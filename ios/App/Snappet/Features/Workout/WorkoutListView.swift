@@ -1,0 +1,51 @@
+import SwiftUI
+import HighlightEngine
+
+struct WorkoutListView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Group {
+            switch model.phase {
+            case .idle:
+                ProgressView("Loading…")
+            case .needsPermission:
+                ContentUnavailableView("Health access needed",
+                    systemImage: "heart.text.square",
+                    description: Text("Allow Health access so Snappet can find your most intense moments."))
+            case .error(let msg):
+                ContentUnavailableView("Something went wrong", systemImage: "exclamationmark.triangle",
+                    description: Text(msg))
+            case .ready:
+                list
+            }
+        }
+        .refreshable { await model.refreshWorkouts() }
+    }
+
+    private var list: some View {
+        List(model.workouts) { wk in
+            NavigationLink(value: wk) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(wk.activity.rawValue.capitalized).font(.headline)
+                    Text(wk.start, format: .dateTime.month().day().hour().minute())
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text(durationText(wk.duration)).font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .navigationDestination(for: WorkoutSummary.self) { ReelView(summary: $0) }
+        .overlay {
+            if model.workouts.isEmpty {
+                ContentUnavailableView("No workouts yet",
+                    systemImage: "figure.run",
+                    description: Text("Track a workout on your Apple Watch, then pull to refresh."))
+            }
+        }
+    }
+
+    private func durationText(_ s: Double) -> String {
+        let m = Int(s) / 60
+        return "\(m) min"
+    }
+}

@@ -58,3 +58,7 @@ GoogleService-Info.plist
 node_modules/
 .venv/
 __pycache__/
+
+# SwiftPM build artifacts
+ios/HighlightEngine/.build/
+.build/

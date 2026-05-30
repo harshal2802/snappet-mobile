@@ -1,0 +1,35 @@
+# XcodeGen spec — generates Snappet.xcodeproj.
+#   brew install xcodegen && cd ios/App && xcodegen generate && open Snappet.xcodeproj
+# Keeps the Xcode project reproducible from source (no binary .pbxproj churn in git).
+name: Snappet
+options:
+  bundleIdPrefix: com.snappet
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  HighlightEngine:
+    path: ../HighlightEngine
+targets:
+  Snappet:
+    type: application
+    platform: iOS
+    sources:
+      - path: Snappet
+    dependencies:
+      - package: HighlightEngine
+    settings:
+      base:
+        INFOPLIST_FILE: Snappet/Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: YES
+        GENERATE_INFOPLIST_FILE: NO
+    entitlements:
+      path: Snappet/Resources/Snappet.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
