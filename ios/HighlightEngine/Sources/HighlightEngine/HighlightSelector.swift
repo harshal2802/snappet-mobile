@@ -1,5 +1,12 @@
 import Foundation
 
+/// Internal scored candidate moment (file-scope so it has an accessible memberwise init).
+private struct Candidate {
+    let t: Double
+    let media: MediaItem
+    let s: Double
+}
+
 /// The swappable strategy that turns a workout + media into ranked highlights.
 ///
 /// MODULARITY IS THE POINT: the spike (Snappet#60 / experiments/) concluded the
@@ -25,17 +32,16 @@ public extension HighlightSelector {
         )
 
         // Candidate moments: only where media exists (we can only show filmed time).
-        struct Cand { let t: Double; let media: MediaItem; let s: Double }
-        var cands: [Cand] = []
+        var cands: [Candidate] = []
         for media in workout.media {
             if media.kind == .photo {
-                cands.append(Cand(t: media.startOffset, media: media,
-                                  s: score(at: media.startOffset, workout: workout, hr: hr, config: config)))
+                cands.append(Candidate(t: media.startOffset, media: media,
+                                       s: score(at: media.startOffset, workout: workout, hr: hr, config: config)))
             } else {
                 var t = media.startOffset
                 while t <= media.endOffset {
-                    cands.append(Cand(t: t, media: media,
-                                      s: score(at: t, workout: workout, hr: hr, config: config)))
+                    cands.append(Candidate(t: t, media: media,
+                                           s: score(at: t, workout: workout, hr: hr, config: config)))
                     t += candidateStepSec
                 }
             }
@@ -44,7 +50,7 @@ public extension HighlightSelector {
 
         // Rank, then greedy non-max suppression by time gap.
         let ranked = cands.sorted { $0.s > $1.s }
-        var chosen: [Cand] = []
+        var chosen: [Candidate] = []
         for c in ranked {
             if chosen.allSatisfy({ abs($0.t - c.t) >= config.minGapSec }) {
                 chosen.append(c)

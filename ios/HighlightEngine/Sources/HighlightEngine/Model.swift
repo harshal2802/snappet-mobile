@@ -16,7 +16,7 @@ public struct HRSample: Sendable, Equatable {
     }
 }
 
-public enum Activity: String, Sendable, CaseIterable {
+public enum Activity: String, Sendable, CaseIterable, Codable {
     case climbing, running, dance, strength, other
 }
 
@@ -55,7 +55,7 @@ public struct Highlight: Sendable, Equatable, Identifiable {
     /// 0...1 intensity-derived rank score.
     public let score: Double
 
-    public enum Kind: String, Sendable { case high, low }
+    public enum Kind: String, Sendable, Codable { case high, low }
 
     public init(id: String, mediaItemId: String, kind: Kind,
                 atOffset: Double, clipStart: Double, clipEnd: Double, score: Double) {
