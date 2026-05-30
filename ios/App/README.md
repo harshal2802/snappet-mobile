@@ -48,7 +48,7 @@ simulator), and grant Health + Photos when prompted.
 
 ## Verification status — read this
 
-- ✅ **`HighlightEngine` is built and unit-tested** (`cd ios/HighlightEngine && swift test`, 15 tests
+- ✅ **`HighlightEngine` is built and unit-tested** (`cd ios/HighlightEngine && swift test`, 14 tests
   green). The algorithm, selection pipeline, reel planning, and feedback capture are real and proven.
 - ⚠️ **The app shell (Services + SwiftUI) is NOT compile-verified here** — it depends on Xcode +
   HealthKit/Photos/AVFoundation entitlements and a device, which can't run in this environment. The
