@@ -57,7 +57,7 @@ struct ReelView: View {
                     .listRowBackground(Color.clear)
                 }
 
-                Section("Highlights (\(vm.keptHighlights.count))") {
+                Section {
                     ForEach(vm.keptHighlights) { h in
                         HighlightRow(highlight: h)
                             .swipeActions {
@@ -66,6 +66,8 @@ struct ReelView: View {
                                 }
                             }
                     }
+                } header: {
+                    Text("Highlights (\(vm.keptHighlights.count))")
                 } footer: {
                     Text("Auto-selected from your heart rate. Swipe to remove; tap Regenerate for a fresh cut.")
                 }
