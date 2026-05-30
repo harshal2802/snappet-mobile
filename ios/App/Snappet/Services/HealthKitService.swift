@@ -96,7 +96,7 @@ final class HealthKitService: @unchecked Sendable {
 
     private static func map(_ t: HKWorkoutActivityType) -> Activity {
         switch t {
-        case .climbing, .bouldering: return .climbing
+        case .climbing: return .climbing
         case .running: return .running
         case .cardioDance, .socialDance, .barre: return .dance
         case .traditionalStrengthTraining, .functionalStrengthTraining: return .strength
