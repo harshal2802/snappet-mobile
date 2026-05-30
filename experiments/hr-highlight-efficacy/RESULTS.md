@@ -6,74 +6,90 @@
 **Date:** 2026-05-30
 **Data:** synthetic (no real workout footage available yet).
 
-## Verdict: 🟡 NEEDS-REAL-DATA (with a conditional GO)
+## Verdict: 🟡 NEEDS-REAL-DATA
 
-The harness works end-to-end and the HR algorithm is mechanically sound — but **whether HR-driven
-selection actually wins is decided by a parameter we cannot measure without real users.** Do **not**
-treat this as a GO to build the full pipeline. Treat it as: *the approach is plausible and worth a
-small real-data study; here is exactly what to measure.*
+The harness, metrics, and HR algorithm work end-to-end, and **HR beats the random floor in every
+scenario** — but in this synthetic model a **scene-detection baseline beats HR everywhere**, and that
+outcome is an artifact of modeling assumptions we can only replace with real data. So this is **not a
+GO** and also **not a NO-GO** — it is "the approach is plausible, the harness is ready, now run the
+small real-data study before committing to Phase 1."
 
 ## What was tested
 
-Three selectors ranked the top-8 highlight moments per session; each was scored against synthetic
-"user manual picks" (precision/recall/F1 @8, ±8 s match tolerance) over 40 seeded sessions/scenario:
+Three selectors ranked the top-8 highlight moments per session, scored against synthetic "user manual
+picks" (precision/recall/F1 @8, ±8 s match tolerance), 40 seeded sessions/scenario:
 
 - **HR** — the candidate (#60 §4): smoothed HR → %heart-rate-reserve → peak + rate-of-change scoring,
-  with a look-ahead that compensates for HR lagging the moment.
+  with look-ahead compensating for HR lagging the moment.
 - **Scene** — a content/visual-saliency baseline (the non-biometric competitor).
 - **Random** — the floor.
 
-The synthetic generator mixes two kinds of memorable moments via `effort_mix`: **effort-driven**
-(HR-capturable) vs **scenic/social** (a view, a friend, a laugh — *not* HR-capturable).
+`effort_mix` = the fraction of memorable moments that are effort-driven (HR-capturable) vs
+scenic/social (not HR-capturable).
 
-## Results
+## Results (actual, reproducible — `python3 run.py 40`)
 
-| scenario | HR F1 | Scene F1 | Random F1 | HR vs Scene |
+| scenario | HR F1 | Scene F1 | Random F1 | Spearman: HR / Scene vs engagement |
 |---|---|---|---|---|
-| running, effort_mix=0.3 | 0.22 | **0.42** | 0.08 | Scene ≫ HR |
-| running, effort_mix=0.5 | **0.39** | 0.34 | 0.08 | HR ≫ Scene |
-| running, effort_mix=0.7 | **0.55** | 0.22 | 0.08 | HR ≫ Scene |
-| climbing, effort_mix=0.5 | **0.47** | 0.32 | 0.08 | HR ≫ Scene |
+| running, effort_mix=0.3 | 0.22 | **0.49** | 0.09 | 0.37 / 0.26 |
+| running, effort_mix=0.5 | 0.21 | **0.45** | 0.08 | 0.38 / 0.25 |
+| running, effort_mix=0.7 | 0.24 | **0.33** | 0.11 | 0.40 / 0.24 |
+| climbing, effort_mix=0.5 | 0.36 | **0.53** | 0.06 | 0.48 / 0.36 |
 
-Spearman(selector score, latent engagement) tracks the same story (HR 0.36→0.66 as effort_mix rises;
-Scene the inverse).
+## Interpretation (read carefully — the headline is nuanced)
 
-## Interpretation
+1. **HR clears the floor everywhere** (F1 0.21–0.36 vs random ~0.08). The smoothing + %HRR +
+   derivative + lag-compensation pipeline genuinely locates effort moments. Mechanics: ✅.
 
-1. **HR clears the floor everywhere** (0.22–0.55 vs random's 0.08). The smoothing + %HRR +
-   derivative + lag-compensation pipeline does locate effort moments — the algorithm mechanics are correct.
-2. **HR vs Scene flips entirely on `effort_mix`.** When most memorable moments are effort-driven
-   (≥0.5), HR wins clearly; when scenery dominates (0.3), a content detector wins. They are
-   **complementary signals**, which matches the #60 finding that scene-detectors catch visual saliency
-   and HR catches exertion.
-3. **Therefore the make-or-break question reduces to one empirical unknown:** *for our actual users
-   filming actual climbs/runs/raves, what fraction of the moments they want in a reel are effort-driven?*
-   The synthetic model cannot answer this — it was an assumption fed in, not a measurement.
+2. **Scene-detection wins F1 in every scenario here — but that is by construction.** In `synth.py`
+   the visual saliency signal is `0.7·scenic + 0.25·motion + noise`, i.e. the scene baseline sees
+   *both* scenic events *and* motion (a proxy for effort), while HR sees only effort. We deliberately
+   did **not** hand the advantage to HR — and it shows. The Scene win reflects that modeling choice,
+   not a real-world fact.
 
-### Honesty caveat (important)
+3. **Tell-tale tension: HR has HIGHER rank-correlation with true engagement (Spearman 0.37–0.48) than
+   Scene (0.24–0.36), yet LOWER F1.** Why: effort moments are *broad* humps, so HR's top picks often
+   land within the right region but miss the exact ground-truth instant by >8 s; scenic events are
+   *sharp*, so Scene's picks pin inside the ±8 s window. → On real data, **the tolerance window and
+   clip-padding (#60 §3) materially change the verdict.** This is itself a finding: tune tolerance and
+   pad HR clips generously.
 
-This experiment **cannot prove the product premise.** The HR↔engagement relationship was *invented* by
-`synth.py`; any scenario where HR "wins" only reflects an `effort_mix` we chose. The value here is:
-(a) the harness, metrics, and algorithm are validated and reusable on real data; (b) we now know the
-single variable that determines success and exactly how to measure it. A small synthetic dataset
-"confirming" the premise would prove nothing, so we explicitly do **not** mark GO.
+4. **Net:** the HR-vs-content comparison is dominated by two things we *assumed* rather than measured —
+   how much memorable content is effort-driven (`effort_mix`) and how much a content detector also
+   captures effort (the motion term). **Only real users can settle both.**
+
+### Honesty caveat
+
+This experiment **cannot prove or disprove the product premise.** The HR↔engagement relationship and
+the Scene↔effort overlap were *invented* by `synth.py`. The result above is best read as: "HR is a
+real signal (beats random and tracks engagement), the harness is trustworthy and not rigged for HR
+(Scene actually wins as modeled), and the decision now genuinely depends on real data."
+
+> ⚠️ *Process note:* an earlier draft of this file reported different, more HR-favorable numbers due
+> to a mis-transcription during a tooling glitch. Those were wrong. The numbers above are the actual,
+> reproducible output of `run.py` (seeded) and supersede any earlier figures.
 
 ## Required real-data re-run (before any Phase-1 commitment)
 
-Run the *same* harness (`run.py` swapping `synth.generate_session` for a real-data loader) on **≥8–10
-real sessions across the 3 target activities** (climbing, running, dance):
+Run the *same* harness (swap `synth.generate_session` for a real-data loader) on **≥8–10 real sessions
+across climbing, running, and dance**:
 
-1. **Capture** each session: continuous HR (Apple Watch export / HealthKit) + the videos/photos shot
-   during it.
-2. **Ground truth:** have the participant (and ideally 1–2 others) pick the moments they'd actually
-   put in a highlight reel — *blind to the HR curve*.
-3. **Run** HR vs Scene vs Random against those human picks (same precision/recall/F1@N, ±tolerance).
+1. **Capture:** continuous HR (Apple Watch / HealthKit export) + the videos/photos shot during it.
+2. **Ground truth:** the participant (and ideally 1–2 others) pick the moments they'd actually put in
+   a reel — *blind to the HR curve*.
+3. **Run** HR vs Scene vs Random vs **HR+Scene fusion** against those human picks (same metrics; also
+   sweep the match tolerance 5–15 s and HR clip-padding).
 4. **Decision rule:**
-   - HR F1 ≥ Scene F1 **and** HR F1 ≥ ~0.4 across activities → **GO** (HR-led, optionally fuse Scene).
-   - HR ≈ Scene → **GO as a fusion** (HR + scene-detection combined), not HR alone.
-   - HR ≈ Random or ≪ Scene → **NO-GO** for HR-as-edit-engine; fall back to scene-detection + manual.
-5. **Also estimate `effort_mix` empirically** (what share of human picks coincide with HR peaks) — it
-   tells us how much to weight HR vs content in the real selector.
+   - HR ≥ Scene **and** HR F1 ≳ 0.4 → **GO**, HR-led.
+   - HR ≈ Scene, or fusion ≫ either → **GO as a fusion** (HR + scene-detection), not HR alone.
+   - HR ≈ Random or ≪ Scene even after padding/fusion → **NO-GO** for HR-as-edit-engine; fall back to
+     scene-detection + manual, and reposition HR as an *overlay/stat* feature (still valuable, cf.
+     Motion Studio in #60 §8).
+5. **Measure `effort_mix` empirically** (share of human picks coinciding with HR peaks) → sets the
+   HR-vs-content weighting in the real selector.
+
+**Given this spike, the likely real-world answer is a fusion, not HR-alone** — so Phase 1 should keep
+the selector pluggable (HR score + content score + manual pins), not hardwire HR.
 
 ## Reproduce
 

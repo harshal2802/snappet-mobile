@@ -28,6 +28,9 @@ python3 run.py 40     # pure Python stdlib, no dependencies; seeded & reproducib
 
 ## Bottom line
 
-🟡 **NEEDS-REAL-DATA.** The algorithm beats the random floor everywhere and the harness is sound, but
-HR-vs-scene-detection flips on one unknown (`effort_mix`) that only real users can settle. See
-`RESULTS.md` for the decision rule and the ≥8–10-session real-data study to run before Phase 1.
+🟡 **NEEDS-REAL-DATA.** HR beats the random floor in every scenario (mechanics ✅) and actually tracks
+latent engagement better than the scene baseline by rank-correlation — but in this synthetic model the
+scene-detector wins F1 (by construction: its signal also sees motion). The real HR-vs-content verdict
+depends on assumptions only real users can settle, and the likely answer is a **fusion**, not HR-alone.
+See `RESULTS.md` for the actual numbers, the nuance, and the ≥8–10-session real-data study to run
+before Phase 1.
