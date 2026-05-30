@@ -46,15 +46,28 @@ open Snappet.xcodeproj
 Then set your signing team, run on a **real device** (HealthKit + Photos need a device, not the
 simulator), and grant Health + Photos when prompted.
 
-## Verification status — read this
+## Verification status — read this (precise about what's proven)
 
-- ✅ **`HighlightEngine` is built and unit-tested** (`cd ios/HighlightEngine && swift test`, 14 tests
-  green). The algorithm, selection pipeline, reel planning, and feedback capture are real and proven.
-- ⚠️ **The app shell (Services + SwiftUI) is NOT compile-verified here** — it depends on Xcode +
-  HealthKit/Photos/AVFoundation entitlements and a device, which can't run in this environment. The
-  code is written to current SwiftUI/HealthKit/AVFoundation APIs and is structured to build, but
-  expect to resolve minor signing/concurrency wrinkles on first Xcode build. The *logic that matters*
-  for the algorithm is in the tested engine, not the shell.
+- ✅ **`HighlightEngine` builds + 14 unit tests pass** — `cd ios/HighlightEngine && swift test`. The
+  algorithm, selection pipeline, reel planning, and feedback capture are real and proven.
+- ✅ **The whole app type-checks against the iOS 18 SDK** — Swift 6, **0 errors, 0 warnings**, all 9
+  app sources compiled against the real HealthKit / Photos / AVFoundation / SwiftUI APIs + the engine
+  module:
+  ```bash
+  cd ios
+  xcrun -sdk iphonesimulator swiftc -emit-module -module-name HighlightEngine \
+    -target arm64-apple-ios18.0-simulator -swift-version 6 \
+    HighlightEngine/Sources/HighlightEngine/*.swift -emit-module-path /tmp/he/HighlightEngine.swiftmodule
+  xcrun -sdk iphonesimulator swiftc -typecheck -target arm64-apple-ios18.0-simulator -swift-version 6 \
+    -I /tmp/he $(find "$PWD/App/Snappet" -name '*.swift')
+  ```
+  This proves the API usage and Swift 6 concurrency are correct (it's what caught the `Sendable` /
+  `AVAssetExportSession` fixes).
+- ⚠️ **A full `xcodebuild` (link + bundle) and on-device run are NOT done here.** This environment is
+  missing the iOS simulator *runtime* (`xcodebuild` fails at destination resolution: "iOS 26.5 is not
+  installed"), and HealthKit/Photos/AVFoundation only *execute* on a real device with signing + real
+  workouts/media. Type-check is proven; full build + runtime behaviour is the next verification step,
+  via `xcodegen generate && open Snappet.xcodeproj` on a Mac with the simulator runtime / a device.
 
 ## Next
 
