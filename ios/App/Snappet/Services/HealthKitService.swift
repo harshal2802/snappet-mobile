@@ -20,7 +20,9 @@ struct WorkoutSummary: Identifiable, Hashable {
 /// normal Apple Watch workout, then Snappet reads it once it has synced to the
 /// phone. This is the authoritative HR series the research recommends for highlight
 /// detection (#60 §3), and it makes v1 runnable today with existing workouts.
-final class HealthKitService {
+/// `@unchecked Sendable`: the only stored property is `HKHealthStore`, which Apple
+/// documents as thread-safe, so this service can be called across actor boundaries.
+final class HealthKitService: @unchecked Sendable {
     private let store = HKHealthStore()
 
     enum HealthError: LocalizedError {

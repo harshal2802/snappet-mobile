@@ -6,7 +6,8 @@ import HighlightEngine
 /// work" magic, #60 §A). Needs full-library read to scan by time window; the app
 /// primes this with a value-first screen and falls back to a manual picker on
 /// limited access.
-final class PhotoLibraryService {
+/// Stateless → `Sendable`, so it can be called across actor boundaries.
+final class PhotoLibraryService: Sendable {
 
     enum PhotoError: LocalizedError {
         case denied
