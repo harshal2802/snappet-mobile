@@ -5,7 +5,7 @@ name: Snappet
 options:
   bundleIdPrefix: com.snappet
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   createIntermediateGroups: true
 packages:
   HighlightEngine:

@@ -3,6 +3,13 @@ import AVFoundation
 import Photos
 import HighlightEngine
 
+/// Wraps a non-Sendable value so it can cross an async continuation boundary.
+/// Safe here because each boxed value is produced and consumed exactly once, serially.
+private struct Box<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
 /// Turns a platform-free `ReelPlan` into an actual video using AVFoundation
 /// (#60 §5), entirely on-device. Resolves each segment's source `AVAsset` from its
 /// PHAsset id, stitches the trimmed ranges into an `AVMutableComposition`, and
@@ -10,7 +17,8 @@ import HighlightEngine
 ///
 /// Photos (still segments) are skipped in v1's video stitch — a follow-up can render
 /// a Ken-Burns still for `photoStill` seconds. Videos are the core of the reel.
-final class ReelExporter {
+/// Stateless → `Sendable`.
+final class ReelExporter: Sendable {
 
     enum ExportError: LocalizedError {
         case noVideoSegments, exportFailed(String)
@@ -34,7 +42,7 @@ final class ReelExporter {
         var cursor = CMTime.zero
 
         for seg in videoSegments {
-            guard let asset = try await avAsset(forLocalIdentifier: seg.mediaItemId) else { continue }
+            guard let asset = await avAsset(forLocalIdentifier: seg.mediaItemId) else { continue }
             let range = CMTimeRange(
                 start: CMTime(seconds: seg.startWithinMedia, preferredTimescale: 600),
                 duration: CMTime(seconds: seg.duration, preferredTimescale: 600)
@@ -48,31 +56,28 @@ final class ReelExporter {
             cursor = cursor + range.duration
         }
 
-        guard let export = AVAssetExportSession(asset: composition,
-                                                presetName: AVAssetExportPresetHighestQuality) else {
+        guard let session = AVAssetExportSession(asset: composition,
+                                                 presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.exportFailed("could not create export session")
         }
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("snappet-reel-\(UUID().uuidString).mp4")
-        export.outputURL = out
-        export.outputFileType = .mp4
-        await export.export()
-        guard export.status == .completed else {
-            throw ExportError.exportFailed(export.error?.localizedDescription ?? "unknown")
-        }
+        // Modern async export (iOS 18+): throws on failure, no continuation/data-race.
+        try await session.export(to: out, as: .mp4)
         return out
     }
 
-    private func avAsset(forLocalIdentifier id: String) async throws -> AVAsset? {
+    private func avAsset(forLocalIdentifier id: String) async -> AVAsset? {
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
         guard let phAsset = assets.firstObject else { return nil }
-        return await withCheckedContinuation { cont in
+        let boxed: Box<AVAsset?> = await withCheckedContinuation { cont in
             let opts = PHVideoRequestOptions()
             opts.isNetworkAccessAllowed = true
             opts.deliveryMode = .highQualityFormat
             PHImageManager.default().requestAVAsset(forVideo: phAsset, options: opts) { avAsset, _, _ in
-                cont.resume(returning: avAsset)
+                cont.resume(returning: Box(avAsset))
             }
         }
+        return boxed.value
     }
 }

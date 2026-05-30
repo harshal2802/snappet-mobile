@@ -61,7 +61,7 @@ final class ReelViewModel {
         state = .exporting
         // Survivors are positive signal; log them as kept + exported.
         for h in keptHighlights { log(.kept, highlight: h) }
-        let plan = model.engine.planner.plan(highlights: keptHighlights, media: wk.media)
+        let plan = model.reelPlan(for: keptHighlights, media: wk.media)
         do {
             let url = try await exporter.export(plan)
             for h in keptHighlights { log(.exported, highlight: h) }

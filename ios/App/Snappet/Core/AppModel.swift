@@ -18,11 +18,15 @@ final class AppModel {
 
     /// The active engine. Default = best-guess HR selector + per-activity presets.
     /// Later: `FusionSelector.hrLeaning(scene:)` once a vision pipeline exists.
-    private(set) lazy var engine = HighlightEngine(
-        selector: HRHighlightSelector(),
-        planner: ReelPlanner(targetDuration: 30),
-        feedback: feedback
-    )
+    /// Computed (HighlightEngine is a cheap Sendable value) so callers get a copy —
+    /// no stored main-actor property to trip Swift 6 isolation across the view layer.
+    var engine: HighlightEngine {
+        HighlightEngine(
+            selector: HRHighlightSelector(),
+            planner: ReelPlanner(targetDuration: 30),
+            feedback: feedback
+        )
+    }
 
     func bootstrap() async {
         do {
@@ -52,5 +56,10 @@ final class AppModel {
             maxBpm: summary.maxBpm,
             media: media
         )
+    }
+
+    /// Assemble a reel plan from chosen highlights (keeps engine access on the main actor).
+    func reelPlan(for highlights: [Highlight], media: [MediaItem]) -> ReelPlan {
+        engine.planner.plan(highlights: highlights, media: media)
     }
 }

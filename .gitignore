@@ -62,3 +62,6 @@ __pycache__/
 # SwiftPM build artifacts
 ios/HighlightEngine/.build/
 .build/
+
+# XcodeGen output (regenerate from project.yml)
+ios/App/*.xcodeproj
