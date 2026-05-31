@@ -39,3 +39,28 @@ targets:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: [health-records]
         com.apple.developer.healthkit.background-delivery: true
+  SnappetUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SnappetUITests
+    dependencies:
+      - target: Snappet
+    settings:
+      base:
+        TEST_TARGET_NAME: Snappet
+        PRODUCT_BUNDLE_IDENTIFIER: com.snappet.uitests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Snappet:
+    build:
+      targets:
+        Snappet: all
+        SnappetUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SnappetUITests

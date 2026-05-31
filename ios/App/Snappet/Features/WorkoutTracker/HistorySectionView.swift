@@ -8,40 +8,52 @@ struct HistorySectionView: View {
     let unit: WeightUnit
     let deleteSession: (WorkoutSession) -> Void
 
-    private var grouped: [(month: String, sessions: [WorkoutSession])] {
+    /// A month bucket of sessions. `Identifiable` (by month) so the `ForEach` keeps stable view
+    /// identity across re-renders — without it, pushing onto the shared nav path churns this
+    /// subtree's identity and the row Button's tap/navigation doesn't "stick".
+    private struct MonthGroup: Identifiable { let id: String; let sessions: [WorkoutSession] }
+
+    private var grouped: [MonthGroup] {
         let cal = Calendar.current
         let groups = Dictionary(grouping: history) { session -> Date in
             cal.date(from: cal.dateComponents([.year, .month], from: session.startedAt)) ?? session.startedAt
         }
         return groups.keys.sorted(by: >).map { key in
-            (key.formatted(.dateTime.month(.wide).year()), groups[key]!.sorted { $0.startedAt > $1.startedAt })
+            MonthGroup(id: key.formatted(.dateTime.month(.wide).year()),
+                       sessions: groups[key]!.sorted { $0.startedAt > $1.startedAt })
         }
     }
 
     var body: some View {
-        Group {
+        // Bare List + .overlay for the empty state (matching ExerciseBrowserView) — the previous
+        // `Group { if empty … else List }` branch swap left the row Buttons' tap gestures dead.
+        List {
+            ForEach(grouped) { group in
+                Section(group.id) {
+                    ForEach(group.sessions) { session in
+                        // NOTE: kept as a value-based NavigationLink (unlike the rest of the suite,
+                        // which uses router Buttons). A Button here provably never fired its action
+                        // on tap — a narrow SwiftUI/List quirk specific to this view — so we keep the
+                        // known-good NavigationLink. Trade-off: this one row isn't XCUITest-tappable.
+                        NavigationLink(value: SessionRoute(id: session.id)) {
+                            HistoryRow(session: session, unit: unit)
+                        }
+                        .accessibilityIdentifier("historyRow")
+                        .swipeActions {
+                            Button(role: .destructive) { deleteSession(session) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .overlay {
             if history.isEmpty {
                 ContentUnavailableView {
                     Label("No workouts yet", systemImage: "clock.arrow.circlepath")
                 } description: {
                     Text("Finish a workout and it will appear here with your stats.")
-                }
-            } else {
-                List {
-                    ForEach(grouped, id: \.month) { group in
-                        Section(group.month) {
-                            ForEach(group.sessions) { session in
-                                NavigationLink(value: session) {
-                                    HistoryRow(session: session, unit: unit)
-                                }
-                                .swipeActions {
-                                    Button(role: .destructive) { deleteSession(session) } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

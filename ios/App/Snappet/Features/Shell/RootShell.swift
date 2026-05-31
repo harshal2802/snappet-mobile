@@ -19,7 +19,7 @@ struct RootShell: View {
         // QA/screenshot hook: `-screenshotModule <id>` opens one module full-screen.
         if let id = Self.screenshotModuleID,
            let module = ModuleRegistry.all.first(where: { $0.id == id }) {
-            NavigationStack { module.destination() }
+            NavigationStack { module.destination() }.environment(SuiteRouter())
         } else {
             ShellTabs()
         }

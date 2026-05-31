@@ -10,6 +10,7 @@ struct ExerciseDetailView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(SuiteRouter.self) private var router
     @State private var editing = false
     @State private var confirmingDelete = false
 
@@ -45,7 +46,7 @@ struct ExerciseDetailView: View {
                         LabeledContent("Best set", value: bestSetText(top))
                     }
                     LabeledContent("Sessions", value: "\(sessionCount)")
-                    NavigationLink(value: ProgressRoute(exerciseId: exercise.id)) {
+                    Button { router.push(ProgressRoute(exerciseId: exercise.id)) } label: {
                         Label("View progress", systemImage: "chart.xyaxis.line")
                     }
                 }

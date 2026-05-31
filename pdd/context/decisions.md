@@ -7,6 +7,29 @@ or accidentally reverse them. Product-level decisions (separate repo, etc.) live
 
 ---
 
+## [2026-05-31] Button-driven, UI-testable navigation via a shared SuiteRouter
+
+**Decision**: Replaced the modules' value-based `NavigationLink(value:)` list rows with plain `Button`s
+that push onto a shared `NavigationPath` owned by a new `@Observable SuiteRouter` (injected via
+`.environment` at the App Library, which now uses `NavigationStack(path:)` and pushes modules by a
+`ModuleRoute` value). Every interactive row got an `accessibilityIdentifier`. Added a `SnappetUITests`
+target with a workout walkthrough + an all-modules smoke test.
+**Why**: XCUITest cannot activate SwiftUI `List` `NavigationLink` rows in this app — they expose as
+`Cell → StaticText` with no button trait, so no tap (cell / text / identifier / coordinate) navigates,
+which made every detail screen un-automatable. `Button`s are real, hittable controls; a spike proved the
+end-to-end chain (card → row → detail → player → finish) is now drivable and screenshot-verified.
+**Also**: session detail pushes a lightweight `SessionRoute(id:)`, never the `WorkoutSession` model — the
+model type is the player `fullScreenCover(item:)`, and pushing it onto the path while that cover exists
+wedges the push.
+**Rules out**: relying on value-based NavigationLink rows for testable navigation; modules owning their
+own `NavigationStack` (they still ride the App Library's, now path-based).
+**Known limitation**: the **History → session-detail** row is the one row left as a value-based
+`NavigationLink` — a `Button` there provably never fired its action on tap (a narrow SwiftUI/List quirk,
+confirmed by logging vs a working control). It works for users but isn't XCUITest-tappable; kept rather
+than shipping a dead Button.
+**Verified**: `xcodebuild` iPhone 17 Pro sim BUILD SUCCEEDED; `SnappetUITests` both tests green
+(`WorkoutWalkthroughTests`, `SuiteSmokeTests`). Shipped as a stacked PR on top of #6/#7.
+
 ## [2026-05-31] Workout tracker UX: fix start/finish transitions without a module-owned NavigationStack (#5)
 
 **Decision**: A deep UX review (issue #5) found the workout player + start-conflict dialog were presented from `WorkoutHomeView` while a pushed `RoutineDetailView` sat on top — making presentation fragile and dropping the user back on the routine's prescription page after a workout. Rather than give the module its own `NavigationStack`/`NavigationPath` (banned — modules ride the App Library's stack), the routine detail now **pops itself (`@Environment(\.dismiss)`) before calling `start()`**, so the cover/dialog present from the home (top of stack) and finishing lands on the home; `finishWorkout` switches to the **Dashboard** on a saved finish. The Routines list's previously-dead `start` closure is wired to a swipe + context-menu "Start". `RoutineDetailView` hides the suite tab bar (`.toolbar(.hidden, for: .tabBar)`) so its bottom Start bar doesn't stack on it. Separately (branch `fix/workout-player-session`), the live player never persists a **zero-set** session (auto-discard), and the rest timer is driven off a target **end `Date`** so backgrounding doesn't make it drift.

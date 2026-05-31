@@ -6,6 +6,7 @@ struct WorkoutSettingsView: View {
     @Binding var unitRaw: String
     let customExercises: [CustomExercise]
     let history: [WorkoutSession]
+    let open: (Exercise) -> Void
     let deleteCustom: (CustomExercise) -> Void
 
     var body: some View {
@@ -25,12 +26,14 @@ struct WorkoutSettingsView: View {
             if !customExercises.isEmpty {
                 Section("Custom exercises") {
                     ForEach(customExercises.sorted { $0.name < $1.name }) { custom in
-                        NavigationLink(value: custom.asExercise) {
+                        Button { open(custom.asExercise) } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(custom.name).font(.headline)
                                 Text(custom.asExercise.subtitle).font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("customExerciseRow")
                     }
                     .onDelete { offsets in
                         let sorted = customExercises.sorted { $0.name < $1.name }

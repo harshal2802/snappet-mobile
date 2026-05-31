@@ -5,6 +5,7 @@ import SwiftUI
 /// workout app (lives inside the App Library's NavigationStack — no stack of its own).
 struct ExerciseBrowserView: View {
     let resolver: ExerciseResolver
+    let open: (Exercise) -> Void
 
     @State private var query = ""
     @State private var filters = ExerciseFilters()
@@ -26,7 +27,9 @@ struct ExerciseBrowserView: View {
             }
             Section {
                 ForEach(results) { ex in
-                    NavigationLink(value: ex) { ExerciseRow(exercise: ex) }
+                    Button { open(ex) } label: { ExerciseRow(exercise: ex) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("exerciseRow")
                 }
             } header: {
                 Text("\(results.count) exercise\(results.count == 1 ? "" : "s")")

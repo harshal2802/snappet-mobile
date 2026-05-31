@@ -6,6 +6,7 @@ import SwiftData
 struct JournalRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SnappetCore.self) private var core
+    @Environment(SuiteRouter.self) private var router
     @Query(sort: \JournalEntry.createdAt, order: .reverse) private var entries: [JournalEntry]
 
     @State private var newEntry: JournalEntry?
@@ -40,9 +41,11 @@ struct JournalRootView: View {
     private var entryList: some View {
         List {
             ForEach(entries) { entry in
-                NavigationLink(value: entry) {
+                Button { router.push(entry) } label: {
                     JournalRow(entry: entry)
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("journalRow")
             }
             .onDelete(perform: deleteEntries)
         }
