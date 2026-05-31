@@ -73,9 +73,13 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
-🟢 **Phase 1 iOS MVP — feature-complete across P1–P7 and now BUILDS + RUNS on the iOS simulator**
-(BUILD SUCCEEDED; installs, launches, onboarding renders). The remaining step is the data-dependent
-end-to-end run on a real device (P1) — the simulator has no Apple Watch workouts / real Photos.
+🟢 **Now the Snappet daily-app SUITE (P9) — builds + runs on the iOS simulator.** A `TabView` shell
+(Home dashboard + App Library) over an on-device SwiftData store (Snappet Core), with 7 modules:
+**Workout Reels** (flagship), **Pomodoro / Habits / Journal** (productivity), **Tip / Split Expenses /
+Budget** (finance). Every app logs usage to Snappet Core; the Home dashboard aggregates historical
+usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches, dashboard renders.
+Remaining: data-dependent on-device runs (Workout needs Apple Watch workouts/Photos; each app's real
+persistence/interaction is unverified until a device or sim interaction pass).
 
 ### Built
 
