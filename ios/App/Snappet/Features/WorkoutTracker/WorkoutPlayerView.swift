@@ -14,6 +14,7 @@ struct WorkoutPlayerView: View {
     let onClose: (_ saved: Bool) -> Void
 
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
 
     enum Phase { case exercise, rest, done }
     @State private var phase: Phase = .exercise
@@ -28,6 +29,7 @@ struct WorkoutPlayerView: View {
     // Rest timer.
     @State private var restRemaining = 0
     @State private var restTotal = 0
+    @State private var restEndDate: Date?
     @State private var timerTask: Task<Void, Never>?
     @State private var flash = false
 
@@ -55,10 +57,16 @@ struct WorkoutPlayerView: View {
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    // Step back to fix a previously logged set.
+                    if phase == .exercise && hasPrevious {
+                        Button { goPrevious() } label: { Label("Previous set", systemImage: "chevron.left") }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if phase == .done {
-                        Button("Done") { finish(saved: true) }.fontWeight(.semibold)
-                    } else {
+                    // On the done screen the bottom "Finish" button is the single, clear exit —
+                    // no redundant top-right "Done".
+                    if phase != .done {
                         Button("End") { showingEnd = true }
                     }
                 }
@@ -67,6 +75,13 @@ struct WorkoutPlayerView: View {
         .interactiveDismissDisabled()
         .onAppear { unit = defaultUnit; resumePosition() }
         .onDisappear { timerTask?.cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            // Returning to foreground: recompute remaining from the wall clock immediately
+            // instead of waiting up to 200ms for the next tick.
+            if phase == .active, self.phase == .rest, let end = restEndDate {
+                restRemaining = max(0, Int(end.timeIntervalSinceNow.rounded(.up)))
+            }
+        }
         .confirmationDialog("End this workout?", isPresented: $showingEnd, titleVisibility: .visible) {
             Button("Save & exit") { finish(saved: true) }
             Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
@@ -339,22 +354,70 @@ struct WorkoutPlayerView: View {
         return next
     }
 
+    // MARK: - Step back (edit a previous set)
+
+    private var hasPrevious: Bool {
+        if setIndex > 0 { return true }
+        return previousPlayableIndex(before: exerciseIndex) != nil
+    }
+
+    private func previousPlayableIndex(before index: Int) -> Int? {
+        (0..<index).last { !exercises[$0].skipped }
+    }
+
+    /// Move back one set (or to the last set of the previous played exercise) and prefill it with
+    /// what was logged, so the user can correct a mistake. Re-completing it advances forward again.
+    private func goPrevious() {
+        if setIndex > 0 {
+            setIndex -= 1
+        } else if let prev = previousPlayableIndex(before: exerciseIndex) {
+            exerciseIndex = prev
+            setIndex = max(0, exercises[prev].sets.count - 1)
+        } else {
+            return
+        }
+        phase = .exercise
+        prefillEditing()
+    }
+
+    /// Prefill inputs from the current set's own log (when stepping back to edit); otherwise fall
+    /// back to the normal forward prefill.
+    private func prefillEditing() {
+        guard let ex = current, ex.sets.indices.contains(setIndex) else { prefillInputs(); return }
+        let set = ex.sets[setIndex]
+        if set.completedAt != nil {
+            repsText = set.actualReps.map(String.init) ?? ""
+            weightText = set.actualWeight.map(Self.formatWeight) ?? ""
+            unit = set.weightUnit ?? unit
+        } else {
+            prefillInputs()
+        }
+    }
+
     // MARK: - Rest timer
 
     private func startRest(_ seconds: Int) {
-        restTotal = seconds; restRemaining = seconds; phase = .rest
+        restTotal = seconds
+        restRemaining = seconds
+        let end = Date().addingTimeInterval(TimeInterval(seconds))
+        restEndDate = end
+        phase = .rest
         timerTask?.cancel()
         timerTask = Task { @MainActor in
-            while restRemaining > 0 {
-                try? await Task.sleep(for: .seconds(1))
+            while true {
+                try? await Task.sleep(for: .milliseconds(200))
                 if Task.isCancelled { return }
-                restRemaining -= 1
+                guard let end = restEndDate else { return }
+                let remaining = max(0, Int(end.timeIntervalSinceNow.rounded(.up)))
+                restRemaining = remaining
+                if remaining <= 0 { break }
             }
             await restFinished()
         }
     }
 
     @MainActor private func restFinished() async {
+        restEndDate = nil
         Haptics.success()
         flash = true
         try? await Task.sleep(for: .milliseconds(350))
@@ -364,6 +427,7 @@ struct WorkoutPlayerView: View {
 
     private func skipRest() {
         timerTask?.cancel()
+        restEndDate = nil
         Haptics.tap()
         advanceAfterRest()
     }
@@ -378,7 +442,8 @@ struct WorkoutPlayerView: View {
 
     private func finish(saved: Bool) {
         timerTask?.cancel()
-        onClose(saved)
+        // Don't persist an empty workout — if nothing was logged, discard regardless of the exit chosen.
+        onClose(saved && session.completedSetCount > 0)
     }
 
     private func persist() { try? context.save() }
@@ -399,6 +464,6 @@ struct WorkoutPlayerView: View {
 
 /// Thin haptics wrapper (UIKit is fine in the app target; only `HighlightEngine` is platform-free).
 enum Haptics {
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    @MainActor static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    @MainActor static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
 }
