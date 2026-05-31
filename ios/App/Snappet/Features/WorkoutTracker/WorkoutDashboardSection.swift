@@ -13,6 +13,8 @@ struct WorkoutDashboardSection: View {
     let goToRoutines: () -> Void
     let goToBrowse: () -> Void
 
+    private var isEmptyState: Bool { history.isEmpty && activeSession == nil }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -20,17 +22,22 @@ struct WorkoutDashboardSection: View {
                     resumeBanner(activeSession)
                 }
 
-                if history.isEmpty && activeSession == nil {
+                if isEmptyState {
                     emptyState
                 } else {
                     statGrid
-                    if !weeklyVolume.isEmpty { volumeChart }
+                    // Only chart weeks that actually have volume — a bodyweight-only history is all
+                    // zeroes, and an all-zero chart renders as an empty, broken-looking frame.
+                    if weeklyVolume.contains(where: { $0.volumeKg > 0 }) { volumeChart }
                     if !personalRecords.isEmpty { recordsSection }
                 }
 
-                if !quickStart.isEmpty { quickStartSection }
+                // The empty state already points to routines/exercises; don't also show the
+                // quick-start list under it (two ways to pick a routine on one screen).
+                if !quickStart.isEmpty && !isEmptyState { quickStartSection }
             }
             .padding()
+            .padding(.bottom, 24) // clear the suite's floating tab bar
         }
     }
 
