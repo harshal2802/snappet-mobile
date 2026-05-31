@@ -30,32 +30,62 @@ final class ReelExporter: Sendable {
         }
     }
 
-    func export(_ plan: ReelPlan) async throws -> URL {
-        let videoSegments = plan.segments.filter { $0.kind == .video && $0.duration > 0.1 }
-        guard !videoSegments.isEmpty else { throw ExportError.noVideoSegments }
+    /// Build the playable composition for a plan. An `AVMutableComposition` is an
+    /// `AVAsset`, so this is reused for BOTH in-app preview (wrap in an `AVPlayer`,
+    /// no export) and export. `sending` lets the freshly-built, otherwise-unreferenced
+    /// composition cross to the `@MainActor` view model under Swift 6 isolation.
+    func makeComposition(for plan: ReelPlan) async throws -> sending AVMutableComposition {
+        let renderable = plan.segments.filter {
+            ($0.kind == .video && $0.duration > 0.1) || $0.kind == .photo
+        }
+        guard !renderable.isEmpty else { throw ExportError.noVideoSegments }
 
         let composition = AVMutableComposition()
         let vTrack = composition.addMutableTrack(withMediaType: .video,
                                                  preferredTrackID: kCMPersistentTrackID_Invalid)
         let aTrack = composition.addMutableTrack(withMediaType: .audio,
                                                  preferredTrackID: kCMPersistentTrackID_Invalid)
+        let photoRenderer = PhotoClipRenderer()
         var cursor = CMTime.zero
+        var inserted = 0
 
-        for seg in videoSegments {
-            guard let asset = await avAsset(forLocalIdentifier: seg.mediaItemId) else { continue }
-            let range = CMTimeRange(
-                start: CMTime(seconds: seg.startWithinMedia, preferredTimescale: 600),
-                duration: CMTime(seconds: seg.duration, preferredTimescale: 600)
-            )
-            if let src = try await asset.loadTracks(withMediaType: .video).first {
-                try vTrack?.insertTimeRange(range, of: src, at: cursor)
+        // Iterate segments IN ORDER so photos interleave with videos correctly.
+        for seg in renderable {
+            if seg.kind == .photo {
+                // Render the still to a Ken-Burns clip, then insert it like a video.
+                guard let url = await photoRenderer.renderClip(assetId: seg.mediaItemId,
+                                                               duration: plan.photoStill) else { continue }
+                let asset = AVURLAsset(url: url)
+                guard let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
+                let dur = try await asset.load(.duration)
+                let range = CMTimeRange(start: .zero, duration: dur)
+                do {
+                    try vTrack?.insertTimeRange(range, of: src, at: cursor)
+                    cursor = cursor + dur
+                    inserted += 1
+                } catch { continue }   // skip a bad photo clip, keep the reel
+            } else {
+                guard let asset = await avAsset(forLocalIdentifier: seg.mediaItemId) else { continue }
+                let range = CMTimeRange(
+                    start: CMTime(seconds: seg.startWithinMedia, preferredTimescale: 600),
+                    duration: CMTime(seconds: seg.duration, preferredTimescale: 600)
+                )
+                guard let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
+                do { try vTrack?.insertTimeRange(range, of: src, at: cursor) }
+                catch { continue }
+                if let srcA = try? await asset.loadTracks(withMediaType: .audio).first {
+                    try? aTrack?.insertTimeRange(range, of: srcA, at: cursor)
+                }
+                cursor = cursor + range.duration
+                inserted += 1
             }
-            if let srcA = try await asset.loadTracks(withMediaType: .audio).first {
-                try? aTrack?.insertTimeRange(range, of: srcA, at: cursor)
-            }
-            cursor = cursor + range.duration
         }
+        guard inserted > 0 else { throw ExportError.noVideoSegments }
+        return composition
+    }
 
+    func export(_ plan: ReelPlan) async throws -> URL {
+        let composition = try await makeComposition(for: plan)
         guard let session = AVAssetExportSession(asset: composition,
                                                  presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.exportFailed("could not create export session")

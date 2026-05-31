@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Snappet does no tracking and runs no analytics/ad SDKs. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!--
+      No data collection is declared because nothing leaves the device.
+      Health (heart rate) and Photos/Videos are read, processed into a
+      highlight reel, and written back to the user's own library entirely
+      ON-DEVICE. Snappet has no network/backend and transmits no user data,
+      so per Apple's definition (data "collected" = transmitted off device)
+      there is nothing to declare here.
+    -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <!-- Required-reason APIs the app actually links/uses. -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <!-- File timestamps on files the app itself created
+                 (FeedbackStore JSONL sink + ReelExporter temp output). -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
+            </array>
+        </dict>
+        <dict>
+            <!-- UserDefaults used only to read/write the app's own
+                 onboarding-completed flag (snappet.hasOnboarded). -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

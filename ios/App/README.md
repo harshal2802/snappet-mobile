@@ -48,11 +48,12 @@ simulator), and grant Health + Photos when prompted.
 
 ## Verification status — read this (precise about what's proven)
 
-- ✅ **`HighlightEngine` builds + 14 unit tests pass** — `cd ios/HighlightEngine && swift test`. The
-  algorithm, selection pipeline, reel planning, and feedback capture are real and proven.
-- ✅ **The whole app type-checks against the iOS 18 SDK** — Swift 6, **0 errors, 0 warnings**, all 9
-  app sources compiled against the real HealthKit / Photos / AVFoundation / SwiftUI APIs + the engine
-  module:
+- ✅ **`HighlightEngine` builds + 18 unit tests pass** — `cd ios/HighlightEngine && swift test`. The
+  algorithm, selection pipeline, reel planning (incl. pin budget-exemption + manual order), and
+  feedback capture are real and proven.
+- ✅ **The whole app type-checks against the iOS 18 SDK** — Swift 6, **0 errors, 0 warnings**, all
+  app sources compiled against the real HealthKit / Photos / AVFoundation / AVKit / SwiftUI APIs + the
+  engine module:
   ```bash
   cd ios
   xcrun -sdk iphonesimulator swiftc -emit-module -module-name HighlightEngine \
@@ -63,15 +64,30 @@ simulator), and grant Health + Photos when prompted.
   ```
   This proves the API usage and Swift 6 concurrency are correct (it's what caught the `Sendable` /
   `AVAssetExportSession` fixes).
-- ⚠️ **A full `xcodebuild` (link + bundle) and on-device run are NOT done here.** This environment is
-  missing the iOS simulator *runtime* (`xcodebuild` fails at destination resolution: "iOS 26.5 is not
-  installed"), and HealthKit/Photos/AVFoundation only *execute* on a real device with signing + real
-  workouts/media. Type-check is proven; full build + runtime behaviour is the next verification step,
-  via `xcodegen generate && open Snappet.xcodeproj` on a Mac with the simulator runtime / a device.
+- ✅ **Full `xcodebuild` compile + link for the simulator → BUILD SUCCEEDED**, and `simctl install` +
+  `launch` on an iPhone 17 (iOS 26.4) sim runs the app — the **onboarding screen renders, no crash**.
+  This caught + fixed a real `Info.plist` bug (missing `CFBundleIdentifier` under `GENERATE_INFOPLIST_FILE: NO`).
+  Build invocation (the *generic* sim destination wants an uninstalled iOS 26.5; target a concrete sim):
+  ```bash
+  cd ios/App && xcodegen generate
+  xcrun simctl boot 'iPhone 17'   # or any booted iOS 26.x sim
+  xcodebuild -project Snappet.xcodeproj -scheme Snappet -sdk iphonesimulator \
+    -destination 'id=<booted-sim-udid>' CODE_SIGNING_ALLOWED=NO build
+  ```
+- ⚠️ **End-to-end reel flow still needs a real device.** The simulator has no Apple Watch *workouts*
+  and no real Photos media, so "real workout → auto-found clips → reel → export" is validated on a
+  device per [`RUNBOOK-device.md`](RUNBOOK-device.md). Build + launch + UI render are now proven; the
+  data-dependent path is the remaining device-only step (P1).
 
 ## Next
 
-- First Xcode build on device → run against your real workouts → start collecting feedback data.
-- Phase 0b time-sync spike (prompt `42`) to validate the photo↔HR alignment padding used in
-  `PhotoLibraryService`.
-- Then: content/vision selector → fusion; advanced edit controls; live watch capture.
+The whole prompt chain in [`pdd/prompts/features/PLAN-ios-to-shippable.md`](../../pdd/prompts/features/PLAN-ios-to-shippable.md)
+is done **except P1 — the first on-device run, which is yours**: follow
+[`RUNBOOK-device.md`](RUNBOOK-device.md) on your Mac (Apple Watch + real workouts + a physical iPhone)
+to validate runtime and produce the first `highlight-feedback.jsonl`. Then run
+`experiments/feedback-replay/run.py <that file>` to start tuning, and once ≥8–10 real sessions exist,
+apply the GO / fusion / NO-GO gate in `experiments/hr-highlight-efficacy/RESULTS.md`.
+
+Already shipped since v0.1: value-first onboarding + JIT permissions (P2), in-app reel preview (P3),
+finished pin/reorder/restore feedback loop (P4), the media↔HR time-sync (P5) + feedback-replay/fusion
+(P6) analysis tools, and ship-prep scaffolding — privacy manifest, app-icon slot, display name (P7).

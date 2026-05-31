@@ -23,6 +23,30 @@ final class PhotoLibraryService: Sendable {
         await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
 
+    /// Current access without prompting (drives the auto-discover vs manual-pick choice).
+    var currentStatus: PHAuthorizationStatus {
+        PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    }
+
+    /// Map manually-selected asset identifiers (from the `.limited` PHPicker fallback)
+    /// to engine `MediaItem`s, using the same creationDate→offset mapping as auto-discovery.
+    func media(forIdentifiers ids: [String], workoutStart: Date) -> [MediaItem] {
+        guard !ids.isEmpty else { return [] }
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
+        var items: [MediaItem] = []
+        result.enumerateObjects { asset, _, _ in
+            guard let created = asset.creationDate else { return }
+            let kind: MediaItem.Kind = asset.mediaType == .video ? .video : .photo
+            items.append(MediaItem(
+                id: asset.localIdentifier,
+                kind: kind,
+                startOffset: created.timeIntervalSince(workoutStart),
+                duration: kind == .video ? asset.duration : 0
+            ))
+        }
+        return items.sorted { $0.startOffset < $1.startOffset }
+    }
+
     /// All photos/videos whose creation date falls inside the workout window,
     /// converted to engine `MediaItem`s with offsets relative to the workout start.
     func media(in interval: DateInterval, workoutStart: Date) async throws -> [MediaItem] {

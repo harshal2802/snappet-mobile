@@ -7,12 +7,8 @@ struct WorkoutListView: View {
     var body: some View {
         Group {
             switch model.phase {
-            case .idle:
+            case .onboarding, .loading:
                 ProgressView("Loading…")
-            case .needsPermission:
-                ContentUnavailableView("Health access needed",
-                    systemImage: "heart.text.square",
-                    description: Text("Allow Health access so Snappet can find your most intense moments."))
             case .error(let msg):
                 ContentUnavailableView("Something went wrong", systemImage: "exclamationmark.triangle",
                     description: Text(msg))

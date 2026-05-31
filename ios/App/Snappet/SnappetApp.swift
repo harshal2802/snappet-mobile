@@ -8,7 +8,7 @@ struct SnappetApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .task { await model.bootstrap() }
+                .task { await model.start() }
         }
     }
 }
@@ -17,9 +17,14 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        NavigationStack {
-            WorkoutListView()
-                .navigationTitle("Snappet")
+        switch model.phase {
+        case .onboarding:
+            OnboardingView()
+        default:
+            NavigationStack {
+                WorkoutListView()
+                    .navigationTitle("Snappet")
+            }
         }
     }
 }
