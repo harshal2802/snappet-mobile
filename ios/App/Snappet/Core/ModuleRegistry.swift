@@ -8,6 +8,7 @@ enum ModuleRegistry {
     static var all: [AppModule] {
         [
             WorkoutModule.module,
+            WorkoutTrackerModule.module,
             PomodoroModule.module,
             HabitModule.module,
             JournalModule.module,

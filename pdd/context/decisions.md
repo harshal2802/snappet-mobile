@@ -213,3 +213,21 @@ device run are **not** done in this environment (no simulator runtime; HealthKit
 runtime behavior. Overclaiming "verified" would mislead.
 **Rules out**: reporting device-only features as working off a type-check. Next real verification =
 `xcodegen generate && open` on a Mac with a device/simulator runtime.
+
+## [2026-05-31] Workout tracker is a separate suite app, not the "Workout" id
+
+**Decision**: The web suite's `workout` app (gym/strength tracker) ships as a new
+`Features/WorkoutTracker/` module with id `workout-log`, title "Workout" — alongside, not replacing,
+the flagship "Workout Reels" (id `workout`). Catalog (873 exercises, Free Exercise DB) is **bundled**
+as a resource and loaded offline; remote exercise photos are **dropped** in favour of category SF
+Symbols. Routine/session exercise lists are stored as Codable composites on the `@Model` (loaded and
+edited whole) rather than SwiftData relationships. A **top segmented control** drives the 5 sections.
+**Why**: the two apps are genuinely different products (HR reels vs. set logging); reusing the id
+would collide. Bundling keeps the app on-device-only (no catalog fetch); photos are large + remote
+and add little on a phone. Composite storage matches the web app's single-object shape and keeps the
+top-level schema simple. A bottom tab bar would collide with the suite's own Home/Apps tab bar.
+**Rules out**: a network-fetched catalog; per-set SwiftData relationship rows; a nested bottom TabView.
+**Verified**: `xcodebuild` BUILD SUCCEEDED (iPhone 17 Pro sim); app installs + launches into the
+module; dashboard renders with the 15 starters seeded; Browse decodes all 873 exercises. This module
+has **no device-only dependencies** (no HealthKit/Photos), so the sim run exercises it for real —
+unlike Workout Reels. Engine tests unchanged (18/18).
