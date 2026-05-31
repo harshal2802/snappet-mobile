@@ -5,10 +5,11 @@ import SwiftUI
 /// to the module's own screen.
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
+    @State private var router = SuiteRouter()
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $router.path) {
             ScrollView {
                 // Plain VStack layout — `Section` only renders inside List/Form/Table,
                 // not a ScrollView (that showed a blank Apps tab).
@@ -21,16 +22,15 @@ struct AppLibraryView: View {
                                     .font(.title3.bold())
                                 LazyVGrid(columns: columns, spacing: 16) {
                                     ForEach(modules) { module in
-                                        NavigationLink {
-                                            module.destination()
-                                                .onAppear {
-                                                    core.log(module: module.id, action: "open",
-                                                             summary: "Opened \(module.title)")
-                                                }
+                                        // A Button (not a NavigationLink) so the card is a real,
+                                        // UI-test-hittable control; it pushes onto the shared path.
+                                        Button {
+                                            router.push(ModuleRoute(id: module.id))
                                         } label: {
                                             ModuleCard(module: module)
                                         }
                                         .buttonStyle(.plain)
+                                        .accessibilityIdentifier("moduleCard.\(module.id)")
                                     }
                                 }
                             }
@@ -41,6 +41,20 @@ struct AppLibraryView: View {
                 .padding()
             }
             .navigationTitle("Apps")
+            .navigationDestination(for: ModuleRoute.self) { route in
+                moduleDestination(route)
+            }
+        }
+        .environment(router)
+    }
+
+    /// The mini-app for a pushed `ModuleRoute`, logging an "open" event (as the old NavigationLink did).
+    @ViewBuilder private func moduleDestination(_ route: ModuleRoute) -> some View {
+        if let module = ModuleRegistry.all.first(where: { $0.id == route.id }) {
+            module.destination()
+                .onAppear {
+                    core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
+                }
         }
     }
 }

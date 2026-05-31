@@ -12,6 +12,8 @@ struct WorkoutDashboardSection: View {
     let resume: () -> Void
     let goToRoutines: () -> Void
     let goToBrowse: () -> Void
+    let openRoutine: (Routine) -> Void
+    let openProgress: (String) -> Void
 
     private var isEmptyState: Bool { history.isEmpty && activeSession == nil }
 
@@ -107,7 +109,7 @@ struct WorkoutDashboardSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Personal records").font(.headline)
             ForEach(personalRecords, id: \.exerciseId) { pr in
-                NavigationLink(value: ProgressRoute(exerciseId: pr.exerciseId)) {
+                Button { openProgress(pr.exerciseId) } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(resolver.name(for: pr.exerciseId)).font(.subheadline.weight(.semibold))
@@ -122,6 +124,7 @@ struct WorkoutDashboardSection: View {
                     }
                     .padding(.vertical, 6)
                 }
+                .buttonStyle(.plain)
                 if pr.exerciseId != personalRecords.last?.exerciseId { Divider() }
             }
         }
@@ -132,7 +135,7 @@ struct WorkoutDashboardSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Quick start").font(.headline)
             ForEach(quickStart) { routine in
-                NavigationLink(value: routine) {
+                Button { openRoutine(routine) } label: {
                     HStack {
                         Image(systemName: routine.sport?.symbol ?? "list.bullet").foregroundStyle(.orange)
                         VStack(alignment: .leading, spacing: 1) {
@@ -145,6 +148,7 @@ struct WorkoutDashboardSection: View {
                     }
                     .padding(.vertical, 6)
                 }
+                .buttonStyle(.plain)
                 if routine.id != quickStart.last?.id { Divider() }
             }
         }

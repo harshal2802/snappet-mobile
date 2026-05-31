@@ -3,6 +3,7 @@ import HighlightEngine
 
 struct WorkoutListView: View {
     @Environment(AppModel.self) private var model
+    @Environment(SuiteRouter.self) private var router
 
     var body: some View {
         Group {
@@ -21,7 +22,7 @@ struct WorkoutListView: View {
 
     private var list: some View {
         List(model.workouts) { wk in
-            NavigationLink(value: wk) {
+            Button { router.push(wk) } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(wk.activity.rawValue.capitalized).font(.headline)
                     Text(wk.start, format: .dateTime.month().day().hour().minute())
@@ -29,6 +30,8 @@ struct WorkoutListView: View {
                     Text(durationText(wk.duration)).font(.caption).foregroundStyle(.tertiary)
                 }
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("workoutReelRow")
         }
         .navigationDestination(for: WorkoutSummary.self) { ReelView(summary: $0) }
         .overlay {

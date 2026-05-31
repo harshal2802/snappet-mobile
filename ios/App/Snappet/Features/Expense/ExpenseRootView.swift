@@ -6,6 +6,7 @@ import SwiftData
 /// stack of its own.
 struct ExpenseRootView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(SuiteRouter.self) private var router
     @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var groups: [ExpenseGroup]
 
     @State private var showingNewGroup = false
@@ -40,9 +41,11 @@ struct ExpenseRootView: View {
     private var groupList: some View {
         List {
             ForEach(groups) { group in
-                NavigationLink(value: group) {
+                Button { router.push(group) } label: {
                     GroupRow(group: group)
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("expenseGroupRow")
             }
             .onDelete(perform: deleteGroups)
         }

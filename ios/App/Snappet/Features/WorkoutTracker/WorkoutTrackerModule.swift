@@ -54,9 +54,15 @@ enum WorkoutSection: String, CaseIterable, Identifiable {
 /// the exercise detail, which routes on `Exercise` itself).
 struct ProgressRoute: Hashable { let exerciseId: String }
 
+/// Routing payload for a completed session's detail. Pushed by id rather than the `WorkoutSession`
+/// object so it never collides with the live-player `fullScreenCover(item:)`, which is also keyed on
+/// `WorkoutSession` — pushing the model type directly while that cover exists wedges the push.
+struct SessionRoute: Hashable { let id: UUID }
+
 struct WorkoutHomeView: View {
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
+    @Environment(SuiteRouter.self) private var router
 
     @Query(sort: \Routine.updatedAt, order: .reverse) private var routines: [Routine]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var sessions: [WorkoutSession]
@@ -100,8 +106,10 @@ struct WorkoutHomeView: View {
             RoutineDetailView(routine: r, resolver: resolver, unit: unit,
                               start: { startWorkout(from: r) })
         }
-        .navigationDestination(for: WorkoutSession.self) { s in
-            SessionDetailView(session: s, resolver: resolver, unit: unit)
+        .navigationDestination(for: SessionRoute.self) { route in
+            if let s = sessions.first(where: { $0.id == route.id }) {
+                SessionDetailView(session: s, resolver: resolver, unit: unit)
+            }
         }
         .navigationDestination(for: ProgressRoute.self) { route in
             ExerciseProgressView(exerciseId: route.exerciseId, resolver: resolver,
@@ -141,11 +149,14 @@ struct WorkoutHomeView: View {
                                     unit: unit, activeSession: activeSession,
                                     resume: { playing = activeSession },
                                     goToRoutines: { section = .routines },
-                                    goToBrowse: { section = .browse })
+                                    goToBrowse: { section = .browse },
+                                    openRoutine: { router.push($0) },
+                                    openProgress: { router.push(ProgressRoute(exerciseId: $0)) })
         case .browse:
-            ExerciseBrowserView(resolver: resolver)
+            ExerciseBrowserView(resolver: resolver, open: { router.push($0) })
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
+                                open: { router.push($0) },
                                 start: startWorkout(from:),
                                 deleteRoutine: deleteRoutine,
                                 newRoutine: { showingNewRoutine = true })
@@ -154,7 +165,8 @@ struct WorkoutHomeView: View {
                                deleteSession: deleteSession)
         case .settings:
             WorkoutSettingsView(unitRaw: $preferredUnitRaw, customExercises: customExercises,
-                                history: history, deleteCustom: deleteCustomExercise)
+                                history: history, open: { router.push($0) },
+                                deleteCustom: deleteCustomExercise)
         }
     }
 

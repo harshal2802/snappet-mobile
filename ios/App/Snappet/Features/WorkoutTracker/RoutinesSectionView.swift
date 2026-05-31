@@ -7,6 +7,7 @@ struct RoutinesSectionView: View {
     let routines: [Routine]
     let resolver: ExerciseResolver
     let unit: WeightUnit
+    let open: (Routine) -> Void
     let start: (Routine) -> Void
     let deleteRoutine: (Routine) -> Void
     let newRoutine: () -> Void
@@ -37,7 +38,9 @@ struct RoutinesSectionView: View {
             if !mine.isEmpty {
                 Section("My Routines") {
                     ForEach(mine) { routine in
-                        NavigationLink(value: routine) { RoutineRow(routine: routine, resolver: resolver) }
+                        Button { open(routine) } label: { RoutineRow(routine: routine, resolver: resolver) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("routineRow")
                             // Start + Delete both live on the trailing edge: a leading (left→right)
                             // swipe is the system back gesture here (this list is the module's root in
                             // the App Library's NavigationStack), so a leading action fought it and
@@ -50,7 +53,9 @@ struct RoutinesSectionView: View {
             if !starters.isEmpty {
                 Section("Starter Routines") {
                     ForEach(starters) { routine in
-                        NavigationLink(value: routine) { RoutineRow(routine: routine, resolver: resolver) }
+                        Button { open(routine) } label: { RoutineRow(routine: routine, resolver: resolver) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("routineRow")
                             // Start + Delete both live on the trailing edge: a leading (left→right)
                             // swipe is the system back gesture here (this list is the module's root in
                             // the App Library's NavigationStack), so a leading action fought it and
