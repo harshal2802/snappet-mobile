@@ -7,6 +7,29 @@ or accidentally reverse them. Product-level decisions (separate repo, etc.) live
 
 ---
 
+## [2026-05-31] Pivot to the Snappet daily-app SUITE — shared store + module registry + dashboard (P9)
+
+**Decision**: Expanded from a single workout app to the **daily-app suite** thesis (#60 §D): a `TabView`
+shell (Home dashboard + App Library), an on-device **SwiftData** shared store (**Snappet Core**), and a
+pluggable **module registry**. Built 6 mini-apps alongside the existing Workout module — Pomodoro,
+Habits, Journal (productivity); Tip, Split Expenses, Budget (finance) — via parallel agents.
+**Architecture / contract** (so the suite stays pluggable):
+- `SnappetCore` (`Core/SnappetCore.swift`) wraps the shared `ModelContext` and exposes
+  `log(module:action:summary:metric:)`. Every mini-app logs usage there; the **Home dashboard**
+  (`@Query` over `UsageRecord` + Swift Charts) aggregates *historical sub-app usage* across the suite.
+  The App Library logs an `open` event centrally, so every module gets baseline tracking for free.
+- A mini-app = a self-contained `Features/<App>/` folder vending `AppModule` (`Core/AppModule.swift`)
+  with `id/title/subtitle/systemImage/tint/category/destination`. `ModuleRegistry.all` lists them;
+  `SnappetSchema.models` lists every `@Model` (the one central place new persistence types are added).
+- Modules are **pushed into the App Library's `NavigationStack`** → they must NOT nest their own.
+- Permissions are **per-module**, not global: the suite opens instantly; the Workout module primes
+  Health/Photos on first entry (the old global onboarding gate was removed).
+**Persistence**: SwiftData. `@Model` types: `UsageRecord`, `PomodoroSession`, `Habit`+`HabitCompletion`,
+`JournalEntry`, `ExpenseGroup`+`ExpenseRecord`, `BudgetCategory`+`BudgetTransaction`. Mini-apps key
+relations by `UUID` foreign keys (not `@Relationship`) for clean per-parent `#Predicate` queries.
+**Verified**: full `xcodebuild` for the simulator → **BUILD SUCCEEDED** (foundation + all 7 modules),
+app installs + launches, Home dashboard renders. Device run + each app's real-data behavior still pending.
+
 ## [2026-05-31] Photos rendered as Ken-Burns clips instead of being dropped (P8)
 
 **Decision**: `ReelExporter` previously filtered to `kind == .video` and silently dropped every photo

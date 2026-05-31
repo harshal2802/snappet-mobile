@@ -3,6 +3,24 @@
 Native iOS + Android app for **Snappet** — a suite of small daily-utility mini-apps that share one
 on-device data layer to become a go-to daily app.
 
+## Screens
+
+The iOS suite — a Home dashboard aggregating usage across mini-apps, an App Library, and the modules
+themselves (Workout reels · Pomodoro · Habits · Journal · Tip · Split Expenses · Budget). Captured on
+the iOS 26 simulator.
+
+| Home dashboard | App Library | Workout (onboarding) |
+|---|---|---|
+| ![Home](docs/screenshots/01-home.png) | ![Apps](docs/screenshots/02-apps.png) | ![Workout](docs/screenshots/03-workout.png) |
+
+| Pomodoro | Habits | Journal |
+|---|---|---|
+| ![Pomodoro](docs/screenshots/04-pomodoro.png) | ![Habits](docs/screenshots/05-habits.png) | ![Journal](docs/screenshots/06-journal.png) |
+
+| Tip Calculator | Split Expenses | Budget |
+|---|---|---|
+| ![Tip](docs/screenshots/07-tip.png) | ![Expenses](docs/screenshots/08-expenses.png) | ![Budget](docs/screenshots/09-budget.png) |
+
 **Flagship feature:** workout-tracking + **HR-driven auto-highlight reels** — track a workout's heart
 rate (Apple Watch / Wear OS / BLE band), film however you like, and the app auto-finds the media you
 shot during the workout window and assembles a highlight reel ranked by heart-rate intensity, with

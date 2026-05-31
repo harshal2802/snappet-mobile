@@ -89,6 +89,22 @@ fusion) or tuning `HighlightConfig` is a one-line change with no UI/pipeline edi
 - **Branch per phase/feature**: `feat/ios-mvp-highlight-engine`, `spike/hr-highlight-efficacy`.
 - One phase = one prompt + one PR. Commit the prompt asset alongside the code it produced.
 
+## Adding a mini-app to the suite
+
+Each mini-app is a self-contained `Features/<App>/` folder. To add one:
+1. Build your screens in `Features/<App>/`. The root view is **pushed into the App Library's
+   `NavigationStack`** — do **not** wrap it in your own `NavigationStack` (set `.navigationTitle`;
+   use `NavigationLink`/`.navigationDestination` for deeper screens). Sheets may carry their own stack.
+2. Vend a descriptor: `enum <App>Module { @MainActor static var module: AppModule { AppModule(id:…,
+   title:…, subtitle:…, systemImage:…, tint:…, category: .fitness/.productivity/.finance) { <App>RootView() } } }`.
+3. Log usage so the Home dashboard tracks it: `@Environment(SnappetCore.self) private var core` →
+   `core.log(module: "<id>", action:, summary:, metric:)` on meaningful actions. (Module open is logged
+   centrally by the App Library.)
+4. Persistence = **SwiftData**. Define `@Model` types in your folder (globally-unique names; key
+   relations by `UUID` foreign key for clean per-parent `#Predicate` queries). Trivial state → `@AppStorage`.
+5. **Two central edits to wire it in:** append `<App>Module.module` to `ModuleRegistry.all` and your
+   `@Model` types to `SnappetSchema.models` (both in `Core/`). Then `xcodegen generate` & build.
+
 ## PDD
 
 - Every feature/spike traces to a prompt in `pdd/prompts/` and ultimately to the web repo's `#60` /
