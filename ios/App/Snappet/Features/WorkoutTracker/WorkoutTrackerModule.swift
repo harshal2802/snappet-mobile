@@ -216,6 +216,7 @@ struct WorkoutHomeView: View {
             let mins = Int(session.duration / 60)
             core.log(module: WorkoutTrackerModule.id, action: "session",
                      summary: "Completed \(session.routineName)", metric: Double(mins))
+            section = .dashboard
         } else {
             context.delete(session)
             try? context.save()
