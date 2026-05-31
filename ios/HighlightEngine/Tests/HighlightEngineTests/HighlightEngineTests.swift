@@ -132,6 +132,57 @@ final class HighlightEngineTests: XCTestCase {
         XCTAssertEqual(res.reel.segments.first?.kind, .photo)
     }
 
+    // MARK: pinning & manual order (auto-generate-then-edit, #60 §B)
+
+    /// Build a set of highlights spread across one long clip, for planner tests.
+    private func spreadHighlights() -> (highlights: [Highlight], media: [MediaItem]) {
+        let media = [MediaItem(id: "clip1", kind: .video, startOffset: 0, duration: 600)]
+        // Five 5-second clips at descending score, far enough apart to all survive NMS-free planning.
+        let highlights: [Highlight] = (0..<5).map { (i: Int) -> Highlight in
+            let at = Double(i * 100)
+            return Highlight(id: "h\(i)", mediaItemId: "clip1", kind: .high,
+                             atOffset: at, clipStart: at, clipEnd: at + 5,
+                             score: 1.0 - Double(i) * 0.1)
+        }
+        return (highlights, media)
+    }
+
+    func testPinnedHighlightIsBudgetExempt() {
+        let (highlights, media) = spreadHighlights()
+        // Budget fits ~1 clip (5s). Pin the LOWEST-score, last highlight.
+        let planner = ReelPlanner(targetDuration: 5)
+        let pinned: Set<String> = ["h4"]
+        let plan = planner.plan(highlights: highlights, media: media, pinnedIds: pinned)
+        XCTAssertTrue(plan.segments.contains { $0.id == "h4" },
+                      "a pinned highlight must appear even when the budget would otherwise drop it")
+    }
+
+    func testPinnedManyExceedBudgetStillAllIncluded() {
+        let (highlights, media) = spreadHighlights()
+        let planner = ReelPlanner(targetDuration: 5)   // room for ~1 clip
+        let pinned: Set<String> = ["h0", "h1", "h2", "h3", "h4"]
+        let plan = planner.plan(highlights: highlights, media: media, pinnedIds: pinned)
+        XCTAssertEqual(Set(plan.segments.map(\.id)), pinned,
+                       "all pinned highlights are included even when they exceed the target duration")
+    }
+
+    func testExplicitOrderRespected() {
+        let (highlights, media) = spreadHighlights()
+        let planner = ReelPlanner(targetDuration: 10_000)   // include everything
+        let order = ["h4", "h0", "h3", "h1", "h2"]
+        let plan = planner.plan(highlights: highlights, media: media, order: order)
+        XCTAssertEqual(plan.segments.map(\.id), order,
+                       "segments must follow the explicit order when provided")
+    }
+
+    func testDefaultPlanStillChronological() {
+        let (highlights, media) = spreadHighlights()
+        let planner = ReelPlanner(targetDuration: 10_000)
+        let plan = planner.plan(highlights: highlights, media: media)   // no pins, no order
+        XCTAssertEqual(plan.segments.map(\.id), ["h0", "h1", "h2", "h3", "h4"],
+                       "with no order/pins the reel stays chronological by atOffset")
+    }
+
     // MARK: feedback / data capture
 
     func testFeedbackSinkReceivesShownEvents() {
