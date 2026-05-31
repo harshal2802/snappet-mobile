@@ -38,8 +38,11 @@ struct RoutinesSectionView: View {
                 Section("My Routines") {
                     ForEach(mine) { routine in
                         NavigationLink(value: routine) { RoutineRow(routine: routine, resolver: resolver) }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) { startButton(routine) }
-                            .swipeActions { deleteButton(routine) }
+                            // Start + Delete both live on the trailing edge: a leading (left→right)
+                            // swipe is the system back gesture here (this list is the module's root in
+                            // the App Library's NavigationStack), so a leading action fought it and
+                            // popped the user out to the App Library instead of revealing Start.
+                            .swipeActions(edge: .trailing) { deleteButton(routine); startButton(routine) }
                             .contextMenu { startButton(routine); deleteButton(routine) }
                     }
                 }
@@ -48,8 +51,11 @@ struct RoutinesSectionView: View {
                 Section("Starter Routines") {
                     ForEach(starters) { routine in
                         NavigationLink(value: routine) { RoutineRow(routine: routine, resolver: resolver) }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) { startButton(routine) }
-                            .swipeActions { deleteButton(routine) }
+                            // Start + Delete both live on the trailing edge: a leading (left→right)
+                            // swipe is the system back gesture here (this list is the module's root in
+                            // the App Library's NavigationStack), so a leading action fought it and
+                            // popped the user out to the App Library instead of revealing Start.
+                            .swipeActions(edge: .trailing) { deleteButton(routine); startButton(routine) }
                             .contextMenu { startButton(routine); deleteButton(routine) }
                     }
                 }
