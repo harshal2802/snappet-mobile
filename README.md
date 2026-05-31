@@ -24,6 +24,13 @@ minimal manual editing.
 The schema is **copied/generated** into this repo per platform when implementation starts — it is not
 a runtime import. When the schema changes, it changes in the web repo first.
 
+## How this repo is developed (PDD)
+
+This repo uses **Prompt-Driven Development**. The iOS-implementation context and the prompt chain that
+drives the code live in [`pdd/`](pdd/) — start at [`pdd/context/project.md`](pdd/context/project.md)
+for the reality-based current state, and [`pdd/prompts/features/PLAN-ios-to-shippable.md`](pdd/prompts/features/PLAN-ios-to-shippable.md)
+for the v0.1 → shippable roadmap. The web repo stays the product brain; `pdd/` owns iOS specifics.
+
 ## Status
 
 🟡 **Pre-implementation.** The make-or-break premise (does a user's *own* HR pick highlights they

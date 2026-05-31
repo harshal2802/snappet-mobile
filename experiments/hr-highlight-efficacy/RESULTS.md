@@ -14,6 +14,29 @@ outcome is an artifact of modeling assumptions we can only replace with real dat
 GO** and also **not a NO-GO** — it is "the approach is plausible, the harness is ready, now run the
 small real-data study before committing to Phase 1."
 
+## Update (2026-05-31): fusion + tolerance sweep added (closes the harness gap this file demanded)
+
+The "Required real-data re-run" section below asked for **HR+Scene fusion** and a **match-tolerance
+sweep** before any Phase-1 commitment. Both now exist in the harness (prompt `06-feedback-replay-tuner`).
+On the *same synthetic model*, two findings stand out — and they sharpen, not overturn, the verdict:
+
+1. **Fusion has the highest rank-correlation with engagement everywhere** (Spearman 0.52–0.63 vs HR
+   0.37–0.48, Scene 0.24–0.36). The blended score tracks "what the user would like" best, even where
+   its F1@8 trails Scene.
+2. **Widening the match tolerance flips the ranking toward Fusion** (climbing, effort_mix=0.5):
+
+   | ±tol (s) | HR | Scene | Fusion |
+   |---|---|---|---|
+   | 5 | 0.22 | 0.44 | 0.39 |
+   | 8 | 0.36 | 0.53 | 0.51 |
+   | 12 | 0.52 | 0.55 | **0.68** |
+   | 15 | 0.58 | 0.56 | **0.73** |
+
+   This is exactly interpretation #3 below made concrete: HR/Fusion land in the right *region* but miss
+   the exact instant, so a wider window (≡ **generous clip padding**, #60 §3) lets them win. **Fusion at
+   a realistic ±12–15 s padding beats Scene** — strong synthetic support for shipping a *fusion* selector
+   with generous padding, not HR-alone and not Scene-alone. Still synthetic; the real-data re-run decides.
+
 ## What was tested
 
 Three selectors ranked the top-8 highlight moments per session, scored against synthetic "user manual
@@ -78,7 +101,9 @@ across climbing, running, and dance**:
 2. **Ground truth:** the participant (and ideally 1–2 others) pick the moments they'd actually put in
    a reel — *blind to the HR curve*.
 3. **Run** HR vs Scene vs Random vs **HR+Scene fusion** against those human picks (same metrics; also
-   sweep the match tolerance 5–15 s and HR clip-padding).
+   sweep the match tolerance 5–15 s and HR clip-padding). ✅ *Fusion selector + tolerance sweep are now
+   implemented in the harness (`selectors.py`/`run.py`, 2026-05-31) — swap `generate_session` for a
+   real-data loader and these run unchanged.*
 4. **Decision rule:**
    - HR ≥ Scene **and** HR F1 ≳ 0.4 → **GO**, HR-led.
    - HR ≈ Scene, or fusion ≫ either → **GO as a fusion** (HR + scene-detection), not HR alone.
