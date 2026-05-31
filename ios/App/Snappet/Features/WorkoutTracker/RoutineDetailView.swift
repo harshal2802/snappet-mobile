@@ -8,6 +8,7 @@ struct RoutineDetailView: View {
     let unit: WeightUnit
     let start: () -> Void
 
+    @Environment(\.dismiss) private var dismiss
     @State private var editing = false
 
     var body: some View {
@@ -47,8 +48,9 @@ struct RoutineDetailView: View {
         }
         .navigationTitle(routine.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom) {
-            Button { start() } label: {
+            Button { dismiss(); start() } label: {
                 Label("Start Workout", systemImage: "play.fill")
                     .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }

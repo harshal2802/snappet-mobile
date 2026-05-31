@@ -38,7 +38,9 @@ struct RoutinesSectionView: View {
                 Section("My Routines") {
                     ForEach(mine) { routine in
                         NavigationLink(value: routine) { RoutineRow(routine: routine, resolver: resolver) }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) { startButton(routine) }
                             .swipeActions { deleteButton(routine) }
+                            .contextMenu { startButton(routine); deleteButton(routine) }
                     }
                 }
             }
@@ -46,11 +48,19 @@ struct RoutinesSectionView: View {
                 Section("Starter Routines") {
                     ForEach(starters) { routine in
                         NavigationLink(value: routine) { RoutineRow(routine: routine, resolver: resolver) }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) { startButton(routine) }
                             .swipeActions { deleteButton(routine) }
+                            .contextMenu { startButton(routine); deleteButton(routine) }
                     }
                 }
             }
         }
+    }
+
+    private func startButton(_ routine: Routine) -> some View {
+        Button { start(routine) } label: { Label("Start", systemImage: "play.fill") }
+            .tint(.green)
+            .disabled(routine.exercises.isEmpty)
     }
 
     private func deleteButton(_ routine: Routine) -> some View {

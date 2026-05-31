@@ -7,6 +7,15 @@ or accidentally reverse them. Product-level decisions (separate repo, etc.) live
 
 ---
 
+## [2026-05-31] Workout tracker UX: fix start/finish transitions without a module-owned NavigationStack (#5)
+
+**Decision**: A deep UX review (issue #5) found the workout player + start-conflict dialog were presented from `WorkoutHomeView` while a pushed `RoutineDetailView` sat on top — making presentation fragile and dropping the user back on the routine's prescription page after a workout. Rather than give the module its own `NavigationStack`/`NavigationPath` (banned — modules ride the App Library's stack), the routine detail now **pops itself (`@Environment(\.dismiss)`) before calling `start()`**, so the cover/dialog present from the home (top of stack) and finishing lands on the home; `finishWorkout` switches to the **Dashboard** on a saved finish. The Routines list's previously-dead `start` closure is wired to a swipe + context-menu "Start". `RoutineDetailView` hides the suite tab bar (`.toolbar(.hidden, for: .tabBar)`) so its bottom Start bar doesn't stack on it. Separately (branch `fix/workout-player-session`), the live player never persists a **zero-set** session (auto-discard), and the rest timer is driven off a target **end `Date`** so backgrounding doesn't make it drift.
+**Why**: keeps the no-nested-NavigationStack contract intact while fixing the actual transition bugs; `dismiss()`-then-start is the idiomatic way for a pushed child to hand presentation back to its host.
+**Rules out**: a module-owned navigation stack/path; saving empty workouts; a wall-clock-naive rest timer.
+**Deferred** (issue #5 "Low"): icon-only segmented section labels, disambiguating the two "Workout*" app names, and flattening the triple-stacked routine-editor sheets.
+**Shipped on**: branches `fix/workout-nav-and-transitions` + `fix/workout-player-session`.
+**Verified**: `xcodebuild` for the iPhone 17 Pro sim → **BUILD SUCCEEDED** (both branches merged); no new warnings from these changes. The transition *feel* (pop-then-present, tab-bar hide, rest-timer foreground correction) still needs a sim/device run.
+
 ## [2026-05-31] Pivot to the Snappet daily-app SUITE — shared store + module registry + dashboard (P9)
 
 **Decision**: Expanded from a single workout app to the **daily-app suite** thesis (#60 §D): a `TabView`
