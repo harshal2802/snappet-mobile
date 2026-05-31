@@ -63,6 +63,11 @@ def _score_map(name, fn, s):
     if name == "Scene":
         vis = _moving_avg(s.visual, 5)
         return {t: vis[t] for t in s.candidates}
+    if name == "Fusion":
+        from selectors import _hr_scores, _normalize
+        hr_n = _normalize(_hr_scores(s))
+        scene_n = _normalize({t: _moving_avg(s.visual, 5)[t] for t in s.candidates})
+        return {t: 0.7 * hr_n[t] + 0.3 * scene_n[t] for t in s.candidates}
     rng = random.Random(0)
     return {t: rng.random() for t in s.candidates}
 
@@ -89,25 +94,54 @@ def main():
         print(f"## {activity}, effort_mix = {mix}\n")
         print("| selector | F1@8 | precision@8 | recall@8 | Spearman(score, engagement) |")
         print("|---|---|---|---|---|")
-        for name in ("HR", "Scene", "Random"):
+        for name in ("HR", "Scene", "Fusion", "Random"):
             st = stats[name]
             print(f"| {name} | {fmt(st['f1'])} | {fmt(st['precision'])} | {fmt(st['recall'])} | {fmt(st['spear'])} |")
         hr_f1, scene_f1, rand_f1 = stats["HR"]["f1"][0], stats["Scene"]["f1"][0], stats["Random"]["f1"][0]
+        fus_f1 = stats["Fusion"]["f1"][0]
         verdict = (
             "HR ≫ Scene" if hr_f1 > scene_f1 + 0.05 else
             "HR ≈ Scene" if abs(hr_f1 - scene_f1) <= 0.05 else
             "Scene ≫ HR"
         )
         beats_floor = "yes" if hr_f1 > rand_f1 + 0.05 else "NO"
-        print(f"\n→ HR vs Scene: **{verdict}** · HR beats random floor: **{beats_floor}**\n")
-        summary.append((f"{activity}/{mix}", hr_f1, scene_f1, rand_f1, verdict))
+        print(f"\n→ HR vs Scene: **{verdict}** · Fusion F1: **{fus_f1:.2f}** · "
+              f"HR beats random floor: **{beats_floor}**\n")
+        summary.append((f"{activity}/{mix}", hr_f1, scene_f1, fus_f1, rand_f1, verdict))
 
     print("## One-line summary\n")
-    print("| scenario | HR F1 | Scene F1 | Random F1 | HR vs Scene |")
-    print("|---|---|---|---|---|")
-    for name, h, s, r, v in summary:
-        print(f"| {name} | {h:.2f} | {s:.2f} | {r:.2f} | {v} |")
+    print("| scenario | HR F1 | Scene F1 | Fusion F1 | Random F1 | HR vs Scene |")
+    print("|---|---|---|---|---|---|")
+    for name, h, sc, fu, r, v in summary:
+        print(f"| {name} | {h:.2f} | {sc:.2f} | {fu:.2f} | {r:.2f} | {v} |")
+
+    _tolerance_sweep(n_sessions)
     print("\n_See RESULTS.md for interpretation and the GO/NO-GO/NEEDS-REAL-DATA verdict._")
+
+
+def _tolerance_sweep(n_sessions: int, tolerances=(5, 8, 12, 15)):
+    """The spike flagged match tolerance as decisive (RESULTS.md interp #3): HR picks land
+    in the right region but miss the exact instant, so a wider window should favor HR/Fusion.
+    Sweep it on one representative scenario (climbing, effort_mix=0.5)."""
+    activity, mix = "climbing", 0.5
+    print(f"\n## Match-tolerance sweep ({activity}, effort_mix={mix})\n")
+    print("Mean F1 as the ±match-tolerance window widens. Watch whether HR/Fusion close on Scene as "
+          "tolerance grows (the spike's predicted effect).\n")
+    print("| ±tol (s) | HR | Scene | Fusion | Random |")
+    print("|---|---|---|---|---|")
+    for tol in tolerances:
+        f1 = {name: [] for name in SELECTORS}
+        for i in range(n_sessions):
+            rng = random.Random(1000 + i)
+            s = generate_session(rng, activity=activity, effort_mix=mix, n_ground_truth=N_PICKS)
+            if len(s.ground_truth) < 2:
+                continue
+            for name, fn in SELECTORS.items():
+                picks = fn(s, N_PICKS, seed=1000 + i) if name == "Random" else fn(s, N_PICKS)
+                f1[name].append(score_at_n(picks, s.ground_truth, tol=tol)["f1"])
+        means = {name: (sum(v) / len(v) if v else 0.0) for name, v in f1.items()}
+        print(f"| {tol} | {means['HR']:.2f} | {means['Scene']:.2f} | "
+              f"{means['Fusion']:.2f} | {means['Random']:.2f} |")
 
 
 if __name__ == "__main__":

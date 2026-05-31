@@ -60,8 +60,43 @@ def random_selector(s: Session, n: int, seed: int = 0) -> List[int]:
     return _select_top_n(scores, n)
 
 
+# ── Fusion (HR + Scene) — the spike's predicted real-world winner (#60 §4) ────
+# Mirrors the Swift `FusionSelector.hrLeaning` (0.7 HR / 0.3 Scene). Both component
+# scores are normalized to 0..1 over the candidate set so the weights are meaningful.
+def fusion_selector(s: Session, n: int, w_hr: float = 0.7, w_scene: float = 0.3) -> List[int]:
+    hr_n = _normalize(_hr_scores(s))
+    scene_n = _normalize({t: _moving_avg(s.visual, 5)[t] for t in s.candidates})
+    scores = {t: w_hr * hr_n[t] + w_scene * scene_n[t] for t in s.candidates}
+    return _select_top_n(scores, n)
+
+
+def _hr_scores(s: Session, smooth_window: int = 9, look_ahead: int = 6,
+               w_level: float = 0.6, w_slope: float = 0.4) -> Dict[int, float]:
+    """Per-candidate HR score (same math as hr_selector, factored out for fusion)."""
+    hr_s = _moving_avg(s.hr, smooth_window)
+    hrr = [max(0.0, min(1.0, (v - s.rest_bpm) / (s.max_bpm - s.rest_bpm))) for v in hr_s]
+    slope = [0.0] * len(hr_s)
+    for t in range(1, len(hr_s) - 1):
+        slope[t] = (hr_s[t + 1] - hr_s[t - 1]) / 2.0
+    max_slope = max(slope) or 1.0
+    slope_n = [max(0.0, v / max_slope) for v in slope]
+    out = {}
+    for t in s.candidates:
+        u = min(len(hr_s) - 1, t + look_ahead)
+        out[t] = w_level * hrr[u] + w_slope * slope_n[u]
+    return out
+
+
+def _normalize(scores: Dict[int, float]) -> Dict[int, float]:
+    vals = list(scores.values())
+    lo, hi = (min(vals), max(vals)) if vals else (0.0, 1.0)
+    span = (hi - lo) or 1.0
+    return {t: (v - lo) / span for t, v in scores.items()}
+
+
 SELECTORS: Dict[str, Callable] = {
     "HR": hr_selector,
     "Scene": scene_selector,
+    "Fusion": fusion_selector,
     "Random": random_selector,
 }
