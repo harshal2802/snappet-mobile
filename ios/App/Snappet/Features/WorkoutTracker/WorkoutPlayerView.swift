@@ -418,6 +418,6 @@ struct WorkoutPlayerView: View {
 
 /// Thin haptics wrapper (UIKit is fine in the app target; only `HighlightEngine` is platform-free).
 enum Haptics {
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    @MainActor static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    @MainActor static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
 }
