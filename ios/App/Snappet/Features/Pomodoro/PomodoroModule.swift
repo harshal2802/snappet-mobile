@@ -5,6 +5,6 @@ import SwiftUI
 enum PomodoroModule {
     @MainActor static var module: AppModule {
         AppModule(id: "pomodoro", title: "Pomodoro", subtitle: "Focus timer",
-                  systemImage: "timer", tint: .red, category: .productivity) { PomodoroRootView() }
+                  systemImage: "timer", tint: SnappetColor.moduleAccent("pomodoro"), category: .productivity) { PomodoroRootView() }
     }
 }
