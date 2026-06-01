@@ -1,5 +1,7 @@
 package com.snappet.mobile.feature.pomodoro
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +59,10 @@ import androidx.compose.ui.unit.sp
 import com.snappet.mobile.core.UsageRecord
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -141,7 +147,13 @@ fun PomodoroRoot(onExit: () -> Unit) {
 @Composable
 private fun PomodoroBody(timer: PomodoroTimerState, sessions: List<PomodoroSession>, padding: PaddingValues) {
     val isFocus = timer.phase == PomodoroPhase.FOCUS
-    val tint = if (isFocus) Color(0xFFE5484D) else Color(0xFF30A46C)
+    val reduceMotion = LocalReduceMotion.current
+    val targetTint = if (isFocus) SnappetAccents.Tomato else SnappetAccents.Leaf
+    val tint by animateColorAsState(
+        targetValue = targetTint,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "pomodoroPhaseColor",
+    )
     val todayStart = PomodoroStats.startOfDay(System.currentTimeMillis())
     val today = sessions.filter { it.completedAt >= todayStart }
     Column(
@@ -188,6 +200,12 @@ private fun StatCard(value: String, label: String, modifier: Modifier = Modifier
 
 @Composable
 private fun TimerRing(progress: Float, timeText: String, tint: Color) {
+    val reduceMotion = LocalReduceMotion.current
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = gated(reduceMotion, SnappetMotion.quick()),
+        label = "pomodoroProgress",
+    )
     Box(Modifier.size(260.dp).testTag("pomodoro.timeRemaining"), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 18.dp.toPx()
@@ -198,7 +216,7 @@ private fun TimerRing(progress: Float, timeText: String, tint: Color) {
                 topLeft = Offset(inset, inset), size = arcSize, style = Stroke(width = stroke),
             )
             drawArc(
-                color = tint, startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                color = tint, startAngle = -90f, sweepAngle = 360f * animatedProgress, useCenter = false,
                 topLeft = Offset(inset, inset), size = arcSize, style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
         }
