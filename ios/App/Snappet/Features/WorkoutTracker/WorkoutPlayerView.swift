@@ -15,6 +15,7 @@ struct WorkoutPlayerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppModel.self) private var app
 
     enum Phase { case exercise, rest, done }
     @State private var phase: Phase = .exercise
@@ -100,6 +101,7 @@ struct WorkoutPlayerView: View {
             let exercise = resolver.exercise(id: ex.exerciseId)
             ScrollView {
                 VStack(spacing: 20) {
+                    liveMetricsDebugRow
                     header(ex)
 
                     VStack(spacing: 4) {
@@ -132,6 +134,38 @@ struct WorkoutPlayerView: View {
             }
         } else {
             ProgressView()
+        }
+    }
+
+    /// Temporary debug readout proving the watch → phone HR relay is live (A1).
+    /// The real overlay (HR zone + the two timers) lands in A4; this is just enough
+    /// to confirm samples arrive end-to-end on a paired device. Shows the connection
+    /// state when no sample has arrived yet so a missing watch is obvious.
+    @ViewBuilder private var liveMetricsDebugRow: some View {
+        let live = app.liveWorkout
+        HStack(spacing: 8) {
+            Image(systemName: "heart.fill").foregroundStyle(.pink)
+            if let hr = live.latestHR {
+                Text("\(Int(hr.rounded())) bpm")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                Text("· \(live.samples.count) samples")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text(liveStatusText).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemBackground), in: Capsule())
+    }
+
+    private var liveStatusText: String {
+        switch app.liveWorkout.connectionState {
+        case .unsupported: return "No watch metrics on this device"
+        case .inactive: return "Watch connecting…"
+        case .active: return app.liveWorkout.isWatchReachable
+            ? "Watch ready — waiting for HR…" : "Open the workout on your watch"
+        case .workoutRunning: return "Waiting for heart rate…"
         }
     }
 

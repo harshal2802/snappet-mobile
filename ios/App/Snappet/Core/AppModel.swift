@@ -21,6 +21,12 @@ final class AppModel {
     let photos = PhotoLibraryService()
     let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
 
+    /// Live workout metrics relay (Apple Watch companion → phone over WCSession).
+    /// The single meeting point for WorkoutTracker's *live* HR path; shaped so A3 can
+    /// swap in a BLE source behind a `MetricsSource` protocol without changing call
+    /// sites. Distinct from `health`, which is the post-hoc (completed-workout) path.
+    let liveWorkout = LiveWorkoutService()
+
     /// Value-first onboarding is shown until the user has been through it once.
     /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
     private let onboardedKey = "snappet.hasOnboarded"

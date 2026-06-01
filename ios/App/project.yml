@@ -6,6 +6,7 @@ options:
   bundleIdPrefix: com.snappet
   deploymentTarget:
     iOS: "18.0"
+    watchOS: "11.0"
   createIntermediateGroups: true
 packages:
   HighlightEngine:
@@ -16,8 +17,14 @@ targets:
     platform: iOS
     sources:
       - path: Snappet
+      # Shared wire types (LiveWorkoutMessage) compiled into both the phone and the
+      # watch so the WCSession relay has one source of truth.
+      - path: Shared
     dependencies:
       - package: HighlightEngine
+      # Embed the watchOS companion so the watch app installs with the phone app.
+      - target: SnappetWatch
+        embed: true
     settings:
       base:
         INFOPLIST_FILE: Snappet/Resources/Info.plist
@@ -40,6 +47,48 @@ targets:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: [health-records]
         com.apple.developer.healthkit.background-delivery: true
+  # watchOS companion: runs HKWorkoutSession + HKLiveWorkoutBuilder and relays live HR /
+  # energy to the phone over WCSession (live-workout-studio A1).
+  SnappetWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: SnappetWatch
+      - path: Shared
+    settings:
+      base:
+        INFOPLIST_FILE: SnappetWatch/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app.watchkitapp
+        DEVELOPMENT_TEAM: P6U6C88W9J
+        INFOPLIST_KEY_CFBundleDisplayName: Snappet
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.snappet.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "4"
+        GENERATE_INFOPLIST_FILE: NO
+    entitlements:
+      path: SnappetWatch/SnappetWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.background-delivery: true
+  # App unit tests for the PURE pieces (no device): WorkoutActivityMapping +
+  # the LiveWorkoutService HR-buffer offset math. Distinct from HighlightEngineTests,
+  # which must stay platform-free.
+  SnappetTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SnappetTests
+    dependencies:
+      - target: Snappet
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Snappet.app/Snappet"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        PRODUCT_BUNDLE_IDENTIFIER: com.snappet.unittests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
   SnappetUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -58,10 +107,19 @@ schemes:
     build:
       targets:
         Snappet: all
+        SnappetWatch: all
+        SnappetTests: [test]
         SnappetUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
+        - SnappetTests
         - SnappetUITests
+  SnappetWatch:
+    build:
+      targets:
+        SnappetWatch: all
+    run:
+      config: Debug

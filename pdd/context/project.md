@@ -129,6 +129,13 @@ See [`pdd/prompts/features/PLAN-ios-to-shippable.md`](../prompts/features/PLAN-i
 for the prompt chain that drives v0.1 → a shippable v1. The cross-platform initiative plan (Phases 0–5)
 lives in the web repo's `PLAN-snappet-mobile.md`.
 
+**Next initiative (post-v1, planned 2026-06-01):** **Live Workout Capture + Video Studio** —
+[`pdd/prompts/features/live-workout-studio/`](../prompts/features/live-workout-studio/PLAN.md)
+(`RESEARCH.md` + `PLAN.md` + A1). Adds a watchOS companion for live HR/timers/background to WorkoutTracker,
+session media tagging, an enriched summary, a CapCut-style clip editor, engine-driven highlight generation,
+and share/save — bridging WorkoutTracker to `HighlightEngine`. Tracking: GitHub issue
+[#15](https://github.com/harshal2802/snappet-mobile/issues/15).
+
 ## License
 
 TBD.

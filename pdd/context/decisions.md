@@ -4,6 +4,109 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] A1 — watchOS companion + live HR relay implemented (WorkoutTracker gains a live path)
+
+**Decision**: Implemented prompt A1 (`pdd/prompts/features/live-workout-studio/A1-…md`,
+branch `feat/live-workout-watchos-companion`). WorkoutTracker now has a **live metrics source**:
+a new **watchOS companion target** (`ios/App/SnappetWatch/`) runs an `HKWorkoutSession` +
+`HKLiveWorkoutBuilder` and relays live HR/energy to the phone over `WCSession`; the phone starts the
+matching `HKWorkoutActivityType` on the watch from the routine. This **supersedes the v1
+post-hoc-only / no-watchOS deferral for WorkoutTracker only** — the flagship Reels app's
+`HealthKitService` (post-hoc) is unchanged and untouched.
+
+**Concrete, non-obvious choices made:**
+- **WCSession message shape** — one shared `LiveWorkoutMessage` enum (in `ios/App/Shared/`, compiled
+  into *both* the phone and watch targets via `project.yml` so the wire can't drift). Three messages,
+  discriminated by a `kind` string key, encoded as plist dicts: `start(activityType: UInt)` (the
+  `HKWorkoutActivityType.rawValue`), `stop`, and `metrics(hrBpm, energyKcal, t)`. Sent via
+  `sendMessage` when reachable, falling back to `transferUserInfo` so a start/stop/sample isn't
+  dropped while the counterpart is briefly unreachable.
+- **Activity mapping table** (`WorkoutActivityMapping`, the inverse of `HealthKitService.map`):
+  `SportTag` wins first — `.climbing → .climbing`, `.calisthenics → .functionalStrengthTraining`,
+  `.general` falls through to the routine's **dominant `ExerciseCategory`**: `strength/powerlifting →
+  .traditionalStrengthTraining`, `cardio → .running`, `plyometrics → .jumpRope`, `stretching →
+  .flexibility`, `olympic/strongman → .functionalStrengthTraining`. Final fallback (no sport, no
+  category) is `.traditionalStrengthTraining` (a gym routine's sensible default; the spec's `.other`
+  is reachable only via an unmapped type). Dominant-category tie-break is deterministic by rawValue.
+- **HR buffer attaches to `WorkoutSession`** via `LiveWorkoutService.sessionOffset(...)`: incoming
+  watch samples carry `t` since the *watch* session start; the phone re-bases each onto the
+  `WorkoutSession.startedAt` timeline (engine convention: `HRSample.t` = seconds since session start),
+  preferring the watch's monotonic clock but flooring to wall-clock-elapsed if it's wildly ahead, and
+  clamping ≥ 0. Buffer lives on the service (not persisted yet) for B2 to flush. Lifecycle is owned by
+  `WorkoutHomeView` (`start(for:)` on session create/replace, `stop()` in `finishWorkout`), matching
+  where the session lifecycle already lives — not the player.
+- **Pluggability for A3**: `LiveWorkoutService`'s public surface (`connectionState`, `latestHR`,
+  `energy`, `isWatchReachable`, `start(for:)`, `stop()`, `samples`) is shaped to become a
+  `MetricsSource` protocol with a `BLEHeartRateSource` conformer with **no call-site change**,
+  mirroring the `HighlightSelector` pluggability pattern. `HighlightEngine` is untouched — live HR
+  becomes plain `HRSample` value types at the `Services` boundary.
+- **Watch target config**: `WKBackgroundModes = [workout-processing]` (keeps HR flowing wrist-down /
+  phone-pocketed), HealthKit + background-delivery entitlements, `WKCompanionAppBundleIdentifier =
+  com.snappet.app`, bundle id `com.snappet.app.watchkitapp`, embedded in the phone app. Added a
+  `SnappetTests` app unit-test target (separate from the platform-free `HighlightEngineTests`) for the
+  pure pieces.
+- **Build gotcha recorded**: building the iOS scheme with `-sdk iphonesimulator` forces that SDK onto
+  the embedded **watch** target and breaks it ("HKLiveWorkoutBuilder only available in iOS 26"). Build
+  the `Snappet` scheme with **`-destination` only** (no `-sdk`) so each target picks its own SDK. The
+  `WorkoutWatchManager` must subclass `NSObject` (HK delegates require it).
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate` produces both an iOS app and a
+watchOS app target. `SnappetWatch` builds for the watchOS 26.5 simulator → **BUILD SUCCEEDED**, 0
+warnings. The `Snappet` iOS scheme (with the embedded watch target) builds for the iPhone 17 Pro sim →
+**BUILD SUCCEEDED**, 0 warnings from these changes. `SnappetTests` → **15/15 pass**
+(`WorkoutActivityMapping` + the HR-buffer offset math + message round-trip). `HighlightEngine` →
+**18/18 pass**, source unchanged.
+**Device-pending (NOT verified — the PLAN's "after A1" decision gate)**: the actual live relay — watch
+starts the mapped `HKWorkoutSession`, HR streams to the phone within ~3 s, keeps updating with the
+phone backgrounded, and battery cost — only runs on a **paired physical Apple Watch + iPhone**. A
+simulator build proves the shape, not the stream.
+
+**Post-review hardening (2026-06-01, same branch)**: a multi-angle review surfaced six fixes, applied
+before merge: (1) watch `start()` sets a synchronous `starting` flag so a 2nd start during the async
+auth await can't spawn a duplicate `HKWorkoutSession`; (2) `replaceActiveAndStart` now `stop()`s the old
+watch session first (else the watch's `!isRunning` guard silently drops the new start); (3) all resume
+paths (dashboard banner, "Resume current workout", re-tapping the same routine) route through a `resume()`
+that restarts live metrics when the service isn't already running — fixing no-HR after a cold relaunch;
+(4) the phone only promotes to `.workoutRunning` when a paired watch with the app installed exists
+(`isPaired && isWatchAppInstalled`), so the overlay doesn't strand at "Waiting for heart rate…" with no
+watch; (5) `LiveWorkoutMessage` metrics decode now requires every field (no `?? 0`) so a malformed
+message drops instead of poisoning the buffer with phantom 0-bpm samples; (6) `.cardio → .mixedCardio`
+(generic cardio isn't necessarily running) + removed dead `hrUnit`/`kcalUnit`. The "inverted tie-break"
+flag was **refuted** (the comparator is deterministic, which is its only contract). `WorkoutWalkthroughTests`
+gained `-uiTestFreshStore` (it was the lone UI test without it — a leftover active session was triggering
+the start-conflict dialog). Verified: iOS + watchOS BUILD SUCCEEDED, `SnappetTests` 15/15, `HighlightEngine`
+18/18, `WorkoutWalkthroughTests` + `SuiteSmokeTests` green (walkthrough green on two consecutive runs).
+
+---
+
+## [2026-06-01] Live Workout Capture + Video Studio initiative — reopens the watchOS/BLE/in-app-capture deferrals (for WorkoutTracker only)
+
+**Decision**: Scoped a new initiative (research + plan, branch `plan/live-workout-video-studio`, GitHub
+issue #15) that turns **WorkoutTracker** from a foreground-only set logger into a live, instrumented,
+media-rich workout with an on-device video studio. Direction chosen with the user (2026-06-01):
+(1) **Apple Watch companion first** — a new watchOS target running `HKWorkoutSession`/`HKLiveWorkoutBuilder`
+with a `WCSession` relay is the only supported way to get live HR + background execution + "start the
+right workout on the watch"; (2) **unify** — finishing a WorkoutTracker session feeds the existing
+**`HighlightEngine`/`ReelPlanner`** (HR + tagged clips + manual selection) to generate highlights, with
+**no engine change**; (3) **full CapCut-style editor** on `AVMutableVideoComposition` +
+`AVVideoCompositionCoreAnimationTool`. Two parallel tracks (A: live capture A1–A4; B: studio B1–B5) in
+`pdd/prompts/features/live-workout-studio/PLAN.md`; feasibility in that folder's `RESEARCH.md`.
+**Why**: the selector/engine were kept platform-free and pluggable *specifically* so a live path could be
+added without a rewrite — this is that day. Live HR becomes plain `HRSample`s at the `Services` boundary,
+so `HighlightEngine` stays platform-free; all new platform I/O is a `Services/` type; a `MetricsSource`
+protocol (Apple Watch → BLE → post-hoc HealthKit) mirrors the `HighlightSelector` pluggability.
+**Supersedes (scoped to WorkoutTracker, NOT the flagship Reels app)**: the v1 calls *"reads COMPLETED
+workouts, not a live watchOS session"* (2026-05-30) and *"out of scope for v1: watchOS live capture,
+generic BLE bands, in-app capture"* (`PLAN-ios-to-shippable.md`). This initiative sits **on top of** a
+shipped v1 and does not block it.
+**Rules out (for now)**: **Fitbit live / Google Fit on iOS** — no real-time API, cloud-only, violates the
+on-device-only constraint (`RESEARCH.md` §3.3); a non-Apple band is only ever a *post-hoc HealthKit*
+source if its app writes to Health, or a *live BLE* source (`0x180D`) via CoreBluetooth in Phase 2.
+Health Connect belongs to the Android target. **Status**: research + plan only — no implementation code
+yet; A1 (watchOS companion) is authored and ready to run.
+
+---
+
 ## [2026-05-31] Pomodoro settings persist via @AppStorage in the view, applied to the engine
 
 **Decision**: Focus/break lengths are stored as `@AppStorage("pomodoro.focusMinutes"/".breakMinutes")`
