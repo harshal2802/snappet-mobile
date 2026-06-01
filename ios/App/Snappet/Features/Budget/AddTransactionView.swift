@@ -1,17 +1,34 @@
 import SwiftUI
 
-/// Sheet to log a spend against a category. Date defaults to now; note is optional.
-/// Reports `(category, amount, note, date)` on save.
+/// Sheet to log a spend against a category, or edit an existing one. When `transaction`
+/// is non-nil the fields are pre-filled and the title/CTA switch to "Edit". Date defaults
+/// to now for new spends; note is optional. Reports `(category, amount, note, date)` on save.
 struct AddTransactionView: View {
     @Environment(\.dismiss) private var dismiss
 
     let categories: [BudgetCategory]
-    let onAdd: (BudgetCategory, Double, String, Date) -> Void
+    /// When set, the sheet edits this transaction instead of creating a new one.
+    let transaction: BudgetTransaction?
+    let onSave: (BudgetCategory, Double, String, Date) -> Void
 
     @State private var selectedCategoryID: UUID?
     @State private var amount: Double?
-    @State private var note = ""
-    @State private var date = Date.now
+    @State private var note: String
+    @State private var date: Date
+
+    init(categories: [BudgetCategory],
+         transaction: BudgetTransaction? = nil,
+         onSave: @escaping (BudgetCategory, Double, String, Date) -> Void) {
+        self.categories = categories
+        self.transaction = transaction
+        self.onSave = onSave
+        _selectedCategoryID = State(initialValue: transaction?.categoryID)
+        _amount = State(initialValue: transaction?.amount)
+        _note = State(initialValue: transaction?.note ?? "")
+        _date = State(initialValue: transaction?.date ?? .now)
+    }
+
+    private var isEditing: Bool { transaction != nil }
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "USD" }
 
@@ -36,25 +53,27 @@ struct AddTransactionView: View {
                 Section("Amount") {
                     TextField("Amount", value: $amount, format: .currency(code: currencyCode))
                         .keyboardType(.decimalPad)
+                        .accessibilityIdentifier("budget.txnAmount")
                 }
                 Section("Details") {
                     TextField("Note (optional)", text: $note)
                     DatePicker("Date", selection: $date, in: ...Date.now, displayedComponents: .date)
                 }
             }
-            .navigationTitle("Add Transaction")
+            .navigationTitle(isEditing ? "Edit Transaction" : "Add Transaction")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button(isEditing ? "Save" : "Add") {
                         if let category = selectedCategory, let value = amount {
-                            onAdd(category, value, note, date)
+                            onSave(category, value, note, date)
                         }
                         dismiss()
                     }
+                    .accessibilityIdentifier("budget.txnSave")
                     .disabled(!isValid)
                 }
             }

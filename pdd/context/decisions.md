@@ -263,3 +263,22 @@ top-level schema simple. A bottom tab bar would collide with the suite's own Hom
 module; dashboard renders with the 15 starters seeded; Browse decodes all 873 exercises. This module
 has **no device-only dependencies** (no HealthKit/Photos), so the sim run exercises it for real —
 unlike Workout Reels. Engine tests unchanged (18/18).
+
+## [2026-05-31] Budget `MonthScope` generalised to an arbitrary selected month
+
+**Decision**: `MonthScope` changed from a stateless `enum` of `static` helpers pinned to `.now`
+(current calendar month) into a small `Equatable`/`Sendable` value type anchored on a `Date`'s month:
+`MonthScope(anchor:)` with instance `contains(_:)`, `start`/`end`, `previous()`/`next()`, `isCurrent`,
+and a `label`. The current month is just `MonthScope()`. `BudgetRootView` holds the selected month in
+`@State` and a prev/next header steps it, so the summary tiles, per-category progress, and the
+spend-by-category donut all reflect the chosen month (backdated transactions appear when you step
+back). "Next" is disabled once `isCurrent`. Per-category transactions are a **pushed** screen
+(`BudgetCategoryTransactionsView`) where a row opens `AddTransactionView` in edit mode (optional
+`transaction:`); the 6-month bar chart lives in `BudgetTrendsView` with aggregation in a pure
+`SpendTrend.monthlyTotals` helper. No new `@Model` (reuses `BudgetCategory`/`BudgetTransaction`);
+category delete still cascades its transactions by `categoryID`.
+**Why**: the data already spans months (transactions carry a backdated `date`) — only the UI was
+pinned to "now". A value type makes month stepping a one-liner and keeps the scope testable.
+**Rules out**: the old `MonthScope.contains(_:now:)` static call sites (all migrated).
+**Verified**: `xcodebuild build-for-testing` (iPhone 17 Pro sim) — TEST BUILD SUCCEEDED; new
+`BudgetUITests` compiles into the UI-test bundle. (Live run deferred to the merge pass.)

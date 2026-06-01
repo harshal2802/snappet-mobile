@@ -8,9 +8,11 @@ struct CategorySpend: Identifiable {
     let amount: Double
 }
 
-/// A sector (pie/donut) chart of this month's spend broken down by category.
+/// A sector (pie/donut) chart of the selected month's spend broken down by category.
 struct SpendByCategoryChart: View {
     let slices: [CategorySpend]
+    /// Label for the centred caption, e.g. "May 2026".
+    var periodLabel: String = "this month"
 
     private var total: Double { slices.reduce(0) { $0 + $1.amount } }
 
@@ -32,7 +34,7 @@ struct SpendByCategoryChart: View {
                     VStack(spacing: 2) {
                         Text(total.asCurrency)
                             .font(.headline.bold())
-                        Text("this month")
+                        Text(periodLabel)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -41,6 +43,6 @@ struct SpendByCategoryChart: View {
             }
         }
         .frame(height: 220)
-        .accessibilityLabel("Spending by category, total \(total.asCurrency) this month")
+        .accessibilityLabel("Spending by category, total \(total.asCurrency) in \(periodLabel)")
     }
 }

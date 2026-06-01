@@ -2,9 +2,11 @@ import SwiftUI
 import SwiftData
 
 /// Root screen for the Budget mini-app. Pushed into the App Library's NavigationStack
-/// (so it adds no stack of its own). Shows a month summary, a spend-by-category chart,
-/// and a list of categories with spent-vs-limit progress. Categories are managed via a
-/// sheet; transactions are added via a sheet. All sums scope to the current month.
+/// (so it adds no stack of its own). A prev/next month header drives a selected
+/// `MonthScope`; the summary tiles, spend-by-category donut, and per-category progress all
+/// reflect that month (so backdated transactions show up when you step back). Categories
+/// are managed via a sheet; per-category transactions (with edit) are a pushed screen; a
+/// 6-month trend chart is reachable from the toolbar.
 struct BudgetRootView: View {
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
@@ -15,6 +17,8 @@ struct BudgetRootView: View {
     @State private var showingAddCategory = false
     @State private var showingAddTransaction = false
     @State private var editingCategory: BudgetCategory?
+    /// The month the whole screen is scoped to. Defaults to the current month.
+    @State private var month = MonthScope()
 
     var body: some View {
         Group {
@@ -34,12 +38,14 @@ struct BudgetRootView: View {
                         Label("Add Transaction", systemImage: "creditcard")
                     }
                     .disabled(categories.isEmpty)
+                    .accessibilityIdentifier("budget.addTxn")
 
                     Button {
                         showingAddCategory = true
                     } label: {
                         Label("Add Category", systemImage: "folder.badge.plus")
                     }
+                    .accessibilityIdentifier("budget.addCategory")
                 } label: {
                     Label("Add", systemImage: "plus")
                 }
@@ -60,6 +66,19 @@ struct BudgetRootView: View {
                 addTransaction(category: category, amount: amount, note: note, date: date)
             }
         }
+        .navigationDestination(for: BudgetCategory.self) { category in
+            BudgetCategoryTransactionsView(
+                category: category,
+                categories: categories,
+                transactions: transactions,
+                scope: month,
+                onEdit: editTransaction,
+                onDelete: deleteTransaction
+            )
+        }
+        .navigationDestination(for: BudgetTrendsRoute.self) { _ in
+            BudgetTrendsView(transactions: transactions)
+        }
     }
 
     // MARK: - States
@@ -68,15 +87,22 @@ struct BudgetRootView: View {
         ContentUnavailableView {
             Label("No categories yet", systemImage: "chart.pie")
         } description: {
-            Text("Add a budget category to start tracking this month's spending.")
+            Text("Add a budget category to start tracking your spending.")
         } actions: {
             Button("Add Category") { showingAddCategory = true }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("budget.addCategory")
         }
     }
 
     private var content: some View {
         List {
+            Section {
+                monthHeader
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
             Section {
                 BudgetSummaryView(totalLimit: totalLimit,
                                   totalSpent: totalSpent,
@@ -85,31 +111,80 @@ struct BudgetRootView: View {
                     .listRowBackground(Color.clear)
             }
 
+            Section {
+                NavigationLink(value: BudgetTrendsRoute()) {
+                    Label("6-month trends", systemImage: "chart.bar.xaxis")
+                }
+                .accessibilityIdentifier("budget.trends")
+            }
+
             if totalSpent > 0 {
-                Section("Spending this month") {
-                    SpendByCategoryChart(slices: chartSlices)
+                Section("Spending in \(month.label)") {
+                    SpendByCategoryChart(slices: chartSlices, periodLabel: month.label)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
             }
 
             Section("Categories") {
                 ForEach(categories) { category in
-                    BudgetCategoryRow(name: category.name,
-                                      spent: spent(for: category),
-                                      limit: category.monthlyLimit)
-                        .contentShape(Rectangle())
-                        .onTapGesture { editingCategory = category }
+                    NavigationLink(value: category) {
+                        BudgetCategoryRow(name: category.name,
+                                          spent: spent(for: category),
+                                          limit: category.monthlyLimit)
+                    }
+                    .accessibilityIdentifier("budget.category.\(category.name)")
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingCategory = category
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                    }
                 }
                 .onDelete(perform: deleteCategories)
             }
         }
     }
 
+    /// Prev/next month stepper with the month label. "Next" is capped at the current month.
+    private var monthHeader: some View {
+        HStack {
+            Button {
+                month = month.previous()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.headline)
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityIdentifier("budget.prevMonth")
+
+            Spacer()
+
+            Text(month.label)
+                .font(.headline)
+                .accessibilityIdentifier("budget.monthLabel")
+
+            Spacer()
+
+            Button {
+                month = month.next()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.headline)
+                    .frame(width: 44, height: 44)
+            }
+            .disabled(month.isCurrent)
+            .accessibilityIdentifier("budget.nextMonth")
+        }
+        .padding(.horizontal)
+    }
+
     // MARK: - Month-scoped math
 
-    /// Transactions that fall within the current calendar month.
+    /// Transactions that fall within the selected month.
     private var monthTransactions: [BudgetTransaction] {
-        transactions.filter { MonthScope.contains($0.date) }
+        transactions.filter { month.contains($0.date) }
     }
 
     private func spent(for category: BudgetCategory) -> Double {
@@ -167,10 +242,31 @@ struct BudgetRootView: View {
                  metric: amount)
     }
 
+    private func editTransaction(_ transaction: BudgetTransaction,
+                                 category: BudgetCategory,
+                                 amount: Double,
+                                 note: String,
+                                 date: Date) {
+        guard amount > 0 else { return }
+        transaction.categoryID = category.id
+        transaction.amount = amount
+        transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        transaction.date = date
+        try? context.save()
+        core.log(module: "budget", action: "edit",
+                 summary: "Edited \(amount.asCurrency) on \(category.name)",
+                 metric: amount)
+    }
+
+    private func deleteTransaction(_ transaction: BudgetTransaction) {
+        context.delete(transaction)
+        try? context.save()
+    }
+
     private func deleteCategories(at offsets: IndexSet) {
         for index in offsets {
             let category = categories[index]
-            // Remove the category and all of its transactions.
+            // Remove the category and all of its transactions (cascade by foreign key).
             for transaction in transactions where transaction.categoryID == category.id {
                 context.delete(transaction)
             }
@@ -179,3 +275,7 @@ struct BudgetRootView: View {
         try? context.save()
     }
 }
+
+/// Value-type route for the pushed trends screen (so the destination is type-keyed and the
+/// row stays a plain `NavigationLink(value:)`).
+struct BudgetTrendsRoute: Hashable {}
