@@ -4,6 +4,61 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] A4 — live-metrics overlay UI (HR zone + overall timer + rest timer) (WorkoutTracker)
+
+**Decision**: Implemented prompt A4 (`pdd/prompts/features/live-workout-studio/A4-live-overlay-ui.md`,
+branch `feat/live-workout-overlay`). Replaced A1's temporary `liveMetricsDebugRow` in `WorkoutPlayerView`
+with a polished **live-metrics overlay** that composes, at a glance: the **live HR** (bpm + zone
+color/label + source name), the **overall workout timer** (A2's `overallTimerHeader`), and — on the rest
+screen — the **rest countdown**, plus a graceful **no-source** state. This is the user's "overlay fitness
+data along with current and overall workout timer" ask (RESEARCH.md §3.2).
+
+**Concrete, non-obvious choices made:**
+- **`HeartRateZone` is a pure value type** (`Features/WorkoutTracker/HeartRateZone.swift`, `enum: Int`,
+  `Sendable`/`Equatable`) — the only SwiftUI surface is `var color: Color` (itself a value type), so the
+  bpm→zone mapping is **unit-testable in `SnappetTests` with no device** (mirrors keeping `HighlightEngine`
+  platform-free, but this lives in the app since it returns a SwiftUI `Color`; the engine stays untouched,
+  grep-confirmed no platform import). `forBpm(_:maxHR:)` is the single mapping point; the view does no zone
+  math.
+- **Default max HR = 190, a fixed constant (not `220 − age`)** — and *why*: the suite has **no user age /
+  HR profile yet**, so a personalized max isn't computable. 190 is a reasonable adult ceiling that gives
+  the overlay meaningful **relative** zone color without pretending to be a training prescription. The
+  zones are the common 5-zone %-of-max model (recovery <60% / easy 60–70 / aerobic 70–80 / threshold
+  80–90 / max ≥90), lower-bound inclusive. `maxHR` is a parameter, so when a profile lands (a later
+  prompt) the call site passes a real max with **zero** change to the zone math.
+- **A `.none` zone** (rawValue 0) for nil / no-data, distinct from "a real but very low bpm": `forBpm`
+  returns `.none` for `nil`, non-positive bpm, **and** non-positive `maxHR` (a degenerate max can't yield a
+  meaningful zone → no-data, not a crash). `.none` renders the inert secondary-gray pill, never a fake
+  "Z1", so a missing watch / band reads as missing.
+- **The overlay composes the two timers via existing pieces, not a re-implementation**: `overallTimerHeader`
+  (A2, the self-updating `Text(timerInterval:)` pinned via `.safeAreaInset(.top)`) is unchanged; the new
+  `liveMetricsOverlay` (the HR pill) is placed at the top of **both** the exercise `ScrollView` and the
+  rest screen (so HR stays visible while resting, alongside the rest countdown circle). No new timer loop,
+  no Live-Activity regression — the existing `.onChange` pushes are untouched.
+- **`LiveHRPill` is a thin file-private view** handed an already-computed bpm + `HeartRateZone` + source
+  name + the no-source text — **no business logic in the view** (conventions.md "views are thin"). With a
+  sample: ❤️ (zone-tinted, `.pulse`) + bpm (zone color) + `pillLabel` ("Z3 · Aerobic") chip + `displayName`.
+  Without one: the source-aware status (reusing A1/A3's `liveStatusText` / `MetricsSourceState`, e.g. "Open
+  the workout on your watch" / "Connecting…" / "No watch metrics on this device"). The pill reads live data
+  **only** through `app.liveWorkout` (the coordinator) — never `watch` / `ble` directly.
+- **Accessibility**: the overlay carries `accessibilityIdentifier("liveMetricsOverlay")` (an
+  `accessibilityElement(children: .ignore)` with a composed label/value) so the walkthrough can assert it.
+  No new `@Model` → `SnappetSchema.models` unchanged.
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**, 0 warnings from
+these changes. `SnappetWatch` (watchOS 26.5 sim) → **BUILD SUCCEEDED** (A1/A2/A3 unbroken). `SnappetTests`
+→ **56/56 pass** (48 prior + 8 new `HeartRateZone`: nil/no-data, non-positive bpm + non-positive maxHR,
+default-190 boundary table, custom-maxHR boundary shift, labels / `pillLabel`, distinct rawValues).
+`HighlightEngine` → **18/18**, source unchanged (no platform import). `WorkoutWalkthroughTests` → **green**,
+including the new `liveMetricsOverlay` assertion (it resolves as an `Other` element in the player).
+**Device-pending (NOT verified)**: the overlay's **live visual** — the zone colors filling in, the ❤️ pulse,
+and a real bpm rendering — needs a device with an HR source (Apple Watch or a BLE band). The sim has no
+watch/HR, so the walkthrough asserts only the **no-source** state; a clean sim build + the no-source render
++ the pure zone tests prove the **shape**, not a live-HR rendering (same honesty bar as A1/A2/A3).
+
+---
+
 ## [2026-06-01] A3 — MetricsSource abstraction + generic BLE heart-rate band (WorkoutTracker)
 
 **Decision**: Implemented prompt A3 (`pdd/prompts/features/live-workout-studio/A3-…md`,
