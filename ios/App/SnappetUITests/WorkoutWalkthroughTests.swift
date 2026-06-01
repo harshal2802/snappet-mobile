@@ -66,6 +66,12 @@ final class WorkoutWalkthroughTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["overallWorkoutTimer"].waitForExistence(timeout: 4)
                 || app.otherElements["overallWorkoutTimer"].waitForExistence(timeout: 1),
                 "the player should show an overall workout timer")
+            // A4: the live-metrics overlay (HR pill) is shown in the player. The sim has no
+            // watch / HR source, so it renders its no-source state (we assert the overlay
+            // element exists, not a bpm value — there is none in the simulator).
+            XCTAssertTrue(app.otherElements["liveMetricsOverlay"].waitForExistence(timeout: 4)
+                || app.staticTexts["liveMetricsOverlay"].waitForExistence(timeout: 1),
+                "the player should show the live-metrics overlay (no-source state in the sim)")
             drivePlayerToDone(); sleep(2); snap("08-after-finish")
             let onDash = app.staticTexts["Day streak"].waitForExistence(timeout: 5)
                 || app.staticTexts["Workouts"].waitForExistence(timeout: 2)
