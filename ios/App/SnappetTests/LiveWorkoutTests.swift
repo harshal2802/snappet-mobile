@@ -1,0 +1,137 @@
+import XCTest
+import HealthKit
+@testable import Snappet
+
+/// Unit tests for the **pure** pieces of the live-workout path (A1) — no device, no
+/// HealthKit data, no WCSession. `WorkoutActivityMapping` is a plain enum mapping and
+/// the HR-buffer offset math is a static function, so both run in the app test target.
+/// (The live relay itself is device-pending — see decisions.md 2026-06-01.)
+final class WorkoutActivityMappingTests: XCTestCase {
+
+    // MARK: - Sport tag wins
+
+    func testClimbingSportMapsToClimbing() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(sport: .climbing, category: .strength),
+            .climbing)
+    }
+
+    func testCalisthenicsMapsToFunctionalStrength() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(sport: .calisthenics, category: nil),
+            .functionalStrengthTraining)
+    }
+
+    func testGeneralSportFallsThroughToCategory() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(sport: .general, category: .cardio),
+            .running)
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(sport: .general, category: .strength),
+            .traditionalStrengthTraining)
+    }
+
+    // MARK: - Category mapping + fallback
+
+    func testCategoryMapping() {
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .strength), .traditionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .powerlifting), .traditionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .cardio), .running)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .plyometrics), .jumpRope)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .stretching), .flexibility)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .olympicWeightlifting), .functionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .strongman), .functionalStrengthTraining)
+    }
+
+    func testNoSportNoCategoryFallsBackToStrengthTraining() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(sport: nil, category: nil),
+            .traditionalStrengthTraining)
+    }
+
+    // MARK: - Dominant category
+
+    func testDominantCategoryPicksMostCommon() {
+        let cats: [ExerciseCategory] = [.strength, .strength, .cardio]
+        XCTAssertEqual(WorkoutActivityMapping.dominantCategory(of: cats), .strength)
+    }
+
+    func testDominantCategoryEmptyIsNil() {
+        XCTAssertNil(WorkoutActivityMapping.dominantCategory(of: []))
+    }
+
+    func testDominantCategoryTieIsDeterministic() {
+        // 1 each → tie broken deterministically (stable result across runs).
+        let a = WorkoutActivityMapping.dominantCategory(of: [.cardio, .strength])
+        let b = WorkoutActivityMapping.dominantCategory(of: [.strength, .cardio])
+        XCTAssertEqual(a, b)
+    }
+}
+
+@MainActor
+final class LiveWorkoutOffsetTests: XCTestCase {
+
+    func testOffsetUsesWatchClockWhenClose() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        // Watch says 30s; wall-clock arrival is 31s after start → trust watch's 30.
+        let received = start.addingTimeInterval(31)
+        let t = LiveWorkoutService.sessionOffset(watchOffset: 30, sessionStart: start, receivedAt: received)
+        XCTAssertEqual(t, 30, accuracy: 0.001)
+    }
+
+    func testOffsetFallsBackToWallClockWhenWatchClockWildlyAhead() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let received = start.addingTimeInterval(10)
+        // Watch claims 9999s but only 10s of wall-clock elapsed → use 10.
+        let t = LiveWorkoutService.sessionOffset(watchOffset: 9_999, sessionStart: start, receivedAt: received)
+        XCTAssertEqual(t, 10, accuracy: 0.001)
+    }
+
+    func testOffsetClampsNonNegative() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let received = start.addingTimeInterval(-5)   // skew: arrived "before" start
+        let t = LiveWorkoutService.sessionOffset(watchOffset: -3, sessionStart: start, receivedAt: received)
+        XCTAssertGreaterThanOrEqual(t, 0)
+    }
+
+    func testOffsetWithoutSessionStartUsesRawWatchOffset() {
+        let t = LiveWorkoutService.sessionOffset(watchOffset: 12, sessionStart: nil, receivedAt: .now)
+        XCTAssertEqual(t, 12, accuracy: 0.001)
+    }
+
+    func testIngestBuffersSamplesAgainstSessionStart() {
+        let service = LiveWorkoutService()
+        let start = Date(timeIntervalSince1970: 5_000)
+        service.start(activityType: .running, sessionStart: start)
+        service.ingest(hrBpm: 120, energyKcal: 8, watchOffset: 5,
+                       receivedAt: start.addingTimeInterval(5))
+        service.ingest(hrBpm: 145, energyKcal: 20, watchOffset: 10,
+                       receivedAt: start.addingTimeInterval(10))
+        XCTAssertEqual(service.latestHR, 145)
+        XCTAssertEqual(service.energy, 20)
+        XCTAssertEqual(service.samples.count, 2)
+        XCTAssertEqual(service.samples[0].t, 5, accuracy: 0.001)
+        XCTAssertEqual(service.samples[0].bpm, 120)
+        XCTAssertEqual(service.samples[1].t, 10, accuracy: 0.001)
+    }
+
+    func testStartResetsBuffer() {
+        let service = LiveWorkoutService()
+        let start = Date()
+        service.start(activityType: .running, sessionStart: start)
+        service.ingest(hrBpm: 100, energyKcal: 1, watchOffset: 1)
+        XCTAssertEqual(service.samples.count, 1)
+        service.start(activityType: .climbing, sessionStart: Date())
+        XCTAssertTrue(service.samples.isEmpty)
+        XCTAssertNil(service.latestHR)
+    }
+
+    func testMessageRoundTrips() {
+        let m = LiveWorkoutMessage.metrics(hrBpm: 130, energyKcal: 12.5, t: 42)
+        XCTAssertEqual(LiveWorkoutMessage(payload: m.payload), m)
+        let s = LiveWorkoutMessage.start(activityType: HKWorkoutActivityType.climbing.rawValue)
+        XCTAssertEqual(LiveWorkoutMessage(payload: s.payload), s)
+        XCTAssertEqual(LiveWorkoutMessage(payload: LiveWorkoutMessage.stop.payload), .stop)
+        XCTAssertNil(LiveWorkoutMessage(payload: ["nonsense": 1]))
+    }
+}
