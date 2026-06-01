@@ -27,6 +27,12 @@ final class AppModel {
     /// sites. Distinct from `health`, which is the post-hoc (completed-workout) path.
     let liveWorkout = LiveWorkoutService()
 
+    /// Drives the WorkoutTracker **Live Activity** (Lock Screen + Dynamic Island): overall
+    /// timer + live HR + current exercise. Started/ended alongside `liveWorkout` from the
+    /// session lifecycle in `WorkoutHomeView`; updated as HR/exercise change. No-ops where
+    /// ActivityKit/Live Activities are unavailable or unauthorized (live-workout-studio A2).
+    let liveActivity = LiveActivityController()
+
     /// Value-first onboarding is shown until the user has been through it once.
     /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
     private let onboardedKey = "snappet.hasOnboarded"

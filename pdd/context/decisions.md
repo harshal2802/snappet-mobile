@@ -4,6 +4,80 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] A2 — overall workout timer + background Live Activity (WorkoutTracker)
+
+**Decision**: Implemented prompt A2 (`pdd/prompts/features/live-workout-studio/A2-…md`,
+branch `feat/live-workout-overall-timer`). A running WorkoutTracker session now has (1) an **overall
+workout timer** in the player and (2) a **Live Activity** (Lock Screen + Dynamic Island) showing the
+overall timer + live HR + current exercise/set — solving the user's "routine can't run in background" +
+"no overall timer" asks (RESEARCH.md §3.2) and making live HR visible without the app foregrounded.
+
+**Concrete, non-obvious choices made:**
+- **Overall timer = wall-clock `Text(timerInterval:)`, no background CPU.** The player header renders
+  `Text(timerInterval: session.startedAt...distantFuture, countsDown: false)` so SwiftUI/the OS ticks it
+  off the wall clock — correct across backgrounding *by construction*, the same end-`Date` philosophy the
+  rest timer already uses. It runs alongside the per-set rest circle, labelled "Total" vs the rest timer.
+  It carries `accessibilityIdentifier("overallWorkoutTimer")` + an `.accessibilityValue` from the pure
+  `WorkoutLiveSnapshot.elapsedString` so the walkthrough can assert it deterministically. No per-second
+  state, no timer loop for the overall clock — only the *live HR* needs the watch session.
+- **New Widget Extension target `SnappetWidgets`** in `project.yml` (`type: app-extension`,
+  `NSExtensionPointIdentifier = com.apple.widgetkit-extension`, iOS 18 deployment, `SKIP_INSTALL=YES`,
+  bundle id `com.snappet.app.widgets`), **embedded** in the phone app like the watch target, and added to
+  the `Snappet` scheme's build targets. Added `NSSupportsLiveActivities = YES` to the app Info.plist.
+- **One shared `ActivityAttributes` contract** (`Shared/WorkoutActivityAttributes.swift`, compiled into
+  *both* the app and the widget extension via the `Shared/` path) — same can't-drift pattern as
+  `LiveWorkoutMessage`. Static `routineName`; `ContentState { startedAt: Date; hrBpm: Int?;
+  exerciseName: String; setProgress: String }`. The Live Activity renders the overall timer with
+  `Text(timerInterval: state.startedAt…)` (OS-ticked, no pushed per-second updates). `ContentState` is
+  `Codable, Hashable, **Sendable**` — the `Sendable` is load-bearing so `Activity<…>` is Sendable.
+- **`LiveActivityController` service** (`Services/`, `@MainActor @Observable`, guarded
+  `#if canImport(ActivityKit)`): `start(routineName:startedAt:…)`, `update(_:)`/`update(hrBpm:…)`, `end()`.
+  Every entry point **no-ops** where ActivityKit can't be imported, the OS is < iOS 16.1, or
+  `ActivityAuthorizationInfo().areActivitiesEnabled == false`; `start` ends any prior activity first so a
+  resume never strands an orphan. Holds the activity as `Any?` + a typed `@available(iOS 16.1)` computed
+  accessor so the type isn't referenced below its availability floor.
+- **Swift-6 send of the activity into a detached async update**: `Activity` is documented thread-safe &
+  `Sendable`, but the local picks up a main-actor tag from the `@MainActor` getter, so `Task { await
+  activity.update(...) }` tripped region isolation ("sending main-actor-isolated value to a nonisolated
+  method"). Resolved with `nonisolated(unsafe) let act = activity` immediately before the `Task` — the
+  documented escape hatch for a value that's genuinely safe off-actor. (Marking `ContentState: Sendable`
+  was necessary but not sufficient on its own.)
+- **Lifecycle co-located with the existing session lifecycle** in `WorkoutHomeView`: `start` the activity
+  in `startLiveMetrics` (so every start/replace path covers it) + on `resume` (the activity lives on the
+  phone independently of the watch, so it's (re)started even on a warm resume after a cold relaunch);
+  `end()` in `finishWorkout` alongside `liveWorkout.stop()`. The player pushes `update`s via `.onChange`
+  on phase / exerciseIndex / setIndex / `liveWorkout.latestHR`, mapping a pure `WorkoutLiveSnapshot`
+  (platform-free, in `Features/WorkoutTracker/`) → `ContentState`. The snapshot is the single source of
+  truth both the in-player timer and the activity read, and is what the unit tests exercise.
+- **No new `@Model`** → `SnappetSchema.models` unchanged. `HighlightEngine` untouched (no platform import;
+  `grep` confirms none added).
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate` defines app + watch + **SnappetWidgets**
+targets. `Snappet` iOS scheme builds for the iPhone 17 Pro sim (with the embedded widget extension +
+watch) → **BUILD SUCCEEDED**, 0 warnings from these changes (the widget `.appex` builds and embeds).
+`SnappetWatch` builds for the watchOS 26.5 sim → **BUILD SUCCEEDED** (A1 unbroken). `SnappetTests` →
+**24/24 pass** (the 15 existing + 9 new: elapsed-time formatting, snapshot field carry-through, and the
+`ContentState` field-mapping + Codable round-trip). `HighlightEngine` → **18/18**, source unchanged.
+`WorkoutWalkthroughTests` → **green**, including the new `overallWorkoutTimer` assertion.
+**Device-pending (NOT verified)**: the actual Live Activity **rendering** — the Lock Screen banner and
+the Dynamic Island compact/minimal/expanded regions — and the live HR appearing there, only truly run on
+a device (Live Activities need a real Lock Screen / Dynamic Island; the sim build proves the *shape*, not
+the on-device activity). Update-budget behavior under a real workout is also a device check.
+
+**Post-review hardening (2026-06-01, same branch)**: review fixes applied before merge: (1) **HR update
+storm** — the player fired an ActivityKit `update` on every ~1 Hz HR sample (would exhaust the update
+budget and lag the Lock Screen); added a pure, unit-tested `WorkoutLiveSnapshot.shouldPush` throttle —
+structural changes (exercise/set text) push immediately, HR-only changes are rate-limited to ≥2 s — and
+`LiveActivityController.update(_:)` now consults it via stored `lastSnapshot`/`lastPushedAt`; (2) **warm
+resume no longer end+recreates** a Live Activity that's already showing (new `isRunning` guard);
+(3) `startLiveActivity` seeds a real `"Set 1 of N"` so the Lock Screen isn't blank if backgrounded before
+the player appears. The "set-number off-by-one during rest" flag was **refuted** (SwiftUI applies all
+`@State` mutations before `.onChange` fires, so the snapshot reads the settled `phase`). Added 4 throttle
+unit tests (SnappetTests 24→28). Re-verified: app + watch BUILD SUCCEEDED, SnappetTests 28/28,
+HighlightEngine 18/18, WorkoutWalkthroughTests green.
+
+---
+
 ## [2026-06-01] A1 — watchOS companion + live HR relay implemented (WorkoutTracker gains a live path)
 
 **Decision**: Implemented prompt A1 (`pdd/prompts/features/live-workout-studio/A1-…md`,

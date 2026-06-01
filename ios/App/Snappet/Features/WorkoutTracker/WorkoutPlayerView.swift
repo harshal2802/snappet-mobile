@@ -55,6 +55,7 @@ struct WorkoutPlayerView: View {
                 case .done: doneScreen
                 }
             }
+            .safeAreaInset(edge: .top) { overallTimerHeader }
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -74,7 +75,7 @@ struct WorkoutPlayerView: View {
             }
         }
         .interactiveDismissDisabled()
-        .onAppear { unit = defaultUnit; resumePosition() }
+        .onAppear { unit = defaultUnit; resumePosition(); pushLiveActivity() }
         .onDisappear { timerTask?.cancel() }
         .onChange(of: scenePhase) { _, phase in
             // Returning to foreground: recompute remaining from the wall clock immediately
@@ -83,6 +84,13 @@ struct WorkoutPlayerView: View {
                 restRemaining = max(0, Int(end.timeIntervalSinceNow.rounded(.up)))
             }
         }
+        // Keep the Live Activity in sync as the player advances or HR changes. The overall
+        // timer in the activity ticks on its own (anchored on startedAt); these updates only
+        // refresh HR + the current exercise/set line.
+        .onChange(of: phase) { _, _ in pushLiveActivity() }
+        .onChange(of: exerciseIndex) { _, _ in pushLiveActivity() }
+        .onChange(of: setIndex) { _, _ in pushLiveActivity() }
+        .onChange(of: app.liveWorkout.latestHR) { _, _ in pushLiveActivity() }
         .confirmationDialog("End this workout?", isPresented: $showingEnd, titleVisibility: .visible) {
             Button("Save & exit") { finish(saved: true) }
             Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
@@ -92,6 +100,60 @@ struct WorkoutPlayerView: View {
             Button("Skip exercise", role: .destructive) { skipExercise() }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    // MARK: - Overall timer
+
+    /// The overall workout timer = time since `session.startedAt`, shown alongside (and clearly
+    /// distinct from) the per-set rest timer. Rendered with `Text(timerInterval:)` so SwiftUI
+    /// self-updates it off the wall clock — correct across backgrounding with **no background
+    /// CPU** (the same end-`Date` philosophy the rest timer uses). The accessibility value uses
+    /// the pure `WorkoutLiveSnapshot.elapsedString` so the walkthrough test can read it
+    /// deterministically (live-workout-studio A2).
+    private var overallTimerHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "stopwatch").foregroundStyle(.orange)
+            Text("Total").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(.bar)
+        .accessibilityIdentifier("overallWorkoutTimer")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Total workout time")
+        .accessibilityValue(WorkoutLiveSnapshot.elapsedString(Date.now.timeIntervalSince(session.startedAt)))
+    }
+
+    // MARK: - Live Activity sync
+
+    /// The current live snapshot — what the in-player timer + Live Activity should show right now.
+    private var currentSnapshot: WorkoutLiveSnapshot {
+        let hr = app.liveWorkout.latestHR.map { Int($0.rounded()) }
+        let name: String
+        let progress: String
+        switch phase {
+        case .done:
+            name = "Workout complete"; progress = ""
+        case .rest:
+            name = "Resting"
+            progress = nextSetLabel ?? ""
+        case .exercise:
+            if let ex = current {
+                name = resolver.name(for: ex.exerciseId, override: ex.displayName)
+                progress = "Set \(setIndex + 1) of \(ex.sets.count)"
+            } else {
+                name = session.routineName; progress = ""
+            }
+        }
+        return WorkoutLiveSnapshot(startedAt: session.startedAt, hrBpm: hr,
+                                   exerciseName: name, setProgress: progress)
+    }
+
+    private func pushLiveActivity() {
+        app.liveActivity.update(currentSnapshot)
     }
 
     // MARK: - Exercise screen

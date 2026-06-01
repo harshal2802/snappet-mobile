@@ -60,6 +60,12 @@ final class WorkoutWalkthroughTests: XCTestCase {
             XCTAssertTrue(app.buttons["Start Workout"].waitForExistence(timeout: 4), "routine detail should open")
             // Start the workout from the detail → drive player → finish.
             app.buttons["Start Workout"].tap(); sleep(2); snap("07-player")
+            // A2: the player shows a self-updating overall workout timer (distinct from the
+            // per-set rest timer). It's a self-updating Text(timerInterval:), so we assert the
+            // element exists rather than a specific value.
+            XCTAssertTrue(app.staticTexts["overallWorkoutTimer"].waitForExistence(timeout: 4)
+                || app.otherElements["overallWorkoutTimer"].waitForExistence(timeout: 1),
+                "the player should show an overall workout timer")
             drivePlayerToDone(); sleep(2); snap("08-after-finish")
             let onDash = app.staticTexts["Day streak"].waitForExistence(timeout: 5)
                 || app.staticTexts["Workouts"].waitForExistence(timeout: 2)
