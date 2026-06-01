@@ -4,6 +4,60 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] B4 — engine-driven highlight generation (the WorkoutTracker ↔ HighlightEngine bridge)
+
+**Decision.** Connect the set-logger to the flagship algorithm by feeding a finished session's data
+into the **EXISTING** `HighlightEngine`, with no engine change. A new **pure** bridge —
+`Features/WorkoutTracker/SessionHighlightInput.swift` (an `enum` of static mappers + a plain-value
+`Clip` struct; **no SwiftData/AVFoundation/Photos**) — maps a `WorkoutSession` to an engine `Workout`:
+
+- **HR**: `hrSeries` (`HRPoint`) → `[HRSample]`, **1:1** on the same `startedAt`-relative timeline (`t`/`bpm`).
+- **Media**: each tagged `SessionMedia` → `MediaItem` (`id = localIdentifier`, `startOffset = offsetSec`
+  clamped ≥ 0). A **video** → `.video` with `durationSec`; a video with no resolvable duration falls back
+  to a small `defaultVideoDuration` (6 s) and, when even that is unavailable, is **skipped gracefully**
+  (a windowless clip the engine can't use). A **photo** → `.photo` with duration `0` (Ken-Burns still,
+  already handled by `ReelExporter`/`PhotoClipRenderer`).
+- **Activity**: routine `SportTag` (stronger) → then the dominant `ExerciseCategory` → the engine's coarse
+  `Activity`, defaulting to `.strength` (generic gym). Targets the engine's `Activity` (not
+  `HKWorkoutActivityType`) so the engine stays platform-free — this is the **engine-Activity twin** of
+  the live path's `WorkoutActivityMapping` (which maps *up* to HealthKit types).
+
+**Generation + render (reuse, not reimplement).** `SessionHighlightViewModel` (`@MainActor @Observable`)
+snapshots the `@Model`s into plain `[HRPoint]`/`[Clip]` on the `@MainActor`, runs the **existing**
+`app.engine.selector.select(workout:config: .preset(for:))` → `[Highlight]`, then `app.reelPlan(…pinnedIds:)`
+→ `ReelPlan`, then **reuses `ReelExporter.makeComposition`** to build an `AVPlayer` preview (the same
+composition export uses — no reel-stitch reimplementation). The non-Sendable `@Model` never crosses into
+the engine/exporter.
+
+**Selected clips → `pinnedIds` (budget-exempt).** The user's selected **clip** ids become the planner's
+pins (the 2026-05-30 pin decision). Because `ReelPlanner` pins by **highlight** id, the view model expands
+each selected clip id into the highlight ids whose `mediaItemId` is that clip — so a hand-picked clip is
+always kept, budget-exempt. The **pure bridge** (`pinnedIds(forSelected:)`) emits the selected clip ids
+verbatim (the unit-tested contract); the clip→highlight expansion is app composition state in the VM.
+
+**UI.** A **"Generate highlight"** button in `SessionDetailView`'s media section, **enabled only when the
+session has a tagged video**, opens `SessionHighlightView` — a **sheet** owning its own `NavigationStack`
+(modules must not nest one) with a clip-selection list (default = all videos), a **Generate** action, and
+an inline `VideoPlayer` preview. B5 adds share/save.
+
+**B3 `ClipEdit`s are NOT applied to the reel segments (deferred).** B4 generates from the **raw** tagged
+clips; per-segment edit integration (applying a clip's trim/crop/overlays to its reel slot) is a B5/later
+concern — it would require threading per-segment `EditPlan`s through a composition the engine-driven
+`ReelExporter` doesn't currently take, and the gate "after B3" (export cost) is unmeasured. Recorded here
+so it isn't mistaken for an oversight.
+
+**No new `@Model`** (the inputs already exist: B2 `hrSeries`, B1 `SessionMedia`) → `SnappetSchema.models`
+unchanged. `git diff ios/HighlightEngine` is empty — the engine is reused verbatim.
+
+**Verified vs device-pending.** Verified: app + watch schemes build (iPhone 17 Pro / Apple Watch Series 11
+sims, `-destination` only); `SnappetTests` green incl. the new `SessionHighlightInputTests` (HR 1:1, media
+kind/offset/duration incl. default-when-nil + skip-when-windowless + photos, activity mapping, selection →
+`pinnedIds`, and an end-to-end bridge→selector→planner pin-survival check); `HighlightEngine` 18/18 with an
+**empty** `ios/HighlightEngine` diff; `WorkoutWalkthroughTests` green (the sim session has no media/HR, so
+"Generate highlight" is disabled — it can't run, doesn't crash the summary). **Device-pending**: the actual
+**rendered highlight reel** — the sim has no Photos/video, so `ReelExporter` has nothing real to stitch. A
+clean build is **not** a verified rendered reel.
+
 ## [2026-06-01] B3 — non-destructive CapCut-style on-device clip editor (WorkoutTracker)
 
 **Post-review fix (2026-06-01, same branch)**: review found the time-gated text overlay used a

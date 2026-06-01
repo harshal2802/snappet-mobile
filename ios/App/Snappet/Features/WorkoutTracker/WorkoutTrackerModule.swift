@@ -109,7 +109,11 @@ struct WorkoutHomeView: View {
         }
         .navigationDestination(for: SessionRoute.self) { route in
             if let s = sessions.first(where: { $0.id == route.id }) {
-                SessionDetailView(session: s, resolver: resolver, unit: unit)
+                // The routine's sport feeds the B4 highlight engine's activity mapping (it may
+                // have since been deleted → nil, then the bridge falls back to the dominant
+                // exercise category / a generic gym default).
+                let sport = routines.first(where: { $0.id == s.routineID })?.sport
+                SessionDetailView(session: s, resolver: resolver, unit: unit, sport: sport)
             }
         }
         .navigationDestination(for: ProgressRoute.self) { route in
