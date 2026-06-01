@@ -186,18 +186,25 @@ final class VideoStudio: Sendable {
             text.frame = CGRect(x: center.x - boxW / 2, y: center.y - boxH / 2,
                                 width: boxW, height: boxH)
 
-            // Time-gate the overlay's visibility (output/edited seconds).
-            let start = max(0, overlay.startSec)
-            let end = min(overlay.endSec, totalDuration.isFinite ? totalDuration : overlay.endSec)
-            if start > 0 || end < totalDuration {
+            // Time-gate the overlay's visibility (output/edited seconds). Visible ONLY within
+            // [start, end] — a keyframe over the whole clip so the overlay also DISAPPEARS after
+            // `end` (a `fillMode:.forwards` basic animation would wrongly hold it visible).
+            let total = max(0.01, totalDuration.isFinite ? totalDuration : overlay.endSec)
+            let start = max(0, min(overlay.startSec, total))
+            let end = max(start, min(overlay.endSec, total))
+            if start > 0 || end < total {
                 text.opacity = 0
-                let show = CABasicAnimation(keyPath: "opacity")
-                show.fromValue = 1; show.toValue = 1
-                show.beginTime = start <= 0 ? AVCoreAnimationBeginTimeAtZero : start
-                show.duration = max(0.01, end - start)
-                show.isRemovedOnCompletion = false
-                show.fillMode = .forwards
-                text.add(show, forKey: "visibility")
+                let s = start / total
+                let e = end / total
+                let anim = CAKeyframeAnimation(keyPath: "opacity")
+                anim.values   = [0, 0, 1, 1, 0, 0]
+                anim.keyTimes = [0, NSNumber(value: s), NSNumber(value: s),
+                                 NSNumber(value: e), NSNumber(value: e), 1]
+                anim.beginTime = AVCoreAnimationBeginTimeAtZero
+                anim.duration = total
+                anim.isRemovedOnCompletion = false
+                anim.fillMode = .both
+                text.add(anim, forKey: "visibility")
             }
             overlayLayer.addSublayer(text)
         }

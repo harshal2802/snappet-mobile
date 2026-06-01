@@ -6,6 +6,19 @@ or accidentally reverse them.
 
 ## [2026-06-01] B3 — non-destructive CapCut-style on-device clip editor (WorkoutTracker)
 
+**Post-review fix (2026-06-01, same branch)**: review found the time-gated text overlay used a
+`CABasicAnimation(opacity)` with `fillMode: .forwards`, which holds the overlay **visible after its
+`endSec`** instead of hiding it. Replaced with a `CAKeyframeAnimation` over the whole clip
+(`values [0,0,1,1,0,0]` at `keyTimes [0, s, s, e, e, 1]`, `beginTime = AVCoreAnimationBeginTimeAtZero`)
+so a text overlay is visible **only** within `[startSec, endSec]` and disappears after. (Whole-clip text —
+the common case — is unaffected: it skips the animation and stays at full opacity.) Review otherwise
+confirmed the geometry is sound: the CALayer **Y-flip** is correct (`layerPoint`), the crop transform
+order `preferred.concatenating(crop)` applies orientation then crop correctly, the `EditPlan` Sendable
+snapshot is the right Swift-6 boundary, and the PHAsset→AVAsset continuation single-resumes
+(`.highQualityFormat`). Re-verified: app + watch BUILD SUCCEEDED, SnappetTests 97/97, HighlightEngine
+18/18, WorkoutWalkthroughTests green. The overlay-timing fix is device-pending visually (no video on the
+sim) — the keyframe approach is the standard `AVVideoCompositionCoreAnimationTool` pattern.
+
 **Decision**: Implemented prompt B3 (`pdd/prompts/features/live-workout-studio/B3-clip-editor.md`,
 branch `feat/live-workout-clip-editor`). A tagged **video** in a session's `SessionDetailView` B1 gallery now
 opens a **non-destructive, fully on-device clip editor** — the user's "individually adjust the split/crop,
