@@ -214,6 +214,16 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var completedSetCount: Int { sets.filter { $0.completedAt != nil }.count }
 }
 
+/// One persisted heart-rate sample of a session's live HR series. `t` is seconds from
+/// `WorkoutSession.startedAt` (the engine convention — same timeline as `HRSample.t`),
+/// `bpm` the measured rate. Stored as a Codable composite inside `WorkoutSession` (like
+/// `exercises`) — **not** a separate `@Model` — so adding `hrSeries` is an additive
+/// lightweight migration, mirroring the Journal `tags` precedent (decisions.md 2026-05-31).
+struct HRPoint: Codable, Hashable, Sendable {
+    var t: Double
+    var bpm: Double
+}
+
 // MARK: - SwiftData models
 
 /// A workout routine: an ordered list of exercise prescriptions. Starter routines are
@@ -282,15 +292,24 @@ final class WorkoutSession {
     var startedAt: Date
     var completedAt: Date?
     var exercises: [SessionExercise]
+    /// The live heart-rate series captured during the session (flushed from the active
+    /// `MetricsSource` buffer in `finishWorkout` on a saved finish). Empty when there was
+    /// no live HR source (e.g. on the simulator, or a phone-only workout) — the summary's
+    /// HR chart/stats hide cleanly in that case. **Additive** property (default `[]`) →
+    /// SwiftData lightweight migration; `SnappetSchema.models` is unchanged (the Journal
+    /// `tags` precedent, decisions.md 2026-05-31 / 2026-06-01 B2).
+    var hrSeries: [HRPoint] = []
 
     init(id: UUID = UUID(), routineID: UUID? = nil, routineName: String,
-         startedAt: Date = .now, completedAt: Date? = nil, exercises: [SessionExercise] = []) {
+         startedAt: Date = .now, completedAt: Date? = nil, exercises: [SessionExercise] = [],
+         hrSeries: [HRPoint] = []) {
         self.id = id
         self.routineID = routineID
         self.routineName = routineName
         self.startedAt = startedAt
         self.completedAt = completedAt
         self.exercises = exercises
+        self.hrSeries = hrSeries
     }
 
     var isActive: Bool { completedAt == nil }

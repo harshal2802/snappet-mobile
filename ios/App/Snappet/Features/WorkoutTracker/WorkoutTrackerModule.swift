@@ -279,8 +279,14 @@ struct WorkoutHomeView: View {
 
     /// Called when the player closes. `saved == false` means "discard": delete the session.
     private func finishWorkout(_ session: WorkoutSession, saved: Bool) {
-        // End the watch session regardless of save/discard so the watch isn't left
-        // recording. (Buffered HRSamples are retained on the service for B2.)
+        // On a saved finish, flush the live HR buffer into the session BEFORE `stop()` (which
+        // stops both sources) so the enriched summary (B2) can chart it. `samples` are engine
+        // `HRSample`s already rebased onto the session timeline; empty with no live source, so
+        // the summary's chart/stats simply hide. Discards keep no series (the session is deleted).
+        if saved {
+            session.hrSeries = WorkoutHRStats.points(from: app.liveWorkout.samples)
+        }
+        // End the watch session regardless of save/discard so the watch isn't left recording.
         app.liveWorkout.stop()
         // End the Live Activity alongside the watch session.
         app.liveActivity.end()
