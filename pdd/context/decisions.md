@@ -4,6 +4,34 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] Live Workout Capture + Video Studio initiative — reopens the watchOS/BLE/in-app-capture deferrals (for WorkoutTracker only)
+
+**Decision**: Scoped a new initiative (research + plan, branch `plan/live-workout-video-studio`, GitHub
+issue #15) that turns **WorkoutTracker** from a foreground-only set logger into a live, instrumented,
+media-rich workout with an on-device video studio. Direction chosen with the user (2026-06-01):
+(1) **Apple Watch companion first** — a new watchOS target running `HKWorkoutSession`/`HKLiveWorkoutBuilder`
+with a `WCSession` relay is the only supported way to get live HR + background execution + "start the
+right workout on the watch"; (2) **unify** — finishing a WorkoutTracker session feeds the existing
+**`HighlightEngine`/`ReelPlanner`** (HR + tagged clips + manual selection) to generate highlights, with
+**no engine change**; (3) **full CapCut-style editor** on `AVMutableVideoComposition` +
+`AVVideoCompositionCoreAnimationTool`. Two parallel tracks (A: live capture A1–A4; B: studio B1–B5) in
+`pdd/prompts/features/live-workout-studio/PLAN.md`; feasibility in that folder's `RESEARCH.md`.
+**Why**: the selector/engine were kept platform-free and pluggable *specifically* so a live path could be
+added without a rewrite — this is that day. Live HR becomes plain `HRSample`s at the `Services` boundary,
+so `HighlightEngine` stays platform-free; all new platform I/O is a `Services/` type; a `MetricsSource`
+protocol (Apple Watch → BLE → post-hoc HealthKit) mirrors the `HighlightSelector` pluggability.
+**Supersedes (scoped to WorkoutTracker, NOT the flagship Reels app)**: the v1 calls *"reads COMPLETED
+workouts, not a live watchOS session"* (2026-05-30) and *"out of scope for v1: watchOS live capture,
+generic BLE bands, in-app capture"* (`PLAN-ios-to-shippable.md`). This initiative sits **on top of** a
+shipped v1 and does not block it.
+**Rules out (for now)**: **Fitbit live / Google Fit on iOS** — no real-time API, cloud-only, violates the
+on-device-only constraint (`RESEARCH.md` §3.3); a non-Apple band is only ever a *post-hoc HealthKit*
+source if its app writes to Health, or a *live BLE* source (`0x180D`) via CoreBluetooth in Phase 2.
+Health Connect belongs to the Android target. **Status**: research + plan only — no implementation code
+yet; A1 (watchOS companion) is authored and ready to run.
+
+---
+
 ## [2026-05-31] Pomodoro settings persist via @AppStorage in the view, applied to the engine
 
 **Decision**: Focus/break lengths are stored as `@AppStorage("pomodoro.focusMinutes"/".breakMinutes")`
