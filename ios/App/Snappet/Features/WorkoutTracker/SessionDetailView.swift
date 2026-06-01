@@ -12,6 +12,16 @@ struct SessionDetailView: View {
     let session: WorkoutSession
     let resolver: ExerciseResolver
     let unit: WeightUnit
+    /// The routine's sport, used by B4 highlight generation's activity mapping (`nil` if the
+    /// routine was deleted — the bridge then falls back to the dominant exercise category).
+    var sport: SportTag? = nil
+
+    /// Dominant exercise category across the session (B4 activity-mapping fallback when there's
+    /// no sport). Resolved from the session's exercises via the `resolver`.
+    private var dominantCategory: ExerciseCategory? {
+        let cats = session.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category }
+        return WorkoutActivityMapping.dominantCategory(of: cats)
+    }
 
     var body: some View {
         List {
@@ -31,7 +41,7 @@ struct SessionDetailView: View {
                 HeartRateSummarySection(series: session.hrSeries, stats: stats)
             }
 
-            SessionMediaSection(session: session)
+            SessionMediaSection(session: session, sport: sport, category: dominantCategory)
 
             ForEach(session.exercises) { ex in
                 Section {
@@ -178,6 +188,9 @@ private struct ZoneBar: View {
 /// Photos, so this renders its empty / "add media" state there.
 private struct SessionMediaSection: View {
     let session: WorkoutSession
+    /// Activity inputs for the B4 highlight engine (passed down from the detail view).
+    let sport: SportTag?
+    let category: ExerciseCategory?
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -193,13 +206,23 @@ private struct SessionMediaSection: View {
     /// The video clip being edited in the B3 clip-editor sheet (videos only — photos aren't
     /// editable in the clip editor). `item:` sheet so the editor owns its own `NavigationStack`.
     @State private var editingClip: SessionMedia?
+    /// Presents the B4 highlight-generation sheet (clip selection → generate → preview).
+    @State private var showingHighlight = false
 
-    init(session: WorkoutSession) {
+    init(session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
         self.session = session
+        self.sport = sport
+        self.category = category
         let sid = session.id
         _media = Query(filter: #Predicate<SessionMedia> { $0.sessionID == sid },
                        sort: \SessionMedia.offsetSec, order: .forward)
     }
+
+    /// "Generate highlight" is enabled only when the session has at least one tagged **video**
+    /// (the reel stitch is video-first; a photo-only session has nothing to cut). On the
+    /// simulator there's no media, so this stays disabled and the action can't run — keeping
+    /// `WorkoutWalkthroughTests` green (decisions.md 2026-06-01, B4).
+    private var hasVideo: Bool { media.contains { $0.kind == .video } }
 
     private let columns = [GridItem(.adaptive(minimum: 88), spacing: 8)]
 
@@ -255,6 +278,15 @@ private struct SessionMediaSection: View {
             } label: {
                 Label("Add photos/videos", systemImage: "plus")
             }
+
+            // B4: engine-driven highlight reel from the tagged clips + HR + selection.
+            Button {
+                showingHighlight = true
+            } label: {
+                Label("Generate highlight", systemImage: "sparkles.tv")
+            }
+            .disabled(!hasVideo)
+            .accessibilityIdentifier("generateHighlight")
         } header: {
             Text("Media from this workout")
         }
@@ -263,6 +295,22 @@ private struct SessionMediaSection: View {
         }
         .sheet(item: $editingClip) { clip in
             ClipEditorView(media: clip)
+        }
+        .sheet(isPresented: $showingHighlight) {
+            // Snapshot the @Models into plain values on the MainActor; the bridge + engine never
+            // touch SwiftData. The sheet owns its own NavigationStack (no nesting in the module's).
+            SessionHighlightView(
+                viewModel: SessionHighlightViewModel(
+                    app: app,
+                    hrSeries: session.hrSeries,
+                    clips: media.map {
+                        SessionHighlightInput.Clip(
+                            localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
+                            offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+                    },
+                    duration: session.duration,
+                    sport: sport,
+                    category: category))
         }
         .task {
             // Auto-discover once when the detail first appears, but only silently — never
