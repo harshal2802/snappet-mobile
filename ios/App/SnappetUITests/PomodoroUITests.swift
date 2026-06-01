@@ -22,6 +22,7 @@ final class PomodoroUITests: XCTestCase {
 
     func testTimerControlsAndHistory() {
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFreshStore"]
         app.launch()
         openPomodoro(app)
 
@@ -59,6 +60,7 @@ final class PomodoroUITests: XCTestCase {
 
     func testSettingsPersistAcrossRelaunch() {
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFreshStore"]
         app.launch()
         openPomodoro(app)
 

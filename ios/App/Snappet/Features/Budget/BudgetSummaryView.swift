@@ -10,9 +10,12 @@ struct BudgetSummaryView: View {
     var body: some View {
         HStack(spacing: 12) {
             tile(value: totalLimit.asCurrency, label: "Budget", tint: .blue)
+                .accessibilityIdentifier("budget.total")
             tile(value: totalSpent.asCurrency, label: "Spent", tint: .purple)
+                .accessibilityIdentifier("budget.spent")
             tile(value: remaining.asCurrency, label: "Remaining",
                  tint: remaining < 0 ? .red : .green)
+                .accessibilityIdentifier("budget.remaining")
         }
         .padding(.horizontal)
     }

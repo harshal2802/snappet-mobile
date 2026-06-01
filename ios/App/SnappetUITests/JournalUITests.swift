@@ -10,6 +10,7 @@ final class JournalUITests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
+        app.launchArguments += ["-uiTestFreshStore"]
         app.launch()
     }
 
