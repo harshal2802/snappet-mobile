@@ -6,6 +6,8 @@ import SwiftUI
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
     @State private var router = SuiteRouter()
+    /// Drives the zoom transition from a tapped module card into the module's screen (iOS 18).
+    @Namespace private var moduleZoom
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
     var body: some View {
@@ -30,6 +32,7 @@ struct AppLibraryView: View {
                                             ModuleCard(module: module)
                                         }
                                         .buttonStyle(.plain)
+                                        .matchedTransitionSource(id: module.id, in: moduleZoom)
                                         .accessibilityIdentifier("moduleCard.\(module.id)")
                                     }
                                 }
@@ -52,6 +55,7 @@ struct AppLibraryView: View {
     @ViewBuilder private func moduleDestination(_ route: ModuleRoute) -> some View {
         if let module = ModuleRegistry.all.first(where: { $0.id == route.id }) {
             module.destination()
+                .navigationTransition(.zoom(sourceID: module.id, in: moduleZoom))
                 .onAppear {
                     core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
                 }
