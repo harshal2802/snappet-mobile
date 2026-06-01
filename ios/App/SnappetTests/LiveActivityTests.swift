@@ -57,6 +57,46 @@ final class WorkoutLiveSnapshotTests: XCTestCase {
         XCTAssertNil(snap.hrBpm)
     }
 
+    // MARK: - Update throttle (shouldPush) — keeps ActivityKit within its update budget
+
+    private func snap(_ name: String, _ progress: String, hr: Int?) -> WorkoutLiveSnapshot {
+        WorkoutLiveSnapshot(startedAt: Date(timeIntervalSince1970: 0), hrBpm: hr,
+                            exerciseName: name, setProgress: progress)
+    }
+
+    func testFirstPushAlwaysGoes() {
+        let now = Date(timeIntervalSince1970: 100)
+        XCTAssertTrue(WorkoutLiveSnapshot.shouldPush(
+            snap("Squat", "Set 1 of 3", hr: nil), after: nil, lastPushedAt: nil, now: now))
+    }
+
+    func testIdenticalSnapshotDoesNotPush() {
+        let now = Date(timeIntervalSince1970: 100)
+        let s = snap("Squat", "Set 1 of 3", hr: 120)
+        XCTAssertFalse(WorkoutLiveSnapshot.shouldPush(
+            s, after: s, lastPushedAt: now.addingTimeInterval(-0.1), now: now))
+    }
+
+    func testStructuralChangePushesImmediatelyEvenWithinHRWindow() {
+        let now = Date(timeIntervalSince1970: 100)
+        let last = snap("Squat", "Set 1 of 3", hr: 120)
+        let next = snap("Squat", "Set 2 of 3", hr: 120)   // set advanced
+        XCTAssertTrue(WorkoutLiveSnapshot.shouldPush(
+            next, after: last, lastPushedAt: now.addingTimeInterval(-0.1), now: now))
+    }
+
+    func testHROnlyChangeRateLimited() {
+        let now = Date(timeIntervalSince1970: 100)
+        let last = snap("Squat", "Set 1 of 3", hr: 120)
+        let next = snap("Squat", "Set 1 of 3", hr: 121)   // HR only
+        // Too soon → suppressed.
+        XCTAssertFalse(WorkoutLiveSnapshot.shouldPush(
+            next, after: last, lastPushedAt: now.addingTimeInterval(-1), now: now))
+        // Past the interval → allowed.
+        XCTAssertTrue(WorkoutLiveSnapshot.shouldPush(
+            next, after: last, lastPushedAt: now.addingTimeInterval(-3), now: now))
+    }
+
     #if canImport(ActivityKit)
     // MARK: - ContentState mapping (the producer/renderer contract)
 

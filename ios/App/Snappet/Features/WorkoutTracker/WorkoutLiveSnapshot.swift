@@ -26,4 +26,18 @@ struct WorkoutLiveSnapshot: Equatable, Sendable {
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
     }
+
+    /// Decide whether `next` warrants pushing to ActivityKit given the last pushed snapshot.
+    /// **Structural** changes (exercise / set-progress text) always push immediately; an
+    /// **HR-only** change is rate-limited to `minHRInterval` so a ~1 Hz HR stream can't exceed
+    /// ActivityKit's update budget (which would make the Lock Screen lag). Identical snapshots
+    /// never push. Pure + deterministic so the throttle is unit-tested without a device.
+    static func shouldPush(_ next: WorkoutLiveSnapshot, after last: WorkoutLiveSnapshot?,
+                           lastPushedAt: Date?, now: Date, minHRInterval: TimeInterval = 2) -> Bool {
+        guard let last else { return true }   // first push always goes
+        if next.exerciseName != last.exerciseName || next.setProgress != last.setProgress { return true }
+        if next.hrBpm == last.hrBpm { return false }   // nothing changed at all
+        guard let lastPushedAt else { return true }
+        return now.timeIntervalSince(lastPushedAt) >= minHRInterval   // HR-only → rate-limit
+    }
 }

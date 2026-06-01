@@ -64,6 +64,18 @@ the Dynamic Island compact/minimal/expanded regions — and the live HR appearin
 a device (Live Activities need a real Lock Screen / Dynamic Island; the sim build proves the *shape*, not
 the on-device activity). Update-budget behavior under a real workout is also a device check.
 
+**Post-review hardening (2026-06-01, same branch)**: review fixes applied before merge: (1) **HR update
+storm** — the player fired an ActivityKit `update` on every ~1 Hz HR sample (would exhaust the update
+budget and lag the Lock Screen); added a pure, unit-tested `WorkoutLiveSnapshot.shouldPush` throttle —
+structural changes (exercise/set text) push immediately, HR-only changes are rate-limited to ≥2 s — and
+`LiveActivityController.update(_:)` now consults it via stored `lastSnapshot`/`lastPushedAt`; (2) **warm
+resume no longer end+recreates** a Live Activity that's already showing (new `isRunning` guard);
+(3) `startLiveActivity` seeds a real `"Set 1 of N"` so the Lock Screen isn't blank if backgrounded before
+the player appears. The "set-number off-by-one during rest" flag was **refuted** (SwiftUI applies all
+`@State` mutations before `.onChange` fires, so the snapshot reads the settled `phase`). Added 4 throttle
+unit tests (SnappetTests 24→28). Re-verified: app + watch BUILD SUCCEEDED, SnappetTests 28/28,
+HighlightEngine 18/18, WorkoutWalkthroughTests green.
+
 ---
 
 ## [2026-06-01] A1 — watchOS companion + live HR relay implemented (WorkoutTracker gains a live path)

@@ -37,7 +37,23 @@ final class LiveActivityController {
     }
     #endif
 
+    /// Last snapshot pushed + when — drives the `shouldPush` throttle so a ~1 Hz HR stream
+    /// doesn't exceed ActivityKit's update budget.
+    private var lastSnapshot: WorkoutLiveSnapshot?
+    private var lastPushedAt: Date?
+
     init() {}
+
+    /// Whether a Live Activity is currently running (so callers can avoid restarting it —
+    /// e.g. a warm resume shouldn't end+recreate the activity that's already showing).
+    var isRunning: Bool {
+        #if canImport(ActivityKit)
+        if #available(iOS 16.1, *) { return typedActivity != nil }
+        return false
+        #else
+        return false
+        #endif
+    }
 
     /// Whether the platform can run a workout Live Activity *and* the user has them enabled.
     var isAvailable: Bool {
@@ -66,10 +82,16 @@ final class LiveActivityController {
             typedActivity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: state, staleDate: nil))
+            // Seed the throttle with what we just pushed via `request`.
+            lastSnapshot = WorkoutLiveSnapshot(startedAt: startedAt, hrBpm: nil,
+                                               exerciseName: exerciseName, setProgress: setProgress)
+            lastPushedAt = .now
         } catch {
             // Request can throw if the activity budget is exhausted or the entitlement is
             // missing — degrade silently; the in-app overall timer still works.
             typedActivity = nil
+            lastSnapshot = nil
+            lastPushedAt = nil
         }
         #endif
     }
@@ -78,7 +100,13 @@ final class LiveActivityController {
     /// the in-player overall timer reads). No-op if no activity is running. `startedAt` is
     /// preserved from the running activity so the overall timer keeps ticking from the original
     /// start, regardless of the snapshot's own `startedAt`.
-    func update(_ snapshot: WorkoutLiveSnapshot) {
+    func update(_ snapshot: WorkoutLiveSnapshot, now: Date = .now) {
+        // Throttle: structural changes push immediately; HR-only changes are rate-limited so a
+        // ~1 Hz HR stream can't exhaust ActivityKit's update budget (and lag the Lock Screen).
+        guard WorkoutLiveSnapshot.shouldPush(snapshot, after: lastSnapshot,
+                                             lastPushedAt: lastPushedAt, now: now) else { return }
+        lastSnapshot = snapshot
+        lastPushedAt = now
         update(hrBpm: snapshot.hrBpm, exerciseName: snapshot.exerciseName,
                setProgress: snapshot.setProgress)
     }
@@ -106,6 +134,8 @@ final class LiveActivityController {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), let activity = typedActivity else { return }
         self.typedActivity = nil
+        lastSnapshot = nil
+        lastPushedAt = nil
         nonisolated(unsafe) let act = activity
         Task { await act.end(nil, dismissalPolicy: .immediate) }
         #endif

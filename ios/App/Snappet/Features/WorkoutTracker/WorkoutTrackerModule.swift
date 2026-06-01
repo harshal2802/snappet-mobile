@@ -224,10 +224,10 @@ struct WorkoutHomeView: View {
                 app.liveWorkout.start(for: session, sport: nil, category: nil)
                 startLiveActivity(for: session)
             }
-        } else {
-            // Watch is already streaming (warm resume) so we skip restarting live metrics, but
-            // the Live Activity lives on the phone independently — (re)start it so it reflects
-            // the resumed session (e.g. after a cold relaunch). `start` ends any prior activity.
+        } else if !app.liveActivity.isRunning {
+            // Watch is already streaming (warm resume) so we skip restarting live metrics. Only
+            // (re)start the Live Activity if one isn't already showing — otherwise a warm resume
+            // would needlessly end+recreate the activity already on the Lock Screen.
             startLiveActivity(for: session)
         }
         playing = session
@@ -251,8 +251,11 @@ struct WorkoutHomeView: View {
     private func startLiveActivity(for session: WorkoutSession) {
         let first = session.exercises.first { !$0.skipped }
         let name = first.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
+        // Seed a real first-set label so the Lock Screen isn't blank if the app is backgrounded
+        // before the player view appears (e.g. started via a shortcut).
+        let progress = first.map { "Set 1 of \($0.sets.count)" } ?? ""
         app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
-                               exerciseName: name, setProgress: "")
+                               exerciseName: name, setProgress: progress)
     }
 
     private func makeSession(from routine: Routine) -> WorkoutSession {
