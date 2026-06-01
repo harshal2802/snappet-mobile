@@ -71,8 +71,10 @@ final class PomodoroUITests: XCTestCase {
         XCTAssertTrue(focusStepper.waitForExistence(timeout: 6), "Focus stepper should appear")
         focusStepper.buttons.element(boundBy: 1).tap() // increment
 
-        // Capture the new label, dismiss, and relaunch.
-        let labelAfterChange = focusStepper.value as? String
+        // The focus length is shown as a "<n> min" label inside the stepper's row; that text
+        // reflects the persisted @AppStorage value, so capturing it is a meaningful check.
+        let labelAfterChange = focusLengthLabel(in: app)
+        XCTAssertNotNil(labelAfterChange, "Focus length label should be readable after incrementing")
         if app.buttons["Done"].exists { app.buttons["Done"].tap() }
 
         app.terminate()
@@ -83,8 +85,17 @@ final class PomodoroUITests: XCTestCase {
         let reopened = app.steppers["pomodoro.focusStepper"]
         XCTAssertTrue(reopened.waitForExistence(timeout: 6), "Focus stepper should reappear")
         // The persisted @AppStorage value should survive the relaunch.
-        if let before = labelAfterChange, let after = reopened.value as? String {
-            XCTAssertEqual(before, after, "Focus length should persist across relaunch")
-        }
+        let labelAfterRelaunch = focusLengthLabel(in: app)
+        XCTAssertEqual(labelAfterChange, labelAfterRelaunch,
+                       "Focus length should persist across relaunch")
+    }
+
+    /// The "<n> min" label rendered inside the focus stepper's row (the persisted value).
+    private func focusLengthLabel(in app: XCUIApplication) -> String? {
+        let stepper = app.steppers["pomodoro.focusStepper"]
+        let label = stepper.staticTexts.matching(
+            NSPredicate(format: "label ENDSWITH %@", "min")).firstMatch
+        guard label.waitForExistence(timeout: 4) else { return nil }
+        return label.label
     }
 }
