@@ -163,7 +163,7 @@ struct WorkoutPlayerView: View {
             let exercise = resolver.exercise(id: ex.exerciseId)
             ScrollView {
                 VStack(spacing: 20) {
-                    liveMetricsDebugRow
+                    liveMetricsOverlay
                     header(ex)
 
                     VStack(spacing: 4) {
@@ -199,33 +199,38 @@ struct WorkoutPlayerView: View {
         }
     }
 
-    /// Temporary debug readout proving the watch → phone HR relay is live (A1).
-    /// The real overlay (HR zone + the two timers) lands in A4; this is just enough
-    /// to confirm samples arrive end-to-end on a paired device. Shows the connection
-    /// state when no sample has arrived yet so a missing watch is obvious.
-    @ViewBuilder private var liveMetricsDebugRow: some View {
-        let live = app.liveWorkout
-        HStack(spacing: 8) {
-            Image(systemName: "heart.fill").foregroundStyle(.pink)
-            if let hr = live.latestHR {
-                Text("\(Int(hr.rounded())) bpm")
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                Text("· \(live.samples.count) samples")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                Text(liveStatusText).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground), in: Capsule())
+    /// The A4 live-metrics overlay: a polished HR pill (❤️ bpm + zone color/label + source
+    /// name) shown on the exercise and rest screens. Together with `overallTimerHeader` (A2,
+    /// pinned to the top) and the rest countdown (rest screen), this gives the user the live
+    /// HR + overall timer + rest timer at a glance — the user's "overlay fitness data along
+    /// with current and overall workout timer" ask. When there's no HR sample it shows the
+    /// source-aware "no source" status (reusing A1/A3's `liveStatusText`) instead of a fake
+    /// zone, so a missing watch / band is obvious. No business logic here — bpm→zone mapping is
+    /// the pure `HeartRateZone`; the view just renders it. (live-workout-studio A4)
+    @ViewBuilder private var liveMetricsOverlay: some View {
+        let bpm = app.liveWorkout.latestHR
+        LiveHRPill(bpm: bpm.map { Int($0.rounded()) },
+                   zone: HeartRateZone.forBpm(bpm),
+                   sourceName: app.liveWorkout.displayName,
+                   noSourceText: liveStatusText)
+            .accessibilityIdentifier("liveMetricsOverlay")
     }
 
     private var liveStatusText: String {
+        // BLE band path: report the source-agnostic state (no watch concepts apply).
+        if app.liveWorkout.activeKind == .ble {
+            switch app.liveWorkout.state {
+            case .unavailable: return "Turn on Bluetooth to use a heart-rate band"
+            case .idle: return "Pick a heart-rate band in Settings"
+            case .connecting: return "Connecting to \(app.liveWorkout.displayName)…"
+            case .connected, .streaming: return "Waiting for heart rate…"
+            }
+        }
+        // Apple-Watch path keeps its watch-specific wording (A1 behavior, unchanged).
         switch app.liveWorkout.connectionState {
         case .unsupported: return "No watch metrics on this device"
         case .inactive: return "Watch connecting…"
-        case .active: return app.liveWorkout.isWatchReachable
+        case .active: return app.liveWorkout.isReachable
             ? "Watch ready — waiting for HR…" : "Open the workout on your watch"
         case .workoutRunning: return "Waiting for heart rate…"
         }
@@ -298,6 +303,7 @@ struct WorkoutPlayerView: View {
 
     private var restScreen: some View {
         VStack(spacing: 28) {
+            liveMetricsOverlay.padding(.horizontal)
             Spacer()
             Text("Rest").font(.title.bold())
             ZStack {
@@ -555,6 +561,56 @@ struct WorkoutPlayerView: View {
     }
     private func timeString(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// The live heart-rate pill rendered by the player's `liveMetricsOverlay` (A4). A thin,
+/// state-free view: it's handed an already-computed bpm + `HeartRateZone` + source name (the
+/// bpm→zone mapping is the pure, unit-tested `HeartRateZone`), so it contains no business
+/// logic. With a sample it shows ❤️ + bpm tinted by the zone color, the short zone label, and
+/// the source name; with no sample it shows the source-aware "no source" status text.
+private struct LiveHRPill: View {
+    let bpm: Int?
+    let zone: HeartRateZone
+    let sourceName: String
+    /// Source-aware status when there's no live HR (e.g. "Open the workout on your watch").
+    let noSourceText: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "heart.fill")
+                .foregroundStyle(bpm == nil ? Color.secondary : zone.color)
+                .symbolEffect(.pulse, isActive: bpm != nil)
+            if let bpm {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(bpm)")
+                        .font(.title3.weight(.bold).monospacedDigit())
+                        .foregroundStyle(zone.color)
+                    Text("bpm").font(.caption).foregroundStyle(.secondary)
+                }
+                Text(zone.pillLabel)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(zone.color.opacity(0.18), in: Capsule())
+                    .foregroundStyle(zone.color)
+                Spacer(minLength: 4)
+                Text(sourceName)
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text(noSourceText)
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .lineLimit(2).multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.vertical, 10).padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(bpm == nil ? "Heart rate"
+            : "Heart rate \(bpm!) beats per minute, \(zone.label) zone, source \(sourceName)")
+        .accessibilityValue(bpm == nil ? noSourceText : "\(bpm!) bpm")
     }
 }
 

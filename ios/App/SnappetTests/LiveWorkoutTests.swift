@@ -78,7 +78,7 @@ final class LiveWorkoutOffsetTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_000)
         // Watch says 30s; wall-clock arrival is 31s after start → trust watch's 30.
         let received = start.addingTimeInterval(31)
-        let t = LiveWorkoutService.sessionOffset(watchOffset: 30, sessionStart: start, receivedAt: received)
+        let t = AppleWatchMetricsSource.sessionOffset(watchOffset: 30, sessionStart: start, receivedAt: received)
         XCTAssertEqual(t, 30, accuracy: 0.001)
     }
 
@@ -86,24 +86,24 @@ final class LiveWorkoutOffsetTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_000)
         let received = start.addingTimeInterval(10)
         // Watch claims 9999s but only 10s of wall-clock elapsed → use 10.
-        let t = LiveWorkoutService.sessionOffset(watchOffset: 9_999, sessionStart: start, receivedAt: received)
+        let t = AppleWatchMetricsSource.sessionOffset(watchOffset: 9_999, sessionStart: start, receivedAt: received)
         XCTAssertEqual(t, 10, accuracy: 0.001)
     }
 
     func testOffsetClampsNonNegative() {
         let start = Date(timeIntervalSince1970: 1_000)
         let received = start.addingTimeInterval(-5)   // skew: arrived "before" start
-        let t = LiveWorkoutService.sessionOffset(watchOffset: -3, sessionStart: start, receivedAt: received)
+        let t = AppleWatchMetricsSource.sessionOffset(watchOffset: -3, sessionStart: start, receivedAt: received)
         XCTAssertGreaterThanOrEqual(t, 0)
     }
 
     func testOffsetWithoutSessionStartUsesRawWatchOffset() {
-        let t = LiveWorkoutService.sessionOffset(watchOffset: 12, sessionStart: nil, receivedAt: .now)
+        let t = AppleWatchMetricsSource.sessionOffset(watchOffset: 12, sessionStart: nil, receivedAt: .now)
         XCTAssertEqual(t, 12, accuracy: 0.001)
     }
 
     func testIngestBuffersSamplesAgainstSessionStart() {
-        let service = LiveWorkoutService()
+        let service = AppleWatchMetricsSource()
         let start = Date(timeIntervalSince1970: 5_000)
         service.start(activityType: .running, sessionStart: start)
         service.ingest(hrBpm: 120, energyKcal: 8, watchOffset: 5,
@@ -119,7 +119,7 @@ final class LiveWorkoutOffsetTests: XCTestCase {
     }
 
     func testStartResetsBuffer() {
-        let service = LiveWorkoutService()
+        let service = AppleWatchMetricsSource()
         let start = Date()
         service.start(activityType: .running, sessionStart: start)
         service.ingest(hrBpm: 100, energyKcal: 1, watchOffset: 1)

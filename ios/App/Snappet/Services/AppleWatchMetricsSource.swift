@@ -6,51 +6,61 @@ import HighlightEngine
 import WatchConnectivity
 #endif
 
-/// Phone-side host for the live workout relay. Starts the matching
-/// `HKWorkoutActivityType` on the paired Apple Watch (the watch runs the actual
-/// `HKWorkoutSession` + `HKLiveWorkoutBuilder`) and receives streamed heart-rate /
-/// energy samples back over `WCSession`, exposing the latest values to the UI and
-/// buffering them as engine `HRSample`s for later persistence (B2/B4).
+/// Apple-Watch live-metrics source: the phone-side host for the watch relay. Starts the
+/// matching `HKWorkoutActivityType` on the paired Apple Watch (the watch runs the actual
+/// `HKWorkoutSession` + `HKLiveWorkoutBuilder`) and receives streamed heart-rate / energy
+/// samples back over `WCSession`, exposing the latest values to the UI and buffering them
+/// as engine `HRSample`s for later persistence (B2/B4).
 ///
-/// **Pluggability (A3):** the public surface — `connectionState`, `latestHR`,
-/// `energy`, `isWatchReachable`, `start(for:)`, `stop()` and the `HRSample` buffer —
-/// is shaped to become a `MetricsSource` protocol with a `BLEHeartRateSource`
-/// conformer **without changing call sites**, mirroring how `HighlightSelector` is a
-/// protocol with swappable implementations (decisions.md 2026-05-30). The phone never
-/// touches a live `HKWorkoutSession` itself — that lives on the watch — so this stays
-/// a thin connectivity host, not a second HealthKit path next to `HealthKitService`.
+/// This is the A1 `LiveWorkoutService` logic, conformed to the `MetricsSource` protocol
+/// with **identical behavior** (decisions.md 2026-06-01, A3): the watch-specific
+/// `isWatchReachable` was renamed to the protocol's `isReachable`, and the existing
+/// `connectionState` is mapped onto the source-agnostic `state`. The phone never touches a
+/// live `HKWorkoutSession` itself — that lives on the watch — so this stays a thin
+/// connectivity host, not a second HealthKit path next to `HealthKitService`.
 ///
 /// **Verification honesty:** the relay only truly runs on a paired physical Apple
 /// Watch + iPhone; a simulator/type-check proves the shape, not the live stream
 /// (RESEARCH.md §3.1, the PLAN's "after A1" device gate).
 @MainActor
 @Observable
-final class LiveWorkoutService: NSObject {
+final class AppleWatchMetricsSource: NSObject, MetricsSource {
 
-    /// Connection lifecycle, exposed so the UI can show a graceful "no source" state
-    /// (A4) without the view knowing about `WCSession`.
+    /// Watch-specific connection lifecycle. Kept internal (and mapped onto the
+    /// source-agnostic `MetricsSourceState` for the protocol) so the coordinator's
+    /// default-selection logic can still ask whether a workout is running on the watch.
     enum ConnectionState: Equatable, Sendable {
         /// `WCSession` unsupported on this device (e.g. iPad / no paired watch capability).
         case unsupported
         /// Supported, not yet activated.
         case inactive
-        /// Activated; `isWatchReachable` reports live reachability.
+        /// Activated; `isReachable` reports live reachability.
         case active
         /// A live workout is running on the watch.
         case workoutRunning
     }
 
     private(set) var connectionState: ConnectionState = .inactive
-    /// Latest heart rate relayed from the watch (bpm), or `nil` before the first sample.
     private(set) var latestHR: Double?
-    /// Latest cumulative active energy relayed from the watch (kcal).
     private(set) var energy: Double = 0
     /// Whether the watch app is currently reachable for an immediate `sendMessage`.
-    private(set) var isWatchReachable = false
+    /// (A1's `isWatchReachable`, renamed to the `MetricsSource` surface.)
+    private(set) var isReachable = false
 
-    /// Buffered HR series for the active session, `t` relative to its `startedAt`.
-    /// Kept here (not persisted yet) so B2 can flush it to a per-session HR series.
     private(set) var samples: [HRSample] = []
+
+    let displayName = "Apple Watch"
+
+    /// Map the watch-specific `connectionState` (+ whether a sample has arrived) onto the
+    /// source-agnostic `MetricsSourceState` the protocol exposes.
+    var state: MetricsSourceState {
+        switch connectionState {
+        case .unsupported: return .unavailable
+        case .inactive: return .idle
+        case .active: return isReachable ? .connecting : .idle
+        case .workoutRunning: return latestHR != nil ? .streaming : .connected
+        }
+    }
 
     /// The wall-clock start of the session we're buffering against. Incoming watch
     /// samples carry `t` relative to the *watch* session start; we re-base them onto
@@ -81,9 +91,6 @@ final class LiveWorkoutService: NSObject {
 
     // MARK: - Start / stop
 
-    /// Start a live workout for a session: map its routine sport/category to an
-    /// `HKWorkoutActivityType`, tell the watch to begin, and reset the HR buffer
-    /// onto this session's `startedAt` timeline.
     func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
         let type = WorkoutActivityMapping.activityType(sport: sport, category: category)
         start(activityType: type, sessionStart: session.startedAt)
@@ -101,14 +108,13 @@ final class LiveWorkoutService: NSObject {
         if watchUsable { connectionState = .workoutRunning }
     }
 
-    /// End the live workout on the watch. The buffered `samples` are retained for B2.
     func stop() {
         send(.stop)
         sessionStart = nil
         if connectionState == .workoutRunning { connectionState = .active }
     }
 
-    // MARK: - Sample ingestion (also the A3 / test seam)
+    // MARK: - Sample ingestion (also the test seam)
 
     /// Ingest one relayed metrics message. Pure given `sessionStart`, so it is
     /// unit-testable without a device: it computes the HR sample's offset on the
@@ -142,8 +148,9 @@ final class LiveWorkoutService: NSObject {
 
     /// Whether a paired watch with our companion app installed is available. Used to
     /// avoid promoting to `.workoutRunning` (and stranding the UI at "Waiting for heart
-    /// rate…") when there is no watch that can actually start a session.
-    private var watchUsable: Bool {
+    /// rate…") when there is no watch that can actually start a session. The coordinator
+    /// reads this for its default source selection (prefer the watch when usable).
+    var watchUsable: Bool {
         #if canImport(WatchConnectivity)
         guard let session, session.activationState == .activated else { return false }
         return session.isPaired && session.isWatchAppInstalled
@@ -177,7 +184,7 @@ final class LiveWorkoutService: NSObject {
 }
 
 #if canImport(WatchConnectivity)
-extension LiveWorkoutService: WCSessionDelegate {
+extension AppleWatchMetricsSource: WCSessionDelegate {
     nonisolated func session(_ session: WCSession,
                              activationDidCompleteWith state: WCSessionActivationState,
                              error: Error?) {
@@ -186,13 +193,13 @@ extension LiveWorkoutService: WCSessionDelegate {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.connectionState = activated ? .active : .inactive
-            self.isWatchReachable = reachable
+            self.isReachable = reachable
         }
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let reachable = session.isReachable
-        Task { @MainActor [weak self] in self?.isWatchReachable = reachable }
+        Task { @MainActor [weak self] in self?.isReachable = reachable }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {

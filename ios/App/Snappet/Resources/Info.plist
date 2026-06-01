@@ -24,6 +24,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Snappet connects to your Bluetooth heart-rate band (chest straps, Polar, Garmin, and similar) to show live heart rate during a workout. Everything stays on your device.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Snappet reads your workout heart rate to find your most intense moments and build a highlight reel.</string>
 	<key>NSHealthUpdateUsageDescription</key>

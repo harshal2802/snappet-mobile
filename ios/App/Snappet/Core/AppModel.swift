@@ -21,11 +21,13 @@ final class AppModel {
     let photos = PhotoLibraryService()
     let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
 
-    /// Live workout metrics relay (Apple Watch companion → phone over WCSession).
-    /// The single meeting point for WorkoutTracker's *live* HR path; shaped so A3 can
-    /// swap in a BLE source behind a `MetricsSource` protocol without changing call
-    /// sites. Distinct from `health`, which is the post-hoc (completed-workout) path.
-    let liveWorkout = LiveWorkoutService()
+    /// Live workout metrics for WorkoutTracker, behind a pluggable `MetricsSource` (A3).
+    /// The coordinator holds an Apple-Watch source (A1, `WCSession`) **and** a generic BLE
+    /// heart-rate-band source (`0x180D`/`0x2A37`, CoreBluetooth) and forwards the active
+    /// one — HR can come from either, picked in `WorkoutSettingsView`. The property keeps
+    /// its A1 name so A2/A4 call sites don't churn. Distinct from `health`, which is the
+    /// post-hoc (completed-workout) path.
+    let liveWorkout = LiveMetricsCoordinator()
 
     /// Drives the WorkoutTracker **Live Activity** (Lock Screen + Dynamic Island): overall
     /// timer + live HR + current exercise. Started/ended alongside `liveWorkout` from the
