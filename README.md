@@ -29,6 +29,32 @@ the iOS 26 simulator.
 |---|---|---|
 | ![Tip](docs/screenshots/07-tip.png) | ![Expenses](docs/screenshots/08-expenses.png) | ![Budget](docs/screenshots/09-budget.png) |
 
+**Live Workout Capture + Video Studio** — the WorkoutTracker turned into a live, instrumented, media-rich
+workout: a live player (overall timer + live-HR overlay), an enriched HR summary (chart + time-in-zone)
+and a heart-rate source picker (Apple Watch / BLE band).
+
+| Workout dashboard | Routines | Routine detail |
+|---|---|---|
+| ![Workout dashboard](docs/screenshots/workout-dashboard.png) | ![Routines](docs/screenshots/workout-routines.png) | ![Routine detail](docs/screenshots/routine-detail.png) |
+
+| Live player (timer + HR overlay) | History | HR summary (chart + zones) |
+|---|---|---|
+| ![Live player](docs/screenshots/live-player.png) | ![History](docs/screenshots/workout-history.png) | ![HR summary](docs/screenshots/workout-summary.png) |
+
+| Workout settings | HR source picker | |
+|---|---|---|
+| ![Workout settings](docs/screenshots/workout-settings.png) | ![HR source picker](docs/screenshots/hr-source-picker.png) | |
+
+### ▶ Walkthrough video
+
+A guided walkthrough of the **Live Workout Capture + Video Studio** initiative (A1–B5), in story order —
+suite home → routines → the live player → the enriched HR summary → media + highlight → the HR source picker.
+
+<video src="https://github.com/harshal2802/snappet-mobile/raw/main/docs/live-workout-studio-walkthrough.mp4" controls width="320"></video>
+
+If the embedded player doesn't load,
+[download / open the walkthrough video](docs/live-workout-studio-walkthrough.mp4) directly.
+
 ### 🗺️ Interactive app map
 
 Explore the whole app as a **searchable, interactive knowledge graph** — every screen, sheet,

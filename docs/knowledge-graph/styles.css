@@ -104,6 +104,7 @@ html, body {
   border-radius: 9px; padding: 8px 11px; font-size: 12px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
   font-family: var(--font); transition: background .12s, border-color .12s;
+  text-decoration: none;
 }
 .btn:hover { background: var(--border); }
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -191,6 +192,14 @@ html, body {
 .detail .head h2 { font-size: 18px; font-weight: 700; line-height: 1.25; }
 .detail .head .close { position: absolute; top: 12px; right: 12px; background: none; border: none; color: var(--text-faint); font-size: 20px; cursor: pointer; line-height: 1; }
 .detail .body { padding: 16px; }
+.detail .shot, .detail .shot-video {
+  display: block; width: 100%; max-height: 420px;
+  object-fit: contain; object-position: top;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); margin-bottom: 16px;
+}
+.detail .shot-video { max-height: 480px; }
 .detail .desc { font-size: 13.5px; line-height: 1.55; color: var(--text-dim); margin-bottom: 16px; }
 .detail .kv { display: flex; gap: 8px; font-size: 12.5px; margin-bottom: 9px; }
 .detail .kv .k { color: var(--text-faint); min-width: 64px; flex-shrink: 0; }
