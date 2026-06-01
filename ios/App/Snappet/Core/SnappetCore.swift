@@ -42,6 +42,7 @@ enum SnappetSchema {
         ExpenseGroup.self, ExpenseRecord.self,
         BudgetCategory.self, BudgetTransaction.self,
         Routine.self, WorkoutSession.self, CustomExercise.self,
+        TipCalculation.self,
     ]
 }
 

@@ -335,3 +335,20 @@ no second store, no parallel ledger. **Rules out**: a separate `Settlement` @Mod
 greedy algorithm (kept as-is). Dropping a participant who appears on a record warns before saving but
 is allowed (past entries keep their names). **Verified**: `xcodebuild build-for-testing` TEST BUILD
 SUCCEEDED (iPhone 17 Pro sim, 0 warnings); `ExpenseUITests` compiles. Live run deferred to the merge pass.
+
+## 2026-05-31 — Tip gains persistence (first `@Model`) + editable presets & round-up
+
+**Decision**: Tip — previously `@AppStorage`-only — gets its first persisted model,
+`TipCalculation` (`bill`, `tipPct`, `people`, `tipAmount`, `total`, `date`) in
+`Features/Tip/TipModels.swift`, registered as one appended line in `SnappetSchema.models`. Each
+committed calculation (bill-field commit) both logs a `UsageRecord` (unchanged) and inserts a
+`TipCalculation`; `TipHistoryView` lists them newest-first with swipe-delete + clear-all, pushed onto
+the shared `SuiteRouter` path (no nested `NavigationStack`). The four preset percentages move from a
+hard-coded array to four `@AppStorage` keys (`tip.preset.0…3`), edited via a sheet of steppers. A
+`tip.roundUp` toggle rounds the grand total up to the nearest whole currency unit and back-computes
+the effective tip so the per-person split stays consistent. **Why**: Tip was the only mini-app
+without history; storing a flat snapshot per calc matches the suite's other flat `@Model`s and keeps
+per-app `#Predicate` queries trivial. Four discrete `@AppStorage` keys avoid comma-decoding and bind
+each stepper directly. **Rules out**: comma-encoded preset string; SwiftData relationships;
+recomputing per-person from raw (pre-round-up) total. **Verified**: `xcodebuild build-for-testing`
+TEST BUILD SUCCEEDED (iPhone 17 Pro sim); `TipUITests` compiles (history + preset-edit flow).
