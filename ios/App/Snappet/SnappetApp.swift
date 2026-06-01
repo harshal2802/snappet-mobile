@@ -14,7 +14,14 @@ struct SnappetApp: App {
         // each run is deterministic (the on-disk store persists between launches on the sim,
         // which would otherwise pollute data-creating tests). Only affects SwiftData;
         // `@AppStorage` (UserDefaults) is untouched.
-        let freshStore = ProcessInfo.processInfo.arguments.contains("-uiTestFreshStore")
+        //
+        // `-uiTestSeedStudioDemo` is a sibling test-only arg (Live Workout Studio walkthrough):
+        // it IMPLIES a fresh in-memory store for determinism, and then seeds a completed
+        // WorkoutSession with a synthetic HR series so the B2 enriched summary renders on the
+        // simulator. Both args are test-only; a normal/production launch hits neither branch.
+        let args = ProcessInfo.processInfo.arguments
+        let seedStudioDemo = args.contains(StudioDemoSeed.argument)
+        let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo
         if freshStore {
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -23,6 +30,11 @@ struct SnappetApp: App {
         } else {
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        }
+        // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production
+        // impact. Seeds into the fresh in-memory store before any UI appears.
+        if seedStudioDemo {
+            StudioDemoSeed.seedIfRequested(into: container.mainContext)
         }
     }
 
