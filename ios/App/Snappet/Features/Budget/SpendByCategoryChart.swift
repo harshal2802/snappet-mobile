@@ -14,18 +14,26 @@ struct SpendByCategoryChart: View {
     /// Label for the centred caption, e.g. "May 2026".
     var periodLabel: String = "this month"
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the donut's sweep-in animation on appear / value change (issue #30 §5.8).
+    @State private var drawn = false
+
     private var total: Double { slices.reduce(0) { $0 + $1.amount } }
 
     var body: some View {
         Chart(slices) { slice in
             SectorMark(
-                angle: .value("Spent", slice.amount),
+                angle: .value("Spent", drawn || reduceMotion ? slice.amount : 0),
                 innerRadius: .ratio(0.6),
                 angularInset: 1.5
             )
             .cornerRadius(4)
             .foregroundStyle(by: .value("Category", slice.name))
         }
+        .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
+        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: total)
+        .onAppear { drawn = true }
+        .onDisappear { drawn = false }
         .chartLegend(position: .bottom, alignment: .center, spacing: 8)
         .chartBackground { proxy in
             GeometryReader { geo in

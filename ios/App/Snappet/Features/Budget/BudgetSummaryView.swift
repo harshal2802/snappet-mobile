@@ -8,31 +8,39 @@ struct BudgetSummaryView: View {
     let remaining: Double
 
     var body: some View {
-        HStack(spacing: 12) {
-            tile(value: totalLimit.asCurrency, label: "Budget", tint: .blue)
+        HStack(spacing: SnappetSpacing.md) {
+            tile(value: totalLimit.asCurrency, label: "Budget",
+                 systemImage: "banknote.fill", tint: SnappetColor.budget)
                 .accessibilityIdentifier("budget.total")
-            tile(value: totalSpent.asCurrency, label: "Spent", tint: .purple)
+            tile(value: totalSpent.asCurrency, label: "Spent",
+                 systemImage: "cart.fill", tint: SnappetColor.journal)
                 .accessibilityIdentifier("budget.spent")
             tile(value: remaining.asCurrency, label: "Remaining",
-                 tint: remaining < 0 ? .red : .green)
+                 systemImage: remaining < 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                 tint: remaining < 0 ? SnappetColor.pomodoro : SnappetColor.habits)
                 .accessibilityIdentifier("budget.remaining")
         }
         .padding(.horizontal)
     }
 
-    private func tile(value: String, label: String, tint: Color) -> some View {
-        VStack(spacing: 4) {
+    private func tile(value: String, label: String, systemImage: String, tint: Color) -> some View {
+        VStack(spacing: SnappetSpacing.xs) {
+            // Icon is a non-colour signal in addition to the tint (issue #30 accessibility).
+            Image(systemName: systemImage).font(.caption).foregroundStyle(tint)
             Text(value)
                 .font(.headline.bold())
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+                .monospacedDigit()
+                .contentTransition(.numericText())
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .snappetTile()
+        // Balances move toward their new value rather than snapping (issue #30 §5.8).
+        .animation(.snappy, value: value)
     }
 }
