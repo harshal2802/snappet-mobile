@@ -10,6 +10,7 @@ import AVKit
 struct SessionHighlightView: View {
     @State var viewModel: SessionHighlightViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showShare = false
 
     private var videoClips: [SessionHighlightInput.Clip] { viewModel.clips.filter(\.isVideo) }
@@ -41,11 +42,15 @@ struct SessionHighlightView: View {
 
                 Section {
                     preview
+                        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                                   value: viewModel.state)
                 }
 
                 if viewModel.canExport || viewModel.exportState != .idle {
                     Section {
                         exportShare
+                            .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                                       value: viewModel.exportState)
                     } footer: {
                         Text("Share your reel anywhere, or save it to your Photos library. Everything stays on your device.")
                     }
@@ -81,8 +86,11 @@ struct SessionHighlightView: View {
             if let player = viewModel.previewPlayer {
                 VideoPlayer(player: player)
                     .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
                     .accessibilityIdentifier("highlightPreview")
+                    // The freshly generated reel fades/scales in (gated by Reduce Motion).
+                    .transition(reduceMotion ? .opacity
+                                : .scale(scale: 0.96).combined(with: .opacity))
             }
         case .empty:
             ContentUnavailableView("No highlights found", systemImage: "video.slash",
@@ -115,7 +123,9 @@ struct SessionHighlightView: View {
         case .exported(let url), .saving(let url), .saved(let url):
             if case .saved = viewModel.exportState {
                 Label("Saved to Photos", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(SnappetColor.habits)
+                    // Success label pops in once saved; degrades to a fade under Reduce Motion.
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
             Button {
                 showShare = true

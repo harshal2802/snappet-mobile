@@ -55,7 +55,7 @@ struct RoutineDetailView: View {
                     .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.orange)
+            .tint(SnappetColor.workout)
             .padding()
             .background(.bar)
             .disabled(routine.exercises.isEmpty)

@@ -14,7 +14,7 @@ struct OnboardingView: View {
             VStack(spacing: 12) {
                 Image(systemName: "heart.text.square.fill")
                     .font(.system(size: 56))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(SnappetColor.brand)
                 Text("Snappet")
                     .font(.largeTitle.bold())
                 Text("Turn your workouts into highlight reels — automatically.")
@@ -24,13 +24,13 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 18) {
-                ValuePoint(icon: "applewatch", tint: .blue,
+                ValuePoint(icon: "applewatch", tint: SnappetColor.workout,
                            title: "Reads your workout heart rate",
                            detail: "Snappet finds your most intense moments from your Apple Watch workouts.")
-                ValuePoint(icon: "photo.on.rectangle.angled", tint: .green,
+                ValuePoint(icon: "photo.on.rectangle.angled", tint: SnappetColor.habits,
                            title: "Finds the clips you already shot",
                            detail: "It matches the photos and videos you filmed during the workout — no manual picking.")
-                ValuePoint(icon: "wand.and.stars", tint: .orange,
+                ValuePoint(icon: "wand.and.stars", tint: SnappetColor.reels,
                            title: "Builds a reel ranked by intensity",
                            detail: "A finished reel in one tap. Pin, reorder, or regenerate if you want to tweak it.")
             }

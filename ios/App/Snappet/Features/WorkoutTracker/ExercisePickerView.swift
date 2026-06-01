@@ -8,6 +8,7 @@ struct ExercisePickerView: View {
     let onAdd: ([Exercise]) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var filters = ExerciseFilters()
     @State private var showingFilters = false
@@ -40,7 +41,7 @@ struct ExercisePickerView: View {
                             HStack {
                                 ExerciseRow(exercise: ex)
                                 Image(systemName: selectedSet.contains(ex.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selectedSet.contains(ex.id) ? .orange : .secondary)
+                                    .foregroundStyle(selectedSet.contains(ex.id) ? SnappetColor.workout : Color.secondary)
                             }
                         }
                         .buttonStyle(.plain)
@@ -50,6 +51,8 @@ struct ExercisePickerView: View {
                 }
             }
             .listStyle(.plain)
+            // The "Selected" section grows/shrinks as picks toggle — gentle list animation, gated.
+            .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: selected)
             .searchable(text: $query, prompt: "Search exercises or muscles")
             .navigationTitle("Add Exercises")
             .navigationBarTitleDisplayMode(.inline)
@@ -127,7 +130,7 @@ private struct ExercisePickerFilters: View {
                     HStack {
                         Text(item[keyPath: label]).foregroundStyle(.primary)
                         Spacer()
-                        if isOn(item) { Image(systemName: "checkmark").foregroundStyle(.orange) }
+                        if isOn(item) { Image(systemName: "checkmark").foregroundStyle(SnappetColor.workout) }
                     }
                 }
             }

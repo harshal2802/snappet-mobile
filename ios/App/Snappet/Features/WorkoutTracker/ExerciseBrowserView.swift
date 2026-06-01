@@ -67,7 +67,7 @@ struct ExerciseRow: View {
         HStack(spacing: 12) {
             Image(systemName: exercise.category.symbol)
                 .font(.title3)
-                .foregroundStyle(.orange)
+                .foregroundStyle(SnappetColor.workout)
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(exercise.name).font(.headline).lineLimit(1)
@@ -78,8 +78,8 @@ struct ExerciseRow: View {
                 Text("Custom")
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(.orange.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.orange)
+                    .background(SnappetColor.workout.opacity(0.15), in: Capsule())
+                    .foregroundStyle(SnappetColor.workout)
             }
         }
         .padding(.vertical, 2)
@@ -156,11 +156,12 @@ private struct FlowChips<T: Identifiable & Hashable>: View {
                         .font(.subheadline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
-                        .background(on ? Color.orange.opacity(0.2) : Color(.secondarySystemFill),
+                        .background(on ? SnappetColor.workout.opacity(0.2) : Color(.secondarySystemFill),
                                     in: Capsule())
-                        .foregroundStyle(on ? .orange : .primary)
+                        .foregroundStyle(on ? SnappetColor.workout : Color.primary)
                 }
                 .buttonStyle(.plain)
+                .snappetAnimation(SnappetMotion.quick, value: on)
             }
         }
         .padding(.vertical, 4)

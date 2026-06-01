@@ -85,7 +85,7 @@ struct HeartRateSourcePicker: View {
             coordinator.ble.connect(device)
         } label: {
             HStack {
-                Image(systemName: "heart.fill").foregroundStyle(.pink)
+                Image(systemName: "heart.fill").foregroundStyle(SnappetColor.brand)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.name).font(.headline)
                     if coordinator.ble.connectedName == device.name {
