@@ -25,6 +25,11 @@ targets:
       # Embed the watchOS companion so the watch app installs with the phone app.
       - target: SnappetWatch
         embed: true
+      # Embed the Widget Extension so the WorkoutTracker Live Activity (overall timer +
+      # live HR + current exercise on the Lock Screen / Dynamic Island) ships with the app
+      # (live-workout-studio A2).
+      - target: SnappetWidgets
+        embed: true
     settings:
       base:
         INFOPLIST_FILE: Snappet/Resources/Info.plist
@@ -72,6 +77,30 @@ targets:
       properties:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.background-delivery: true
+  # Widget Extension: renders the WorkoutTracker Live Activity (overall timer + live HR +
+  # current exercise) on the Lock Screen + Dynamic Island. The app target drives it via
+  # LiveActivityController; this extension only renders the shared WorkoutActivityAttributes
+  # (compiled into both via the Shared/ path — one source of truth, like LiveWorkoutMessage).
+  # iOS 18 deployment target; embedded in the phone app above.
+  SnappetWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: SnappetWidgets
+      - path: Shared
+    settings:
+      base:
+        INFOPLIST_FILE: SnappetWidgets/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app.widgets
+        DEVELOPMENT_TEAM: P6U6C88W9J
+        INFOPLIST_KEY_CFBundleDisplayName: Snappet
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
   # App unit tests for the PURE pieces (no device): WorkoutActivityMapping +
   # the LiveWorkoutService HR-buffer offset math. Distinct from HighlightEngineTests,
   # which must stay platform-free.
@@ -108,6 +137,7 @@ schemes:
       targets:
         Snappet: all
         SnappetWatch: all
+        SnappetWidgets: all
         SnappetTests: [test]
         SnappetUITests: [test]
     run:
