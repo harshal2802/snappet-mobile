@@ -22,6 +22,7 @@ targets:
       base:
         INFOPLIST_FILE: Snappet/Resources/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app
+        DEVELOPMENT_TEAM: P6U6C88W9J
         # App icon comes from Resources/Assets.xcassets/AppIcon.appiconset
         # (Snappet/ is already a source path, so the catalog + PrivacyInfo.xcprivacy
         # are compiled/bundled automatically — only the icon name needs declaring).

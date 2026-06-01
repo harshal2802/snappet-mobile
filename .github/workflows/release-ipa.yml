@@ -21,7 +21,7 @@ jobs:
   build:
     runs-on: macos-15        # Sequoia runner ships Xcode 16 / the iOS 18 SDK
     env:
-      TEAM_ID: 8TRC99V9PN
+      TEAM_ID: P6U6C88W9J
       BUNDLE_ID: com.snappet.app
       SCHEME: Snappet
     steps:

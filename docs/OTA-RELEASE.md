@@ -5,7 +5,7 @@ CI builds an ad-hoc-signed `.ipa` on every published release and attaches it plu
 `manifest.plist`; testers install from `docs/install.html` (served by GitHub Pages).
 
 > **Hard limits of ad-hoc** (Apple's rules, not ours):
-> - Requires a **paid Apple Developer account** ($99/yr). Your project already targets team `8TRC99V9PN`.
+> - Requires a **paid Apple Developer account** ($99/yr). Your project targets team `P6U6C88W9J`.
 > - Installs **only on devices whose UDID is registered** in the provisioning profile (max **100
 >   iPhones/year** per account). Every new tester ⇒ add their UDID, regenerate the profile, update
 >   the secret, re-run the build.
