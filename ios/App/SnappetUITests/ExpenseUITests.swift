@@ -54,14 +54,20 @@ final class ExpenseUITests: XCTestCase {
         app.buttons["expense.group.save"].tap()
         snap("02-group-created")
 
-        // Open the group.
+        // Open the group. A row tap that lands while the create-group sheet is still dismissing
+        // can be swallowed, so retry until the group detail (its actions menu) appears.
         let groupRow = app.buttons.matching(identifier: "expenseGroupRow").firstMatch
         XCTAssertTrue(groupRow.waitForExistence(timeout: 6), "the created group row should appear")
-        groupRow.tap()
+        let groupActions = app.buttons["expense.groupActions"]
+        var openTries = 0
+        while !groupActions.exists && openTries < 5 {
+            groupRow.tap()
+            _ = groupActions.waitForExistence(timeout: 2)
+            openTries += 1
+        }
         snap("03-group-detail")
 
         // Add an expense: Alice paid 100, split between both → Bob owes Alice 50.
-        let groupActions = app.buttons["expense.groupActions"]
         XCTAssertTrue(groupActions.waitForExistence(timeout: 6), "group actions menu should exist")
         groupActions.tap()
         app.buttons["expense.newExpense"].tap()

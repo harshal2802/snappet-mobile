@@ -39,23 +39,32 @@ struct ExpenseRootView: View {
         }
     }
 
+    // A ScrollView + VStack of Buttons (not a List) — the suite's proven XCUITest-tappable
+    // navigation pattern (matches AppLibraryView). A Button inside a `List` row does not reliably
+    // fire its action under XCUITest in this app (see decisions.md). Delete moves to a context menu.
     private var groupList: some View {
-        List {
-            ForEach(groups) { group in
-                Button { router.push(group) } label: {
-                    GroupRow(group: group)
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(groups) { group in
+                    Button { router.push(group) } label: {
+                        GroupRow(group: group)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("expenseGroupRow")
+                    .contextMenu {
+                        Button("Delete", role: .destructive) { delete(group) }
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("expenseGroupRow")
             }
-            .onDelete(perform: deleteGroups)
+            .padding()
         }
     }
 
-    private func deleteGroups(at offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(groups[index])
-        }
+    private func delete(_ group: ExpenseGroup) {
+        modelContext.delete(group)
         try? modelContext.save()
     }
 }
