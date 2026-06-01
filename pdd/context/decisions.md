@@ -4,6 +4,56 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] B1 — session media tagging (photos/videos shot during a workout) (WorkoutTracker)
+
+**Decision**: Implemented prompt B1 (`pdd/prompts/features/live-workout-studio/B1-session-media-tagging.md`,
+branch `feat/live-workout-session-media`). A WorkoutTracker session can now collect the photos/videos taken
+during it — auto-discovered by capture-time window and/or added by hand — stored as session-scoped tags and
+shown in `SessionDetailView`. This is the video-studio data foundation B2/B3/B4 consume (RESEARCH.md §3.4,
+verdict GO).
+
+**Concrete, non-obvious choices made:**
+- **`SessionMedia` shape + FK-not-relationship** (`Features/WorkoutTracker/SessionMedia.swift`): `id`,
+  `sessionID: UUID` (a `WorkoutSession.id` **foreign key**, NOT a SwiftData `@Relationship`),
+  `localIdentifier` (PHAsset id), `kindRaw` (photo/video as a string), `offsetSec` (capture time relative to
+  `startedAt`, **clamped ≥ 0** in `init`), `durationSec: Double?` (videos), `addedManually: Bool`,
+  `createdAt`. The FK-not-relationship choice matches the rest of WorkoutTracker (`Routine`/`WorkoutSession`
+  key on `UUID`) so the gallery loads with a clean per-session `#Predicate<SessionMedia> { $0.sessionID ==
+  sid }` — the suite's per-parent query convention. The asset **bytes never enter the store**: a row holds
+  only the `localIdentifier` + offset; Photos keeps the media (on-device only).
+- **One central edit**: appended `SessionMedia.self` to the single `SnappetSchema.models` line in
+  `Core/SnappetCore.swift` (additive, no migration).
+- **±90 s pad reused from `PhotoLibraryService`**: `SessionMediaService.padSec = 90`, the same grace padding
+  the flagship Reels app uses for clock skew/drift between the recording device and the workout clock. (The
+  TZ-normalization caveat flagged in `project.md` for the post-hoc path applies equally here — unconfirmed
+  until measured on a device.)
+- **Pure mapping isolated for testability**: `SessionMediaService` exposes static `window`/`isInWindow`/
+  `offset`/`candidates(from:)` that take plain tuples — **no PhotoKit type crosses that boundary** — so the
+  in-window predicate (incl. ±pad boundaries, inclusive), the clamped `creationDate → offset` math, and
+  dedupe-by-`localIdentifier` are unit-tested in `SnappetTests/SessionMediaMappingTests.swift` (8 cases)
+  with no device. (Mirrors keeping `HighlightEngine` platform-free; this lives in the app since it wraps
+  PhotoKit, but its logic is device-free — grep-confirmed no platform import added to the engine.)
+- **Auto-discovery trigger point**: `SessionDetailView`'s gallery section fires auto-discovery **once on
+  first appear, silently** (only if full access is already granted — value-first, never prompts on appear),
+  **plus** an explicit "Find media from this workout" button that *does* request access value-first. Manual
+  add is the "Add photos/videos" PHPicker button (`addedManually = true`); remove is a long-press context
+  menu. Re-running discovery is safe (deduped by `localIdentifier`).
+- **`.limited`-access handling**: a `.limited` grant can't scan the library by time window, so
+  `discover(...)` throws `.denied` unless **fully** `.authorized`; the UI routes `.limited` to the PHPicker
+  (the suite-wide limited-access fallback). Manual picks bypass the window filter (the user chose them) but
+  are still offset-aligned + deduped.
+- **Thumbnails**: `PHImageManager` with `deliveryMode = .highQualityFormat` (a single final callback, so the
+  `withCheckedContinuation` bridge resumes exactly once) and `isNetworkAccessAllowed = false` (on-device
+  only). Missing assets (e.g. on the simulator) render a placeholder.
+
+**Device-pending (NOT verified by this build/tests)**: live PHAsset auto-discovery surfacing real clips,
+the `.limited`/`.authorized` permission prompts, and rendered thumbnails — the simulator has no Photos
+library. Verified here: the `@Model` + service + UI + the pure mapping (app + watch sim build, 8 new
+mapping tests + the 56 existing `SnappetTests`, `WorkoutWalkthroughTests`, `HighlightEngine` 18/18). A clean
+build is **not** verified Photos discovery. Open gate (PLAN.md): on a device, does discovery surface clips
+*during* an active session or only after the Camera app finalizes them? If real-time tagging fails →
+in-app `AVCaptureSession` capture (B1b).
+
 ## [2026-06-01] A4 — live-metrics overlay UI (HR zone + overall timer + rest timer) (WorkoutTracker)
 
 **Decision**: Implemented prompt A4 (`pdd/prompts/features/live-workout-studio/A4-live-overlay-ui.md`,
