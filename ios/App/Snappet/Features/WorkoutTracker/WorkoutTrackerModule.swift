@@ -132,7 +132,8 @@ struct WorkoutHomeView: View {
                                                  set: { if !$0 { startConflict = nil } }),
                             titleVisibility: .visible) {
             Button("Resume current workout") {
-                playing = activeSession; startConflict = nil
+                if let s = activeSession { resume(s) }
+                startConflict = nil
             }
             Button("Discard it & start new", role: .destructive) {
                 if let conflict = startConflict { replaceActiveAndStart(with: conflict) }
@@ -148,7 +149,7 @@ struct WorkoutHomeView: View {
         case .dashboard:
             WorkoutDashboardSection(history: history, routines: routines, resolver: resolver,
                                     unit: unit, activeSession: activeSession,
-                                    resume: { playing = activeSession },
+                                    resume: { if let s = activeSession { resume(s) } },
                                     goToRoutines: { section = .routines },
                                     goToBrowse: { section = .browse },
                                     openRoutine: { router.push($0) },
@@ -187,7 +188,7 @@ struct WorkoutHomeView: View {
 
     private func startWorkout(from routine: Routine) {
         if let active = activeSession {
-            if active.routineID == routine.id { playing = active }
+            if active.routineID == routine.id { resume(active) }
             else { startConflict = routine }
             return
         }
@@ -199,11 +200,30 @@ struct WorkoutHomeView: View {
     }
 
     private func replaceActiveAndStart(with routine: Routine) {
+        // Stop the watch session for the workout being discarded *before* starting the
+        // new one — otherwise the watch's `!isRunning` guard drops the new start and it
+        // keeps recording the old activity (and HR rebases onto the wrong session).
+        app.liveWorkout.stop()
         if let active = activeSession { context.delete(active) }
         let session = makeSession(from: routine)
         context.insert(session)
         try? context.save()
         startLiveMetrics(for: session, routine: routine)
+        playing = session
+    }
+
+    /// Resume an already-active session (dashboard banner / "Resume current workout" /
+    /// re-tapping the same routine). After a cold relaunch the watch isn't recording, so
+    /// (re)start live metrics — guarded so a warm resume (watch already running) doesn't
+    /// double-start. Falls back to a default type if the routine was since deleted.
+    private func resume(_ session: WorkoutSession) {
+        if app.liveWorkout.connectionState != .workoutRunning {
+            if let routine = routines.first(where: { $0.id == session.routineID }) {
+                startLiveMetrics(for: session, routine: routine)
+            } else {
+                app.liveWorkout.start(for: session, sport: nil, category: nil)
+            }
+        }
         playing = session
     }
 

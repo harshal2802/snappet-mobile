@@ -42,7 +42,7 @@ enum WorkoutActivityMapping {
         switch category {
         case .strength, .powerlifting: return .traditionalStrengthTraining
         case .olympicWeightlifting, .strongman: return .functionalStrengthTraining
-        case .cardio: return .running
+        case .cardio: return .mixedCardio   // generic: a cardio routine may be cycling/rowing, not running
         case .plyometrics: return .jumpRope
         case .stretching: return .flexibility
         }

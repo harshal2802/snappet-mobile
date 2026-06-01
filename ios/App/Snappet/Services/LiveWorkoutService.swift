@@ -96,7 +96,9 @@ final class LiveWorkoutService: NSObject {
         latestHR = nil
         energy = 0
         send(.start(activityType: activityType.rawValue))
-        connectionState = .workoutRunning
+        // Only claim "running" when there's actually a watch to run it — otherwise the
+        // A4 overlay would sit at "Waiting for heart rate…" forever (no watch installed).
+        if watchUsable { connectionState = .workoutRunning }
     }
 
     /// End the live workout on the watch. The buffered `samples` are retained for B2.
@@ -136,6 +138,18 @@ final class LiveWorkoutService: NSObject {
         // happen), trust the wall clock; otherwise trust the watch's monotonic clock.
         let chosen = (t <= elapsed + 5) ? t : elapsed
         return max(0, chosen)
+    }
+
+    /// Whether a paired watch with our companion app installed is available. Used to
+    /// avoid promoting to `.workoutRunning` (and stranding the UI at "Waiting for heart
+    /// rate…") when there is no watch that can actually start a session.
+    private var watchUsable: Bool {
+        #if canImport(WatchConnectivity)
+        guard let session, session.activationState == .activated else { return false }
+        return session.isPaired && session.isWatchAppInstalled
+        #else
+        return false
+        #endif
     }
 
     // MARK: - Send

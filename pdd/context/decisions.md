@@ -61,6 +61,22 @@ starts the mapped `HKWorkoutSession`, HR streams to the phone within ~3 s, keeps
 phone backgrounded, and battery cost — only runs on a **paired physical Apple Watch + iPhone**. A
 simulator build proves the shape, not the stream.
 
+**Post-review hardening (2026-06-01, same branch)**: a multi-angle review surfaced six fixes, applied
+before merge: (1) watch `start()` sets a synchronous `starting` flag so a 2nd start during the async
+auth await can't spawn a duplicate `HKWorkoutSession`; (2) `replaceActiveAndStart` now `stop()`s the old
+watch session first (else the watch's `!isRunning` guard silently drops the new start); (3) all resume
+paths (dashboard banner, "Resume current workout", re-tapping the same routine) route through a `resume()`
+that restarts live metrics when the service isn't already running — fixing no-HR after a cold relaunch;
+(4) the phone only promotes to `.workoutRunning` when a paired watch with the app installed exists
+(`isPaired && isWatchAppInstalled`), so the overlay doesn't strand at "Waiting for heart rate…" with no
+watch; (5) `LiveWorkoutMessage` metrics decode now requires every field (no `?? 0`) so a malformed
+message drops instead of poisoning the buffer with phantom 0-bpm samples; (6) `.cardio → .mixedCardio`
+(generic cardio isn't necessarily running) + removed dead `hrUnit`/`kcalUnit`. The "inverted tie-break"
+flag was **refuted** (the comparator is deterministic, which is its only contract). `WorkoutWalkthroughTests`
+gained `-uiTestFreshStore` (it was the lone UI test without it — a leftover active session was triggering
+the start-conflict dialog). Verified: iOS + watchOS BUILD SUCCEEDED, `SnappetTests` 15/15, `HighlightEngine`
+18/18, `WorkoutWalkthroughTests` + `SuiteSmokeTests` green (walkthrough green on two consecutive runs).
+
 ---
 
 ## [2026-06-01] Live Workout Capture + Video Studio initiative — reopens the watchOS/BLE/in-app-capture deferrals (for WorkoutTracker only)

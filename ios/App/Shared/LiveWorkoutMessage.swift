@@ -60,9 +60,11 @@ enum LiveWorkoutMessage: Equatable, Sendable {
         case .stop:
             self = .stop
         case .metrics:
-            let hr = payload[Key.hrBpm] as? Double ?? 0
-            let kcal = payload[Key.energyKcal] as? Double ?? 0
-            let t = payload[Key.t] as? Double ?? 0
+            // Require every field — a missing/mistyped value must drop the message, not
+            // decode as a phantom 0-bpm sample that poisons the HR buffer.
+            guard let hr = payload[Key.hrBpm] as? Double,
+                  let kcal = payload[Key.energyKcal] as? Double,
+                  let t = payload[Key.t] as? Double else { return nil }
             self = .metrics(hrBpm: hr, energyKcal: kcal, t: t)
         }
     }

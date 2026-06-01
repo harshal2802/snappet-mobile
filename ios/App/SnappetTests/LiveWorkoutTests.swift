@@ -25,7 +25,7 @@ final class WorkoutActivityMappingTests: XCTestCase {
     func testGeneralSportFallsThroughToCategory() {
         XCTAssertEqual(
             WorkoutActivityMapping.activityType(sport: .general, category: .cardio),
-            .running)
+            .mixedCardio)
         XCTAssertEqual(
             WorkoutActivityMapping.activityType(sport: .general, category: .strength),
             .traditionalStrengthTraining)
@@ -36,7 +36,7 @@ final class WorkoutActivityMappingTests: XCTestCase {
     func testCategoryMapping() {
         XCTAssertEqual(WorkoutActivityMapping.activityType(for: .strength), .traditionalStrengthTraining)
         XCTAssertEqual(WorkoutActivityMapping.activityType(for: .powerlifting), .traditionalStrengthTraining)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .cardio), .running)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .cardio), .mixedCardio)
         XCTAssertEqual(WorkoutActivityMapping.activityType(for: .plyometrics), .jumpRope)
         XCTAssertEqual(WorkoutActivityMapping.activityType(for: .stretching), .flexibility)
         XCTAssertEqual(WorkoutActivityMapping.activityType(for: .olympicWeightlifting), .functionalStrengthTraining)
@@ -61,10 +61,13 @@ final class WorkoutActivityMappingTests: XCTestCase {
     }
 
     func testDominantCategoryTieIsDeterministic() {
-        // 1 each → tie broken deterministically (stable result across runs).
+        // 1 each → tie broken deterministically by rawValue (independent of input order).
         let a = WorkoutActivityMapping.dominantCategory(of: [.cardio, .strength])
         let b = WorkoutActivityMapping.dominantCategory(of: [.strength, .cardio])
         XCTAssertEqual(a, b)
+        // Lock the concrete winner so a future comparator flip is caught (smallest
+        // rawValue wins: "cardio" < "strength").
+        XCTAssertEqual(a, .cardio)
     }
 }
 
@@ -133,5 +136,7 @@ final class LiveWorkoutOffsetTests: XCTestCase {
         XCTAssertEqual(LiveWorkoutMessage(payload: s.payload), s)
         XCTAssertEqual(LiveWorkoutMessage(payload: LiveWorkoutMessage.stop.payload), .stop)
         XCTAssertNil(LiveWorkoutMessage(payload: ["nonsense": 1]))
+        // Malformed metrics (missing energyKcal + t) must decode to nil, not phantom 0s.
+        XCTAssertNil(LiveWorkoutMessage(payload: ["kind": "metrics", "hrBpm": 100.0]))
     }
 }

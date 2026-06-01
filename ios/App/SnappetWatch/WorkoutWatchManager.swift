@@ -26,6 +26,9 @@ final class WorkoutWatchManager: NSObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var startDate: Date?
+    /// Set synchronously the instant a start is requested (before the async auth await)
+    /// so a second start arriving mid-authorization can't spawn a 2nd `HKWorkoutSession`.
+    private var starting = false
 
     /// The relay back to the phone. The manager forwards each new HR/energy sample here.
     let link = WatchConnectivityLink()
@@ -40,9 +43,6 @@ final class WorkoutWatchManager: NSObject {
         }
         link.activate()
     }
-
-    private let hrUnit = HKUnit.count().unitDivided(by: .minute())
-    private let kcalUnit = HKUnit.kilocalorie()
 
     // MARK: - Authorization
 
@@ -65,7 +65,8 @@ final class WorkoutWatchManager: NSObject {
     // MARK: - Start / end
 
     func start(activityType raw: UInt) {
-        guard !isRunning else { return }
+        guard !isRunning, !starting else { return }
+        starting = true
         Task {
             try? await requestAuthorization()
             startSession(activityType: HKWorkoutActivityType(rawValue: raw) ?? .other)
@@ -73,6 +74,7 @@ final class WorkoutWatchManager: NSObject {
     }
 
     private func startSession(activityType: HKWorkoutActivityType) {
+        defer { starting = false }
         let config = HKWorkoutConfiguration()
         config.activityType = activityType
         config.locationType = .unknown
@@ -106,6 +108,7 @@ final class WorkoutWatchManager: NSObject {
 
     private func resetState() {
         isRunning = false
+        starting = false
         session = nil
         builder = nil
         startDate = nil

@@ -10,6 +10,10 @@ final class WorkoutWalkthroughTests: XCTestCase {
         super.setUp()
         continueAfterFailure = true
         app = XCUIApplication()
+        // Isolated, empty in-memory store so the run is deterministic and never inherits a
+        // leftover active session (which would trigger the start-conflict dialog instead of
+        // the player). Matches every other SnappetUITests target.
+        app.launchArguments += ["-uiTestFreshStore"]
         app.launch()
     }
 
