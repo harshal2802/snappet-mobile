@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The two phases of a Pomodoro cycle.
 enum PomodoroPhase {
@@ -98,6 +101,8 @@ final class PomodoroTimer {
         if finished == .focus {
             onFocusCompleted?(focusMinutes)
         }
+        // Tactile cue that a phase ended (success for finishing focus, warning for break-over).
+        playCompletionHaptic(success: finished == .focus)
         // Auto-switch focus -> break -> focus and keep running.
         phase = (finished == .focus) ? .breakTime : .focus
         remaining = phaseDuration
@@ -121,5 +126,20 @@ final class PomodoroTimer {
     private func invalidateTicker() {
         ticker?.invalidate()
         ticker = nil
+    }
+
+    /// Apply persisted lengths from settings. When the timer is idle this also re-seeds
+    /// `remaining` so the new focus length shows immediately at the top of a phase.
+    func applyDurations(focusMinutes: Int, breakMinutes: Int) {
+        self.focusMinutes = focusMinutes
+        self.breakMinutes = breakMinutes
+        if !isRunning { remaining = phaseDuration }
+    }
+
+    private func playCompletionHaptic(success: Bool) {
+        #if canImport(UIKit)
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(success ? .success : .warning)
+        #endif
     }
 }

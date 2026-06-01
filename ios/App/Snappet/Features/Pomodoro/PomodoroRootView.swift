@@ -7,15 +7,20 @@ struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(\.modelContext) private var modelContext
 
-    // Sessions completed today, newest first, for the stats summary.
-    @Query private var todaySessions: [PomodoroSession]
+    // Sessions over the last 7 days, newest first — drives the today stats and the chart.
+    @Query private var recentSessions: [PomodoroSession]
+
+    // Timer lengths persisted across launches; applied to the engine on appear / on change.
+    @AppStorage("pomodoro.focusMinutes") private var focusSetting = 25
+    @AppStorage("pomodoro.breakMinutes") private var breakSetting = 5
 
     @State private var timer = PomodoroTimer()
     @State private var showingSettings = false
 
     init() {
-        let start = Calendar.current.startOfDay(for: .now)
-        _todaySessions = Query(
+        let start = Calendar.current.date(byAdding: .day, value: -6,
+                                          to: Calendar.current.startOfDay(for: .now)) ?? .now
+        _recentSessions = Query(
             filter: #Predicate<PomodoroSession> { $0.completedAt >= start },
             sort: \.completedAt, order: .reverse
         )
@@ -28,28 +33,42 @@ struct PomodoroRootView: View {
                 TimerRing(progress: timer.progress, timeText: timer.timeText,
                           tint: timer.phase == .focus ? .red : .green)
                     .frame(width: 260, height: 260)
+                    .accessibilityIdentifier("pomodoro.timeRemaining")
                 controls
                 TodayStats(count: focusCount, minutes: focusMinutes)
+                PomodoroFocusChart(data: chartData)
             }
             .padding()
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("Pomodoro")
+        .navigationDestination(for: PomodoroRoute.self) { _ in
+            PomodoroHistoryView()
+        }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: PomodoroRoute.history) {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                .accessibilityIdentifier("pomodoro.history")
+                .accessibilityLabel("Session history")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingSettings = true } label: {
                     Image(systemName: "slider.horizontal.3")
                 }
+                .accessibilityIdentifier("pomodoro.settings")
                 .accessibilityLabel("Timer settings")
             }
         }
         .sheet(isPresented: $showingSettings) {
-            PomodoroSettingsView(focusMinutes: $timer.focusMinutes,
-                                 breakMinutes: $timer.breakMinutes,
+            PomodoroSettingsView(focusMinutes: $focusSetting,
+                                 breakMinutes: $breakSetting,
                                  onChange: handleSettingsChange)
         }
         .onAppear {
             timer.onFocusCompleted = handleFocusCompleted
+            timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
         }
     }
@@ -63,6 +82,7 @@ struct PomodoroRootView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier("pomodoro.reset")
 
             if timer.isRunning {
                 Button(action: timer.pause) {
@@ -70,12 +90,14 @@ struct PomodoroRootView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("pomodoro.pause")
             } else {
                 Button(action: timer.start) {
                     Label("Start", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("pomodoro.start")
             }
         }
         .controlSize(.large)
@@ -83,8 +105,13 @@ struct PomodoroRootView: View {
 
     // MARK: Derived stats
 
+    private var todaySessions: [PomodoroSession] {
+        let start = Calendar.current.startOfDay(for: .now)
+        return recentSessions.filter { $0.completedAt >= start }
+    }
     private var focusCount: Int { todaySessions.count }
     private var focusMinutes: Int { todaySessions.reduce(0) { $0 + $1.minutes } }
+    private var chartData: [DailyFocus] { PomodoroStats.last7Days(recentSessions) }
 
     // MARK: Actions
 
@@ -95,11 +122,16 @@ struct PomodoroRootView: View {
                  summary: "Focused \(minutes) min", metric: Double(minutes))
     }
 
-    /// Reflect new lengths immediately when the timer is idle at the top of a phase.
+    /// Persisted lengths changed — push them into the engine and re-seed an idle timer so
+    /// the new focus length shows immediately at the top of a phase.
     private func handleSettingsChange() {
-        guard !timer.isRunning else { return }
-        timer.reset()
+        timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
     }
+}
+
+/// Navigation route for the Pomodoro module's deeper screens (pushed onto the suite stack).
+enum PomodoroRoute: Hashable {
+    case history
 }
 
 // MARK: - Subviews
