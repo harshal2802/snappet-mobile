@@ -20,12 +20,14 @@ struct PomodoroSettingsView: View {
                         LabeledContent("Length", value: "\(focusMinutes) min")
                     }
                     .onChange(of: focusMinutes) { onChange() }
+                    .accessibilityIdentifier("pomodoro.focusStepper")
                 }
                 Section("Break") {
                     Stepper(value: $breakMinutes, in: breakRange, step: 1) {
                         LabeledContent("Length", value: "\(breakMinutes) min")
                     }
                     .onChange(of: breakMinutes) { onChange() }
+                    .accessibilityIdentifier("pomodoro.breakStepper")
                 }
             }
             .navigationTitle("Settings")

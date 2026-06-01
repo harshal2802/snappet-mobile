@@ -2,7 +2,25 @@
 
 Reverse-chronological. Each entry: the decision, why, and what it rules out. These are the
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
-or accidentally reverse them. Product-level decisions (separate repo, etc.) live in the web repo's
+or accidentally reverse them.
+
+## [2026-05-31] Pomodoro settings persist via @AppStorage in the view, applied to the engine
+
+**Decision**: Focus/break lengths are stored as `@AppStorage("pomodoro.focusMinutes"/".breakMinutes")`
+in `PomodoroRootView` (and bound straight into the settings sheet); the view pushes them into the
+`@Observable PomodoroTimer` via a new `applyDurations(focusMinutes:breakMinutes:)` on appear and on
+change. The 7-day focus chart (`PomodoroFocusChart` + `PomodoroStats.last7Days`) renders on both the
+root and atop History, fed by a single `@Query` over the last 7 days. A `UINotificationFeedbackGenerator`
+fires in `PomodoroTimer.completePhase` (UIKit guarded by `#if canImport(UIKit)` to keep the type buildable
+off-device). **Why**: `@Observable` classes can't host the `@AppStorage` property wrapper, so persistence
+lives in the view (the one SwiftUI place it works) and the timer stays a plain engine that's told its
+durations. One shared 7-day query avoids a second round-trip. **Rules out**: persisting the timer object
+itself; a new `@Model` for history (it reads existing `PomodoroSession` rows); a nested `NavigationStack`
+(History is reached via `navigationDestination(for: PomodoroRoute.self)` on the suite's stack).
+
+---
+
+Product-level decisions (separate repo, etc.) live in the web repo's
 `decisions.md`; this file is native-implementation-specific.
 
 ---
