@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Snappet Mobile — App Knowledge Graph</title>
+  <meta name="description" content="Searchable, interactive knowledge graph of the Snappet Mobile app's wireframe, screens and workflows." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ───────────── Top bar ───────────── -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">S</div>
+        <div>
+          <h1>Snappet · Knowledge Graph</h1>
+          <div class="sub">App wireframe &amp; workflow map</div>
+        </div>
+      </div>
+
+      <div class="search-wrap" id="searchWrap">
+        <span class="icon">⌕</span>
+        <input id="search" type="text" placeholder="Search screens, services, models…  ( / )" autocomplete="off" spellcheck="false" />
+        <button class="clear" id="searchClear" title="Clear">×</button>
+        <div class="search-results" id="searchResults"></div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="toolbtns">
+        <button class="btn" id="btnSidebar" title="Toggle filters"><span class="ic">☰</span></button>
+        <button class="btn" id="btnPath" title="Trace a workflow path (P)"><span class="ic">⤳</span> Trace path</button>
+        <button class="btn" id="btnFit" title="Fit to screen (F)"><span class="ic">⤢</span> Fit</button>
+        <button class="btn" id="btnExport" title="Export PNG"><span class="ic">⤓</span> PNG</button>
+        <button class="btn" id="btnTheme" title="Toggle theme (T)"><span class="ic">☀</span></button>
+        <button class="btn" id="btnHelp" title="Help (?)"><span class="ic">?</span></button>
+      </div>
+    </header>
+
+    <!-- ───────────── Main ───────────── -->
+    <div class="main">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <h3>Layout</h3>
+        <div class="seg" id="layoutSeg">
+          <button data-layout="force" class="active">Force</button>
+          <button data-layout="tree">Hierarchy</button>
+          <button data-layout="group">Clusters</button>
+        </div>
+
+        <h3>Node types</h3>
+        <div id="typeFilters"></div>
+
+        <h3>Category</h3>
+        <div id="catFilters"></div>
+
+        <h3>Platform</h3>
+        <div id="platFilters"></div>
+
+        <h3>Edge types</h3>
+        <div class="legend-edges" id="edgeLegend"></div>
+
+        <h3>Actions</h3>
+        <div class="mini-actions">
+          <button class="btn" id="btnReset"><span class="ic">↺</span> Reset view &amp; filters</button>
+        </div>
+      </aside>
+
+      <!-- Stage -->
+      <div class="stage">
+        <canvas id="graph"></canvas>
+        <div class="tooltip" id="tooltip"></div>
+        <div class="stats-pill" id="stats">—</div>
+
+        <div class="path-banner" id="pathBanner">
+          <span>Path: <b id="pathFrom">—</b> → <b id="pathTo">pick a target…</b></span>
+          <span class="x" id="pathClose" title="Exit path mode">✕</span>
+        </div>
+
+        <div class="stage-controls">
+          <button class="btn" id="btnZoomIn" title="Zoom in">+</button>
+          <button class="btn" id="btnZoomOut" title="Zoom out">−</button>
+        </div>
+
+        <div class="hint">
+          Drag nodes · scroll to zoom · click to inspect · double-click to pin · <kbd>/</kbd> search · <kbd>?</kbd> help
+        </div>
+      </div>
+
+      <!-- Detail panel -->
+      <aside class="detail" id="detailPanel">
+        <div id="detailContent"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ───────────── Help modal ───────────── -->
+  <div class="modal-overlay" id="helpModal">
+    <div class="modal">
+      <div class="mh">
+        <h2>About this knowledge graph</h2>
+        <button class="close" id="helpClose">×</button>
+      </div>
+      <div class="mb">
+        <p>An interactive map of <b>Snappet Mobile</b> — every screen, sheet, service, engine component and data model, wired by the navigation and data-flow edges that connect them. Built directly from the source tree; no backend, fully offline.</p>
+
+        <h4>What the shapes mean</h4>
+        <p>Each <b>node type</b> has a colour and shape (see the legend): mini-apps are hexagons in their brand tint, screens are rectangles, sheets/modals are amber, services are violet, the HighlightEngine core is red, and data models are yellow cylinders. <b>Edges</b> are coloured by relationship — green for navigation pushes, amber dashed for presented sheets, violet for "uses a service", red for engine data-flow.</p>
+
+        <h4>Three layouts</h4>
+        <p><b>Force</b> — organic, physics-driven. <b>Hierarchy</b> — breadth-first layers from the app root, great for seeing depth. <b>Clusters</b> — nodes grouped by mini-app with labelled bubbles.</p>
+
+        <h4>Trace a path</h4>
+        <p>Click <b>Trace path</b> (or open a node and use "Trace a path from here"), then click a target node. The shortest navigation/data path between them lights up — a quick way to read a user flow, e.g. <i>App Library → Workout Reels → Reel → Share</i>.</p>
+
+        <h4>Keyboard shortcuts</h4>
+        <table class="kbtable">
+          <tr><td><kbd>/</kbd></td><td>Focus search</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Fit graph to screen</td></tr>
+          <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Force / Hierarchy / Clusters layout</td></tr>
+          <tr><td><kbd>P</kbd></td><td>Toggle path-trace mode</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Toggle light / dark theme</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Deselect / exit path mode</td></tr>
+          <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+        </table>
+
+        <h4>Deep links</h4>
+        <p>Selecting a node updates the URL (<code>#node=reel</code>) so you can share a link straight to any screen in the graph.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="graph.js"></script>
+</body>
+</html>
