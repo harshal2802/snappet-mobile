@@ -43,6 +43,10 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     private(set) var connectionState: ConnectionState = .inactive
     private(set) var latestHR: Double?
     private(set) var energy: Double = 0
+    /// Whether the live workout is paused. Pause can be initiated from the phone (the player's
+    /// pause control) or from the watch (its controls page); both sides converge on this flag
+    /// via the bidirectional `.pause`/`.resume` relay.
+    private(set) var isPaused = false
     /// Whether the watch app is currently reachable for an immediate `sendMessage`.
     /// (A1's `isWatchReachable`, renamed to the `MetricsSource` surface.)
     private(set) var isReachable = false
@@ -102,6 +106,7 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
         samples.removeAll()
         latestHR = nil
         energy = 0
+        isPaused = false
         send(.start(activityType: activityType.rawValue))
         // Only claim "running" when there's actually a watch to run it — otherwise the
         // A4 overlay would sit at "Waiting for heart rate…" forever (no watch installed).
@@ -111,7 +116,23 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     func stop() {
         send(.stop)
         sessionStart = nil
+        isPaused = false
         if connectionState == .workoutRunning { connectionState = .active }
+    }
+
+    /// Pause the workout on the watch (UI-initiated on the phone). Tells the watch to pause its
+    /// `HKWorkoutSession` and flips the local flag. The watch applies the pause without echoing
+    /// it back, so this can't ping-pong.
+    func pause() { setPaused(true, propagate: true) }
+    /// Resume the workout on the watch (UI-initiated on the phone).
+    func resume() { setPaused(false, propagate: true) }
+
+    /// Apply a paused state. `propagate == true` relays the change to the watch (phone-initiated);
+    /// `false` means we're *reacting* to a watch-initiated change and must not echo it back.
+    private func setPaused(_ paused: Bool, propagate: Bool) {
+        guard paused != isPaused else { return }
+        isPaused = paused
+        if propagate { send(paused ? .pause : .resume) }
     }
 
     // MARK: - Sample ingestion (also the test seam)
@@ -211,9 +232,18 @@ extension AppleWatchMetricsSource: WCSessionDelegate {
     }
 
     private nonisolated func handle(payload: [String: Any]) {
-        guard case let .metrics(hr, kcal, t)? = LiveWorkoutMessage(payload: payload) else { return }
-        Task { @MainActor [weak self] in
-            self?.ingest(hrBpm: hr, energyKcal: kcal, watchOffset: t)
+        switch LiveWorkoutMessage(payload: payload) {
+        case let .metrics(hr, kcal, t)?:
+            Task { @MainActor [weak self] in
+                self?.ingest(hrBpm: hr, energyKcal: kcal, watchOffset: t)
+            }
+        case .pause?:
+            // Watch-initiated pause → reflect it locally without echoing back.
+            Task { @MainActor [weak self] in self?.setPaused(true, propagate: false) }
+        case .resume?:
+            Task { @MainActor [weak self] in self?.setPaused(false, propagate: false) }
+        case .start?, .stop?, .none:
+            break   // start/stop flow phone → watch only
         }
     }
 
