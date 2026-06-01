@@ -48,6 +48,11 @@ final class BLEHeartRateParserTests: XCTestCase {
         XCTAssertNil(BLEHeartRateMetricsSource.parseHeartRate(Data([0x01, 0x2C])))
     }
 
+    func testFlagsOnlyUInt16BufferIsNil() {
+        // flags say UInt16 but NO value bytes at all (a 1-byte packet) — must not crash.
+        XCTAssertNil(BLEHeartRateMetricsSource.parseHeartRate(Data([0x01])))
+    }
+
     // MARK: - Session-relative offset (wall-clock, clamped ≥ 0)
 
     func testBLEOffsetUsesWallClock() {
@@ -133,5 +138,16 @@ final class MetricsSourceSelectionTests: XCTestCase {
         XCTAssertEqual(coordinator.energy, 0)
         XCTAssertEqual(coordinator.samples.count, 1)
         XCTAssertEqual(coordinator.displayName, "Heart-rate band")
+    }
+
+    @MainActor
+    func testIsSessionActiveTracksStartStop() {
+        let coordinator = LiveMetricsCoordinator()
+        XCTAssertFalse(coordinator.isSessionActive)
+        let session = WorkoutSession(routineName: "Test")
+        coordinator.start(for: session, sport: nil, category: nil)
+        XCTAssertTrue(coordinator.isSessionActive)   // resume guard relies on this (source-agnostic)
+        coordinator.stop()
+        XCTAssertFalse(coordinator.isSessionActive)
     }
 }

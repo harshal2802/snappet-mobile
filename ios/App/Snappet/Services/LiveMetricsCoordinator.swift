@@ -35,6 +35,12 @@ final class LiveMetricsCoordinator: MetricsSource {
     /// else BLE if a band was chosen). Setting it pins the source.
     var selectedSource: MetricsSourceKind?
 
+    /// Whether a workout session is currently driving a source (`start()` called, `stop()` not
+    /// yet). Source-agnostic — the resume guard reads this instead of the watch-specific
+    /// `connectionState`, so a **BLE** session isn't needlessly restarted on resume (which would
+    /// clear its HR buffer and reconnect the band).
+    private(set) var isSessionActive = false
+
     init(watch: AppleWatchMetricsSource = AppleWatchMetricsSource(),
          ble: BLEHeartRateMetricsSource = BLEHeartRateMetricsSource()) {
         self.watch = watch
@@ -80,10 +86,12 @@ final class LiveMetricsCoordinator: MetricsSource {
     var displayName: String { active.displayName }
 
     func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
+        isSessionActive = true
         active.start(for: session, sport: sport, category: category)
     }
 
     func stop() {
+        isSessionActive = false
         // Stop both so neither transport is left running after a source switch mid-session.
         watch.stop()
         ble.stop()

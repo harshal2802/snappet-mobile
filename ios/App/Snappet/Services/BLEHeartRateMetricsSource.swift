@@ -92,8 +92,11 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// Begin/resume scanning for `0x180D` advertisers (no-op if Bluetooth isn't ready).
     func startScan() {
         #if canImport(CoreBluetooth)
+        // Clear the previous session's discoveries so the picker doesn't show stale, possibly
+        // out-of-range bands. `prepare()` creates the central (scan begins on power-on) or, if it
+        // already exists, starts scanning now — so we don't double-invoke the scan.
+        discovered.removeAll()
         prepare()
-        startScanIfPossible()
         #endif
     }
 
@@ -107,6 +110,13 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// already known, connect immediately; otherwise the next scan hit connects it.
     func connect(_ device: BLEDevice) {
         #if canImport(CoreBluetooth)
+        // Already connected/connecting to this exact band → don't downgrade a live `.streaming`
+        // state back to `.connecting` on a double-tap.
+        if desiredPeripheralID == device.id,
+           state == .connecting || state == .connected || state == .streaming { return }
+        // Switching bands: disconnect the previous one so we don't ingest from two at once.
+        if let existing = peripheral { central?.cancelPeripheralConnection(existing) }
+        peripheral = nil
         desiredPeripheralID = device.id
         connectedName = device.name
         guard let central else { prepare(); return }
@@ -146,9 +156,12 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         #if canImport(CoreBluetooth)
         central?.stopScan()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
+        peripheral = nil
         #endif
         isReachable = false
-        if state == .streaming || state == .connected { state = .idle }
+        // Reset from any active state (incl. `.connecting`, e.g. ending a workout before the band
+        // finishes connecting) so a stale "Connecting…" doesn't persist; keep `.unavailable` (BT off).
+        if state != .unavailable { state = .idle }
     }
 
     // MARK: - Sample ingestion (test seam)

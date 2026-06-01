@@ -80,6 +80,24 @@ asserted text; the overall-timer assertion still passes).
 physical heart-rate band. A sim build proves the shape + the pure parser, **not** a live stream (the same
 honesty bar as A1's WCSession relay). Battery/latency of a sustained BLE notify stream is also a device check.
 
+**Post-review hardening (2026-06-01, same branch)**: review fixes applied before merge: (1) the resume
+guard in `WorkoutHomeView` used the watch-specific `connectionState != .workoutRunning`, which is **always
+true for a BLE session** (BLE never sets `.workoutRunning`) → every resume restarted metrics and **cleared
+the BLE HR buffer**; added a source-agnostic `LiveMetricsCoordinator.isSessionActive` (set in `start`,
+cleared in `stop`) and the guard now reads `!isSessionActive`; (2) `BLEHeartRateMetricsSource.connect`
+now disconnects the previously-connected band before connecting a new one (else two peripherals stream
+into `ingest` at once) and early-returns on a double-tap of the already-connected band (no `.streaming`→
+`.connecting` downgrade); (3) `stop()` resets state from **any** active state incl. `.connecting` (a
+workout ended mid-connect no longer strands "Connecting…") and clears the peripheral ref; (4) `startScan()`
+clears the stale `discovered` list and no longer double-invokes the scan. The "duplicate device on rapid
+discover" flag was **refuted** (the `didDiscover` Tasks hop to the serialized `@MainActor`, so the
+`contains` check isn't racy). Added 2 tests (flags-only UInt16 buffer → nil; `isSessionActive` start/stop);
+SnappetTests 46→48. **Known limitation (documented, not fixed)**: switching the HR source *mid-session*
+doesn't auto-start the newly-selected source, and watch-usability isn't `@Observable` (a watch pairing
+mid-workout won't re-resolve the active source) — both are unusual mid-session interactions, deferred.
+Re-verified: app + watch BUILD SUCCEEDED, SnappetTests 48/48, HighlightEngine 18/18 (engine import-clean),
+WorkoutWalkthroughTests green.
+
 ---
 
 ## [2026-06-01] A2 — overall workout timer + background Live Activity (WorkoutTracker)
