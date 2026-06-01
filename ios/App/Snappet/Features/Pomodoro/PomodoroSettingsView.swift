@@ -17,14 +17,28 @@ struct PomodoroSettingsView: View {
             Form {
                 Section("Focus") {
                     Stepper(value: $focusMinutes, in: focusRange, step: 5) {
-                        LabeledContent("Length", value: "\(focusMinutes) min")
+                        HStack {
+                            Text("Length")
+                            Spacer()
+                            // Identified value text so UI tests can read the persisted length directly
+                            // (a stepper's inner label isn't reliably queryable on-device).
+                            Text("\(focusMinutes) min")
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("pomodoro.focusValue")
+                        }
                     }
                     .onChange(of: focusMinutes) { onChange() }
                     .accessibilityIdentifier("pomodoro.focusStepper")
                 }
                 Section("Break") {
                     Stepper(value: $breakMinutes, in: breakRange, step: 1) {
-                        LabeledContent("Length", value: "\(breakMinutes) min")
+                        HStack {
+                            Text("Length")
+                            Spacer()
+                            Text("\(breakMinutes) min")
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("pomodoro.breakValue")
+                        }
                     }
                     .onChange(of: breakMinutes) { onChange() }
                     .accessibilityIdentifier("pomodoro.breakStepper")

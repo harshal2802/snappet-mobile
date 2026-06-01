@@ -90,11 +90,9 @@ final class PomodoroUITests: XCTestCase {
                        "Focus length should persist across relaunch")
     }
 
-    /// The "<n> min" label rendered inside the focus stepper's row (the persisted value).
+    /// The identified "<n> min" value text in the focus settings row (reflects the persisted value).
     private func focusLengthLabel(in app: XCUIApplication) -> String? {
-        let stepper = app.steppers["pomodoro.focusStepper"]
-        let label = stepper.staticTexts.matching(
-            NSPredicate(format: "label ENDSWITH %@", "min")).firstMatch
+        let label = app.staticTexts["pomodoro.focusValue"]
         guard label.waitForExistence(timeout: 4) else { return nil }
         return label.label
     }
