@@ -78,8 +78,19 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 **Workout Reels** (flagship), **Pomodoro / Habits / Journal** (productivity), **Tip / Split Expenses /
 Budget** (finance). Every app logs usage to Snappet Core; the Home dashboard aggregates historical
 usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches, dashboard renders.
-Remaining: data-dependent on-device runs (Workout needs Apple Watch workouts/Photos; each app's real
-persistence/interaction is unverified until a device or sim interaction pass).
+
+🟢 **Feature-completeness pass on the 6 non-flagship apps (2026-05-31, issues #9–#14).** Each got one
+coherent increment, implemented on its own branch by parallel agents and merged one-by-one:
+**Pomodoro** session history + 7-day chart + persisted settings; **Habits** edit + 7-day backfill strip
++ 30-day rate; **Journal** tags + `.searchable`; **Tip** calculation history (its first `@Model`) +
+editable presets + round-up; **Split Expenses** edit expenses/groups + manual settlements; **Budget**
+edit transactions + month switcher + 6-month trends. Prompts in `pdd/prompts/features/12–17`. Tests:
+each app has a `SnappetUITests/<App>UITests.swift` driving its flow; UI tests use a `-uiTestFreshStore`
+launch arg (isolated in-memory store) for determinism. **Verified on the iPhone 17 Pro sim: all 10 UI
+tests green** (6 apps + `SuiteSmokeTests` + `WorkoutWalkthroughTests`) and `HighlightEngine` 18/18.
+Remaining: data-dependent on-device runs (Workout needs Apple Watch workouts/Photos); the Budget
+month-switcher's forward chevron is verified in-app but its synthetic XCUITest tap is flaky (harness
+quirk, noted in the test).
 
 ### Built
 
