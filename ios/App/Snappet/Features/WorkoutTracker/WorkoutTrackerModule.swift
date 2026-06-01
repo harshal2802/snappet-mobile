@@ -217,7 +217,10 @@ struct WorkoutHomeView: View {
     /// (re)start live metrics — guarded so a warm resume (watch already running) doesn't
     /// double-start. Falls back to a default type if the routine was since deleted.
     private func resume(_ session: WorkoutSession) {
-        if app.liveWorkout.connectionState != .workoutRunning {
+        // Source-agnostic: restart metrics only when no session is driving a source (e.g. after a
+        // cold relaunch). Using the watch-specific `connectionState` here would always restart a
+        // BLE session — clearing its HR buffer — since a BLE source never sets `.workoutRunning`.
+        if !app.liveWorkout.isSessionActive {
             if let routine = routines.first(where: { $0.id == session.routineID }) {
                 startLiveMetrics(for: session, routine: routine)
             } else {
@@ -236,7 +239,7 @@ struct WorkoutHomeView: View {
     /// Ask the watch to start an `HKWorkoutSession` of the type that matches the
     /// routine (sport tag first, then its dominant exercise category). A1's
     /// watch-trigger: the phone chooses the activity type, the watch records it and
-    /// streams HR back into `LiveWorkoutService`. No-op when no watch is reachable.
+    /// streams HR back into the active `MetricsSource`. No-op when no watch is reachable.
     private func startLiveMetrics(for session: WorkoutSession, routine: Routine) {
         let category = WorkoutActivityMapping.dominantCategory(
             of: routine.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category })

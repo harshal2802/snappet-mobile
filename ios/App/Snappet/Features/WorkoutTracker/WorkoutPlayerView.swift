@@ -222,10 +222,20 @@ struct WorkoutPlayerView: View {
     }
 
     private var liveStatusText: String {
+        // BLE band path: report the source-agnostic state (no watch concepts apply).
+        if app.liveWorkout.activeKind == .ble {
+            switch app.liveWorkout.state {
+            case .unavailable: return "Turn on Bluetooth to use a heart-rate band"
+            case .idle: return "Pick a heart-rate band in Settings"
+            case .connecting: return "Connecting to \(app.liveWorkout.displayName)…"
+            case .connected, .streaming: return "Waiting for heart rate…"
+            }
+        }
+        // Apple-Watch path keeps its watch-specific wording (A1 behavior, unchanged).
         switch app.liveWorkout.connectionState {
         case .unsupported: return "No watch metrics on this device"
         case .inactive: return "Watch connecting…"
-        case .active: return app.liveWorkout.isWatchReachable
+        case .active: return app.liveWorkout.isReachable
             ? "Watch ready — waiting for HR…" : "Open the workout on your watch"
         case .workoutRunning: return "Waiting for heart rate…"
         }
