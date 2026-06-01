@@ -63,6 +63,7 @@ struct WorkoutHomeView: View {
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
     @Environment(SuiteRouter.self) private var router
+    @Environment(AppModel.self) private var app
 
     @Query(sort: \Routine.updatedAt, order: .reverse) private var routines: [Routine]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var sessions: [WorkoutSession]
@@ -193,6 +194,7 @@ struct WorkoutHomeView: View {
         let session = makeSession(from: routine)
         context.insert(session)
         try? context.save()
+        startLiveMetrics(for: session, routine: routine)
         playing = session
     }
 
@@ -201,7 +203,18 @@ struct WorkoutHomeView: View {
         let session = makeSession(from: routine)
         context.insert(session)
         try? context.save()
+        startLiveMetrics(for: session, routine: routine)
         playing = session
+    }
+
+    /// Ask the watch to start an `HKWorkoutSession` of the type that matches the
+    /// routine (sport tag first, then its dominant exercise category). A1's
+    /// watch-trigger: the phone chooses the activity type, the watch records it and
+    /// streams HR back into `LiveWorkoutService`. No-op when no watch is reachable.
+    private func startLiveMetrics(for session: WorkoutSession, routine: Routine) {
+        let category = WorkoutActivityMapping.dominantCategory(
+            of: routine.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category })
+        app.liveWorkout.start(for: session, sport: routine.sport, category: category)
     }
 
     private func makeSession(from routine: Routine) -> WorkoutSession {
@@ -222,6 +235,9 @@ struct WorkoutHomeView: View {
 
     /// Called when the player closes. `saved == false` means "discard": delete the session.
     private func finishWorkout(_ session: WorkoutSession, saved: Bool) {
+        // End the watch session regardless of save/discard so the watch isn't left
+        // recording. (Buffered HRSamples are retained on the service for B2.)
+        app.liveWorkout.stop()
         if saved {
             session.completedAt = .now
             try? context.save()
