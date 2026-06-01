@@ -4,6 +4,69 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] B2 — enriched post-workout summary (HR chart + band stats + media gallery) (WorkoutTracker)
+
+**Decision**: Implemented prompt B2 (`pdd/prompts/features/live-workout-studio/B2-enriched-summary.md`,
+branch `feat/live-workout-summary`). A finished WorkoutTracker session's `SessionDetailView` now shows,
+above the B1 tagged-media gallery, a **live HR chart** + **band stats** (avg/max/min HR + time-in-zone),
+so a completed workout presents the user's "detailed fitness band data along with tagged videos"
+(RESEARCH.md §3.4). Consumes A1's live HR buffer + B1's gallery.
+
+**Concrete, non-obvious choices made:**
+- **Persist the HR series as an ADDITIVE Codable composite, not a new `@Model`** (`WorkoutModels.swift`):
+  added `var hrSeries: [HRPoint] = []` to `WorkoutSession`, where `HRPoint { t: Double; bpm: Double }` is a
+  small `Codable`/`Hashable`/`Sendable` value type stored inline like `exercises`. A default-`[]` additive
+  property triggers SwiftData's **lightweight migration** with **`SnappetSchema.models` UNCHANGED** —
+  exactly the **Journal `tags: [String] = []` precedent** (decisions.md 2026-05-31). No versioned schema
+  plan, no migration stage. The HR bytes are tiny (1 Hz, `t`+`bpm` doubles) so an inline composite (always
+  loaded with the session, like its sets) is right — no FK-keyed child rows needed here, unlike B1's
+  `SessionMedia` (which references on-device Photos assets that must NOT enter the store).
+- **Flush point: `finishWorkout(_:saved:)`, on a saved finish, BEFORE `stop()`** (`WorkoutTrackerModule.swift`):
+  `session.hrSeries = WorkoutHRStats.points(from: app.liveWorkout.samples)` runs before
+  `app.liveWorkout.stop()` (which stops both sources). The coordinator's `samples` are engine `HRSample`s
+  **already rebased onto the `WorkoutSession.startedAt` timeline** by A1, so the flush is a straight
+  field-for-field map (`HRSample.t/bpm → HRPoint.t/bpm`), isolated in `WorkoutHRStats.points(from:)` so
+  it's unit-tested. Empty buffer (no live source — the sim, or a phone-only workout) → empty `hrSeries` →
+  the summary's HR section hides cleanly. A **discard** keeps no series (the session is deleted).
+- **Pure stats helper `WorkoutHRStats`** (`Features/WorkoutTracker/WorkoutHRStats.swift`): a value type
+  with `make(from: [HRPoint], maxHR:) -> WorkoutHRStats?` computing avg/max/min + per-zone dwell seconds,
+  plus the `HRSample → HRPoint` map. It lives in the app (not `HighlightEngine`) because time-in-zone
+  reuses the app's `HeartRateZone` (which vends a SwiftUI `Color`), but its **logic is platform-free**, so
+  it's unit-tested in `SnappetTests` with no device (mirrors keeping the engine platform-free; grep-confirms
+  no platform import added to the engine, and `git diff` shows the engine source unchanged). Returns `nil`
+  for an **empty** series (so the view hides the whole section); a **single-sample** series yields
+  avg=max=min and **zero dwell** (one point has no following interval). Time-in-zone uses **left-edge
+  attribution**: each sample owns the interval until the next, so dwell sums to the series span and the
+  last sample contributes nothing — a deliberate, tested convention.
+- **Reuse, don't reimplement**: the chart line feeds the points through
+  `HighlightEngine.HeartRateSeries.make(...)` (resample→smooth, 5 s window) for a clean line rather than a
+  jagged raw plot — the engine is **called**, never modified. Time-in-zone reuses `HeartRateZone.forBpm`
+  (default max HR 190, the A4 fixed constant — no user HR profile yet; `maxHR` is a parameter so a future
+  profile drops in with zero zone-math change). The zone bar/legend reuse `HeartRateZone.color`/`pillLabel`.
+- **Thin view** (`SessionDetailView.swift`): a `HeartRateSummarySection` (`private struct`) rendered only
+  when `WorkoutHRStats.make` is non-nil, composing a `HeartRateChart` + an avg/max/min row + a `ZoneBar`
+  (each a small `private struct`); no HR math in the view. The B1 `SessionMediaSection` is unchanged and
+  stays below. The chart/zone bar carry `accessibilityIdentifier`s (`hrChart`, `hrZoneBar`) for future
+  assertions. Per-exercise HR overlay was **skipped** (the optional nice-to-have) — not needed for the
+  core chart+stats+gallery and not cheap enough to justify here.
+- **No new `@Model`** → `SnappetSchema.models` unchanged.
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**. `SnappetWatch`
+(watchOS 26.5 sim) → **BUILD SUCCEEDED**. `SnappetTests` → **74/74 pass** (62 prior + 12 new
+`WorkoutHRStats`: avg/max/min, order-independence, time-in-zone left-edge bucketing + custom-maxHR shift,
+`orderedZoneSeconds` low→high, empty→nil, single-sample→zero-dwell, the `HRSample→HRPoint` map + empty +
+round-trip). `HighlightEngine` → **18/18**, source unchanged (grep-clean, `git diff` empty).
+`WorkoutWalkthroughTests` → **green** (the sim finishes with an empty `hrSeries`, so the HR section hides
+and the gallery/stats absence doesn't break the flow).
+**Device-pending (NOT verified by this build/tests)**: the chart's actual **visual** with a **real
+live-HR series** — the smoothed bpm line, the avg/max/min over real data, and the time-in-zone bar
+filling — needs a device with a live HR source (Apple Watch or BLE band) finishing a session, because the
+simulator has no HR source so it persists an empty `hrSeries` and the chart hides. A clean sim build +
+synthetic-data unit tests prove the **math + the shape**, NOT a verified live-HR chart (the same honesty
+bar as A1–A4 / B1). Also device-pending: that the additive `hrSeries` migrates an existing on-device store
+without data loss (lightweight migration is exercised only by the fresh-store sim run here).
+
 ## [2026-06-01] B1 — session media tagging (photos/videos shot during a workout) (WorkoutTracker)
 
 **Decision**: Implemented prompt B1 (`pdd/prompts/features/live-workout-studio/B1-session-media-tagging.md`,

@@ -1,10 +1,13 @@
 import SwiftUI
 import SwiftData
 import Photos
+import Charts
+import HighlightEngine
 
-/// Detail for a completed session: summary stats, every exercise with its sets, and the
-/// **tagged-media gallery** (B1) — the photos/videos shot during this workout, auto-discovered
-/// by capture-time window and/or added by hand.
+/// Detail for a completed session: summary stats, the **live HR chart + band stats** (B2 —
+/// avg/max HR + time-in-zone, only when the session has a persisted `hrSeries`), every exercise
+/// with its sets, and the **tagged-media gallery** (B1) — the photos/videos shot during this
+/// workout, auto-discovered by capture-time window and/or added by hand.
 struct SessionDetailView: View {
     let session: WorkoutSession
     let resolver: ExerciseResolver
@@ -22,6 +25,10 @@ struct SessionDetailView: View {
                 if vol > 0 {
                     LabeledContent("Total volume", value: WorkoutMath.formatVolume(kg: vol, unit: unit))
                 }
+            }
+
+            if let stats = WorkoutHRStats.make(from: session.hrSeries) {
+                HeartRateSummarySection(series: session.hrSeries, stats: stats)
             }
 
             SessionMediaSection(session: session)
@@ -42,6 +49,120 @@ struct SessionDetailView: View {
         }
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Heart-rate summary (B2)
+
+/// The "Heart rate" section: a smoothed bpm-over-time line chart + a stats row (avg/max HR)
+/// + a time-in-zone bar with a legend. Rendered only when the session has a non-empty
+/// `hrSeries` (the parent guards on `WorkoutHRStats.make` being non-nil), so a phone-only /
+/// simulator workout shows nothing here. All HR math lives in the pure `WorkoutHRStats`
+/// helper and `HighlightEngine.HeartRateSeries`; this view is thin (B2).
+private struct HeartRateSummarySection: View {
+    let series: [HRPoint]
+    let stats: WorkoutHRStats
+
+    var body: some View {
+        Section {
+            HeartRateChart(series: series)
+                .frame(height: 160)
+                .padding(.vertical, 4)
+                .accessibilityIdentifier("hrChart")
+
+            HStack(spacing: 24) {
+                hrStat("Avg", bpm: stats.avgBpm)
+                hrStat("Max", bpm: stats.maxBpm)
+                hrStat("Min", bpm: stats.minBpm)
+            }
+            .frame(maxWidth: .infinity)
+
+            if stats.totalSeconds > 0 {
+                ZoneBar(stats: stats)
+            }
+        } header: {
+            Text("Heart rate")
+        }
+    }
+
+    private func hrStat(_ label: String, bpm: Double) -> some View {
+        VStack(spacing: 2) {
+            Text("\(Int(bpm.rounded()))")
+                .font(.title3.monospacedDigit().weight(.semibold))
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A Swift Charts line of bpm over session time. The raw `hrSeries` is resampled + smoothed
+/// via `HighlightEngine.HeartRateSeries` (reused, not reimplemented — the engine stays
+/// platform-free) so the line is clean rather than jagged. The x-axis is elapsed minutes.
+private struct HeartRateChart: View {
+    let series: [HRPoint]
+
+    /// The smoothed (bpm, t-seconds) points the chart draws.
+    private var smoothed: [(t: Double, bpm: Double)] {
+        let samples = series.map { HRSample(t: $0.t, bpm: $0.bpm) }
+        let duration = max(1, series.map(\.t).max() ?? 0)
+        // Reuse the engine's resample→smooth (5 s window is gentle for a chart line).
+        let hr = HeartRateSeries.make(from: samples, duration: duration, dt: 1.0,
+                                      smoothingWindowSec: 5, restBpm: nil, maxBpm: nil)
+        return hr.bpm.enumerated().map { (t: Double($0.offset) * hr.dt, bpm: $0.element) }
+    }
+
+    var body: some View {
+        Chart(smoothed, id: \.t) { point in
+            LineMark(
+                x: .value("Time", point.t / 60),
+                y: .value("BPM", point.bpm)
+            )
+            .foregroundStyle(.red)
+            .interpolationMethod(.catmullRom)
+        }
+        .chartXAxisLabel("min")
+        .chartYAxisLabel("bpm")
+    }
+}
+
+/// A horizontal time-in-zone bar (proportional segments per zone, zone-tinted) + a legend
+/// listing each used zone with its minutes. Reuses `HeartRateZone` for colors/labels.
+private struct ZoneBar: View {
+    let stats: WorkoutHRStats
+
+    private var used: [(zone: HeartRateZone, seconds: Double)] {
+        stats.orderedZoneSeconds.filter { $0.seconds > 0 }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                HStack(spacing: 1) {
+                    ForEach(used, id: \.zone.rawValue) { item in
+                        item.zone.color
+                            .frame(width: max(1, geo.size.width * (item.seconds / stats.totalSeconds)))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .frame(height: 12)
+            .accessibilityIdentifier("hrZoneBar")
+
+            ForEach(used, id: \.zone.rawValue) { item in
+                HStack(spacing: 6) {
+                    Circle().fill(item.zone.color).frame(width: 8, height: 8)
+                    Text(item.zone.pillLabel).font(.caption)
+                    Spacer()
+                    Text(Self.minutesLabel(item.seconds))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    static func minutesLabel(_ seconds: Double) -> String {
+        let mins = seconds / 60
+        return mins >= 1 ? "\(Int(mins.rounded())) min" : "\(Int(seconds.rounded()))s"
     }
 }
 
