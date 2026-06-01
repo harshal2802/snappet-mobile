@@ -25,12 +25,28 @@ enum SettleUp {
     /// For each expense the cost is split equally among its `participants`; the `payer`
     /// is credited the full amount. A participant's net is therefore
     /// `(sum of amounts they paid) - (sum of their equal shares)`.
+    ///
+    /// A settlement record (`isSettlement == true`) is *not* split: it is a direct
+    /// transfer where the `payer` pays the single recipient (its lone `participant`)
+    /// `amount`. The payer's net rises by `amount` (they've now paid off that much) and
+    /// the recipient's net falls by `amount` (they've been paid back), so an outstanding
+    /// debtor/creditor pair converges to zero once a settlement equal to the suggested
+    /// transfer is recorded.
     static func balances(participants: [String], expenses: [ExpenseRecord]) -> [Balance] {
         var net: [String: Double] = Dictionary(uniqueKeysWithValues: participants.map { ($0, 0.0) })
 
         for expense in expenses {
             // Guard against an expense with no split targets (shouldn't happen via the UI).
             guard !expense.participants.isEmpty else { continue }
+
+            if expense.isSettlement {
+                // Direct transfer: payer pays the single recipient `amount`.
+                let recipient = expense.participants[0]
+                net[expense.payer, default: 0] += expense.amount
+                net[recipient, default: 0] -= expense.amount
+                continue
+            }
+
             let share = expense.amount / Double(expense.participants.count)
 
             // Credit the payer for what they fronted.

@@ -28,6 +28,7 @@ struct ExpenseRootView: View {
                 } label: {
                     Label("New Group", systemImage: "plus")
                 }
+                .accessibilityIdentifier("expense.newGroup")
             }
         }
         .navigationDestination(for: ExpenseGroup.self) { group in
