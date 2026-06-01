@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.workout
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -45,9 +45,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.delay
 
-private val Orange = Color(0xFFF76808)
+private val Orange = SnappetAccents.Ember
 
 private enum class PlayerPhase { EXERCISE, REST, DONE }
 
@@ -298,6 +302,13 @@ private fun ExercisePhase(
 
 @Composable
 private fun RestPhase(padding: PaddingValues, remaining: Int, total: Int, onSkip: () -> Unit) {
+    val reduceMotion = LocalReduceMotion.current
+    val targetProgress = if (total > 0) remaining.toFloat() / total else 0f
+    val progress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = gated(reduceMotion, SnappetMotion.quick()),
+        label = "workoutRestProgress",
+    )
     Column(
         Modifier.fillMaxSize().padding(padding).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -314,7 +325,6 @@ private fun RestPhase(padding: PaddingValues, remaining: Int, total: Int, onSkip
                     color = Orange.copy(alpha = 0.15f), startAngle = 0f, sweepAngle = 360f, useCenter = false,
                     topLeft = Offset(inset, inset), size = arcSize, style = Stroke(width = stroke),
                 )
-                val progress = if (total > 0) remaining.toFloat() / total else 0f
                 drawArc(
                     color = Orange, startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
                     topLeft = Offset(inset, inset), size = arcSize, style = Stroke(width = stroke, cap = StrokeCap.Round),
