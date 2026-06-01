@@ -222,7 +222,13 @@ struct WorkoutHomeView: View {
                 startLiveMetrics(for: session, routine: routine)
             } else {
                 app.liveWorkout.start(for: session, sport: nil, category: nil)
+                startLiveActivity(for: session)
             }
+        } else {
+            // Watch is already streaming (warm resume) so we skip restarting live metrics, but
+            // the Live Activity lives on the phone independently — (re)start it so it reflects
+            // the resumed session (e.g. after a cold relaunch). `start` ends any prior activity.
+            startLiveActivity(for: session)
         }
         playing = session
     }
@@ -235,6 +241,18 @@ struct WorkoutHomeView: View {
         let category = WorkoutActivityMapping.dominantCategory(
             of: routine.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category })
         app.liveWorkout.start(for: session, sport: routine.sport, category: category)
+        startLiveActivity(for: session)
+    }
+
+    /// Begin the Live Activity (overall timer + live HR + current exercise on the Lock Screen /
+    /// Dynamic Island) anchored on `session.startedAt`. The overall timer ticks off that date
+    /// with no background CPU; the player pushes HR/exercise updates as it advances. No-op where
+    /// Live Activities are unavailable/unauthorized (live-workout-studio A2).
+    private func startLiveActivity(for session: WorkoutSession) {
+        let first = session.exercises.first { !$0.skipped }
+        let name = first.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
+        app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
+                               exerciseName: name, setProgress: "")
     }
 
     private func makeSession(from routine: Routine) -> WorkoutSession {
@@ -258,6 +276,8 @@ struct WorkoutHomeView: View {
         // End the watch session regardless of save/discard so the watch isn't left
         // recording. (Buffered HRSamples are retained on the service for B2.)
         app.liveWorkout.stop()
+        // End the Live Activity alongside the watch session.
+        app.liveActivity.end()
         if saved {
             session.completedAt = .now
             try? context.save()
