@@ -4,6 +4,83 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] B3 — non-destructive CapCut-style on-device clip editor (WorkoutTracker)
+
+**Decision**: Implemented prompt B3 (`pdd/prompts/features/live-workout-studio/B3-clip-editor.md`,
+branch `feat/live-workout-clip-editor`). A tagged **video** in a session's `SessionDetailView` B1 gallery now
+opens a **non-destructive, fully on-device clip editor** — the user's "individually adjust the split/crop,
+text overlay and all the basic CapCut/edit features" (RESEARCH.md §3.5). Edit state is **data, not baked
+pixels**; nothing renders until export, so editing is instant + reversible. Builds on the existing
+`ReelExporter` AVFoundation stitch.
+
+**Concrete, non-obvious choices made:**
+- **Non-destructive `@Model ClipEdit`** (`Features/WorkoutTracker/ClipEdit.swift`), keyed to its source
+  `SessionMedia` by `sessionMediaID: UUID` (a **foreign key**, NOT a `@Relationship` — the suite convention,
+  matching `SessionMedia.sessionID`), with the PHAsset `localIdentifier` **denormalized** so `VideoStudio`
+  resolves the source without a second fetch. Holds the edit list: `trimStart`/`trimEnd` (split = two
+  `ClipEdit`s with adjacent trims + `splitOrder`); a normalized crop rect (`cropX/Y/Width/Height`) + an
+  `OutputAspect` (9:16 / 1:1 / 16:9 / original); `speed` (0.25–4×); `textOverlays: [TextOverlay]` (an inline
+  `Codable` composite — `string`, normalized-center `CGPoint`, `fontSize`, `colorHex`, `startSec`/`endSec` —
+  like `WorkoutSession.exercises`/`hrSeries`, **not** a child `@Model`); `mutedOriginalAudio` + optional
+  `musicTrackName`. **One central edit**: `ClipEdit.self` appended to the single `SnappetSchema.models` line
+  (additive → SwiftData lightweight migration, same precedent as B1's `SessionMedia`).
+- **All geometry/timing math isolated into `ClipEditGeometry`** (`Features/WorkoutTracker/`,
+  Foundation+CoreGraphics only — value types, **no AVFoundation/SwiftUI**), so trim→`TimeWindow`
+  (clamp to `[0, assetDuration]`, force `start<end`, collapse a degenerate/inverted range to a tiny min
+  slice), speed→scaled output duration (`sourceDuration / clampedSpeed`), normalized crop-rect→
+  `CGAffineTransform` (aspect-fill the cropped region into `renderSize`, sanitized so a degenerate rect can't
+  NaN), normalized position→`CALayer` point (**y-flipped** to CALayer's bottom-left origin), output
+  `renderSize` per aspect (canvas longer edge = source longer edge, rounded to **even** dims — H.264
+  requires even W/H), and split→two **adjacent, non-overlapping** windows (`a.end == b.start`, both ≥
+  minDuration) are **unit-tested in `SnappetTests` with no device/AVFoundation** (23 cases) — the same
+  testability discipline that keeps `HighlightEngine` platform-free (grep-confirmed: the engine gained no
+  platform import, `git diff` shows its source unchanged). The `renderSize` per aspect is the
+  **mixed-orientation normalization** — a portrait + a landscape source both render into one canvas — which
+  **closes the gap deferred since 2026-05-31** (Photo-Ken-Burns / video-only reels never unified orientation).
+- **`VideoStudio` service** (`Services/VideoStudio.swift`, stateless `Sendable`): one
+  `makeComposition(for: EditPlan) async throws -> sending (AVMutableComposition, AVVideoComposition?)` reused
+  for **both** preview (wrap in `AVPlayer`) and export — mirroring how `ReelExporter` shares one composition
+  (P3). Trim → a source `CMTimeRange`; speed → `scaleTimeRange` on the inserted video (and audio) range;
+  crop/aspect/orientation → `AVMutableVideoComposition.renderSize` + a single
+  `AVMutableVideoCompositionLayerInstruction.setTransform` that **concatenates the track's
+  `preferredTransform` (orientation) with the crop transform**; text overlays → a `CALayer` tree
+  (`CATextLayer`s, time-gated by an opacity `CABasicAnimation`) composited via
+  `AVVideoCompositionCoreAnimationTool`. **Reuses `ReelExporter`'s PHAsset→`AVAsset` resolve + the
+  `Box<T>: @unchecked Sendable` + async `export(to:as:)` patterns** rather than duplicating them
+  (`isNetworkAccessAllowed = false` — on-device).
+- **Swift-6 actor crossing**: a `ClipEdit` is a `@MainActor`-confined, non-Sendable SwiftData `@Model`, so it
+  must NOT cross into `VideoStudio`'s nonisolated build path. Resolved by snapshotting it into a `Sendable`
+  value `EditPlan` (a plain struct, `@MainActor init(_ ClipEdit)`) **on the caller's actor** — the same
+  "engine/service takes a plain value, not the model" discipline as `ReelExporter` taking a `ReelPlan`. The
+  freshly-built composition crosses back with `sending`.
+- **Editor UI** (`ClipEditorView.swift`) is a **sheet** (`.sheet(item: $editingClip)` from
+  `SessionDetailView`) so it owns its own `NavigationStack` — **NOT** nested in the module (which rides the
+  App Library's stack). Inline `VideoPlayer` over the live composition + control cards: trim sliders +
+  Split, an `OutputAspect` segmented picker + a centered zoom-crop slider, a speed slider + 0.5/1/2× presets,
+  a text-overlay list (add/edit/remove via a sub-sheet editing string/size/position/color), and a mute
+  toggle. **All logic in `ClipEditorViewModel`** (`@MainActor @Observable`): owns the `ClipEdit`, rebuilds
+  the `AVPlayer` preview off `VideoStudio` after every edit (with a `buildToken` so a newer edit supersedes
+  an in-flight build), and persists; the view is thin (conventions.md). **Split** inserts a sibling
+  `ClipEdit` (second half) via an `insert` closure and keeps the first half on the current edit.
+  Only **videos** open the editor (photos aren't clip-editable); the editor reuses/creates the primary
+  (lowest-`splitOrder`) `ClipEdit` for that source.
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**. `SnappetWatch`
+(watchOS 26.5 sim) → **BUILD SUCCEEDED**. `SnappetTests` → **97/97 pass** (74 prior + 23 new
+`ClipEditGeometry`: trim clamp/order/inverted/zero-asset, speed double/half/clamp, split adjacency +
+exhaustiveness + too-short→nil, renderSize per aspect + even-dims + degenerate-source, full-frame &
+center crop transforms + degenerate→finite, sanitized crop rect, y-flipped layer point + clamping).
+`HighlightEngine` → **18/18**, source unchanged (grep-clean). `WorkoutWalkthroughTests` → **green** (the sim
+has no Photos/video, so no clip opens the editor in the walkthrough — the gallery/summary flow is unbroken).
+**Device-pending (NOT verified by this build/tests)**: the actual **rendered output** — the cropped,
+text-overlaid, speed-ramped video, the live `AVPlayer` preview, and the mixed-orientation `renderSize`
+normalizing a real portrait+landscape pair — needs **real video assets on a device** (the simulator has no
+Photos/video, so `VideoStudio` resolves no `AVAsset` and the editor shows its no-source preview state). A
+clean build + the pure-math unit tests prove the **model + composition-building + the geometry + the editor
+UI shape**, NOT a verified rendered export (same honesty bar as A1–B2). **Export time + memory profiling**
+of a multi-clip + overlay export is a device gate (PLAN "after B3").
+
 ## [2026-06-01] B2 — enriched post-workout summary (HR chart + band stats + media gallery) (WorkoutTracker)
 
 **Decision**: Implemented prompt B2 (`pdd/prompts/features/live-workout-studio/B2-enriched-summary.md`,

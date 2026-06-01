@@ -190,6 +190,9 @@ private struct SessionMediaSection: View {
     @State private var isDiscovering = false
     @State private var didAutoDiscover = false
     @State private var message: String?
+    /// The video clip being edited in the B3 clip-editor sheet (videos only — photos aren't
+    /// editable in the clip editor). `item:` sheet so the editor owns its own `NavigationStack`.
+    @State private var editingClip: SessionMedia?
 
     init(session: WorkoutSession) {
         self.session = session
@@ -213,7 +216,16 @@ private struct SessionMediaSection: View {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(media) { item in
                         SessionMediaThumb(item: item)
+                            .onTapGesture {
+                                // A tagged video opens the B3 clip editor; photos aren't editable there.
+                                if item.kind == .video { editingClip = item }
+                            }
                             .contextMenu {
+                                if item.kind == .video {
+                                    Button { editingClip = item } label: {
+                                        Label("Edit clip", systemImage: "slider.horizontal.3")
+                                    }
+                                }
                                 Button(role: .destructive) { remove(item) } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
@@ -248,6 +260,9 @@ private struct SessionMediaSection: View {
         }
         .sheet(isPresented: $showingPicker) {
             MediaPicker { ids in addManual(ids) }
+        }
+        .sheet(item: $editingClip) { clip in
+            ClipEditorView(media: clip)
         }
         .task {
             // Auto-discover once when the detail first appears, but only silently — never
