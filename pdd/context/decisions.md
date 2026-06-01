@@ -4,6 +4,49 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] Knowledge graph extended for the Live Workout Studio initiative — per-node screenshots + embedded walkthrough video
+
+**Decision**: Updated the interactive knowledge graph (`docs/knowledge-graph/`, branch
+`feat/graph-studio-update`) to cover the just-merged **Live Workout Capture + Video Studio** initiative
+(A1–B5), and added two new presentation affordances to the detail panel.
+
+**Concrete choices made:**
+- **`data.js` nodes (16 added, 1 retired, several updated)**. Added the pluggable live-metrics layer
+  (`metricssource`, `livemetricscoordinator`, `applewatchsource`, `blesource`) and the studio services
+  (`sessionmediaservice`, `videostudio`, `medialibraryservice`); the shared Live Activity contract node
+  `workoutactivityattributes`; the new `@Model`s `model-sessionmedia` + `model-clipedit`; the new sheets
+  `wt-hr-source-picker`, `wt-clip-editor`, `wt-highlight`; the OS-framework nodes `ext-corebluetooth` +
+  `ext-watchconnectivity`; and an **overview node `live-workout-studio`** (type `section`) that carries the
+  walkthrough video and `contains`/`feeds` the key new nodes so it's discoverable. **Retired** the stale
+  `liveworkoutservice` node (the file `LiveWorkoutService.swift` was renamed in A3 to
+  `LiveMetricsCoordinator.swift` + `AppleWatchMetricsSource.swift`) — its edges re-pointed to
+  `livemetricscoordinator`. **Updated** `sharesheet` (B5 generalized it → `Features/Shell/ShareSheet.swift`),
+  `wt-player`/`wt-session-detail`/`wt-settings` descs (A4 overlay / B2 summary / A3 picker entry), and
+  `model-workout` (B2 `hrSeries`). Wired the full live + studio edge flows with the existing edge types
+  (`uses`/`streams`/`persists`/`feeds`/`present`/`contains`). The link-id integrity check passes (every edge
+  source/target is a defined node id; no orphans, no duplicate node ids) — 109 nodes total.
+- **Per-node screenshots**. Added an optional `shot` field; `renderDetail(n)` injects an `<img class="shot">`
+  under the head (safe when absent), styled in `styles.css` (full panel width, rounded, bordered, `max-height`
+  + `object-fit: contain` so tall phone shots fit). Curated 17 shots: the 9 existing suite screens
+  (`01-home`…`09-budget`) + 8 NEW live-workout frames copied from `/tmp/studio-walkthrough-frames/` into
+  `docs/screenshots/` with semantic names (`workout-dashboard`, `workout-routines`, `routine-detail`,
+  `live-player`, `workout-history`, `workout-summary`, `workout-settings`, `hr-source-picker`). The
+  **ClipEditor / SessionHighlight** screens are **device-only** (no simulator video) → their `shot` is left
+  unset; their detail still shows desc + connections.
+- **Embedded walkthrough video**. Added an optional `video` field rendered as a `<video class="shot-video"
+  controls preload="metadata">` in `renderDetail`, attached to the `live-workout-studio` overview node
+  (`docs/live-workout-studio-walkthrough.mp4`). Added a "▶ Walkthrough video" affordance in `index.html`'s
+  header (an `<a class="btn">` to the relative path, offline-friendly). The root `README.md` gained a
+  **"Walkthrough video"** subsection (HTML5 `<video>` off the GitHub **raw** URL + a relative-link fallback)
+  and the 8 new live-workout screens in the Screens grid; the graph `README.md` "How it was built" note now
+  cites the initiative + the `shot`/`video` additions.
+- **Stays static/offline**: no build step. **Verified**: braces balanced in `data.js` (310/310); the
+  `renderDetail` template-literal injection follows the existing `${cond ? \`…\` : ""}` pattern; every
+  `shot`/`video` path resolves to an existing file (17 PNGs + the mp4); link-id integrity + no-duplicate-id
+  checks pass. (`node --check` could not be run in this sandbox — Node execution is blocked — so syntax was
+  confirmed structurally: balanced delimiters, the exact existing node/edge object shape, and a grep-based
+  source/target-vs-node-id audit.) Only the renamed PNG copies are committed; the `/tmp` frames are not.
+
 ## [2026-06-01] Live Workout Studio walkthrough — chronological screenshot UI test + a test-only HR demo seed
 
 **Decision**: Added a demo/QA asset (branch `feat/live-workout-walkthrough-video`, prompt
