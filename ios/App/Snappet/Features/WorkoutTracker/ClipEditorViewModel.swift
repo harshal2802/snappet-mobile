@@ -21,15 +21,22 @@ final class ClipEditorViewModel {
     private(set) var state: State = .idle
     private(set) var previewPlayer: AVPlayer?
 
+    /// B5: the export → share / save-to-Photos flow (the rendered `.mp4` is carried in `.exported`
+    /// so share + save reuse the single render). Drives the editor's bottom action bar.
+    private(set) var exportState: ExportShareState = .idle
+
     private let studio: VideoStudio
+    private let library: MediaLibraryService
     private let save: () -> Void
     private let insert: (ClipEdit) -> Void
     private var buildToken = 0
 
     init(edit: ClipEdit, studio: VideoStudio,
-         insert: @escaping (ClipEdit) -> Void, save: @escaping () -> Void) {
+         insert: @escaping (ClipEdit) -> Void, save: @escaping () -> Void,
+         library: MediaLibraryService = MediaLibraryService()) {
         self.edit = edit
         self.studio = studio
+        self.library = library
         self.insert = insert
         self.save = save
     }
@@ -141,11 +148,43 @@ final class ClipEditorViewModel {
         return true
     }
 
+    // MARK: - B5: Export → share / save to Photos
+
+    /// Render the current edit to a temp `.mp4` via the shared `VideoStudio` (the same composition
+    /// the preview uses), leaving the result in `.exported(url)` so the view can share it or save it
+    /// to Photos. Re-exporting from any state is allowed (a later edit produces a fresh render).
+    func export() async {
+        exportState = exportState.beginningExport()
+        let plan = EditPlan(edit)   // snapshot on the MainActor; the @Model never crosses actors
+        do {
+            let url = try await studio.export(plan)
+            exportState = exportState.exportSucceeded(url)
+        } catch {
+            exportState = exportState.failed(
+                (error as? LocalizedError)?.errorDescription ?? "Couldn't export this clip.")
+        }
+    }
+
+    /// Save the already-exported file to the user's Photos library (add-only, on-device).
+    func saveToPhotos() async {
+        guard let url = exportState.exportedURL else { return }
+        exportState = exportState.beginningSave()
+        do {
+            try await library.saveVideoToPhotos(url)
+            exportState = exportState.saveSucceeded()
+        } catch {
+            exportState = exportState.failed(
+                (error as? LocalizedError)?.errorDescription ?? "Couldn't save to Photos.")
+        }
+    }
+
     // MARK: - Persist + invalidate
 
     private func commit() {
         edit.updatedAt = .now
         save()
+        // A new edit invalidates any prior export (the rendered file no longer matches).
+        if !exportState.isBusy { exportState = .idle }
         Task { await rebuild() }
     }
 }
