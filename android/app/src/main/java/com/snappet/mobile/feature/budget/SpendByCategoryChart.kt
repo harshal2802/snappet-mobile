@@ -14,6 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,6 +28,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 
 /** One category's spend for the selected month — the unit the chart plots. */
 data class CategorySpend(val name: String, val amount: Double)
@@ -41,6 +50,14 @@ private val sliceColors = listOf(
 @Composable
 fun SpendByCategoryChart(slices: List<CategorySpend>, periodLabel: String, modifier: Modifier = Modifier) {
     val total = slices.sumOf { it.amount }
+    val reduceMotion = LocalReduceMotion.current
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val sweepFactor by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "spendDonutSweep",
+    )
     Column(
         modifier
             .fillMaxWidth()
@@ -56,7 +73,7 @@ fun SpendByCategoryChart(slices: List<CategorySpend>, periodLabel: String, modif
                 var startAngle = -90f
                 val safeTotal = if (total > 0) total else 1.0
                 slices.forEachIndexed { i, slice ->
-                    val sweep = (slice.amount / safeTotal * 360.0).toFloat()
+                    val sweep = (slice.amount / safeTotal * 360.0).toFloat() * sweepFactor
                     drawArc(
                         color = sliceColors[i % sliceColors.size],
                         startAngle = startAngle,
