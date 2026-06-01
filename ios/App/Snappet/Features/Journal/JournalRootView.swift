@@ -2,7 +2,8 @@ import SwiftUI
 import SwiftData
 
 /// The Quick Journal root: a list of entries (newest first) with create / view-edit /
-/// delete. Pushed into the suite's NavigationStack, so it adds no stack of its own.
+/// delete, plus live search/filter by title, body, or tag. Pushed into the suite's
+/// NavigationStack, so it adds no stack of its own.
 struct JournalRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SnappetCore.self) private var core
@@ -10,17 +11,33 @@ struct JournalRootView: View {
     @Query(sort: \JournalEntry.createdAt, order: .reverse) private var entries: [JournalEntry]
 
     @State private var newEntry: JournalEntry?
+    @State private var searchText: String = ""
+
+    /// Entries matching the current search query (title, body, or any tag — case-insensitive).
+    /// Kept out of `body` so the view stays thin.
+    private var filteredEntries: [JournalEntry] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return entries }
+        return entries.filter { entry in
+            entry.title.lowercased().contains(query)
+                || entry.body.lowercased().contains(query)
+                || entry.tags.contains { $0.contains(query) }
+        }
+    }
 
     var body: some View {
         Group {
             if entries.isEmpty {
                 ContentUnavailableView("No entries yet", systemImage: "book.closed",
                     description: Text("Tap + to write your first journal entry."))
+            } else if filteredEntries.isEmpty {
+                ContentUnavailableView.search(text: searchText)
             } else {
                 entryList
             }
         }
         .navigationTitle("Journal")
+        .searchable(text: $searchText, prompt: "Search title, body, or tag")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -28,6 +45,7 @@ struct JournalRootView: View {
                 } label: {
                     Label("New Entry", systemImage: "plus")
                 }
+                .accessibilityIdentifier("journal.add")
             }
         }
         .navigationDestination(for: JournalEntry.self) { entry in
@@ -40,7 +58,7 @@ struct JournalRootView: View {
 
     private var entryList: some View {
         List {
-            ForEach(entries) { entry in
+            ForEach(filteredEntries) { entry in
                 Button { router.push(entry) } label: {
                     JournalRow(entry: entry)
                 }
@@ -58,14 +76,16 @@ struct JournalRootView: View {
     }
 
     private func deleteEntries(at offsets: IndexSet) {
+        // Map list offsets through the filtered view so the right entries are removed.
+        let visible = filteredEntries
         for index in offsets {
-            modelContext.delete(entries[index])
+            modelContext.delete(visible[index])
         }
         try? modelContext.save()
     }
 }
 
-/// A single row: title (or first line of body) plus the created date.
+/// A single row: title (or first line of body), the created date, and any tags.
 private struct JournalRow: View {
     let entry: JournalEntry
 
@@ -77,6 +97,12 @@ private struct JournalRow: View {
             Text(entry.createdAt, format: .dateTime.month().day().year().hour().minute())
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if !entry.tags.isEmpty {
+                Text(entry.tags.map { "#\($0)" }.joined(separator: " "))
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                    .lineLimit(1)
+            }
         }
     }
 

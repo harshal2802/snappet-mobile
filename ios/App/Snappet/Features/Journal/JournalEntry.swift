@@ -16,11 +16,29 @@ final class JournalEntry {
     var createdAt: Date
     /// When the entry was last edited (equals `createdAt` until first edit).
     var updatedAt: Date
+    /// Free-form tags for organizing/filtering. Stored normalized (see `normalizeTags`):
+    /// trimmed, lowercased, de-duplicated, empties dropped. Defaulted so SwiftData performs a
+    /// lightweight additive migration for stores created before this property existed.
+    var tags: [String] = []
 
-    init(title: String, body: String, createdAt: Date = .now, updatedAt: Date = .now) {
+    init(title: String, body: String, createdAt: Date = .now, updatedAt: Date = .now, tags: [String] = []) {
         self.title = title
         self.body = body
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.tags = JournalEntry.normalizeTags(tags)
+    }
+
+    /// Normalize raw tag strings: trim whitespace, lowercase, drop empties, and de-duplicate
+    /// while preserving first-seen order.
+    static func normalizeTags(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for tag in raw {
+            let normalized = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !normalized.isEmpty, seen.insert(normalized).inserted else { continue }
+            result.append(normalized)
+        }
+        return result
     }
 }
