@@ -7,6 +7,9 @@ the edges.
 
 It's a single static site — **no build step, no backend, fully offline**. Open it and explore.
 
+**Live:** [harshal2802.github.io/snappet-mobile/knowledge-graph](https://harshal2802.github.io/snappet-mobile/knowledge-graph/)
+(once GitHub Pages is enabled — see below).
+
 ## Open it
 
 ```sh
@@ -19,7 +22,15 @@ cd docs/knowledge-graph && python3 -m http.server 8000
 # → http://localhost:8000
 ```
 
-It also works as a **GitHub Pages** site (point Pages at `/docs`, then visit `…/knowledge-graph/`).
+### GitHub Pages
+
+The site is plain static HTML/JS, so Pages serves it with no build:
+
+1. Repo **Settings → Pages → Source: "Deploy from a branch" → `main` / `/docs`**.
+2. Visit `https://<owner>.github.io/snappet-mobile/knowledge-graph/`.
+
+The repo includes an empty `docs/.nojekyll` so Pages serves the files verbatim instead of
+running them through Jekyll.
 
 ## What you can do
 

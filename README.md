@@ -34,8 +34,14 @@ the iOS 26 simulator.
 Explore the whole app as a **searchable, interactive knowledge graph** — every screen, sheet,
 service, engine component and data model, wired by the navigation and data flows that connect
 them. Three layouts, fuzzy search, workflow path-tracing, filters and deep-links; no build step,
-fully offline. See [`docs/knowledge-graph/`](docs/knowledge-graph/README.md) — open
-`docs/knowledge-graph/index.html`, or serve `/docs` via GitHub Pages.
+fully offline.
+
+**▶︎ [Open the interactive map](https://harshal2802.github.io/snappet-mobile/knowledge-graph/)**
+(GitHub Pages) · or open `docs/knowledge-graph/index.html` locally · source &
+docs in [`docs/knowledge-graph/`](docs/knowledge-graph/README.md).
+
+> Enabling Pages: **Settings → Pages → Deploy from a branch → `main` / `/docs`**. The site is
+> plain static HTML/JS (a `.nojekyll` file makes Pages serve it verbatim).
 
 ## Status
 
