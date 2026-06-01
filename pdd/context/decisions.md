@@ -319,3 +319,19 @@ pinned to "now". A value type makes month stepping a one-liner and keeps the sco
 **Rules out**: the old `MonthScope.contains(_:now:)` static call sites (all migrated).
 **Verified**: `xcodebuild build-for-testing` (iPhone 17 Pro sim) — TEST BUILD SUCCEEDED; new
 `BudgetUITests` compiles into the UI-test bundle. (Live run deferred to the merge pass.)
+
+## [2026-05-31] Split Expenses: manual settlements as a flagged ExpenseRecord
+
+**Decision**: A manual settlement ("X paid Y back") is stored as a normal `ExpenseRecord` with a new
+additive flag `var isSettlement: Bool = false` (lightweight migration via the default), `payer = X`,
+`participants = [Y]` (the lone recipient), and `amount`. It is **not** split: the balance math in
+`SettleUp.balances` treats `isSettlement` records as a direct transfer — `+amount` to the payer's net,
+`-amount` to the recipient's net — so recording a settlement equal to a suggested transfer drives that
+pair's balances to zero and the greedy plan converges. Editing reuses the existing sheets:
+`NewExpenseSheet`/`NewGroupSheet` take an optional model and update it in place; new
+`RecordSettlementSheet` inserts the settlement. **Why**: a flagged record keeps one flat model and one
+fetch/predicate path, needs no schema/`SnappetSchema.models` change, and feeds the same balance pass —
+no second store, no parallel ledger. **Rules out**: a separate `Settlement` @Model; mutating the
+greedy algorithm (kept as-is). Dropping a participant who appears on a record warns before saving but
+is allowed (past entries keep their names). **Verified**: `xcodebuild build-for-testing` TEST BUILD
+SUCCEEDED (iPhone 17 Pro sim, 0 warnings); `ExpenseUITests` compiles. Live run deferred to the merge pass.

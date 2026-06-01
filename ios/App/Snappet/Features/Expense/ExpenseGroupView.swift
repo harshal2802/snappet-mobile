@@ -12,6 +12,10 @@ struct ExpenseGroupView: View {
     @Query private var expenses: [ExpenseRecord]
 
     @State private var showingNewExpense = false
+    @State private var showingSettlement = false
+    @State private var showingEditGroup = false
+    /// The expense currently being edited via `NewExpenseSheet`, if any.
+    @State private var editingExpense: ExpenseRecord?
 
     init(group: ExpenseGroup) {
         self.group = group
@@ -36,16 +40,56 @@ struct ExpenseGroupView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingNewExpense = true
+                Menu {
+                    Button {
+                        showingNewExpense = true
+                    } label: {
+                        Label("Add Expense", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("expense.newExpense")
+
+                    Button {
+                        showingSettlement = true
+                    } label: {
+                        Label("Record Settlement", systemImage: "arrow.left.arrow.right")
+                    }
+                    .accessibilityIdentifier("expense.settle")
+
+                    Button {
+                        showingEditGroup = true
+                    } label: {
+                        Label("Edit Group", systemImage: "pencil")
+                    }
+                    .accessibilityIdentifier("expense.editGroup")
                 } label: {
-                    Label("Add Expense", systemImage: "plus")
+                    Label("Group Actions", systemImage: "plus")
                 }
+                .accessibilityIdentifier("expense.groupActions")
             }
         }
         .sheet(isPresented: $showingNewExpense) {
             NewExpenseSheet(group: group)
         }
+        .sheet(item: $editingExpense) { expense in
+            NewExpenseSheet(group: group, record: expense)
+        }
+        .sheet(isPresented: $showingSettlement) {
+            RecordSettlementSheet(group: group)
+        }
+        .sheet(isPresented: $showingEditGroup) {
+            NewGroupSheet(group: group, usedNames: usedNames)
+        }
+    }
+
+    /// Participant names referenced as payer or splitter on any record — used to warn
+    /// before dropping them when editing the group.
+    private var usedNames: Set<String> {
+        var names = Set<String>()
+        for expense in expenses {
+            names.insert(expense.payer)
+            names.formUnion(expense.participants)
+        }
+        return names
     }
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "USD" }
@@ -107,6 +151,17 @@ struct ExpenseGroupView: View {
         Section("Expenses") {
             ForEach(expenses) { expense in
                 ExpenseRow(expense: expense, currency: currency)
+                    .contentShape(Rectangle())
+                    .onTapGesture { editingExpense = expense }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            editingExpense = expense
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.blue)
+                        .accessibilityIdentifier("expense.editExpense")
+                    }
             }
             .onDelete(perform: deleteExpenses)
         }
@@ -135,7 +190,12 @@ private struct ExpenseRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            HStack(spacing: 6) {
+                if expense.isSettlement {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                }
                 Text(expense.title)
                     .font(.headline)
                     .lineLimit(1)
@@ -143,6 +203,7 @@ private struct ExpenseRow: View {
                 Text(currency(expense.amount))
                     .font(.headline)
                     .monospacedDigit()
+                    .foregroundStyle(expense.isSettlement ? .green : .primary)
             }
             Text(detail)
                 .font(.subheadline)
@@ -152,6 +213,10 @@ private struct ExpenseRow: View {
     }
 
     private var detail: String {
-        "\(expense.payer) paid · split \(expense.participants.count) ways"
+        if expense.isSettlement {
+            let recipient = expense.participants.first ?? "someone"
+            return "Settlement · \(expense.payer) paid \(recipient)"
+        }
+        return "\(expense.payer) paid · split \(expense.participants.count) ways"
     }
 }

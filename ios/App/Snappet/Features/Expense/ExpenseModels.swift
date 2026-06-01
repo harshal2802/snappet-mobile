@@ -35,14 +35,20 @@ final class ExpenseRecord {
     /// Participants the cost is split equally among (defaults to all group members).
     var participants: [String]
     var date: Date
+    /// When `true`, this record is a manual settlement ("`payer` paid the single
+    /// participant `amount` back") rather than a shared expense. It feeds the balance
+    /// math as a direct transfer: it is not split, and moves the pair toward zero.
+    /// Additive with a default so the SwiftData migration stays lightweight.
+    var isSettlement: Bool = false
 
     init(groupID: UUID, title: String, amount: Double, payer: String,
-         participants: [String], date: Date = .now) {
+         participants: [String], date: Date = .now, isSettlement: Bool = false) {
         self.groupID = groupID
         self.title = title
         self.amount = amount
         self.payer = payer
         self.participants = participants
         self.date = date
+        self.isSettlement = isSettlement
     }
 }
