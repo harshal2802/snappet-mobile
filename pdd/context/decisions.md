@@ -263,3 +263,22 @@ top-level schema simple. A bottom tab bar would collide with the suite's own Hom
 module; dashboard renders with the 15 starters seeded; Browse decodes all 873 exercises. This module
 has **no device-only dependencies** (no HealthKit/Photos), so the sim run exercises it for real —
 unlike Workout Reels. Engine tests unchanged (18/18).
+
+## [2026-05-31] Journal tags via additive SwiftData migration
+
+**Decision**: Add `var tags: [String] = []` to the existing `JournalEntry` `@Model` rather than a
+new tag entity or relationship. Tags are normalized at the boundary (`JournalEntry.normalizeTags`:
+trim, lowercase, drop empties, de-dupe preserving order). `SnappetSchema.models` is **unchanged**
+(the type is already registered — only a stored property is added). Search filters live in a
+`filteredEntries` computed property on `JournalRootView` (title/body/any-tag, case-insensitive) via
+`.searchable`; the editor commits chips on comma/return and shows removable chips.
+**Why**: an additive property with a default triggers SwiftData's **lightweight migration**, so
+pre-existing entries (no tags) load without wiping the store — no versioned `SchemaMigrationPlan`
+needed. A `[String]` on the model is simpler than a tag entity for free-form, per-entry labels and
+keeps `#Predicate`/in-memory filtering trivial. The editor stays a pushed destination (not a nested
+`NavigationStack`).
+**Rules out**: a destructive migration; a separate Tag `@Model`/relationship; editing existing
+`JournalEntry` fields or `SnappetSchema.models`.
+**Verified**: `xcodegen generate` + `xcodebuild build-for-testing` (iPhone 17 Pro sim, Swift 6) →
+`** TEST BUILD SUCCEEDED **`, 0 Journal warnings. `JournalUITests` compiles. The tag+search flow is
+asserted in UI tests but not yet executed on the sim in this pass (build-for-testing only).

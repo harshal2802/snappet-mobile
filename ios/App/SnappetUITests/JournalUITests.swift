@@ -1,0 +1,81 @@
+import XCTest
+
+/// UI flow for the Journal mini-app's tags + search feature: open Journal from the App Library,
+/// create two entries (one carrying a unique tag), then search by that tag and assert the list
+/// filters down to the tagged entry. Clearing the search restores the full list.
+final class JournalUITests: XCTestCase {
+    var app: XCUIApplication!
+
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launch()
+    }
+
+    /// Open the Journal module from the App Library.
+    private func openJournal() {
+        app.tabBars.buttons["Apps"].tap()
+        let card = app.buttons["moduleCard.journal"]
+        XCTAssertTrue(card.waitForExistence(timeout: 6), "App Library should have a Journal card")
+        var tries = 0
+        while !card.isHittable && tries < 8 { app.swipeUp(); tries += 1 }
+        card.tap()
+        XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 6), "Journal should open")
+    }
+
+    /// Create one entry with the given title and optional tag.
+    private func createEntry(title: String, tag: String?) {
+        app.buttons["journal.add"].tap()
+
+        let titleField = app.textFields["journal.titleField"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 4), "editor title field should appear")
+        titleField.tap()
+        titleField.typeText(title)
+
+        if let tag {
+            let tagField = app.textFields["journal.tagField"]
+            XCTAssertTrue(tagField.waitForExistence(timeout: 4), "editor tag field should appear")
+            tagField.tap()
+            // Comma commits the tag into a chip.
+            tagField.typeText("\(tag),")
+        }
+
+        app.buttons["journal.save"].tap()
+        XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 4), "should return to the list")
+    }
+
+    func testTagAndSearchFlow() {
+        openJournal()
+
+        // Unique tokens so the assertions are independent of any pre-existing store contents.
+        let unique = String(UInt32.random(in: 100_000...999_999))
+        let taggedTitle = "Tagged-\(unique)"
+        let plainTitle = "Plain-\(unique)"
+        let tag = "trip\(unique)"
+
+        createEntry(title: taggedTitle, tag: tag)
+        createEntry(title: plainTitle, tag: nil)
+
+        let taggedCell = app.staticTexts[taggedTitle]
+        let plainCell = app.staticTexts[plainTitle]
+        XCTAssertTrue(taggedCell.waitForExistence(timeout: 4), "tagged entry should be listed")
+        XCTAssertTrue(plainCell.waitForExistence(timeout: 4), "plain entry should be listed")
+
+        // Search by the unique tag → only the tagged entry should remain.
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 4), "search field should be present")
+        searchField.tap()
+        searchField.typeText(tag)
+
+        XCTAssertTrue(taggedCell.waitForExistence(timeout: 4), "tag search should keep the tagged entry")
+        XCTAssertFalse(plainCell.waitForExistence(timeout: 2), "tag search should hide the untagged entry")
+
+        // Clear the search → both entries return.
+        if app.buttons["Clear text"].exists { app.buttons["Clear text"].tap() }
+        else { searchField.buttons.firstMatch.tap() }
+
+        XCTAssertTrue(taggedCell.waitForExistence(timeout: 4), "clearing search should restore the tagged entry")
+        XCTAssertTrue(plainCell.waitForExistence(timeout: 4), "clearing search should restore the plain entry")
+    }
+}
