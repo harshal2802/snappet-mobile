@@ -134,7 +134,9 @@ const nodes = [
   { id: "wt-progress", label: "ExerciseProgressView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/ExerciseProgressView.swift", desc: "Charted progress over time for one exercise (pushed by ProgressRoute).", tags: ["detail","charts"] },
   { id: "wt-player", label: "WorkoutPlayerView", type: "cover", group: "workout-log", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutPlayerView.swift", desc: "Full-screen guided session: per-set logging, rest timer, live HR. Starts watch live-metrics + a Live Activity; on close, saves or discards.", tags: ["player","fullscreen","live"] },
+    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutPlayerView.swift", desc: "Full-screen guided session: per-set logging, rest timer, live HR. Pause/Resume (relayed to the watch), Minimize (leave without ending — keeps running in the background), and animated exercise→rest→done transitions. Starts watch live-metrics + a Live Activity; schedules background rest-complete notifications.", tags: ["player","fullscreen","live","pause","background"] },
+  { id: "wt-live-banner", label: "LiveWorkoutBanner", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/LiveWorkoutBanner.swift", desc: "Persistent in-app banner shown while a workout runs but the player is minimized: routine, self-ticking overall timer, zone-colored live HR. Tap zooms back into the player.", tags: ["live","banner","background"] },
   { id: "wt-routine-editor", label: "RoutineEditorView", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/RoutineEditorView.swift", desc: "Create/edit a routine; presents the exercise picker to add exercises.", tags: ["editor"] },
   { id: "wt-exercise-editor", label: "ExerciseEditorView", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
@@ -222,7 +224,9 @@ const nodes = [
   { id: "liveworkoutservice", label: "LiveWorkoutService", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/LiveWorkoutService.swift", desc: "Bridges the watch HKWorkoutSession to the phone: starts/stops the activity and ingests streamed live HR.", tags: ["live","hr","watch"] },
   { id: "liveactivitycontroller", label: "LiveActivityController", type: "service", group: "core", category: "core", platform: "ios",
-    file: "ios/App/Snappet/Services/LiveActivityController.swift", desc: "Drives the Lock Screen / Dynamic Island Live Activity: overall timer, live HR, current exercise.", tags: ["live-activity"] },
+    file: "ios/App/Snappet/Services/LiveActivityController.swift", desc: "Drives the Lock Screen / Dynamic Island Live Activity: overall timer, live HR, current exercise, and paused state.", tags: ["live-activity","pause"] },
+  { id: "workoutnotifications", label: "WorkoutNotifications", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Services/WorkoutNotifications.swift", desc: "Local notifications for a backgrounded/minimized workout — schedules a 'rest complete' alert (UNUserNotifications) so the rest still reaches the notification bar when the player isn't foregrounded.", tags: ["notifications","background"] },
   { id: "workoutactivitymapping", label: "WorkoutActivityMapping", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/WorkoutActivityMapping.swift", desc: "Maps a routine's sport/dominant-category to the HKWorkoutActivityType the watch should record.", tags: ["mapping"] },
 
@@ -244,15 +248,17 @@ const nodes = [
   { id: "watchapp", label: "SnappetWatchApp", type: "watch", group: "watch", category: "fitness", platform: "watchos",
     file: "ios/App/SnappetWatch/SnappetWatchApp.swift", desc: "watchOS companion entry point.", tags: ["watchos","entry"] },
   { id: "watchview", label: "WatchWorkoutView", type: "watch", group: "watch", category: "fitness", platform: "watchos",
-    file: "ios/App/SnappetWatch/WatchWorkoutView.swift", desc: "Live workout face on the watch: HR + timers.", tags: ["watchos","live"] },
+    file: "ios/App/SnappetWatch/WatchWorkoutView.swift", desc: "Rich two-page watch face (vertical paging): a zone-colored HR + elapsed + energy + avg-HR Metrics page, and a Controls page (Pause/Resume + End) driven on the wrist and relayed to the phone.", tags: ["watchos","live","controls"] },
   { id: "watchmanager", label: "WorkoutWatchManager", type: "watch", group: "watch", category: "fitness", platform: "watchos",
-    file: "ios/App/SnappetWatch/WorkoutWatchManager.swift", desc: "Runs the HKWorkoutSession on the watch and streams HR samples to the phone.", tags: ["watchos","hkworkout"] },
+    file: "ios/App/SnappetWatch/WorkoutWatchManager.swift", desc: "Runs the HKWorkoutSession on the watch (start/pause/resume/end), tracks avg HR, and streams HR/energy samples to the phone.", tags: ["watchos","hkworkout","pause"] },
   { id: "watchlink", label: "WatchConnectivityLink", type: "watch", group: "watch", category: "fitness", platform: "watchos",
-    file: "ios/App/SnappetWatch/WatchConnectivityLink.swift", desc: "WatchConnectivity transport relaying live HR/control messages between watch and phone.", tags: ["watchconnectivity"] },
+    file: "ios/App/SnappetWatch/WatchConnectivityLink.swift", desc: "WatchConnectivity transport relaying live HR + bidirectional start/stop/pause/resume control messages between watch and phone.", tags: ["watchconnectivity","pause"] },
 
   // ═════════════════ Widget / Live Activity ═════════════════
   { id: "liveactivity-widget", label: "WorkoutLiveActivity", type: "widget", group: "watch", category: "fitness", platform: "ios",
-    file: "ios/App/SnappetWidgets/WorkoutLiveActivity.swift", desc: "WidgetKit Live Activity UI for the Lock Screen + Dynamic Island.", tags: ["widgetkit","live-activity"] },
+    file: "ios/App/SnappetWidgets/WorkoutLiveActivity.swift", desc: "WidgetKit Live Activity UI for the Lock Screen + Dynamic Island: overall timer, zone-colored HR, current exercise, and a Paused badge that freezes the timer.", tags: ["widgetkit","live-activity","pause"] },
+  { id: "heartratezone", label: "HeartRateZone", type: "model", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Shared/HeartRateZone.swift", desc: "Pure bpm→training-zone value type (color + label) shared (Shared/) across the phone overlay, the watch face, and the Live Activity so all three render the same zone.", tags: ["shared","hr","zone"] },
 
   // ═════════════════ Data models (SwiftData @Model) ═════════════════
   { id: "model-usage", label: "UsageRecord", type: "model", group: "core", category: "core", platform: "ios+android",
@@ -393,6 +399,9 @@ const links = [
   { source: "wt-routine-editor", target: "wt-exercise-picker", type: "present" },
   { source: "wt-player", target: "liveworkoutservice", type: "uses", label: "live HR" },
   { source: "wt-player", target: "liveactivitycontroller", type: "uses" },
+  { source: "wt-player", target: "workoutnotifications", type: "uses", label: "rest alert" },
+  { source: "wt-home", target: "wt-live-banner", type: "contains", label: "minimized" },
+  { source: "wt-live-banner", target: "wt-player", type: "cover", label: "Resume (zoom)" },
   { source: "wt-home", target: "workoutactivitymapping", type: "uses" },
   { source: "wt-home", target: "model-workout", type: "persists" },
   { source: "wt-home", target: "snappetcore", type: "feeds", label: "log usage" },
@@ -403,6 +412,9 @@ const links = [
   { source: "watchmanager", target: "ext-healthkit", type: "uses" },
   { source: "watchapp", target: "watchview", type: "contains" },
   { source: "watchview", target: "watchmanager", type: "uses" },
+  { source: "watchview", target: "heartratezone", type: "uses" },
+  { source: "wt-player", target: "heartratezone", type: "uses" },
+  { source: "liveactivity-widget", target: "heartratezone", type: "uses" },
 
   // ---- Pomodoro ----
   { source: "m-pomodoro", target: "pomodoro-root", type: "contains" },

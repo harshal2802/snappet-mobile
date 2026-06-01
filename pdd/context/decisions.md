@@ -4,6 +4,48 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] Live-workout studio next pass — rich watch UI, pause/resume, background/minimize, transitions, notification status
+
+**Decision**: One coherent change set across the live-workout surfaces (the features are tightly
+coupled through the `Shared/` wire types, so a single change rather than parallel branches):
+
+- **Bidirectional pause/resume.** `LiveWorkoutMessage` gains `.pause`/`.resume` (either device can
+  initiate; the receiver applies it *without echoing* to avoid ping-pong). `MetricsSource` gains
+  `pause()`/`resume()` (default no-op so a stream-only BLE band needn't implement them); the
+  Apple-Watch source pauses the on-wrist `HKWorkoutSession`, the coordinator tracks `isPaused`
+  (reading the watch source for the watch path, a local flag for BLE). The watch manager treats a
+  `.paused` `HKWorkoutSession` state as still-running (only ended/stopped clears the face).
+- **Rich watch UI.** `WatchWorkoutView` becomes a two-page vertical-paging face: a zone-colored HR +
+  elapsed + energy + avg-HR **Metrics** page and a Pause/Resume + End **Controls** page.
+- **Background / navigate-back.** The player gets a **Minimize** control (`onMinimize`) that drops the
+  full-screen cover **without** ending the session; the session stays `isActive`, the watch keeps
+  recording, and a new `LiveWorkoutBanner` pinned to the WorkoutTracker home shows live metrics +
+  zooms back into the player. No SwiftData schema change (reuses `isActive`).
+- **Notification status.** The Live Activity (Lock Screen + Dynamic Island) is the persistent
+  notification-area status; it now renders a **Paused** badge (freezing the timer) + zone-colored HR.
+  A new `WorkoutNotifications` service **schedules** a "rest complete" local notification when rest
+  *starts* (a foreground `Task.sleep` is suspended in the background), cancelled on skip/pause/finish.
+- **Transitions.** A central `Motion`/`AnyTransition` vocabulary (`Features/Shell/Transitions.swift`):
+  iOS 18 `.zoom` for App Library card→module and banner→player, a section-swap for the workout
+  segmented control, a cross-fade-and-slide for the player's exercise↔rest↔done phases, and a
+  bottom slide for the banner.
+- **`HeartRateZone` moved to `Shared/`** so the phone overlay, watch face, and Live Activity render
+  the same bpm→zone color/label from one source of truth (no logic change).
+
+**Why**: pause + background-continue + a way back in are the table-stakes gaps for a real workout
+session; routing all of it through the existing `Shared/` wire types + the `MetricsSource`/coordinator
+seam keeps the watch/phone/widget from drifting and adds no new HealthKit path.
+
+**Rules out**: a SwiftData pause-interval ledger (the displayed timer freezes via a captured value;
+"total" stays wall-clock and is documented); per-feature parallel branches (they'd conflict on the
+shared wire/UI files); a bespoke push-notification stack (local `UNUserNotifications` only, on-device).
+
+**Verified**: extended the pure XCTest suites — `LiveWorkoutTests` (pause/resume message round-trip,
+source + coordinator pause state), `LiveActivityTests` (paused snapshot push + `ContentState`),
+`WorkoutNotificationsTests` (rest-complete copy). **Build/sim run is device-pending**: this change was
+authored in a Linux environment with no Xcode toolchain, so it has **not** been compiled or run on a
+simulator — `xcodebuild test` on the iOS 18 sim + a paired-watch device pass is owed at the merge gate.
+
 ## [2026-06-01] A4 — live-metrics overlay UI (HR zone + overall timer + rest timer) (WorkoutTracker)
 
 **Decision**: Implemented prompt A4 (`pdd/prompts/features/live-workout-studio/A4-live-overlay-ui.md`,

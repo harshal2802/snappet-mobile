@@ -139,4 +139,42 @@ final class LiveWorkoutOffsetTests: XCTestCase {
         // Malformed metrics (missing energyKcal + t) must decode to nil, not phantom 0s.
         XCTAssertNil(LiveWorkoutMessage(payload: ["kind": "metrics", "hrBpm": 100.0]))
     }
+
+    func testPauseResumeMessagesRoundTrip() {
+        // The bidirectional pause/resume control must survive the WCSession dictionary round-trip.
+        XCTAssertEqual(LiveWorkoutMessage(payload: LiveWorkoutMessage.pause.payload), .pause)
+        XCTAssertEqual(LiveWorkoutMessage(payload: LiveWorkoutMessage.resume.payload), .resume)
+    }
+
+    func testPauseResumeTogglesSourceState() {
+        // Phone-initiated pause/resume flips the source's paused flag (the relay send is a no-op
+        // with no activated WCSession, but the local state must still track).
+        let service = AppleWatchMetricsSource()
+        service.start(activityType: .running, sessionStart: Date())
+        XCTAssertFalse(service.isPaused)
+        service.pause()
+        XCTAssertTrue(service.isPaused)
+        service.resume()
+        XCTAssertFalse(service.isPaused)
+        // Start resets the paused flag.
+        service.pause()
+        service.start(activityType: .running, sessionStart: Date())
+        XCTAssertFalse(service.isPaused)
+    }
+
+    func testCoordinatorForwardsPauseToActiveSource() {
+        // With no watch/BLE available the coordinator defaults to the Apple-Watch source; pausing
+        // the coordinator must flip the watch source (and thus the coordinator's own `isPaused`).
+        let coordinator = LiveMetricsCoordinator()
+        XCTAssertFalse(coordinator.isPaused)
+        coordinator.pause()
+        XCTAssertTrue(coordinator.isPaused)
+        XCTAssertTrue(coordinator.watch.isPaused)
+        coordinator.resume()
+        XCTAssertFalse(coordinator.isPaused)
+        // Stopping clears any paused state.
+        coordinator.pause()
+        coordinator.stop()
+        XCTAssertFalse(coordinator.isPaused)
+    }
 }
