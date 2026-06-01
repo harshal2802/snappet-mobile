@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Install Snappet</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: -apple-system-body, system-ui, sans-serif; max-width: 28rem; margin: 0 auto;
+           padding: 2.5rem 1.25rem; text-align: center; line-height: 1.5; }
+    h1 { font-size: 1.9rem; margin-bottom: .25rem; }
+    .ver { color: #888; margin-top: 0; }
+    .btn { display: inline-block; margin: 1.5rem 0; padding: .9rem 2rem; border-radius: 14px;
+           background: #007aff; color: #fff; font-weight: 600; font-size: 1.1rem; text-decoration: none; }
+    .btn[aria-disabled="true"] { background: #999; pointer-events: none; }
+    .note { font-size: .9rem; color: #888; text-align: left; background: rgba(127,127,127,.1);
+            padding: 1rem 1.1rem; border-radius: 12px; }
+    code { background: rgba(127,127,127,.18); padding: .1rem .35rem; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h1>📱 Install Snappet</h1>
+  <p class="ver" id="ver"></p>
+  <a id="btn" class="btn" aria-disabled="true">Install on iPhone</a>
+  <p class="note">
+    <b>Open this page in Safari on the iPhone</b> (not Chrome, not the in-app browser).
+    Your device's UDID must be registered in the build's provisioning profile, or the install
+    will fail. After tapping <b>Install</b>, confirm the prompt, then trust the developer under
+    <b>Settings → General → VPN &amp; Device Management</b>.
+  </p>
+  <script>
+    // The repo that hosts the releases. Update if you fork/rename.
+    const REPO = "harshal2802/snappet-mobile";
+    const tag = new URLSearchParams(location.search).get("tag");
+    const btn = document.getElementById("btn");
+    const ver = document.getElementById("ver");
+    if (tag) {
+      const manifest = `https://github.com/${REPO}/releases/download/${encodeURIComponent(tag)}/manifest.plist`;
+      btn.href = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifest)}`;
+      btn.removeAttribute("aria-disabled");
+      ver.textContent = "Version " + tag;
+    } else {
+      btn.textContent = "Add ?tag=<release-tag> to the URL";
+      ver.innerHTML = 'e.g. <code>install.html?tag=v0.1.0</code>';
+    }
+  </script>
+</body>
+</html>
