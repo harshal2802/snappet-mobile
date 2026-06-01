@@ -13,6 +13,12 @@ final class JournalUITests: XCTestCase {
         app.launch()
     }
 
+    /// Wait until `element` is no longer present (the inverse of `waitForExistence`).
+    private func waitForDisappearance(of element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)
+        return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
+    }
+
     /// Open the Journal module from the App Library.
     private func openJournal() {
         app.tabBars.buttons["Apps"].tap()
@@ -69,7 +75,10 @@ final class JournalUITests: XCTestCase {
         searchField.typeText(tag)
 
         XCTAssertTrue(taggedCell.waitForExistence(timeout: 4), "tag search should keep the tagged entry")
-        XCTAssertFalse(plainCell.waitForExistence(timeout: 2), "tag search should hide the untagged entry")
+        // The plain cell is already on screen, so wait for it to *disappear* as the filter applies
+        // rather than relying on a still-cached `exists` returning false immediately.
+        XCTAssertTrue(waitForDisappearance(of: plainCell, timeout: 4),
+                      "tag search should hide the untagged entry")
 
         // Clear the search → both entries return.
         if app.buttons["Clear text"].exists { app.buttons["Clear text"].tap() }
