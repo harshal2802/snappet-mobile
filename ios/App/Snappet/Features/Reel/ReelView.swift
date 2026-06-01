@@ -209,12 +209,3 @@ private struct ExportedView: View {
         .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
     }
 }
-
-/// UIKit share sheet bridge.
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
-}

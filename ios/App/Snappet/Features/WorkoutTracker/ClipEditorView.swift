@@ -93,6 +93,7 @@ struct ClipEditorView: View {
                 SpeedControls(vm: vm)
                 OverlayControls(vm: vm, editingOverlay: $editingOverlay)
                 AudioControls(vm: vm)
+                ExportShareControls(vm: vm)
             }
             .padding()
         }
@@ -328,6 +329,69 @@ private struct AudioControls: View {
                 get: { vm.edit.mutedOriginalAudio },
                 set: { vm.setMuted($0) }))
                 .accessibilityIdentifier("muteAudio")
+        }
+    }
+}
+
+// MARK: - Export / share / save (B5)
+
+/// Render the edited clip, then **Share** (system share sheet) or **Save to Photos** the resulting
+/// `.mp4` — the user's "every generated video could be sharable or downloadable to Photos". The
+/// view is thin: it reflects `vm.exportState` and routes taps to the view model; the export/save
+/// I/O lives in `VideoStudio` / `MediaLibraryService`.
+private struct ExportShareControls: View {
+    @Bindable var vm: ClipEditorViewModel
+    @State private var showShare = false
+
+    var body: some View {
+        ControlCard(title: "Export", systemImage: "square.and.arrow.up") {
+            switch vm.exportState {
+            case .idle, .failed:
+                if case .failed(let message) = vm.exportState {
+                    Text(message).font(.footnote).foregroundStyle(.secondary)
+                }
+                Button {
+                    Task { await vm.export() }
+                } label: {
+                    Label("Export clip", systemImage: "film").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("exportClip")
+
+            case .exporting:
+                ProgressView("Exporting…").frame(maxWidth: .infinity)
+
+            case .exported(let url), .saving(let url), .saved(let url):
+                if case .saved = vm.exportState {
+                    Label("Saved to Photos", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green).font(.subheadline)
+                }
+                HStack(spacing: 12) {
+                    Button {
+                        showShare = true
+                    } label: {
+                        Label("Share", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(vm.exportState.isBusy)
+                    .accessibilityIdentifier("shareClip")
+
+                    Button {
+                        Task { await vm.saveToPhotos() }
+                    } label: {
+                        if vm.exportState.isBusy {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Label("Save to Photos", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(vm.exportState.isBusy)
+                    .accessibilityIdentifier("saveClipToPhotos")
+                }
+                .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
+            }
         }
     }
 }

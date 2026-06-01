@@ -4,6 +4,73 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] B5 — share + save generated videos to Photos (the video-studio finale)
+
+**Decision.** Implemented prompt B5 (`pdd/prompts/features/live-workout-studio/B5-share-and-save.md`,
+branch `feat/live-workout-share-save`). Every generated/edited video — the **B3 edited clip** and the
+**B4 highlight reel** — can now be **shared** (system share sheet) or **saved to the Photos library**, all
+on-device (the user's "all the videos generated could be sharable or downloadable to local/Photos",
+RESEARCH §3.6). This is reuse + wiring on top of B3/B4; **no engine change** (`git diff ios/HighlightEngine`
+empty, grep-clean of platform imports).
+
+**Concrete, non-obvious choices made:**
+- **`Services/MediaLibraryService.swift`** (stateless `Sendable`): `saveVideoToPhotos(_ url:) async throws`
+  requests **add-only** authorization (`PHPhotoLibrary.requestAuthorization(for: .addOnly)`) — the
+  **narrowest** grant that lets the app write a new asset without read access to the whole library, and
+  deliberately **distinct** from the **read-write** `PhotoLibraryService` uses for B1 discovery. The save is
+  the async `PHPhotoLibrary.shared().performChanges { PHAssetCreationRequest.forAsset().addResource(with:
+  .video, fileURL: url, options: nil) }` overload — **no continuation needed** (the async API already bridges
+  the callback, unlike B1's `PHImageManager`/A1's WCSession callbacks). Typed `SaveError: LocalizedError`
+  (`.denied` routes the user to Settings; `.failed(msg)` wraps a change-block failure). `.limited` is treated
+  as savable (add-only `.limited` can still add).
+- **Generalized `ShareSheet`** — moved out of `Features/Reel/ReelView.swift` (where it was top-level but
+  conceptually private to the reel app) into **`Features/Shell/ShareSheet.swift`**, so the flagship reel app
+  AND the WorkoutTracker studio (B3 editor + B4 reel) share **one** `UIActivityViewController` wrapper. No
+  second bridge written (the spec's "don't duplicate" constraint). The flagship's call site is unchanged
+  (same type name, same target).
+- **Pure `ExportShareState`** (`Features/WorkoutTracker/ExportShareState.swift`): an `Equatable` value-type
+  state machine (`idle → exporting → exported(URL) → saving(URL) → saved(URL)`, plus `failed(String)`) with a
+  reducer, so the transitions, the **carried export URL**, and the `isBusy`/`exportedURL` accessors are
+  **unit-tested in `SnappetTests` with no AVFoundation/PhotoKit/UIKit** (9 cases) — the device-only
+  export/save/share I/O is not, but the state logic that drives both producers' UI is (the same "isolate the
+  pure logic" discipline as `ClipEditGeometry`/`WorkoutHRStats`). The rendered file `URL` is carried through
+  `.exported`/`.saving`/`.saved` so **share + save reuse the single render** (export once, then share and/or
+  save that same file). `beginningSave()`/`saveSucceeded()` are guarded to no-op without a prior export.
+- **Two thin wire-ins, I/O through the services:**
+  - **B3 clip editor** — `ClipEditorViewModel.export()` snapshots the `@Model` into `EditPlan` on the
+    `@MainActor` and calls `VideoStudio.export` (the same composition the preview already uses); `saveToPhotos()`
+    calls `MediaLibraryService`. A new "Export" `ControlCard` in `ClipEditorView`: Export → Share + Save to
+    Photos with progress + a `saved` checkmark. **A subsequent edit invalidates the export** — `commit()`
+    resets `exportState` to `.idle` (unless busy) since the prior render no longer matches the edit.
+  - **B4 highlight** — `SessionHighlightViewModel` now **keeps `lastPlan`** from `generate()` (the VM already
+    built a `ReelPlan` to preview) so `export()` re-renders the **same** reel via `ReelExporter.export`
+    (no reel-stitch reimplementation); `saveToPhotos()` calls `MediaLibraryService`. A new Export/Share/Save
+    section in `SessionHighlightView`, gated on `canExport` (plan present + state `.ready`); re-generating
+    resets the export.
+- **Privacy.** `NSPhotoLibraryAddUsageDescription` is present in the app Info.plist (it predates B5, from the
+  first working version) and **accurate** ("Snappet saves your finished highlight reel back to your library")
+  — confirmed, not re-added. `PrivacyInfo.xcprivacy` stays accurate: saving to the user's **own** library is
+  on-device, so **no** `NSPrivacyCollectedDataTypes` entry is added (Apple's "collected" = transmitted off
+  device; nothing leaves). The existing manifest comment already covers "written back to the user's own
+  library entirely ON-DEVICE".
+- **No new `@Model`** → `SnappetSchema.models` unchanged.
+
+**Verified (this environment, Xcode/SDK 26.5).** `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**. `SnappetWatch`
+(watchOS 26.5 sim, Apple Watch Series 11) → **BUILD SUCCEEDED**. `SnappetTests` → **122/122 pass** (incl. the
+9 new `ExportShareStateTests`: full idle→saved flow, URL carried through every post-export state, save
+guarded without an export, `isBusy` gates, failure + re-export recovery, re-export supersedes a prior file).
+`HighlightEngine` → **18/18**, source unchanged (`git diff ios/HighlightEngine` empty, grep-clean of platform
+imports). `SnappetUITests/WorkoutWalkthroughTests` → **green** (the sim session has no media/video, so
+"Generate highlight" stays disabled and no clip opens the editor — the share/save affordances never render in
+the walkthrough, and the summary flow is unbroken).
+**Device-pending (NOT verified by this build/tests).** The actual **Photos save** (the add-only auth prompt +
+`performChanges` writing a `.video` asset into the user's library) and the **share-sheet round-trip** need a
+**real rendered video on a device**: the sim has no Photos/video, so `VideoStudio`/`ReelExporter` resolve no
+`AVAsset` and produce nothing to save — so neither producer reaches `.exported` in the sim. A clean build +
+the pure state-machine tests prove the **service shape + the wiring + the state logic + Info.plist**, NOT a
+verified Photos save or share (same honesty bar as A1–B4).
+
 ## [2026-06-01] B4 — engine-driven highlight generation (the WorkoutTracker ↔ HighlightEngine bridge)
 
 **Decision.** Connect the set-logger to the flagship algorithm by feeding a finished session's data

@@ -10,6 +10,7 @@ import AVKit
 struct SessionHighlightView: View {
     @State var viewModel: SessionHighlightViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showShare = false
 
     private var videoClips: [SessionHighlightInput.Clip] { viewModel.clips.filter(\.isVideo) }
 
@@ -40,6 +41,14 @@ struct SessionHighlightView: View {
 
                 Section {
                     preview
+                }
+
+                if viewModel.canExport || viewModel.exportState != .idle {
+                    Section {
+                        exportShare
+                    } footer: {
+                        Text("Share your reel anywhere, or save it to your Photos library. Everything stays on your device.")
+                    }
                 }
             }
             .navigationTitle("Highlight")
@@ -81,6 +90,53 @@ struct SessionHighlightView: View {
         case .error(let msg):
             ContentUnavailableView("Couldn't generate", systemImage: "exclamationmark.triangle",
                 description: Text(msg))
+        }
+    }
+
+    /// B5: export the generated reel, then Share / Save to Photos. The view is thin — it reflects
+    /// `viewModel.exportState` and routes taps to the VM; export/save I/O lives in the services.
+    @ViewBuilder
+    private var exportShare: some View {
+        switch viewModel.exportState {
+        case .idle, .failed:
+            if case .failed(let message) = viewModel.exportState {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
+            }
+            Button {
+                Task { await viewModel.export() }
+            } label: {
+                Label("Export reel", systemImage: "film").frame(maxWidth: .infinity)
+            }
+            .accessibilityIdentifier("exportHighlight")
+
+        case .exporting:
+            ProgressView("Exporting…").frame(maxWidth: .infinity)
+
+        case .exported(let url), .saving(let url), .saved(let url):
+            if case .saved = viewModel.exportState {
+                Label("Saved to Photos", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            Button {
+                showShare = true
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .disabled(viewModel.exportState.isBusy)
+            .accessibilityIdentifier("shareHighlight")
+
+            Button {
+                Task { await viewModel.saveToPhotos() }
+            } label: {
+                if viewModel.exportState.isBusy {
+                    ProgressView()
+                } else {
+                    Label("Save to Photos", systemImage: "square.and.arrow.down")
+                }
+            }
+            .disabled(viewModel.exportState.isBusy)
+            .accessibilityIdentifier("saveHighlightToPhotos")
+            .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
         }
     }
 }

@@ -21,8 +21,17 @@ final class SessionHighlightViewModel {
     /// In-app preview of the generated reel (built from the composition — no export round-trip).
     private(set) var previewPlayer: AVPlayer?
 
+    /// B5: the export → share / save-to-Photos flow for the generated reel (the rendered `.mp4` is
+    /// carried in `.exported` so share + save reuse the single render).
+    private(set) var exportState: ExportShareState = .idle
+
+    /// The plan from the most recent successful generation, kept so **Export** can render the same
+    /// reel to a file URL via `ReelExporter.export` (the VM already builds a `ReelPlan` to preview).
+    private var lastPlan: ReelPlan?
+
     private let app: AppModel
     private let exporter: ReelExporter
+    private let library: MediaLibraryService
 
     /// All video clips available to generate from (photos are mapped too but only videos are
     /// shown as selectable, since the reel stitch is video-first). Identified by `localIdentifier`.
@@ -43,7 +52,8 @@ final class SessionHighlightViewModel {
          duration: Double,
          sport: SportTag?,
          category: ExerciseCategory?,
-         exporter: ReelExporter = ReelExporter()) {
+         exporter: ReelExporter = ReelExporter(),
+         library: MediaLibraryService = MediaLibraryService()) {
         self.app = app
         self.hrSeries = hrSeries
         self.clips = clips
@@ -51,6 +61,7 @@ final class SessionHighlightViewModel {
         self.sport = sport
         self.category = category
         self.exporter = exporter
+        self.library = library
         // Default selection = every video clip (auto-generate-then-edit default).
         self.selectedIds = Set(clips.filter(\.isVideo).map(\.localIdentifier))
     }
@@ -74,6 +85,8 @@ final class SessionHighlightViewModel {
     func generate() async {
         state = .generating
         previewPlayer = nil
+        lastPlan = nil
+        exportState = .idle   // a new generation invalidates any prior export
 
         // 1. Bridge mapping (pure): session → engine Workout; selection → pinned clip ids.
         let workout = SessionHighlightInput.makeWorkout(
@@ -102,6 +115,7 @@ final class SessionHighlightViewModel {
         do {
             let composition = try await exporter.makeComposition(for: plan)
             previewPlayer = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+            lastPlan = plan   // keep it so B5 Export can render the same reel to a file URL
             state = .ready
         } catch {
             // On the simulator there's no real video to stitch, so the composition has no
@@ -109,6 +123,39 @@ final class SessionHighlightViewModel {
             previewPlayer = nil
             state = .error((error as? LocalizedError)?.errorDescription
                            ?? "Couldn't build a highlight reel from these clips yet.")
+        }
+    }
+
+    // MARK: - B5: Export → share / save to Photos
+
+    /// Whether the reel has been generated and can be exported (gates the Export action).
+    var canExport: Bool { lastPlan != nil && state == .ready }
+
+    /// Render the generated reel to a temp `.mp4` by **reusing** `ReelExporter.export` on the plan
+    /// the VM already built, leaving the result in `.exported(url)` so the view can share it or save
+    /// it to Photos. On-device only.
+    func export() async {
+        guard let plan = lastPlan else { return }
+        exportState = exportState.beginningExport()
+        do {
+            let url = try await exporter.export(plan)
+            exportState = exportState.exportSucceeded(url)
+        } catch {
+            exportState = exportState.failed(
+                (error as? LocalizedError)?.errorDescription ?? "Couldn't export this reel.")
+        }
+    }
+
+    /// Save the already-exported reel to the user's Photos library (add-only, on-device).
+    func saveToPhotos() async {
+        guard let url = exportState.exportedURL else { return }
+        exportState = exportState.beginningSave()
+        do {
+            try await library.saveVideoToPhotos(url)
+            exportState = exportState.saveSucceeded()
+        } catch {
+            exportState = exportState.failed(
+                (error as? LocalizedError)?.errorDescription ?? "Couldn't save to Photos.")
         }
     }
 }
