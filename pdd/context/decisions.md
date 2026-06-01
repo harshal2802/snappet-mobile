@@ -4,6 +4,57 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] Live Workout Studio walkthrough — chronological screenshot UI test + a test-only HR demo seed
+
+**Decision**: Added a demo/QA asset (branch `feat/live-workout-walkthrough-video`, prompt
+`pdd/prompts/features/live-workout-studio/WALKTHROUGH.md`) that walks the whole Live Workout Studio
+initiative (A1–B5) in story order and captures ordered screenshots for a video walkthrough. The headline
+screen — the **B2 enriched summary (HR chart + avg/max/min + time-in-zone)** — only renders when a session
+has a non-empty `hrSeries`, which the simulator never produces (no live HR source). So a **test-only demo
+seed** plants the data that makes it render.
+
+**Concrete, non-obvious choices made:**
+- **`StudioDemoSeed` lives behind a new launch arg `-uiTestSeedStudioDemo`** (`Features/WorkoutTracker/
+  StudioDemoSeed.swift`), a **sibling of `-uiTestFreshStore`** that it **implies** — `SnappetApp.init()`
+  builds the in-memory container for it (determinism) and calls `seedIfRequested(into:)` once, before any
+  UI appears. The guard returns immediately without the arg → **ZERO production impact** (a normal launch
+  hits neither arg). The ONLY app-target edit is that one `init()` branch; everything else is test code +
+  the seed type in the feature folder. Idempotent (keyed on a fixed `routineID`).
+- **The seed is DATA ONLY (no Photos)**: it inserts one **completed** `WorkoutSession` (three logged
+  exercises with completed sets) carrying a **deterministic synthetic `hrSeries`** — a warm-up ramp → five
+  sine-driven work/recovery oscillations → cool-down, ~120–175 bpm over ~30 min, one `HRPoint` every 3 s,
+  **no randomness** so the chart/stats are pixel-identical every run. This is enough for the B2 HR section
+  (chart + avg 146 / max 172 / min 120 + a Z2–Z5 time-in-zone bar) to RENDER on the sim. Tagged media /
+  clip editor / highlight reel still need real video and stay device-only (the seed doesn't fake them).
+- **Walkthrough navigation reuses the suite's UI-testable conventions** (segmented-control + Button rows;
+  `WorkoutWalkthroughTests` pattern: `snap("NN-name")` via `XCTAttachment(screenshot:)`, `.keepAlways`).
+  The **History → session-detail** row is the suite's one value-based `NavigationLink` (decisions.md
+  2026-05-31) — XCUITest CAN activate it here (the prior limitation was a plain `Button` not firing, not
+  the NavigationLink), so the test opens the *seeded* session through it with identifier/label/first-row
+  fallbacks, asserting the B2 `hrChart` / "Heart rate" section then snaps it.
+- **The A3 HR-source-picker entry is a `.buttonStyle(.plain)` row**: a plain `.tap()` on its identifier
+  didn't always present the sheet, so `openHRSourcePicker()` retries via the row label then a
+  normalized-coordinate tap — robust, never flakes. Confirmed the sheet (Apple Watch row + "Scanning for
+  bands…") then renders.
+- **The frames are throwaway** (exported to `/tmp/studio-walkthrough-frames/frame-NNN.png` via
+  `xcresulttool export attachments` + the manifest's `suggestedHumanReadableName`) and are **NOT committed**
+  — only the test + seed + this note + the WALKTHROUGH prompt are.
+
+**Verified (this environment, Xcode/SDK 26.5, iPhone 17 Pro iOS 26.4 sim)**: `xcodegen generate`; the
+`Snappet` scheme TEST BUILD SUCCEEDED (app + watch + widgets + both test targets).
+`LiveWorkoutStudioWalkthroughTests` → **PASS** (1/1), capturing 12 ordered frames — suite home, app library,
+workout dashboard, routines, routine detail (Start bar), the player (A2 overall-timer header + A4
+no-source overlay), after-finish dashboard, History (the just-finished session + the seeded Studio Demo),
+the **B2 HR summary** (chart + 146/172/120 + zone bar), the B1 media section + disabled B4 "Generate
+highlight", Settings, and the A3 HR-source picker sheet. All PNGs uniform **1206 × 2622** (single sim) →
+stitchable. The existing **`WorkoutWalkthroughTests` stays green** (62 s, 1/1). `HighlightEngine` source
+untouched (no platform import added).
+**Rendered vs skipped**: every planned step rendered EXCEPT `07-rest-screen` — the driven starter routine
+reached **Finish** without the player surfacing a rest-countdown screen in the snapshot window (rest is the
+prompt's optional "if reached" step), so it's gracefully absent rather than a fake. Device-only surfaces
+(a real bpm in the overlay, media thumbnails, the clip editor, an actual reel) show their honest simulator
+state (no-source / empty / disabled), not staged data — the same honesty bar as A1–B5.
+
 ## [2026-06-01] B5 — share + save generated videos to Photos (the video-studio finale)
 
 **Decision.** Implemented prompt B5 (`pdd/prompts/features/live-workout-studio/B5-share-and-save.md`,
