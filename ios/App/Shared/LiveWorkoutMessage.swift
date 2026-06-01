@@ -1,6 +1,6 @@
 import Foundation
 
-/// The wire shape shared by the phone (`LiveWorkoutService`) and the watch
+/// The wire shape shared by the phone (`AppleWatchMetricsSource`) and the watch
 /// (`WatchConnectivityLink`). Compiled into **both** targets (see `project.yml`):
 /// keeping one source of truth for the message keys means the relay can't drift
 /// between the two sides.

@@ -4,6 +4,84 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-01] A3 — MetricsSource abstraction + generic BLE heart-rate band (WorkoutTracker)
+
+**Decision**: Implemented prompt A3 (`pdd/prompts/features/live-workout-studio/A3-…md`,
+branch `feat/live-workout-metrics-source`). The live-metrics layer is now behind a pluggable
+**`MetricsSource`** protocol so live HR can come from **either** the Apple Watch (A1) **or** a generic
+**BLE heart-rate band** (chest straps / Polar / Garmin / any device exposing the standard Heart Rate
+Service), with band identification + a picker. This realizes the A1 doc-comment promise (the surface was
+shaped to become a protocol with a BLE conformer without call-site churn) and the RESEARCH.md §3.3
+decision (non-Apple bands connect on-device via the BLE Heart Rate Profile — never a cloud API).
+
+**Concrete, non-obvious choices made:**
+- **`MetricsSource` protocol** (`Services/MetricsSource.swift`, `@MainActor`, `AnyObject`) mirrors the
+  `HighlightSelector` pluggability (decisions.md 2026-05-30): `latestHR`, `energy`, `samples` (the engine
+  `HRSample` buffer), a source-agnostic `state: MetricsSourceState`
+  (`.unavailable/.idle/.connecting/.connected/.streaming`), `isReachable`, `displayName`,
+  `start(for:sport:category:)`, `stop()`. The app talks only to this — HR transport is invisible to the
+  player / Live Activity / overlay. `HighlightEngine` stays platform-free (grep-confirmed: no
+  HealthKit/CoreBluetooth/WatchConnectivity import in the package); live HR is plain `HRSample`s at the
+  `Services` boundary, exactly like the post-hoc path.
+- **`isWatchReachable → isReachable` + `connectionState → MetricsSourceState` migration**: A1's
+  `LiveWorkoutService` became `AppleWatchMetricsSource` with **byte-for-byte identical** WCSession /
+  buffering / offset behavior (the A1 offset + mapping + round-trip tests pass unchanged, only the type
+  name updated). The watch-specific `isWatchReachable` was renamed to the protocol's `isReachable` (the
+  one call-site change the A1 review flagged); the watch's `ConnectionState` is **kept internal** (the
+  resume/replace lifecycle in `WorkoutHomeView` is genuinely watch-specific) and **mapped** onto
+  `MetricsSourceState` via a computed `state` (`.workoutRunning` → `.streaming` once a sample arrives,
+  else `.connected`; `.active` → `.connecting` when reachable; `.unsupported` → `.unavailable`).
+- **BLE parsing isolated into a pure static func** `BLEHeartRateMetricsSource.parseHeartRate(_:)` so it is
+  unit-testable with no device/band: byte 0 = flags, **bit 0** selects UInt8 (1 byte) vs little-endian
+  UInt16 (2 bytes) BPM; optional sensor-contact (bits 1–2) / energy-expended (bit 3) / RR (bit 4) fields
+  are **ignored** (only BPM needed); an empty or too-short buffer (e.g. flags say UInt16 but one value
+  byte) returns `nil` so a malformed packet can't poison the buffer. **`energy = 0`** — the Heart Rate
+  Profile has no calorie field. Unlike the watch (which relays its own monotonic `t`), a BLE measurement
+  has no timestamp, so its `sessionOffset` uses **wall-clock elapsed** since `session.startedAt`, clamped
+  ≥ 0. The central scans `0x180D`, exposes a deduped `[BLEDevice]` (by `CBPeripheral.identifier`, a plain
+  value type so the picker/tests don't import CoreBluetooth), connects a chosen one, discovers `0x180D` →
+  `0x2A37`, and subscribes for ~1 Hz notifications.
+- **Swift-6 CoreBluetooth concurrency**: `CBCentralManagerDelegate`/`CBPeripheralDelegate` callbacks are
+  `nonisolated` (they arrive on CB's queue) and hop to `@MainActor` via `Task { @MainActor in … }` before
+  mutating observable state — mirroring the `WCSessionDelegate` pattern. The static `CBUUID` constants and
+  `parseHeartRate`/`sessionOffset`/`resolve` are marked `nonisolated` so the off-actor callbacks (and the
+  pure tests) can reach them; the non-Sendable `CBPeripheral`/`CBCentralManager` are carried into the
+  MainActor hop via `nonisolated(unsafe) let` (the documented escape hatch — they're confined to CB's
+  queue and CB tolerates `connect` from any queue). Bluetooth permission is **deferred**: the
+  `CBCentralManager` is created lazily on `prepare()` (when the picker opens), not at app launch.
+- **`LiveMetricsCoordinator` keeps the `AppModel.liveWorkout` property NAME** (so A2/A4 call sites don't
+  churn) and is itself a `MetricsSource`: it holds both concrete sources, tracks a user `selectedSource`
+  + the discovered-BLE list, and **forwards** the whole protocol surface to the active source. `stop()`
+  stops **both** sources so a mid-session source switch never strands a transport. Selection is a pure,
+  unit-tested rule `resolve(selected:watchUsable:hasBLEDevice:)`: an explicit pick wins; else prefer the
+  watch when usable (paired + app installed); else BLE if a band was chosen; else default to the watch
+  (its `.unavailable` drives the UI's "no source" message — A1 behavior preserved). A small
+  `connectionState` shim forwards to the watch source so the watch-specific resume/replace guard in
+  `WorkoutHomeView` is unchanged.
+- **Picker UI** (`HeartRateSourcePicker`) is presented as a **sheet** from `WorkoutSettingsView`'s new
+  "Live metrics" section — a sheet may carry its own `NavigationStack`, so the no-nested-stack rule for
+  the module is honored. It lists Apple Watch + scanned bands (rows have `accessibilityIdentifier`s:
+  `hrSourceAppleWatch`, `hrSourceBLEDevice`, plus `openHeartRateSource`); scanning starts on appear (the
+  one-time Bluetooth prompt) and stops on disappear. The player's status text became source-aware (BLE
+  states vs the watch wording).
+- **No new `@Model`** → `SnappetSchema.models` unchanged. `NSBluetoothAlwaysUsageDescription` added to the
+  app Info.plist.
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**, 0 warnings from
+these changes. `SnappetWatch` (watchOS 26.5 sim) → **BUILD SUCCEEDED** (A1 unbroken). `SnappetTests` →
+**46/46 pass** (the 28 prior + 18 new: HR-measurement parser UInt8/UInt16 with/without sensor-contact &
+energy fields + malformed/short → nil, BLE wall-clock offset, BLE ingest/energy/state, and the
+source-selection rule + coordinator forwarding). `HighlightEngine` → **18/18**, source unchanged.
+`WorkoutWalkthroughTests` → **green** (the `MetricsSourceState` change didn't alter the walkthrough's
+asserted text; the overall-timer assertion still passes).
+**Device-pending (NOT verified)**: a **real BLE band connect + live HR stream** — the `0x180D` scan,
+`0x2A37` subscription, parse-to-`HRSample`, and the picker's connect flow — only run on a device with a
+physical heart-rate band. A sim build proves the shape + the pure parser, **not** a live stream (the same
+honesty bar as A1's WCSession relay). Battery/latency of a sustained BLE notify stream is also a device check.
+
+---
+
 ## [2026-06-01] A2 — overall workout timer + background Live Activity (WorkoutTracker)
 
 **Decision**: Implemented prompt A2 (`pdd/prompts/features/live-workout-studio/A2-…md`,

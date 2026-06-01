@@ -9,6 +9,9 @@ struct WorkoutSettingsView: View {
     let open: (Exercise) -> Void
     let deleteCustom: (CustomExercise) -> Void
 
+    @Environment(AppModel.self) private var app
+    @State private var showingHRSource = false
+
     var body: some View {
         Form {
             Section("Preferences") {
@@ -16,6 +19,20 @@ struct WorkoutSettingsView: View {
                     ForEach(WeightUnit.allCases) { Text($0.display.uppercased()).tag($0.rawValue) }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            Section {
+                Button {
+                    showingHRSource = true
+                } label: {
+                    LabeledContent("Heart-rate source", value: app.liveWorkout.activeKind.title)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("openHeartRateSource")
+            } header: {
+                Text("Live metrics")
+            } footer: {
+                Text("Choose where live heart rate comes from during a workout — your Apple Watch or a Bluetooth heart-rate band.")
             }
 
             Section("Your data") {
@@ -47,6 +64,9 @@ struct WorkoutSettingsView: View {
             } footer: {
                 Text("Exercise data from the Free Exercise DB (yuhonas/free-exercise-db), bundled for offline use. Everything stays on your device.")
             }
+        }
+        .sheet(isPresented: $showingHRSource) {
+            HeartRateSourcePicker()
         }
     }
 }
