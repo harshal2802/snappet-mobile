@@ -19,6 +19,9 @@ final class AppModel {
 
     let health = HealthKitService()
     let photos = PhotoLibraryService()
+    /// WorkoutTracker session-scoped media tagging (B1): auto-discovery by capture-time
+    /// window + manual PHPicker add. Distinct from `photos`, the flagship reels path.
+    let sessionMedia = SessionMediaService()
     let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
 
     /// Live workout metrics for WorkoutTracker, behind a pluggable `MetricsSource` (A3).
