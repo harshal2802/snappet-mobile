@@ -2,8 +2,10 @@ import SwiftUI
 import SwiftData
 
 /// Root screen for the Habit mini-app. Pushed into the App Library's NavigationStack
-/// (so it adds no stack of its own). Lists the user's habits with their current streak
-/// and a per-day done toggle; habits are added via a sheet and removed via swipe.
+/// (so it adds no stack of its own). Lists the user's habits with their current streak,
+/// a 30-day completion rate, a today toggle, and a tappable 7-day strip to backfill or
+/// correct past days. Habits are created/edited via a reusable `HabitEditorView` sheet
+/// and deleted via swipe or an explicit confirmation.
 struct HabitRootView: View {
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
@@ -12,6 +14,10 @@ struct HabitRootView: View {
     @Query private var completions: [HabitCompletion]
 
     @State private var showingAdd = false
+    /// The habit currently being edited via the editor sheet, if any.
+    @State private var editingHabit: Habit?
+    /// The habit pending delete confirmation, if any.
+    @State private var pendingDelete: Habit?
 
     var body: some View {
         Group {
@@ -23,6 +29,7 @@ struct HabitRootView: View {
                 } actions: {
                     Button("Add Habit") { showingAdd = true }
                         .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("habit.add")
                 }
             } else {
                 list
@@ -34,25 +41,55 @@ struct HabitRootView: View {
                 Button { showingAdd = true } label: {
                     Label("Add Habit", systemImage: "plus")
                 }
+                .accessibilityIdentifier("habit.add")
             }
         }
         .sheet(isPresented: $showingAdd) {
-            AddHabitView { name, symbol in addHabit(name: name, symbol: symbol) }
+            HabitEditorView { name, symbol in addHabit(name: name, symbol: symbol) }
+        }
+        .sheet(item: $editingHabit) { habit in
+            HabitEditorView(habit: habit) { name, symbol in update(habit, name: name, symbol: symbol) }
+        }
+        .confirmationDialog(
+            "Delete this habit?",
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let habit = pendingDelete { delete(habit) }
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("This removes the habit and all its completion history.")
         }
     }
 
     private var list: some View {
         List {
-            ForEach(habits) { habit in
+            ForEach(Array(habits.enumerated()), id: \.element.id) { index, habit in
                 HabitRow(
                     habit: habit,
+                    index: index,
                     streak: streak(for: habit),
+                    completionRate: completionRate(for: habit),
+                    weekDays: weekStrip(for: habit),
                     isDoneToday: isDoneToday(habit),
-                    toggle: { toggleToday(habit) }
+                    toggle: { toggleToday(habit) },
+                    toggleDay: { day in toggle(habit, day: day) },
+                    edit: { editingHabit = habit },
+                    requestDelete: { pendingDelete = habit }
                 )
             }
             .onDelete(perform: deleteHabits)
         }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        )
     }
 
     // MARK: - Day helpers
@@ -66,6 +103,17 @@ struct HabitRootView: View {
 
     private func isDoneToday(_ habit: Habit) -> Bool {
         completionDays(for: habit).contains(calendar.startOfDay(for: .now))
+    }
+
+    /// The last 7 calendar days (oldest → today) with each day's done state, for the week strip.
+    private func weekStrip(for habit: Habit) -> [WeekDay] {
+        let done = completionDays(for: habit)
+        let today = calendar.startOfDay(for: .now)
+        // offset 6 (oldest) … 0 (today), laid out left→right.
+        return (0..<7).reversed().map { offset in
+            let day = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+            return WeekDay(offset: offset, date: day, isDone: done.contains(day))
+        }
     }
 
     /// Current streak = number of consecutive calendar days completed, ending today.
@@ -94,6 +142,20 @@ struct HabitRootView: View {
         return count
     }
 
+    /// 30-day completion rate: completions in the trailing 30 days ÷ days the habit has existed
+    /// (capped at 30). Returns 0 when the habit is brand new with no elapsed days.
+    private func completionRate(for habit: Habit) -> Double {
+        let today = calendar.startOfDay(for: .now)
+        let createdDay = calendar.startOfDay(for: habit.createdAt)
+        // Inclusive days since creation, capped at the 30-day window.
+        let elapsed = (calendar.dateComponents([.day], from: createdDay, to: today).day ?? 0) + 1
+        let window = max(1, min(elapsed, 30))
+
+        guard let windowStart = calendar.date(byAdding: .day, value: -(window - 1), to: today) else { return 0 }
+        let done = completionDays(for: habit).filter { $0 >= windowStart && $0 <= today }.count
+        return Double(done) / Double(window)
+    }
+
     // MARK: - Mutations
 
     private func addHabit(name: String, symbol: String) {
@@ -104,63 +166,130 @@ struct HabitRootView: View {
         core.log(module: "habit", action: "create", summary: "Added habit: \(trimmed)")
     }
 
+    private func update(_ habit: Habit, name: String, symbol: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        habit.name = trimmed
+        habit.symbol = symbol
+        try? context.save()
+        core.log(module: "habit", action: "edit", summary: "Edited habit: \(trimmed)")
+    }
+
     private func toggleToday(_ habit: Habit) {
-        let today = calendar.startOfDay(for: .now)
-        if let existing = completions.first(where: { $0.habitID == habit.id && calendar.isDate($0.day, inSameDayAs: today) }) {
-            // Un-mark today.
+        toggle(habit, day: calendar.startOfDay(for: .now))
+    }
+
+    /// Insert or remove a completion for `day` (already start-of-day). Logs `done` for today
+    /// and `backfill` for any other (past) day.
+    private func toggle(_ habit: Habit, day: Date) {
+        let normalized = calendar.startOfDay(for: day)
+        if let existing = completions.first(where: { $0.habitID == habit.id && calendar.isDate($0.day, inSameDayAs: normalized) }) {
             context.delete(existing)
             try? context.save()
         } else {
-            context.insert(HabitCompletion(habitID: habit.id, day: today))
+            context.insert(HabitCompletion(habitID: habit.id, day: normalized))
             try? context.save()
-            core.log(module: "habit", action: "done", summary: "Did: \(habit.name)")
+            let isToday = calendar.isDateInToday(normalized)
+            core.log(
+                module: "habit",
+                action: isToday ? "done" : "backfill",
+                summary: isToday ? "Did: \(habit.name)" : "Backfilled: \(habit.name)"
+            )
         }
+    }
+
+    private func delete(_ habit: Habit) {
+        for completion in completions where completion.habitID == habit.id {
+            context.delete(completion)
+        }
+        context.delete(habit)
+        try? context.save()
     }
 
     private func deleteHabits(at offsets: IndexSet) {
         for index in offsets {
-            let habit = habits[index]
-            // Remove the habit and all its completion records.
-            for completion in completions where completion.habitID == habit.id {
-                context.delete(completion)
-            }
-            context.delete(habit)
+            delete(habits[index])
         }
-        try? context.save()
     }
+}
+
+// MARK: - Week strip model
+
+/// One day in a habit's 7-day strip. `offset` is days before today (0 == today).
+private struct WeekDay: Identifiable {
+    let offset: Int
+    let date: Date
+    let isDone: Bool
+
+    var id: Int { offset }
 }
 
 // MARK: - Row
 
 private struct HabitRow: View {
     let habit: Habit
+    let index: Int
     let streak: Int
+    let completionRate: Double
+    let weekDays: [WeekDay]
     let isDoneToday: Bool
     let toggle: () -> Void
+    let toggleDay: (Date) -> Void
+    let edit: () -> Void
+    let requestDelete: () -> Void
+
+    private var ratePercent: String {
+        let pct = Int((completionRate * 100).rounded())
+        return "\(pct)%"
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: habit.symbol)
-                .font(.title2)
-                .foregroundStyle(.green)
-                .frame(width: 32)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: habit.symbol)
+                    .font(.title2)
+                    .foregroundStyle(.green)
+                    .frame(width: 32)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(habit.name).font(.headline)
-                streakLabel
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(habit.name).font(.headline)
+                    streakLabel
+                    Text("\(ratePercent) last 30 days")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("habit.rate.\(index)")
+                }
+
+                Spacer()
+
+                Button(action: toggle) {
+                    Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
+                        .font(.title)
+                        .foregroundStyle(isDoneToday ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isDoneToday ? "Mark not done today" : "Mark done today")
+                .accessibilityIdentifier("habit.toggle")
             }
 
-            Spacer()
-
-            Button(action: toggle) {
-                Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
-                    .font(.title)
-                    .foregroundStyle(isDoneToday ? .green : .secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isDoneToday ? "Mark not done today" : "Mark done today")
+            weekStripView
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("habit.row.\(index)")
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive, action: requestDelete) {
+                Label("Delete", systemImage: "trash")
+            }
+            Button(action: edit) {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
+        .contextMenu {
+            Button { edit() } label: { Label("Edit", systemImage: "pencil") }
+            Button(role: .destructive) { requestDelete() } label: { Label("Delete", systemImage: "trash") }
+        }
     }
 
     @ViewBuilder
@@ -175,67 +304,64 @@ private struct HabitRow: View {
                 .foregroundStyle(.secondary)
         }
     }
+
+    /// Tappable 7-day strip: each cell backfills/corrects that day's completion.
+    private var weekStripView: some View {
+        HStack(spacing: 6) {
+            // Explicit edit button so the editor is reachable without relying on swipe in tests.
+            Button(action: edit) {
+                Image(systemName: "pencil")
+                    .font(.footnote)
+                    .frame(width: 28, height: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+            .accessibilityLabel("Edit habit")
+            .accessibilityIdentifier("habit.edit")
+
+            ForEach(weekDays) { day in
+                DayCell(day: day) { toggleDay(day.date) }
+            }
+        }
+    }
 }
 
-// MARK: - Add sheet
+// MARK: - Day cell
 
-private struct AddHabitView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var symbol = "checkmark.circle"
+private struct DayCell: View {
+    let day: WeekDay
+    let toggle: () -> Void
 
-    let onAdd: (String, String) -> Void
+    private var weekdayLetter: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEEE" // narrow single-letter weekday
+        return f.string(from: day.date)
+    }
 
-    /// A small palette of SF Symbols to pick from.
-    private let symbols = [
-        "checkmark.circle", "drop.fill", "book.fill", "figure.run",
-        "dumbbell.fill", "leaf.fill", "bed.double.fill", "cup.and.saucer.fill",
-        "moon.fill", "sun.max.fill", "pencil", "heart.fill"
-    ]
-
-    private var trimmedName: String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var dayNumber: String {
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        return f.string(from: day.date)
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Habit") {
-                    TextField("Name", text: $name)
-                }
-                Section("Symbol") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
-                        ForEach(symbols, id: \.self) { sym in
-                            Button {
-                                symbol = sym
-                            } label: {
-                                Image(systemName: sym)
-                                    .font(.title2)
-                                    .frame(width: 44, height: 44)
-                                    .background(symbol == sym ? Color.green.opacity(0.2) : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .foregroundStyle(symbol == sym ? .green : .primary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-            .navigationTitle("New Habit")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        onAdd(trimmedName, symbol)
-                        dismiss()
-                    }
-                    .disabled(trimmedName.isEmpty)
+        Button(action: toggle) {
+            VStack(spacing: 2) {
+                Text(weekdayLetter)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                ZStack {
+                    Circle()
+                        .fill(day.isDone ? Color.green : Color.green.opacity(0.12))
+                        .frame(width: 28, height: 28)
+                    Text(dayNumber)
+                        .font(.caption2)
+                        .foregroundStyle(day.isDone ? .white : .secondary)
                 }
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(weekdayLetter) \(dayNumber), \(day.isDone ? "done" : "not done")")
+        .accessibilityIdentifier("habit.day.\(day.offset)")
     }
 }
