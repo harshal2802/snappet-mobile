@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
@@ -81,17 +85,20 @@ fun KilterDetailScreen(
     var climb by remember { mutableStateOf<KilterClimb?>(null) }
     var stats by remember { mutableStateOf<List<KilterClimbStat>>(emptyList()) }
     var holds by remember { mutableStateOf<List<KilterHold>>(emptyList()) }
+    var geometry by remember { mutableStateOf(KilterBoardGeometry.EMPTY) }
     var betaLinks by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedAngle by remember { mutableStateOf(KilterSettings.angle(context)) }
     var logConfirmation by remember { mutableStateOf<String?>(null) }
     var angleMenu by remember { mutableStateOf(false) }
+    val gradeFormat = remember { KilterSettings.gradeFormat(context) }
 
     androidx.compose.runtime.LaunchedEffect(uuid) {
         val loaded = withContext(Dispatchers.IO) {
             val c = catalog.climb(uuid) ?: return@withContext null
-            Quad(c, catalog.stats(uuid), catalog.holds(c), catalog.betaLinks(uuid))
+            Loaded(c, catalog.stats(uuid), catalog.holds(c), catalog.boardGeometry(c.layoutId), catalog.betaLinks(uuid))
         } ?: return@LaunchedEffect
-        climb = loaded.climb; stats = loaded.stats; holds = loaded.holds; betaLinks = loaded.beta
+        climb = loaded.climb; stats = loaded.stats; holds = loaded.holds
+        geometry = loaded.geometry; betaLinks = loaded.beta
         selectedAngle = if (stats.any { it.angle == selectedAngle }) selectedAngle
         else stats.maxByOrNull { it.ascents }?.angle ?: selectedAngle
     }
@@ -156,7 +163,7 @@ fun KilterDetailScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            KilterBoard(holds, Modifier.fillMaxWidth().height(340.dp))
+            KilterBoard(geometry, holds, Modifier.fillMaxWidth())
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 LegendDot("00DD00", "Start"); LegendDot("00FFFF", "Middle")
@@ -179,9 +186,29 @@ fun KilterDetailScreen(
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Stat("Grade", currentStat?.let { catalog.gradeLabel(it.difficulty) } ?: "—", "kilter.grade")
+                Stat("Grade", currentStat?.let { kilterDisplayGrade(catalog.gradeLabel(it.difficulty), gradeFormat) } ?: "—", "kilter.grade")
                 Stat("Quality", "★".repeat((currentStat?.quality ?: 0.0).roundToInt().coerceIn(0, 3)), null)
                 Stat("Ascents", "${currentStat?.ascents ?: 0}", null)
+            }
+
+            // Benchmark ("Classic") badge + first-ascensionist.
+            val isClassic = currentStat?.benchmarkDifficulty != null
+            val fa = currentStat?.faUsername ?: ""
+            if (isClassic || fa.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    if (isClassic) {
+                        Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)) {
+                            Text("★ Classic", style = MaterialTheme.typography.labelMedium,
+                                color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (fa.isNotEmpty()) {
+                        Text("FA $fa", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
+                }
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -192,10 +219,16 @@ fun KilterDetailScreen(
                 LogButton("Project", Icons.Filled.Star, false, Modifier.weight(1f), "kilter.log.project") { log(KilterAscentStatus.PROJECT) }
                 LogButton("Attempt", Icons.Filled.Bolt, false, Modifier.weight(1f), "kilter.log.attempt") { log(KilterAscentStatus.ATTEMPT) }
             }
-            logConfirmation?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("kilter.logConfirmation"))
+            androidx.compose.animation.AnimatedVisibility(visible = logConfirmation != null) {
+                Box(Modifier.background(Color(0xFF30A46C).copy(alpha = 0.16f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Text("✓ ${logConfirmation ?: ""}", style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF1E7E48), fontWeight = FontWeight.Medium,
+                        modifier = Modifier.testTag("kilter.logConfirmation"))
+                }
             }
+
+            if (stats.size > 1) GradeChart(stats, selectedAngle, catalog)
 
             // Illuminate (Phase 2)
             if (board.state != KilterBoardController.State.UNSUPPORTED) {
@@ -257,6 +290,37 @@ private fun LogButton(
     }
 }
 
+/** How grade changes across board angles — the selected angle highlighted in the Kilter accent. */
+@Composable
+private fun GradeChart(stats: List<KilterClimbStat>, selectedAngle: Int, catalog: KilterCatalog) {
+    val accent = Color(0xFFD97706)
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f)
+    val diffs = stats.map { it.difficulty }
+    val lo = (diffs.minOrNull() ?: 0.0) - 1.0
+    val hi = (diffs.maxOrNull() ?: 1.0) + 1.0
+    val range = (hi - lo).coerceAtLeast(1.0)
+    Column(Modifier.fillMaxWidth()) {
+        Text("Grade by angle", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth().height(92.dp), verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            stats.forEach { s ->
+                val frac = (((s.difficulty - lo) / range).toFloat()).coerceIn(0.06f, 1f)
+                Box(Modifier.weight(1f).fillMaxHeight(frac)
+                    .background(if (s.angle == selectedAngle) accent else muted, RoundedCornerShape(3.dp)))
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            stats.forEach { s ->
+                Text("${s.angle}", Modifier.weight(1f), textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 @Composable
 private fun LegendDot(hex: String, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -265,10 +329,11 @@ private fun LegendDot(hex: String, label: String) {
     }
 }
 
-/** Small 4-tuple to return the catalog load in one shot off the main thread. */
-private data class Quad(
+/** Bundles the catalog load so it happens in one shot off the main thread. */
+private data class Loaded(
     val climb: KilterClimb,
     val stats: List<KilterClimbStat>,
     val holds: List<KilterHold>,
+    val geometry: KilterBoardGeometry,
     val beta: List<String>,
 )

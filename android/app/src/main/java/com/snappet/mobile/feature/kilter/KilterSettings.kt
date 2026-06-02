@@ -21,4 +21,9 @@ object KilterSettings {
 
     fun maxGrade(context: Context): Int = prefs(context).getInt("maxGrade", 33)
     fun setMaxGrade(context: Context, value: Int) = prefs(context).edit().putInt("maxGrade", value).apply()
+
+    fun gradeFormat(context: Context): KilterGradeFormat =
+        KilterGradeFormat.from(prefs(context).getString("gradeFormat", null))
+    fun setGradeFormat(context: Context, value: KilterGradeFormat) =
+        prefs(context).edit().putString("gradeFormat", value.name).apply()
 }
