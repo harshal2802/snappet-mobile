@@ -184,16 +184,20 @@ final class KilterCatalog {
     }
 
     /// Decode a climb's `frames` into positioned, colored holds for rendering / illumination.
+    ///
+    /// Holds are normalized against the **whole board's** hole extent for the climb's layout (not the
+    /// climb's own `edge_*` bounds), so every climb renders at the same scale and the lit holds line
+    /// up exactly with the faint grid from `boardGeometry(forLayout:)`.
     func holds(for climb: KilterClimb) -> [KilterHold] {
-        let w = Double(climb.edgeRight - climb.edgeLeft)
-        let h = Double(climb.edgeTop - climb.edgeBottom)
+        let e = extent(forLayout: climb.layoutId)
+        let w = Double(e.maxX - e.minX), h = Double(e.maxY - e.minY)
         guard w > 0, h > 0 else { return [] }
         let leds = ledPositions(forLayout: climb.layoutId)
         var out: [KilterHold] = []
         for (placementId, roleId) in Self.parseFrames(climb.frames) {
             guard let (bx, by) = placementXY[placementId] else { continue }
-            let nx = (Double(bx) - Double(climb.edgeLeft)) / w
-            let ny = (Double(by) - Double(climb.edgeBottom)) / h
+            let nx = (Double(bx) - Double(e.minX)) / w
+            let ny = (Double(by) - Double(e.minY)) / h
             out.append(KilterHold(
                 placementId: placementId,
                 x: min(max(nx, 0), 1),
@@ -203,6 +207,51 @@ final class KilterCatalog {
                 ledPosition: placementHole[placementId].flatMap { leds[$0] }))
         }
         return out
+    }
+
+    // MARK: - Board geometry (the faint full-grid backdrop)
+
+    /// `layout_id -> (minX,maxX,minY,maxY)` board-coordinate extent of every placement on the layout.
+    private var extentCache: [Int: (minX: Int, maxX: Int, minY: Int, maxY: Int)] = [:]
+    private var geometryCache: [Int: KilterBoardGeometry] = [:]
+
+    private func extent(forLayout layoutId: Int) -> (minX: Int, maxX: Int, minY: Int, maxY: Int) {
+        if let c = extentCache[layoutId] { return c }
+        var e = (minX: 0, maxX: 1, minY: 0, maxY: 1)
+        query("""
+            SELECT MIN(h.x), MAX(h.x), MIN(h.y), MAX(h.y)
+            FROM placements p JOIN holes h ON h.id = p.hole_id WHERE p.layout_id = ?
+        """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+            if sqlite3_column_type(s, 0) != SQLITE_NULL {
+                e = (Self.int(s, 0), Self.int(s, 1), Self.int(s, 2), Self.int(s, 3))
+            }
+        }
+        extentCache[layoutId] = e
+        return e
+    }
+
+    /// The board's drawable geometry: aspect ratio + the full normalized hole grid (deduped by hole),
+    /// so the render shows the whole wall with the climb's holds highlighted on top.
+    func boardGeometry(forLayout layoutId: Int) -> KilterBoardGeometry {
+        if let c = geometryCache[layoutId] { return c }
+        let e = extent(forLayout: layoutId)
+        let w = Double(e.maxX - e.minX), h = Double(e.maxY - e.minY)
+        guard w > 0, h > 0 else { return .empty }
+        var grid: [KilterGridHole] = []
+        var seen = Set<Int>()   // hole_id, to dedupe placements sharing a hole
+        query("""
+            SELECT DISTINCT p.hole_id, h.x, h.y
+            FROM placements p JOIN holes h ON h.id = p.hole_id WHERE p.layout_id = ?
+        """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+            let hole = Self.int(s, 0)
+            guard seen.insert(hole).inserted else { return }
+            let nx = (Double(Self.int(s, 1)) - Double(e.minX)) / w
+            let ny = (Double(Self.int(s, 2)) - Double(e.minY)) / h
+            grid.append(KilterGridHole(x: nx, y: 1 - ny))
+        }
+        let geo = KilterBoardGeometry(aspect: w / h, grid: grid)
+        geometryCache[layoutId] = geo
+        return geo
     }
 
     /// `difficulty (float) -> grade label`, rounding to the nearest catalog grade.

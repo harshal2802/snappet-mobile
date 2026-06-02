@@ -60,6 +60,44 @@ struct KilterLayout: Identifiable, Hashable, Sendable {
     let name: String
 }
 
+/// One hole position on the board, normalized to view space (x,y in 0…1, y from the top). The full
+/// set draws the faint board grid under a climb's lit holds, giving the render real wall context.
+struct KilterGridHole: Hashable, Sendable {
+    let x: Double
+    let y: Double
+}
+
+/// The drawable geometry of a board layout: its aspect ratio (width/height of the hole extent) and
+/// the full normalized hole grid. Lit holds (`KilterHold`) are normalized to the *same* extent so
+/// they line up exactly with the grid.
+struct KilterBoardGeometry: Sendable {
+    let aspect: Double
+    let grid: [KilterGridHole]
+    static let empty = KilterBoardGeometry(aspect: 1, grid: [])
+}
+
+/// How a climb's catalog list is ordered.
+enum KilterSort: String, CaseIterable, Sendable {
+    case popular, hardest, easiest, quality
+    var label: String {
+        switch self {
+        case .popular: return "Most climbed"
+        case .hardest: return "Hardest"
+        case .easiest: return "Easiest"
+        case .quality: return "Highest quality"
+        }
+    }
+    /// The `ORDER BY` clause (over the joined `climb_stats cs`).
+    var orderBy: String {
+        switch self {
+        case .popular: return "cs.ascensionist_count DESC"
+        case .hardest: return "cs.display_difficulty DESC, cs.ascensionist_count DESC"
+        case .easiest: return "cs.display_difficulty ASC, cs.ascensionist_count DESC"
+        case .quality: return "cs.quality_average DESC, cs.ascensionist_count DESC"
+        }
+    }
+}
+
 // MARK: - User-data models (persisted in the shared SnappetCore store)
 
 /// How a logged attempt resolved. Stored by `rawValue` on `KilterLogEntry`.

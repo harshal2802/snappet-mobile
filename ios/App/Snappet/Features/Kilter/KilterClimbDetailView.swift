@@ -22,6 +22,7 @@ struct KilterClimbDetailView: View {
     @State private var climb: KilterClimb?
     @State private var stats: [KilterClimbStat] = []
     @State private var holds: [KilterHold] = []
+    @State private var geometry: KilterBoardGeometry = .empty
     @State private var betaLinks: [String] = []
     @State private var selectedAngle: Int = 40
     @State private var logConfirmation: String?
@@ -53,8 +54,8 @@ struct KilterClimbDetailView: View {
 
     @ViewBuilder private func content(_ climb: KilterClimb) -> some View {
         VStack(spacing: 20) {
-            KilterBoardView(holds: holds)
-                .frame(maxHeight: 360)
+            KilterBoardView(geometry: geometry, holds: holds)
+                .frame(maxHeight: 380)
                 .padding(.horizontal)
 
             roleLegend
@@ -191,6 +192,7 @@ struct KilterClimbDetailView: View {
         climb = c
         stats = catalog.stats(uuid)
         holds = catalog.holds(for: c)
+        geometry = catalog.boardGeometry(forLayout: c.layoutId)
         betaLinks = catalog.betaLinks(uuid)
         // Prefer the shared angle if it has stats; otherwise the most-climbed angle.
         if stats.contains(where: { $0.angle == sharedAngle }) {
