@@ -9,6 +9,7 @@ enum ModuleRegistry {
         [
             WorkoutModule.module,
             WorkoutTrackerModule.module,
+            KilterModule.module,
             PomodoroModule.module,
             HabitModule.module,
             JournalModule.module,

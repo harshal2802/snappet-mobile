@@ -15,6 +15,10 @@ import com.snappet.mobile.feature.habit.HabitCompletion
 import com.snappet.mobile.feature.habit.HabitDao
 import com.snappet.mobile.feature.journal.JournalDao
 import com.snappet.mobile.feature.journal.JournalEntry
+import com.snappet.mobile.feature.kilter.KilterDao
+import com.snappet.mobile.feature.kilter.KilterFavorite
+import com.snappet.mobile.feature.kilter.KilterLogEntry
+import com.snappet.mobile.feature.kilter.KilterSession
 import com.snappet.mobile.feature.pomodoro.PomodoroDao
 import com.snappet.mobile.feature.pomodoro.PomodoroSession
 import com.snappet.mobile.feature.tip.TipCalculation
@@ -41,8 +45,9 @@ import com.snappet.mobile.feature.workout.WorkoutSession
         ExpenseGroup::class, ExpenseRecord::class,
         BudgetCategory::class, BudgetTransaction::class,
         WorkoutRoutine::class, WorkoutSession::class, WorkoutCustomExercise::class,
+        KilterLogEntry::class, KilterSession::class, KilterFavorite::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class SnappetDatabase : RoomDatabase() {
@@ -54,6 +59,7 @@ abstract class SnappetDatabase : RoomDatabase() {
     abstract fun expenseDao(): ExpenseDao
     abstract fun budgetDao(): BudgetDao
     abstract fun workoutDao(): WorkoutDao
+    abstract fun kilterDao(): KilterDao
 
     companion object {
         fun build(context: Context): SnappetDatabase =

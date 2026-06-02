@@ -22,6 +22,8 @@ targets:
       - path: Shared
     dependencies:
       - package: HighlightEngine
+      # Read-only access to the bundled Kilter catalog (Features/Kilter, `import SQLite3`).
+      - sdk: libsqlite3.tbd
       # Embed the watchOS companion so the watch app installs with the phone app.
       - target: SnappetWatch
         embed: true

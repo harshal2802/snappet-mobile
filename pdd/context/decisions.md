@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-02] Kilter Board mini-app — bundled read-only catalog, not a runtime sync
+
+**Decision**: Added a **Kilter Board** mini-app (iOS + Android) for browsing the Kilter climb catalog,
+rendering a climb's holds, logging sends/projects, reviewing history, and — gated, Phase 2 — lighting
+the physical board over BLE. Traces to [#32](https://github.com/harshal2802/snappet-mobile/issues/32).
+
+**Concrete choices made:**
+- **The catalog is bundled static reference data, never synced.** The Kilter database is fetched +
+  trimmed at *dev time* by `tools/kilter/build_bundled_db.py` (wrapping `boardlib`) into a small
+  `kilter.sqlite3` shipped as an app asset (`ios/App/Snappet/Resources/`, `android/.../assets/`), opened
+  **read-only**. This keeps Snappet's on-device-only rule (#1) intact: no runtime network/sync/accounts.
+  Refresh = re-run the tool, drop in the new asset, ship an app update. **Rules out** an in-app live sync.
+- **Catalog stays out of SwiftData/Room.** It's read with raw SQLite (`import SQLite3` on iOS; a
+  read-only `SQLiteDatabase` copied out of `assets/` on Android), so the persistence stores own *only*
+  user data. User data = three models/entities (`KilterLogEntry`, `KilterSession`, `KilterFavorite`)
+  added to `SnappetSchema.models` / `SnappetDatabase` (Room version bumped 1→2; destructive-migration).
+- **Bundled subset, not the full ~100k climbs.** Default trim: the 800 most-climbed listed problems on
+  Kilter Original + Homewall + all board geometry (~4.9 MB). Committed in *both* platform asset dirs
+  (≈9.8 MB total). Open question #11.1 (full-vs-trim, possibly Git LFS) deferred to a product call;
+  #11.2 (redistribution license) **must** be resolved before shipping.
+- **BLE illumination is implemented but device-unverified.** The Aurora/Kilter wire format
+  (`KilterProtocol`, framed ≤20-byte packets) and GATT UUIDs come from community reverse-engineering and
+  are **not** confirmed on hardware — gated behind an explicit Connect tap, inert in Phase 1, and not to
+  be reported as working until validated on a real board (device-only rule #6). Sessions auto-open on
+  connect to group logged ascents in History.
+
 ## [2026-06-01] Live-workout studio next pass — rich watch UI, pause/resume, background/minimize, transitions, notification status
 
 **Decision**: One coherent change set across the live-workout surfaces (the features are tightly
@@ -45,6 +71,7 @@ source + coordinator pause state), `LiveActivityTests` (paused snapshot push + `
 `WorkoutNotificationsTests` (rest-complete copy). **Build/sim run is device-pending**: this change was
 authored in a Linux environment with no Xcode toolchain, so it has **not** been compiled or run on a
 simulator — `xcodebuild test` on the iOS 18 sim + a paired-watch device pass is owed at the merge gate.
+
 ## [2026-06-01] Knowledge graph extended for the Live Workout Studio initiative — per-node screenshots + embedded walkthrough video
 
 **Decision**: Updated the interactive knowledge graph (`docs/knowledge-graph/`, branch

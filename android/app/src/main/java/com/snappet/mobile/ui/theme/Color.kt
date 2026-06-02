@@ -56,6 +56,7 @@ object SnappetAccents {
     val Mint = Color(0xFF12A594)
     val Teal = Color(0xFF0D9488)
     val Azure = Color(0xFF0091FF)
+    val Kilter = Color(0xFFD97706)   // amber/sandstone — Kilter Board (climbing); distinct from coral/ember
 
     /** Accent for a module id; falls back to the brand coral for unknown ids. */
     fun forModule(id: String): Color = when (id) {
@@ -67,6 +68,7 @@ object SnappetAccents {
         "tip" -> Mint
         "expense" -> Teal
         "budget" -> Azure
+        "kilter" -> Kilter
         else -> Coral
     }
 }

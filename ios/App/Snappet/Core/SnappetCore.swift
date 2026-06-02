@@ -43,6 +43,7 @@ enum SnappetSchema {
         BudgetCategory.self, BudgetTransaction.self,
         Routine.self, WorkoutSession.self, CustomExercise.self, SessionMedia.self, ClipEdit.self,
         TipCalculation.self,
+        KilterLogEntry.self, KilterSession.self, KilterFavorite.self,
     ]
 }
 
