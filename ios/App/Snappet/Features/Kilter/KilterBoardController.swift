@@ -78,6 +78,9 @@ final class KilterBoardController: NSObject {
 
 extension KilterBoardController: CBCentralManagerDelegate {
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        // Delegate callbacks arrive on the main queue (`queue: nil`), so hopping to the main actor is
+        // safe; the non-Sendable CB object is marked unsafe to satisfy Swift 6 region isolation.
+        nonisolated(unsafe) let central = central
         MainActor.assumeIsolated {
             switch central.state {
             case .poweredOn:
@@ -92,6 +95,8 @@ extension KilterBoardController: CBCentralManagerDelegate {
 
     nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                     advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        nonisolated(unsafe) let central = central
+        nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
             central.stopScan()
             self.peripheral = peripheral
@@ -102,6 +107,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
             peripheral.discoverServices([Self.serviceUUID])
         }
@@ -127,6 +133,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
 
 extension KilterBoardController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
             for service in peripheral.services ?? [] where service.uuid == Self.serviceUUID {
                 peripheral.discoverCharacteristics([Self.writeUUID], for: service)
@@ -136,6 +143,8 @@ extension KilterBoardController: CBPeripheralDelegate {
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
                                 error: Error?) {
+        nonisolated(unsafe) let peripheral = peripheral
+        nonisolated(unsafe) let service = service
         MainActor.assumeIsolated {
             for characteristic in service.characteristics ?? [] where characteristic.uuid == Self.writeUUID {
                 writeChar = characteristic
