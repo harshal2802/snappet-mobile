@@ -200,6 +200,11 @@ html, body {
   box-shadow: var(--shadow); margin-bottom: 16px;
 }
 .detail .shot-video { max-height: 480px; }
+/* Light + dark screenshot pair, shown side by side. */
+.detail .shots { display: flex; gap: 10px; margin-bottom: 16px; }
+.detail .shotfig { flex: 1 1 0; min-width: 0; margin: 0; }
+.detail .shotfig .shot { margin-bottom: 6px; max-height: 360px; }
+.detail .shotfig figcaption { text-align: center; font-size: 11px; color: var(--text-faint); letter-spacing: 0.04em; text-transform: uppercase; }
 .detail .desc { font-size: 13.5px; line-height: 1.55; color: var(--text-dim); margin-bottom: 16px; }
 .detail .kv { display: flex; gap: 8px; font-size: 12.5px; margin-bottom: 9px; }
 .detail .kv .k { color: var(--text-faint); min-width: 64px; flex-shrink: 0; }

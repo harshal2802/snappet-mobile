@@ -15,7 +15,8 @@ minimal manual editing.
 
 The iOS suite — a Home dashboard aggregating usage across mini-apps, an App Library, and the modules
 themselves (Workout reels · Pomodoro · Habits · Journal · Tip · Split Expenses · Budget). Captured on
-the iOS 26 simulator.
+the iOS 26 simulator, themed with the **Snappet Pulse** design system (#30) — one warm Pulse-coral
+brand accent, curated per-module accents, a shared spacing/radius/type scale, and full dark mode.
 
 | Home dashboard | App Library | Workout (onboarding) |
 |---|---|---|
@@ -44,6 +45,40 @@ and a heart-rate source picker (Apple Watch / BLE band).
 | Workout settings | HR source picker | |
 |---|---|---|
 | ![Workout settings](docs/screenshots/workout-settings.png) | ![HR source picker](docs/screenshots/hr-source-picker.png) | |
+
+### 🌙 Dark mode
+
+Snappet Pulse renders from the same tokens in both appearances — warm near-black surfaces with the
+same coral brand accent and per-module hues. Same screens as above, in dark.
+
+<details>
+<summary>Show dark-mode gallery</summary>
+
+| Home dashboard | App Library | Workout (onboarding) |
+|---|---|---|
+| ![Home (dark)](docs/screenshots/01-home-dark.png) | ![Apps (dark)](docs/screenshots/02-apps-dark.png) | ![Workout (dark)](docs/screenshots/03-workout-dark.png) |
+
+| Pomodoro | Habits | Journal |
+|---|---|---|
+| ![Pomodoro (dark)](docs/screenshots/04-pomodoro-dark.png) | ![Habits (dark)](docs/screenshots/05-habits-dark.png) | ![Journal (dark)](docs/screenshots/06-journal-dark.png) |
+
+| Tip Calculator | Split Expenses | Budget |
+|---|---|---|
+| ![Tip (dark)](docs/screenshots/07-tip-dark.png) | ![Expenses (dark)](docs/screenshots/08-expenses-dark.png) | ![Budget (dark)](docs/screenshots/09-budget-dark.png) |
+
+| Workout dashboard | Routines | Routine detail |
+|---|---|---|
+| ![Workout dashboard (dark)](docs/screenshots/workout-dashboard-dark.png) | ![Routines (dark)](docs/screenshots/workout-routines-dark.png) | ![Routine detail (dark)](docs/screenshots/routine-detail-dark.png) |
+
+| Live player (timer + HR overlay) | History | HR summary (chart + zones) |
+|---|---|---|
+| ![Live player (dark)](docs/screenshots/live-player-dark.png) | ![History (dark)](docs/screenshots/workout-history-dark.png) | ![HR summary (dark)](docs/screenshots/workout-summary-dark.png) |
+
+| Workout settings | HR source picker | |
+|---|---|---|
+| ![Workout settings (dark)](docs/screenshots/workout-settings-dark.png) | ![HR source picker (dark)](docs/screenshots/hr-source-picker-dark.png) | |
+
+</details>
 
 ### ▶ Walkthrough video
 
