@@ -103,14 +103,14 @@ struct ClipEditorView: View {
     @ViewBuilder
     private func preview(_ vm: ClipEditorViewModel) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14).fill(.black)
+            RoundedRectangle(cornerRadius: SnappetRadius.md).fill(.black)
             switch vm.state {
             case .building, .idle:
                 ProgressView().tint(.white)
             case .ready:
                 if let player = vm.previewPlayer {
                     VideoPlayer(player: player)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
                         .accessibilityIdentifier("clipEditorPreview")
                 }
             case .error(let message):
@@ -341,6 +341,7 @@ private struct AudioControls: View {
 /// I/O lives in `VideoStudio` / `MediaLibraryService`.
 private struct ExportShareControls: View {
     @Bindable var vm: ClipEditorViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showShare = false
 
     var body: some View {
@@ -364,7 +365,7 @@ private struct ExportShareControls: View {
             case .exported(let url), .saving(let url), .saved(let url):
                 if case .saved = vm.exportState {
                     Label("Saved to Photos", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green).font(.subheadline)
+                        .foregroundStyle(SnappetColor.habits).font(.subheadline)
                 }
                 HStack(spacing: 12) {
                     Button {
@@ -393,6 +394,9 @@ private struct ExportShareControls: View {
                 .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
             }
         }
+        // Cross-fade between export states (idle → exporting → exported / saved), gated.
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                   value: vm.exportState)
     }
 }
 
@@ -410,6 +414,6 @@ private struct ControlCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 }

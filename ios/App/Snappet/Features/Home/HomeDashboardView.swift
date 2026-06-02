@@ -7,26 +7,40 @@ import Charts
 /// logging to `SnappetCore` updates this automatically.
 struct HomeDashboardView: View {
     @Query(sort: \UsageRecord.timestamp, order: .reverse) private var records: [UsageRecord]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the 7-day chart's grow-up-from-baseline animation on appear.
+    @State private var chartAppeared = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    todayRow
-                    weekChart
-                    activityFeed
-                }
-                .padding()
-            }
-            .navigationTitle("Today")
-            .overlay {
+            // Empty ↔ populated is a cross-fade (issue #30 §5.2) — and rendering one OR
+            // the other (not an .overlay) fixes the empty-state-overlaps-content bug.
+            ZStack {
                 if records.isEmpty {
                     ContentUnavailableView("No activity yet",
                         systemImage: "square.grid.2x2",
                         description: Text("Open an app from the Apps tab — your activity shows up here."))
+                        .transition(.opacity)
+                } else {
+                    feed.transition(.opacity)
                 }
             }
+            .snappetAnimation(SnappetMotion.standard, value: records.isEmpty)
+            .navigationTitle("Today")
         }
+    }
+
+    private var feed: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SnappetSpacing.xl) {
+                todayRow
+                weekChart
+                activityFeed
+            }
+            .padding()
+        }
+        // Clear the suite's floating tab bar so the last card isn't covered.
+        .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
     }
 
     // MARK: today
@@ -35,12 +49,15 @@ struct HomeDashboardView: View {
     private var todayRecords: [UsageRecord] { records.filter { $0.timestamp >= todayStart } }
 
     private var todayRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
             Text("Today").font(.title3.bold())
-            HStack(spacing: 12) {
-                StatTile(value: "\(todayRecords.count)", label: "actions", tint: .blue)
-                StatTile(value: "\(Set(todayRecords.map(\.module)).count)", label: "apps used", tint: .purple)
-                StatTile(value: streakText, label: "day streak", tint: .orange)
+            HStack(spacing: SnappetSpacing.md) {
+                StatTile(value: "\(todayRecords.count)", label: "actions",
+                         systemImage: "bolt.fill", tint: SnappetColor.brand)
+                StatTile(value: "\(Set(todayRecords.map(\.module)).count)", label: "apps used",
+                         systemImage: "square.grid.2x2.fill", tint: SnappetColor.journal)
+                StatTile(value: streakText, label: "day streak",
+                         systemImage: "flame.fill", tint: SnappetColor.workout)
             }
         }
     }
@@ -60,38 +77,47 @@ struct HomeDashboardView: View {
     }
 
     private var weekChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
             Text("Last 7 days").font(.headline)
             Chart(lastWeek) { d in
                 BarMark(x: .value("Day", d.day, unit: .day),
-                        y: .value("Actions", d.count))
+                        // Bars grow up from the baseline on appear (issue #30 §5.2).
+                        y: .value("Actions", chartAppeared || reduceMotion ? d.count : 0))
                 .foregroundStyle(.tint)
                 .cornerRadius(4)
             }
             .chartXAxis { AxisMarks(values: .stride(by: .day)) { _ in AxisValueLabel(format: .dateTime.weekday(.narrow)) } }
             .frame(height: 160)
+            .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartAppeared)
+            .onAppear { chartAppeared = true }
+            .onDisappear { chartAppeared = false }
         }
     }
 
     // MARK: activity feed
 
     private var activityFeed: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
             Text("Recent activity").font(.headline)
             ForEach(records.prefix(12)) { r in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.summary).font(.subheadline)
-                        Text(r.module.capitalized).font(.caption).foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.summary).font(.subheadline)
+                            Text(r.module.capitalized).font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                        }
+                        Spacer()
+                        Text(r.timestamp, format: .relative(presentation: .numeric))
+                            .font(.caption).foregroundStyle(.tertiary)
                     }
-                    Spacer()
-                    Text(r.timestamp, format: .relative(presentation: .numeric))
-                        .font(.caption).foregroundStyle(.tertiary)
+                    .padding(.vertical, SnappetSpacing.xs)
+                    Divider()
                 }
-                .padding(.vertical, 4)
-                Divider()
+                // New rows slide + fade in (issue #30 §5.2).
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .snappetAnimation(SnappetMotion.standard, value: records.count)
     }
 
     /// Consecutive days (ending today) with at least one logged action.
@@ -111,14 +137,21 @@ struct HomeDashboardView: View {
 private struct StatTile: View {
     let value: String
     let label: String
+    let systemImage: String
     let tint: Color
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: SnappetSpacing.xs) {
+            // Icon is a non-colour signal so the three tiles are distinguishable without
+            // relying on hue alone (issue #30 accessibility).
+            Image(systemName: systemImage).font(.subheadline).foregroundStyle(tint)
             Text(value).font(.title.bold()).foregroundStyle(tint)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text(label).font(.caption).foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .snappetTile()
+        // Numbers count up rather than snapping (issue #30 §5.2).
+        .animation(.snappy, value: value)
     }
 }

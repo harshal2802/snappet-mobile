@@ -44,8 +44,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.animateFloatAsState
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Currency
@@ -220,9 +224,9 @@ private fun TipBody(
         }
 
         Text("Results", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        ResultRow("Tip", currency(tipAmount), tag = "tip.tip")
-        ResultRow("Total", currency(total), tag = "tip.total")
-        ResultRow("Per person", currency(perPerson), emphasized = true, tag = "tip.perPerson")
+        ResultRow("Tip", tipAmount, tag = "tip.tip")
+        ResultRow("Total", total, tag = "tip.total")
+        ResultRow("Per person", perPerson, emphasized = true, tag = "tip.perPerson")
 
         Button(onClick = onCommit, modifier = Modifier.fillMaxWidth().testTag("tip.commit")) {
             Text("Add to history")
@@ -231,11 +235,17 @@ private fun TipBody(
 }
 
 @Composable
-private fun ResultRow(label: String, value: String, emphasized: Boolean = false, tag: String) {
+private fun ResultRow(label: String, amount: Double, emphasized: Boolean = false, tag: String) {
+    val reduceMotion = LocalReduceMotion.current
+    val animatedAmount by animateFloatAsState(
+        targetValue = amount.toFloat(),
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "tipResult.$tag",
+    )
     Row(Modifier.fillMaxWidth().testTag(tag), verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.weight(1f))
         Text(
-            value,
+            currency(animatedAmount.toDouble()),
             fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
             color = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )

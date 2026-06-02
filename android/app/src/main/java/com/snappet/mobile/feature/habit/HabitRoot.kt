@@ -1,5 +1,8 @@
 package com.snappet.mobile.feature.habit
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,16 +45,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.scale
 import com.snappet.mobile.core.SnappetCore
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Green = Color(0xFF30A46C)
-private val Orange = Color(0xFFF76808)
+private val Green = SnappetAccents.Leaf
+private val Orange = SnappetAccents.Ember
 
 /**
  * Root entry for the Habit mini-app. Lists habits with their current streak, a 30-day completion
@@ -211,7 +219,13 @@ private fun HabitRow(
     onToggleDay: (Long) -> Unit,
     onEdit: () -> Unit,
 ) {
-    val pct = Math.round(rate * 100).toInt()
+    val reduceMotion = LocalReduceMotion.current
+    val pctTarget = Math.round(rate * 100).toInt()
+    val pct by animateIntAsState(
+        targetValue = pctTarget,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "habit.rate.$index",
+    )
     Column(
         Modifier
             .fillMaxWidth()
@@ -240,11 +254,17 @@ private fun HabitRow(
 
 @Composable
 private fun StreakLabel(streak: Int) {
+    val reduceMotion = LocalReduceMotion.current
+    val animatedStreak by animateIntAsState(
+        targetValue = streak,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "habitStreak",
+    )
     if (streak > 0) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Icon(Icons.Filled.LocalFireDepartment, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
             Text(
-                "$streak ${if (streak == 1) "day" else "days"} streak",
+                "$animatedStreak ${if (streak == 1) "day" else "days"} streak",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Orange,
             )
@@ -274,6 +294,17 @@ private val dayNumberFmt = SimpleDateFormat("d", Locale.getDefault())
 @Composable
 private fun DayCell(day: WeekDay, onToggle: () -> Unit) {
     val date = Date(day.dayStart)
+    val reduceMotion = LocalReduceMotion.current
+    val fill by animateColorAsState(
+        targetValue = if (day.isDone) Green else Green.copy(alpha = 0.12f),
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "habitDayFill",
+    )
+    val cellScale by animateFloatAsState(
+        targetValue = if (day.isDone) 1f else 0.92f,
+        animationSpec = gated(reduceMotion, SnappetMotion.expressive()),
+        label = "habitDayScale",
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -287,8 +318,9 @@ private fun DayCell(day: WeekDay, onToggle: () -> Unit) {
         Box(
             Modifier
                 .size(28.dp)
+                .scale(cellScale)
                 .clip(CircleShape)
-                .background(if (day.isDone) Green else Green.copy(alpha = 0.12f)),
+                .background(fill),
             contentAlignment = Alignment.Center,
         ) {
             Text(

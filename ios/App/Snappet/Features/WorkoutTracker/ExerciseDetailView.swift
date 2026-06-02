@@ -32,7 +32,7 @@ struct ExerciseDetailView: View {
             if !exercise.primaryMuscles.isEmpty || !exercise.secondaryMuscles.isEmpty {
                 Section("Muscles") {
                     if !exercise.primaryMuscles.isEmpty {
-                        muscleRow("Primary", exercise.primaryMuscles, .orange)
+                        muscleRow("Primary", exercise.primaryMuscles, SnappetColor.workout)
                     }
                     if !exercise.secondaryMuscles.isEmpty {
                         muscleRow("Secondary", exercise.secondaryMuscles, .secondary)
@@ -58,7 +58,7 @@ struct ExerciseDetailView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text("\(idx + 1)")
                                 .font(.caption.bold().monospacedDigit())
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(SnappetColor.workout)
                                 .frame(width: 20, alignment: .trailing)
                             Text(step).font(.callout)
                         }

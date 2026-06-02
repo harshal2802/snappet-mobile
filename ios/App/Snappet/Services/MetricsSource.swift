@@ -59,4 +59,19 @@ protocol MetricsSource: AnyObject {
     func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?)
     /// End the live session. Buffered `samples` are retained for B2.
     func stop()
+
+    /// Pause the live session. For an Apple Watch this pauses the on-wrist `HKWorkoutSession`
+    /// (so HR/energy collection stops); for a transport with no session concept (a BLE band
+    /// that just streams) this is a no-op and pause is purely a UI/Live-Activity state tracked
+    /// by the coordinator. Default: no-op.
+    func pause()
+    /// Resume a paused live session. Default: no-op.
+    func resume()
+}
+
+extension MetricsSource {
+    // Default no-ops so a stream-only source (BLE) needn't implement pause/resume — the
+    // coordinator still tracks the paused *display* state for those sources.
+    func pause() {}
+    func resume() {}
 }

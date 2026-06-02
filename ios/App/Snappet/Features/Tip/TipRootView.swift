@@ -193,8 +193,11 @@ struct TipRootView: View {
             Spacer()
             Text(amount.formatted(.currency(code: currencyCode)))
                 .monospacedDigit()
+                .contentTransition(.numericText())
                 .fontWeight(emphasized ? .bold : .regular)
                 .foregroundStyle(emphasized ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                // Totals move toward their new value as the bill/tip/split change (issue #30 §5.8).
+                .animation(.snappy, value: amount)
         }
     }
 

@@ -12,7 +12,7 @@ enum WorkoutModule {
             title: "Workout Reels",
             subtitle: "Auto-highlight reels from your heart rate",
             systemImage: "figure.run",
-            tint: .pink,
+            tint: SnappetColor.moduleAccent("workout"),
             category: .fitness
         ) { WorkoutModuleView() }
     }

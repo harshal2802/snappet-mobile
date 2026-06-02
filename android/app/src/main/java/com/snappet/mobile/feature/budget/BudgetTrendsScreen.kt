@@ -19,11 +19,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -97,6 +106,14 @@ fun BudgetTrendsScreen(transactions: List<BudgetTransaction>, onExit: () -> Unit
 @Composable
 private fun TrendsBarChart(totals: List<MonthlySpend>) {
     val maxTotal = (totals.maxOfOrNull { it.total } ?: 0.0).coerceAtLeast(1.0)
+    val reduceMotion = LocalReduceMotion.current
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val grow by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "budgetTrendsGrow",
+    )
     Column(
         Modifier
             .fillMaxWidth()
@@ -110,10 +127,10 @@ private fun TrendsBarChart(totals: List<MonthlySpend>) {
             val gap = size.width * 0.03f
             val barW = (size.width - gap * (n + 1)) / n
             totals.forEachIndexed { i, m ->
-                val h = size.height * (m.total / maxTotal).toFloat()
+                val h = size.height * (m.total / maxTotal).toFloat() * grow
                 val x = gap + i * (barW + gap)
                 drawRoundRect(
-                    color = Color(0xFF3B82F6),
+                    color = SnappetAccents.Azure,
                     topLeft = Offset(x, size.height - h),
                     size = Size(barW, h),
                     cornerRadius = CornerRadius(8f, 8f),

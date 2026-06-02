@@ -51,10 +51,10 @@ struct ExerciseProgressView: View {
                     Chart(points) { p in
                         LineMark(x: .value("Date", p.date),
                                  y: .value("Weight", WorkoutMath.kgToUnit(p.weightKg, unit)))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(SnappetColor.workout)
                         PointMark(x: .value("Date", p.date),
                                   y: .value("Weight", WorkoutMath.kgToUnit(p.weightKg, unit)))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(SnappetColor.workout)
                     }
                     .frame(height: 180)
                 }

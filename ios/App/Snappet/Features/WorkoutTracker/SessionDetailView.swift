@@ -99,6 +99,7 @@ private struct HeartRateSummarySection: View {
         VStack(spacing: 2) {
             Text("\(Int(bpm.rounded()))")
                 .font(.title3.monospacedDigit().weight(.semibold))
+                .contentTransition(.numericText())
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -109,6 +110,10 @@ private struct HeartRateSummarySection: View {
 /// platform-free) so the line is clean rather than jagged. The x-axis is elapsed minutes.
 private struct HeartRateChart: View {
     let series: [HRPoint]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the line draw-in: the plotted bpm animates from 0 → actual on first appear.
+    @State private var drawn = false
 
     /// The smoothed (bpm, t-seconds) points the chart draws.
     private var smoothed: [(t: Double, bpm: Double)] {
@@ -124,13 +129,19 @@ private struct HeartRateChart: View {
         Chart(smoothed, id: \.t) { point in
             LineMark(
                 x: .value("Time", point.t / 60),
-                y: .value("BPM", point.bpm)
+                // The line rises from the baseline on appear (issue #30 §5.7); Reduce Motion
+                // shows it fully drawn immediately.
+                y: .value("BPM", drawn || reduceMotion ? point.bpm : 0)
             )
-            .foregroundStyle(.red)
+            // Semantic HR colour — the zone ramp's hot end (kept as the HR scale).
+            .foregroundStyle(HeartRateZone.max.color)
             .interpolationMethod(.catmullRom)
         }
         .chartXAxisLabel("min")
         .chartYAxisLabel("bpm")
+        .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
+        .onAppear { drawn = true }
+        .onDisappear { drawn = false }
     }
 }
 
@@ -138,6 +149,10 @@ private struct HeartRateChart: View {
 /// listing each used zone with its minutes. Reuses `HeartRateZone` for colors/labels.
 private struct ZoneBar: View {
     let stats: WorkoutHRStats
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the segment width grow-in on appear.
+    @State private var drawn = false
 
     private var used: [(zone: HeartRateZone, seconds: Double)] {
         stats.orderedZoneSeconds.filter { $0.seconds > 0 }
@@ -148,14 +163,18 @@ private struct ZoneBar: View {
             GeometryReader { geo in
                 HStack(spacing: 1) {
                     ForEach(used, id: \.zone.rawValue) { item in
+                        let fraction = drawn || reduceMotion ? item.seconds / stats.totalSeconds : 0
                         item.zone.color
-                            .frame(width: max(1, geo.size.width * (item.seconds / stats.totalSeconds)))
+                            .frame(width: max(1, geo.size.width * fraction))
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: drawn)
             }
             .frame(height: 12)
             .accessibilityIdentifier("hrZoneBar")
+            .onAppear { drawn = true }
+            .onDisappear { drawn = false }
 
             ForEach(used, id: \.zone.rawValue) { item in
                 HStack(spacing: 6) {
@@ -194,6 +213,7 @@ private struct SessionMediaSection: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Per-session media, ordered by capture offset. `#Predicate` on the `sessionID` FK
     // (the suite's per-parent query convention).
@@ -256,6 +276,8 @@ private struct SessionMediaSection: View {
                     }
                 }
                 .padding(.vertical, 4)
+                // Newly discovered / added thumbnails settle in gently (gated by Reduce Motion).
+                .snappetAnimation(SnappetMotion.standard, value: media.count)
             }
 
             if let message {
@@ -410,7 +432,7 @@ private struct SessionMediaThumb: View {
                 }
             }
             .frame(width: side, height: side)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.sm, style: .continuous))
 
             if item.kind == .video {
                 Image(systemName: "play.circle.fill")

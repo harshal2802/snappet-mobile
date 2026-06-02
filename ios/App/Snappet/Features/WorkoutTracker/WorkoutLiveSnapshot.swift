@@ -14,6 +14,9 @@ struct WorkoutLiveSnapshot: Equatable, Sendable {
     var exerciseName: String
     /// Short set/exercise progress, e.g. "Set 2 of 4" — empty when not applicable.
     var setProgress: String
+    /// Whether the workout is paused (drives the "Paused" state across the player, the Live
+    /// Activity, and the in-app banner). Defaulted so existing call sites are untouched.
+    var paused: Bool = false
 
     /// Format an elapsed interval as the overall-timer string `H:MM:SS` (hours dropped under an
     /// hour → `M:SS`). Pure + deterministic so it is unit-testable; the in-player header prefers
@@ -35,7 +38,9 @@ struct WorkoutLiveSnapshot: Equatable, Sendable {
     static func shouldPush(_ next: WorkoutLiveSnapshot, after last: WorkoutLiveSnapshot?,
                            lastPushedAt: Date?, now: Date, minHRInterval: TimeInterval = 2) -> Bool {
         guard let last else { return true }   // first push always goes
-        if next.exerciseName != last.exerciseName || next.setProgress != last.setProgress { return true }
+        // Structural changes (exercise / set-progress / pause state) push immediately.
+        if next.exerciseName != last.exerciseName || next.setProgress != last.setProgress
+            || next.paused != last.paused { return true }
         if next.hrBpm == last.hrBpm { return false }   // nothing changed at all
         guard let lastPushedAt else { return true }
         return now.timeIntervalSince(lastPushedAt) >= minHRInterval   // HR-only → rate-limit

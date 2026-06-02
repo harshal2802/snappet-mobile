@@ -19,7 +19,7 @@ enum WorkoutTrackerModule {
             title: "Workout",
             subtitle: "Routines, set tracking & PRs",
             systemImage: "dumbbell.fill",
-            tint: .orange,
+            tint: SnappetColor.moduleAccent(id),
             category: .fitness
         ) { WorkoutHomeView() }
     }
@@ -77,6 +77,8 @@ struct WorkoutHomeView: View {
     @State private var showingNewExercise = false
     @State private var playing: WorkoutSession?
     @State private var startConflict: Routine?
+    /// Drives the zoom transition between the live-workout banner and the full-screen player.
+    @Namespace private var playerZoom
 
     private var unit: WeightUnit { WeightUnit(rawValue: preferredUnitRaw) ?? .kg }
     private var resolver: ExerciseResolver { ExerciseResolver(custom: customExercises) }
@@ -96,7 +98,13 @@ struct WorkoutHomeView: View {
             .padding(.bottom, 8)
 
             sectionContent
+                .id(section)
+                .transition(.sectionSwap)
+                .animation(.snappyNav, value: section)
         }
+        // While a workout runs but the player is minimized, keep a live banner pinned to the
+        // bottom (live metrics in-app + a one-tap way back in — the background-workout ask).
+        .safeAreaInset(edge: .bottom) { liveWorkoutBanner }
         .navigationTitle(section.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
@@ -127,9 +135,10 @@ struct WorkoutHomeView: View {
             ExerciseEditorView(existing: nil)
         }
         .fullScreenCover(item: $playing) { session in
-            WorkoutPlayerView(session: session, resolver: resolver, defaultUnit: unit) { saved in
-                finishWorkout(session, saved: saved)
-            }
+            WorkoutPlayerView(session: session, resolver: resolver, defaultUnit: unit,
+                              onClose: { saved in finishWorkout(session, saved: saved) },
+                              onMinimize: { minimizeWorkout() })
+                .navigationTransition(.zoom(sourceID: "workoutPlayer", in: playerZoom))
         }
         .confirmationDialog("A workout is already in progress.",
                             isPresented: Binding(get: { startConflict != nil },
@@ -146,6 +155,21 @@ struct WorkoutHomeView: View {
             Button("Cancel", role: .cancel) { startConflict = nil }
         }
         .task { seedStarters() }
+    }
+
+    /// The live-workout banner — shown only while a workout is active *and* the player is
+    /// minimized. Tapping it zooms back into the player (matched via `playerZoom`).
+    @ViewBuilder private var liveWorkoutBanner: some View {
+        if playing == nil, let active = activeSession {
+            LiveWorkoutBanner(
+                routineName: active.routineName,
+                startedAt: active.startedAt,
+                bpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
+                paused: app.liveWorkout.isPaused,
+                resume: { resume(active) })
+                .matchedTransitionSource(id: "workoutPlayer", in: playerZoom)
+                .transition(.liveBanner)
+        }
     }
 
     @ViewBuilder private var sectionContent: some View {
@@ -237,7 +261,7 @@ struct WorkoutHomeView: View {
             // would needlessly end+recreate the activity already on the Lock Screen.
             startLiveActivity(for: session)
         }
-        playing = session
+        withAnimation(.snappyNav) { playing = session }
     }
 
     /// Ask the watch to start an `HKWorkoutSession` of the type that matches the
@@ -279,6 +303,13 @@ struct WorkoutHomeView: View {
             )
         }
         return WorkoutSession(routineID: routine.id, routineName: routine.name, exercises: exercises)
+    }
+
+    /// Minimize the player without ending the workout: just drop the full-screen cover. The
+    /// session stays `isActive`, the watch keeps recording, and the Live Activity + the in-app
+    /// banner keep showing live metrics. Re-opened by tapping the banner. (Background-workout ask.)
+    private func minimizeWorkout() {
+        withAnimation(.snappyNav) { playing = nil }
     }
 
     /// Called when the player closes. `saved == false` means "discard": delete the session.

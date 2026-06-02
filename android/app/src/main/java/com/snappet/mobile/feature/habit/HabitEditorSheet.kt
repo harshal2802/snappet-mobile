@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import com.snappet.mobile.ui.theme.SnappetAccents
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -72,7 +73,7 @@ fun HabitEditorSheet(existing: Habit?, onSave: (String, String) -> Unit) {
                     Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (selected) Color(0x3330A46C) else Color.Transparent)
+                        .background(if (selected) SnappetAccents.Leaf.copy(alpha = 0.2f) else Color.Transparent)
                         .testTag("habit.symbol.$sym"),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -80,7 +81,7 @@ fun HabitEditorSheet(existing: Habit?, onSave: (String, String) -> Unit) {
                         Icon(
                             HabitSymbols.icon(sym),
                             contentDescription = sym,
-                            tint = if (selected) Color(0xFF30A46C) else MaterialTheme.colorScheme.onSurface,
+                            tint = if (selected) SnappetAccents.Leaf else MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }

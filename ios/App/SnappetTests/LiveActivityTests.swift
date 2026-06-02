@@ -97,6 +97,22 @@ final class WorkoutLiveSnapshotTests: XCTestCase {
             next, after: last, lastPushedAt: now.addingTimeInterval(-3), now: now))
     }
 
+    func testPauseStateChangePushesImmediately() {
+        // A pause/resume must reach the Live Activity at once (it's structural), even inside the
+        // HR rate-limit window, so the Lock Screen "Paused" badge isn't delayed.
+        let now = Date(timeIntervalSince1970: 100)
+        var last = snap("Squat", "Set 1 of 3", hr: 120)
+        var next = last
+        next.paused = true
+        XCTAssertTrue(WorkoutLiveSnapshot.shouldPush(
+            next, after: last, lastPushedAt: now.addingTimeInterval(-0.1), now: now))
+        // And resuming likewise.
+        last.paused = true
+        next.paused = false
+        XCTAssertTrue(WorkoutLiveSnapshot.shouldPush(
+            next, after: last, lastPushedAt: now.addingTimeInterval(-0.1), now: now))
+    }
+
     #if canImport(ActivityKit)
     // MARK: - ContentState mapping (the producer/renderer contract)
 
@@ -119,10 +135,20 @@ final class WorkoutLiveSnapshotTests: XCTestCase {
     func testContentStateCodableRoundTrips() throws {
         let state = WorkoutActivityAttributes.ContentState(
             startedAt: Date(timeIntervalSince1970: 1_234),
-            hrBpm: nil, exerciseName: "Resting", setProgress: "Next: Bench")
+            hrBpm: nil, exerciseName: "Resting", setProgress: "Next: Bench", paused: true)
         let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: data)
         XCTAssertEqual(decoded, state)
+        XCTAssertTrue(decoded.paused)
+    }
+
+    func testContentStatePausedCarriesThrough() {
+        let snap = WorkoutLiveSnapshot(startedAt: .now, hrBpm: 120,
+                                       exerciseName: "Bench", setProgress: "Set 1 of 3", paused: true)
+        let state = WorkoutActivityAttributes.ContentState(
+            startedAt: snap.startedAt, hrBpm: snap.hrBpm,
+            exerciseName: snap.exerciseName, setProgress: snap.setProgress, paused: snap.paused)
+        XCTAssertTrue(state.paused)
     }
     #endif
 }

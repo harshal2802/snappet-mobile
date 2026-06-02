@@ -92,8 +92,12 @@ The model was reconstructed from the iOS source tree (`ios/App/Snappet/`): the `
 and `SuiteRouter`, `ModuleRegistry`'s eight `AppModule`s, every `navigationDestination` / `.sheet`
 / `.fullScreenCover`, the flagship Workout-Reels pipeline (`AppModel` → `HighlightEngine` →
 `ReelExporter`), and the SwiftData `@Model`s behind Snappet Core. It also covers the **Live Workout
-Capture + Video Studio** initiative — the watchOS companion, the pluggable `MetricsSource` layer (Apple
-Watch / BLE band), the Live Activity, and the video studio (session media tagging → enriched HR summary →
-CapCut-style clip editor → engine-driven highlight reel → share / save). Many screen/section nodes carry a
-**screenshot** (`shot`), and the **Live Workout Studio** overview node embeds the **walkthrough video**.
+Capture + Video Studio** initiative — the watchOS companion and its bidirectional pause/resume + rich
+watch face, the pluggable `MetricsSource` layer (Apple Watch / BLE band), the Live Activity (with the
+paused/notification status + the in-app `LiveWorkoutBanner`), and the video studio (session media tagging
+→ enriched HR summary → CapCut-style clip editor → engine-driven highlight reel → share / save). Many
+screen/section nodes carry a **screenshot** (`shot`) — the detail panel shows it in **both Light and
+Dark** (the dark variant is the same path with a `-dark` suffix, e.g. `01-home-dark.png`), reflecting
+the Snappet Pulse design system (#30) — and the **Live Workout Studio** overview node embeds
+the **walkthrough video**.
 Android mirrors the same screens 1:1 (nodes are tagged `iOS + Android` where parity exists).

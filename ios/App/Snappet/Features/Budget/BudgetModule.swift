@@ -11,7 +11,7 @@ enum BudgetModule {
             title: "Budget",
             subtitle: "Track monthly spending",
             systemImage: "chart.pie",
-            tint: .blue,
+            tint: SnappetColor.moduleAccent("budget"),
             category: .finance
         ) { BudgetRootView() }
     }

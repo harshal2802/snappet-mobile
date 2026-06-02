@@ -108,18 +108,18 @@ final class LiveActivityController {
         lastSnapshot = snapshot
         lastPushedAt = now
         update(hrBpm: snapshot.hrBpm, exerciseName: snapshot.exerciseName,
-               setProgress: snapshot.setProgress)
+               setProgress: snapshot.setProgress, paused: snapshot.paused)
     }
 
     /// Push a new content state. No-op if no activity is running. `startedAt` is preserved
     /// from the running activity so the overall timer keeps ticking from the original start.
-    func update(hrBpm: Int?, exerciseName: String, setProgress: String) {
+    func update(hrBpm: Int?, exerciseName: String, setProgress: String, paused: Bool = false) {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), let activity = typedActivity else { return }
         let startedAt = activity.content.state.startedAt
         let state = WorkoutActivityAttributes.ContentState(
             startedAt: startedAt, hrBpm: hrBpm,
-            exerciseName: exerciseName, setProgress: setProgress)
+            exerciseName: exerciseName, setProgress: setProgress, paused: paused)
         let content = ActivityContent(state: state, staleDate: nil)
         // `Activity` is documented thread-safe and `Sendable`; `nonisolated(unsafe)` strips the
         // main-actor tag the local picks up from the `@MainActor` getter so the detached async

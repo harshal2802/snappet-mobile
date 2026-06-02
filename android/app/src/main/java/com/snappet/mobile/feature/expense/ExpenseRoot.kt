@@ -39,18 +39,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import com.snappet.mobile.core.SnappetCore
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-private val Green = Color(0xFF30A46C)
-private val Red = Color(0xFFE5484D)
+private val Green = SnappetAccents.Leaf
+private val Red = SnappetAccents.Tomato
 
 /**
  * Root entry for the Split Expenses mini-app. Shows a list of expense groups; tapping one drills
@@ -229,18 +234,7 @@ private fun GroupDetail(
             } else {
                 item { SectionHeader("Balances") }
                 items(balances, key = { it.name }) { balance ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(balance.name, modifier = Modifier.weight(1f))
-                        Text(
-                            money(balance.net),
-                            fontWeight = FontWeight.SemiBold,
-                            color = when {
-                                balance.net > 0.005 -> Green
-                                balance.net < -0.005 -> Red
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
+                    BalanceRow(name = balance.name, net = balance.net)
                 }
 
                 item { SectionHeader("Settle Up") }
@@ -328,6 +322,34 @@ private fun GroupDetail(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BalanceRow(name: String, net: Double) {
+    val reduceMotion = LocalReduceMotion.current
+    val targetColor = when {
+        net > 0.005 -> Green
+        net < -0.005 -> Red
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val color by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "balanceColor.$name",
+    )
+    val animatedNet by animateFloatAsState(
+        targetValue = net.toFloat(),
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "balanceNet.$name",
+    )
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(name, modifier = Modifier.weight(1f))
+        Text(
+            money(animatedNet.toDouble()),
+            fontWeight = FontWeight.SemiBold,
+            color = color,
+        )
     }
 }
 

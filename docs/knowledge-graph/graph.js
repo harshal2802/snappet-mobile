@@ -608,7 +608,7 @@
         <h2>${n.label}</h2>
       </div>
       <div class="body">
-        ${n.shot ? `<img class="shot" src="${n.shot}" alt="${n.label} screenshot" loading="lazy">` : ""}
+        ${n.shot ? `<div class="shots"><figure class="shotfig"><img class="shot" src="${n.shot}" alt="${n.label} light screenshot" loading="lazy"><figcaption>Light</figcaption></figure><figure class="shotfig"><img class="shot" src="${n.shot.replace(/\.png$/, "-dark.png")}" alt="${n.label} dark screenshot" loading="lazy"><figcaption>Dark</figcaption></figure></div>` : ""}
         ${n.video ? `<video class="shot-video" controls preload="metadata" playsinline><source src="${n.video}" type="video/mp4">Your browser can't play this video — <a href="${n.video}">open it directly</a>.</video>` : ""}
         <div class="desc">${n.desc}</div>
         <div class="kv"><span class="k">Category</span><span class="v">${cap(n.category)}</span></div>

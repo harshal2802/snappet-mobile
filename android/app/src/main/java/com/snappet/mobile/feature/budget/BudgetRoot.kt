@@ -46,17 +46,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.launch
 
 private enum class BudgetScreen { ROOT, CATEGORY, TRENDS }
 
-private val Blue = Color(0xFF3B82F6)
-private val Purple = Color(0xFF8B5CF6)
-private val Green = Color(0xFF30A46C)
-private val OrangeBar = Color(0xFFF76808)
-private val RedBar = Color(0xFFE5484D)
+private val Blue = SnappetAccents.Azure
+private val Purple = SnappetAccents.Violet
+private val Green = SnappetAccents.Leaf
+private val OrangeBar = SnappetAccents.Ember
+private val RedBar = SnappetAccents.Tomato
 
 /**
  * Root entry for the Budget mini-app. Scoped to a selected month (prev/next stepper); the summary
@@ -288,14 +294,20 @@ private fun MonthHeader(month: MonthScope, onPrev: () -> Unit, onNext: () -> Uni
 @Composable
 private fun SummaryTiles(totalLimit: Double, totalSpent: Double, remaining: Double) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Tile(totalLimit.asCurrency(), "Budget", Blue, Modifier.weight(1f).testTag("budget.total"))
-        Tile(totalSpent.asCurrency(), "Spent", Purple, Modifier.weight(1f).testTag("budget.spent"))
-        Tile(remaining.asCurrency(), "Remaining", if (remaining < 0) RedBar else Green, Modifier.weight(1f).testTag("budget.remaining"))
+        Tile(totalLimit, "Budget", Blue, Modifier.weight(1f).testTag("budget.total"))
+        Tile(totalSpent, "Spent", Purple, Modifier.weight(1f).testTag("budget.spent"))
+        Tile(remaining, "Remaining", if (remaining < 0) RedBar else Green, Modifier.weight(1f).testTag("budget.remaining"))
     }
 }
 
 @Composable
-private fun Tile(value: String, label: String, tint: Color, modifier: Modifier = Modifier) {
+private fun Tile(amount: Double, label: String, tint: Color, modifier: Modifier = Modifier) {
+    val reduceMotion = LocalReduceMotion.current
+    val animatedAmount by animateFloatAsState(
+        targetValue = amount.toFloat(),
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "budgetTile.$label",
+    )
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
@@ -304,7 +316,7 @@ private fun Tile(value: String, label: String, tint: Color, modifier: Modifier =
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = tint, maxLines = 1)
+        Text(animatedAmount.toDouble().asCurrency(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = tint, maxLines = 1)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -336,11 +348,22 @@ private fun CategoryRow(name: String, spent: Double, limit: Double, onClick: () 
         else -> 0.0
     }
     val isOver = limit > 0 && spent > limit
-    val barTint = when {
+    val targetBarTint = when {
         isOver -> RedBar
         fraction >= 0.85 -> OrangeBar
         else -> Blue
     }
+    val reduceMotion = LocalReduceMotion.current
+    val barTint by animateColorAsState(
+        targetValue = targetBarTint,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "budgetBarColor.$name",
+    )
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction.toFloat(),
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "budgetBarFraction.$name",
+    )
     Column(
         Modifier
             .fillMaxWidth()
@@ -360,7 +383,7 @@ private fun CategoryRow(name: String, spent: Double, limit: Double, onClick: () 
             )
         }
         LinearProgressIndicator(
-            progress = { fraction.toFloat() },
+            progress = { animatedFraction },
             modifier = Modifier.fillMaxWidth(),
             color = barTint,
         )

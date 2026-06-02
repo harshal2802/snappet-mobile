@@ -27,12 +27,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.SnappetAccents
 
 /**
  * The flagship **Workout Reels** module — HR-driven auto-highlight reels.
@@ -54,10 +54,10 @@ fun ReelRoot(onExit: () -> Unit) {
         ) {
             Card(
                 Modifier.fillMaxWidth().testTag("reel.hero"),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE5484D).copy(alpha = 0.12f)),
+                colors = CardDefaults.cardColors(containerColor = SnappetAccents.Coral.copy(alpha = 0.12f)),
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Filled.Movie, contentDescription = null, tint = Color(0xFFE5484D), modifier = Modifier.size(40.dp))
+                    Icon(Icons.Filled.Movie, contentDescription = null, tint = SnappetAccents.Coral, modifier = Modifier.size(40.dp))
                     Text("HR-driven highlight reels", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
                         "Do a normal watch workout and film however you like. Snappet reads the " +

@@ -42,6 +42,7 @@ struct SnappetApp: App {
         WindowGroup {
             RootShell()
                 .environment(appModel)
+                .tint(SnappetColor.brand)
         }
         .modelContainer(container)
     }

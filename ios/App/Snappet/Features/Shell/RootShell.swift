@@ -10,7 +10,7 @@ struct RootShell: View {
         if let core {
             content.environment(core)
         } else {
-            ProgressView()
+            LoadingView()
                 .task { core = SnappetCore(context: context) }
         }
     }
@@ -29,6 +29,26 @@ struct RootShell: View {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "-screenshotModule"), i + 1 < args.count else { return nil }
         return args[i + 1]
+    }
+}
+
+/// A calm, branded cold-start view (issue #30 §5.10) — a brand-tinted pulse glyph over a
+/// quiet ProgressView on the `paper` background, instead of a bare spinner. The glyph
+/// gently pulses while loading (no-op under Reduce Motion).
+private struct LoadingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            SnappetColor.paper.ignoresSafeArea()
+            VStack(spacing: SnappetSpacing.lg) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 44, weight: .semibold))
+                    .foregroundStyle(SnappetColor.brand)
+                    .symbolEffect(.pulse, isActive: !reduceMotion)
+                ProgressView()
+            }
+        }
     }
 }
 

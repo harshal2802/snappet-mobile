@@ -6,6 +6,7 @@ import SwiftData
 struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Sessions over the last 7 days, newest first — drives the today stats and the chart.
     @Query private var recentSessions: [PomodoroSession]
@@ -31,9 +32,12 @@ struct PomodoroRootView: View {
             VStack(spacing: 32) {
                 PhaseLabel(phase: timer.phase)
                 TimerRing(progress: timer.progress, timeText: timer.timeText,
-                          tint: timer.phase == .focus ? .red : .green)
+                          tint: Self.tint(for: timer.phase), reduceMotion: reduceMotion)
                     .frame(width: 260, height: 260)
                     .accessibilityIdentifier("pomodoro.timeRemaining")
+                    // Phase change (focus↔break) cross-fades the ring colour (issue #30 §5.4).
+                    .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                               value: timer.phase)
                 controls
                 TodayStats(count: focusCount, minutes: focusMinutes)
                 PomodoroFocusChart(data: chartData)
@@ -103,6 +107,11 @@ struct PomodoroRootView: View {
         .controlSize(.large)
     }
 
+    /// Pulse accent for a phase: tomato while focusing, leaf-green on a break.
+    private static func tint(for phase: PomodoroPhase) -> Color {
+        phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits
+    }
+
     // MARK: Derived stats
 
     private var todaySessions: [PomodoroSession] {
@@ -138,11 +147,12 @@ enum PomodoroRoute: Hashable {
 
 private struct PhaseLabel: View {
     let phase: PomodoroPhase
+    private var tint: Color { phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits }
     var body: some View {
         Label(phase.title, systemImage: phase == .focus ? "brain.head.profile" : "cup.and.saucer.fill")
             .font(.title3.weight(.semibold))
-            .foregroundStyle(phase == .focus ? Color.red : Color.green)
-            .padding(.horizontal, 16).padding(.vertical, 8)
+            .foregroundStyle(tint)
+            .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, SnappetSpacing.sm)
             .background(.ultraThinMaterial, in: Capsule())
     }
 }
@@ -151,6 +161,7 @@ private struct TimerRing: View {
     let progress: Double
     let timeText: String
     let tint: Color
+    let reduceMotion: Bool
 
     var body: some View {
         ZStack {
@@ -160,7 +171,8 @@ private struct TimerRing: View {
                 .trim(from: 0, to: progress)
                 .stroke(tint, style: StrokeStyle(lineWidth: 18, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.linear(duration: 0.3), value: progress)
+                // Smooth, continuous ring progress; instant under Reduce Motion.
+                .animation(reduceMotion ? nil : .linear(duration: 0.3), value: progress)
             Text(timeText)
                 .font(.system(size: 56, weight: .semibold, design: .rounded))
                 .monospacedDigit()
@@ -197,12 +209,13 @@ private struct StatCard: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: systemImage).font(.title2).foregroundStyle(.red)
+            Image(systemName: systemImage).font(.title2).foregroundStyle(SnappetColor.pomodoro)
             Text(value).font(.title.weight(.bold)).monospacedDigit()
-            Text(label).font(.caption).foregroundStyle(.secondary)
+                .contentTransition(.numericText())
+            Text(label).font(.caption).foregroundStyle(SnappetColor.textSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .snappetTile()
+        .animation(.snappy, value: value)
     }
 }

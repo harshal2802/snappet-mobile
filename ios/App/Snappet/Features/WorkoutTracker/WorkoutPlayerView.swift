@@ -11,10 +11,16 @@ struct WorkoutPlayerView: View {
     @Bindable var session: WorkoutSession
     let resolver: ExerciseResolver
     let defaultUnit: WeightUnit
+    /// Close the player and report whether to keep the session (finish / save & exit) or discard.
     let onClose: (_ saved: Bool) -> Void
+    /// Dismiss the player **without** ending the workout — the session stays active, the watch
+    /// keeps recording, and the Live Activity + in-app banner keep showing live metrics. Tapping
+    /// the banner brings the player back. (Background-workout / navigate-back ask.)
+    let onMinimize: () -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppModel.self) private var app
 
     enum Phase { case exercise, rest, done }
@@ -38,6 +44,12 @@ struct WorkoutPlayerView: View {
     @State private var showingEnd = false
     @State private var confirmingSkip = false
 
+    // Paused state: the elapsed value frozen at the moment of pause (nil = running). Drives the
+    // header's freeze; pause itself lives on `app.liveWorkout` so the watch + Live Activity agree.
+    @State private var displayElapsedAtPause: TimeInterval?
+    // Drives the one-shot completion-seal bounce (incremented when the done screen appears).
+    @State private var doneBounce = 0
+
     private var exercises: [SessionExercise] { session.exercises }
     private var current: SessionExercise? {
         exercises.indices.contains(exerciseIndex) ? exercises[exerciseIndex] : nil
@@ -50,19 +62,37 @@ struct WorkoutPlayerView: View {
         NavigationStack {
             Group {
                 switch phase {
-                case .exercise: exerciseScreen
-                case .rest: restScreen
-                case .done: doneScreen
+                case .exercise: exerciseScreen.transition(.workoutPhase)
+                case .rest: restScreen.transition(.workoutPhase)
+                case .done: doneScreen.transition(.workoutPhase)
                 }
             }
+            .animation(Motion.content, value: phase)
             .safeAreaInset(edge: .top) { overallTimerHeader }
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    // Minimize: leave the player without ending the workout (it keeps running in
+                    // the background; the in-app banner brings it back).
+                    Button { onMinimize() } label: { Label("Minimize", systemImage: "chevron.down") }
+                        .accessibilityIdentifier("minimizeWorkout")
+                }
+                ToolbarItem(placement: .topBarLeading) {
                     // Step back to fix a previously logged set.
                     if phase == .exercise && hasPrevious {
                         Button { goPrevious() } label: { Label("Previous set", systemImage: "chevron.left") }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    // Pause / resume the live workout (relays to the watch + freezes the timers,
+                    // overlay, and Live Activity).
+                    if phase != .done {
+                        Button { togglePause() } label: {
+                            Label(isPaused ? "Resume" : "Pause",
+                                  systemImage: isPaused ? "play.fill" : "pause.fill")
+                        }
+                        .accessibilityIdentifier("pauseWorkout")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -75,7 +105,14 @@ struct WorkoutPlayerView: View {
             }
         }
         .interactiveDismissDisabled()
-        .onAppear { unit = defaultUnit; resumePosition(); pushLiveActivity() }
+        .onAppear {
+            unit = defaultUnit; resumePosition()
+            // Re-sync the local freeze with the live source (e.g. paused from the watch while
+            // the player was minimized), then push the current state to the Live Activity.
+            syncPausedDisplay(app.liveWorkout.isPaused)
+            app.workoutNotifications.requestAuthorization()
+            pushLiveActivity()
+        }
         .onDisappear { timerTask?.cancel() }
         .onChange(of: scenePhase) { _, phase in
             // Returning to foreground: recompute remaining from the wall clock immediately
@@ -91,6 +128,12 @@ struct WorkoutPlayerView: View {
         .onChange(of: exerciseIndex) { _, _ in pushLiveActivity() }
         .onChange(of: setIndex) { _, _ in pushLiveActivity() }
         .onChange(of: app.liveWorkout.latestHR) { _, _ in pushLiveActivity() }
+        // React to pause changes from *either* device (the watch can pause too): freeze/unfreeze
+        // the rest countdown + the displayed timer, then re-push so the Live Activity matches.
+        .onChange(of: app.liveWorkout.isPaused) { _, paused in
+            syncPausedDisplay(paused)
+            pushLiveActivity()
+        }
         .confirmationDialog("End this workout?", isPresented: $showingEnd, titleVisibility: .visible) {
             Button("Save & exit") { finish(saved: true) }
             Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
@@ -112,15 +155,31 @@ struct WorkoutPlayerView: View {
     /// deterministically (live-workout-studio A2).
     private var overallTimerHeader: some View {
         HStack(spacing: 8) {
-            Image(systemName: "stopwatch").foregroundStyle(.orange)
+            // Pause-aware (PR #31) icon, tinted with the Pulse workout accent when running (#30).
+            Image(systemName: isPaused ? "pause.fill" : "stopwatch")
+                .foregroundStyle(isPaused ? .yellow : SnappetColor.workout)
             Text("Total").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(.primary)
+            if let frozen = displayElapsedAtPause {
+                // Paused → freeze the displayed elapsed instead of letting the wall-clock timer tick.
+                Text(WorkoutLiveSnapshot.elapsedString(frozen))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Text("PAUSED")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(.yellow.opacity(0.25), in: Capsule())
+                    .foregroundStyle(.yellow)
+            } else {
+                Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
         .background(.bar)
+        .animation(.snappyNav, value: isPaused)
         .accessibilityIdentifier("overallWorkoutTimer")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Total workout time")
@@ -149,11 +208,41 @@ struct WorkoutPlayerView: View {
             }
         }
         return WorkoutLiveSnapshot(startedAt: session.startedAt, hrBpm: hr,
-                                   exerciseName: name, setProgress: progress)
+                                   exerciseName: name, setProgress: progress,
+                                   paused: isPaused)
     }
 
     private func pushLiveActivity() {
         app.liveActivity.update(currentSnapshot)
+    }
+
+    // MARK: - Pause / resume
+
+    /// Whether the live workout is currently paused (source of truth lives on the coordinator so
+    /// the watch + Live Activity agree).
+    private var isPaused: Bool { app.liveWorkout.isPaused }
+
+    /// Toggle pause from the player's control. The coordinator relays it to the watch; the
+    /// `onChange(isPaused)` handler does the local freeze/unfreeze so a watch-driven toggle takes
+    /// the same path.
+    private func togglePause() {
+        if isPaused { app.liveWorkout.resume() } else { app.liveWorkout.pause() }
+        Haptics.tap()
+    }
+
+    /// Reconcile the player's local UI with the live paused state: freeze/unfreeze the displayed
+    /// elapsed and pause/resume the in-player rest countdown so the rest timer doesn't keep ticking
+    /// (and firing) while the workout is paused.
+    private func syncPausedDisplay(_ paused: Bool) {
+        if paused {
+            if displayElapsedAtPause == nil {
+                displayElapsedAtPause = Date.now.timeIntervalSince(session.startedAt)
+            }
+            if phase == .rest { pauseRest() }
+        } else {
+            displayElapsedAtPause = nil
+            if phase == .rest { resumeRest() }
+        }
     }
 
     // MARK: - Exercise screen
@@ -181,7 +270,7 @@ struct WorkoutPlayerView: View {
                         Text(isLastSetOfWorkout ? "Complete & finish" : "Complete set")
                             .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
-                    .buttonStyle(.borderedProminent).tint(.orange)
+                    .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
 
                     Button(role: .destructive) { confirmingSkip = true } label: {
                         Label("Skip exercise", systemImage: "forward.end")
@@ -239,7 +328,7 @@ struct WorkoutPlayerView: View {
     private func header(_ ex: SessionExercise) -> some View {
         VStack(spacing: 6) {
             Text("Exercise \(playedSoFar) of \(playableCount)")
-                .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.workout)
             Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
                 .font(.title2.bold()).multilineTextAlignment(.center)
         }
@@ -249,12 +338,14 @@ struct WorkoutPlayerView: View {
         HStack(spacing: 6) {
             ForEach(ex.sets.indices, id: \.self) { i in
                 Circle()
-                    .fill(ex.sets[i].completedAt != nil ? Color.orange
-                          : (i == setIndex ? Color.orange.opacity(0.4) : Color(.systemGray4)))
+                    .fill(ex.sets[i].completedAt != nil ? SnappetColor.workout
+                          : (i == setIndex ? SnappetColor.workout.opacity(0.4) : Color(.systemGray4)))
                     .frame(width: 9, height: 9)
             }
         }
         .padding(.top, 2)
+        // Pip fill advances as sets complete — gentle cross-fade, gated by Reduce Motion.
+        .snappetAnimation(SnappetMotion.standard, value: setIndex)
     }
 
     private var inputs: some View {
@@ -281,7 +372,7 @@ struct WorkoutPlayerView: View {
                 if let suffix { Text(suffix).font(.caption).foregroundStyle(.secondary) }
             }
             .padding(.vertical, 8).padding(.horizontal, 10)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: SnappetRadius.sm))
         }
     }
 
@@ -290,13 +381,13 @@ struct WorkoutPlayerView: View {
             Text("How to").font(.headline)
             ForEach(Array(exercise.instructions.prefix(4).enumerated()), id: \.offset) { idx, step in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(idx + 1)").font(.caption.bold()).foregroundStyle(.orange)
+                    Text("\(idx + 1)").font(.caption.bold()).foregroundStyle(SnappetColor.workout)
                     Text(step).font(.callout).foregroundStyle(.secondary)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     // MARK: - Rest screen
@@ -310,13 +401,16 @@ struct WorkoutPlayerView: View {
                 Circle().stroke(Color(.systemGray5), lineWidth: 14)
                 Circle()
                     .trim(from: 0, to: restTotal > 0 ? CGFloat(restRemaining) / CGFloat(restTotal) : 0)
-                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                    .stroke(SnappetColor.workout, style: StrokeStyle(lineWidth: 14, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.25), value: restRemaining)
-                Text(timeString(restRemaining)).font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                    // The countdown sweep is a quiet linear tick; under Reduce Motion it snaps.
+                    .animation(reduceMotion ? nil : .linear(duration: 0.25), value: restRemaining)
+                Text(timeString(restRemaining))
+                    .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText())
             }
             .frame(width: 220, height: 220)
-            .background(flash ? Color.green.opacity(0.25) : .clear)
+            .background(flash ? SnappetColor.habits.opacity(0.25) : .clear)
             .clipShape(Circle())
 
             if let next = nextSetLabel {
@@ -327,7 +421,7 @@ struct WorkoutPlayerView: View {
                 Label("Skip rest", systemImage: "forward.fill").font(.headline)
                     .frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.bordered).tint(.orange).padding(.horizontal)
+            .buttonStyle(.bordered).tint(SnappetColor.workout).padding(.horizontal)
         }
         .padding()
     }
@@ -338,7 +432,10 @@ struct WorkoutPlayerView: View {
         let volumeKg = WorkoutMath.sessionVolumeKg(session)
         return VStack(spacing: 24) {
             Spacer()
-            Image(systemName: "checkmark.seal.fill").font(.system(size: 72)).foregroundStyle(.orange)
+            Image(systemName: "checkmark.seal.fill").font(.system(size: 72)).foregroundStyle(SnappetColor.workout)
+                // Celebratory bounce on the completion seal; the trigger value is held constant
+                // under Reduce Motion so the effect never fires.
+                .symbolEffect(.bounce, value: reduceMotion ? 0 : doneBounce)
             Text("Workout Complete").font(.title.bold())
             Text(session.routineName).foregroundStyle(.secondary)
             HStack(spacing: 28) {
@@ -354,14 +451,16 @@ struct WorkoutPlayerView: View {
             Button { finish(saved: true) } label: {
                 Text("Finish").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            .buttonStyle(.borderedProminent).tint(.orange).padding(.horizontal)
+            .buttonStyle(.borderedProminent).tint(SnappetColor.workout).padding(.horizontal)
         }
         .padding()
+        .onAppear { doneBounce += 1 }
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 4) {
             Text(value).font(.title2.bold().monospacedDigit())
+                .contentTransition(.numericText())
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -501,9 +600,21 @@ struct WorkoutPlayerView: View {
     private func startRest(_ seconds: Int) {
         restTotal = seconds
         restRemaining = seconds
+        phase = .rest
+        beginRestCountdown(from: seconds)
+    }
+
+    /// (Re)anchor the rest countdown to finish `seconds` from now and (re)schedule the background
+    /// "rest complete" notification, so the rest still alerts the user if the player is minimized
+    /// or the phone is locked. Shared by the initial start and by resume-after-pause.
+    private func beginRestCountdown(from seconds: Int) {
         let end = Date().addingTimeInterval(TimeInterval(seconds))
         restEndDate = end
-        phase = .rest
+        app.workoutNotifications.scheduleRestComplete(after: TimeInterval(seconds), nextUp: nextSetLabel)
+        runRestLoop()
+    }
+
+    private func runRestLoop() {
         timerTask?.cancel()
         timerTask = Task { @MainActor in
             while true {
@@ -518,8 +629,25 @@ struct WorkoutPlayerView: View {
         }
     }
 
+    /// Freeze the rest countdown while paused: stop the loop, drop the wall-clock anchor (so
+    /// `restRemaining` holds), and cancel the scheduled notification so it can't fire mid-pause.
+    private func pauseRest() {
+        timerTask?.cancel()
+        restEndDate = nil
+        app.workoutNotifications.clear()
+    }
+
+    /// Resume the rest countdown from the frozen `restRemaining`.
+    private func resumeRest() {
+        guard restRemaining > 0 else { advanceAfterRest(); return }
+        beginRestCountdown(from: restRemaining)
+    }
+
     @MainActor private func restFinished() async {
         restEndDate = nil
+        // Completed in-app → the flash + haptics are the cue; cancel the background notification
+        // so it doesn't also fire.
+        app.workoutNotifications.clear()
         Haptics.success()
         flash = true
         try? await Task.sleep(for: .milliseconds(350))
@@ -530,6 +658,7 @@ struct WorkoutPlayerView: View {
     private func skipRest() {
         timerTask?.cancel()
         restEndDate = nil
+        app.workoutNotifications.clear()
         Haptics.tap()
         advanceAfterRest()
     }
@@ -544,6 +673,7 @@ struct WorkoutPlayerView: View {
 
     private func finish(saved: Bool) {
         timerTask?.cancel()
+        app.workoutNotifications.clear()
         // Don't persist an empty workout — if nothing was logged, discard regardless of the exit chosen.
         onClose(saved && session.completedSetCount > 0)
     }
@@ -576,16 +706,20 @@ private struct LiveHRPill: View {
     /// Source-aware status when there's no live HR (e.g. "Open the workout on your watch").
     let noSourceText: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "heart.fill")
                 .foregroundStyle(bpm == nil ? Color.secondary : zone.color)
-                .symbolEffect(.pulse, isActive: bpm != nil)
+                // The heart pulses in time with a live sample; suppressed under Reduce Motion.
+                .symbolEffect(.pulse, isActive: bpm != nil && !reduceMotion)
             if let bpm {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(bpm)")
                         .font(.title3.weight(.bold).monospacedDigit())
                         .foregroundStyle(zone.color)
+                        .contentTransition(.numericText())
                     Text("bpm").font(.caption).foregroundStyle(.secondary)
                 }
                 Text(zone.pillLabel)
@@ -607,6 +741,9 @@ private struct LiveHRPill: View {
         .padding(.vertical, 10).padding(.horizontal, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemBackground), in: Capsule())
+        // Cross-fade the bpm/zone tint + label as the training zone changes (issue #30 §5.6).
+        .snappetAnimation(SnappetMotion.standard, value: zone)
+        .snappetAnimation(SnappetMotion.standard, value: bpm)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(bpm == nil ? "Heart rate"
             : "Heart rate \(bpm!) beats per minute, \(zone.label) zone, source \(sourceName)")

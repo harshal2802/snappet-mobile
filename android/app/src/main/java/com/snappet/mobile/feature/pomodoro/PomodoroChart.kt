@@ -15,10 +15,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -53,6 +62,14 @@ object PomodoroStats {
 @Composable
 fun PomodoroFocusChart(data: List<DailyFocus>, modifier: Modifier = Modifier) {
     val maxMinutes = (data.maxOfOrNull { it.minutes } ?: 0).coerceAtLeast(1)
+    val reduceMotion = LocalReduceMotion.current
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val grow by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "pomodoroChartGrow",
+    )
     Column(
         modifier
             .fillMaxWidth()
@@ -67,10 +84,10 @@ fun PomodoroFocusChart(data: List<DailyFocus>, modifier: Modifier = Modifier) {
             val gap = size.width * 0.03f
             val barW = (size.width - gap * (n + 1)) / n
             data.forEachIndexed { i, d ->
-                val h = size.height * (d.minutes.toFloat() / maxMinutes)
+                val h = size.height * (d.minutes.toFloat() / maxMinutes) * grow
                 val x = gap + i * (barW + gap)
                 drawRoundRect(
-                    color = Color(0xFFE5484D),
+                    color = SnappetAccents.Tomato,
                     topLeft = Offset(x, size.height - h),
                     size = Size(barW, h),
                     cornerRadius = CornerRadius(8f, 8f),
