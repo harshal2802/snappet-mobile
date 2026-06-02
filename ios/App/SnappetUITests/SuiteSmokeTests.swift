@@ -1,7 +1,7 @@
 import XCTest
 
 /// Smoke test: every mini-app opens from the App Library via its (now Button) card — verifying the
-/// shared `SuiteRouter` / `ModuleRoute` entry navigation works for all 8 modules.
+/// shared `SuiteRouter` / `ModuleRoute` entry navigation works for all 9 modules.
 final class SuiteSmokeTests: XCTestCase {
 
     func testEverySuiteAppOpens() {
@@ -9,7 +9,7 @@ final class SuiteSmokeTests: XCTestCase {
         app.launch()
         app.tabBars.buttons["Apps"].tap()
 
-        let ids = ["workout", "workout-log", "pomodoro", "habit", "journal", "tip", "expense", "budget"]
+        let ids = ["workout", "workout-log", "nutrition", "pomodoro", "habit", "journal", "tip", "expense", "budget"]
         for id in ids {
             let card = app.buttons["moduleCard.\(id)"]
             XCTAssertTrue(card.waitForExistence(timeout: 6), "App Library should have a card for \(id)")
