@@ -55,6 +55,8 @@ enum SnappetColor {
     static let expenses = dynamic(light: 0x1592A6, dark: 0x3CB5C9)
     /// Budget — azure.
     static let budget = dynamic(light: 0x2A7DE1, dark: 0x589BF2)
+    /// Nutrition — avocado/lime (distinct from Habits' leaf-green and Workout's ember).
+    static let nutrition = dynamic(light: 0x6FAE2F, dark: 0x8FCB4F)
 
     /// Resolve a module accent from its registry `id`. Falls back to `brand` for
     /// unknown ids. Note the two fitness apps: id `workout` is "Workout Reels" (coral),
@@ -69,6 +71,7 @@ enum SnappetColor {
         case "tip":         return tip
         case "expense":     return expenses
         case "budget":      return budget
+        case "nutrition":   return nutrition
         default:            return brand
         }
     }

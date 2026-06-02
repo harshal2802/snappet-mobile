@@ -4,6 +4,58 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-02] Calorie & Nutrition mini-app — bundled open food DB (OFF + USDA FDC), not a commercial API
+
+**Decision**: Scaffold a new **Calorie & Nutrition** mini-app (`Features/Nutrition/`, registry id
+`nutrition`, fitness category) backed by a **bundled, read-only food database** built dev-time from
+the two open sources every maintained FOSS tracker uses — **Open Food Facts** (ODbL, branded/barcoded)
++ **USDA FoodData Central** (public domain, generic foods) — *not* an online commercial API. Research
+in `pdd/prompts/features/calorie-tracker/RESEARCH.md`; tracked in issue #33.
+
+**Why**: Snappet is **on-device only** (no backend/accounts/network). That rules out the paid
+API-only services (Nutritionix/Edamam/FatSecret/Spoonacular — no downloadable dataset, cost money,
+forbid caching) and points at a bundled dataset, which only open data provides. This mirrors the
+**Kilter Board (#32)** precedent: ship a trimmed read-only catalog asset, keep user data in SnappetCore.
+
+**Concrete choices made (this scaffold)**:
+- **Pure math isolated + unit-tested** (`Features/Nutrition/NutritionMath.swift`, `SnappetTests/
+  NutritionMathTests.swift`): `Nutrients`, `ServingMath` (scale/total, clamps bad input, nil-micro
+  handling), `MacroSplit` (Atwater 4/4/9), `NutritionBudget` (net = consumed − (active+basal),
+  eat-back, clamped progress, no div-by-zero), `BasalEnergy.mifflinStJeor` — value types, **no
+  SwiftData/HealthKit/SwiftUI**, so they run with no device (same discipline as `WorkoutHRStats`/
+  `ClipEditGeometry`; `HighlightEngine` gains no platform import).
+- **One denormalized `@Model FoodLogEntry`** (the `TipCalculation` snapshot precedent): stores the
+  food's name/brand + **per-serving** nutrients + quantity, decoupled from the read-only catalog so
+  the catalog refreshes in an app update without rewriting history. Appended to the single
+  `SnappetSchema.models` line (additive → lightweight migration). Custom-food + saved-goals `@Model`s
+  deferred; Phase-1 goals live in `@AppStorage`.
+- **Catalog behind a `FoodCatalog` protocol**: Phase-1 ships a tiny `SampleFoodCatalog` so the app is
+  usable before the multi-GB asset exists; the production `BundledFoodCatalog` (reads `food.sqlite3`)
+  drops in without touching the views.
+- **HealthKit write in `Services/NutritionHealthService.swift`** (`@unchecked Sendable`, like
+  `HealthKitService`): a meal → one `HKCorrelation(.food)` bundling energy + macro `HKQuantitySample`s;
+  reads active/basal energy via `HKStatisticsQuery` for the Phase-2 net budget. Device-only.
+- **Catalog builder** `tools/build-food-db/build_food_db.py` (Python **stdlib only**): joins the FDC
+  CSV bundle (`food`/`food_nutrient`/`branded_food`) + the OFF CSV/TSV export into a trimmed SQLite
+  (`foods` table + FTS5), per-100g macros + `serving_g`, sodium normalized to grams. **Smoke-tested
+  on this Linux box** with synthetic fixtures (build → FTS search → barcode lookup all pass).
+- **Knowledge graph updated in the same change** (`docs/knowledge-graph/data.js`): added the
+  `nutrition` group + `m-nutrition`/screens/`food-catalog`/`nutritionhealthservice`/`model-foodlog`
+  nodes and wired the edges; integrity audit passes (121 nodes, 198 edges, no orphan/dup ids, balanced
+  delimiters).
+
+**Rules out**: a commercial nutrition API as a core dependency (revisit only if the on-device rule is
+relaxed for a specific market, e.g. Nutritionix US restaurant + NLP); bundling OFF **images**
+(CC-BY-SA); a runtime catalog sync (refresh = ship an app update). Open product questions (issue #33
+§9): data-redistribution licensing/attribution, bundle size / market scope, whether to allow an
+opt-in online OFF barcode fallback, and HealthKit as system-of-record vs. opt-in mirror.
+
+**Verified vs. owed**: this scaffold was authored in a **Linux environment with no Xcode/Swift
+toolchain**, so the iOS code is **not compiled or run** — `xcodegen generate` + `xcodebuild test`
+(app + watch sims) and the new `NutritionUITests` / `NutritionMathTests` are **owed at the macOS merge
+gate**. Verified here: the **Python builder runs** (synthetic-fixture smoke test) and the **graph
+integrity check passes**. HealthKit writes are device-only regardless.
+
 ## [2026-06-01] Live-workout studio next pass — rich watch UI, pause/resume, background/minimize, transitions, notification status
 
 **Decision**: One coherent change set across the live-workout surfaces (the features are tightly

@@ -49,6 +49,7 @@ const GROUP_COLORS = {
   shell:        "#8e8e93",
   workout:      "#ff2d92", // pink   — Workout Reels (flagship)
   "workout-log":"#ff9f0a", // orange — Workout tracker
+  nutrition:    "#6FAE2F", // avocado/lime — Calorie & Nutrition tracker
   pomodoro:     "#ff453a", // red
   habit:        "#30d158", // green
   journal:      "#5e5ce6", // indigo
@@ -182,6 +183,24 @@ const nodes = [
   { id: "journal-editor", label: "JournalEditorView", type: "screen", group: "journal", category: "productivity", platform: "ios+android",
     file: "ios/App/Snappet/Features/Journal/JournalEditorView.swift", desc: "Compose/edit an entry with tags. Reached by pushing an existing JournalEntry or by the new-entry item.", tags: ["editor"] },
 
+  // ═════════════════ MODULE: Calorie & Nutrition ═════════════════
+  { id: "m-nutrition", label: "Nutrition", type: "module", group: "nutrition", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Nutrition/NutritionModule.swift", desc: "Calorie & nutrition tracker: log foods, track calories + macros against a daily budget, review history. Bundled open food DB (Open Food Facts + USDA FoodData Central), on-device, writes to HealthKit / Health Connect.", tags: ["nutrition","calories","macros","healthkit"] },
+  { id: "nutrition-root", label: "NutritionRootView", type: "screen", group: "nutrition", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Nutrition/NutritionRootView.swift", desc: "Today/Diary: calorie-budget ring + macro bars + per-meal lists. Presents Add-food & Goals; pushes History.", tags: ["root","diary"] },
+  { id: "nutrition-add", label: "AddFoodView", type: "sheet", group: "nutrition", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Nutrition/AddFoodView.swift", desc: "Search the bundled catalog (barcode scan is Phase 2) and pick an item to log to a meal. Pushes FoodDetailView.", tags: ["search","add"] },
+  { id: "nutrition-detail", label: "FoodDetailView", type: "screen", group: "nutrition", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Nutrition/FoodDetailView.swift", desc: "Pick serving + quantity, see computed totals, add to the diary. Persists a FoodLogEntry, logs usage, writes the meal to HealthKit.", tags: ["detail","serving"] },
+  { id: "nutrition-history", label: "NutritionHistoryView", type: "screen", group: "nutrition", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Nutrition/NutritionHistoryView.swift", desc: "Daily calorie totals over time + 7-day average vs. target (Swift Charts). Pushed via NutritionHistoryRoute.", tags: ["history","charts"] },
+  { id: "nutrition-goals", label: "Goals", type: "sheet", group: "nutrition", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Nutrition/NutritionRootView.swift", desc: "Set the daily calorie + macro-gram targets (Phase-1 goals live in @AppStorage).", tags: ["settings","goals"] },
+  { id: "food-catalog", label: "FoodCatalog (bundled DB)", type: "service", group: "nutrition", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Nutrition/FoodCatalog.swift", desc: "Read-only food lookup over the bundled food.sqlite3 (Open Food Facts + USDA FDC, built by tools/build-food-db). Phase-1 ships a SampleFoodCatalog until the asset lands.", tags: ["catalog","sqlite","reference-data"] },
+  { id: "nutritionhealthservice", label: "NutritionHealthService", type: "service", group: "nutrition", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Services/NutritionHealthService.swift", desc: "Writes meals to HealthKit as a .food correlation (energy + macros) and reads active/basal energy for the net-calorie budget. Device-only.", tags: ["healthkit","nutrition"] },
+
   // ═════════════════ MODULE: Tip Calculator ═════════════════
   { id: "m-tip", label: "Tip Calculator", type: "module", group: "tip", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Features/Tip/TipModule.swift", desc: "Split the bill: calculation history, editable presets and round-up.", tags: ["tip","split"] },
@@ -303,6 +322,8 @@ const nodes = [
     file: "ios/App/Snappet/Features/Journal/JournalEntry.swift", desc: "A journal entry with tags.", tags: ["@model"] },
   { id: "model-tip", label: "Tip models", type: "model", group: "tip", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Features/Tip/TipModels.swift", desc: "Saved tip calculations + presets.", tags: ["@model"] },
+  { id: "model-foodlog", label: "FoodLogEntry", type: "model", group: "nutrition", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Nutrition/NutritionModels.swift", desc: "A logged food in the diary — a denormalized snapshot (name/brand + per-serving nutrients + quantity), decoupled from the read-only catalog.", tags: ["@model"] },
   { id: "model-expense", label: "Expense models", type: "model", group: "expense", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Features/Expense/ExpenseModels.swift", desc: "ExpenseGroup, Expense, Settlement.", tags: ["@model"] },
   { id: "model-budget", label: "Budget models", type: "model", group: "budget", category: "finance", platform: "ios+android",
@@ -340,6 +361,7 @@ const links = [
   { source: "applibrary", target: "moduleregistry", type: "uses" },
   { source: "applibrary", target: "m-workout", type: "navigate" },
   { source: "applibrary", target: "m-workout-log", type: "navigate" },
+  { source: "applibrary", target: "m-nutrition", type: "navigate" },
   { source: "applibrary", target: "m-pomodoro", type: "navigate" },
   { source: "applibrary", target: "m-habit", type: "navigate" },
   { source: "applibrary", target: "m-journal", type: "navigate" },
@@ -350,6 +372,7 @@ const links = [
   // ModuleRegistry collects all modules
   { source: "moduleregistry", target: "m-workout", type: "contains" },
   { source: "moduleregistry", target: "m-workout-log", type: "contains" },
+  { source: "moduleregistry", target: "m-nutrition", type: "contains" },
   { source: "moduleregistry", target: "m-pomodoro", type: "contains" },
   { source: "moduleregistry", target: "m-habit", type: "contains" },
   { source: "moduleregistry", target: "m-journal", type: "contains" },
@@ -530,6 +553,21 @@ const links = [
   { source: "tip-root", target: "tip-presets", type: "present" },
   { source: "tip-root", target: "model-tip", type: "persists" },
   { source: "tip-root", target: "snappetcore", type: "feeds", label: "log usage" },
+
+  // ---- Nutrition module ----
+  { source: "m-nutrition", target: "nutrition-root", type: "contains" },
+  { source: "nutrition-root", target: "nutrition-history", type: "navigate", label: "NutritionHistoryRoute" },
+  { source: "nutrition-root", target: "nutrition-add", type: "present" },
+  { source: "nutrition-root", target: "nutrition-goals", type: "present" },
+  { source: "nutrition-root", target: "model-foodlog", type: "persists" },
+  { source: "nutrition-root", target: "snappetcore", type: "feeds", label: "log usage" },
+  { source: "nutrition-add", target: "nutrition-detail", type: "navigate" },
+  { source: "nutrition-add", target: "food-catalog", type: "uses" },
+  { source: "nutrition-detail", target: "model-foodlog", type: "persists" },
+  { source: "nutrition-detail", target: "nutritionhealthservice", type: "uses" },
+  { source: "nutrition-detail", target: "snappetcore", type: "feeds", label: "log usage" },
+  { source: "nutrition-history", target: "model-foodlog", type: "feeds" },
+  { source: "nutritionhealthservice", target: "ext-healthkit", type: "uses" },
 
   // ---- Split Expenses ----
   { source: "m-expense", target: "expense-root", type: "contains" },
