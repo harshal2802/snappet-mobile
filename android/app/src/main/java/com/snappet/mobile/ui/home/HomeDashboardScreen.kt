@@ -45,7 +45,6 @@ import com.snappet.mobile.ui.theme.LocalReduceMotion
 import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
-import com.snappet.mobile.ui.theme.gatedSpec
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -65,8 +64,8 @@ fun HomeDashboardScreen() {
         AnimatedContent(
             targetState = records.isEmpty(),
             transitionSpec = {
-                fadeIn(gatedSpec(reduceMotion, SnappetMotion.quick())) togetherWith
-                    fadeOut(gatedSpec(reduceMotion, SnappetMotion.quick()))
+                fadeIn(gated(reduceMotion, SnappetMotion.quick())) togetherWith
+                    fadeOut(gated(reduceMotion, SnappetMotion.quick()))
             },
             label = "homeEmptyPopulated",
         ) { isEmpty ->
