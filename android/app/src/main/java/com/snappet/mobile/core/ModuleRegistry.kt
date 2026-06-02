@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.ui.graphics.Color
@@ -30,6 +31,12 @@ object ModuleRegistry {
             icon = Icons.Filled.FitnessCenter, tint = Color(0xFFF76808),
             category = ModuleCategory.FITNESS,
         ) { onExit -> com.snappet.mobile.feature.workout.WorkoutRoot(onExit) },
+        AppModule(
+            id = "kilter", title = "Kilter Board",
+            subtitle = "Browse & log board climbs",
+            icon = Icons.Filled.Terrain, tint = Color(0xFFF76808),
+            category = ModuleCategory.FITNESS,
+        ) { onExit -> com.snappet.mobile.feature.kilter.KilterRoot(onExit) },
         AppModule(
             id = "pomodoro", title = "Pomodoro",
             subtitle = "Focus timer & history",
