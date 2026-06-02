@@ -76,6 +76,25 @@ struct KilterBoardGeometry: Sendable {
     static let empty = KilterBoardGeometry(aspect: 1, grid: [])
 }
 
+/// The full set of catalog browse criteria (search + filters + sort). Drives `KilterCatalog.list`.
+struct KilterFilter: Equatable, Sendable {
+    var layoutId: Int
+    var angle: Int
+    var minDifficulty: Double
+    var maxDifficulty: Double
+    var search: String = ""
+    var sort: KilterSort = .popular
+    var benchmarksOnly: Bool = false
+    var minAscents: Int = 0
+    var minQuality: Double = 0
+
+    /// Count of the optional (beyond layout/angle/grade) filters that are active — for a badge.
+    var activeExtras: Int {
+        (benchmarksOnly ? 1 : 0) + (minAscents > 0 ? 1 : 0) + (minQuality > 0 ? 1 : 0)
+            + (sort != .popular ? 1 : 0)
+    }
+}
+
 /// How a climb's catalog list is ordered.
 enum KilterSort: String, CaseIterable, Sendable {
     case popular, hardest, easiest, quality

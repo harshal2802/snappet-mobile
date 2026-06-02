@@ -26,6 +26,22 @@ struct KilterRootView: View {
     @State private var savedOnly = false
     @State private var items: [KilterListItem] = []
 
+    // Search + advanced filters.
+    @State private var search = ""
+    @State private var sort: KilterSort = .popular
+    @State private var benchmarksOnly = false
+    @State private var minAscents = 0
+    @State private var minQuality = 0.0
+    @State private var showingFilters = false
+
+    /// The current browse criteria assembled into one value (drives the catalog query + `.task` id).
+    private var filter: KilterFilter {
+        KilterFilter(layoutId: layoutId, angle: angle,
+                     minDifficulty: Double(minGrade), maxDifficulty: Double(maxGrade),
+                     search: search, sort: sort, benchmarksOnly: benchmarksOnly,
+                     minAscents: minAscents, minQuality: minQuality)
+    }
+
     private var layouts: [KilterLayout] { catalog.layouts() }
     private var availableAngles: [Int] { catalog.angles() }
     private var gradeScale: [(difficulty: Int, label: String)] { catalog.gradeScale() }
@@ -41,13 +57,26 @@ struct KilterRootView: View {
             }
         }
         .navigationTitle("Kilter Board")
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic),
+                    prompt: "Search climbs or setters")
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingFilters = true } label: {
+                    Label("Filters", systemImage: filter.activeExtras > 0
+                          ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }
+                .accessibilityIdentifier("kilter.filtersButton")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { router.push(KilterHistoryRoute()) } label: {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
                 .accessibilityIdentifier("kilter.history")
             }
+        }
+        .sheet(isPresented: $showingFilters) {
+            KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
+                               minAscents: $minAscents, minQuality: $minQuality)
         }
         .navigationDestination(for: KilterClimbRoute.self) { route in
             KilterClimbDetailView(uuid: route.uuid, board: board, sessions: sessions)
@@ -71,10 +100,13 @@ struct KilterRootView: View {
             .listStyle(.plain)
             .overlay {
                 if items.isEmpty {
-                    ContentUnavailableView(savedOnly ? "No saved climbs" : "No climbs match",
-                        systemImage: savedOnly ? "star" : "line.3.horizontal.decrease.circle",
-                        description: Text(savedOnly ? "Star climbs to find them here."
-                                                    : "Try a wider grade range or another angle."))
+                    let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
+                    ContentUnavailableView(
+                        searching ? "No matches" : (savedOnly ? "No saved climbs" : "No climbs match"),
+                        systemImage: searching ? "magnifyingglass" : (savedOnly ? "star" : "line.3.horizontal.decrease.circle"),
+                        description: Text(searching ? "No climbs match “\(search)” with the current filters."
+                                          : (savedOnly ? "Star climbs to find them here."
+                                                       : "Try a wider grade range, another angle, or fewer filters.")))
                 }
             }
         }
@@ -135,20 +167,23 @@ struct KilterRootView: View {
         .foregroundStyle(filled ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
     }
 
-    /// Identity for `.task(id:)` — recompute the list whenever a filter (or the favorites set) changes.
+    /// Identity for `.task(id:)` — recompute the list whenever any criterion (or the favorites set) changes.
     private var filterKey: String {
-        "\(layoutId)-\(angle)-\(minGrade)-\(maxGrade)-\(savedOnly)-\(favoriteUUIDs.count)"
+        "\(layoutId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(favoriteUUIDs.count)"
+        + "|\(search)|\(sort.rawValue)|\(benchmarksOnly)|\(minAscents)|\(minQuality)"
     }
 
     private func refresh() {
         guard catalog.isAvailable else { items = []; return }
-        // Keep min ≤ max even if the user picks them out of order.
-        let lo = Double(min(minGrade, maxGrade)), hi = Double(max(minGrade, maxGrade))
         if savedOnly {
+            // Saved list isn't grade/angle-restricted, but still honor the search box (name/setter).
             let saved = favorites.sorted { $0.addedAt > $1.addedAt }.map(\.climbUUID)
-            items = catalog.climbsByUUID(saved)
+            let all = catalog.climbsByUUID(saved)
+            let term = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            items = term.isEmpty ? all
+                : all.filter { $0.name.lowercased().contains(term) || $0.setter.lowercased().contains(term) }
         } else {
-            items = catalog.list(layoutId: layoutId, angle: angle, minDifficulty: lo, maxDifficulty: hi)
+            items = catalog.list(filter)
         }
     }
 }
@@ -198,5 +233,60 @@ struct KilterStars: View {
             }
         }
         .accessibilityLabel("Quality \(filled) of 3")
+    }
+}
+
+/// Bottom sheet of advanced browse criteria: sort order, a classics/benchmarks toggle, and minimum
+/// ascents/quality. The quick layout/angle/grade/saved chips stay inline; this holds the rest so the
+/// filter row doesn't get crowded.
+struct KilterFiltersSheet: View {
+    @Binding var sort: KilterSort
+    @Binding var benchmarksOnly: Bool
+    @Binding var minAscents: Int
+    @Binding var minQuality: Double
+    @Environment(\.dismiss) private var dismiss
+
+    private let ascentChoices = [0, 10, 50, 100, 500, 1000]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Sort by") {
+                    Picker("Sort", selection: $sort) {
+                        ForEach(KilterSort.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.inline).labelsHidden()
+                    .accessibilityIdentifier("kilter.filter.sort")
+                }
+                Section("Refine") {
+                    Toggle(isOn: $benchmarksOnly) {
+                        Label("Classics only", systemImage: "rosette")
+                    }
+                    .accessibilityIdentifier("kilter.filter.benchmarks")
+                    Picker("Min ascents", selection: $minAscents) {
+                        ForEach(ascentChoices, id: \.self) { Text($0 == 0 ? "Any" : "\($0)+").tag($0) }
+                    }
+                    Picker("Min quality", selection: $minQuality) {
+                        Text("Any").tag(0.0)
+                        Text("★ 1+").tag(1.0)
+                        Text("★ 2+").tag(2.0)
+                        Text("★ 3").tag(3.0)
+                    }
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        sort = .popular; benchmarksOnly = false; minAscents = 0; minQuality = 0
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.accessibilityIdentifier("kilter.filter.done")
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 }

@@ -84,22 +84,45 @@ final class KilterCatalog {
     /// Catalog list for one layout at one angle, filtered by a difficulty range, most-climbed first.
     func list(layoutId: Int, angle: Int, minDifficulty: Double, maxDifficulty: Double,
               limit: Int = 500) -> [KilterListItem] {
-        var out: [KilterListItem] = []
-        query("""
+        list(KilterFilter(layoutId: layoutId, angle: angle,
+                          minDifficulty: minDifficulty, maxDifficulty: maxDifficulty), limit: limit)
+    }
+
+    /// Catalog list driven by the full `KilterFilter` — layout/angle/grade plus free-text search
+    /// (name or setter), a benchmark/"classics" toggle, minimum ascents/quality, and a sort order.
+    func list(_ f: KilterFilter, limit: Int = 500) -> [KilterListItem] {
+        let lo = min(f.minDifficulty, f.maxDifficulty), hi = max(f.minDifficulty, f.maxDifficulty)
+        let term = f.search.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var sql = """
             SELECT c.uuid, c.name, c.setter_username, cs.display_difficulty,
                    cs.quality_average, cs.ascensionist_count
             FROM climbs c
             JOIN climb_stats cs ON cs.climb_uuid = c.uuid AND cs.angle = ?
             WHERE c.is_listed = 1 AND c.layout_id = ?
               AND cs.display_difficulty BETWEEN ? AND ?
-            ORDER BY cs.ascensionist_count DESC
-            LIMIT ?
-        """, bind: { s in
-            sqlite3_bind_int64(s, 1, Int64(angle))
-            sqlite3_bind_int64(s, 2, Int64(layoutId))
-            sqlite3_bind_double(s, 3, minDifficulty)
-            sqlite3_bind_double(s, 4, maxDifficulty)
-            sqlite3_bind_int64(s, 5, Int64(limit))
+              AND cs.ascensionist_count >= ?
+              AND cs.quality_average >= ?
+        """
+        if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
+        if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
+        sql += " ORDER BY \(f.sort.orderBy) LIMIT ?"   // sort is an enum-controlled clause (no injection)
+
+        var out: [KilterListItem] = []
+        query(sql, bind: { s in
+            var i: Int32 = 1
+            sqlite3_bind_int64(s, i, Int64(f.angle)); i += 1
+            sqlite3_bind_int64(s, i, Int64(f.layoutId)); i += 1
+            sqlite3_bind_double(s, i, lo); i += 1
+            sqlite3_bind_double(s, i, hi); i += 1
+            sqlite3_bind_int64(s, i, Int64(f.minAscents)); i += 1
+            sqlite3_bind_double(s, i, f.minQuality); i += 1
+            if !term.isEmpty {
+                let like = "%\(term)%"
+                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
+                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
+            }
+            sqlite3_bind_int64(s, i, Int64(limit))
         }) { s in
             out.append(self.listItem(s))
         }
