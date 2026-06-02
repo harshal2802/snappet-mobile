@@ -81,39 +81,44 @@ struct KilterRootView: View {
     }
 
     private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                Menu {
-                    Picker("Layout", selection: $layoutId) {
-                        ForEach(layouts) { Text($0.name).tag($0.id) }
-                    }
-                } label: { chip("Layout", layouts.first { $0.id == layoutId }?.name ?? "—") }
-                .accessibilityIdentifier("kilter.layout")
+        // The Layout/Angle/Grade menus scroll horizontally; the Saved toggle is pinned at the trailing
+        // edge so it's always reachable (it used to overflow off-screen on narrower devices).
+        HStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Menu {
+                        Picker("Layout", selection: $layoutId) {
+                            ForEach(layouts) { Text($0.name).tag($0.id) }
+                        }
+                    } label: { chip("Layout", layouts.first { $0.id == layoutId }?.name ?? "—") }
+                    .accessibilityIdentifier("kilter.layout")
 
-                Menu {
-                    Picker("Angle", selection: $angle) {
-                        ForEach(availableAngles, id: \.self) { Text("\($0)°").tag($0) }
-                    }
-                } label: { chip("Angle", "\(angle)°") }
-                .accessibilityIdentifier("kilter.angle")
+                    Menu {
+                        Picker("Angle", selection: $angle) {
+                            ForEach(availableAngles, id: \.self) { Text("\($0)°").tag($0) }
+                        }
+                    } label: { chip("Angle", "\(angle)°") }
+                    .accessibilityIdentifier("kilter.angle")
 
-                Menu {
-                    Picker("From", selection: $minGrade) {
-                        ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
-                    }
-                    Picker("To", selection: $maxGrade) {
-                        ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
-                    }
-                } label: { chip("Grade", "\(catalog.gradeLabel(Double(minGrade)))–\(catalog.gradeLabel(Double(maxGrade)))") }
-                .accessibilityIdentifier("kilter.grade")
-
-                Button { savedOnly.toggle() } label: {
-                    chip("", "Saved", filled: savedOnly, systemImage: savedOnly ? "star.fill" : "star")
+                    Menu {
+                        Picker("From", selection: $minGrade) {
+                            ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
+                        }
+                        Picker("To", selection: $maxGrade) {
+                            ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
+                        }
+                    } label: { chip("Grade", "\(catalog.gradeLabel(Double(minGrade)))–\(catalog.gradeLabel(Double(maxGrade)))") }
+                    .accessibilityIdentifier("kilter.grade")
                 }
-                .accessibilityIdentifier("kilter.savedToggle")
+                .padding(.leading)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+
+            Button { savedOnly.toggle() } label: {
+                chip("", "Saved", filled: savedOnly, systemImage: savedOnly ? "star.fill" : "star")
+            }
+            .accessibilityIdentifier("kilter.savedToggle")
+            .padding(.trailing)
         }
     }
 

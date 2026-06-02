@@ -37,6 +37,8 @@ class KilterUITest : SuiteTest() {
         composeRule.onNodeWithTag("kilter.log.sent").performScrollTo().performClick()
         composeRule.waitForIdle()
 
+        // History lives on the catalog top bar, so step back out of the climb detail first.
+        tapBack()
         composeRule.onNodeWithTag("kilter.history").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("kilter.historyRow").fetchSemanticsNodes().isNotEmpty()

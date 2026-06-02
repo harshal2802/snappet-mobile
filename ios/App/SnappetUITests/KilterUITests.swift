@@ -39,6 +39,8 @@ final class KilterUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["kilter.logConfirmation"].waitForExistence(timeout: 4),
                       "Logging should confirm on screen")
 
+        // History lives on the catalog toolbar, so step back out of the climb detail first.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["kilter.history"].tap()
         let row = app.descendants(matching: .any)["kilter.historyRow"]
         XCTAssertTrue(row.firstMatch.waitForExistence(timeout: 6),
