@@ -5,6 +5,7 @@
 **Status**: complete — verdicts below; every claim that needs hardware is flagged **device-pending**
 (HealthKit / CoreBluetooth are device-only, exactly as the prior wearable research notes).
 **Source**: user request, 2026-06-02 — *"integrate auto ring data into this app for workout tracking."*
+Target narrowed to the **Oura Ring** (user, 2026-06-02) — see the specific verdict in §3a.
 **Context**: `pdd/context/project.md`, `conventions.md`, `decisions.md`;
 `pdd/prompts/features/live-workout-studio/RESEARCH.md` §3.2–3.3 (the Apple-Watch + BLE-band decision this
 extends), `A3-metrics-source-abstraction-ble.md` (the `MetricsSource` protocol).
@@ -106,6 +107,48 @@ single property, not the brand, decides the integration path.
 - **Energy/calories live.** The BLE HR profile carries none (`BLEHeartRateMetricsSource.energy == 0`,
   already true); Tier 2 can read `.activeEnergyBurned` post-hoc **if** the ring writes it.
 
+## 3a. Oura Ring — the specific verdict (target, 2026-06-02)
+
+Applying §3 to Oura (Gen 3 / 4 / 5) — verified against Oura's own docs (sources below):
+
+- **Tier 1 (live BLE HR from the ring): NO — and Oura proves it the hard way.** The Oura ring does
+  **not** advertise the standard BLE Heart Rate Service for third-party live streaming. More tellingly,
+  Oura's *own* **"Live Activity Tracking / Live Heart Rate"** workout feature does **not** use the ring
+  for real-time workout HR — it instructs the user to pair an **external Bluetooth chest strap or AirPods
+  Pro** ("any Bluetooth-enabled chest strap, such as Polar") for live HR, because finger-PPG is
+  unreliable during motion. So even Oura doesn't treat the ring as a live workout-HR source. There is
+  **nothing for `BLEHeartRateMetricsSource` to connect to** — live ring HR during a workout isn't a
+  thing. → **R1 ("rings are bands") does NOT apply to Oura** (the ring will never appear as a `0x180D`
+  band); don't relabel the picker as if it will.
+- **The useful corollary:** the *live* path for an Oura user is the **chest strap Oura itself tells them
+  to buy** — and Snappet's existing `BLEHeartRateMetricsSource` connects that exact strap **directly**
+  (`0x180D`/`0x2A37`), no Oura app in the loop. So a user who wants the live A4 overlay pairs the strap
+  with *Snappet*; the *ring* contributes the post-hoc layer below. The two are complementary, not
+  competing.
+- **Tier 2 (post-hoc Apple Health): YES — this *is* the Oura integration.** Oura writes to Apple Health:
+  **resting heart rate, HRV, heart-rate samples**, and — via "Record a Workout" / auto-detected activity
+  — **workout HR + active energy + duration**. Snappet's R2 backfill reads that HR for the session window
+  into `hrSeries`. Oura's *own-documented* caveats land exactly on R2's design:
+  - **Granularity is limited.** Apple Health may get total active energy + duration but a **coarser HR
+    series** and an imprecise/uncategorized workout *type* (vs. an Apple Watch). → good enough for B2's
+    chart + time-in-zone + recovery context; **weaker for B4's fine-grained highlight ranking** (a sparse
+    series gives the selector less to rank on). Promise the summary, hedge the reel.
+  - **Sync is delayed** (ring → Oura app → Health, not instant). → confirms R2 must be **re-runnable**
+    (foreground re-read + an explicit "Update from Health"), never a finish-time one-shot.
+  - Actual in-workout **sample density** from a current Oura firmware is **device-pending** — measure
+    before claiming the reel works well on ring-only HR.
+- **Tier 3 (Oura cloud API v2): NO-GO.** Oura has a documented OAuth2 REST API (a `/heartrate` endpoint,
+  ~5-min granularity), but it's cloud + account → ruled out by on-device-only, same as Fitbit. Route
+  through HealthKit (Tier 2) or not at all.
+- **Bonus Oura-only signals (post-hoc, out of scope for now):** HRV, resting HR, and readiness/recovery
+  are things a *ring* gives that a strap doesn't — not workout HR, but they could enrich a session
+  summary later ("recovery before this workout"). Noted, not built; HR-driven highlights don't need them.
+
+**Bottom line for Oura:** there is **no live ring HR** (Oura itself says: use a strap — which Snappet
+already supports live), so **skip R1** and build **R2** — integrate the Oura ring as a **post-hoc
+Apple-Health HR backfill** into a session's `hrSeries`. Live overlay, if wanted, comes from a chest strap
+paired straight to Snappet. No engine change, no cloud, no new live architecture.
+
 ## 4. Recommended approach & phasing
 
 Mirror the studio's `MetricsSource` discipline: **live transport stays BLE-standard-only; rings that
@@ -118,12 +161,12 @@ can't stream live are a post-hoc HealthKit backfill, not a fake live source.** P
                              Tier 3: vendor cloud ───────────────────────────────────────────────► ✗ NO-GO (on-device-only)
 ```
 
-- **Phase R1 — "rings are bands" (copy-only, free).** Generalize the HR-source picker + footer to name
-  **rings** alongside chest straps/Polar/Garmin, and surface the connected ring's BLE name. Verify on a
-  device with any ring that advertises `0x180D`. **No transport code** — `BLEHeartRateMetricsSource`,
-  the coordinator, the overlay, and the B2/B4 flush already cover it end-to-end. Lowest risk, ships first.
-  *Files:* `HeartRateSourcePicker.swift` (copy), optionally `MetricsSourceKind.title`. Knowledge-graph
-  `data.js` note if the picker copy/behavior changes meaningfully.
+- **Phase R1 — "rings are bands" (copy-only, free) — N/A for Oura.** For a ring that *does* advertise
+  standard `0x180D` (not Oura — see §3a), generalize the HR-source picker + footer to name **rings**
+  alongside chest straps/Polar/Garmin and surface the connected ring's BLE name; **no transport code**,
+  since `BLEHeartRateMetricsSource`, the coordinator, the overlay, and the B2/B4 flush already cover it.
+  **Skip this for the Oura target** — the Oura ring never appears as a BLE band, so relabeling the picker
+  for it would mislead. (If a strap is paired for live HR, that already shows correctly today.)
 
 - **Phase R2 — post-hoc HealthKit HR backfill (the mainstream-ring path).** Add a re-runnable import that
   fills a finished session's `hrSeries` from Apple Health for `[startedAt, completedAt]` when the live
@@ -175,7 +218,24 @@ can't stream live are a post-hoc HealthKit backfill, not a fake live source.** P
 ## 7. Bottom line
 
 The studio's `MetricsSource` + `HealthKitService` seams were built precisely so a new HR wearable is a
-plug-in, and a ring is no exception: **a standard-BLE ring already works for free (R1); the realistic
-mainstream path is a post-hoc Apple-Health HR backfill into `hrSeries` (R2); vendor cloud APIs are out
-(R3), consistent with the existing Fitbit/Google ruling.** No `HighlightEngine` change, no backend, no
-new live architecture — reuse, relabel, and one narrow post-hoc read.
+plug-in. In the **general** case: a standard-BLE ring works for free (R1), the realistic mainstream path
+is a post-hoc Apple-Health HR backfill into `hrSeries` (R2), and vendor cloud APIs are out (R3),
+consistent with the existing Fitbit/Google ruling.
+
+**For the Oura target specifically (§3a):** there is **no live HR from the ring** — Oura itself routes
+live workout HR through an external chest strap, which Snappet already supports directly. So **skip R1
+and build R2**: integrate Oura as a **post-hoc Apple-Health HR backfill** into a finished session's
+`hrSeries` (re-runnable, source-filterable), good for the B2 summary and recovery context, hedged for the
+B4 reel (Oura's HR series is coarser than a Watch/strap). Live overlay, if the user wants it, comes from a
+chest strap paired straight to Snappet — not the ring. No `HighlightEngine` change, no backend, no new
+live architecture — one narrow post-hoc read.
+
+## Sources
+
+- Oura — Apple Health Integration (which data types sync): <https://support.ouraring.com/hc/en-us/articles/360025438734-Apple-Health-Integration>
+- Oura — Live Heart Rate (ring shows spot HR at rest): <https://support.ouraring.com/hc/en-us/articles/4410651298963-Live-Heart-Rate>
+- Oura — Live Activity Tracking (pairs an external BT chest strap / AirPods for live workout HR): <https://ouraring.com/blog/live-activity-tracking/>
+- Oura — Record a Workout / Workout Heart Rate: <https://ouraring.com/blog/oura-workout-heart-rate/>
+- Oura — Developer / Cloud API (Tier 3, cloud + OAuth → out of scope): <https://ouraring.com/developer>
+- 9to5Mac — Oura 2025 fitness metrics + Apple Health updates: <https://9to5mac.com/2025/05/21/oura-ring-gets-better-fitness-metrics-and-more-integrations/>
+- Acciyo — "Does Oura Work With Apple Health?" (granularity limitation summary): <https://www.acciyo.com/does-oura-ring-work-with-apple-health/>
