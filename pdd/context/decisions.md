@@ -45,6 +45,423 @@ source + coordinator pause state), `LiveActivityTests` (paused snapshot push + `
 `WorkoutNotificationsTests` (rest-complete copy). **Build/sim run is device-pending**: this change was
 authored in a Linux environment with no Xcode toolchain, so it has **not** been compiled or run on a
 simulator — `xcodebuild test` on the iOS 18 sim + a paired-watch device pass is owed at the merge gate.
+## [2026-06-01] Knowledge graph extended for the Live Workout Studio initiative — per-node screenshots + embedded walkthrough video
+
+**Decision**: Updated the interactive knowledge graph (`docs/knowledge-graph/`, branch
+`feat/graph-studio-update`) to cover the just-merged **Live Workout Capture + Video Studio** initiative
+(A1–B5), and added two new presentation affordances to the detail panel.
+
+**Concrete choices made:**
+- **`data.js` nodes (16 added, 1 retired, several updated)**. Added the pluggable live-metrics layer
+  (`metricssource`, `livemetricscoordinator`, `applewatchsource`, `blesource`) and the studio services
+  (`sessionmediaservice`, `videostudio`, `medialibraryservice`); the shared Live Activity contract node
+  `workoutactivityattributes`; the new `@Model`s `model-sessionmedia` + `model-clipedit`; the new sheets
+  `wt-hr-source-picker`, `wt-clip-editor`, `wt-highlight`; the OS-framework nodes `ext-corebluetooth` +
+  `ext-watchconnectivity`; and an **overview node `live-workout-studio`** (type `section`) that carries the
+  walkthrough video and `contains`/`feeds` the key new nodes so it's discoverable. **Retired** the stale
+  `liveworkoutservice` node (the file `LiveWorkoutService.swift` was renamed in A3 to
+  `LiveMetricsCoordinator.swift` + `AppleWatchMetricsSource.swift`) — its edges re-pointed to
+  `livemetricscoordinator`. **Updated** `sharesheet` (B5 generalized it → `Features/Shell/ShareSheet.swift`),
+  `wt-player`/`wt-session-detail`/`wt-settings` descs (A4 overlay / B2 summary / A3 picker entry), and
+  `model-workout` (B2 `hrSeries`). Wired the full live + studio edge flows with the existing edge types
+  (`uses`/`streams`/`persists`/`feeds`/`present`/`contains`). The link-id integrity check passes (every edge
+  source/target is a defined node id; no orphans, no duplicate node ids) — 109 nodes total.
+- **Per-node screenshots**. Added an optional `shot` field; `renderDetail(n)` injects an `<img class="shot">`
+  under the head (safe when absent), styled in `styles.css` (full panel width, rounded, bordered, `max-height`
+  + `object-fit: contain` so tall phone shots fit). Curated 17 shots: the 9 existing suite screens
+  (`01-home`…`09-budget`) + 8 NEW live-workout frames copied from `/tmp/studio-walkthrough-frames/` into
+  `docs/screenshots/` with semantic names (`workout-dashboard`, `workout-routines`, `routine-detail`,
+  `live-player`, `workout-history`, `workout-summary`, `workout-settings`, `hr-source-picker`). The
+  **ClipEditor / SessionHighlight** screens are **device-only** (no simulator video) → their `shot` is left
+  unset; their detail still shows desc + connections.
+- **Embedded walkthrough video**. Added an optional `video` field rendered as a `<video class="shot-video"
+  controls preload="metadata">` in `renderDetail`, attached to the `live-workout-studio` overview node
+  (`docs/live-workout-studio-walkthrough.mp4`). Added a "▶ Walkthrough video" affordance in `index.html`'s
+  header (an `<a class="btn">` to the relative path, offline-friendly). The root `README.md` gained a
+  **"Walkthrough video"** subsection (HTML5 `<video>` off the GitHub **raw** URL + a relative-link fallback)
+  and the 8 new live-workout screens in the Screens grid; the graph `README.md` "How it was built" note now
+  cites the initiative + the `shot`/`video` additions.
+- **Stays static/offline**: no build step. **Verified**: braces balanced in `data.js` (310/310); the
+  `renderDetail` template-literal injection follows the existing `${cond ? \`…\` : ""}` pattern; every
+  `shot`/`video` path resolves to an existing file (17 PNGs + the mp4); link-id integrity + no-duplicate-id
+  checks pass. (`node --check` could not be run in this sandbox — Node execution is blocked — so syntax was
+  confirmed structurally: balanced delimiters, the exact existing node/edge object shape, and a grep-based
+  source/target-vs-node-id audit.) Only the renamed PNG copies are committed; the `/tmp` frames are not.
+
+## [2026-06-01] Live Workout Studio walkthrough — chronological screenshot UI test + a test-only HR demo seed
+
+**Decision**: Added a demo/QA asset (branch `feat/live-workout-walkthrough-video`, prompt
+`pdd/prompts/features/live-workout-studio/WALKTHROUGH.md`) that walks the whole Live Workout Studio
+initiative (A1–B5) in story order and captures ordered screenshots for a video walkthrough. The headline
+screen — the **B2 enriched summary (HR chart + avg/max/min + time-in-zone)** — only renders when a session
+has a non-empty `hrSeries`, which the simulator never produces (no live HR source). So a **test-only demo
+seed** plants the data that makes it render.
+
+**Concrete, non-obvious choices made:**
+- **`StudioDemoSeed` lives behind a new launch arg `-uiTestSeedStudioDemo`** (`Features/WorkoutTracker/
+  StudioDemoSeed.swift`), a **sibling of `-uiTestFreshStore`** that it **implies** — `SnappetApp.init()`
+  builds the in-memory container for it (determinism) and calls `seedIfRequested(into:)` once, before any
+  UI appears. The guard returns immediately without the arg → **ZERO production impact** (a normal launch
+  hits neither arg). The ONLY app-target edit is that one `init()` branch; everything else is test code +
+  the seed type in the feature folder. Idempotent (keyed on a fixed `routineID`).
+- **The seed is DATA ONLY (no Photos)**: it inserts one **completed** `WorkoutSession` (three logged
+  exercises with completed sets) carrying a **deterministic synthetic `hrSeries`** — a warm-up ramp → five
+  sine-driven work/recovery oscillations → cool-down, ~120–175 bpm over ~30 min, one `HRPoint` every 3 s,
+  **no randomness** so the chart/stats are pixel-identical every run. This is enough for the B2 HR section
+  (chart + avg 146 / max 172 / min 120 + a Z2–Z5 time-in-zone bar) to RENDER on the sim. Tagged media /
+  clip editor / highlight reel still need real video and stay device-only (the seed doesn't fake them).
+- **Walkthrough navigation reuses the suite's UI-testable conventions** (segmented-control + Button rows;
+  `WorkoutWalkthroughTests` pattern: `snap("NN-name")` via `XCTAttachment(screenshot:)`, `.keepAlways`).
+  The **History → session-detail** row is the suite's one value-based `NavigationLink` (decisions.md
+  2026-05-31) — XCUITest CAN activate it here (the prior limitation was a plain `Button` not firing, not
+  the NavigationLink), so the test opens the *seeded* session through it with identifier/label/first-row
+  fallbacks, asserting the B2 `hrChart` / "Heart rate" section then snaps it.
+- **The A3 HR-source-picker entry is a `.buttonStyle(.plain)` row**: a plain `.tap()` on its identifier
+  didn't always present the sheet, so `openHRSourcePicker()` retries via the row label then a
+  normalized-coordinate tap — robust, never flakes. Confirmed the sheet (Apple Watch row + "Scanning for
+  bands…") then renders.
+- **The frames are throwaway** (exported to `/tmp/studio-walkthrough-frames/frame-NNN.png` via
+  `xcresulttool export attachments` + the manifest's `suggestedHumanReadableName`) and are **NOT committed**
+  — only the test + seed + this note + the WALKTHROUGH prompt are.
+
+**Verified (this environment, Xcode/SDK 26.5, iPhone 17 Pro iOS 26.4 sim)**: `xcodegen generate`; the
+`Snappet` scheme TEST BUILD SUCCEEDED (app + watch + widgets + both test targets).
+`LiveWorkoutStudioWalkthroughTests` → **PASS** (1/1), capturing 12 ordered frames — suite home, app library,
+workout dashboard, routines, routine detail (Start bar), the player (A2 overall-timer header + A4
+no-source overlay), after-finish dashboard, History (the just-finished session + the seeded Studio Demo),
+the **B2 HR summary** (chart + 146/172/120 + zone bar), the B1 media section + disabled B4 "Generate
+highlight", Settings, and the A3 HR-source picker sheet. All PNGs uniform **1206 × 2622** (single sim) →
+stitchable. The existing **`WorkoutWalkthroughTests` stays green** (62 s, 1/1). `HighlightEngine` source
+untouched (no platform import added).
+**Rendered vs skipped**: every planned step rendered EXCEPT `07-rest-screen` — the driven starter routine
+reached **Finish** without the player surfacing a rest-countdown screen in the snapshot window (rest is the
+prompt's optional "if reached" step), so it's gracefully absent rather than a fake. Device-only surfaces
+(a real bpm in the overlay, media thumbnails, the clip editor, an actual reel) show their honest simulator
+state (no-source / empty / disabled), not staged data — the same honesty bar as A1–B5.
+
+## [2026-06-01] B5 — share + save generated videos to Photos (the video-studio finale)
+
+**Decision.** Implemented prompt B5 (`pdd/prompts/features/live-workout-studio/B5-share-and-save.md`,
+branch `feat/live-workout-share-save`). Every generated/edited video — the **B3 edited clip** and the
+**B4 highlight reel** — can now be **shared** (system share sheet) or **saved to the Photos library**, all
+on-device (the user's "all the videos generated could be sharable or downloadable to local/Photos",
+RESEARCH §3.6). This is reuse + wiring on top of B3/B4; **no engine change** (`git diff ios/HighlightEngine`
+empty, grep-clean of platform imports).
+
+**Concrete, non-obvious choices made:**
+- **`Services/MediaLibraryService.swift`** (stateless `Sendable`): `saveVideoToPhotos(_ url:) async throws`
+  requests **add-only** authorization (`PHPhotoLibrary.requestAuthorization(for: .addOnly)`) — the
+  **narrowest** grant that lets the app write a new asset without read access to the whole library, and
+  deliberately **distinct** from the **read-write** `PhotoLibraryService` uses for B1 discovery. The save is
+  the async `PHPhotoLibrary.shared().performChanges { PHAssetCreationRequest.forAsset().addResource(with:
+  .video, fileURL: url, options: nil) }` overload — **no continuation needed** (the async API already bridges
+  the callback, unlike B1's `PHImageManager`/A1's WCSession callbacks). Typed `SaveError: LocalizedError`
+  (`.denied` routes the user to Settings; `.failed(msg)` wraps a change-block failure). `.limited` is treated
+  as savable (add-only `.limited` can still add).
+- **Generalized `ShareSheet`** — moved out of `Features/Reel/ReelView.swift` (where it was top-level but
+  conceptually private to the reel app) into **`Features/Shell/ShareSheet.swift`**, so the flagship reel app
+  AND the WorkoutTracker studio (B3 editor + B4 reel) share **one** `UIActivityViewController` wrapper. No
+  second bridge written (the spec's "don't duplicate" constraint). The flagship's call site is unchanged
+  (same type name, same target).
+- **Pure `ExportShareState`** (`Features/WorkoutTracker/ExportShareState.swift`): an `Equatable` value-type
+  state machine (`idle → exporting → exported(URL) → saving(URL) → saved(URL)`, plus `failed(String)`) with a
+  reducer, so the transitions, the **carried export URL**, and the `isBusy`/`exportedURL` accessors are
+  **unit-tested in `SnappetTests` with no AVFoundation/PhotoKit/UIKit** (9 cases) — the device-only
+  export/save/share I/O is not, but the state logic that drives both producers' UI is (the same "isolate the
+  pure logic" discipline as `ClipEditGeometry`/`WorkoutHRStats`). The rendered file `URL` is carried through
+  `.exported`/`.saving`/`.saved` so **share + save reuse the single render** (export once, then share and/or
+  save that same file). `beginningSave()`/`saveSucceeded()` are guarded to no-op without a prior export.
+- **Two thin wire-ins, I/O through the services:**
+  - **B3 clip editor** — `ClipEditorViewModel.export()` snapshots the `@Model` into `EditPlan` on the
+    `@MainActor` and calls `VideoStudio.export` (the same composition the preview already uses); `saveToPhotos()`
+    calls `MediaLibraryService`. A new "Export" `ControlCard` in `ClipEditorView`: Export → Share + Save to
+    Photos with progress + a `saved` checkmark. **A subsequent edit invalidates the export** — `commit()`
+    resets `exportState` to `.idle` (unless busy) since the prior render no longer matches the edit.
+  - **B4 highlight** — `SessionHighlightViewModel` now **keeps `lastPlan`** from `generate()` (the VM already
+    built a `ReelPlan` to preview) so `export()` re-renders the **same** reel via `ReelExporter.export`
+    (no reel-stitch reimplementation); `saveToPhotos()` calls `MediaLibraryService`. A new Export/Share/Save
+    section in `SessionHighlightView`, gated on `canExport` (plan present + state `.ready`); re-generating
+    resets the export.
+- **Privacy.** `NSPhotoLibraryAddUsageDescription` is present in the app Info.plist (it predates B5, from the
+  first working version) and **accurate** ("Snappet saves your finished highlight reel back to your library")
+  — confirmed, not re-added. `PrivacyInfo.xcprivacy` stays accurate: saving to the user's **own** library is
+  on-device, so **no** `NSPrivacyCollectedDataTypes` entry is added (Apple's "collected" = transmitted off
+  device; nothing leaves). The existing manifest comment already covers "written back to the user's own
+  library entirely ON-DEVICE".
+- **No new `@Model`** → `SnappetSchema.models` unchanged.
+
+**Verified (this environment, Xcode/SDK 26.5).** `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**. `SnappetWatch`
+(watchOS 26.5 sim, Apple Watch Series 11) → **BUILD SUCCEEDED**. `SnappetTests` → **122/122 pass** (incl. the
+9 new `ExportShareStateTests`: full idle→saved flow, URL carried through every post-export state, save
+guarded without an export, `isBusy` gates, failure + re-export recovery, re-export supersedes a prior file).
+`HighlightEngine` → **18/18**, source unchanged (`git diff ios/HighlightEngine` empty, grep-clean of platform
+imports). `SnappetUITests/WorkoutWalkthroughTests` → **green** (the sim session has no media/video, so
+"Generate highlight" stays disabled and no clip opens the editor — the share/save affordances never render in
+the walkthrough, and the summary flow is unbroken).
+**Device-pending (NOT verified by this build/tests).** The actual **Photos save** (the add-only auth prompt +
+`performChanges` writing a `.video` asset into the user's library) and the **share-sheet round-trip** need a
+**real rendered video on a device**: the sim has no Photos/video, so `VideoStudio`/`ReelExporter` resolve no
+`AVAsset` and produce nothing to save — so neither producer reaches `.exported` in the sim. A clean build +
+the pure state-machine tests prove the **service shape + the wiring + the state logic + Info.plist**, NOT a
+verified Photos save or share (same honesty bar as A1–B4).
+
+## [2026-06-01] B4 — engine-driven highlight generation (the WorkoutTracker ↔ HighlightEngine bridge)
+
+**Decision.** Connect the set-logger to the flagship algorithm by feeding a finished session's data
+into the **EXISTING** `HighlightEngine`, with no engine change. A new **pure** bridge —
+`Features/WorkoutTracker/SessionHighlightInput.swift` (an `enum` of static mappers + a plain-value
+`Clip` struct; **no SwiftData/AVFoundation/Photos**) — maps a `WorkoutSession` to an engine `Workout`:
+
+- **HR**: `hrSeries` (`HRPoint`) → `[HRSample]`, **1:1** on the same `startedAt`-relative timeline (`t`/`bpm`).
+- **Media**: each tagged `SessionMedia` → `MediaItem` (`id = localIdentifier`, `startOffset = offsetSec`
+  clamped ≥ 0). A **video** → `.video` with `durationSec`; a video with no resolvable duration falls back
+  to a small `defaultVideoDuration` (6 s) and, when even that is unavailable, is **skipped gracefully**
+  (a windowless clip the engine can't use). A **photo** → `.photo` with duration `0` (Ken-Burns still,
+  already handled by `ReelExporter`/`PhotoClipRenderer`).
+- **Activity**: routine `SportTag` (stronger) → then the dominant `ExerciseCategory` → the engine's coarse
+  `Activity`, defaulting to `.strength` (generic gym). Targets the engine's `Activity` (not
+  `HKWorkoutActivityType`) so the engine stays platform-free — this is the **engine-Activity twin** of
+  the live path's `WorkoutActivityMapping` (which maps *up* to HealthKit types).
+
+**Generation + render (reuse, not reimplement).** `SessionHighlightViewModel` (`@MainActor @Observable`)
+snapshots the `@Model`s into plain `[HRPoint]`/`[Clip]` on the `@MainActor`, runs the **existing**
+`app.engine.selector.select(workout:config: .preset(for:))` → `[Highlight]`, then `app.reelPlan(…pinnedIds:)`
+→ `ReelPlan`, then **reuses `ReelExporter.makeComposition`** to build an `AVPlayer` preview (the same
+composition export uses — no reel-stitch reimplementation). The non-Sendable `@Model` never crosses into
+the engine/exporter.
+
+**Selected clips → `pinnedIds` (budget-exempt).** The user's selected **clip** ids become the planner's
+pins (the 2026-05-30 pin decision). Because `ReelPlanner` pins by **highlight** id, the view model expands
+each selected clip id into the highlight ids whose `mediaItemId` is that clip — so a hand-picked clip is
+always kept, budget-exempt. The **pure bridge** (`pinnedIds(forSelected:)`) emits the selected clip ids
+verbatim (the unit-tested contract); the clip→highlight expansion is app composition state in the VM.
+
+**UI.** A **"Generate highlight"** button in `SessionDetailView`'s media section, **enabled only when the
+session has a tagged video**, opens `SessionHighlightView` — a **sheet** owning its own `NavigationStack`
+(modules must not nest one) with a clip-selection list (default = all videos), a **Generate** action, and
+an inline `VideoPlayer` preview. B5 adds share/save.
+
+**B3 `ClipEdit`s are NOT applied to the reel segments (deferred).** B4 generates from the **raw** tagged
+clips; per-segment edit integration (applying a clip's trim/crop/overlays to its reel slot) is a B5/later
+concern — it would require threading per-segment `EditPlan`s through a composition the engine-driven
+`ReelExporter` doesn't currently take, and the gate "after B3" (export cost) is unmeasured. Recorded here
+so it isn't mistaken for an oversight.
+
+**No new `@Model`** (the inputs already exist: B2 `hrSeries`, B1 `SessionMedia`) → `SnappetSchema.models`
+unchanged. `git diff ios/HighlightEngine` is empty — the engine is reused verbatim.
+
+**Verified vs device-pending.** Verified: app + watch schemes build (iPhone 17 Pro / Apple Watch Series 11
+sims, `-destination` only); `SnappetTests` green incl. the new `SessionHighlightInputTests` (HR 1:1, media
+kind/offset/duration incl. default-when-nil + skip-when-windowless + photos, activity mapping, selection →
+`pinnedIds`, and an end-to-end bridge→selector→planner pin-survival check); `HighlightEngine` 18/18 with an
+**empty** `ios/HighlightEngine` diff; `WorkoutWalkthroughTests` green (the sim session has no media/HR, so
+"Generate highlight" is disabled — it can't run, doesn't crash the summary). **Device-pending**: the actual
+**rendered highlight reel** — the sim has no Photos/video, so `ReelExporter` has nothing real to stitch. A
+clean build is **not** a verified rendered reel.
+
+## [2026-06-01] B3 — non-destructive CapCut-style on-device clip editor (WorkoutTracker)
+
+**Post-review fix (2026-06-01, same branch)**: review found the time-gated text overlay used a
+`CABasicAnimation(opacity)` with `fillMode: .forwards`, which holds the overlay **visible after its
+`endSec`** instead of hiding it. Replaced with a `CAKeyframeAnimation` over the whole clip
+(`values [0,0,1,1,0,0]` at `keyTimes [0, s, s, e, e, 1]`, `beginTime = AVCoreAnimationBeginTimeAtZero`)
+so a text overlay is visible **only** within `[startSec, endSec]` and disappears after. (Whole-clip text —
+the common case — is unaffected: it skips the animation and stays at full opacity.) Review otherwise
+confirmed the geometry is sound: the CALayer **Y-flip** is correct (`layerPoint`), the crop transform
+order `preferred.concatenating(crop)` applies orientation then crop correctly, the `EditPlan` Sendable
+snapshot is the right Swift-6 boundary, and the PHAsset→AVAsset continuation single-resumes
+(`.highQualityFormat`). Re-verified: app + watch BUILD SUCCEEDED, SnappetTests 97/97, HighlightEngine
+18/18, WorkoutWalkthroughTests green. The overlay-timing fix is device-pending visually (no video on the
+sim) — the keyframe approach is the standard `AVVideoCompositionCoreAnimationTool` pattern.
+
+**Decision**: Implemented prompt B3 (`pdd/prompts/features/live-workout-studio/B3-clip-editor.md`,
+branch `feat/live-workout-clip-editor`). A tagged **video** in a session's `SessionDetailView` B1 gallery now
+opens a **non-destructive, fully on-device clip editor** — the user's "individually adjust the split/crop,
+text overlay and all the basic CapCut/edit features" (RESEARCH.md §3.5). Edit state is **data, not baked
+pixels**; nothing renders until export, so editing is instant + reversible. Builds on the existing
+`ReelExporter` AVFoundation stitch.
+
+**Concrete, non-obvious choices made:**
+- **Non-destructive `@Model ClipEdit`** (`Features/WorkoutTracker/ClipEdit.swift`), keyed to its source
+  `SessionMedia` by `sessionMediaID: UUID` (a **foreign key**, NOT a `@Relationship` — the suite convention,
+  matching `SessionMedia.sessionID`), with the PHAsset `localIdentifier` **denormalized** so `VideoStudio`
+  resolves the source without a second fetch. Holds the edit list: `trimStart`/`trimEnd` (split = two
+  `ClipEdit`s with adjacent trims + `splitOrder`); a normalized crop rect (`cropX/Y/Width/Height`) + an
+  `OutputAspect` (9:16 / 1:1 / 16:9 / original); `speed` (0.25–4×); `textOverlays: [TextOverlay]` (an inline
+  `Codable` composite — `string`, normalized-center `CGPoint`, `fontSize`, `colorHex`, `startSec`/`endSec` —
+  like `WorkoutSession.exercises`/`hrSeries`, **not** a child `@Model`); `mutedOriginalAudio` + optional
+  `musicTrackName`. **One central edit**: `ClipEdit.self` appended to the single `SnappetSchema.models` line
+  (additive → SwiftData lightweight migration, same precedent as B1's `SessionMedia`).
+- **All geometry/timing math isolated into `ClipEditGeometry`** (`Features/WorkoutTracker/`,
+  Foundation+CoreGraphics only — value types, **no AVFoundation/SwiftUI**), so trim→`TimeWindow`
+  (clamp to `[0, assetDuration]`, force `start<end`, collapse a degenerate/inverted range to a tiny min
+  slice), speed→scaled output duration (`sourceDuration / clampedSpeed`), normalized crop-rect→
+  `CGAffineTransform` (aspect-fill the cropped region into `renderSize`, sanitized so a degenerate rect can't
+  NaN), normalized position→`CALayer` point (**y-flipped** to CALayer's bottom-left origin), output
+  `renderSize` per aspect (canvas longer edge = source longer edge, rounded to **even** dims — H.264
+  requires even W/H), and split→two **adjacent, non-overlapping** windows (`a.end == b.start`, both ≥
+  minDuration) are **unit-tested in `SnappetTests` with no device/AVFoundation** (23 cases) — the same
+  testability discipline that keeps `HighlightEngine` platform-free (grep-confirmed: the engine gained no
+  platform import, `git diff` shows its source unchanged). The `renderSize` per aspect is the
+  **mixed-orientation normalization** — a portrait + a landscape source both render into one canvas — which
+  **closes the gap deferred since 2026-05-31** (Photo-Ken-Burns / video-only reels never unified orientation).
+- **`VideoStudio` service** (`Services/VideoStudio.swift`, stateless `Sendable`): one
+  `makeComposition(for: EditPlan) async throws -> sending (AVMutableComposition, AVVideoComposition?)` reused
+  for **both** preview (wrap in `AVPlayer`) and export — mirroring how `ReelExporter` shares one composition
+  (P3). Trim → a source `CMTimeRange`; speed → `scaleTimeRange` on the inserted video (and audio) range;
+  crop/aspect/orientation → `AVMutableVideoComposition.renderSize` + a single
+  `AVMutableVideoCompositionLayerInstruction.setTransform` that **concatenates the track's
+  `preferredTransform` (orientation) with the crop transform**; text overlays → a `CALayer` tree
+  (`CATextLayer`s, time-gated by an opacity `CABasicAnimation`) composited via
+  `AVVideoCompositionCoreAnimationTool`. **Reuses `ReelExporter`'s PHAsset→`AVAsset` resolve + the
+  `Box<T>: @unchecked Sendable` + async `export(to:as:)` patterns** rather than duplicating them
+  (`isNetworkAccessAllowed = false` — on-device).
+- **Swift-6 actor crossing**: a `ClipEdit` is a `@MainActor`-confined, non-Sendable SwiftData `@Model`, so it
+  must NOT cross into `VideoStudio`'s nonisolated build path. Resolved by snapshotting it into a `Sendable`
+  value `EditPlan` (a plain struct, `@MainActor init(_ ClipEdit)`) **on the caller's actor** — the same
+  "engine/service takes a plain value, not the model" discipline as `ReelExporter` taking a `ReelPlan`. The
+  freshly-built composition crosses back with `sending`.
+- **Editor UI** (`ClipEditorView.swift`) is a **sheet** (`.sheet(item: $editingClip)` from
+  `SessionDetailView`) so it owns its own `NavigationStack` — **NOT** nested in the module (which rides the
+  App Library's stack). Inline `VideoPlayer` over the live composition + control cards: trim sliders +
+  Split, an `OutputAspect` segmented picker + a centered zoom-crop slider, a speed slider + 0.5/1/2× presets,
+  a text-overlay list (add/edit/remove via a sub-sheet editing string/size/position/color), and a mute
+  toggle. **All logic in `ClipEditorViewModel`** (`@MainActor @Observable`): owns the `ClipEdit`, rebuilds
+  the `AVPlayer` preview off `VideoStudio` after every edit (with a `buildToken` so a newer edit supersedes
+  an in-flight build), and persists; the view is thin (conventions.md). **Split** inserts a sibling
+  `ClipEdit` (second half) via an `insert` closure and keeps the first half on the current edit.
+  Only **videos** open the editor (photos aren't clip-editable); the editor reuses/creates the primary
+  (lowest-`splitOrder`) `ClipEdit` for that source.
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**. `SnappetWatch`
+(watchOS 26.5 sim) → **BUILD SUCCEEDED**. `SnappetTests` → **97/97 pass** (74 prior + 23 new
+`ClipEditGeometry`: trim clamp/order/inverted/zero-asset, speed double/half/clamp, split adjacency +
+exhaustiveness + too-short→nil, renderSize per aspect + even-dims + degenerate-source, full-frame &
+center crop transforms + degenerate→finite, sanitized crop rect, y-flipped layer point + clamping).
+`HighlightEngine` → **18/18**, source unchanged (grep-clean). `WorkoutWalkthroughTests` → **green** (the sim
+has no Photos/video, so no clip opens the editor in the walkthrough — the gallery/summary flow is unbroken).
+**Device-pending (NOT verified by this build/tests)**: the actual **rendered output** — the cropped,
+text-overlaid, speed-ramped video, the live `AVPlayer` preview, and the mixed-orientation `renderSize`
+normalizing a real portrait+landscape pair — needs **real video assets on a device** (the simulator has no
+Photos/video, so `VideoStudio` resolves no `AVAsset` and the editor shows its no-source preview state). A
+clean build + the pure-math unit tests prove the **model + composition-building + the geometry + the editor
+UI shape**, NOT a verified rendered export (same honesty bar as A1–B2). **Export time + memory profiling**
+of a multi-clip + overlay export is a device gate (PLAN "after B3").
+
+## [2026-06-01] B2 — enriched post-workout summary (HR chart + band stats + media gallery) (WorkoutTracker)
+
+**Decision**: Implemented prompt B2 (`pdd/prompts/features/live-workout-studio/B2-enriched-summary.md`,
+branch `feat/live-workout-summary`). A finished WorkoutTracker session's `SessionDetailView` now shows,
+above the B1 tagged-media gallery, a **live HR chart** + **band stats** (avg/max/min HR + time-in-zone),
+so a completed workout presents the user's "detailed fitness band data along with tagged videos"
+(RESEARCH.md §3.4). Consumes A1's live HR buffer + B1's gallery.
+
+**Concrete, non-obvious choices made:**
+- **Persist the HR series as an ADDITIVE Codable composite, not a new `@Model`** (`WorkoutModels.swift`):
+  added `var hrSeries: [HRPoint] = []` to `WorkoutSession`, where `HRPoint { t: Double; bpm: Double }` is a
+  small `Codable`/`Hashable`/`Sendable` value type stored inline like `exercises`. A default-`[]` additive
+  property triggers SwiftData's **lightweight migration** with **`SnappetSchema.models` UNCHANGED** —
+  exactly the **Journal `tags: [String] = []` precedent** (decisions.md 2026-05-31). No versioned schema
+  plan, no migration stage. The HR bytes are tiny (1 Hz, `t`+`bpm` doubles) so an inline composite (always
+  loaded with the session, like its sets) is right — no FK-keyed child rows needed here, unlike B1's
+  `SessionMedia` (which references on-device Photos assets that must NOT enter the store).
+- **Flush point: `finishWorkout(_:saved:)`, on a saved finish, BEFORE `stop()`** (`WorkoutTrackerModule.swift`):
+  `session.hrSeries = WorkoutHRStats.points(from: app.liveWorkout.samples)` runs before
+  `app.liveWorkout.stop()` (which stops both sources). The coordinator's `samples` are engine `HRSample`s
+  **already rebased onto the `WorkoutSession.startedAt` timeline** by A1, so the flush is a straight
+  field-for-field map (`HRSample.t/bpm → HRPoint.t/bpm`), isolated in `WorkoutHRStats.points(from:)` so
+  it's unit-tested. Empty buffer (no live source — the sim, or a phone-only workout) → empty `hrSeries` →
+  the summary's HR section hides cleanly. A **discard** keeps no series (the session is deleted).
+- **Pure stats helper `WorkoutHRStats`** (`Features/WorkoutTracker/WorkoutHRStats.swift`): a value type
+  with `make(from: [HRPoint], maxHR:) -> WorkoutHRStats?` computing avg/max/min + per-zone dwell seconds,
+  plus the `HRSample → HRPoint` map. It lives in the app (not `HighlightEngine`) because time-in-zone
+  reuses the app's `HeartRateZone` (which vends a SwiftUI `Color`), but its **logic is platform-free**, so
+  it's unit-tested in `SnappetTests` with no device (mirrors keeping the engine platform-free; grep-confirms
+  no platform import added to the engine, and `git diff` shows the engine source unchanged). Returns `nil`
+  for an **empty** series (so the view hides the whole section); a **single-sample** series yields
+  avg=max=min and **zero dwell** (one point has no following interval). Time-in-zone uses **left-edge
+  attribution**: each sample owns the interval until the next, so dwell sums to the series span and the
+  last sample contributes nothing — a deliberate, tested convention.
+- **Reuse, don't reimplement**: the chart line feeds the points through
+  `HighlightEngine.HeartRateSeries.make(...)` (resample→smooth, 5 s window) for a clean line rather than a
+  jagged raw plot — the engine is **called**, never modified. Time-in-zone reuses `HeartRateZone.forBpm`
+  (default max HR 190, the A4 fixed constant — no user HR profile yet; `maxHR` is a parameter so a future
+  profile drops in with zero zone-math change). The zone bar/legend reuse `HeartRateZone.color`/`pillLabel`.
+- **Thin view** (`SessionDetailView.swift`): a `HeartRateSummarySection` (`private struct`) rendered only
+  when `WorkoutHRStats.make` is non-nil, composing a `HeartRateChart` + an avg/max/min row + a `ZoneBar`
+  (each a small `private struct`); no HR math in the view. The B1 `SessionMediaSection` is unchanged and
+  stays below. The chart/zone bar carry `accessibilityIdentifier`s (`hrChart`, `hrZoneBar`) for future
+  assertions. Per-exercise HR overlay was **skipped** (the optional nice-to-have) — not needed for the
+  core chart+stats+gallery and not cheap enough to justify here.
+- **No new `@Model`** → `SnappetSchema.models` unchanged.
+
+**Verified (this environment, Xcode/SDK 26.5)**: `xcodegen generate`; `Snappet` iOS scheme built for the
+iPhone 17 Pro sim (`-destination` only, embedded watch + widget) → **BUILD SUCCEEDED**. `SnappetWatch`
+(watchOS 26.5 sim) → **BUILD SUCCEEDED**. `SnappetTests` → **74/74 pass** (62 prior + 12 new
+`WorkoutHRStats`: avg/max/min, order-independence, time-in-zone left-edge bucketing + custom-maxHR shift,
+`orderedZoneSeconds` low→high, empty→nil, single-sample→zero-dwell, the `HRSample→HRPoint` map + empty +
+round-trip). `HighlightEngine` → **18/18**, source unchanged (grep-clean, `git diff` empty).
+`WorkoutWalkthroughTests` → **green** (the sim finishes with an empty `hrSeries`, so the HR section hides
+and the gallery/stats absence doesn't break the flow).
+**Device-pending (NOT verified by this build/tests)**: the chart's actual **visual** with a **real
+live-HR series** — the smoothed bpm line, the avg/max/min over real data, and the time-in-zone bar
+filling — needs a device with a live HR source (Apple Watch or BLE band) finishing a session, because the
+simulator has no HR source so it persists an empty `hrSeries` and the chart hides. A clean sim build +
+synthetic-data unit tests prove the **math + the shape**, NOT a verified live-HR chart (the same honesty
+bar as A1–A4 / B1). Also device-pending: that the additive `hrSeries` migrates an existing on-device store
+without data loss (lightweight migration is exercised only by the fresh-store sim run here).
+
+## [2026-06-01] B1 — session media tagging (photos/videos shot during a workout) (WorkoutTracker)
+
+**Decision**: Implemented prompt B1 (`pdd/prompts/features/live-workout-studio/B1-session-media-tagging.md`,
+branch `feat/live-workout-session-media`). A WorkoutTracker session can now collect the photos/videos taken
+during it — auto-discovered by capture-time window and/or added by hand — stored as session-scoped tags and
+shown in `SessionDetailView`. This is the video-studio data foundation B2/B3/B4 consume (RESEARCH.md §3.4,
+verdict GO).
+
+**Concrete, non-obvious choices made:**
+- **`SessionMedia` shape + FK-not-relationship** (`Features/WorkoutTracker/SessionMedia.swift`): `id`,
+  `sessionID: UUID` (a `WorkoutSession.id` **foreign key**, NOT a SwiftData `@Relationship`),
+  `localIdentifier` (PHAsset id), `kindRaw` (photo/video as a string), `offsetSec` (capture time relative to
+  `startedAt`, **clamped ≥ 0** in `init`), `durationSec: Double?` (videos), `addedManually: Bool`,
+  `createdAt`. The FK-not-relationship choice matches the rest of WorkoutTracker (`Routine`/`WorkoutSession`
+  key on `UUID`) so the gallery loads with a clean per-session `#Predicate<SessionMedia> { $0.sessionID ==
+  sid }` — the suite's per-parent query convention. The asset **bytes never enter the store**: a row holds
+  only the `localIdentifier` + offset; Photos keeps the media (on-device only).
+- **One central edit**: appended `SessionMedia.self` to the single `SnappetSchema.models` line in
+  `Core/SnappetCore.swift` (additive, no migration).
+- **±90 s pad reused from `PhotoLibraryService`**: `SessionMediaService.padSec = 90`, the same grace padding
+  the flagship Reels app uses for clock skew/drift between the recording device and the workout clock. (The
+  TZ-normalization caveat flagged in `project.md` for the post-hoc path applies equally here — unconfirmed
+  until measured on a device.)
+- **Pure mapping isolated for testability**: `SessionMediaService` exposes static `window`/`isInWindow`/
+  `offset`/`candidates(from:)` that take plain tuples — **no PhotoKit type crosses that boundary** — so the
+  in-window predicate (incl. ±pad boundaries, inclusive), the clamped `creationDate → offset` math, and
+  dedupe-by-`localIdentifier` are unit-tested in `SnappetTests/SessionMediaMappingTests.swift` (8 cases)
+  with no device. (Mirrors keeping `HighlightEngine` platform-free; this lives in the app since it wraps
+  PhotoKit, but its logic is device-free — grep-confirmed no platform import added to the engine.)
+- **Auto-discovery trigger point**: `SessionDetailView`'s gallery section fires auto-discovery **once on
+  first appear, silently** (only if full access is already granted — value-first, never prompts on appear),
+  **plus** an explicit "Find media from this workout" button that *does* request access value-first. Manual
+  add is the "Add photos/videos" PHPicker button (`addedManually = true`); remove is a long-press context
+  menu. Re-running discovery is safe (deduped by `localIdentifier`).
+- **`.limited`-access handling**: a `.limited` grant can't scan the library by time window, so
+  `discover(...)` throws `.denied` unless **fully** `.authorized`; the UI routes `.limited` to the PHPicker
+  (the suite-wide limited-access fallback). Manual picks bypass the window filter (the user chose them) but
+  are still offset-aligned + deduped.
+- **Thumbnails**: `PHImageManager` with `deliveryMode = .highQualityFormat` (a single final callback, so the
+  `withCheckedContinuation` bridge resumes exactly once) and `isNetworkAccessAllowed = false` (on-device
+  only). Missing assets (e.g. on the simulator) render a placeholder.
+
+**Device-pending (NOT verified by this build/tests)**: live PHAsset auto-discovery surfacing real clips,
+the `.limited`/`.authorized` permission prompts, and rendered thumbnails — the simulator has no Photos
+library. Verified here: the `@Model` + service + UI + the pure mapping (app + watch sim build, 8 new
+mapping tests + the 56 existing `SnappetTests`, `WorkoutWalkthroughTests`, `HighlightEngine` 18/18). A clean
+build is **not** verified Photos discovery. Open gate (PLAN.md): on a device, does discovery surface clips
+*during* an active session or only after the Camera app finalizes them? If real-time tagging fails →
+in-app `AVCaptureSession` capture (B1b).
 
 ## [2026-06-01] A4 — live-metrics overlay UI (HR zone + overall timer + rest timer) (WorkoutTracker)
 
