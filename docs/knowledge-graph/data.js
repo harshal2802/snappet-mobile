@@ -55,6 +55,7 @@ const GROUP_COLORS = {
   tip:          "#63e6be", // mint
   expense:      "#40c8c8", // teal
   budget:       "#0a84ff", // blue
+  kilter:       "#d97706", // amber  — Kilter Board (climbing)
   core:         "#5e5ce6",
   engine:       "#ff453a",
   watch:        "#66d4cf",
@@ -323,6 +324,26 @@ const nodes = [
     file: "—", desc: "BLE central for the standard Heart Rate Service (0x180D) — chest straps / generic HR bands. Device-only.", tags: ["apple","ble","hr"] },
   { id: "ext-watchconnectivity", label: "WatchConnectivity", type: "external", group: "platform", category: "platform", platform: "external",
     file: "—", desc: "WCSession transport between the watch and the phone for live HR/control messages.", tags: ["apple","watch"] },
+
+  // ───────────────────────── Kilter Board mini-app (#35) ─────────────────────────
+  { id: "m-kilter", label: "Kilter Board", type: "module", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterModule.swift", desc: "Browse the bundled read-only Kilter climb catalog, render a climb on the board, log sends/projects, review history, and — gated, device-unverified — light the physical board over BLE. On-device only; the catalog ships as a read-only SQLite asset.", tags: ["climbing","catalog","ble"], shot: "../screenshots/kilter-catalog.png", video: "../kilter-walkthrough.mp4" },
+  { id: "kilter-catalog", label: "KilterRootView (catalog)", type: "screen", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterRootView.swift", desc: "Catalog browser: search by name/setter, quick layout/angle/grade chips + a Filters sheet, a Saved filter, a daily Climb-of-the-day, and a More menu (start/end session, surprise me, settings). Pushes a climb, History, or Settings.", tags: ["catalog","search","filters"], shot: "../screenshots/kilter-catalog.png" },
+  { id: "kilter-detail", label: "KilterClimbDetailView", type: "screen", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterClimbDetailView.swift", desc: "A climb on the full board grid (faint holes + role-colored holds), an angle picker, a per-angle grade chart, a Classic (benchmark) badge + FA, Flash/Sent/Project/Attempt logging, a Saved toggle, a beta link, and gated BLE illumination.", tags: ["board","render","logging"], shot: "../screenshots/kilter-detail.png" },
+  { id: "kilter-history", label: "KilterHistoryView", type: "screen", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterHistoryView.swift", desc: "Ascent history: summary, a grade pyramid, sessions (manual + BLE), and the full ascent log.", tags: ["history","pyramid","sessions"] },
+  { id: "kilter-settings", label: "KilterSettingsView", type: "screen", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterSettingsView.swift", desc: "Kilter preferences: default board + angle, grade scale (Font / V / both), and clear logged history.", tags: ["settings"] },
+  { id: "kilter-filters", label: "Filters sheet", type: "sheet", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterRootView.swift", desc: "Advanced browse criteria: sort (most-climbed / hardest / easiest / quality), a Classics (benchmarks) toggle, and minimum ascents / quality.", tags: ["filters","sheet","sort"] },
+  { id: "kilter-catalog-db", label: "KilterCatalog", type: "service", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterCatalog.swift", desc: "Read-only access layer over the bundled kilter.sqlite3 (built by tools/kilter/build_bundled_db.py). Decodes frames→holds normalized to the whole board's extent, exposes the board grid geometry, and runs the filtered catalog queries. Kept out of SwiftData/Room; on-device only, never synced.", tags: ["sqlite","read-only","catalog"] },
+  { id: "kilter-board-ctrl", label: "KilterBoardController", type: "service", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterBoardController.swift", desc: "CoreBluetooth controller that scans, connects and writes Aurora illumination packets, gated behind an explicit Connect tap. DEVICE-UNVERIFIED — the GATT UUIDs + wire format are community-reverse-engineered and not confirmed on hardware. Opens a session on connect.", tags: ["ble","corebluetooth","unverified","gated"] },
+  { id: "kilter-models", label: "Kilter user data", type: "model", group: "kilter", category: "fitness", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Kilter/KilterModels.swift", desc: "User data persisted in SnappetCore (separate from the read-only catalog): KilterLogEntry, KilterSession, KilterFavorite — keyed by climb_uuid.", tags: ["swiftdata","room","user-data"] },
 ];
 
 const links = [
@@ -554,6 +575,23 @@ const links = [
 
   // ---- SwiftData backs the store + every model ----
   { source: "snappetcore", target: "ext-swiftdata", type: "uses" },
+
+  // ---- Kilter Board (#35) ----
+  { source: "applibrary", target: "m-kilter", type: "navigate" },
+  { source: "moduleregistry", target: "m-kilter", type: "contains" },
+  { source: "m-kilter", target: "kilter-catalog", type: "contains" },
+  { source: "kilter-catalog", target: "kilter-detail", type: "navigate", label: "KilterClimbRoute" },
+  { source: "kilter-catalog", target: "kilter-history", type: "navigate", label: "KilterHistoryRoute" },
+  { source: "kilter-catalog", target: "kilter-settings", type: "navigate", label: "KilterSettingsRoute" },
+  { source: "kilter-catalog", target: "kilter-filters", type: "present" },
+  { source: "kilter-catalog", target: "kilter-catalog-db", type: "uses" },
+  { source: "kilter-detail", target: "kilter-catalog-db", type: "uses" },
+  { source: "kilter-detail", target: "kilter-board-ctrl", type: "uses", label: "illuminate (BLE)" },
+  { source: "kilter-detail", target: "kilter-models", type: "persists" },
+  { source: "kilter-detail", target: "snappetcore", type: "feeds", label: "log usage" },
+  { source: "kilter-history", target: "kilter-models", type: "persists" },
+  { source: "kilter-board-ctrl", target: "ext-corebluetooth", type: "uses" },
+  { source: "kilter-models", target: "snappetcore", type: "persists" },
 ];
 
 // Expose for the renderer (also works as an ES module if imported).
