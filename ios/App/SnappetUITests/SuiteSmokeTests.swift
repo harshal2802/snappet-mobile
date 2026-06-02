@@ -1,7 +1,7 @@
 import XCTest
 
 /// Smoke test: every mini-app opens from the App Library via its (now Button) card — verifying the
-/// shared `SuiteRouter` / `ModuleRoute` entry navigation works for all 8 modules.
+/// shared `SuiteRouter` / `ModuleRoute` entry navigation works for all 9 modules.
 final class SuiteSmokeTests: XCTestCase {
 
     func testEverySuiteAppOpens() {
@@ -9,9 +9,14 @@ final class SuiteSmokeTests: XCTestCase {
         app.launch()
         app.tabBars.buttons["Apps"].tap()
 
-        let ids = ["workout", "workout-log", "pomodoro", "habit", "journal", "tip", "expense", "budget"]
+        let ids = ["workout", "workout-log", "kilter", "pomodoro", "habit", "journal", "tip", "expense", "budget"]
         for id in ids {
             let card = app.buttons["moduleCard.\(id)"]
+            // The LazyVGrid only realizes cards near the viewport, so scroll until the card exists
+            // before asserting — the Finance cards sit well below the fold (more so now that Kilter
+            // adds a Fitness row).
+            var find = 0
+            while !card.exists && find < 12 { app.swipeUp(); find += 1 }
             XCTAssertTrue(card.waitForExistence(timeout: 6), "App Library should have a card for \(id)")
 
             // Scroll the card into a hittable position if it's below the fold.
