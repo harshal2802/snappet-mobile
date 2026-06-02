@@ -149,6 +149,49 @@ already supports live), so **skip R1** and build **R2** — integrate the Oura r
 Apple-Health HR backfill** into a session's `hrSeries`. Live overlay, if wanted, comes from a chest strap
 paired straight to Snappet. No engine change, no cloud, no new live architecture.
 
+## 3b. The subscription wall — the decisive constraint (user goal: integrate Oura data WITHOUT a paid membership)
+
+The user's refined goal (2026-06-02): *integrate all the Oura data we can **without the user paying for
+the Oura subscription**.* This collides head-on with how Oura is built — and it changes the verdict.
+
+**Oura gates data export behind its membership ($5.99/mo). That gate is the product's business model,
+and it sits on every channel that matters:**
+
+- **Oura API (Tier 3): membership-gated — confirmed.** Gen 3 / Ring 4 users **without** an active Oura
+  Membership **cannot access their data through the Oura API** (Oura's own support docs). Dead twice over
+  for us: cloud (violates on-device-only) **and** paid.
+- **Apple Health export (Tier 2): membership-gated at worst, near-empty at best.** Sources conflict on
+  whether the *pipe* opens without a membership (the authoritative Oura support pages weren't fetchable
+  from this environment — **account-pending verification**). But it barely matters: **without a
+  membership Oura withholds the computed metrics** (HRV, readiness, sleep stages, detailed/workout HR) —
+  the app itself shows "much more limited" data after the free month. So even if the Health pipe opens,
+  what flows is a stripped-down free-tier trickle, **not** the workout-HR series R2 needs. Oura
+  deliberately makes the unpaid data not worth integrating.
+- **Live BLE (Tier 1): doesn't exist for Oura** regardless of membership (§3a).
+
+**⇒ There is no *supported* channel to get meaningful Oura data without a subscription.** Tier 2 and Tier
+3 both depend on membership; Tier 1 isn't available for Oura at all. The user's goal, *as stated for the
+Oura ring*, is **not achievable through any supported path.**
+
+**The only subscription-free channel — and why it's a NO-GO:** talking to the ring **directly over its
+proprietary BLE**, bypassing the Oura app/cloud/membership. Community reverse-engineering exists, but it
+is **brittle** (undocumented, changes and is increasingly **encrypted** across firmware), almost
+certainly **violates Oura's Terms of Service**, yields **raw PPG signal, not finished HR** (Oura's HR/HRV
+is computed by their proprietary algorithms, not emitted ready-to-use), and is a standing **legal +
+maintenance liability**. Inappropriate for a shipping, store-distributed product. **NO-GO.**
+
+**The pivot (what actually serves the goal "live HR overlay, no subscription"):** drop Oura for the
+*workout* and use the channels Snappet **already** has, which cost the user **nothing recurring** and
+need **no new architecture**:
+- a **standard BLE chest strap** (`0x180D`/`0x2A37`) — the *same device class Oura itself tells users to
+  pair for live workout HR* — connects straight to Snappet's existing `BLEHeartRateMetricsSource`, fully
+  on-device, real live HR + zones; **or**
+- the **Apple Watch** (`AppleWatchMetricsSource`) — live HR/energy, no subscription.
+
+Both deliver the live overlay the user likes, with zero Oura dependency and zero recurring cost. The Oura
+ring's unique value (HRV / resting HR / recovery) stays locked behind its paywall — that's Oura's choice,
+not a gap Snappet can close cleanly.
+
 ## 4. Recommended approach & phasing
 
 Mirror the studio's `MetricsSource` discipline: **live transport stays BLE-standard-only; rings that
@@ -223,12 +266,20 @@ is a post-hoc Apple-Health HR backfill into `hrSeries` (R2), and vendor cloud AP
 consistent with the existing Fitbit/Google ruling.
 
 **For the Oura target specifically (§3a):** there is **no live HR from the ring** — Oura itself routes
-live workout HR through an external chest strap, which Snappet already supports directly. So **skip R1
-and build R2**: integrate Oura as a **post-hoc Apple-Health HR backfill** into a finished session's
-`hrSeries` (re-runnable, source-filterable), good for the B2 summary and recovery context, hedged for the
-B4 reel (Oura's HR series is coarser than a Watch/strap). Live overlay, if the user wants it, comes from a
-chest strap paired straight to Snappet — not the ring. No `HighlightEngine` change, no backend, no new
-live architecture — one narrow post-hoc read.
+live workout HR through an external chest strap, which Snappet already supports directly. The only ring
+integration would have been a **post-hoc Apple-Health HR backfill** (R2)…
+
+**…but with the "no subscription" constraint (§3b), even R2 is off the table.** Oura gates every
+supported export channel — the API explicitly requires membership, and the Apple-Health path is
+membership-gated and/or stripped to a near-empty free-tier trickle. The only subscription-free channel
+(direct reverse-engineered BLE to the ring) is brittle, ToS-violating, raw-signal-only, and a legal
+liability → **NO-GO**.
+
+**Net recommendation:** **don't integrate the Oura ring for workout HR.** It can't be done live, and it
+can't be done without paying Oura. To get the live HR overlay the user likes **at no recurring cost**,
+use what Snappet already ships: a **standard BLE chest strap** (the same device Oura itself uses) or the
+**Apple Watch**. Both are on-device, subscription-free, real-time, and need no new code. Revisit an Oura
+post-hoc backfill (R2) only if the user later accepts an Oura membership.
 
 ## Sources
 
@@ -239,3 +290,6 @@ live architecture — one narrow post-hoc read.
 - Oura — Developer / Cloud API (Tier 3, cloud + OAuth → out of scope): <https://ouraring.com/developer>
 - 9to5Mac — Oura 2025 fitness metrics + Apple Health updates: <https://9to5mac.com/2025/05/21/oura-ring-gets-better-fitness-metrics-and-more-integrations/>
 - Acciyo — "Does Oura Work With Apple Health?" (granularity limitation summary): <https://www.acciyo.com/does-oura-ring-work-with-apple-health/>
+- Oura — The Oura API (Gen3 / Ring 4 API access requires active membership): <https://support.ouraring.com/hc/en-us/articles/4415266939155-The-Oura-API>
+- Oura — Membership (data is "much more limited" without it): <https://ouraring.com/membership>
+- Oura — Export & Share Your Oura Data (Trends export available without membership; not a live/HR feed): <https://support.ouraring.com/hc/en-us/articles/360025441594-Export-Share-Your-Oura-Data>
