@@ -121,6 +121,10 @@ struct ExpenseGroupView: View {
                     Text(currency(balance.net))
                         .foregroundStyle(color(for: balance.net))
                         .monospacedDigit()
+                        // Balances animate toward their new value (and toward zero on
+                        // settle-up) rather than snapping (issue #30 §5.8).
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: balance.net)
                 }
             }
         }
@@ -132,7 +136,7 @@ struct ExpenseGroupView: View {
         Section("Settle Up") {
             if transfers.isEmpty {
                 Label("All settled up", systemImage: "checkmark.circle")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(SnappetColor.habits)
             } else {
                 ForEach(transfers) { transfer in
                     HStack {
@@ -170,9 +174,9 @@ struct ExpenseGroupView: View {
     // MARK: - Helpers
 
     private func color(for net: Double) -> Color {
-        if net > 0.005 { return .green }
-        if net < -0.005 { return .red }
-        return .secondary
+        if net > 0.005 { return SnappetColor.habits }
+        if net < -0.005 { return SnappetColor.pomodoro }
+        return Color.secondary
     }
 
     private func deleteExpenses(at offsets: IndexSet) {

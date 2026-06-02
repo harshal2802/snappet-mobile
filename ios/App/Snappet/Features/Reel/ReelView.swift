@@ -7,6 +7,7 @@ import HighlightEngine
 struct ReelView: View {
     let summary: WorkoutSummary
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vm: ReelViewModel?
     @State private var showPicker = false
 
@@ -30,13 +31,15 @@ struct ReelView: View {
                 ContentUnavailableView("Couldn’t build the reel", systemImage: "exclamationmark.triangle",
                     description: Text(msg))
             case .exporting:
-                ProgressView("Exporting…")
+                ExportProgressView()
             case .exported(let url):
                 ExportedView(url: url) { Task { await vm?.generate() } }
             case .ready:
                 content
             }
         }
+        // Cross-fade between the major reel phases (build / ready / export / done), gated.
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: vm?.state)
         .navigationTitle("\(summary.activity.rawValue.capitalized) reel")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -119,7 +122,7 @@ struct ReelView: View {
                                     Button { vm.restore(h) } label: {
                                         Label("Restore", systemImage: "arrow.uturn.backward")
                                     }
-                                    .tint(.blue)
+                                    .tint(SnappetColor.budget)
                                 }
                         }
                     } header: {
@@ -136,6 +139,7 @@ struct ReelView: View {
 /// In-app preview of the current cut — plays the composition directly (no export).
 private struct PreviewBlock: View {
     let vm: ReelViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var building = false
 
     var body: some View {
@@ -143,7 +147,10 @@ private struct PreviewBlock: View {
             if let player = vm.previewPlayer {
                 VideoPlayer(player: player)
                     .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    // The built preview eases in (gated by Reduce Motion).
+                    .transition(reduceMotion ? .opacity
+                                : .scale(scale: 0.96).combined(with: .opacity))
             } else {
                 Button {
                     building = true
@@ -164,6 +171,8 @@ private struct PreviewBlock: View {
                 }
             }
         }
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                   value: vm.previewPlayer == nil)
     }
 }
 
@@ -173,7 +182,7 @@ private struct HighlightRow: View {
     var body: some View {
         HStack {
             Image(systemName: highlight.kind == .high ? "flame.fill" : "leaf.fill")
-                .foregroundStyle(highlight.kind == .high ? .orange : .green)
+                .foregroundStyle(highlight.kind == .high ? SnappetColor.workout : SnappetColor.habits)
             VStack(alignment: .leading) {
                 Text(timecode(highlight.atOffset)).font(.body.monospacedDigit())
                 Text(String(format: "intensity %.0f%%", highlight.score * 100))
@@ -195,10 +204,18 @@ private struct HighlightRow: View {
 private struct ExportedView: View {
     let url: URL
     let onRegenerate: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showShare = false
+    @State private var landed = false
+
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill").font(.largeTitle).foregroundStyle(.green)
+            Image(systemName: "checkmark.circle.fill").font(.largeTitle)
+                .foregroundStyle(SnappetColor.habits)
+                // The success check springs in once the export lands; no-ops under Reduce Motion.
+                .scaleEffect(landed || reduceMotion ? 1 : 0.5)
+                .opacity(landed || reduceMotion ? 1 : 0)
+                .symbolEffect(.bounce, value: reduceMotion ? 0 : (landed ? 1 : 0))
             Text("Reel ready").font(.title2.bold())
             Button { showShare = true } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
@@ -206,6 +223,32 @@ private struct ExportedView: View {
             Button("Make another cut", action: onRegenerate)
         }
         .padding()
+        .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: landed)
+        .onAppear { landed = true }
         .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
+    }
+}
+
+/// A determinate-feel export progress that creeps toward (but never reaches) 100% while the
+/// reel renders, then the parent swaps to `ExportedView`'s success check when `.exported` lands.
+/// Purely presentational — it drives a perceived-progress bar, not the real export (whose
+/// `ReelExporter` exposes no fraction). Honors Reduce Motion by snapping straight to a settled bar.
+private struct ExportProgressView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var fraction: Double = 0
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView(value: fraction)
+                .progressViewStyle(.linear)
+                .tint(SnappetColor.reels)
+                .frame(maxWidth: 240)
+            Text("Exporting…").font(.subheadline).foregroundStyle(.secondary)
+        }
+        .padding()
+        .onAppear {
+            guard !reduceMotion else { fraction = 0.9; return }
+            withAnimation(.easeOut(duration: 6)) { fraction = 0.92 }
+        }
     }
 }

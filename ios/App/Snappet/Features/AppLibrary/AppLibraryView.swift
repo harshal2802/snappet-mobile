@@ -5,9 +5,8 @@ import SwiftUI
 /// to the module's own screen.
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
+    @Namespace private var zoom
     @State private var router = SuiteRouter()
-    /// Drives the zoom transition from a tapped module card into the module's screen (iOS 18).
-    @Namespace private var moduleZoom
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
     var body: some View {
@@ -31,8 +30,8 @@ struct AppLibraryView: View {
                                         } label: {
                                             ModuleCard(module: module)
                                         }
-                                        .buttonStyle(.plain)
-                                        .matchedTransitionSource(id: module.id, in: moduleZoom)
+                                        .buttonStyle(PressableCardStyle())
+                                        .matchedTransitionSource(id: module.id, in: zoom)
                                         .accessibilityIdentifier("moduleCard.\(module.id)")
                                     }
                                 }
@@ -43,9 +42,12 @@ struct AppLibraryView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
+            // Clear the suite's floating tab bar so the last Finance card isn't covered.
+            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
             .navigationTitle("Apps")
             .navigationDestination(for: ModuleRoute.self) { route in
                 moduleDestination(route)
+                    .navigationTransition(.zoom(sourceID: route.id, in: zoom))
             }
         }
         .environment(router)
@@ -55,7 +57,6 @@ struct AppLibraryView: View {
     @ViewBuilder private func moduleDestination(_ route: ModuleRoute) -> some View {
         if let module = ModuleRegistry.all.first(where: { $0.id == route.id }) {
             module.destination()
-                .navigationTransition(.zoom(sourceID: module.id, in: moduleZoom))
                 .onAppear {
                     core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
                 }
@@ -66,15 +67,26 @@ struct AppLibraryView: View {
 private struct ModuleCard: View {
     let module: AppModule
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: SnappetSpacing.md) {
             Image(systemName: module.systemImage)
                 .font(.title)
                 .foregroundStyle(module.tint)
             Text(module.title).font(.headline).lineLimit(1)
-            Text(module.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(module.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(2)
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-        .padding()
-        .background(module.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+        .snappetTile()
+    }
+}
+
+/// Card button style: a quick spring scale-down on press (issue #30 §5.1), degrading to
+/// no motion under Reduce Motion. Keeps the plain look (no default button chrome).
+private struct PressableCardStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.97 : 1))
+            .animation(Snappet.snappetAnimation(SnappetMotion.quick, reduceMotion: reduceMotion),
+                       value: configuration.isPressed)
     }
 }

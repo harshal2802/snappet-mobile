@@ -70,7 +70,7 @@ struct RoutinesSectionView: View {
 
     private func startButton(_ routine: Routine) -> some View {
         Button { start(routine) } label: { Label("Start", systemImage: "play.fill") }
-            .tint(.green)
+            .tint(SnappetColor.workout)
             .disabled(routine.exercises.isEmpty)
     }
 
@@ -88,7 +88,7 @@ struct RoutineRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 if let sport = routine.sport, sport != .general {
-                    Image(systemName: sport.symbol).foregroundStyle(.orange)
+                    Image(systemName: sport.symbol).foregroundStyle(SnappetColor.workout)
                 }
                 Text(routine.name).font(.headline).lineLimit(1)
             }

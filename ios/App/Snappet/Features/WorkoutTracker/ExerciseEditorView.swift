@@ -86,10 +86,11 @@ struct ExerciseEditorView: View {
                             .font(.caption)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
-                            .background(on ? Color.orange.opacity(0.2) : Color(.secondarySystemFill), in: Capsule())
-                            .foregroundStyle(on ? .orange : .primary)
+                            .background(on ? SnappetColor.workout.opacity(0.2) : Color(.secondarySystemFill), in: Capsule())
+                            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
                     }
                     .buttonStyle(.plain)
+                    .snappetAnimation(SnappetMotion.quick, value: on)
                 }
             }
             .padding(.vertical, 4)

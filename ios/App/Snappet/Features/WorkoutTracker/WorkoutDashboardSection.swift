@@ -15,6 +15,10 @@ struct WorkoutDashboardSection: View {
     let openRoutine: (Routine) -> Void
     let openProgress: (String) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the weekly-volume bars' grow-in animation on appear.
+    @State private var chartDrawn = false
+
     private var isEmptyState: Bool { history.isEmpty && activeSession == nil }
 
     var body: some View {
@@ -95,14 +99,18 @@ struct WorkoutDashboardSection: View {
             Chart(weeklyVolume, id: \.weekStart) { point in
                 BarMark(
                     x: .value("Week", point.weekStart, unit: .weekOfYear),
-                    y: .value("Volume", WorkoutMath.kgToUnit(point.volumeKg, unit))
+                    // Bars grow up from the baseline on appear (issue #30 §5.6).
+                    y: .value("Volume", chartDrawn || reduceMotion ? WorkoutMath.kgToUnit(point.volumeKg, unit) : 0)
                 )
                 .foregroundStyle(.orange)
             }
             .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear)) { _ in AxisGridLine(); AxisTick() } }
             .frame(height: 160)
+            .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartDrawn)
+            .onAppear { chartDrawn = true }
+            .onDisappear { chartDrawn = false }
         }
-        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     private var recordsSection: some View {
@@ -229,10 +237,13 @@ struct WorkoutStatCard: View {
         VStack(alignment: .leading, spacing: 6) {
             Image(systemName: systemImage).foregroundStyle(.orange)
             Text(value).font(.title2.bold()).minimumScaleFactor(0.6).lineLimit(1)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.snappy, value: value)
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 }

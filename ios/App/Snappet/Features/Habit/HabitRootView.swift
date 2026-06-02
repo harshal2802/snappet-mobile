@@ -243,12 +243,14 @@ private struct HabitRow: View {
         return "\(pct)%"
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
+            HStack(spacing: SnappetSpacing.md) {
                 Image(systemName: habit.symbol)
                     .font(.title2)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(SnappetColor.habits)
                     .frame(width: 32)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -265,16 +267,20 @@ private struct HabitRow: View {
                 Button(action: toggle) {
                     Image(systemName: isDoneToday ? "checkmark.circle.fill" : "circle")
                         .font(.title)
-                        .foregroundStyle(isDoneToday ? .green : .secondary)
+                        .foregroundStyle(isDoneToday ? SnappetColor.habits : Color.secondary)
+                        // Checkmark springs/bounces on toggle (issue #30 §5.5).
+                        .symbolEffect(.bounce, value: reduceMotion ? false : isDoneToday)
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
+                .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: isDoneToday)
                 .accessibilityLabel(isDoneToday ? "Mark not done today" : "Mark done today")
                 .accessibilityIdentifier("habit.toggle")
             }
 
             weekStripView
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, SnappetSpacing.xs)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("habit.row.\(index)")
         .swipeActions(edge: .trailing) {
@@ -297,11 +303,13 @@ private struct HabitRow: View {
         if streak > 0 {
             Label("\(streak) day\(streak == 1 ? "" : "s") streak", systemImage: "flame.fill")
                 .font(.subheadline)
-                .foregroundStyle(.orange)
+                .foregroundStyle(SnappetColor.workout)
+                .contentTransition(.numericText())
+                .animation(.snappy, value: streak)
         } else {
             Text("No streak yet")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(SnappetColor.textSecondary)
         }
     }
 
@@ -352,7 +360,7 @@ private struct DayCell: View {
                     .foregroundStyle(.secondary)
                 ZStack {
                     Circle()
-                        .fill(day.isDone ? Color.green : Color.green.opacity(0.12))
+                        .fill(day.isDone ? SnappetColor.habits : SnappetColor.habits.opacity(0.12))
                         .frame(width: 28, height: 28)
                     Text(dayNumber)
                         .font(.caption2)

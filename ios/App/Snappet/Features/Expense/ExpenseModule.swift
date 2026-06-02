@@ -5,6 +5,6 @@ import SwiftUI
 enum ExpenseModule {
     @MainActor static var module: AppModule {
         AppModule(id: "expense", title: "Split Expenses", subtitle: "Settle up with friends",
-                  systemImage: "person.2", tint: .teal, category: .finance) { ExpenseRootView() }
+                  systemImage: "person.2", tint: SnappetColor.moduleAccent("expense"), category: .finance) { ExpenseRootView() }
     }
 }

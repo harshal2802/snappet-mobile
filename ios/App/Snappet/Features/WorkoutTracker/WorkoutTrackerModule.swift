@@ -19,7 +19,7 @@ enum WorkoutTrackerModule {
             title: "Workout",
             subtitle: "Routines, set tracking & PRs",
             systemImage: "dumbbell.fill",
-            tint: .orange,
+            tint: SnappetColor.moduleAccent(id),
             category: .fitness
         ) { WorkoutHomeView() }
     }

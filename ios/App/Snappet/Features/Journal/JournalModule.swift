@@ -5,6 +5,6 @@ import SwiftUI
 enum JournalModule {
     @MainActor static var module: AppModule {
         AppModule(id: "journal", title: "Journal", subtitle: "Quick notes & entries",
-                  systemImage: "book.closed", tint: .indigo, category: .productivity) { JournalRootView() }
+                  systemImage: "book.closed", tint: SnappetColor.moduleAccent("journal"), category: .productivity) { JournalRootView() }
     }
 }

@@ -11,7 +11,7 @@ enum HabitModule {
             title: "Habits",
             subtitle: "Daily streaks",
             systemImage: "checkmark.seal",
-            tint: .green,
+            tint: SnappetColor.moduleAccent("habit"),
             category: .productivity
         ) { HabitRootView() }
     }
