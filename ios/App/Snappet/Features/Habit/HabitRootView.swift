@@ -273,7 +273,7 @@ private struct HabitRow: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
-                .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: isDoneToday)
+                .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: isDoneToday)
                 .accessibilityLabel(isDoneToday ? "Mark not done today" : "Mark done today")
                 .accessibilityIdentifier("habit.toggle")
             }

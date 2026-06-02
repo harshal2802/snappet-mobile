@@ -139,7 +139,7 @@ private struct HeartRateChart: View {
         }
         .chartXAxisLabel("min")
         .chartYAxisLabel("bpm")
-        .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
+        .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
         .onAppear { drawn = true }
         .onDisappear { drawn = false }
     }
@@ -169,7 +169,7 @@ private struct ZoneBar: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: drawn)
+                .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: drawn)
             }
             .frame(height: 12)
             .accessibilityIdentifier("hrZoneBar")

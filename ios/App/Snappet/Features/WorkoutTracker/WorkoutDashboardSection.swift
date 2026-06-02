@@ -106,7 +106,7 @@ struct WorkoutDashboardSection: View {
             }
             .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear)) { _ in AxisGridLine(); AxisTick() } }
             .frame(height: 160)
-            .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartDrawn)
+            .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartDrawn)
             .onAppear { chartDrawn = true }
             .onDisappear { chartDrawn = false }
         }

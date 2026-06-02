@@ -39,7 +39,7 @@ struct ReelView: View {
             }
         }
         // Cross-fade between the major reel phases (build / ready / export / done), gated.
-        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: vm?.state)
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: vm?.state)
         .navigationTitle("\(summary.activity.rawValue.capitalized) reel")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -171,7 +171,7 @@ private struct PreviewBlock: View {
                 }
             }
         }
-        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
                    value: vm.previewPlayer == nil)
     }
 }
@@ -223,7 +223,7 @@ private struct ExportedView: View {
             Button("Make another cut", action: onRegenerate)
         }
         .padding()
-        .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: landed)
+        .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: landed)
         .onAppear { landed = true }
         .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
     }

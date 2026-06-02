@@ -86,7 +86,7 @@ private struct PressableCardStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.97 : 1))
-            .animation(snappetAnimation(SnappetMotion.quick, reduceMotion: reduceMotion),
+            .animation(Snappet.snappetAnimation(SnappetMotion.quick, reduceMotion: reduceMotion),
                        value: configuration.isPressed)
     }
 }

@@ -52,7 +52,7 @@ struct ExercisePickerView: View {
             }
             .listStyle(.plain)
             // The "Selected" section grows/shrinks as picks toggle — gentle list animation, gated.
-            .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: selected)
+            .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: selected)
             .searchable(text: $query, prompt: "Search exercises or muscles")
             .navigationTitle("Add Exercises")
             .navigationBarTitleDisplayMode(.inline)

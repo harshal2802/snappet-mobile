@@ -42,14 +42,14 @@ struct SessionHighlightView: View {
 
                 Section {
                     preview
-                        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
                                    value: viewModel.state)
                 }
 
                 if viewModel.canExport || viewModel.exportState != .idle {
                     Section {
                         exportShare
-                            .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                            .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
                                        value: viewModel.exportState)
                     } footer: {
                         Text("Share your reel anywhere, or save it to your Photos library. Everything stays on your device.")

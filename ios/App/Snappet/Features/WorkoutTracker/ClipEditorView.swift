@@ -395,7 +395,7 @@ private struct ExportShareControls: View {
             }
         }
         // Cross-fade between export states (idle → exporting → exported / saved), gated.
-        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
                    value: vm.exportState)
     }
 }

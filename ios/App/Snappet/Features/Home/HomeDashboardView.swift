@@ -88,7 +88,7 @@ struct HomeDashboardView: View {
             }
             .chartXAxis { AxisMarks(values: .stride(by: .day)) { _ in AxisValueLabel(format: .dateTime.weekday(.narrow)) } }
             .frame(height: 160)
-            .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartAppeared)
+            .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: chartAppeared)
             .onAppear { chartAppeared = true }
             .onDisappear { chartAppeared = false }
         }

@@ -36,7 +36,7 @@ struct PomodoroRootView: View {
                     .frame(width: 260, height: 260)
                     .accessibilityIdentifier("pomodoro.timeRemaining")
                     // Phase change (focus↔break) cross-fades the ring colour (issue #30 §5.4).
-                    .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
+                    .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
                                value: timer.phase)
                 controls
                 TodayStats(count: focusCount, minutes: focusMinutes)

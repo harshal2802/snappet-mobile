@@ -30,8 +30,8 @@ struct SpendByCategoryChart: View {
             .cornerRadius(4)
             .foregroundStyle(by: .value("Category", slice.name))
         }
-        .animation(snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
-        .animation(snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: total)
+        .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
+        .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: total)
         .onAppear { drawn = true }
         .onDisappear { drawn = false }
         .chartLegend(position: .bottom, alignment: .center, spacing: 8)
