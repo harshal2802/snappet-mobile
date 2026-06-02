@@ -44,29 +44,32 @@ object PulseColors {
  * Curated per-module accent colors, keyed by the real [com.snappet.mobile.core.AppModule.id] values
  * registered in `ModuleRegistry`. Mirrors the iOS accent assignment:
  *  - `workout` (Workout Reels) → coral, `workout-log` (Workout Tracker) → ember-orange,
+ *  - `nutrition` → fresh-green,
  *  - `pomodoro` → tomato, `habit` → leaf-green, `journal` → violet,
  *  - `tip` → mint, `expense` → teal, `budget` → azure.
  */
 object SnappetAccents {
-    val Coral = Color(0xFFFF5A4D)
-    val Ember = Color(0xFFF76808)
-    val Tomato = Color(0xFFE5484D)
-    val Leaf = Color(0xFF30A46C)
-    val Violet = Color(0xFF8E4EC6)
-    val Mint = Color(0xFF12A594)
-    val Teal = Color(0xFF0D9488)
-    val Azure = Color(0xFF0091FF)
+    val Coral      = Color(0xFFFF5A4D)
+    val Ember      = Color(0xFFF76808)
+    val Tomato     = Color(0xFFE5484D)
+    val Leaf       = Color(0xFF30A46C)
+    val Violet     = Color(0xFF8E4EC6)
+    val Mint       = Color(0xFF12A594)
+    val Teal       = Color(0xFF0D9488)
+    val Azure      = Color(0xFF0091FF)
+    val FreshGreen = Color(0xFF4CAF72)
 
     /** Accent for a module id; falls back to the brand coral for unknown ids. */
     fun forModule(id: String): Color = when (id) {
-        "workout" -> Coral
+        "workout"     -> Coral
         "workout-log" -> Ember
-        "pomodoro" -> Tomato
-        "habit" -> Leaf
-        "journal" -> Violet
-        "tip" -> Mint
-        "expense" -> Teal
-        "budget" -> Azure
-        else -> Coral
+        "nutrition"   -> FreshGreen
+        "pomodoro"    -> Tomato
+        "habit"       -> Leaf
+        "journal"     -> Violet
+        "tip"         -> Mint
+        "expense"     -> Teal
+        "budget"      -> Azure
+        else          -> Coral
     }
 }
