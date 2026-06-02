@@ -27,6 +27,12 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         var exerciseName: String
         /// A short set-progress string, e.g. "Set 2 of 4" or "Exercise 3 of 6".
         var setProgress: String
+        /// Whether the workout is paused — the Lock Screen / Dynamic Island show a "Paused"
+        /// badge and freeze the timer so the notification-area status matches the wrist + phone.
+        /// Defaulted so callers that don't care about pause (and older code paths) construct it
+        /// without churn; the producer + renderer are the same app version, so the shape can't
+        /// drift mid-session.
+        var paused: Bool = false
     }
 
     /// The routine being performed — fixed for the activity's lifetime.

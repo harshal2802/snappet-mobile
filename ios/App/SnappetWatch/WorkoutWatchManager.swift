@@ -18,14 +18,21 @@ import HealthKit
 @Observable
 final class WorkoutWatchManager: NSObject {
     private(set) var latestHR: Double = 0
+    private(set) var avgHR: Double = 0
     private(set) var energyKcal: Double = 0
     private(set) var isRunning = false
+    /// Whether the session is paused. Pause can be tapped on the watch (its controls page) or
+    /// driven from the phone; both converge here via the bidirectional `.pause`/`.resume` relay.
+    private(set) var paused = false
     private(set) var elapsed: TimeInterval = 0
 
     private let store = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var startDate: Date?
+    /// Running sum/count of HR samples, for the average shown on the metrics page.
+    private var hrSum: Double = 0
+    private var hrCount: Int = 0
     /// Set synchronously the instant a start is requested (before the async auth await)
     /// so a second start arriving mid-authorization can't spawn a 2nd `HKWorkoutSession`.
     private var starting = false
@@ -40,6 +47,12 @@ final class WorkoutWatchManager: NSObject {
         }
         link.onStop = { [weak self] in
             Task { @MainActor [weak self] in self?.end() }
+        }
+        link.onPause = { [weak self] in
+            Task { @MainActor [weak self] in self?.setPaused(true, propagate: false) }
+        }
+        link.onResume = { [weak self] in
+            Task { @MainActor [weak self] in self?.setPaused(false, propagate: false) }
         }
         link.activate()
     }
@@ -92,9 +105,30 @@ final class WorkoutWatchManager: NSObject {
             session.startActivity(with: start)
             builder.beginCollection(withStart: start) { _, _ in }
             isRunning = true
+            paused = false
+            hrSum = 0
+            hrCount = 0
+            avgHR = 0
         } catch {
             isRunning = false
         }
+    }
+
+    // MARK: - Pause / resume
+
+    /// Pause the workout from the watch UI (relays the pause to the phone).
+    func pause() { setPaused(true, propagate: true) }
+    /// Resume the workout from the watch UI (relays the resume to the phone).
+    func resume() { setPaused(false, propagate: true) }
+
+    /// Apply a paused state. `propagate == true` is a watch-initiated change we relay to the phone;
+    /// `false` is us reacting to a phone-initiated change (don't echo it back). Pausing/resuming
+    /// the `HKWorkoutSession` stops/restarts HR + energy collection on the wrist.
+    private func setPaused(_ shouldPause: Bool, propagate: Bool) {
+        guard isRunning, shouldPause != paused else { return }
+        paused = shouldPause
+        if shouldPause { session?.pause() } else { session?.resume() }
+        if propagate { link.sendControl(shouldPause ? .pause : .resume) }
     }
 
     func end() {
@@ -109,14 +143,26 @@ final class WorkoutWatchManager: NSObject {
     private func resetState() {
         isRunning = false
         starting = false
+        paused = false
         session = nil
         builder = nil
         startDate = nil
         elapsed = 0
+        latestHR = 0
+        avgHR = 0
+        energyKcal = 0
+        hrSum = 0
+        hrCount = 0
     }
 
-    /// Forward the latest metrics to the phone, stamping the watch-relative offset.
+    /// Forward the latest metrics to the phone, stamping the watch-relative offset, and fold the
+    /// new HR sample into the running average shown on the metrics page.
     fileprivate func relay() {
+        if latestHR > 0 {
+            hrSum += latestHR
+            hrCount += 1
+            avgHR = hrSum / Double(hrCount)
+        }
         let t = startDate.map { Date().timeIntervalSince($0) } ?? 0
         elapsed = t
         link.sendMetrics(hrBpm: latestHR, energyKcal: energyKcal, t: t)
@@ -131,7 +177,15 @@ extension WorkoutWatchManager: HKWorkoutSessionDelegate {
                                     from fromState: HKWorkoutSessionState,
                                     date: Date) {
         Task { @MainActor [weak self] in
-            self?.isRunning = (toState == .running)
+            guard let self else { return }
+            // A paused session is still "running" for the UI (we keep showing the live face);
+            // only an ended/stopped session clears it. `paused` tracks the pause sub-state.
+            switch toState {
+            case .running:        self.isRunning = true;  self.paused = false
+            case .paused:         self.isRunning = true;  self.paused = true
+            case .ended, .stopped: self.isRunning = false; self.paused = false
+            default:              break
+            }
         }
     }
 

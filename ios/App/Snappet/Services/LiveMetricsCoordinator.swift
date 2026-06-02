@@ -85,16 +85,44 @@ final class LiveMetricsCoordinator: MetricsSource {
     var isReachable: Bool { active.isReachable }
     var displayName: String { active.displayName }
 
+    /// Paused-display state for stream-only sources (BLE) that have no session to pause. For the
+    /// Apple-Watch path the watch source owns the truth (the watch can pause from its own
+    /// controls), so `isPaused` reads through to it; this flag only backs the BLE path.
+    private var bleDisplayPaused = false
+
+    /// Whether the live workout is currently paused — reflected in the player, the Live Activity,
+    /// and (for the watch) on-wrist. Reads the active source's own paused state for the watch
+    /// (which can be paused from either device) and the local display flag for a BLE band.
+    var isPaused: Bool {
+        activeKind == .ble ? bleDisplayPaused : watch.isPaused
+    }
+
     func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
         isSessionActive = true
+        bleDisplayPaused = false
         active.start(for: session, sport: sport, category: category)
     }
 
     func stop() {
         isSessionActive = false
+        bleDisplayPaused = false
         // Stop both so neither transport is left running after a source switch mid-session.
         watch.stop()
         ble.stop()
+    }
+
+    /// Pause the live workout. For the watch this pauses the on-wrist `HKWorkoutSession`; for a
+    /// BLE band (no session to pause) it just flips the display state so the timer / Live Activity
+    /// read "Paused".
+    func pause() {
+        if activeKind == .ble { bleDisplayPaused = true }
+        active.pause()
+    }
+
+    /// Resume the live workout.
+    func resume() {
+        if activeKind == .ble { bleDisplayPaused = false }
+        active.resume()
     }
 
     // MARK: - A1 compatibility shims (so A2/A4 call sites don't churn)

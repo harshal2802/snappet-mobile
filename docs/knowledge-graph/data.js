@@ -138,7 +138,9 @@ const nodes = [
   { id: "wt-progress", label: "ExerciseProgressView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/ExerciseProgressView.swift", desc: "Charted progress over time for one exercise (pushed by ProgressRoute).", tags: ["detail","charts"] },
   { id: "wt-player", label: "WorkoutPlayerView", type: "cover", group: "workout-log", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutPlayerView.swift", desc: "Full-screen guided session: per-set logging, rest timer, and a live-metrics overlay — live HR (bpm + zone color/label) composed with a wall-clock overall timer and the rest countdown, plus a graceful no-source state. Starts live metrics (via the coordinator) + a Live Activity; on close, saves (flushing the HR series) or discards.", tags: ["player","fullscreen","live","overlay"], shot: "../screenshots/live-player.png" },
+    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutPlayerView.swift", desc: "Full-screen guided session: per-set logging, rest timer, and a live-metrics overlay — live HR (bpm + zone color/label) composed with a wall-clock overall timer and the rest countdown, plus a graceful no-source state. Pause/Resume (relayed to the watch + freezing the timers and Live Activity) and Minimize (leave without ending — keeps running in the background, brought back by the banner), with animated exercise→rest→done transitions. Starts live metrics (via the coordinator) + a Live Activity, schedules background rest-complete notifications; on close, saves (flushing the HR series) or discards.", tags: ["player","fullscreen","live","overlay","pause","background"], shot: "../screenshots/live-player.png" },
+  { id: "wt-live-banner", label: "LiveWorkoutBanner", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/LiveWorkoutBanner.swift", desc: "Persistent in-app banner pinned to the WorkoutTracker home while a workout runs but the player is minimized: routine name, a self-ticking overall timer (or a Paused badge), and zone-colored live HR. Pure presentation (handed resolved values + a resume action); tapping it zooms back into the player.", tags: ["live","banner","background","pause"] },
   { id: "wt-routine-editor", label: "RoutineEditorView", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/RoutineEditorView.swift", desc: "Create/edit a routine; presents the exercise picker to add exercises.", tags: ["editor"] },
   { id: "wt-exercise-editor", label: "ExerciseEditorView", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
@@ -230,9 +232,11 @@ const nodes = [
   { id: "photoclciprenderer", label: "PhotoClipRenderer", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/PhotoClipRenderer.swift", desc: "Turns photos into Ken-Burns clips interleaved into the reel.", tags: ["kenburns","photos"] },
   { id: "liveactivitycontroller", label: "LiveActivityController", type: "service", group: "core", category: "core", platform: "ios",
-    file: "ios/App/Snappet/Services/LiveActivityController.swift", desc: "Drives the Lock Screen / Dynamic Island Live Activity: overall timer, live HR, current exercise. Throttles HR-only pushes (≥2 s) so it never exhausts the ActivityKit update budget.", tags: ["live-activity"] },
+    file: "ios/App/Snappet/Services/LiveActivityController.swift", desc: "Drives the Lock Screen / Dynamic Island Live Activity: overall timer, live HR, current exercise, and the paused state (renders a Paused badge that freezes the timer). Throttles HR-only pushes (≥2 s) so it never exhausts the ActivityKit update budget.", tags: ["live-activity","pause"] },
   { id: "workoutactivitymapping", label: "WorkoutActivityMapping", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/WorkoutActivityMapping.swift", desc: "Maps a routine's sport/dominant-category to the HKWorkoutActivityType the watch should record (the inverse of HealthKitService's post-hoc map).", tags: ["mapping"] },
+  { id: "workoutnotifications", label: "WorkoutNotifications", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Services/WorkoutNotifications.swift", desc: "Local notifications for a backgrounded/minimized workout — schedules a 'rest complete' alert (UNUserNotifications) when rest starts so it still reaches the notification bar if the player isn't foregrounded, and cancels it on skip/pause/finish.", tags: ["notifications","background"] },
 
   // ═════════════════ Live-metrics layer (pluggable MetricsSource — WorkoutTracker) ═════════════════
   { id: "metricssource", label: "MetricsSource", type: "service", group: "workout-log", category: "fitness", platform: "ios",
@@ -268,17 +272,19 @@ const nodes = [
   { id: "watchapp", label: "SnappetWatchApp", type: "watch", group: "watch", category: "fitness", platform: "watchos",
     file: "ios/App/SnappetWatch/SnappetWatchApp.swift", desc: "watchOS companion entry point — hosts the live workout face and the watch-side workout manager.", tags: ["watchos","entry"] },
   { id: "watchview", label: "WatchWorkoutView", type: "watch", group: "watch", category: "fitness", platform: "watchos",
-    file: "ios/App/SnappetWatch/WatchWorkoutView.swift", desc: "Live workout face on the watch: HR + timers, driven by the watch-side HKWorkoutSession.", tags: ["watchos","live"] },
+    file: "ios/App/SnappetWatch/WatchWorkoutView.swift", desc: "Rich two-page watch face (vertical paging): a zone-colored HR + elapsed + energy + avg-HR Metrics page, and a Controls page (Pause/Resume + End) driven on the wrist and relayed to the phone.", tags: ["watchos","live","controls","pause"] },
   { id: "watchmanager", label: "WorkoutWatchManager", type: "watch", group: "watch", category: "fitness", platform: "watchos",
-    file: "ios/App/SnappetWatch/WorkoutWatchManager.swift", desc: "Runs the HKWorkoutSession + HKLiveWorkoutBuilder on the watch and streams HR/energy samples to the phone. NSObject subclass (HK delegates require it); a `starting` flag blocks duplicate sessions.", tags: ["watchos","hkworkout"] },
+    file: "ios/App/SnappetWatch/WorkoutWatchManager.swift", desc: "Runs the HKWorkoutSession + HKLiveWorkoutBuilder on the watch (start/pause/resume/end), tracks avg HR, and streams HR/energy samples to the phone. NSObject subclass (HK delegates require it); a `starting` flag blocks duplicate sessions; a paused session still counts as running.", tags: ["watchos","hkworkout","pause"] },
   { id: "watchlink", label: "WatchConnectivityLink", type: "watch", group: "watch", category: "fitness", platform: "watchos",
-    file: "ios/App/SnappetWatch/WatchConnectivityLink.swift", desc: "WatchConnectivity transport relaying the shared LiveWorkoutMessage (start/stop/metrics) between watch and phone — sendMessage when reachable, transferUserInfo fallback so nothing drops.", tags: ["watchconnectivity"] },
+    file: "ios/App/SnappetWatch/WatchConnectivityLink.swift", desc: "WatchConnectivity transport relaying the shared LiveWorkoutMessage (start/stop/metrics + bidirectional pause/resume) between watch and phone — sendMessage when reachable, transferUserInfo fallback so nothing drops; the receiver applies a pause/resume without echoing.", tags: ["watchconnectivity","pause"] },
 
   // ═════════════════ Widget / Live Activity ═════════════════
   { id: "liveactivity-widget", label: "WorkoutLiveActivity", type: "widget", group: "watch", category: "fitness", platform: "ios",
-    file: "ios/App/SnappetWidgets/WorkoutLiveActivity.swift", desc: "WidgetKit/ActivityKit Live Activity UI in the SnappetWidgets extension: the Lock Screen banner + Dynamic Island compact/minimal/expanded regions, showing the overall timer, live HR and current exercise/set.", tags: ["widgetkit","live-activity"] },
+    file: "ios/App/SnappetWidgets/WorkoutLiveActivity.swift", desc: "WidgetKit/ActivityKit Live Activity UI in the SnappetWidgets extension: the Lock Screen banner + Dynamic Island compact/minimal/expanded regions, showing the overall timer, zone-colored live HR, current exercise/set, and a Paused badge that freezes the timer.", tags: ["widgetkit","live-activity","pause"] },
   { id: "workoutactivityattributes", label: "WorkoutActivityAttributes", type: "widget", group: "watch", category: "fitness", platform: "ios",
-    file: "ios/App/Shared/WorkoutActivityAttributes.swift", desc: "The shared ActivityAttributes contract compiled into BOTH the app and the widget extension so the Live Activity wire can't drift: static routineName + a Codable/Hashable/Sendable ContentState (startedAt, hrBpm, exerciseName, setProgress).", tags: ["activitykit","shared","contract"] },
+    file: "ios/App/Shared/WorkoutActivityAttributes.swift", desc: "The shared ActivityAttributes contract compiled into BOTH the app and the widget extension so the Live Activity wire can't drift: static routineName + a Codable/Hashable/Sendable ContentState (startedAt, hrBpm, exerciseName, setProgress, paused).", tags: ["activitykit","shared","contract"] },
+  { id: "heartratezone", label: "HeartRateZone", type: "model", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Shared/HeartRateZone.swift", desc: "Pure bpm→training-zone value type (color + label) in Shared/ so the phone overlay, the watch face, and the Live Activity all render the same zone from one source of truth.", tags: ["shared","hr","zone"] },
 
   // ═════════════════ Data models (SwiftData @Model) ═════════════════
   { id: "model-usage", label: "UsageRecord", type: "model", group: "core", category: "core", platform: "ios+android",
@@ -427,10 +433,16 @@ const links = [
   { source: "wt-routine-editor", target: "wt-exercise-picker", type: "present" },
   { source: "wt-player", target: "livemetricscoordinator", type: "uses", label: "live HR overlay" },
   { source: "wt-player", target: "liveactivitycontroller", type: "uses" },
+  { source: "wt-player", target: "workoutnotifications", type: "uses", label: "rest alert" },
   { source: "wt-settings", target: "wt-hr-source-picker", type: "present", label: "Live metrics" },
   { source: "wt-home", target: "workoutactivitymapping", type: "uses" },
   { source: "wt-home", target: "model-workout", type: "persists" },
   { source: "wt-home", target: "snappetcore", type: "feeds", label: "log usage" },
+
+  // background workout: minimize → in-app banner → resume
+  { source: "wt-home", target: "wt-live-banner", type: "contains", label: "minimized" },
+  { source: "wt-live-banner", target: "wt-player", type: "cover", label: "Resume (zoom)" },
+  { source: "wt-live-banner", target: "livemetricscoordinator", type: "uses", label: "live HR" },
 
   // ---- Live-metrics layer (pluggable MetricsSource) ----
   { source: "livemetricscoordinator", target: "metricssource", type: "uses", label: "conforms / forwards" },
@@ -456,6 +468,12 @@ const links = [
   // Live Activity contract + widget extension
   { source: "liveactivitycontroller", target: "workoutactivityattributes", type: "uses" },
   { source: "liveactivity-widget", target: "workoutactivityattributes", type: "uses", label: "shared contract" },
+
+  // shared bpm→zone mapping (one source of truth for overlay / watch face / Live Activity / banner)
+  { source: "wt-player", target: "heartratezone", type: "uses" },
+  { source: "wt-live-banner", target: "heartratezone", type: "uses" },
+  { source: "watchview", target: "heartratezone", type: "uses" },
+  { source: "liveactivity-widget", target: "heartratezone", type: "uses" },
 
   // ---- Video studio (Track B): media tagging → summary → editor / highlight → share+save ----
   { source: "wt-session-detail", target: "sessionmediaservice", type: "uses", label: "discover media" },

@@ -42,27 +42,37 @@ struct WorkoutLiveActivity: Widget {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } compactLeading: {
-                Image(systemName: "stopwatch").foregroundStyle(.orange)
+                Image(systemName: context.state.paused ? "pause.fill" : "stopwatch")
+                    .foregroundStyle(context.state.paused ? .yellow : .orange)
             } compactTrailing: {
                 timerText(context).font(.caption2.monospacedDigit()).frame(width: 44)
             } minimal: {
-                Image(systemName: "figure.run").foregroundStyle(.orange)
+                Image(systemName: context.state.paused ? "pause.fill" : "figure.run")
+                    .foregroundStyle(context.state.paused ? .yellow : .orange)
             }
-            .keylineTint(.orange)
+            .keylineTint(context.state.paused ? .yellow : .orange)
         }
     }
 
-    private func timerText(_ context: ActivityViewContext<WorkoutActivityAttributes>) -> Text {
-        Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
+    /// The overall timer, or a "Paused" label when the workout is paused (so the
+    /// notification-area status matches the wrist + phone rather than ticking on while paused).
+    @ViewBuilder private func timerText(_ context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
+        if context.state.paused {
+            Text("Paused")
+        } else {
+            Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
+        }
     }
 
+    /// Heart rate, tinted by its `HeartRateZone` (shared with the phone overlay + watch face).
     private func heartLabel(_ context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
-        Label {
+        let zone = HeartRateZone.forBpm(context.state.hrBpm.map(Double.init))
+        return Label {
             Text(context.state.hrBpm.map { "\($0)" } ?? "—")
         } icon: {
             Image(systemName: "heart.fill")
         }
-        .foregroundStyle(.pink)
+        .foregroundStyle(zone == .none ? .pink : zone.color)
     }
 }
 
@@ -70,12 +80,21 @@ struct WorkoutLiveActivity: Widget {
 private struct LockScreenView: View {
     let context: ActivityViewContext<WorkoutActivityAttributes>
 
+    private var zone: HeartRateZone { HeartRateZone.forBpm(context.state.hrBpm.map(Double.init)) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(context.attributes.routineName, systemImage: "dumbbell.fill")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(.orange)
                     .lineLimit(1)
+                if context.state.paused {
+                    Text("PAUSED")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.yellow.opacity(0.25), in: Capsule())
+                        .foregroundStyle(.yellow)
+                }
                 Spacer()
                 Label {
                     Text(context.state.hrBpm.map { "\($0) bpm" } ?? "—")
@@ -83,7 +102,8 @@ private struct LockScreenView: View {
                 } icon: {
                     Image(systemName: "heart.fill")
                 }
-                .font(.subheadline.weight(.semibold)).foregroundStyle(.pink)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(zone == .none ? .pink : zone.color)
             }
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -94,9 +114,14 @@ private struct LockScreenView: View {
                     }
                 }
                 Spacer()
-                Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
-                    .font(.title.monospacedDigit().weight(.bold))
-                    .foregroundStyle(.primary)
+                if context.state.paused {
+                    Label("Paused", systemImage: "pause.fill")
+                        .font(.headline.weight(.bold)).foregroundStyle(.yellow)
+                } else {
+                    Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
+                        .font(.title.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.primary)
+                }
             }
         }
     }

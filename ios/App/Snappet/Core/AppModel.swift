@@ -43,6 +43,11 @@ final class AppModel {
     /// ActivityKit/Live Activities are unavailable or unauthorized (live-workout-studio A2).
     let liveActivity = LiveActivityController()
 
+    /// Local notifications for a backgrounded / minimized workout (e.g. "rest complete"), so the
+    /// session can still reach the notification bar alongside the Live Activity. No-ops when
+    /// unauthorized (live-workout-studio next pass).
+    let workoutNotifications = WorkoutNotifications()
+
     /// Value-first onboarding is shown until the user has been through it once.
     /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
     private let onboardedKey = "snappet.hasOnboarded"

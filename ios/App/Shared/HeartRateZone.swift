@@ -9,6 +9,10 @@ import SwiftUI
 /// (live-workout-studio A4). `Color` is the only SwiftUI surface used, and it's a value type,
 /// so this stays trivially testable.
 ///
+/// **Lives in `Shared/`** (compiled into the phone app, the watchOS companion, and the widget
+/// extension — see `project.yml`) so the watch HR face and the Live Activity render the *same*
+/// zone color/label as the phone overlay, with one source of truth for the bpm→zone mapping.
+///
 /// **Why a fixed default max HR (`defaultMaxHR = 190`)**: the suite has no user age / HR
 /// profile yet, so we can't compute the usual `220 − age`. 190 is a reasonable mid-range
 /// adult ceiling — enough to give the overlay meaningful *relative* zone color without

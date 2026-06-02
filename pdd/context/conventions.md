@@ -105,6 +105,15 @@ Each mini-app is a self-contained `Features/<App>/` folder. To add one:
 5. **Two central edits to wire it in:** append `<App>Module.module` to `ModuleRegistry.all` and your
    `@Model` types to `SnappetSchema.models` (both in `Core/`). Then `xcodegen generate` & build.
 
+## Keep the knowledge graph current
+
+The interactive app map (`docs/knowledge-graph/`) is rendered entirely from `data.js`. **Any change
+that affects the user experience** — a new screen/sheet/cover, service, watch surface, widget, a
+navigation/data-flow edge, or a meaningful behavior change to an existing node — must update
+`data.js` (add/edit the `nodes` entry + wire a `links` edge) **in the same change**. Treat it like
+docs that must not drift from the code; shared value/wire types in `Shared/` get a node too so the
+phone ↔ watch ↔ widget reuse is visible.
+
 ## PDD
 
 - Every feature/spike traces to a prompt in `pdd/prompts/` and ultimately to the web repo's `#60` /
