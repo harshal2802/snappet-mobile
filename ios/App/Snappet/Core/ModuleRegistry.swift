@@ -15,6 +15,7 @@ enum ModuleRegistry {
             TipModule.module,
             ExpenseModule.module,
             BudgetModule.module,
+            NutritionModule.module,
         ]
     }
 

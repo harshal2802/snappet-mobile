@@ -6,9 +6,10 @@ import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Timer
 import com.snappet.mobile.ui.theme.SnappetAccents
 
 /**
@@ -33,6 +34,12 @@ object ModuleRegistry {
             icon = Icons.Filled.FitnessCenter, tint = SnappetAccents.forModule("workout-log"),
             category = ModuleCategory.FITNESS,
         ) { onExit -> com.snappet.mobile.feature.workout.WorkoutRoot(onExit) },
+        AppModule(
+            id = "nutrition", title = "Nutrition",
+            subtitle = "Calories & macros",
+            icon = Icons.Filled.Restaurant, tint = SnappetAccents.forModule("nutrition"),
+            category = ModuleCategory.FITNESS,
+        ) { onExit -> com.snappet.mobile.feature.nutrition.NutritionRoot(onExit) },
         AppModule(
             id = "pomodoro", title = "Pomodoro",
             subtitle = "Focus timer & history",
