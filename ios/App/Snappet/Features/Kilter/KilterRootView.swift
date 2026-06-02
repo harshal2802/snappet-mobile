@@ -4,6 +4,7 @@ import SwiftData
 /// Route values pushed onto the App Library's shared `SuiteRouter` path.
 struct KilterClimbRoute: Hashable { let uuid: String }
 struct KilterHistoryRoute: Hashable {}
+struct KilterSettingsRoute: Hashable {}
 
 /// Kilter Board catalog: browse climbs from the bundled, read-only catalog, filtered by layout,
 /// angle, and grade (plus a Saved filter), and open a climb for the board render + logging.
@@ -12,7 +13,9 @@ struct KilterHistoryRoute: Hashable {}
 /// deeper screens (detail, history) push onto the shared `SuiteRouter` path.
 struct KilterRootView: View {
     @Environment(SuiteRouter.self) private var router
+    @Environment(\.modelContext) private var modelContext
     @Query private var favorites: [KilterFavorite]
+    @Query private var allEntries: [KilterLogEntry]
 
     private let catalog = KilterCatalog.shared
     /// Shared across the module's screens (detail illuminates / sessions group history).
@@ -33,6 +36,13 @@ struct KilterRootView: View {
     @State private var minAscents = 0
     @State private var minQuality = 0.0
     @State private var showingFilters = false
+
+    // Discovery + display preference.
+    @State private var cotd: KilterListItem?
+    @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
+    private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
+    /// Discovery (climb-of-the-day) shows only on the plain browse view, not while searching/saved.
+    private var showDiscovery: Bool { search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly }
 
     /// The current browse criteria assembled into one value (drives the catalog query + `.task` id).
     private var filter: KilterFilter {
@@ -73,6 +83,28 @@ struct KilterRootView: View {
                 }
                 .accessibilityIdentifier("kilter.history")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    if sessions.isActive {
+                        Button(role: .destructive) { sessions.end(in: modelContext) } label: {
+                            Label("End session", systemImage: "stop.circle")
+                        }
+                    } else {
+                        Button { sessions.start(angle: angle, source: "manual", in: modelContext) } label: {
+                            Label("Start session", systemImage: "play.circle")
+                        }
+                    }
+                    Button { surpriseMe() } label: { Label("Surprise me", systemImage: "dice") }
+                        .accessibilityIdentifier("kilter.surprise")
+                    Divider()
+                    Button { router.push(KilterSettingsRoute()) } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("kilter.more")
+            }
         }
         .sheet(isPresented: $showingFilters) {
             KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
@@ -84,22 +116,46 @@ struct KilterRootView: View {
         .navigationDestination(for: KilterHistoryRoute.self) { _ in
             KilterHistoryView()
         }
+        .navigationDestination(for: KilterSettingsRoute.self) { _ in
+            KilterSettingsView(catalog: catalog)
+        }
         .task(id: filterKey) { refresh() }
+    }
+
+    /// Push a random climb from the current filters (Discovery "Surprise me").
+    private func surpriseMe() {
+        if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
     }
 
     private var content: some View {
         VStack(spacing: 0) {
             filterBar
-            List(items) { item in
-                Button { router.push(KilterClimbRoute(uuid: item.uuid)) } label: {
-                    KilterClimbRow(item: item, isFavorite: favoriteUUIDs.contains(item.uuid))
+            if sessions.isActive { sessionBar }
+            List {
+                if showDiscovery, let cotd {
+                    Section("Climb of the day") {
+                        Button { router.push(KilterClimbRoute(uuid: cotd.uuid)) } label: {
+                            KilterClimbRow(item: cotd, isFavorite: favoriteUUIDs.contains(cotd.uuid),
+                                           gradeFormat: gradeFormat, featured: true)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("kilter.cotd")
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("kilter.climbRow")
+                Section {
+                    ForEach(items) { item in
+                        Button { router.push(KilterClimbRoute(uuid: item.uuid)) } label: {
+                            KilterClimbRow(item: item, isFavorite: favoriteUUIDs.contains(item.uuid),
+                                           gradeFormat: gradeFormat)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("kilter.climbRow")
+                    }
+                }
             }
             .listStyle(.plain)
             .overlay {
-                if items.isEmpty {
+                if items.isEmpty && !(showDiscovery && cotd != nil) {
                     let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
                     ContentUnavailableView(
                         searching ? "No matches" : (savedOnly ? "No saved climbs" : "No climbs match"),
@@ -109,6 +165,29 @@ struct KilterRootView: View {
                                                        : "Try a wider grade range, another angle, or fewer filters.")))
                 }
             }
+        }
+    }
+
+    /// Active-session banner: a live timer + climb count, with End. Logs made while it's up are
+    /// grouped under the session in History.
+    @ViewBuilder private var sessionBar: some View {
+        if let s = sessions.current {
+            let count = allEntries.filter { $0.sessionId == s.id }.count
+            HStack(spacing: 8) {
+                Image(systemName: "record.circle").foregroundStyle(.green)
+                    .symbolEffect(.pulse, options: .repeating)
+                    .font(.subheadline)
+                Text("Session").font(.subheadline.weight(.semibold))
+                Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
+                Spacer()
+                Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("kilter.session.end")
+            }
+            .padding(.horizontal).padding(.vertical, 8)
+            .background(Color.green.opacity(0.12))
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 
@@ -174,7 +253,8 @@ struct KilterRootView: View {
     }
 
     private func refresh() {
-        guard catalog.isAvailable else { items = []; return }
+        guard catalog.isAvailable else { items = []; cotd = nil; return }
+        cotd = showDiscovery ? catalog.climbOfTheDay(layoutId: layoutId, angle: angle) : nil
         if savedOnly {
             // Saved list isn't grade/angle-restricted, but still honor the search box (name/setter).
             let saved = favorites.sorted { $0.addedAt > $1.addedAt }.map(\.climbUUID)
@@ -193,8 +273,15 @@ private struct KilterClimbRow: View {
     let item: KilterListItem
     let isFavorite: Bool
 
+    var gradeFormat: KilterGradeFormat = .both
+    /// Featured (climb-of-the-day) rows get a small ribbon accent.
+    var featured: Bool = false
+
     var body: some View {
         HStack(spacing: 12) {
+            if featured {
+                Image(systemName: "sparkles").foregroundStyle(SnappetColor.moduleAccent("kilter"))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(item.name).font(.headline).lineLimit(1)
@@ -204,7 +291,7 @@ private struct KilterClimbRow: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text(item.gradeLabel)
+                Text(kilterDisplayGrade(item.gradeLabel, gradeFormat))
                     .font(.subheadline.weight(.semibold)).monospacedDigit()
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Color(.tertiarySystemBackground), in: Capsule())

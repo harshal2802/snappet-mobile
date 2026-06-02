@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Charts
 
 /// A single climb: the holds rendered on the board, an angle selector (difficulty is per-angle),
 /// grade / quality / ascents for that angle, logging (Flash / Sent / Project / Attempt), a Saved
@@ -18,6 +19,8 @@ struct KilterClimbDetailView: View {
 
     private let catalog = KilterCatalog.shared
     @AppStorage("kilter.angle") private var sharedAngle: Int = 40
+    @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
+    private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
 
     @State private var climb: KilterClimb?
     @State private var stats: [KilterClimbStat] = []
@@ -61,7 +64,9 @@ struct KilterClimbDetailView: View {
             roleLegend
             anglePicker
             statRow
+            metaRow
             logButtons
+            gradeChart
             illuminateSection
             if let link = betaLinks.first, let url = URL(string: link) {
                 Link(destination: url) {
@@ -107,7 +112,7 @@ struct KilterClimbDetailView: View {
 
     private var statRow: some View {
         HStack {
-            stat("Grade", currentStat.map { catalog.gradeLabel($0.difficulty) } ?? "—")
+            stat("Grade", currentStat.map { kilterDisplayGrade(catalog.gradeLabel($0.difficulty), gradeFormat) } ?? "—")
                 .accessibilityIdentifier("kilter.grade")
             Divider().frame(height: 32)
             VStack(spacing: 2) {
@@ -118,6 +123,57 @@ struct KilterClimbDetailView: View {
             stat("Ascents", "\(currentStat?.ascents ?? 0)")
         }
         .padding(.horizontal)
+    }
+
+    /// Benchmark ("Classic") badge + first-ascensionist, when the catalog has them for this angle.
+    @ViewBuilder private var metaRow: some View {
+        let isClassic = currentStat?.benchmarkDifficulty != nil
+        let fa = currentStat?.faUsername ?? ""
+        if isClassic || !fa.isEmpty {
+            HStack(spacing: 10) {
+                if isClassic {
+                    Label("Classic", systemImage: "rosette")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(SnappetColor.moduleAccent("kilter").opacity(0.18), in: Capsule())
+                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                }
+                if !fa.isEmpty {
+                    Label("FA \(fa)", systemImage: "flag.checkered")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// How the grade changes across board angles — the climb's signature. The selected angle is
+    /// highlighted in the Kilter accent; tap a bar to switch angle.
+    @ViewBuilder private var gradeChart: some View {
+        if stats.count > 1 {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Grade by angle").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Chart(stats) { s in
+                    BarMark(x: .value("Angle", "\(s.angle)°"), y: .value("Difficulty", s.difficulty))
+                        .foregroundStyle(s.angle == selectedAngle
+                                         ? SnappetColor.moduleAccent("kilter") : Color.gray.opacity(0.35))
+                        .cornerRadius(3)
+                }
+                .chartYAxis(.hidden)
+                .chartYScale(domain: chartYDomain)
+                .frame(height: 110)
+                .animation(.snappy, value: selectedAngle)
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// Tighten the chart's y-range around the climb's grades so small differences are visible.
+    private var chartYDomain: ClosedRange<Double> {
+        let ds = stats.map(\.difficulty)
+        let lo = (ds.min() ?? 0) - 1, hi = (ds.max() ?? 1) + 1
+        return lo...max(hi, lo + 1)
     }
 
     private func stat(_ label: String, _ value: String) -> some View {
@@ -138,7 +194,12 @@ struct KilterClimbDetailView: View {
                 logButton(.attempt, "arrow.uturn.up")
             }
             if let logConfirmation {
-                Text(logConfirmation).font(.caption).foregroundStyle(.secondary)
+                Label(logConfirmation, systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.medium)).foregroundStyle(.green)
+                    .symbolEffect(.bounce, value: logConfirmation)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(.green.opacity(0.14), in: Capsule())
+                    .transition(.scale.combined(with: .opacity))
                     .accessibilityIdentifier("kilter.logConfirmation")
             }
         }
@@ -213,7 +274,9 @@ struct KilterClimbDetailView: View {
         core.log(module: "kilter", action: "log-\(status.rawValue)",
                  summary: "\(status.label) \(climb.name) (\(grade) @\(selectedAngle)°)",
                  metric: stat.difficulty)
-        logConfirmation = "Logged \(status.label.lowercased()) · \(grade)"
+        withAnimation(.snappy) {
+            logConfirmation = "Logged \(status.label.lowercased()) · \(grade)"
+        }
     }
 
     private func toggleFavorite() {

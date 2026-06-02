@@ -129,6 +129,24 @@ final class KilterCatalog {
         return out
     }
 
+    /// A random climb matching the current filter (Discovery "Surprise me").
+    func randomClimb(_ filter: KilterFilter) -> KilterListItem? {
+        list(filter, limit: 500).randomElement()
+    }
+
+    /// A deterministic "climb of the day" — a popular classic for the layout/angle, rotating daily.
+    func climbOfTheDay(layoutId: Int, angle: Int) -> KilterListItem? {
+        var pool = list(KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
+                                     maxDifficulty: 39, sort: .popular, benchmarksOnly: true), limit: 150)
+        if pool.isEmpty {   // some layouts have few benchmarks — fall back to most-climbed
+            pool = list(KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
+                                     maxDifficulty: 39, sort: .popular), limit: 150)
+        }
+        guard !pool.isEmpty else { return nil }
+        let day = Calendar.current.ordinality(of: .day, in: .era, for: .now) ?? 0
+        return pool[day % pool.count]
+    }
+
     /// Fetch a set of climbs by uuid (used to render the favorites list), preserving input order.
     func climbsByUUID(_ uuids: [String]) -> [KilterListItem] {
         guard !uuids.isEmpty else { return [] }

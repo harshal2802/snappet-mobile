@@ -95,6 +95,29 @@ struct KilterFilter: Equatable, Sendable {
     }
 }
 
+/// How grades render (the catalog ships combined "6a/V3" labels). A user preference.
+enum KilterGradeFormat: String, CaseIterable, Sendable {
+    case both, v, font
+    var label: String {
+        switch self {
+        case .both: return "Font / V"
+        case .v: return "V-scale"
+        case .font: return "Font"
+        }
+    }
+}
+
+/// Reformat a combined `"6a/V3"` grade label per the user's preference (font part / V part / both).
+func kilterDisplayGrade(_ label: String, _ format: KilterGradeFormat) -> String {
+    let parts = label.split(separator: "/", maxSplits: 1)
+    guard parts.count == 2 else { return label }
+    switch format {
+    case .both: return label
+    case .font: return String(parts[0])
+    case .v: return String(parts[1])
+    }
+}
+
 /// How a climb's catalog list is ordered.
 enum KilterSort: String, CaseIterable, Sendable {
     case popular, hardest, easiest, quality
