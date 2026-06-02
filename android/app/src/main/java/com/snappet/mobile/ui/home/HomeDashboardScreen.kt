@@ -1,5 +1,11 @@
 package com.snappet.mobile.ui.home
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +27,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +41,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import com.snappet.mobile.core.UsageRecord
 import com.snappet.mobile.ui.LocalAppContainer
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.SnappetAccents
+import com.snappet.mobile.ui.theme.SnappetMotion
+import com.snappet.mobile.ui.theme.gated
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -45,27 +59,37 @@ fun HomeDashboardScreen() {
     val core = LocalAppContainer.current.core
     val records by core.allFlow().collectAsState(initial = emptyList())
 
+    val reduceMotion = LocalReduceMotion.current
     Scaffold(topBar = { TopAppBar(title = { Text("Today") }) }) { padding ->
-        if (records.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No activity yet", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Open an app from the Apps tab — your activity shows up here.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
-                    )
+        AnimatedContent(
+            targetState = records.isEmpty(),
+            transitionSpec = {
+                fadeIn(gated(reduceMotion, SnappetMotion.quick())) togetherWith
+                    fadeOut(gated(reduceMotion, SnappetMotion.quick()))
+            },
+            label = "homeEmptyPopulated",
+        ) { isEmpty ->
+            if (isEmpty) {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No activity yet", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Open an app from the Apps tab — your activity shows up here.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
+                        )
+                    }
                 }
-            }
-        } else {
-            Column(
-                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                TodayRow(records)
-                WeekChart(records)
-                ActivityFeed(records)
+            } else {
+                Column(
+                    Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    TodayRow(records)
+                    WeekChart(records)
+                    ActivityFeed(records)
+                }
             }
         }
     }
@@ -85,15 +109,21 @@ private fun TodayRow(records: List<UsageRecord>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Today", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatTile("${today.size}", "actions", Color(0xFF0091FF), Modifier.weight(1f))
-            StatTile("${today.map { it.module }.toSet().size}", "apps used", Color(0xFF8E4EC6), Modifier.weight(1f))
-            StatTile(streak(records).toString(), "day streak", Color(0xFFF76808), Modifier.weight(1f))
+            StatTile(today.size, "actions", SnappetAccents.Azure, Modifier.weight(1f))
+            StatTile(today.map { it.module }.toSet().size, "apps used", SnappetAccents.Violet, Modifier.weight(1f))
+            StatTile(streak(records), "day streak", SnappetAccents.Ember, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun StatTile(value: String, label: String, tint: Color, modifier: Modifier = Modifier) {
+private fun StatTile(value: Int, label: String, tint: Color, modifier: Modifier = Modifier) {
+    val reduceMotion = LocalReduceMotion.current
+    val animated by animateIntAsState(
+        targetValue = value,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "statTile.$label",
+    )
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
@@ -101,7 +131,7 @@ private fun StatTile(value: String, label: String, tint: Color, modifier: Modifi
             .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = tint)
+        Text("$animated", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = tint)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -116,6 +146,14 @@ private fun WeekChart(records: List<UsageRecord>) {
     }
     val maxCount = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
     val barColor = MaterialTheme.colorScheme.primary
+    val reduceMotion = LocalReduceMotion.current
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val grow by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "weekChartGrow",
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Last 7 days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Canvas(Modifier.fillMaxWidth().height(160.dp)) {
@@ -123,7 +161,7 @@ private fun WeekChart(records: List<UsageRecord>) {
             val gap = size.width * 0.03f
             val barW = (size.width - gap * (n + 1)) / n
             counts.forEachIndexed { i, c ->
-                val h = size.height * (c.toFloat() / maxCount)
+                val h = size.height * (c.toFloat() / maxCount) * grow
                 val x = gap + i * (barW + gap)
                 drawRoundRect(
                     color = barColor,

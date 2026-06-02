@@ -40,17 +40,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.SnappetAccents
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
-private val Orange = Color(0xFFF76808)
+private val Orange = SnappetAccents.Ember
 
 private enum class WorkoutScreen { ROOT, EXERCISE_DETAIL, ROUTINE_DETAIL, PLAYER, SESSION_DETAIL }
 private enum class WorkoutSection(val title: String) {
