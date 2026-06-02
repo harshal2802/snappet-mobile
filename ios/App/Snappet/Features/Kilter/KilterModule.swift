@@ -5,6 +5,6 @@ import SwiftUI
 enum KilterModule {
     @MainActor static var module: AppModule {
         AppModule(id: "kilter", title: "Kilter Board", subtitle: "Browse & log board climbs",
-                  systemImage: "figure.climbing", tint: .orange, category: .fitness) { KilterRootView() }
+                  systemImage: "figure.climbing", tint: SnappetColor.moduleAccent("kilter"), category: .fitness) { KilterRootView() }
     }
 }

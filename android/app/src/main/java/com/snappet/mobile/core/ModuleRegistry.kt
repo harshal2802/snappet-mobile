@@ -37,7 +37,7 @@ object ModuleRegistry {
         AppModule(
             id = "kilter", title = "Kilter Board",
             subtitle = "Browse & log board climbs",
-            icon = Icons.Filled.Terrain, tint = Color(0xFFF76808),
+            icon = Icons.Filled.Terrain, tint = SnappetAccents.forModule("kilter"),
             category = ModuleCategory.FITNESS,
         ) { onExit -> com.snappet.mobile.feature.kilter.KilterRoot(onExit) },
         AppModule(
