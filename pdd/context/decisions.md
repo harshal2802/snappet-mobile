@@ -1166,3 +1166,28 @@ per-app `#Predicate` queries trivial. Four discrete `@AppStorage` keys avoid com
 each stepper directly. **Rules out**: comma-encoded preset string; SwiftData relationships;
 recomputing per-person from raw (pre-round-up) total. **Verified**: `xcodebuild build-for-testing`
 TEST BUILD SUCCEEDED (iPhone 17 Pro sim); `TipUITests` compiles (history + preset-edit flow).
+
+## 2026-06-03 — Kilter "Connect board" UX: timeout watchdog + name-based discovery (fix "stuck connecting")
+
+**Decision**: `KilterBoardController` (iOS + Android mirror) gets three changes that together fix the
+board getting wedged on "Connecting…". **(1) Discover by name, not service UUID.** Aurora-family
+boards (Kilter/Tension/…) advertise a local name but generally do **not** put their primary service
+UUID in the advertisement, so the old `scanForPeripherals(withServices:)` / `ScanFilter.setServiceUuid`
+never produced a `didDiscover` and the scan ran forever. We now scan unfiltered and match in a pure,
+unit-tested predicate `isLikelyBoard(name:advertisedServiceUUIDs:)` (name contains kilter/aurora/
+tension/grasshopper/decoy/soill, or the advertised services contain our UUID). **(2) Timeout
+watchdog.** CoreBluetooth's `connect(_:)` (and Android's `connectGatt`) never time out, so a missing,
+asleep, or wrong-GATT board hung the UI silently. A 12 s watchdog (Swift `Task`/`Task.sleep`; Android
+`Handler.postDelayed`) covers scan, connect, **and** service/characteristic discovery — on expiry it
+tears down the half-open connection and moves to `.failed(message)`. **(3) Distinct states + escape
+hatch.** Added `bluetoothOff` and `unauthorized` (was all folded into `unsupported`, which hid the
+whole section) and a `failed(String)` message; added `cancel()` so an in-flight attempt always has a
+Cancel affordance. The detail view now shows a spinner + Cancel while busy, a message + "Try again" on
+failure, an "Open Settings" deep link when permission is denied, and a Bluetooth-off note —
+`unsupported` (no radio / simulator) still hides the section. **Why**: the radio API gives no
+completion guarantee, so the controller must own its own deadlines and the UI must always offer a way
+out. Keeping discovery a pure function lets it run in `SnappetTests` (`KilterBoardMatchTests`) with no
+radio. **Rules out**: filtering the scan by service UUID; a single `unsupported` catch-all; trapping
+the user with no cancel. **Verified**: pure matcher unit-tested (iOS `KilterBoardMatchTests`). The
+live BLE path stays **device-unverified** per the repo's device-only rule — `xcodebuild`/Gradle build
++ on-board validation deferred to a macOS/Android run (this change was authored on Linux/cloud).
