@@ -83,12 +83,16 @@ class KilterBoardController(context: Context) {
     @SuppressLint("MissingPermission")
     fun disconnect() {
         clearTimeout()
+        // `gatt.close()` unregisters the callback, so `onConnectionStateChange(DISCONNECTED)` won't
+        // fire for a user-initiated disconnect — close the session here instead.
+        val wasConnected = isConnected
         gatt?.disconnect()
         gatt?.close()
         gatt = null
         writeChar = null
         writeQueue.clear()
         state = State.IDLE
+        if (wasConnected) onConnectionChange?.invoke(false)
     }
 
     /** Light the given holds (no-op unless connected). Stores them if not yet ready to flush. */

@@ -105,10 +105,15 @@ final class KilterBoardController: NSObject {
         wantsToConnect = false
         timeout?.cancel(); timeout = nil
         central?.stopScan()
+        // Capture before mutating: `cancelPeripheralConnection` triggers `didDisconnectPeripheral`
+        // only *after* this returns, by which point `isConnected` is already false — so the session
+        // is closed here, not there.
+        let wasConnected = isConnected
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
         peripheral = nil
         writeChar = nil
         state = .idle
+        if wasConnected { onConnectionChange?(false) }
     }
 
     /// Watchdog: fail the attempt (and tear down any half-open connection) if a step stalls.
@@ -230,6 +235,9 @@ extension KilterBoardController: CBCentralManagerDelegate {
             // An unexpected drop (error) while connected is worth surfacing; a clean disconnect isn't.
             if let error, wasConnected {
                 state = .failed("The board disconnected: \(error.localizedDescription)")
+            } else if case .failed = state {
+                // A watchdog timeout already set a failure message and *initiated* this disconnect
+                // (its own `cancelPeripheralConnection`). Don't wipe that message back to idle.
             } else {
                 state = .idle
             }
