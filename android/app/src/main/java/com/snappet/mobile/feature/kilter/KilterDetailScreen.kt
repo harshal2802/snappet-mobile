@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -230,25 +231,76 @@ fun KilterDetailScreen(
 
             if (stats.size > 1) GradeChart(stats, selectedAngle, catalog)
 
-            // Illuminate (Phase 2)
+            // Illuminate (Phase 2). Simulators / devices with no BLE radio never show the section.
             if (board.state != KilterBoardController.State.UNSUPPORTED) {
-                OutlinedButton(
-                    onClick = { if (board.isConnected) board.illuminate(holds) else requestConnect() },
-                    modifier = Modifier.fillMaxWidth().testTag("kilter.illuminate"),
-                ) {
-                    Icon(Icons.Filled.Lightbulb, contentDescription = null)
-                    Text(
-                        when {
-                            board.isConnected -> "  Light up this climb"
-                            board.state == KilterBoardController.State.SCANNING -> "  Searching for board…"
-                            board.state == KilterBoardController.State.CONNECTING -> "  Connecting…"
-                            board.state == KilterBoardController.State.FAILED -> "  Couldn't connect — retry"
-                            else -> "  Connect board"
+                when (board.state) {
+                    KilterBoardController.State.CONNECTED -> {
+                        OutlinedButton(
+                            onClick = { board.illuminate(holds) },
+                            modifier = Modifier.fillMaxWidth().testTag("kilter.illuminate"),
+                        ) {
+                            Icon(Icons.Filled.Lightbulb, contentDescription = null)
+                            Text("  Light up this climb")
                         }
-                    )
-                }
-                if (board.isConnected) {
-                    TextButton(onClick = { board.disconnect() }) { Text("Disconnect board") }
+                        TextButton(onClick = { board.disconnect() }) { Text("Disconnect board") }
+                    }
+
+                    KilterBoardController.State.SCANNING, KilterBoardController.State.CONNECTING -> {
+                        Row(
+                            Modifier.fillMaxWidth().testTag("kilter.board.connecting"),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                if (board.state == KilterBoardController.State.SCANNING) "  Searching for your board…"
+                                else "  Connecting…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = { board.cancel() },
+                            modifier = Modifier.testTag("kilter.board.cancel"),
+                        ) { Text("Cancel") }
+                    }
+
+                    KilterBoardController.State.FAILED -> {
+                        Text(
+                            board.failureMessage ?: "Couldn't connect to the board.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedButton(
+                            onClick = { requestConnect() },
+                            modifier = Modifier.fillMaxWidth().testTag("kilter.illuminate"),
+                        ) { Icon(Icons.Filled.Lightbulb, contentDescription = null); Text("  Try again") }
+                    }
+
+                    KilterBoardController.State.BLUETOOTH_OFF -> {
+                        Text(
+                            "Bluetooth is off. Turn it on to connect your board.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().testTag("kilter.board.bluetoothOff"),
+                        )
+                        OutlinedButton(
+                            onClick = { requestConnect() },
+                            modifier = Modifier.fillMaxWidth().testTag("kilter.illuminate"),
+                        ) { Icon(Icons.Filled.Lightbulb, contentDescription = null); Text("  Connect board") }
+                    }
+
+                    else -> {   // IDLE
+                        OutlinedButton(
+                            onClick = { requestConnect() },
+                            modifier = Modifier.fillMaxWidth().testTag("kilter.illuminate"),
+                        ) {
+                            Icon(Icons.Filled.Lightbulb, contentDescription = null)
+                            Text("  Connect board")
+                        }
+                    }
                 }
             }
 

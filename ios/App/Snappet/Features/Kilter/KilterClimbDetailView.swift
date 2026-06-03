@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import UIKit
 
 /// A single climb: the holds rendered on the board, an angle selector (difficulty is per-angle),
 /// grade / quality / ascents for that angle, logging (Flash / Sent / Project / Attempt), a Saved
@@ -15,6 +16,7 @@ struct KilterClimbDetailView: View {
 
     @Environment(SnappetCore.self) private var core
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
     @Query private var favorites: [KilterFavorite]
 
     private let catalog = KilterCatalog.shared
@@ -216,34 +218,78 @@ struct KilterClimbDetailView: View {
     }
 
     @ViewBuilder private var illuminateSection: some View {
+        // Simulators / devices with no BLE radio never show the section — there's nothing to connect to.
         if board.state != .unsupported {
-            VStack(spacing: 6) {
-                Button {
-                    if board.isConnected { board.illuminate(holds) } else { board.connect() }
-                } label: {
-                    Label(board.isConnected ? "Light up this climb" : connectLabel,
-                          systemImage: board.isConnected ? "lightbulb.fill" : "antenna.radiowaves.left.and.right")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("kilter.illuminate")
-                if board.isConnected {
+            VStack(spacing: 8) {
+                switch board.state {
+                case .connected:
+                    primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
+                        board.illuminate(holds)
+                    }
                     Button("Disconnect board") { board.disconnect() }
                         .font(.caption)
+                        .accessibilityIdentifier("kilter.board.disconnect")
+
+                case .scanning, .connecting:
+                    busyRow(board.state == .scanning ? "Searching for your board…" : "Connecting…")
+                    Button("Cancel") { board.cancel() }
+                        .font(.caption)
+                        .accessibilityIdentifier("kilter.board.cancel")
+
+                case .failed(let message):
+                    statusNote(message, systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                    primaryButton("Try again", systemImage: "arrow.clockwise") { board.connect() }
+
+                case .bluetoothOff:
+                    statusNote("Bluetooth is off. Turn it on in Control Center or Settings to connect your board.",
+                               systemImage: "wifi.slash", tint: .secondary)
+
+                case .unauthorized:
+                    statusNote("Snappet needs Bluetooth access to connect to your board.",
+                               systemImage: "lock.fill", tint: .secondary)
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    }
+                    .font(.caption)
+
+                default:   // .idle
+                    primaryButton("Connect board", systemImage: "antenna.radiowaves.left.and.right") {
+                        board.connect()
+                    }
                 }
             }
             .padding(.horizontal)
+            .animation(.snappy, value: board.state)
             .onAppear { wireSessionCapture() }
         }
     }
 
-    private var connectLabel: String {
-        switch board.state {
-        case .scanning: return "Searching for board…"
-        case .connecting: return "Connecting…"
-        case .failed(let message): return message
-        default: return "Connect board"
+    private func primaryButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage).frame(maxWidth: .infinity)
         }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("kilter.illuminate")
+    }
+
+    /// In-flight row: a spinner + status text, framed like the buttons it replaces.
+    private func busyRow(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView()
+            Text(text).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityIdentifier("kilter.board.connecting")
+    }
+
+    private func statusNote(_ text: String, systemImage: String, tint: Color) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .multilineTextAlignment(.leading)
     }
 
     // MARK: - Actions
