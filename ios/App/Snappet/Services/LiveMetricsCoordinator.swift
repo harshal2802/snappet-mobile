@@ -45,22 +45,29 @@ final class LiveMetricsCoordinator: MetricsSource {
          ble: BLEHeartRateMetricsSource = BLEHeartRateMetricsSource()) {
         self.watch = watch
         self.ble = ble
+        // If the user has used a band before, quietly reconnect it now (the Bluetooth permission
+        // was already granted that first time, so this won't prompt) — so by the time they start a
+        // workout the band is live, with zero taps. First-time users are unaffected: no remembered
+        // band → no central created → no prompt at launch.
+        ble.autoConnectIfRemembered()
     }
 
-    /// Discovered BLE bands, surfaced for the picker.
-    var discoveredBLE: [BLEDevice] { ble.discovered }
+    /// BLE bands to surface in the picker — discovered bands plus the remembered band when it
+    /// hasn't been rediscovered yet (so a previously-used band is always offered).
+    var discoveredBLE: [BLEDevice] { ble.displayDevices }
 
     /// The active source kind, resolving the automatic default when nothing is pinned.
     var activeKind: MetricsSourceKind {
         Self.resolve(selected: selectedSource,
                      watchUsable: watch.watchUsable,
-                     hasBLEDevice: ble.connectedName != nil)
+                     hasBLEDevice: ble.hasKnownBand)
     }
 
     /// Pure source-selection rule (unit-testable, no device):
     /// an explicit pick wins; otherwise prefer the Apple Watch when it's usable
-    /// (paired + app installed), else fall back to BLE when a band has been chosen.
-    /// With neither available we still default to the watch (its `.unavailable` state
+    /// (paired + app installed), else fall back to BLE when a band is **known** — chosen this
+    /// session or remembered from a previous one, so a returning band user lands on BLE with no
+    /// taps. With neither available we still default to the watch (its `.unavailable` state
     /// drives the UI's "no source" message — the same as A1's behavior).
     nonisolated static func resolve(selected: MetricsSourceKind?,
                                     watchUsable: Bool,

@@ -87,8 +87,110 @@ final class BLEHeartRateParserTests: XCTestCase {
     }
 }
 
+/// Auto-detection / "remember my band" rules — all pure, no CoreBluetooth, no device.
+/// These back the user-friendly band connection (auto-detect an already-connected band +
+/// reconnect the last-used one without re-picking).
+final class BLEBandAutoDetectTests: XCTestCase {
+
+    private func dev(_ n: Int, name: String? = nil, system: Bool = false) -> BLEDevice {
+        BLEDevice(id: UUID(uuidString: "00000000-0000-0000-0000-00000000000\(n)")!,
+                  name: name ?? "Band \(n)", isSystemConnected: system)
+    }
+
+    // MARK: - merge(systemConnected:scanned:)
+
+    func testMergePutsSystemConnectedFirstAndDedupes() {
+        let a = dev(1, system: true)
+        let b = dev(2)
+        let aScanned = dev(1)   // same id as `a` but found by scanning too
+        let merged = BLEBands.merge(systemConnected: [a], scanned: [aScanned, b])
+        XCTAssertEqual(merged.map(\.id), [a.id, b.id])     // no duplicate of id 1
+        XCTAssertTrue(merged[0].isSystemConnected)          // system-connected entry wins
+    }
+
+    func testMergeKeepsScannedOnlyDevices() {
+        let merged = BLEBands.merge(systemConnected: [], scanned: [dev(2), dev(3)])
+        XCTAssertEqual(merged.map(\.id), [dev(2).id, dev(3).id])
+    }
+
+    // MARK: - displayList(discovered:rememberedID:rememberedName:)
+
+    func testDisplayListSynthesizesUnseenRememberedBand() {
+        let list = BLEBands.displayList(discovered: [dev(2)],
+                                        rememberedID: dev(1).id,
+                                        rememberedName: "Polar H10")
+        XCTAssertEqual(list.first?.id, dev(1).id)           // remembered leads
+        XCTAssertEqual(list.first?.name, "Polar H10")
+        XCTAssertEqual(list.count, 2)
+    }
+
+    func testDisplayListDoesNotDuplicateVisibleRememberedBand() {
+        let list = BLEBands.displayList(discovered: [dev(1), dev(2)],
+                                        rememberedID: dev(1).id,
+                                        rememberedName: "Band 1")
+        XCTAssertEqual(list.map(\.id), [dev(1).id, dev(2).id])   // unchanged, no synthetic row
+    }
+
+    func testDisplayListWithNoMemoryIsJustDiscovered() {
+        let list = BLEBands.displayList(discovered: [dev(2)], rememberedID: nil, rememberedName: nil)
+        XCTAssertEqual(list.map(\.id), [dev(2).id])
+    }
+
+    // MARK: - bandToAutoConnect(remembered:visible:)
+
+    func testAutoConnectPrefersRememberedWhenVisible() {
+        let pick = BLEBands.bandToAutoConnect(remembered: dev(2).id,
+                                              visible: [dev(1, system: true), dev(2)])
+        XCTAssertEqual(pick?.id, dev(2).id)                 // remembered beats a system-connected other
+    }
+
+    func testAutoConnectUsesSingleSystemConnectedWhenNoMemory() {
+        let pick = BLEBands.bandToAutoConnect(remembered: nil, visible: [dev(1, system: true)])
+        XCTAssertEqual(pick?.id, dev(1).id)
+    }
+
+    func testAutoConnectAmbiguousReturnsNil() {
+        // Two system-connected bands and no memory → a real choice, leave it to the user.
+        let pick = BLEBands.bandToAutoConnect(remembered: nil,
+                                              visible: [dev(1, system: true), dev(2, system: true)])
+        XCTAssertNil(pick)
+    }
+
+    func testAutoConnectNoSystemConnectedScanOnlyReturnsNil() {
+        let pick = BLEBands.bandToAutoConnect(remembered: nil, visible: [dev(1), dev(2)])
+        XCTAssertNil(pick)
+    }
+
+    // MARK: - BandMemory round-trip (isolated UserDefaults suite)
+
+    @MainActor
+    func testBandMemoryRemembersAndForgets() throws {
+        let suite = "snappet.test.bandmemory.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let memory = BandMemory(defaults: defaults)
+        XCTAssertFalse(memory.hasRemembered)
+
+        let id = UUID()
+        memory.remember(id: id, name: "Wahoo TICKR")
+        XCTAssertTrue(memory.hasRemembered)
+        XCTAssertEqual(memory.rememberedID, id)
+        XCTAssertEqual(memory.rememberedName, "Wahoo TICKR")
+
+        // A fresh instance over the same suite sees the persisted band (survives "relaunch").
+        let reloaded = BandMemory(defaults: defaults)
+        XCTAssertEqual(reloaded.rememberedID, id)
+
+        memory.forget()
+        XCTAssertFalse(memory.hasRemembered)
+        XCTAssertNil(BandMemory(defaults: defaults).rememberedID)
+    }
+}
+
 /// Source-selection rule: explicit pick wins; else prefer the watch when usable; else BLE
-/// if a band was chosen; else default to the watch (its `.unavailable` drives the UI).
+/// if a band is known (chosen or remembered); else default to the watch (its `.unavailable`
+/// drives the UI).
 final class MetricsSourceSelectionTests: XCTestCase {
 
     func testPrefersWatchWhenUsable() {

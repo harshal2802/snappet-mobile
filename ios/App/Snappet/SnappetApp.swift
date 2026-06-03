@@ -4,7 +4,7 @@ import SwiftData
 @main
 struct SnappetApp: App {
     let container: ModelContainer
-    @State private var appModel = AppModel()
+    @State private var appModel: AppModel
 
     init() {
         // The shared on-device store for the whole suite (Snappet Core). A corrupt
@@ -22,6 +22,19 @@ struct SnappetApp: App {
         let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo
+        // Resolve the demo "Saved" band BEFORE building AppModel — its LiveMetricsCoordinator
+        // constructs the BLE source eagerly and reads BandMemory (UserDefaults) at that moment,
+        // so the picker only shows the "Saved" flow if the band is persisted first. A normal
+        // launch takes the else branch, which clears any leftover demo band (a no-op for real
+        // users, whose band id differs from the fixed demo id).
+        if seedStudioDemo {
+            StudioDemoSeed.seedRememberedBandIfRequested()
+        } else {
+            // Undo any leftover demo band so a normal launch (and the shared unit-test host on the
+            // simulator) starts clean — see clearRememberedBandSeedIfStale.
+            StudioDemoSeed.clearRememberedBandSeedIfStale()
+        }
+        _appModel = State(wrappedValue: AppModel())
         if freshStore {
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))

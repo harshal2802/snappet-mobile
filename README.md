@@ -42,7 +42,7 @@ and a heart-rate source picker (Apple Watch / BLE band).
 |---|---|---|
 | ![Live player](docs/screenshots/live-player.png) | ![History](docs/screenshots/workout-history.png) | ![HR summary](docs/screenshots/workout-summary.png) |
 
-| Workout settings | HR source picker | |
+| Workout settings | HR source picker (auto-detect · Saved band) | |
 |---|---|---|
 | ![Workout settings](docs/screenshots/workout-settings.png) | ![HR source picker](docs/screenshots/hr-source-picker.png) | |
 
@@ -74,7 +74,7 @@ same coral brand accent and per-module hues. Same screens as above, in dark.
 |---|---|---|
 | ![Live player (dark)](docs/screenshots/live-player-dark.png) | ![History (dark)](docs/screenshots/workout-history-dark.png) | ![HR summary (dark)](docs/screenshots/workout-summary-dark.png) |
 
-| Workout settings | HR source picker | |
+| Workout settings | HR source picker (auto-detect · Saved band) | |
 |---|---|---|
 | ![Workout settings (dark)](docs/screenshots/workout-settings-dark.png) | ![HR source picker (dark)](docs/screenshots/hr-source-picker-dark.png) | |
 

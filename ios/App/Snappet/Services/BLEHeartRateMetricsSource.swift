@@ -13,6 +13,24 @@ import CoreBluetooth
 struct BLEDevice: Identifiable, Equatable, Sendable {
     let id: UUID          // CBPeripheral.identifier
     let name: String
+    /// `true` when iOS already has this band connected at the system level (paired in
+    /// Settings / actively connected) — surfaced via `retrieveConnectedPeripherals` so it
+    /// appears **instantly**, without waiting for an advertising scan. These are the bands a
+    /// plain scan misses, which is why an already-connected band "wasn't auto-detected".
+    var isSystemConnected: Bool = false
+}
+
+/// Whether Bluetooth is usable for band detection, surfaced so the picker can show a clear,
+/// actionable message instead of an endless "Scanning…" spinner when it can't possibly work.
+enum BluetoothAvailability: Equatable, Sendable {
+    /// Not yet determined (central not created / state unknown).
+    case unknown
+    /// The user declined the Bluetooth permission — needs a trip to Settings.
+    case unauthorized
+    /// Bluetooth is switched off — needs Control Center / Settings.
+    case poweredOff
+    /// Powered on and authorized; scanning + retrieval are live.
+    case ready
 }
 
 /// Generic BLE heart-rate-band live-metrics source (RESEARCH.md §3.3, A3).
@@ -43,12 +61,53 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     private(set) var state: MetricsSourceState = .unavailable
     private(set) var isReachable = false
 
-    /// Peripherals discovered while scanning (deduplicated by identifier), for the picker.
+    /// Coarse Bluetooth usability, for the picker's empty-state messaging.
+    private(set) var availability: BluetoothAvailability = .unknown
+
+    /// Bands the picker should offer: the system-connected bands (`retrieveConnectedPeripherals`)
+    /// merged with the bands found by scanning, de-duplicated by identifier.
     private(set) var discovered: [BLEDevice] = []
+
+    /// Raw split halves of `discovered`, kept so a new scan hit / system refresh can re-merge
+    /// without losing the other half.
+    private var systemConnected: [BLEDevice] = []
+    private var scanned: [BLEDevice] = []
 
     /// Name of the connected band when known, else a generic label.
     private(set) var connectedName: String?
     var displayName: String { connectedName ?? "Heart-rate band" }
+
+    /// The stable identifier of the band currently targeted/connected — the one the picker
+    /// should mark active. Matching the UI on this (not `connectedName`) avoids mis-flagging
+    /// rows when two bands share a model name, or when a still-unseen "Saved" row's name
+    /// differs from the real peripheral's name. `nil` when no band is targeted.
+    var activeDeviceID: UUID? {
+        #if canImport(CoreBluetooth)
+        desiredPeripheralID
+        #else
+        nil
+        #endif
+    }
+
+    /// Persisted "my usual band" so it reconnects automatically next time (no re-picking).
+    private let memory: BandMemory
+    /// The remembered band, surfaced for the picker + the coordinator's source default.
+    var rememberedID: UUID? { memory.rememberedID }
+    var rememberedName: String? { memory.rememberedName }
+    var hasRememberedBand: Bool { memory.hasRemembered }
+
+    /// Whether there's a band to use **without** opening the picker — one is remembered, or one
+    /// is already targeted/connected. Drives the coordinator's automatic source default so a
+    /// returning band user lands on BLE with no taps.
+    var hasKnownBand: Bool { memory.hasRemembered || connectedName != nil }
+
+    /// The list the picker renders (discovered bands + the remembered band when it hasn't been
+    /// rediscovered yet). Pure, so it's the same on-device and in tests.
+    var displayDevices: [BLEDevice] {
+        BLEBands.displayList(discovered: discovered,
+                             rememberedID: memory.rememberedID,
+                             rememberedName: memory.rememberedName)
+    }
 
     /// Wall-clock session start, to re-base samples onto the engine's `HRSample.t` timeline
     /// (seconds since the session began) — same convention as the watch path.
@@ -68,12 +127,28 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     private var desiredPeripheralID: UUID?
     #endif
 
-    override init() {
+    init(memory: BandMemory = BandMemory()) {
+        self.memory = memory
         super.init()
         #if canImport(CoreBluetooth)
         // Lazily create the central on first use so we don't trigger the Bluetooth
         // permission prompt at app launch — only when the user opens the source picker /
-        // selects BLE. `prepare()` does that.
+        // selects BLE, or (once a band is remembered → permission already granted) when a
+        // session auto-reconnects. `prepare()` / `autoConnectIfRemembered()` do that.
+        // Pre-seed the desired band from memory so a session can reconnect it before the
+        // picker is ever opened.
+        desiredPeripheralID = memory.rememberedID
+        connectedName = memory.rememberedName
+        #endif
+    }
+
+    /// Prepare the central **only if** the user has a remembered band — so a returning user's
+    /// band reconnects automatically (the permission was already granted the first time), while
+    /// a first-time user still gets the deliberate, prompt-on-open flow. Safe to call at launch.
+    func autoConnectIfRemembered() {
+        #if canImport(CoreBluetooth)
+        guard memory.hasRemembered else { return }
+        prepare()
         #endif
     }
 
@@ -84,6 +159,8 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         if central == nil {
             central = CBCentralManager(delegate: self, queue: nil)
         } else {
+            // `startScanIfPossible` refreshes the system-connected list + tries an auto-connect
+            // before (re)starting the advertising scan.
             startScanIfPossible()
         }
         #endif
@@ -92,10 +169,10 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// Begin/resume scanning for `0x180D` advertisers (no-op if Bluetooth isn't ready).
     func startScan() {
         #if canImport(CoreBluetooth)
-        // Clear the previous session's discoveries so the picker doesn't show stale, possibly
-        // out-of-range bands. `prepare()` creates the central (scan begins on power-on) or, if it
-        // already exists, starts scanning now — so we don't double-invoke the scan.
-        discovered.removeAll()
+        // Clear the previous session's *scanned* discoveries so the picker doesn't show stale,
+        // out-of-range advertisers — but keep the system-connected bands, which are still valid.
+        scanned.removeAll()
+        rebuildDiscovered()
         prepare()
         #endif
     }
@@ -210,13 +287,62 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         }
     }
 
+    /// Forget the remembered band and disconnect it. The user is telling us "don't auto-use
+    /// this one anymore"; the picker offers it via swipe / a button.
+    func forget(_ device: BLEDevice) {
+        #if canImport(CoreBluetooth)
+        if desiredPeripheralID == device.id {
+            if let peripheral { central?.cancelPeripheralConnection(peripheral) }
+            peripheral = nil
+            desiredPeripheralID = nil
+            connectedName = nil
+            if state != .unavailable { state = .idle }
+        }
+        if memory.rememberedID == device.id { memory.forget() }
+        #endif
+    }
+
     // MARK: - Scan helper
 
     #if canImport(CoreBluetooth)
     private func startScanIfPossible() {
         guard let central, central.state == .poweredOn else { return }
         if state == .unavailable { state = .idle }
+        refreshSystemConnected()
         central.scanForPeripherals(withServices: [Self.heartRateServiceUUID], options: nil)
+    }
+
+    /// Ask iOS for bands it already has connected (paired in Settings / actively connected) and
+    /// fold them into the discovered list — these never advertise, so a plain scan misses them.
+    /// This is the core of "auto-detect the Bluetooth-connected fitness band".
+    private func refreshSystemConnected() {
+        guard let central else { return }
+        let peripherals = central.retrieveConnectedPeripherals(withServices: [Self.heartRateServiceUUID])
+        systemConnected = peripherals.map { BLEDevice(id: $0.identifier,
+                                                      name: $0.name ?? "Heart-rate band",
+                                                      isSystemConnected: true) }
+        rebuildDiscovered()
+        tryAutoConnect()
+    }
+
+    /// Re-merge the system-connected + scanned halves into the published `discovered` list.
+    private func rebuildDiscovered() {
+        discovered = BLEBands.merge(systemConnected: systemConnected, scanned: scanned)
+    }
+
+    /// Connect a band the user shouldn't have to tap: the remembered one, or the single band
+    /// already connected to iOS. No-op once we already have a target / live connection.
+    private func tryAutoConnect() {
+        guard desiredPeripheralID == nil || state == .idle || state == .unavailable else { return }
+        // The remembered band is the strongest signal even before it's in `discovered`.
+        if let id = memory.rememberedID,
+           let known = central?.retrievePeripherals(withIdentifiers: [id]).first {
+            connect(BLEDevice(id: id, name: memory.rememberedName ?? known.name ?? "Heart-rate band"))
+            return
+        }
+        if let pick = BLEBands.bandToAutoConnect(remembered: memory.rememberedID, visible: discovered) {
+            connect(pick)
+        }
     }
     #endif
 }
@@ -227,13 +353,25 @@ extension BLEHeartRateMetricsSource: CBCentralManagerDelegate {
     // observable state (mirrors how AppleWatchMetricsSource's WCSessionDelegate does it).
 
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        let poweredOn = central.state == .poweredOn
+        let cbState = central.state
+        let unauthorized = central.authorization == .denied || central.authorization == .restricted
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if poweredOn {
+            switch cbState {
+            case .poweredOn:
+                self.availability = .ready
                 if self.state == .unavailable { self.state = .idle }
                 self.startScanIfPossible()
-            } else {
+            case .unauthorized:
+                self.availability = .unauthorized
+                self.state = .unavailable
+                self.isReachable = false
+            case .poweredOff:
+                self.availability = .poweredOff
+                self.state = .unavailable
+                self.isReachable = false
+            default:
+                self.availability = unauthorized ? .unauthorized : .unknown
                 self.state = .unavailable
                 self.isReachable = false
             }
@@ -253,8 +391,9 @@ extension BLEHeartRateMetricsSource: CBCentralManagerDelegate {
         nonisolated(unsafe) let c = central
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if !self.discovered.contains(where: { $0.id == id }) {
-                self.discovered.append(BLEDevice(id: id, name: name))
+            if !self.scanned.contains(where: { $0.id == id }) {
+                self.scanned.append(BLEDevice(id: id, name: name))
+                self.rebuildDiscovered()
             }
             // If the user already asked to connect to this one, connect now that we see it.
             if self.desiredPeripheralID == id {
@@ -262,17 +401,28 @@ extension BLEHeartRateMetricsSource: CBCentralManagerDelegate {
                 p.delegate = self
                 self.state = .connecting
                 c.connect(p, options: nil)
+            } else {
+                // Otherwise see if this newly-seen band is one we should auto-connect (the
+                // remembered band waking up, or the only band around).
+                self.tryAutoConnect()
             }
         }
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         let name = peripheral.name
+        let id = peripheral.identifier
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.isReachable = true
             self.state = .connected
             if let name { self.connectedName = name }
+            // Remember this band so the next workout / launch reconnects it automatically
+            // (the one-time manual pick becomes a permanent convenience).
+            self.memory.remember(id: id, name: self.connectedName ?? "Heart-rate band")
+            // We have our band — stop the radio scan to save battery. The picker re-scans on
+            // appear if the user wants to switch bands.
+            self.central?.stopScan()
         }
         peripheral.discoverServices([Self.heartRateServiceUUID])
     }
