@@ -41,9 +41,11 @@ actually renders.
    no-source state) · 7. `07-rest-screen` (overall timer + overlay + rest countdown — captured only if the
    player surfaces a rest step) · 8. `08-after-finish` (dashboard) · 9. `09-history` · 10.
    `10-session-summary-hr` (the **headline** B2 chart + avg/max/min + time-in-zone bar — opens the *seeded*
-   session specifically) · 11. `11-media-and-highlight` (B1 tagged-media section empty state + the B4
-   "Generate highlight" entry, disabled on the sim) · 12. `12-settings` · 13. `13-hr-source-picker` (the A3
-   Apple Watch + BLE-scan sheet).
+   session specifically) · 11. `11-media-grouped-by-set` (the tagged-media gallery **grouped by set** + a
+   **General** bucket, from 4 seeded synthetic clips; "Generate highlight" now enabled) · 11b.
+   `11b-reassign-menu` (long-press a clip → the **Move to…** reassignment menu) · 12. `12-settings` · 13.
+   `13-hr-source-picker` (the A3 Apple Watch + BLE-scan sheet). Thumbnails render placeholders on the sim
+   (no Photos) — the grouping/reassignment UI is model-driven and renders in full.
 
 ## Constraints honored
 

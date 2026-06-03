@@ -41,7 +41,7 @@ struct SessionDetailView: View {
                 HeartRateSummarySection(series: session.hrSeries, stats: stats)
             }
 
-            SessionMediaSection(session: session, sport: sport, category: dominantCategory)
+            SessionMediaSection(session: session, resolver: resolver, sport: sport, category: dominantCategory)
 
             ForEach(session.exercises) { ex in
                 Section {
@@ -195,18 +195,22 @@ private struct ZoneBar: View {
     }
 }
 
-// MARK: - Tagged-media gallery (B1)
+// MARK: - Tagged-media gallery (B1 + per-set assignment)
 
-/// The "Media from this workout" section: a thumbnail grid ordered by `offsetSec`, an
-/// "Add photos/videos" PHPicker, a "Find media from this workout" auto-discovery action,
-/// and swipe-to-remove. Photos access is requested value-first (on first appear / on tap),
-/// reusing `SessionMediaService` (→ `PhotoLibraryService.requestAccess`).
+/// The "Media from this workout" section: clips **grouped by the set they were filmed during**
+/// (`<exercise> · Set n`) with a **General** bucket for anything not tied to a set, an
+/// "Add photos/videos" PHPicker, a "Find media from this workout" auto-discovery action, a
+/// per-clip **Move to…** reassignment menu (to fix a wrong auto-guess or pin to General), and
+/// remove. Photos access is requested value-first, reusing `SessionMediaService`.
 ///
-/// `.limited` access can't be scanned by time window, so auto-discovery is hidden and only
-/// the PHPicker is offered (the suite-wide limited-access fallback). The simulator has no
-/// Photos, so this renders its empty / "add media" state there.
+/// Placement is inferred from capture time by the pure `SessionMediaAssignment` (reconciled on
+/// appear / after discovery) — it only ever (re)places `auto` clips, so a user's manual move or
+/// General pin is sticky. `.limited` access can't be scanned by time window, so auto-discovery is
+/// hidden and only the PHPicker is offered. The simulator has no Photos, so thumbnails render their
+/// placeholder state there (the grouping/reassignment UI still works — it's driven by the model).
 private struct SessionMediaSection: View {
     let session: WorkoutSession
+    let resolver: ExerciseResolver
     /// Activity inputs for the B4 highlight engine (passed down from the detail view).
     let sport: SportTag?
     let category: ExerciseCategory?
@@ -221,7 +225,7 @@ private struct SessionMediaSection: View {
 
     @State private var showingPicker = false
     @State private var isDiscovering = false
-    @State private var didAutoDiscover = false
+    @State private var didAppear = false
     @State private var message: String?
     /// The video clip being edited in the B3 clip-editor sheet (videos only — photos aren't
     /// editable in the clip editor). `item:` sheet so the editor owns its own `NavigationStack`.
@@ -229,8 +233,9 @@ private struct SessionMediaSection: View {
     /// Presents the B4 highlight-generation sheet (clip selection → generate → preview).
     @State private var showingHighlight = false
 
-    init(session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
+    init(session: WorkoutSession, resolver: ExerciseResolver, sport: SportTag?, category: ExerciseCategory?) {
         self.session = session
+        self.resolver = resolver
         self.sport = sport
         self.category = category
         let sid = session.id
@@ -239,14 +244,59 @@ private struct SessionMediaSection: View {
     }
 
     /// "Generate highlight" is enabled only when the session has at least one tagged **video**
-    /// (the reel stitch is video-first; a photo-only session has nothing to cut). On the
-    /// simulator there's no media, so this stays disabled and the action can't run — keeping
-    /// `WorkoutWalkthroughTests` green (decisions.md 2026-06-01, B4).
+    /// (the reel stitch is video-first; a photo-only session has nothing to cut).
     private var hasVideo: Bool { media.contains { $0.kind == .video } }
 
     private let columns = [GridItem(.adaptive(minimum: 88), spacing: 8)]
 
     var body: some View {
+        // A header section with the actions + empty state, then one section per set group, then
+        // a General section. A `Group` of `Section`s flattens into the parent `List`.
+        Group {
+            actionsSection
+            ForEach(groups) { group in
+                Section {
+                    grid(for: group.items)
+                } header: {
+                    Text(group.title)
+                }
+            }
+        }
+        .sheet(isPresented: $showingPicker) {
+            MediaPicker { ids in addManual(ids) }
+        }
+        .sheet(item: $editingClip) { clip in
+            ClipEditorView(media: clip)
+        }
+        .sheet(isPresented: $showingHighlight) {
+            // Snapshot the @Models into plain values on the MainActor; the bridge + engine never
+            // touch SwiftData. The sheet owns its own NavigationStack (no nesting in the module's).
+            SessionHighlightView(
+                viewModel: SessionHighlightViewModel(
+                    app: app,
+                    hrSeries: session.hrSeries,
+                    clips: media.map {
+                        SessionHighlightInput.Clip(
+                            localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
+                            offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+                    },
+                    duration: session.duration,
+                    sport: sport,
+                    category: category))
+        }
+        .task {
+            // On first appear: silently auto-discover (only if full access already granted), then
+            // reconcile per-set assignments over whatever media we have (discovered or seeded).
+            guard !didAppear else { return }
+            didAppear = true
+            if app.sessionMedia.canAutoDiscover { await autoDiscover(prompt: false) }
+            reconcileAssignments()
+        }
+    }
+
+    // MARK: Sections
+
+    @ViewBuilder private var actionsSection: some View {
         Section {
             if media.isEmpty {
                 ContentUnavailableView {
@@ -255,29 +305,6 @@ private struct SessionMediaSection: View {
                     Text("Add photos and videos you took during this workout, or find them automatically.")
                 }
                 .frame(maxWidth: .infinity)
-            } else {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(media) { item in
-                        SessionMediaThumb(item: item)
-                            .onTapGesture {
-                                // A tagged video opens the B3 clip editor; photos aren't editable there.
-                                if item.kind == .video { editingClip = item }
-                            }
-                            .contextMenu {
-                                if item.kind == .video {
-                                    Button { editingClip = item } label: {
-                                        Label("Edit clip", systemImage: "slider.horizontal.3")
-                                    }
-                                }
-                                Button(role: .destructive) { remove(item) } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
-                            }
-                    }
-                }
-                .padding(.vertical, 4)
-                // Newly discovered / added thumbnails settle in gently (gated by Reduce Motion).
-                .snappetAnimation(SnappetMotion.standard, value: media.count)
             }
 
             if let message {
@@ -312,35 +339,133 @@ private struct SessionMediaSection: View {
         } header: {
             Text("Media from this workout")
         }
-        .sheet(isPresented: $showingPicker) {
-            MediaPicker { ids in addManual(ids) }
+    }
+
+    private func grid(for items: [SessionMedia]) -> some View {
+        LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(items) { item in
+                SessionMediaThumb(item: item)
+                    .onTapGesture {
+                        // A tagged video opens the B3 clip editor; photos aren't editable there.
+                        if item.kind == .video { editingClip = item }
+                    }
+                    .contextMenu { thumbMenu(for: item) }
+            }
         }
-        .sheet(item: $editingClip) { clip in
-            ClipEditorView(media: clip)
+        .padding(.vertical, 4)
+        // Newly discovered / added / reassigned thumbnails settle in gently (Reduce-Motion gated).
+        .snappetAnimation(SnappetMotion.standard, value: media.count)
+    }
+
+    @ViewBuilder private func thumbMenu(for item: SessionMedia) -> some View {
+        if item.kind == .video {
+            Button { editingClip = item } label: {
+                Label("Edit clip", systemImage: "slider.horizontal.3")
+            }
         }
-        .sheet(isPresented: $showingHighlight) {
-            // Snapshot the @Models into plain values on the MainActor; the bridge + engine never
-            // touch SwiftData. The sheet owns its own NavigationStack (no nesting in the module's).
-            SessionHighlightView(
-                viewModel: SessionHighlightViewModel(
-                    app: app,
-                    hrSeries: session.hrSeries,
-                    clips: media.map {
-                        SessionHighlightInput.Clip(
-                            localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
-                            offsetSec: $0.offsetSec, durationSec: $0.durationSec)
-                    },
-                    duration: session.duration,
-                    sport: sport,
-                    category: category))
+        Menu {
+            ForEach(moveTargets) { target in
+                Button(target.title) { reassign(item, to: target.exerciseID, set: target.setIndex) }
+            }
+            Divider()
+            Button("General") { reassign(item, to: nil, set: nil) }
+        } label: {
+            Label("Move to…", systemImage: "arrow.left.arrow.right")
         }
-        .task {
-            // Auto-discover once when the detail first appears, but only silently — never
-            // prompt unless the user already granted full access (value-first).
-            guard !didAutoDiscover else { return }
-            didAutoDiscover = true
-            if app.sessionMedia.canAutoDiscover { await autoDiscover(prompt: false) }
+        Button(role: .destructive) { remove(item) } label: {
+            Label("Remove", systemImage: "trash")
         }
+    }
+
+    // MARK: Grouping
+
+    /// A set/General bucket of clips, in session order (sets first, General last).
+    private struct MediaGroup: Identifiable {
+        let id: String
+        let title: String
+        let items: [SessionMedia]
+    }
+
+    /// A reassignment destination shown in the Move-to menu.
+    private struct MoveTarget: Identifiable {
+        let id: String
+        let title: String
+        let exerciseID: UUID?
+        let setIndex: Int?
+    }
+
+    private var groups: [MediaGroup] {
+        var result: [MediaGroup] = []
+        var placed = Set<UUID>()
+        for ex in session.exercises {
+            let name = resolver.name(for: ex.exerciseId, override: ex.displayName)
+            for i in ex.sets.indices {
+                let items = media.filter {
+                    !$0.isGeneral && $0.assignedExerciseID == ex.id && $0.assignedSetIndex == i
+                }
+                guard !items.isEmpty else { continue }
+                items.forEach { placed.insert($0.id) }
+                result.append(MediaGroup(id: "\(ex.id)-\(i)", title: "\(name) · Set \(i + 1)", items: items))
+            }
+            // Clips tied to the exercise but no specific set.
+            let exItems = media.filter {
+                !$0.isGeneral && $0.assignedExerciseID == ex.id && $0.assignedSetIndex == nil
+            }
+            if !exItems.isEmpty {
+                exItems.forEach { placed.insert($0.id) }
+                result.append(MediaGroup(id: "\(ex.id)-ex", title: name, items: exItems))
+            }
+        }
+        // Everything else (explicitly General, unassigned, or pointing at a missing exercise).
+        let general = media.filter { !placed.contains($0.id) }
+        if !general.isEmpty {
+            result.append(MediaGroup(id: "__general", title: "General", items: general))
+        }
+        return result
+    }
+
+    private var moveTargets: [MoveTarget] {
+        var targets: [MoveTarget] = []
+        for ex in session.exercises {
+            let name = resolver.name(for: ex.exerciseId, override: ex.displayName)
+            for i in ex.sets.indices {
+                targets.append(MoveTarget(id: "\(ex.id)-\(i)", title: "\(name) · Set \(i + 1)",
+                                          exerciseID: ex.id, setIndex: i))
+            }
+        }
+        return targets
+    }
+
+    private func reassign(_ item: SessionMedia, to exerciseID: UUID?, set setIndex: Int?) {
+        item.assignedExerciseID = exerciseID
+        item.assignedSetIndex = setIndex
+        // A move to a set is `manual`; a move to General is a sticky `general` pin. Either way the
+        // auto-assigner will leave it alone from now on.
+        item.assignmentSource = exerciseID == nil ? .general : .manual
+        try? context.save()
+    }
+
+    /// Re-place every `auto` clip from the set-completion timeline (idempotent — writes only on a
+    /// real change, so it can't loop with the `@Query`). Manual / General clips are untouched.
+    @MainActor
+    private func reconcileAssignments() {
+        let completions = SessionMediaAssignment.completions(from: session.exercises, startedAt: session.startedAt)
+        guard !completions.isEmpty else { return }
+        let autoRows = media.filter { $0.assignmentSource == .auto }
+        guard !autoRows.isEmpty else { return }
+        let assigned = SessionMediaAssignment.assign(
+            clips: autoRows.map { .init(id: $0.id, offsetSec: $0.offsetSec) },
+            completions: completions)
+        var changed = false
+        for row in autoRows {
+            let ref = assigned[row.id]
+            if row.assignedExerciseID != ref?.exerciseID || row.assignedSetIndex != ref?.setIndex {
+                row.assignedExerciseID = ref?.exerciseID
+                row.assignedSetIndex = ref?.setIndex
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
     }
 
     private var existingIdentifiers: Set<String> { Set(media.map(\.localIdentifier)) }
@@ -403,6 +528,8 @@ private struct SessionMediaSection: View {
                 addedManually: addedManually))
         }
         try? context.save()
+        // Place the newly added clips into their sets from capture time (they're `auto`).
+        reconcileAssignments()
     }
 
     private func remove(_ item: SessionMedia) {
@@ -450,6 +577,7 @@ private struct SessionMediaThumb: View {
         }
         .frame(width: side, height: side)
         .accessibilityElement()
+        .accessibilityIdentifier("mediaThumb")
         .accessibilityLabel("\(item.kind == .video ? "Video" : "Photo") at \(offsetBadge)")
         .task(id: item.localIdentifier) { await loadThumbnail() }
     }

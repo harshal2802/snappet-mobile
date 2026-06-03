@@ -15,10 +15,12 @@ import XCTest
 /// the real state):
 ///  - RENDERS: suite home, app library, dashboard, routines, routine detail / Start bar, the
 ///    live player (A2 overall-timer header + A4 live-metrics overlay no-source state), the rest
-///    screen, finish, History, the seeded session's **B2 HR summary**, the B1 media section's
-///    empty state + the B4 "Generate highlight" entry (disabled — no video on the sim), Settings,
-///    the A3 heart-rate source picker sheet.
-///  - DEVICE-ONLY (not shown here): a real live-HR overlay value, tagged media thumbnails, the
+///    screen, finish, History, the seeded session's **B2 HR summary**, the **media gallery grouped
+///    by set + a General bucket** (seeded synthetic clips) with the per-clip "Move to…"
+///    reassignment menu + the now-enabled "Generate highlight" entry, Settings, the A3 heart-rate
+///    source picker sheet.
+///  - DEVICE-ONLY (not shown here): a real live-HR overlay value, real media thumbnails (the
+///    seeded clips render their placeholder — the grouping/reassignment UI is model-driven), the
 ///    B3 clip editor, an actual generated highlight reel — they need a paired Apple Watch / BLE
 ///    band + a real Photos video. Expected; the seed showcases the HR summary + the live UI.
 final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
@@ -110,16 +112,42 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 "the seeded session's summary should render the B2 HR chart / Heart rate section")
             sleep(1); snap("10-session-summary-hr")
 
-            // 11 — The B1 tagged-media section + the B4 "Generate highlight" entry (empty/
-            // disabled on the sim — snap the real state). Scroll down to bring it into view.
+            // 11 — The tagged-media gallery, now grouped **by set** with a **General** bucket
+            // (seeded synthetic clips — thumbnails are placeholders on the sim, but the per-set
+            // grouping + reassignment UI is model-driven and renders fully). Scroll it into view.
             let summary = app.collectionViews.firstMatch.exists
                 ? app.collectionViews.firstMatch : app.tables.firstMatch
             if app.staticTexts["Media from this workout"].waitForExistence(timeout: 3) == false {
                 summary.swipeUp(); summary.swipeUp()
             }
-            snap("11-media-and-highlight")
-            // The Generate-highlight button exists but is disabled (no video on the sim).
+            // A per-set group header (e.g. "… · Set 1") and the General bucket should be present.
+            let setHeader = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "Set 1")).firstMatch
+            let generalHeader = app.staticTexts["General"]
+            for _ in 0..<3 where !(setHeader.exists && generalHeader.exists) { summary.swipeUp() }
+            XCTAssertTrue(setHeader.waitForExistence(timeout: 3) || generalHeader.exists,
+                          "the gallery should group clips by set and/or a General bucket")
+            snap("11-media-grouped-by-set")
+            // The Generate-highlight button now enables (the seed includes videos).
             _ = app.buttons["generateHighlight"].waitForExistence(timeout: 3)
+
+            // 11b — The per-clip "Move to…" reassignment menu (fix a wrong auto-guess / pin to
+            // General). Long-press a media thumbnail to surface the context menu. The thumb is an
+            // accessibility element labelled "<kind> at +Ns"; it surfaces as an otherElement /
+            // image / cell, so try each. Best-effort: snap the menu if it opens, else snap the
+            // gallery state (never flakes the run).
+            if let thumb = firstMediaThumb() {
+                thumb.press(forDuration: 1.1)
+                if app.buttons["Move to…"].waitForExistence(timeout: 3) {
+                    snap("11b-reassign-menu")
+                    // Dismiss the context menu without changing anything.
+                    app.tap()
+                } else {
+                    snap("11b-reassign-menu-NOTSHOWN")
+                }
+            } else {
+                snap("11b-reassign-menu-NOTSHOWN")
+            }
 
             // Pop back to the section view for Settings.
             app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -166,6 +194,20 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
             if sheetMarker.waitForExistence(timeout: 4) { return true }
         }
         return false
+    }
+
+    /// A media thumbnail in the grouped gallery (accessibilityIdentifier "mediaThumb"). It can
+    /// surface as an otherElement / image / cell depending on layout, so try each. Returns the
+    /// first hittable match (or `nil` — the 11b snap is best-effort, never flakes the run).
+    private func firstMediaThumb() -> XCUIElement? {
+        let queries = [app.otherElements.matching(identifier: "mediaThumb"),
+                       app.images.matching(identifier: "mediaThumb"),
+                       app.cells.matching(identifier: "mediaThumb")]
+        for q in queries {
+            let el = q.firstMatch
+            if el.waitForExistence(timeout: 2), el.isHittable { return el }
+        }
+        return nil
     }
 
     // MARK: - Player driving

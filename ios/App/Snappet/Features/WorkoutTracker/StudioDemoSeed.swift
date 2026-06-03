@@ -44,14 +44,19 @@ enum StudioDemoSeed {
         let startedAt = Date(timeIntervalSinceNow: -(duration + 5 * 60))
         let completedAt = startedAt.addingTimeInterval(duration)
 
+        let exercises = demoExercises(startedAt: startedAt)
         let session = WorkoutSession(
             routineID: rid,
             routineName: routineName,
             startedAt: startedAt,
             completedAt: completedAt,
-            exercises: demoExercises(),
+            exercises: exercises,
             hrSeries: syntheticHRSeries(durationSec: duration, sampleEverySec: 3))
         context.insert(session)
+
+        // Per-set tagged media (synthetic — see seedMedia) so the grouped-by-set gallery, the
+        // General bucket, and the Move-to reassignment menu render on the simulator.
+        seedMedia(for: session, exercises: exercises, into: context)
 
         // A matching usage record so the Home dashboard / History stats look real.
         context.insert(UsageRecord(
@@ -96,28 +101,64 @@ enum StudioDemoSeed {
 
     /// A few logged exercises with completed sets, so the summary's per-exercise sections and the
     /// volume/sets stats render. Uses bundled exercise ids (see `exercises.json` / `StarterRoutines`).
+    /// Each set's `completedAt` is **spaced across the session** (seconds from `startedAt`) so the
+    /// per-set media assignment has a realistic completion timeline to place clips against.
     @MainActor
-    private static func demoExercises() -> [SessionExercise] {
-        func completed(reps: Int?, weight: Double?) -> SetLog {
-            SetLog(actualReps: reps, actualWeight: weight, weightUnit: .kg, completedAt: .now)
+    private static func demoExercises(startedAt: Date) -> [SessionExercise] {
+        func completed(reps: Int?, weight: Double?, at offset: Double) -> SetLog {
+            SetLog(actualReps: reps, actualWeight: weight, weightUnit: .kg,
+                   completedAt: startedAt.addingTimeInterval(offset))
         }
         return [
             SessionExercise(
                 exerciseId: "Bodyweight_Squat", targetSets: 3, targetReps: "12",
                 targetRestSeconds: 60, targetWeightUnit: .kg,
-                sets: [completed(reps: 12, weight: nil), completed(reps: 12, weight: nil),
-                       completed(reps: 10, weight: nil)]),
+                sets: [completed(reps: 12, weight: nil, at: 120), completed(reps: 12, weight: nil, at: 180),
+                       completed(reps: 10, weight: nil, at: 240)]),
             SessionExercise(
                 exerciseId: "Dumbbell_Bicep_Curl", targetSets: 3, targetReps: "10",
                 targetRestSeconds: 60, targetWeight: 12, targetWeightUnit: .kg,
-                sets: [completed(reps: 10, weight: 12), completed(reps: 10, weight: 12),
-                       completed(reps: 8, weight: 14)]),
+                sets: [completed(reps: 10, weight: 12, at: 600), completed(reps: 10, weight: 12, at: 660),
+                       completed(reps: 8, weight: 14, at: 720)]),
             SessionExercise(
                 exerciseId: "Plank", targetSets: 3, targetReps: "30s",
                 targetRestSeconds: 45, targetWeightUnit: .kg,
-                sets: [completed(reps: nil, weight: nil), completed(reps: nil, weight: nil),
-                       completed(reps: nil, weight: nil)]),
+                sets: [completed(reps: nil, weight: nil, at: 1200), completed(reps: nil, weight: nil, at: 1260),
+                       completed(reps: nil, weight: nil, at: 1320)]),
         ]
+    }
+
+    /// Seed four **synthetic** tagged clips for the demo session, placed by the real
+    /// `SessionMediaAssignment` over the (spaced) set-completion timeline so the seed exercises the
+    /// same logic the app reconciles to: a video in Squat·Set 1, a photo in Curl·Set 2, a video in
+    /// Plank·Set 2, and a post-workout photo in **General**. The `localIdentifier`s are synthetic —
+    /// they don't resolve to real PHAssets (the simulator has no Photos), so each thumbnail renders
+    /// its placeholder, but the grouping + reassignment UI (model-driven) renders in full. The video
+    /// clips also flip "Generate highlight" to its enabled state for the walkthrough.
+    @MainActor
+    private static func seedMedia(for session: WorkoutSession, exercises: [SessionExercise],
+                                  into context: ModelContext) {
+        struct Clip { let id: String; let kind: SessionMedia.Kind; let offset: Double; let duration: Double? }
+        let clips = [
+            Clip(id: "studio-demo-clip-1", kind: .video, offset: 100, duration: 9),
+            Clip(id: "studio-demo-photo-1", kind: .photo, offset: 640, duration: nil),
+            Clip(id: "studio-demo-clip-2", kind: .video, offset: 1240, duration: 12),
+            Clip(id: "studio-demo-photo-2", kind: .photo, offset: 1700, duration: nil),
+        ]
+        let rows = clips.map {
+            SessionMedia(sessionID: session.id, localIdentifier: $0.id, kind: $0.kind,
+                         offsetSec: $0.offset, durationSec: $0.duration, addedManually: false)
+        }
+        let completions = SessionMediaAssignment.completions(from: exercises, startedAt: session.startedAt)
+        let assigned = SessionMediaAssignment.assign(
+            clips: rows.map { .init(id: $0.id, offsetSec: $0.offsetSec) }, completions: completions)
+        for row in rows {
+            if let ref = assigned[row.id] {
+                row.assignedExerciseID = ref.exerciseID
+                row.assignedSetIndex = ref.setIndex
+            }
+            context.insert(row)
+        }
     }
 
     /// A deterministic, realistic HR curve over the session: a warm-up ramp, several work

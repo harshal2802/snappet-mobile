@@ -4,6 +4,55 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-03] Per-set media + full CapCut studio — direction set (design only, no code yet)
+
+**Decision**: Extend the live-workout-studio initiative with two user-requested capabilities, captured
+as a design review in [`pdd/prompts/features/live-workout-studio/DESIGN-full-studio.md`](../prompts/features/live-workout-studio/DESIGN-full-studio.md)
+(decomposed into a Track M + Track S prompt chain). Three forks were resolved by the user (2026-06-03):
+
+- **"Side" = each set**, with reassignment + a non-set **General** bucket. Media gets *set-scoped* on top
+  of session-scoped: additive `assignedExerciseID` / `assignedSetIndex` / `assignmentSourceRaw` on
+  `SessionMedia` (lightweight migration; existing rows fall into General). A set is referenced by
+  `(SessionExercise.id, setIndex)` — **not** a new `SetLog.id` — because `SetLog` is a positional Codable
+  value and a `Codable` default-UUID id mints fresh ids on each decode of old data until re-saved (a
+  silent-break migration hazard). Auto-assignment is a **pure, unit-tested** function
+  (`SessionMediaAssignment`, the `SessionHighlightInput`/`ClipEditGeometry` edge pattern): a clip is
+  assigned to the set whose `(prevCompletion, thisCompletion]` interval contains its offset; a rest-period
+  clip belongs to the set just completed. A `manual`/`general` provenance flag makes user choices sticky
+  against re-runs.
+- **Full CapCut parity** for the editor. The current single-`ClipEdit` editor **cannot** reach parity by
+  accretion; it's superseded by a `StudioProject` timeline document (multi-clip main track + overlay/audio
+  tracks + transitions + keyframes), a custom `StudioCompositor: AVVideoCompositing` (Core Image/Metal) for
+  filters/LUTs/transitions/masks, and an incremental-recomposition preview for smoothness. `B3`'s
+  single-clip behavior survives as the one-clip-project case. **GO, fully on-device** (AVFoundation + Core
+  Image + Vision + Speech), no backend — the only real risk is multi-clip+effects export/preview perf,
+  gated by an **S0 device profiling spike** before committing compositor depth.
+- **Capture = library auto-discover + PHPicker** (no in-app `AVCaptureSession` camera this round) — so the
+  set is *inferred* from capture time, which is exactly why M1 is a pure assignment algorithm with
+  manual-override.
+
+**Why**: closes the two real gaps the user hit — media is session-scoped (no per-set link) and the editor
+is single-clip — while reusing the proven non-destructive / pure-math-at-the-edge pipeline and keeping
+`HighlightEngine` untouched.
+
+**Rules out**: per-rep/per-exercise granularity (chose per-set); a `SetLog.id` FK this round; in-app camera
+capture this round; growing `ClipEdit` into a multi-clip model (a new `StudioProject` instead); any
+cloud/off-device render (unchanged hard constraint).
+
+**Implemented same day (Track M — per-set media)**: shipped `SessionMediaAssignment` (pure, Foundation-only)
++ additive `SessionMedia` assignment fields; rebuilt `SessionDetailView`'s gallery into per-set groups +
+a General bucket with a per-clip **Move to…** reassignment menu (sticky `manual`/`general`, reconciled on
+appear / after discovery); extended `StudioDemoSeed` with spaced per-set completions + 4 synthetic clips
+(3 sets + General) for the walkthrough. **Verified on the iPhone 17 sim**: full unit suite green incl. the
+new `SessionMediaAssignmentTests` (7 cases), **all 16 UI cases across 12 classes green** (incl. the studio
+walkthrough, which now captures the grouped gallery + the reassignment menu), `HighlightEngine` unchanged.
+A screenshot walkthrough video was produced (`docs/walkthroughs/per-set-media-studio-walkthrough.mp4`).
+
+**Still design-only / unproven (Track S — full CapCut studio)**: the `StudioProject` timeline, custom
+`StudioCompositor`, filters/transitions/keyframes/captions are **not** built — they're device-only and
+gated by the S0 profiling spike (can't be honestly sim-verified, so deliberately not faked in the
+walkthrough). That is the next executable step.
+
 ## [2026-06-03] BLE band connection — auto-detect already-connected bands + remember the last one
 
 **Decision**: Make Bluetooth heart-rate-band connection automatic instead of a manual "open the picker,
