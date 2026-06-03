@@ -4,6 +4,41 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-03] Full studio S1 shipped — multi-clip StudioProject + editor (sim-verified)
+
+**Decision**: Built Track S **S1** (the full CapCut-style studio's foundation) as verifiable layers,
+deliberately keeping the pixel pipeline honest:
+- **Pure, unit-tested core** (no device): `StudioProject` `@Model` (multi-clip timeline — TimelineClips
+  with trim/speed/crop/filter/Ken-Burns keyframes, transitions, overlays, audio tracks, canvas
+  aspect/background); `StudioGeometry` (timeline placement with transition overlaps, clip durations,
+  keyframe interpolation); `StudioProjectEditor` (snapshot edit ops) + a generic `UndoStack`. **31 unit
+  tests** (16 geometry + 15 editor/undo) — the two that initially failed caught a real reorder bug
+  (reindex was re-sorting by the stale `order`).
+- **Device-only render** (`StudioComposer`, build-verified only): generalizes `VideoStudio` to a
+  multi-clip composition (sequential trim+speed clips, per-clip orientation+crop on a shared canvas),
+  reused for preview + export.
+- **Editor UI** (`StudioEditorView` + VM): timeline (select/reorder/split/delete), per-clip
+  speed/filter/transition, aspect, text, undo/redo, Export → Share; opened from `SessionDetailView` over
+  the session's `StudioProject` (seeded from its video clips). Preview/export show a device-only
+  placeholder on the sim.
+
+**Why**: a multi-clip editor can't grow out of the single-clip `ClipEdit` by accretion — it needs a
+timeline document + a generalized composer. Making the edit model a value snapshot kept undo/redo and
+every edit op **pure and testable without a device**.
+
+**Verified**: iPhone 17 sim — the studio walkthrough opens the editor, renders the two seeded clips in
+the timeline, splits one, and undoes it (11c/11d frames); full unit + UI suites green. The UI test caught
+a real presentation bug (a `.fullScreenCover` on a Group-of-Sections inside a List never presents — moved
+it onto the launching Button).
+
+**Deferred (S2+, device-only, gated by the S0 profiling spike — NOT built)**: the custom
+`AVVideoCompositing` that actually *renders* filters/LUTs, transitions, keyframed overlay effects,
+captions, and masks; Ken-Burns photos; the audio mix. The `StudioProject` model already carries all of
+this intent — only the compositor pass is pending. **Rules out** writing that compositor blind: it can't
+be sim-verified, and device verification is itself blocked on Xcode signing setup (no Apple ID / profiles
+yet — `feat/live-workout-per-set-media` builds for the sim but a device install needs the team account
+added in Xcode).
+
 ## [2026-06-03] Per-set media + full CapCut studio — direction set (design only, no code yet)
 
 **Decision**: Extend the live-workout-studio initiative with two user-requested capabilities, captured
