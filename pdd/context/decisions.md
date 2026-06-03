@@ -4,6 +4,44 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-03] BLE band connection — auto-detect already-connected bands + remember the last one
+
+**Decision**: Make Bluetooth heart-rate-band connection automatic instead of a manual "open the picker,
+scan, tap the band every time" flow (user report: "it does not auto-detect a Bluetooth-connected fitness
+band; I had to manually do it"). Three changes, all routed through the existing `MetricsSource`/coordinator
+seam so the player / Live Activity / overlay are untouched:
+
+- **Auto-detect the already-connected band.** `BLEHeartRateMetricsSource` now calls
+  `central.retrieveConnectedPeripherals(withServices: [0x180D])` on power-on / picker-open, not just
+  `scanForPeripherals`. A band paired in iOS Settings (Polar/Wahoo/Garmin) is *connected but not
+  advertising*, so a plain scan never saw it — this is the root cause of "wasn't auto-detected". Those
+  bands now appear instantly, flagged `isSystemConnected`, and merge with scanned advertisers
+  (de-duplicated by identifier).
+- **Remember the last-used band.** New `BandMemory` (UserDefaults, on-device) persists the chosen
+  band's `CBPeripheral.identifier` + name. On the next launch the coordinator's init calls
+  `autoConnectIfRemembered()` — which *only* spins up the central when a band is already remembered (so
+  the Bluetooth permission was already granted and we never prompt at launch for a first-time user) — and
+  reconnects it silently; the radio scan stops on connect to save battery. The source-selection default
+  (`resolve`) now treats a *remembered* band as a known band, so a returning band-only user lands on BLE
+  with zero taps.
+- **Honest, actionable picker UI.** The picker shows a "Saved · reconnects automatically" tag, lists
+  system-connected bands, supports swipe-to-Forget, and — when Bluetooth is off / unauthorized
+  (`BluetoothAvailability`) — shows a message + a Settings jump instead of an endless "Scanning…" spinner.
+
+**Why**: the manual re-pick was the single biggest friction in the live-workout flow; the fix is pure
+CoreBluetooth ergonomics (retrieve-connected + a remembered identifier) with no new transport, no cloud,
+and no new HealthKit path.
+
+**Rules out**: a vendor cloud API (Fitbit/Google still ruled out, 2026-06-01); creating the central at
+launch for *all* users (would prompt for Bluetooth before any value is shown — gated on a remembered band
+instead); a SwiftData store for the band (a single identifier is a UserDefaults-sized fact).
+
+**Verified**: extended the pure XCTest suite (`BLEBandAutoDetectTests`) — merge/dedup, the remembered-row
+synthesis, the auto-connect rule (remembered → single system-connected → nil), and a `BandMemory`
+persist/forget round-trip over an isolated suite. **Build/sim + a physical-band connect are device-pending**
+(authored on a Linux box with no Xcode toolchain): `xcodebuild test` on the iOS 18 sim + a real band pass
+are owed at the merge gate, same honesty bar as A1/A3.
+
 ## [2026-06-02] Kilter Board mini-app — bundled read-only catalog, not a runtime sync
 
 **Decision**: Added a **Kilter Board** mini-app (iOS + Android) for browsing the Kilter climb catalog,
