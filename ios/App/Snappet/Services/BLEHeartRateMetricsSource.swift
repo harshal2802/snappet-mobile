@@ -196,6 +196,10 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         peripheral = nil
         desiredPeripheralID = device.id
         connectedName = device.name
+        // A deliberate pick re-opts-in: clear any Forget suppression so this band auto-connects
+        // again (and gets remembered on connect). No-op for the auto paths, which never pick a
+        // suppressed band.
+        memory.allowAutoConnect(id: device.id)
         guard let central else { prepare(); return }
         if let known = central.retrievePeripherals(withIdentifiers: [device.id]).first {
             peripheral = known
@@ -288,7 +292,10 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     }
 
     /// Forget the remembered band and disconnect it. The user is telling us "don't auto-use
-    /// this one anymore"; the picker offers it via swipe / a button.
+    /// this one anymore"; the picker offers it via swipe / a button. We also **suppress**
+    /// auto-connect for it (persisted) so the "single system-connected band → just use it" rule
+    /// can't silently reconnect + re-remember it next scan/launch — the case where the band stays
+    /// connected to iOS on its own (e.g. a Fitbit kept alive by its app). Re-tapping it re-opts-in.
     func forget(_ device: BLEDevice) {
         #if canImport(CoreBluetooth)
         if desiredPeripheralID == device.id {
@@ -298,7 +305,7 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
             connectedName = nil
             if state != .unavailable { state = .idle }
         }
-        if memory.rememberedID == device.id { memory.forget() }
+        memory.suppressAutoConnect(id: device.id)
         #endif
     }
 
@@ -334,13 +341,16 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// already connected to iOS. No-op once we already have a target / live connection.
     private func tryAutoConnect() {
         guard desiredPeripheralID == nil || state == .idle || state == .unavailable else { return }
-        // The remembered band is the strongest signal even before it's in `discovered`.
-        if let id = memory.rememberedID,
+        // The remembered band is the strongest signal even before it's in `discovered` — unless
+        // it's been Forgotten (suppressed), in which case we must not silently reconnect it.
+        if let id = memory.rememberedID, id != memory.suppressedID,
            let known = central?.retrievePeripherals(withIdentifiers: [id]).first {
             connect(BLEDevice(id: id, name: memory.rememberedName ?? known.name ?? "Heart-rate band"))
             return
         }
-        if let pick = BLEBands.bandToAutoConnect(remembered: memory.rememberedID, visible: discovered) {
+        if let pick = BLEBands.bandToAutoConnect(remembered: memory.rememberedID,
+                                                 suppressed: memory.suppressedID,
+                                                 visible: discovered) {
             connect(pick)
         }
     }
