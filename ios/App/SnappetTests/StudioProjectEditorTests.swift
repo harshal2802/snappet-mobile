@@ -76,7 +76,7 @@ final class StudioProjectEditorTests: XCTestCase {
         let a = video(0, trimStart: 0, trimEnd: 10, speed: 2)
         var s = empty(); s.clips = [a]
         s = StudioProjectEditor.splitClip(s, id: a.id, atOutputOffset: 2, sourceDuration: 10)
-        XCTAssertEqual(StudioGeometry.ordered(s.clips)[0].trimEnd, 4, accuracy: 1e-9)
+        XCTAssertEqual(StudioGeometry.ordered(s.clips)[0].trimEnd ?? -1, 4, accuracy: 1e-9)
     }
 
     func testDegenerateSplitIsNoOp() {

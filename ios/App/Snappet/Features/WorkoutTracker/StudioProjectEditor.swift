@@ -40,23 +40,21 @@ extension StudioProjectSnapshot {
 /// Clip `order` is kept contiguous (0…n-1) after structural edits so the timeline stays well-formed.
 enum StudioProjectEditor {
 
-    private static func reindexed(_ clips: [TimelineClip]) -> [TimelineClip] {
-        StudioGeometry.ordered(clips).enumerated().map { i, c in
-            var c = c; c.order = i; return c
-        }
+    /// Assign `order` from **array position** (the caller passes clips already in the desired
+    /// sequence). Must NOT re-sort — that would discard a move/split's new ordering.
+    private static func reindexed(_ clipsInOrder: [TimelineClip]) -> [TimelineClip] {
+        clipsInOrder.enumerated().map { i, c in var c = c; c.order = i; return c }
     }
 
     static func addClip(_ s: StudioProjectSnapshot, _ clip: TimelineClip) -> StudioProjectSnapshot {
         var s = s
-        var clip = clip
-        clip.order = s.clips.count
-        s.clips = reindexed(s.clips + [clip])
+        s.clips = reindexed(StudioGeometry.ordered(s.clips) + [clip])
         return s
     }
 
     static func removeClip(_ s: StudioProjectSnapshot, id: UUID) -> StudioProjectSnapshot {
         var s = s
-        s.clips = reindexed(s.clips.filter { $0.id != id })
+        s.clips = reindexed(StudioGeometry.ordered(s.clips).filter { $0.id != id })
         // Drop a transition that pointed at (after) the removed clip — it no longer has a successor.
         s.transitions = s.transitions.filter { $0.afterClipID != id }
         return s

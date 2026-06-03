@@ -163,6 +163,39 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 snap("11b-reassign-menu-NOTSHOWN")
             }
 
+            // 11c — The full multi-clip Studio (S1): open it over the session's video clips and
+            // exercise the timeline + an edit (split) + undo. The preview render is device-only, so
+            // on the sim the canvas shows its placeholder while the timeline + edits work on the
+            // model. Best-effort (the editor is reachable only when the session has videos).
+            // The "Open studio" button is in the actions section (above the grouped clips); steps
+            // 11/11b scrolled DOWN to General, so scroll back UP (swipeDown) to bring it into view.
+            let openStudio = app.buttons["openStudio"]
+            for _ in 0..<5 where !openStudio.exists { summary.swipeDown() }
+            if openStudio.waitForExistence(timeout: 3), openStudio.isEnabled {
+                openStudio.tap()
+                if app.buttons["studioExport"].waitForExistence(timeout: 6)
+                    || app.navigationBars["Studio"].waitForExistence(timeout: 1) {
+                    XCTAssertTrue(app.staticTexts["Preview renders on a device"].waitForExistence(timeout: 3)
+                                  || app.otherElements["studioPreview"].exists,
+                                  "the studio should show its preview canvas")
+                    let clipCard = app.buttons["studioClipCard"].firstMatch
+                    XCTAssertTrue(clipCard.waitForExistence(timeout: 3),
+                                  "the studio timeline should show clip cards from the session videos")
+                    snap("11c-studio")
+                    // Select the first clip and split it; undo should then enable.
+                    clipCard.tap()
+                    if app.buttons["studioSplit"].waitForExistence(timeout: 2) {
+                        app.buttons["studioSplit"].tap()
+                        XCTAssertTrue(app.buttons["studioUndo"].isEnabled, "undo enables after a split")
+                        snap("11d-studio-edit")
+                        app.buttons["studioUndo"].tap()    // undo the split
+                    }
+                    app.buttons["Done"].tap()
+                } else {
+                    snap("11c-studio-NOTREACHED")
+                }
+            }
+
             // Pop back to the section view for Settings.
             app.navigationBars.buttons.element(boundBy: 0).tap()
         } else {

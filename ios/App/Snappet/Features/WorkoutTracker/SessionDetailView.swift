@@ -232,6 +232,9 @@ private struct SessionMediaSection: View {
     @State private var editingClip: SessionMedia?
     /// Presents the B4 highlight-generation sheet (clip selection → generate → preview).
     @State private var showingHighlight = false
+    /// The full multi-clip studio (S1): the project being edited + its sheet presentation.
+    @State private var studioProject: StudioProject?
+    @State private var openingStudio = false
 
     init(session: WorkoutSession, resolver: ExerciseResolver, sport: SportTag?, category: ExerciseCategory?) {
         self.session = session
@@ -336,9 +339,48 @@ private struct SessionMediaSection: View {
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("generateHighlight")
+
+            // S1: the full multi-clip studio (CapCut-style editor) over the session's video clips.
+            // The cover is attached to the button itself (a stable hosting view) rather than the
+            // Group-of-Sections, which flattens into the List and can't host a presentation.
+            Button {
+                openStudio()
+            } label: {
+                Label("Open studio (multi-clip)", systemImage: "film.stack")
+            }
+            .disabled(!hasVideo)
+            .accessibilityIdentifier("openStudio")
+            .fullScreenCover(isPresented: $openingStudio) {
+                if let project = studioProject {
+                    StudioEditorView(project: project, context: context)
+                }
+            }
         } header: {
             Text("Media from this workout")
         }
+    }
+
+    /// Find or create the session's `StudioProject` (seeded from its video clips, in capture order)
+    /// and present the multi-clip studio editor.
+    private func openStudio() {
+        let sid = session.id
+        if let existing = try? context.fetch(
+            FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
+            studioProject = existing
+        } else {
+            let clips = media.filter { $0.kind == .video }
+                .sorted { $0.offsetSec < $1.offsetSec }
+                .enumerated()
+                .map { i, m in
+                    TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
+                                 isPhoto: false, order: i, trimEnd: m.durationSec)
+                }
+            let project = StudioProject(sessionID: sid, title: session.routineName, clips: clips)
+            context.insert(project)
+            try? context.save()
+            studioProject = project
+        }
+        openingStudio = true
     }
 
     private func grid(for items: [SessionMedia]) -> some View {
