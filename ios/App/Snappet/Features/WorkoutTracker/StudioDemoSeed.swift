@@ -62,6 +62,36 @@ enum StudioDemoSeed {
         try? context.save()
     }
 
+    /// A fixed identifier for the seeded "Saved" demo band so the picker frame is deterministic.
+    static let demoBandID = UUID(uuidString: "5712D0DE-B11D-0DEC-A57E-1234DEA0BA11")!
+    /// The friendly name shown for the seeded remembered band in the source picker.
+    static let demoBandName = "Polar H10"
+
+    /// Seed a **remembered** Bluetooth band so the A3 heart-rate source picker renders the new
+    /// "Saved · reconnects automatically" flow on the simulator — which has no CoreBluetooth, so a
+    /// live band can never appear there. Writes through the real `BandMemory` persistence path
+    /// (UserDefaults), gated by the same `-uiTestSeedStudioDemo` arg, so a normal launch never
+    /// reaches it. `displayList` then synthesises the Saved row even with an empty scan, and the
+    /// coordinator's default resolves to BLE — exactly the returning-band-user experience.
+    @MainActor
+    static func seedRememberedBandIfRequested() {
+        guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        BandMemory().remember(id: demoBandID, name: demoBandName)
+    }
+
+    /// Remove the seeded demo band on any launch **without** the seed arg. `BandMemory` lives in
+    /// `UserDefaults.standard`, which persists on a simulator across launches and is *shared* by
+    /// the unit-test host — so a prior seeded walkthrough run would otherwise leave the demo band
+    /// behind and flip `LiveMetricsCoordinator`'s default source, breaking the source-selection
+    /// unit tests. Scoped strictly to the fixed `demoBandID`, so a real user's remembered band is
+    /// never touched. No-op when the seed arg is present (that launch wants the band).
+    @MainActor
+    static func clearRememberedBandSeedIfStale() {
+        guard !ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        let memory = BandMemory()
+        if memory.rememberedID == demoBandID { memory.forget() }
+    }
+
     // MARK: - Synthetic data
 
     /// A few logged exercises with completed sets, so the summary's per-exercise sections and the

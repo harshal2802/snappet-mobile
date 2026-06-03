@@ -77,6 +77,18 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     private(set) var connectedName: String?
     var displayName: String { connectedName ?? "Heart-rate band" }
 
+    /// The stable identifier of the band currently targeted/connected — the one the picker
+    /// should mark active. Matching the UI on this (not `connectedName`) avoids mis-flagging
+    /// rows when two bands share a model name, or when a still-unseen "Saved" row's name
+    /// differs from the real peripheral's name. `nil` when no band is targeted.
+    var activeDeviceID: UUID? {
+        #if canImport(CoreBluetooth)
+        desiredPeripheralID
+        #else
+        nil
+        #endif
+    }
+
     /// Persisted "my usual band" so it reconnects automatically next time (no re-picking).
     private let memory: BandMemory
     /// The remembered band, surfaced for the picker + the coordinator's source default.

@@ -111,7 +111,7 @@ struct HeartRateSourcePicker: View {
     }
 
     private func bleRow(_ device: BLEDevice) -> some View {
-        let isActive = coordinator.activeKind == .ble && coordinator.ble.connectedName == device.name
+        let isActive = coordinator.activeKind == .ble && coordinator.ble.activeDeviceID == device.id
         return Button {
             coordinator.selectedSource = .ble
             coordinator.ble.connect(device)
@@ -164,7 +164,7 @@ struct HeartRateSourcePicker: View {
     /// The status line under a band row, combining its live connection state with whether it's
     /// the remembered ("Saved") band and/or one iOS already has connected.
     private func subtitle(for device: BLEDevice) -> String {
-        let isTarget = coordinator.ble.connectedName == device.name
+        let isTarget = coordinator.ble.activeDeviceID == device.id
         if isTarget {
             switch coordinator.ble.state {
             case .connecting: return "Connecting…"
