@@ -277,6 +277,12 @@ struct WorkoutPlayerView: View {
                     }
                     .font(.subheadline)
 
+                    // M3: attach a photo/video to *this set* right here in the session, and see the
+                    // clips already tagged to it. Keyed by exercise+set so the strip + its @Query
+                    // re-scope as the user advances.
+                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: setIndex)
+                        .id("set-media-\(ex.id)-\(setIndex)")
+
                     if let exercise, !exercise.instructions.isEmpty {
                         instructions(exercise)
                     }

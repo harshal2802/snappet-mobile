@@ -540,8 +540,9 @@ private struct SessionMediaSection: View {
 
 /// One thumbnail: loads a `PHImageManager` image for the asset, with an offset badge
 /// ("+Ns") and a play glyph for videos. Renders a placeholder where the asset is missing
-/// (e.g. on the simulator, which has no Photos library).
-private struct SessionMediaThumb: View {
+/// (e.g. on the simulator, which has no Photos library). Internal so the live player's
+/// per-set strip (M3) can reuse it.
+struct SessionMediaThumb: View {
     let item: SessionMedia
     @State private var image: UIImage?
 

@@ -82,6 +82,14 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                     || app.staticTexts["liveMetricsOverlay"].waitForExistence(timeout: 1),
                     "the player should show the A4 live-metrics overlay (no-source state)")
 
+                // 6b — M3: the per-set "attach clip to this set" affordance is reachable in the
+                // player (the PHPicker pick itself is device-only; the affordance renders anywhere).
+                let attach = app.buttons["attachClipToSet"]
+                if !attach.exists { app.swipeUp() }
+                XCTAssertTrue(attach.waitForExistence(timeout: 3),
+                    "the player should offer the M3 per-set media attach affordance")
+                snap("06b-attach-to-set")
+
                 // 7 — Drive a couple of sets to reach the rest screen (overall timer + overlay
                 // + rest countdown), then finish.
                 driveToRestThenFinish()
@@ -136,15 +144,21 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
             // accessibility element labelled "<kind> at +Ns"; it surfaces as an otherElement /
             // image / cell, so try each. Best-effort: snap the menu if it opens, else snap the
             // gallery state (never flakes the run).
-            if let thumb = firstMediaThumb() {
-                thumb.press(forDuration: 1.1)
-                if app.buttons["Move to…"].waitForExistence(timeout: 3) {
-                    snap("11b-reassign-menu")
-                    // Dismiss the context menu without changing anything.
-                    app.tap()
-                } else {
-                    snap("11b-reassign-menu-NOTSHOWN")
-                }
+            // A SwiftUI context menu via long-press is flaky in XCUITest, so retry a few times,
+            // pressing the thumb's centre coordinate (more reliable than element.press) and
+            // nudging the scroll between attempts to re-seat the layout.
+            var openedMenu = false
+            for attempt in 0..<3 {
+                guard let thumb = firstMediaThumb() else { break }
+                thumb.press(forDuration: 2.0)
+                if app.buttons["Move to…"].waitForExistence(timeout: 3) { openedMenu = true; break }
+                thumb.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 2.0)
+                if app.buttons["Move to…"].waitForExistence(timeout: 3) { openedMenu = true; break }
+                if attempt < 2 { summary.swipeUp() }
+            }
+            if openedMenu {
+                snap("11b-reassign-menu")
+                app.tap()   // dismiss the context menu without changing anything
             } else {
                 snap("11b-reassign-menu-NOTSHOWN")
             }
