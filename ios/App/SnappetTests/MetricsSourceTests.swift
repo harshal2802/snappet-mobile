@@ -161,6 +161,31 @@ final class BLEBandAutoDetectTests: XCTestCase {
         XCTAssertNil(pick)
     }
 
+    func testAutoConnectSkipsSuppressedLoneSystemBand() {
+        // The user Forgot the only system-connected band → it must NOT be auto-grabbed, even
+        // though it stays connected to iOS (the Fitbit "Forget doesn't stick" bug).
+        let pick = BLEBands.bandToAutoConnect(remembered: nil,
+                                              suppressed: dev(1).id,
+                                              visible: [dev(1, system: true)])
+        XCTAssertNil(pick)
+    }
+
+    func testAutoConnectUsesOtherSystemBandWhenOneSuppressed() {
+        // Forgetting one band shouldn't stop a *different* system-connected band from auto-using.
+        let pick = BLEBands.bandToAutoConnect(remembered: nil,
+                                              suppressed: dev(1).id,
+                                              visible: [dev(1, system: true), dev(2, system: true)])
+        XCTAssertEqual(pick?.id, dev(2).id)
+    }
+
+    func testAutoConnectSkipsSuppressedRememberedBand() {
+        // A remembered-but-Forgotten band must not reconnect via the remembered path either.
+        let pick = BLEBands.bandToAutoConnect(remembered: dev(1).id,
+                                              suppressed: dev(1).id,
+                                              visible: [dev(1, system: true)])
+        XCTAssertNil(pick)
+    }
+
     // MARK: - BandMemory round-trip (isolated UserDefaults suite)
 
     @MainActor
@@ -185,6 +210,32 @@ final class BLEBandAutoDetectTests: XCTestCase {
         memory.forget()
         XCTAssertFalse(memory.hasRemembered)
         XCTAssertNil(BandMemory(defaults: defaults).rememberedID)
+    }
+
+    @MainActor
+    func testSuppressAutoConnectSticksAndReVettedByAllow() throws {
+        let suite = "snappet.test.bandmemory.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let id = UUID()
+        let memory = BandMemory(defaults: defaults)
+        memory.remember(id: id, name: "Google Fitbit Air")
+
+        // Forget → no longer remembered, and suppressed so auto-connect skips it…
+        memory.suppressAutoConnect(id: id)
+        XCTAssertFalse(memory.hasRemembered)
+        XCTAssertEqual(memory.suppressedID, id)
+        // …and the suppression survives a "relaunch".
+        XCTAssertEqual(BandMemory(defaults: defaults).suppressedID, id)
+
+        // An explicit re-pick clears the suppression (re-opts-in).
+        memory.allowAutoConnect(id: id)
+        XCTAssertNil(memory.suppressedID)
+        // Forgetting a *different* band leaves this one's suppression alone.
+        memory.suppressAutoConnect(id: id)
+        memory.allowAutoConnect(id: UUID())
+        XCTAssertEqual(memory.suppressedID, id)
     }
 }
 

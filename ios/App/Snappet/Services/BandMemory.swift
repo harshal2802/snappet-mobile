@@ -10,6 +10,7 @@ final class BandMemory {
     private let defaults: UserDefaults
     private let idKey = "snappet.ble.rememberedBandID"
     private let nameKey = "snappet.ble.rememberedBandName"
+    private let suppressedKey = "snappet.ble.suppressedBandID"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
@@ -29,6 +30,16 @@ final class BandMemory {
     /// is still a deliberate, prompt-on-open action and later launches are automatic).
     var hasRemembered: Bool { rememberedID != nil }
 
+    /// A band the user explicitly **Forgot**: never auto-connect it — not even as the lone
+    /// system-connected band — until they pick it again. Without this, a band that stays
+    /// connected to iOS at the system level (e.g. a Fitbit kept alive by its own app) is
+    /// immediately re-grabbed by the "single system-connected band → just use it" rule and
+    /// re-remembered on connect, so Forget never sticks. Persisted so it survives relaunch.
+    var suppressedID: UUID? {
+        get { defaults.string(forKey: suppressedKey).flatMap(UUID.init(uuidString:)) }
+        set { defaults.set(newValue?.uuidString, forKey: suppressedKey) }
+    }
+
     func remember(id: UUID, name: String) {
         rememberedID = id
         rememberedName = name
@@ -37,6 +48,20 @@ final class BandMemory {
     func forget() {
         rememberedID = nil
         rememberedName = nil
+    }
+
+    /// Forget a band **and** suppress auto-connect for it until the user re-picks it. This is
+    /// what "swipe → Forget" should do: stop remembering it *and* stop the auto-connect rule
+    /// from silently reconnecting it next scan / launch.
+    func suppressAutoConnect(id: UUID) {
+        if rememberedID == id { forget() }
+        suppressedID = id
+    }
+
+    /// Re-enable auto-connect for a band the user just **explicitly chose** (tapped). Clears the
+    /// Forget suppression so a deliberate pick fully re-opts-in (and gets remembered on connect).
+    func allowAutoConnect(id: UUID) {
+        if suppressedID == id { suppressedID = nil }
     }
 }
 
@@ -79,11 +104,16 @@ enum BLEBands {
     ///   2. otherwise, if exactly one band is already connected to iOS, that one (the
     ///      "you clearly have one band, just use it" path);
     ///   3. otherwise `nil` — there's a genuine choice to make, so leave it to the user.
-    static func bandToAutoConnect(remembered: UUID?, visible: [BLEDevice]) -> BLEDevice? {
-        if let remembered, let match = visible.first(where: { $0.id == remembered }) {
+    /// A `suppressed` band (the user Forgot it) is excluded from **both** paths so Forget sticks
+    /// even when that band stays connected to iOS — otherwise rule 2 would instantly re-grab it.
+    static func bandToAutoConnect(remembered: UUID?,
+                                  suppressed: UUID? = nil,
+                                  visible: [BLEDevice]) -> BLEDevice? {
+        if let remembered, remembered != suppressed,
+           let match = visible.first(where: { $0.id == remembered }) {
             return match
         }
-        let systemConnected = visible.filter(\.isSystemConnected)
+        let systemConnected = visible.filter { $0.isSystemConnected && $0.id != suppressed }
         if systemConnected.count == 1 { return systemConnected[0] }
         return nil
     }

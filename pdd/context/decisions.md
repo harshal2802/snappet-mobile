@@ -38,9 +38,19 @@ instead); a SwiftData store for the band (a single identifier is a UserDefaults-
 
 **Verified**: extended the pure XCTest suite (`BLEBandAutoDetectTests`) — merge/dedup, the remembered-row
 synthesis, the auto-connect rule (remembered → single system-connected → nil), and a `BandMemory`
-persist/forget round-trip over an isolated suite. **Build/sim + a physical-band connect are device-pending**
-(authored on a Linux box with no Xcode toolchain): `xcodebuild test` on the iOS 18 sim + a real band pass
-are owed at the merge gate, same honesty bar as A1/A3.
+persist/forget round-trip over an isolated suite. **Now also verified on device (2026-06-03, iPhone 13
+Pro Max + a Google Fitbit Air, which — unlike most Fitbits — exposes the standard `0x180D`/`0x2A37` HR
+profile):** auto-detect with no manual scan, auto-connect + real live HR stream, cold-launch "Saved ·
+reconnects automatically" zero-tap reconnect, and the Bluetooth-off empty state all confirmed.
+
+**Follow-up fix (2026-06-03) — "Forget" must stick for a band iOS keeps connected on its own.** Device
+testing surfaced a real bug: a band that stays connected to iOS at the system level (a Fitbit, kept alive
+by its own app) was immediately re-grabbed by the "single system-connected band → just use it" rule right
+after the user swiped **Forget**, and re-remembered on connect — so Forget never stuck. Fix: `BandMemory`
+persists a **suppressed** band id; `forget` sets it (clearing remembered), `bandToAutoConnect` and the
+remembered-band auto-path **exclude** it, and an explicit tap (`connect`) clears it (re-opt-in). Covered by
+new `BLEBandAutoDetectTests` cases (suppressed lone band → nil; a different system band still auto-connects;
+suppression survives relaunch; allow clears it) and re-verified on device.
 
 ## [2026-06-02] Kilter Board mini-app — bundled read-only catalog, not a runtime sync
 
