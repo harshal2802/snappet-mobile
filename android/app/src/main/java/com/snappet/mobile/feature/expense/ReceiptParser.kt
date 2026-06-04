@@ -12,8 +12,11 @@ object ReceiptParser {
     data class ParsedReceipt(
         val items: List<ReceiptItem>,
         val discount: Double,
-        val tax: Double?,
-        val total: Double?,
+        val subtotal: Double? = null,
+        val tax: Double? = null,
+        val total: Double? = null,
+        /** Item count printed on the receipt (e.g. Costco "Items Sold: 51"), if found. */
+        val itemCount: Int? = null,
     )
 
     private val skipKeywords = listOf(
@@ -27,29 +30,48 @@ object ReceiptParser {
     fun parse(text: String): ParsedReceipt {
         val items = mutableListOf<ReceiptItem>()
         var discount = 0.0
+        var subtotal: Double? = null
         var tax: Double? = null
         var total: Double? = null
+        var itemCount: Int? = null
 
         for (rawLine in text.split('\n', '\r')) {
             val line = rawLine.trim()
             if (line.isEmpty()) continue
             val upper = line.uppercase()
 
+            // Item-count line carries a bare integer, not money, so handle it before the money guard.
+            if (upper.contains("ITEMS SOLD")) {
+                itemCount = lastInteger(line)
+                continue
+            }
+
             val money = lastMoney(line) ?: continue
 
-            // Discount / instant-savings rows (trailing minus) — credit, don't itemize.
+            // Discount / instant-savings rows (leading or trailing minus) — credit, don't itemize.
             if (money.isNegative) {
                 discount += money.value
                 continue
             }
 
-            // Summary / metadata rows: capture tax & grand total, never itemize.
+            // Summary / metadata rows: capture subtotal / tax / total, never itemize.
             if (skipKeywords.any { upper.contains(it) }) {
-                if (upper.contains("TAX") && !upper.contains("N/TAX")) {
-                    tax = money.value
+                if (upper.contains("SUBTOTAL")) {
+                    subtotal = money.value
+                } else if (upper.contains("TAX") && !upper.contains("N/TAX")) {
+                    // Authoritative "TOTAL TAX" wins; a plain "TAX" line is a fallback. Per-rate
+                    // "%" component lines and FSA-eligibility lines are ignored (review Bug 1).
+                    if (!upper.contains("FSA") && !upper.contains("%")) {
+                        if (upper.contains("TOTAL TAX")) {
+                            tax = money.value
+                        } else if (tax == null) {
+                            tax = money.value
+                        }
+                    }
                 } else if (upper.contains("TOTAL") &&
                     !upper.contains("SUBTOTAL") &&
                     !upper.contains("NUMBER") &&
+                    !upper.contains("FSA") &&
                     !upper.contains("BOB")
                 ) {
                     total = maxOf(total ?: 0.0, money.value)
@@ -62,7 +84,16 @@ object ReceiptParser {
             items.add(ReceiptItem(name, money.value))
         }
 
-        return ParsedReceipt(items, discount, tax, total)
+        return ParsedReceipt(items, discount, subtotal, tax, total, itemCount)
+    }
+
+    /** The last bare-integer token on a line (used for the "Items Sold" count). */
+    private fun lastInteger(line: String): Int? {
+        var found: Int? = null
+        for (token in line.split(' ', '\t').filter { it.isNotEmpty() }) {
+            if (token.all { it.isDigit() }) token.toIntOrNull()?.let { found = it }
+        }
+        return found
     }
 
     private data class Money(val value: Double, val isNegative: Boolean, val token: String)
@@ -79,9 +110,11 @@ object ReceiptParser {
         var t = token
         // Drop a trailing single tax-flag letter (Costco: "28.99E", "4.00-A").
         if (t.length > 1 && t.last().isLetter()) t = t.dropLast(1)
-        val isNegative = t.endsWith("-")
-        if (isNegative) t = t.dropLast(1)
         t = t.replace("$", "").replace(",", "")
+        // A minus may be trailing ("4.00-") or leading ("-4.00") depending on the printer.
+        var isNegative = false
+        if (t.endsWith("-")) { isNegative = true; t = t.dropLast(1) }
+        if (t.startsWith("-")) { isNegative = true; t = t.drop(1) }
 
         val dot = t.indexOf('.')
         if (dot < 0) return null

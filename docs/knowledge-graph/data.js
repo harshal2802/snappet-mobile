@@ -214,6 +214,8 @@ const nodes = [
     file: "ios/App/Snappet/Features/Expense/ReceiptSplit.swift", desc: "Pure, device-free receipt math: per-item assignment, proportional tax/discount, penny-perfect reconciliation (ReceiptSplit); plus a text parser that extracts items/tax/discount/total from receipt text (ReceiptParser). Ported 1:1 to Android (ReceiptSplit.kt / ReceiptParser.kt). Unit-tested on both.", tags: ["pure","split","ocr-text"] },
   { id: "expense-scan", label: "Receipt OCR", type: "service", group: "expense", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Services/ReceiptScanner.swift", desc: "On-device receipt OCR: iOS uses VisionKit document scanner + Vision text recognition (ReceiptScanner/ReceiptDocumentScanner); Android uses the camera + ML Kit text recognition (ReceiptScan.kt). Recognized text flows into the pure ReceiptParser.", tags: ["camera","ocr","device-only"] },
+  { id: "expense-validation", label: "ReceiptValidation", type: "model", group: "expense", category: "finance", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Expense/ReceiptValidation.swift", desc: "Pure cross-check of captured items vs the receipt's printed subtotal/tax/total/item-count: items − discount + tax = total, subtotal match, unassigned/negative-share/tax checks. Advisory banner (Balanced / Needs review / Doesn't add up), never blocks saving. Ported to Android (ReceiptValidation.kt). Unit-tested both.", tags: ["pure","validation","reconcile"] },
 
   // ═════════════════ MODULE: Budget ═════════════════
   { id: "m-budget", label: "Budget", type: "module", group: "budget", category: "finance", platform: "ios+android",
@@ -575,6 +577,8 @@ const links = [
   { source: "expense-newreceipt", target: "expense-receiptsplit", type: "feeds", label: "split + parse" },
   { source: "expense-newreceipt", target: "expense-scan", type: "feeds", label: "scan receipt" },
   { source: "expense-scan", target: "expense-receiptsplit", type: "feeds", label: "OCR text → parse" },
+  { source: "expense-newreceipt", target: "expense-validation", type: "feeds", label: "verify totals" },
+  { source: "expense-validation", target: "expense-receiptsplit", type: "feeds", label: "cross-check split" },
   { source: "expense-receiptdetail", target: "expense-receiptsplit", type: "feeds", label: "breakdown" },
   { source: "expense-group", target: "expense-receiptsplit", type: "feeds", label: "receipt balances" },
   { source: "expense-group", target: "expense-settlement", type: "present" },

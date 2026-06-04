@@ -59,6 +59,13 @@ fun NewReceiptSheet(
     var discountText by rememberSaveable { mutableStateOf(record?.discountAmount?.takeIf { it > 0 }?.let { formatAmount(it) } ?: "") }
     var showPaste by remember { mutableStateOf(false) }
 
+    // Totals read off the most recent scan/paste, so the validation banner can cross-check the
+    // edited items against what the receipt printed.
+    var detectedSubtotal by remember { mutableStateOf<Double?>(null) }
+    var detectedTax by remember { mutableStateOf<Double?>(null) }
+    var detectedTotal by remember { mutableStateOf<Double?>(null) }
+    var detectedItemCount by remember { mutableStateOf<Int?>(null) }
+
     val items = remember {
         mutableStateListOf<ItemEdit>().apply {
             record?.items?.forEach { add(ItemEdit(it.name, formatAmount(it.price), it.assignees)) }
@@ -69,12 +76,20 @@ fun NewReceiptSheet(
     val discount = discountText.toDoubleOrNull() ?: 0.0
     val cleaned = items.map { ReceiptItem(it.name.trim(), it.price, it.assignees.toList()) }.filter { it.price > 0 }
     val result = ReceiptSplit.compute(cleaned, tax, discount, participants)
+    val report = ReceiptValidation.validate(
+        result, detectedSubtotal, detectedTax, detectedTotal, detectedItemCount, cleaned.size,
+    )
+    val showValidation = detectedTotal != null || report.overall != ReceiptValidation.Status.PASS
 
     fun applyParsed(parsed: ReceiptParser.ParsedReceipt) {
         parsed.items.forEach { items.add(ItemEdit(it.name, formatAmount(it.price), participants)) }
         if (parsed.discount > 0) discountText = formatAmount(parsed.discount)
         parsed.tax?.let { taxText = formatAmount(it) }
         if (title.isBlank()) title = "Receipt"
+        detectedSubtotal = parsed.subtotal
+        detectedTax = parsed.tax
+        detectedTotal = parsed.total
+        detectedItemCount = parsed.itemCount
     }
 
     val scan = rememberReceiptScanner { text -> if (text.isNotBlank()) applyParsed(ReceiptParser.parse(text)) }
@@ -116,6 +131,10 @@ fun NewReceiptSheet(
                 Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.width(18.dp))
                 Text(" Paste")
             }
+        }
+
+        if (showValidation) {
+            ReceiptValidationBanner(report)
         }
 
         Text("Items (${items.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

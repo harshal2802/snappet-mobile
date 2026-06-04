@@ -4,6 +4,36 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Split Expenses — receipt parser fixes + total/discount validation
+
+**Decision**: From a deep review of the receipt PR, fix two parser bugs and add an advisory
+**validation** pass that reconciles the captured items against the receipt's printed totals.
+
+- **Bug 1 — tax mis-detection.** `ReceiptParser` set `tax = value` on *every* line containing "TAX",
+  so the **last** one won — on the real Costco receipt that's `FSA TAX = 1.64`, not `TOTAL TAX 14.01`.
+  Fix: tax now comes from the authoritative `TOTAL TAX` line (a bare `TAX` line is a fallback), and
+  per-rate `%` component lines and `FSA` lines are ignored; the grand-total scan also excludes `FSA`.
+- **Bug 2 — leading-minus discounts dropped.** `money()` only handled a trailing minus (`4.00-`); a
+  `-4.00` token failed the digit check and vanished. It now strips a leading **or** trailing `-`.
+- **Parser now also reads** `subtotal` and `itemCount` ("Items Sold: 51", handled before the money
+  guard since it's a bare integer) so validation has more to check against.
+- **`ReceiptValidation`** (pure, both platforms, unit-tested): builds a `Report` of independent checks
+  — items − discount + tax = total (the headline; `FAIL` on mismatch with the off-by amount),
+  subtotal match, tax-vs-detected, item-count, unassigned remainder, negative share. Surfaced as a
+  `ReceiptValidationBanner` (Balanced / Needs review / Doesn't add up) in `NewReceiptSheet` that
+  expands to the checklist; it **never blocks saving**. The detected totals are held in sheet state
+  from the last scan/paste — **not persisted** (no schema change this cut), so validation runs at
+  capture time where it matters; persisting a stored mismatch flag is a follow-up.
+
+**Why**: the split is only as trustworthy as the OCR, so the app should *show its work* and flag a
+bad read instead of silently producing a wrong per-person total. Keeping validation pure makes the
+reconciliation logic testable without a device. Scoped per the request to **bug-fixes + validation
+first** (Warehouse/Grocery profile only); typed receipts (restaurant/gas/pharmacy auto-detect) remain
+a planned follow-up — see `docs/wireframes/receipt-types-validation.svg`. **Rules out**: blocking save
+on a mismatch (advisory only); a new persisted column this cut; trusting the last TAX line.
+**Verified**: pure logic unit-tested off-device on both platforms (`ReceiptParserTests`/`Test`,
+`ReceiptValidationTests`/`Test`). UI banners stay device-unverified per the repo's build rule.
+
 ## [2026-06-04] Split Expenses — Android receipt parity + on-device camera OCR (both platforms)
 
 **Decision**: Mirror the iOS itemized-receipt feature to Android and add **on-device camera OCR** to

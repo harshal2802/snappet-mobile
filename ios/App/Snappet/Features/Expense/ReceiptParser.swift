@@ -1,16 +1,19 @@
 import Foundation
 
 /// Pure, device-free parser that turns pasted/scanned receipt text into line items plus
-/// the detected tax, discount and total. Heuristic by necessity — receipts vary wildly —
-/// but the rules are simple and unit-tested against a real Costco receipt:
+/// the detected subtotal, tax, discount, total and item count. Heuristic by necessity —
+/// receipts vary wildly — but the rules are simple and unit-tested against a real Costco
+/// receipt:
 ///
 ///  - A line item is a row ending in a money amount (e.g. `LIQUIDIV LLS  28.99 E`). The
 ///    last money token on the line is the price; leading item-codes (bare integers) and a
 ///    leading single-letter tax flag are stripped from the name.
-///  - A trailing-minus amount (`4.00-`) is an instant-savings/discount line and is summed
-///    into `discount` rather than added as an item.
-///  - Summary rows — SUBTOTAL / TAX / TOTAL / payment / membership lines — are not items;
-///    the tax and grand-total values are captured from them when present.
+///  - A minus amount — trailing (`4.00-`) or leading (`-4.00`) — is an instant-savings /
+///    discount line and is summed into `discount` rather than added as an item.
+///  - Summary rows — SUBTOTAL / TAX / TOTAL / payment / membership lines — are not items.
+///    Tax is taken from the authoritative `TOTAL TAX` line (falling back to a bare `TAX`
+///    line), ignoring per-rate `%` and `FSA` component lines; the grand total ignores
+///    `FSA`/`NUMBER` lines. The detected `subtotal`/`total`/`itemCount` feed `ReceiptValidation`.
 ///
 /// Kept free of SwiftUI/SwiftData so it runs in `SnappetTests` with no simulator.
 enum ReceiptParser {
@@ -18,8 +21,11 @@ enum ReceiptParser {
     struct ParsedReceipt: Equatable {
         var items: [ReceiptItem]
         var discount: Double
+        var subtotal: Double?
         var tax: Double?
         var total: Double?
+        /// Item count printed on the receipt (e.g. Costco "Items Sold: 51"), if found.
+        var itemCount: Int?
     }
 
     /// Keyword fragments that mark a line as a receipt summary / metadata row rather than a
@@ -35,30 +41,50 @@ enum ReceiptParser {
     static func parse(_ text: String) -> ParsedReceipt {
         var items: [ReceiptItem] = []
         var discount = 0.0
+        var subtotal: Double?
         var tax: Double?
         var total: Double?
+        var itemCount: Int?
 
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = String(rawLine).trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty else { continue }
             let upper = line.uppercased()
 
+            // Item-count line carries a bare integer, not a money amount, so handle it before
+            // the money guard (e.g. "TOTAL NUMBER OF ITEMS SOLD = 51", "Items Sold: 51").
+            if upper.contains("ITEMS SOLD") {
+                itemCount = lastInteger(in: line)
+                continue
+            }
+
             guard let money = lastMoney(in: line) else { continue }
 
-            // Discount / instant-savings rows (trailing minus) — credit, don't itemize.
+            // Discount / instant-savings rows (leading or trailing minus) — credit, don't itemize.
             if money.isNegative {
                 discount += money.value
                 continue
             }
 
-            // Summary / metadata rows: capture tax & grand total, never itemize.
+            // Summary / metadata rows: capture subtotal / tax / total, never itemize.
             if skipKeywords.contains(where: { upper.contains($0) }) {
-                // "TOTAL TAX 14.01" or a line that is just the tax.
-                if upper.contains("TAX") && !upper.contains("N/TAX") {
-                    tax = money.value
+                if upper.contains("SUBTOTAL") {
+                    subtotal = money.value
+                } else if upper.contains("TAX") && !upper.contains("N/TAX") {
+                    // Tax: take the authoritative grand "TOTAL TAX" line; otherwise a plain
+                    // "TAX" line only if we have nothing yet. Ignore per-rate "%" component
+                    // lines and FSA-eligibility lines (they would otherwise clobber the total).
+                    if !upper.contains("FSA") && !upper.contains("%") {
+                        if upper.contains("TOTAL TAX") {
+                            tax = money.value
+                        } else if tax == nil {
+                            tax = money.value
+                        }
+                    }
                 } else if upper.contains("TOTAL")
                             && !upper.contains("SUBTOTAL")
                             && !upper.contains("NUMBER")
+                            && !upper.contains("FSA")
                             && !upper.contains("BOB") {
                     // Prefer the largest total seen (the grand total, not a card line).
                     total = max(total ?? 0, money.value)
@@ -71,7 +97,17 @@ enum ReceiptParser {
             items.append(ReceiptItem(name: name, price: money.value))
         }
 
-        return ParsedReceipt(items: items, discount: discount, tax: tax, total: total)
+        return ParsedReceipt(items: items, discount: discount, subtotal: subtotal,
+                             tax: tax, total: total, itemCount: itemCount)
+    }
+
+    /// The last bare-integer token on a line (used for the "Items Sold" count).
+    private static func lastInteger(in line: String) -> Int? {
+        var found: Int?
+        for token in line.split(whereSeparator: { $0 == " " || $0 == "\t" }) {
+            if token.allSatisfy(\.isNumber), let value = Int(token) { found = value }
+        }
+        return found
     }
 
     // MARK: - Money scanning
@@ -92,10 +128,12 @@ enum ReceiptParser {
         // Drop a trailing single tax-flag letter (Costco appends A/B/E/F to amounts,
         // sometimes attached: "28.99E", "4.00-A").
         if let last = t.last, last.isLetter, t.count > 1 { t.removeLast() }
-        let isNegative = t.hasSuffix("-")
-        if isNegative { t.removeLast() }
         t = t.replacingOccurrences(of: "$", with: "")
              .replacingOccurrences(of: ",", with: "")
+        // A minus may be trailing ("4.00-") or leading ("-4.00") depending on the printer.
+        var isNegative = false
+        if t.hasSuffix("-") { isNegative = true; t.removeLast() }
+        if t.hasPrefix("-") { isNegative = true; t.removeFirst() }
         // Require an explicit two-decimal money shape so bare item-codes aren't prices.
         guard let dot = t.firstIndex(of: "."),
               t.distance(from: dot, to: t.endIndex) == 3,

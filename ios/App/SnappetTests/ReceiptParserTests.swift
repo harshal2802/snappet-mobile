@@ -58,6 +58,48 @@ final class ReceiptParserTests: XCTestCase {
         XCTAssertEqual(r.total ?? -1, 619.10, accuracy: 0.0001)
     }
 
+    // Regression: tax must come from the authoritative "TOTAL TAX" line, not the last TAX-bearing
+    // line (per-rate "% Tax" and "FSA TAX" lines would otherwise clobber it). See review Bug 1.
+    func testTaxPrefersTotalTaxIgnoringComponentAndFSALines() {
+        let text = """
+        SUBTOTAL 605.09
+        TAX 14.01
+        **** TOTAL 619.10
+        A 10.25% Tax 6.81
+        B 2.25% TAX 1.12
+        E 1.25% TAX 6.08
+        TOTAL TAX 14.01
+        FSA TAX = 1.64
+        FSA TOTAL = 17.63
+        """
+        let r = ReceiptParser.parse(text)
+        XCTAssertEqual(r.tax ?? -1, 14.01, accuracy: 0.0001, "must not be clobbered by % / FSA lines")
+        XCTAssertEqual(r.total ?? -1, 619.10, accuracy: 0.0001, "FSA TOTAL must not become the grand total")
+        XCTAssertEqual(r.subtotal ?? -1, 605.09, accuracy: 0.0001)
+    }
+
+    func testDetectsSubtotalAndItemCount() {
+        let text = """
+        SUBTOTAL 605.09
+        **** TOTAL 619.10
+        Items Sold: 51
+        """
+        let r = ReceiptParser.parse(text)
+        XCTAssertEqual(r.subtotal ?? -1, 605.09, accuracy: 0.0001)
+        XCTAssertEqual(r.itemCount, 51)
+    }
+
+    // Regression: a leading-minus amount ("-4.00") is a discount, not a dropped line. See Bug 2.
+    func testLeadingMinusIsADiscount() {
+        let text = """
+        APPLES 5.00
+        COUPON -4.00
+        """
+        let r = ReceiptParser.parse(text)
+        XCTAssertEqual(r.items.map(\.name), ["APPLES"])
+        XCTAssertEqual(r.discount, 4.00, accuracy: 0.0001)
+    }
+
     func testHandlesAttachedTaxFlagAndCommas() {
         let text = "100 BIG TICKET 1,234.50 A"
         let r = ReceiptParser.parse(text)

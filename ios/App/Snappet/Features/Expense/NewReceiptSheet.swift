@@ -24,6 +24,13 @@ struct NewReceiptSheet: View {
     @State private var showingPaste = false
     @State private var showingScanner = false
 
+    // Totals read off the most recent scan/paste, kept so `ReceiptValidation` can cross-check the
+    // edited items against what the receipt actually printed. Nil until something is parsed.
+    @State private var detectedSubtotal: Double?
+    @State private var detectedTax: Double?
+    @State private var detectedTotal: Double?
+    @State private var detectedItemCount: Int?
+
     init(group: ExpenseGroup, record: ExpenseRecord? = nil) {
         self.group = group
         self.record = record
@@ -43,11 +50,31 @@ struct NewReceiptSheet: View {
                              discountAmount: discountAmount, order: group.participants)
     }
 
+    /// Live cross-check of the current items against the scanned totals. Shown once a receipt
+    /// has been parsed (a total was detected) or whenever a check is failing/warning.
+    private var validation: ReceiptValidation.Report {
+        ReceiptValidation.validate(
+            result: result,
+            detectedSubtotal: detectedSubtotal,
+            detectedTax: detectedTax,
+            detectedTotal: detectedTotal,
+            detectedItemCount: detectedItemCount,
+            lineItemCount: items.filter { $0.price > 0 }.count
+        )
+    }
+
+    private var showValidation: Bool {
+        detectedTotal != nil || validation.overall != .pass
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 detailsSection
                 pasteSection
+                if showValidation {
+                    ReceiptValidationBanner(report: validation)
+                }
                 itemsSection
                 adjustmentsSection
                 ReceiptSummaryView(result: result, currency: currency)
@@ -178,6 +205,11 @@ struct NewReceiptSheet: View {
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             title = "Receipt"
         }
+        // Remember what the receipt printed so the validation banner can cross-check.
+        detectedSubtotal = parsed.subtotal
+        detectedTax = parsed.tax
+        detectedTotal = parsed.total
+        detectedItemCount = parsed.itemCount
     }
 
     private func save() {

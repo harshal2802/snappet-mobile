@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="900" viewBox="0 0 1640 900">
+<rect width="1640" height="900" fill="#FBFAF8"/>
+<text x="40" y="34" font-family="ui-sans-serif,Helvetica,Arial" font-size="20" fill="#1A1A1E" font-weight="700" text-anchor="start">Split Expenses — Receipt scan: types + validation  (wireframe)</text>
+<rect x="40" y="50" width="360" height="800" rx="26" fill="#FFFFFF" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="40" y="50" width="360" height="64" rx="26" fill="#FBFAF8" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="40" y="92" width="360" height="22" fill="#FBFAF8"/>
+<text x="62" y="86" font-family="ui-sans-serif,Helvetica,Arial" font-size="18" fill="#1A1A1E" font-weight="700" text-anchor="start">New Receipt</text>
+<text x="62" y="106" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">Step 1 · choose type & capture</text>
+<line x1="40" y1="114" x2="400" y2="114" stroke="#CFCDC8" stroke-width="2"/>
+<text x="62" y="150" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="700" text-anchor="start">RECEIPT TYPE</text>
+<rect x="62" y="162" width="84" height="30" rx="15" fill="#1592A6" stroke="#1592A6" stroke-width="1.3"/>
+<text x="104.0" y="182" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="600" text-anchor="middle">Auto ✓</text>
+<rect x="154" y="162" width="96" height="30" rx="15" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.3"/>
+<text x="202.0" y="182" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="600" text-anchor="middle">Grocery</text>
+<rect x="258" y="162" width="120" height="30" rx="15" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.3"/>
+<text x="318.0" y="182" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="600" text-anchor="middle">Restaurant</text>
+<rect x="62" y="200" width="96" height="30" rx="15" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.3"/>
+<text x="110.0" y="220" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="600" text-anchor="middle">Pharmacy</text>
+<rect x="166" y="200" width="64" height="30" rx="15" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.3"/>
+<text x="198.0" y="220" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="600" text-anchor="middle">Gas</text>
+<rect x="238" y="200" width="84" height="30" rx="15" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.3"/>
+<text x="280.0" y="220" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="600" text-anchor="middle">Retail</text>
+<rect x="330" y="200" width="48" height="30" rx="15" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.3"/>
+<text x="354.0" y="220" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="600" text-anchor="middle">…</text>
+<rect x="62" y="250" width="316" height="70" rx="14" fill="#1592A6" stroke="#1592A6" stroke-width="1.5"/>
+<text x="220" y="292" font-family="ui-sans-serif,Helvetica,Arial" font-size="15" fill="#FFFFFF" font-weight="700" text-anchor="middle">📷  Scan receipt with camera</text>
+<rect x="62" y="332" width="316" height="56" rx="14" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="220" y="366" font-family="ui-sans-serif,Helvetica,Arial" font-size="15" fill="#1592A6" font-weight="700" text-anchor="middle">📋  Paste receipt text</text>
+<text x="62" y="430" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">Auto picks a parser profile from the</text>
+<text x="62" y="448" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">scanned text; you can override the type.</text>
+<rect x="62" y="478" width="316" height="300" rx="14" fill="#FBFAF8" stroke="#E2E0DC" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="220" y="560" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#6B6A66" font-weight="normal" text-anchor="middle">camera / live preview</text>
+<text x="220" y="582" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="normal" text-anchor="middle">(VisionKit · ML Kit)</text>
+<rect x="420" y="50" width="360" height="800" rx="26" fill="#FFFFFF" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="420" y="50" width="360" height="64" rx="26" fill="#FBFAF8" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="420" y="92" width="360" height="22" fill="#FBFAF8"/>
+<text x="442" y="86" font-family="ui-sans-serif,Helvetica,Arial" font-size="18" fill="#1A1A1E" font-weight="700" text-anchor="start">Review — Costco</text>
+<text x="442" y="106" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">Step 2 · auto-detected, needs review</text>
+<line x1="420" y1="114" x2="780" y2="114" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="442" y="132" width="316" height="40" rx="12" fill="#EEF6F7" stroke="#1592A6" stroke-width="1.5"/>
+<text x="454" y="157" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1592A6" font-weight="700" text-anchor="start">Type: Warehouse / Grocery</text>
+<text x="746" y="157" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#1592A6" font-weight="600" text-anchor="end">Change ▾</text>
+<rect x="442" y="182" width="316" height="96" rx="12" fill="#FCF3E4" stroke="#C9821F" stroke-width="2"/>
+<text x="454" y="206" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#C9821F" font-weight="700" text-anchor="start">⚠  Needs review</text>
+<text x="454" y="228" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#1A1A1E" font-weight="normal" text-anchor="start">Items 622.59  −  Disc 17.50  +  Tax 14.01</text>
+<text x="454" y="248" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#1A1A1E" font-weight="normal" text-anchor="start">=  619.10      Receipt total: 619.10</text>
+<text x="454" y="268" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#C9821F" font-weight="normal" text-anchor="start">1 tax line ambiguous (FSA 1.64 ignored)</text>
+<text x="442" y="304" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="700" text-anchor="start">ITEMS (51)</text>
+<text x="444" y="337" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="start">LIQUIDIV LLS</text>
+<text x="756" y="337" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="end">28.99</text>
+<text x="444" y="353" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">Everyone</text>
+<line x1="442" y1="364" x2="758" y2="364" stroke="#E2E0DC" stroke-width="1"/>
+<text x="444" y="385" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="start">ORGAINA2</text>
+<text x="756" y="385" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="end">27.99</text>
+<text x="444" y="401" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">Everyone</text>
+<line x1="442" y1="412" x2="758" y2="412" stroke="#E2E0DC" stroke-width="1"/>
+<text x="444" y="433" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="start">OIKOS ZERO</text>
+<text x="756" y="433" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="end">13.99</text>
+<text x="444" y="449" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">Everyone</text>
+<line x1="442" y1="460" x2="758" y2="460" stroke="#E2E0DC" stroke-width="1"/>
+<text x="444" y="481" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="start">ROTISSERIE</text>
+<text x="756" y="481" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="end">4.99</text>
+<text x="444" y="497" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">Everyone</text>
+<line x1="442" y1="508" x2="758" y2="508" stroke="#E2E0DC" stroke-width="1"/>
+<text x="444" y="529" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="start">TILAPIA FLTS</text>
+<text x="756" y="529" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="end">19.29</text>
+<text x="444" y="545" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">Everyone</text>
+<line x1="442" y1="556" x2="758" y2="556" stroke="#E2E0DC" stroke-width="1"/>
+<rect x="442" y="570" width="150" height="34" rx="10" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="517" y="592" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#1592A6" font-weight="600" text-anchor="middle">+ Add item</text>
+<rect x="608" y="570" width="150" height="34" rx="10" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="683" y="592" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#C9821F" font-weight="600" text-anchor="middle">Fix tax</text>
+<rect x="800" y="50" width="360" height="800" rx="26" fill="#FFFFFF" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="800" y="50" width="360" height="64" rx="26" fill="#FBFAF8" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="800" y="92" width="360" height="22" fill="#FBFAF8"/>
+<text x="822" y="86" font-family="ui-sans-serif,Helvetica,Arial" font-size="18" fill="#1A1A1E" font-weight="700" text-anchor="start">Review — Costco</text>
+<text x="822" y="106" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">Step 3 · balanced → split</text>
+<line x1="800" y1="114" x2="1160" y2="114" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="822" y="132" width="316" height="58" rx="12" fill="#EAF6EE" stroke="#3F9D55" stroke-width="2"/>
+<text x="834" y="158" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#3F9D55" font-weight="700" text-anchor="start">✓  Balanced</text>
+<text x="834" y="180" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#1A1A1E" font-weight="normal" text-anchor="start">Matches receipt total  $619.10</text>
+<text x="822" y="216" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="700" text-anchor="start">TOTALS</text>
+<text x="824" y="238" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#6B6A66" font-weight="normal" text-anchor="start">Items subtotal</text>
+<text x="1136" y="238" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="end">622.59</text>
+<text x="824" y="260" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#6B6A66" font-weight="normal" text-anchor="start">Discount</text>
+<text x="1136" y="260" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#3F9D55" font-weight="normal" text-anchor="end">−17.50</text>
+<text x="824" y="282" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#6B6A66" font-weight="normal" text-anchor="start">Tax</text>
+<text x="1136" y="282" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="normal" text-anchor="end">14.01</text>
+<line x1="822" y1="312" x2="1138" y2="312" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="824" y="332" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="start">Total</text>
+<text x="1136" y="332" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="end">619.10</text>
+<text x="822" y="372" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="700" text-anchor="start">PER PERSON</text>
+<rect x="822" y="390" width="316" height="52" rx="12" fill="#FBFAF8" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="834" y="412" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="start">Alice</text>
+<text x="1126" y="412" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="end">226.41</text>
+<text x="834" y="430" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">items 221.8 · +5.1 tax · −0.5 d</text>
+<rect x="822" y="450" width="316" height="52" rx="12" fill="#FBFAF8" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="834" y="472" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="start">Bob</text>
+<text x="1126" y="472" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="end">181.55</text>
+<text x="834" y="490" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">items 177.9 · +4.1 tax</text>
+<rect x="822" y="510" width="316" height="52" rx="12" fill="#FBFAF8" stroke="#E2E0DC" stroke-width="1.5"/>
+<text x="834" y="532" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="start">Cara</text>
+<text x="1126" y="532" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#1A1A1E" font-weight="700" text-anchor="end">211.14</text>
+<text x="834" y="550" font-family="ui-sans-serif,Helvetica,Arial" font-size="10" fill="#6B6A66" font-weight="normal" text-anchor="start">items 206.9 · +4.8 tax</text>
+<rect x="822" y="576" width="316" height="40" rx="12" fill="#1592A6" stroke="#1592A6" stroke-width="1.5"/>
+<text x="980" y="601" font-family="ui-sans-serif,Helvetica,Arial" font-size="14" fill="#FFFFFF" font-weight="700" text-anchor="middle">Save receipt</text>
+<rect x="1180" y="50" width="360" height="800" rx="26" fill="#FFFFFF" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="1180" y="50" width="360" height="64" rx="26" fill="#FBFAF8" stroke="#CFCDC8" stroke-width="2"/>
+<rect x="1180" y="92" width="360" height="22" fill="#FBFAF8"/>
+<text x="1202" y="86" font-family="ui-sans-serif,Helvetica,Arial" font-size="18" fill="#1A1A1E" font-weight="700" text-anchor="start">Validation</text>
+<text x="1202" y="106" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">tap the banner to expand</text>
+<line x1="1180" y1="114" x2="1540" y2="114" stroke="#CFCDC8" stroke-width="2"/>
+<text x="1202" y="150" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="700" text-anchor="start">CHECKS</text>
+<rect x="1202" y="164" width="316" height="54" rx="12" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<circle cx="1224" cy="186" r="11" fill="#3F9D55"/>
+<text x="1224" y="191" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="700" text-anchor="middle">✓</text>
+<text x="1246" y="186" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="start">Items + tax − discount = total</text>
+<text x="1246" y="206" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="normal" text-anchor="start">619.10 = 619.10</text>
+<rect x="1202" y="228" width="316" height="54" rx="12" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<circle cx="1224" cy="250" r="11" fill="#3F9D55"/>
+<text x="1224" y="255" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="700" text-anchor="middle">✓</text>
+<text x="1246" y="250" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="start">Subtotal matches receipt</text>
+<text x="1246" y="270" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="normal" text-anchor="start">622.59 − 17.50 = 605.09</text>
+<rect x="1202" y="292" width="316" height="54" rx="12" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<circle cx="1224" cy="314" r="11" fill="#3F9D55"/>
+<text x="1224" y="319" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="700" text-anchor="middle">✓</text>
+<text x="1246" y="314" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="start">Item count</text>
+<text x="1246" y="334" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="normal" text-anchor="start">51 of 51 (from 'Items Sold')</text>
+<rect x="1202" y="356" width="316" height="54" rx="12" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<circle cx="1224" cy="378" r="11" fill="#C9821F"/>
+<text x="1224" y="383" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="700" text-anchor="middle">⚠</text>
+<text x="1246" y="378" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="start">Unassigned items</text>
+<text x="1246" y="398" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="normal" text-anchor="start">2 items · $12.40 — tap to assign</text>
+<rect x="1202" y="420" width="316" height="38" rx="12" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<circle cx="1224" cy="442" r="11" fill="#3F9D55"/>
+<text x="1224" y="447" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="700" text-anchor="middle">✓</text>
+<text x="1246" y="442" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="start">No negative shares</text>
+<rect x="1202" y="468" width="316" height="54" rx="12" fill="#FFFFFF" stroke="#E2E0DC" stroke-width="1.5"/>
+<circle cx="1224" cy="490" r="11" fill="#E5483D"/>
+<text x="1224" y="495" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#FFFFFF" font-weight="700" text-anchor="middle">✕</text>
+<text x="1246" y="490" font-family="ui-sans-serif,Helvetica,Arial" font-size="13" fill="#1A1A1E" font-weight="600" text-anchor="start">Tax line ambiguous</text>
+<text x="1246" y="510" font-family="ui-sans-serif,Helvetica,Arial" font-size="11" fill="#6B6A66" font-weight="normal" text-anchor="start">used TOTAL TAX, ignored FSA/%</text>
+<text x="1202" y="550" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">Validation is pure + unit-tested;</text>
+<text x="1202" y="568" font-family="ui-sans-serif,Helvetica,Arial" font-size="12" fill="#6B6A66" font-weight="normal" text-anchor="start">warnings never block saving.</text>
+</svg>
