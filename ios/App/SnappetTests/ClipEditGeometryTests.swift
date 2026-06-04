@@ -234,6 +234,26 @@ final class ClipEditGeometryTests: XCTestCase {
         XCTAssertEqual(back.y, 0.75, accuracy: 1e-6)
     }
 
+    func testPipRectCentersAndSizesByScale() {
+        let canvas = CGSize(width: 1000, height: 2000)
+        let r = G.pipRect(normalizedCenter: CGPoint(x: 0.5, y: 0.5), scale: 0.4, canvas: canvas)
+        XCTAssertEqual(r.width, 400, accuracy: 1e-6)
+        XCTAssertEqual(r.height, 800, accuracy: 1e-6)
+        XCTAssertEqual(r.midX, 500, accuracy: 1e-6)
+        XCTAssertEqual(r.midY, 1000, accuracy: 1e-6)
+    }
+
+    func testFillTransformAspectFillsIntoRect() {
+        // A 1000×1000 source filling a 400×800 rect → scale by max(400/1000, 800/1000)=0.8 (cover).
+        let t = G.fillTransform(sourceSize: CGSize(width: 1000, height: 1000),
+                                into: CGRect(x: 100, y: 200, width: 400, height: 800))
+        XCTAssertEqual(t.a, 0.8, accuracy: 1e-6)
+        XCTAssertEqual(t.d, 0.8, accuracy: 1e-6)
+        // centred: scaledW=800 → tx = 100 + (400-800)/2 = -100; scaledH=800 → ty = 200 + (800-800)/2 = 200.
+        XCTAssertEqual(t.tx, -100, accuracy: 1e-6)
+        XCTAssertEqual(t.ty, 200, accuracy: 1e-6)
+    }
+
     func testNormalizedPointClampsADragOffCanvas() {
         let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
         let n = G.normalizedPoint(fromPreview: CGPoint(x: 140, y: -30), in: rect)

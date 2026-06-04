@@ -266,13 +266,42 @@ final class StudioEditorViewModel {
 
     func selectOverlay(_ id: UUID?) { selectedOverlayID = id }
 
-    /// Commit a dragged overlay to its new normalized centre (`0…1`, top-left). No player rebuild.
+    /// Commit a dragged overlay to its new normalized centre (`0…1`, top-left). A `.video` (PiP)
+    /// overlay is in the playback composition, so it rebuilds; text/sticker don't (no rebuild).
     func setOverlayPosition(_ id: UUID, normalized: CGPoint) {
-        editOverlaysOnly { StudioProjectEditor.setOverlayPosition($0, id: id, position: normalized) }
+        let isVideo = overlays.first { $0.id == id }?.kind == .video
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.setOverlayPosition($0, id: id, position: normalized)
+        }
+        isVideo ? edit(t) : editOverlaysOnly(t)
+    }
+    /// Resize a PiP overlay's frame (fraction of canvas). Rebuilds (it's in the composition).
+    func setOverlayScale(_ id: UUID, _ scale: Double) {
+        edit { StudioProjectEditor.setOverlayScale($0, id: id, scale: scale) }
+    }
+
+    // MARK: Picture-in-picture (a second video composited over the main track)
+
+    /// Source clips available to drop in as a PiP (the session's main-track video clips).
+    var pipSources: [(id: UUID, label: String, localIdentifier: String)] {
+        clips.enumerated().compactMap { i, c in
+            c.isPhoto ? nil : (c.id, "Clip \(i + 1)", c.localIdentifier)
+        }
+    }
+    /// Add a picture-in-picture overlay from a source clip's `localIdentifier`, defaulting to a small
+    /// top-right frame spanning the whole timeline.
+    func addPiP(localIdentifier: String) {
+        let ov = OverlayItem(kind: .video, content: localIdentifier, startSec: 0,
+                             endSec: max(3, totalDuration),
+                             position: CGPoint(x: 0.72, y: 0.28), scale: 0.4)
+        edit { StudioProjectEditor.addOverlay($0, ov) }
+        selectedOverlayID = ov.id
     }
 
     func deleteOverlay(_ id: UUID) {
-        editOverlaysOnly { StudioProjectEditor.removeOverlay($0, id: id) }
+        let isVideo = overlays.first { $0.id == id }?.kind == .video
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = { StudioProjectEditor.removeOverlay($0, id: id) }
+        isVideo ? edit(t) : editOverlaysOnly(t)   // a PiP is in the composition → rebuild
         if selectedOverlayID == id { selectedOverlayID = nil }
     }
     func setOverlayOpacity(_ id: UUID, _ opacity: Double) {

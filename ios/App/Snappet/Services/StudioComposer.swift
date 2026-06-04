@@ -62,10 +62,15 @@ final class StudioComposer: Sendable {
                 resolved.append((clip, asset))
             }
         }
+        // Resolve picture-in-picture overlay sources (a second video, composited on top).
+        var videoOverlays: [(overlay: OverlayItem, asset: AVAsset)] = []
+        for ov in snapshot.overlays where ov.kind == .video {
+            if let asset = await avAsset(forLocalIdentifier: ov.content) { videoOverlays.append((ov, asset)) }
+        }
         return try await assemble(resolved: resolved, aspect: snapshot.aspect,
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
                                   overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
-                                  forPlayback: forPlayback)
+                                  videoOverlays: videoOverlays, forPlayback: forPlayback)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -77,24 +82,26 @@ final class StudioComposer: Sendable {
                   transitions: [StudioTransition] = [],
                   overlays: [OverlayItem] = [],
                   audioTracks: [AudioTrack] = [],
+                  videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
                   forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
         // Transitions need two overlapping tracks (separate path); the CIFilter handler composites
         // tracks itself so it can't combine with them. Use the transition path when a transition is
-        // set and NO clip has a filter. If both are present, fall through to the filter path —
-        // filters render and the transition is dropped (a graceful degradation; combining the two
-        // needs a custom AVVideoCompositing, deferred — decisions.md).
+        // set, NO clip has a filter, AND there's no PiP (PiP needs the instruction layer path). If
+        // both are present, fall through — filters/PiP render and the transition is dropped (graceful
+        // degradation; combining needs a custom AVVideoCompositing, deferred — decisions.md).
         if transitions.contains(where: { $0.kind != .none }),
-           !resolved.contains(where: { $0.clip.filter != .none }) {
+           !resolved.contains(where: { $0.clip.filter != .none }), videoOverlays.isEmpty {
             return try await assembleWithTransitions(
                 resolved: resolved, transitions: transitions, aspect: aspect,
                 sourceDurations: sourceDurations, overlays: overlays, forPlayback: forPlayback)
         }
         return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
                                              sourceDurations: sourceDurations, overlays: overlays,
-                                             audioTracks: audioTracks, forPlayback: forPlayback)
+                                             audioTracks: audioTracks, videoOverlays: videoOverlays,
+                                             forPlayback: forPlayback)
     }
 
     /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
@@ -104,6 +111,7 @@ final class StudioComposer: Sendable {
                                      sourceDurations: [UUID: Double],
                                      overlays: [OverlayItem],
                                      audioTracks: [AudioTrack] = [],
+                                     videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
                                      forPlayback: Bool) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         let composition = AVMutableComposition()
@@ -188,8 +196,9 @@ final class StudioComposer: Sendable {
 
         guard cursor > .zero, let canvas = renderSize else { throw ComposerError.noRenderableClips }
 
+        let hasPiP = !videoOverlays.isEmpty
         let videoComposition: AVMutableVideoComposition
-        if filterRanges.contains(where: { $0.filter != .none || ($0.adjust?.isNeutral == false) }) {
+        if !hasPiP, filterRanges.contains(where: { $0.filter != .none || ($0.adjust?.isNeutral == false) }) {
             // S2 — at least one clip has a colour filter or a manual adjust: composite through Core
             // Image. AVFoundation hands each frame to the handler as a CIImage; we aspect-fill it to
             // the canvas and apply the active clip's filter THEN its adjust. (This path supersedes the
@@ -218,12 +227,20 @@ final class StudioComposer: Sendable {
             // No filters: the transform/crop path. Build from the composition's own properties (so
             // color/format tags + a valid source-track mapping are present) rather than a bare
             // `AVMutableVideoComposition()`, which the on-device encoder rejects with -11838 (S0).
+            // Picture-in-picture: add a second video track per .video overlay BEFORE deriving the
+            // videoComposition (so its tracks are present), composited on top of the main track.
+            var pipLayerInstructions: [AVMutableVideoCompositionLayerInstruction] = []
+            for (ov, asset) in videoOverlays {
+                if let li = await insertPiPTrack(ov, asset: asset, into: composition, canvas: canvas) {
+                    pipLayerInstructions.append(li)
+                }
+            }
             videoComposition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
             videoComposition.renderSize = canvas
             videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
             let instruction = AVMutableVideoCompositionInstruction()
             instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-            instruction.layerInstructions = [layerInstruction]
+            instruction.layerInstructions = pipLayerInstructions + [layerInstruction]   // PiP on top
             videoComposition.instructions = [instruction]
             // S4: time-gated text overlays via Core Animation (nil when there are none). Combining
             // overlays with a colour filter is a follow-up (the filter path composites differently).
@@ -269,6 +286,42 @@ final class StudioComposer: Sendable {
             let mix = AVMutableAudioMix(); mix.inputParameters = mixParams; audioMix = mix
         }
         return (composition, videoComposition, audioMix)
+    }
+
+    /// Insert a **picture-in-picture** clip on its own video track and return its layer instruction
+    /// (aspect-filled into the PiP frame, oriented, time-gated to `[startSec, endSec]`). Returns nil if
+    /// the source has no video track. The PiP frame's vertical centre is flipped to the video
+    /// composition's bottom-left origin (matching the overlay `layerPoint` convention).
+    private func insertPiPTrack(_ ov: OverlayItem, asset: AVAsset, into composition: AVMutableComposition,
+                                canvas: CGSize) async -> AVMutableVideoCompositionLayerInstruction? {
+        guard let pv = try? await asset.loadTracks(withMediaType: .video).first,
+              let track = composition.addMutableTrack(
+                withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
+        let nat = (try? await pv.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
+        let pref = (try? await pv.load(.preferredTransform)) ?? .identity
+        let oriented = orientedSize(nat, transform: pref)
+        let srcDur = ((try? await asset.load(.duration))?.seconds) ?? 0
+        let winStart = max(0, ov.startSec)
+        let winEnd = max(winStart + 0.1, ov.endSec)
+        let insertDur = min(srcDur > 0 ? srcDur : (winEnd - winStart), winEnd - winStart)
+        guard insertDur > 0 else { return nil }
+        let at = CMTime(seconds: winStart, preferredTimescale: timescale)
+        if at > .zero { track.insertEmptyTimeRange(CMTimeRange(start: .zero, end: at)) }
+        do {
+            try track.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(seconds: insertDur, preferredTimescale: timescale)),
+                                      of: pv, at: at)
+        } catch { return nil }
+
+        let li = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+        let center = CGPoint(x: ov.normalizedX, y: 1 - ov.normalizedY)   // flip Y to bottom-left origin
+        let rect = ClipEditGeometry.pipRect(normalizedCenter: center, scale: ov.scale, canvas: canvas)
+        li.setTransform(pref.concatenating(ClipEditGeometry.fillTransform(sourceSize: oriented, into: rect)), at: .zero)
+        // Visible only within the window (opacity 0 outside).
+        let op = Float(min(1, max(0, ov.opacity == 0 ? 1 : ov.opacity)))
+        if at > .zero { li.setOpacity(0, at: .zero); li.setOpacity(op, at: at) } else { li.setOpacity(op, at: .zero) }
+        let endTime = CMTime(seconds: winEnd, preferredTimescale: timescale)
+        if endTime < composition.duration { li.setOpacity(0, at: endTime) }
+        return li
     }
 
     /// Resolve a music track's `sourceRef` (the filename the importer copied) to a URL in the app's

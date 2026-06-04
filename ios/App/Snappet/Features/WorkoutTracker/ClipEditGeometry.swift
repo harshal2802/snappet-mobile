@@ -191,6 +191,31 @@ enum ClipEditGeometry {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
+    // MARK: - Picture-in-picture rect + transform
+
+    /// The PiP frame in canvas pixels: a box of `scale` × the canvas, centred at the normalized
+    /// position (0…1, top-left). Clamped so it stays a sane size. Both the on-screen editing frame
+    /// and the composer transform derive from this, so what you place is what renders.
+    static func pipRect(normalizedCenter: CGPoint, scale: Double, canvas: CGSize) -> CGRect {
+        let s = min(1, max(0.1, scale))
+        let w = canvas.width * s
+        let h = canvas.height * s
+        let cx = min(max(normalizedCenter.x, 0), 1) * canvas.width
+        let cy = min(max(normalizedCenter.y, 0), 1) * canvas.height
+        return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
+    }
+
+    /// Affine transform that **aspect-fills** an oriented `sourceSize` into `rect` (centred, cropped to
+    /// the rect's aspect) — applied AFTER the track's `preferredTransform`. Used to place a PiP video.
+    static func fillTransform(sourceSize: CGSize, into rect: CGRect) -> CGAffineTransform {
+        let srcW = max(1, abs(sourceSize.width)), srcH = max(1, abs(sourceSize.height))
+        let scale = max(rect.width / srcW, rect.height / srcH)
+        let scaledW = srcW * scale, scaledH = srcH * scale
+        let tx = rect.minX + (rect.width - scaledW) / 2
+        let ty = rect.minY + (rect.height - scaledH) / 2
+        return CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: tx, ty: ty)
+    }
+
     // MARK: - Normalized overlay position → layer point
 
     /// Map a normalized overlay position (`x,y` in 0…1, **top-left origin** like SwiftUI) to a

@@ -65,6 +65,17 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(s.clips.first?.volume, 0)
     }
 
+    func testSetOverlayScaleClamps() {
+        let ov = OverlayItem(kind: .video, content: "pip-id")
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0.5)
+        XCTAssertEqual(s.overlays.first?.scale, 0.5)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 5)   // clamps to 1
+        XCTAssertEqual(s.overlays.first?.scale, 1)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0)   // clamps to 0.1
+        XCTAssertEqual(s.overlays.first?.scale, 0.1)
+    }
+
     func testOverlayOpacityKeyframesAddSortedAndReplaceSameTime() {
         let ov = OverlayItem(kind: .text, content: "A", endSec: 5)
         var s = empty(); s.overlays = [ov]

@@ -158,7 +158,9 @@ struct StudioTransition: Codable, Hashable, Sendable, Identifiable {
 /// same shape later). Visible while `startSec ≤ playhead ≤ endSec` (output time); position/opacity
 /// can be keyframed. Normalized position is the centre in 0…1 (top-left origin, SwiftUI-style).
 struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
-    enum Kind: String, Codable, Sendable { case text, sticker }
+    /// `text`/`sticker` are Core-Animation overlays (export-only render); `video` is a
+    /// **picture-in-picture** clip composited as a second video track (renders in preview + export).
+    enum Kind: String, Codable, Sendable { case text, sticker, video }
 
     var id: UUID
     var kindRaw: String

@@ -19,6 +19,7 @@ struct StudioEditorView: View {
     @State private var titleDraft = ""
     @State private var activeTool: StudioTool?
     @State private var importingMusic = false
+    @State private var choosingPiP = false
 
     init(project: StudioProject, context: ModelContext) {
         _vm = State(initialValue: StudioEditorViewModel(project: project, context: context))
@@ -61,6 +62,11 @@ struct StudioEditorView: View {
         .fileImporter(isPresented: $importingMusic, allowedContentTypes: [.audio]) { result in
             if case let .success(url) = result { vm.addMusic(from: url) }
         }
+        .confirmationDialog("Add picture-in-picture", isPresented: $choosingPiP, titleVisibility: .visible) {
+            ForEach(vm.pipSources, id: \.id) { src in
+                Button(src.label) { vm.addPiP(localIdentifier: src.localIdentifier) }
+            }
+        } message: { Text("Pick a clip to overlay on top of the video.") }
     }
 
     // MARK: Top bar
@@ -119,7 +125,8 @@ struct StudioEditorView: View {
             StudioOverlayCanvas(overlays: vm.overlays, ratio: vm.previewRatio,
                                 selectedID: vm.selectedOverlayID,
                                 onSelect: { vm.selectOverlay($0) },
-                                onMove: { vm.setOverlayPosition($0, normalized: $1) })
+                                onMove: { vm.setOverlayPosition($0, normalized: $1) },
+                                onScale: { vm.setOverlayScale($0, $1) })
             if let err = vm.previewError {
                 Text(err)
                     .font(.caption2).foregroundStyle(.yellow)
@@ -195,6 +202,8 @@ struct StudioEditorView: View {
                     .accessibilityIdentifier("studioAddText")
                 barButton(vm.musicTracks.isEmpty ? "Music" : "Music ✓", "music.note", action: { importingMusic = true })
                     .accessibilityIdentifier("studioAddMusic")
+                barButton("PiP", "rectangle.on.rectangle", enabled: !vm.pipSources.isEmpty) { choosingPiP = true }
+                    .accessibilityIdentifier("studioAddPiP")
                 barButton("Canvas", "aspectratio") { activeTool = .aspect }
                 barButton("Delete", "trash", enabled: hasClip, role: .destructive) { vm.deleteSelected() }
                     .accessibilityIdentifier("studioDelete")

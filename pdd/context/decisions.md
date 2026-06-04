@@ -12,7 +12,17 @@ or accidentally reverse them.
   (`timelineZoomOut/In`). Everything (offset, strip widths, ruler) reads `pps`, so the whole timeline
   zooms together.
 
-(PiP + HR sections appended as those land.)
+- **PiP video-over-video** — `OverlayItem.Kind.video` (content = a session clip's `localIdentifier`).
+  The composer adds a **second video track** per PiP, aspect-filled into a frame
+  (`ClipEditGeometry.pipRect` + `fillTransform`, Y flipped to the composition's bottom-left origin),
+  oriented, and **time-gated** via opacity (0 outside `[startSec, endSec]`). PiP forces the
+  **instruction path** (renders in preview AND export, unlike the export-only text/sticker tool) — so
+  with a PiP present, per-clip filters are dropped (degradation; transitions+PiP also deferred). The
+  WYSIWYG canvas renders a draggable + **pinchable** frame outline (the real PiP shows through from the
+  player); position/scale/delete of a `.video` overlay **rebuild** (it's in the composition), unlike
+  text/sticker. Add via the **PiP** action-bar button → pick a session clip.
+
+(HR section appended when it lands.)
 
 ## [2026-06-04] Studio editor → edits/CapCut layout (multi-phase redesign)
 

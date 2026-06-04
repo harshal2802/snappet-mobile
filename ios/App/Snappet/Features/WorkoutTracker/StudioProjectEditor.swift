@@ -116,6 +116,14 @@ enum StudioProjectEditor {
         return s
     }
 
+    /// Set an overlay's scale (PiP frame size as a fraction of the canvas), clamped 0.1…1.
+    static func setOverlayScale(_ s: StudioProjectSnapshot, id: UUID, scale: Double) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].scale = min(1, max(0.1, scale))
+        return s
+    }
+
     /// Set an overlay's base opacity (used when it has no opacity keyframes).
     static func setOverlayOpacity(_ s: StudioProjectSnapshot, id: UUID, opacity: Double) -> StudioProjectSnapshot {
         var s = s
