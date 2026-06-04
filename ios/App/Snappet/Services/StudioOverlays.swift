@@ -1,6 +1,7 @@
 import AVFoundation
 import QuartzCore
 import UIKit
+import SwiftUI
 
 /// Builds the Core Animation overlay layer tree for the studio's **text overlays** (S4), composited
 /// into export + preview via `AVVideoCompositionCoreAnimationTool` (the proven `VideoStudio` pattern).
@@ -12,10 +13,13 @@ import UIKit
 /// (keyframed) opacity are follow-ups; v1 is static, time-gated text.
 enum StudioOverlays {
 
-    static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double)
+    static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double,
+                                  hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil)
         -> AVVideoCompositionCoreAnimationTool? {
-        let visible = overlays.filter { !$0.content.isEmpty }
-        guard !visible.isEmpty, canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
+        // `.video` overlays are PiP video tracks (handled by the composer), NOT Core Animation layers.
+        let visible = overlays.filter { !$0.content.isEmpty && $0.kind != .video }
+        let hasHR = hrConfig != nil && hrSamples.count >= 2
+        guard (!visible.isEmpty || hasHR), canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
 
         let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: canvas)
         let videoLayer = CALayer(); videoLayer.frame = CGRect(origin: .zero, size: canvas)
@@ -28,9 +32,78 @@ enum StudioOverlays {
             applyVisibility(layer, overlay: overlay, totalDuration: totalDuration)
             overlayLayer.addSublayer(layer)
         }
+        if let hrConfig, hasHR {
+            overlayLayer.addSublayer(hrLayer(samples: hrSamples, config: hrConfig,
+                                             canvas: canvas, totalDuration: totalDuration))
+        }
         parent.addSublayer(videoLayer)
         parent.addSublayer(overlayLayer)
         return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
+    }
+
+    /// The export heart-rate chart (moving-playhead line): the whole session's HR polyline + a dot
+    /// animated along it in sync with the video time. Bottom-left origin (the animation tool's layer
+    /// space — same flip as `ClipEditGeometry.layerPoint`).
+    private static func hrLayer(samples: [HRPoint], config: HROverlayConfig,
+                                canvas: CGSize, totalDuration: Double) -> CALayer {
+        let chartW = max(60, canvas.width * config.scale)
+        let chartH = chartW * 0.36
+        let cx = config.normalizedX * canvas.width
+        let cy = canvas.height - config.normalizedY * canvas.height        // flip Y to bottom-left
+        let outer = CGRect(x: cx - chartW / 2, y: cy - chartH / 2, width: chartW, height: chartH)
+        let rect = outer.insetBy(dx: 6, dy: 6)
+
+        let container = CALayer(); container.frame = outer
+        let bg = CALayer(); bg.frame = container.bounds
+        bg.backgroundColor = UIColor.black.withAlphaComponent(0.35).cgColor; bg.cornerRadius = 8
+        container.addSublayer(bg)
+
+        let pts = HRChartGeometry.normalizedPoints(samples)
+        // bottom-left: y = n.y * height (n.y = 1 → top). Map into rect (local to container).
+        func local(_ n: CGPoint) -> CGPoint {
+            CGPoint(x: (rect.minX - outer.minX) + n.x * rect.width,
+                    y: (rect.minY - outer.minY) + n.y * rect.height)
+        }
+        let lineColor = config.zoneColored
+            ? UIColor(HeartRateZone.forBpm(averageBPM(samples)).color)
+            : uiColor(config.colorHex)
+
+        let path = CGMutablePath()
+        if let f = pts.first { path.move(to: local(f)); for q in pts.dropFirst() { path.addLine(to: local(q)) } }
+        let line = CAShapeLayer()
+        line.frame = container.bounds; line.path = path
+        line.strokeColor = lineColor.cgColor; line.fillColor = UIColor.clear.cgColor
+        line.lineWidth = 2; line.lineJoin = .round
+        container.addSublayer(line)
+
+        // The playhead dot, animated along the line over the whole timeline.
+        let dot = CALayer()
+        dot.bounds = CGRect(x: 0, y: 0, width: 9, height: 9); dot.cornerRadius = 4.5
+        dot.backgroundColor = UIColor.white.cgColor
+        let inner = CALayer(); inner.frame = CGRect(x: 2, y: 2, width: 5, height: 5)
+        inner.cornerRadius = 2.5; inner.backgroundColor = lineColor.cgColor
+        dot.addSublayer(inner)
+        if !pts.isEmpty {
+            let anim = CAKeyframeAnimation(keyPath: "position")
+            anim.values = pts.map { NSValue(cgPoint: local($0)) }
+            var keyTimes = pts.map { NSNumber(value: min(1, max(0, $0.x))) }
+            keyTimes[0] = 0; keyTimes[keyTimes.count - 1] = 1     // must span [0,1]
+            anim.keyTimes = keyTimes
+            anim.calculationMode = .linear
+            anim.beginTime = AVCoreAnimationBeginTimeAtZero
+            anim.duration = totalDuration
+            anim.isRemovedOnCompletion = false
+            anim.fillMode = .both
+            dot.position = local(pts[0])
+            dot.add(anim, forKey: "hrPlayhead")
+        }
+        container.addSublayer(dot)
+        return container
+    }
+
+    private static func averageBPM(_ samples: [HRPoint]) -> Double {
+        let v = samples.map(\.bpm).filter { $0 > 0 }
+        return v.isEmpty ? 0 : v.reduce(0, +) / Double(v.count)
     }
 
     /// A sticker overlay: an SF Symbol image (`content` = symbol name) tinted by `colorHex`, sized by

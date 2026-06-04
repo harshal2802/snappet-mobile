@@ -46,7 +46,7 @@ struct StudioEditorView: View {
         }
         .sheet(item: $activeTool) { tool in
             StudioToolSheet(tool: tool, vm: vm)
-                .presentationDetents([tool == .adjust ? .height(340) : .height(260)])
+                .presentationDetents([(tool == .adjust || tool == .hr) ? .height(380) : .height(260)])
                 .presentationDragIndicator(.visible)
         }
         .alert("Add text", isPresented: $addingText) {
@@ -127,6 +127,13 @@ struct StudioEditorView: View {
                                 onSelect: { vm.selectOverlay($0) },
                                 onMove: { vm.setOverlayPosition($0, normalized: $1) },
                                 onScale: { vm.setOverlayScale($0, $1) })
+            // Live heart-rate chart overlay (moving-playhead line), draggable to reposition.
+            if let hr = vm.hrOverlay {
+                StudioHRChartView(samples: vm.hrSeries, config: hr, ratio: vm.previewRatio,
+                                  currentTime: vm.currentTime, totalDuration: vm.totalDuration,
+                                  onMove: { vm.setHRPosition($0) })
+                    .accessibilityIdentifier("studioHRChart")
+            }
             if let err = vm.previewError {
                 Text(err)
                     .font(.caption2).foregroundStyle(.yellow)
@@ -204,6 +211,9 @@ struct StudioEditorView: View {
                     .accessibilityIdentifier("studioAddMusic")
                 barButton("PiP", "rectangle.on.rectangle", enabled: !vm.pipSources.isEmpty) { choosingPiP = true }
                     .accessibilityIdentifier("studioAddPiP")
+                barButton(vm.hrOverlay == nil ? "HR" : "HR ✓", "waveform.path.ecg",
+                          enabled: vm.hasHRData) { activeTool = .hr }
+                    .accessibilityIdentifier("studioHRTool")
                 barButton("Canvas", "aspectratio") { activeTool = .aspect }
                 barButton("Delete", "trash", enabled: hasClip, role: .destructive) { vm.deleteSelected() }
                     .accessibilityIdentifier("studioDelete")
@@ -274,7 +284,7 @@ struct StudioEditorView: View {
 
 /// The bottom-sheet tool invoked from the action bar (Speed · Filter · Transition · Canvas) — keeps
 /// the bar to one tap and the value-picking in a focused sheet (the edits pattern).
-enum StudioTool: String, Identifiable { case speed, volume, filter, adjust, transition, aspect; var id: String { rawValue } }
+enum StudioTool: String, Identifiable { case speed, volume, filter, adjust, transition, aspect, hr; var id: String { rawValue } }
 
 private struct StudioToolSheet: View {
     let tool: StudioTool
@@ -299,6 +309,7 @@ private struct StudioToolSheet: View {
         case .adjust: return "Adjust"
         case .transition: return "Transition"
         case .aspect: return "Canvas aspect"
+        case .hr: return "Heart-rate chart"
         }
     }
 
@@ -328,6 +339,8 @@ private struct StudioToolSheet: View {
             StudioVolumeControls(vm: vm)
         case .adjust:
             StudioAdjustControls(vm: vm)
+        case .hr:
+            StudioHRControls(vm: vm)
         case .transition:
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -351,6 +364,45 @@ private struct StudioToolSheet: View {
                             .foregroundStyle(.white)
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The HR-chart tool: enable/disable the overlay + customize colour, size, live-BPM, and zone colour.
+/// Position is set by dragging the chart on the preview. Sliders/toggles commit immediately (the HR
+/// overlay isn't in the playback composition, so there's no preview rebuild).
+private struct StudioHRControls: View {
+    @Bindable var vm: StudioEditorViewModel
+    private let swatches = ["#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#FFFFFF"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Toggle("Show heart-rate chart", isOn: Binding(
+                get: { vm.hrOverlay != nil },
+                set: { _ in vm.toggleHROverlay() }))
+                .accessibilityIdentifier("hrEnable")
+            if let cfg = vm.hrOverlay {
+                HStack(spacing: 10) {
+                    Text("Colour").font(.caption).frame(width: 60, alignment: .leading)
+                    ForEach(swatches, id: \.self) { hex in
+                        Circle().fill(Color(studioHex: hex)).frame(width: 24, height: 24)
+                            .overlay(Circle().stroke(.white, lineWidth: cfg.colorHex == hex ? 2 : 0))
+                            .onTapGesture { var c = cfg; c.colorHex = hex; c.zoneColored = false; vm.updateHROverlay(c) }
+                    }
+                }
+                HStack {
+                    Text("Size").font(.caption).frame(width: 60, alignment: .leading)
+                    Slider(value: Binding(get: { cfg.scale },
+                                          set: { var c = cfg; c.scale = $0; vm.updateHROverlay(c) }),
+                           in: 0.4...1).accessibilityIdentifier("hrSize")
+                }
+                Toggle("Live BPM number", isOn: Binding(
+                    get: { cfg.showBPM }, set: { var c = cfg; c.showBPM = $0; vm.updateHROverlay(c) }))
+                Toggle("Colour by HR zone", isOn: Binding(
+                    get: { cfg.zoneColored }, set: { var c = cfg; c.zoneColored = $0; vm.updateHROverlay(c) }))
+                Text("Drag the chart on the preview to position it.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
     }

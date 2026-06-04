@@ -198,6 +198,31 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+// MARK: - Heart-rate overlay
+
+/// Config for the **heart-rate chart overlay** (the moving-playhead line): the whole session's HR is
+/// drawn over the video, a dot tracks the video's progress. Stored optionally on `StudioProject`
+/// (nil = off). Position is the chart's centre (0…1, top-left); `scale` is its width as a fraction of
+/// the canvas. The HR samples themselves come from the session (not stored here).
+struct HROverlayConfig: Codable, Hashable, Sendable {
+    var normalizedX: Double
+    var normalizedY: Double
+    /// Chart width as a fraction of the canvas (height is derived at a fixed chart aspect).
+    var scale: Double
+    var colorHex: String
+    /// Show the live BPM number (preview only — Core Animation can't keyframe text in export).
+    var showBPM: Bool
+    /// Colour the line/dot by HR zone instead of `colorHex`.
+    var zoneColored: Bool
+
+    var position: CGPoint {
+        get { CGPoint(x: normalizedX, y: normalizedY) }
+        set { normalizedX = newValue.x; normalizedY = newValue.y }
+    }
+    static let `default` = HROverlayConfig(normalizedX: 0.5, normalizedY: 0.80, scale: 0.86,
+                                           colorHex: "#FF3B30", showBPM: true, zoneColored: false)
+}
+
 // MARK: - Audio
 
 /// One audio track in the mix. `original` rides a main-track clip's own audio; `music`/`voiceover`
@@ -258,6 +283,8 @@ final class StudioProject {
     var transitions: [StudioTransition]
     var overlays: [OverlayItem]
     var audioTracks: [AudioTrack]
+    /// Heart-rate chart overlay config (nil = off). Optional → migration-safe additive @Model property.
+    var hrOverlay: HROverlayConfig?
     var createdAt: Date
     var updatedAt: Date
 
@@ -266,6 +293,7 @@ final class StudioProject {
          background: StudioBackground = .black,
          clips: [TimelineClip] = [], transitions: [StudioTransition] = [],
          overlays: [OverlayItem] = [], audioTracks: [AudioTrack] = [],
+         hrOverlay: HROverlayConfig? = nil,
          createdAt: Date = .now) {
         self.id = id
         self.sessionID = sessionID
@@ -276,6 +304,7 @@ final class StudioProject {
         self.transitions = transitions
         self.overlays = overlays
         self.audioTracks = audioTracks
+        self.hrOverlay = hrOverlay
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }

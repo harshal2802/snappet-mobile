@@ -20,6 +20,8 @@ final class StudioEditorViewModel {
     var selectedClipID: UUID?
     var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
+    /// The session's heart-rate samples (for the HR chart overlay), loaded on appear from the FK.
+    private(set) var hrSeries: [HRPoint] = []
     var previewPlayer: AVPlayer?
     var isBuildingPreview = false
     /// Set when the player rejects the composition (see `rebuildPreview`) — the studio stays open
@@ -131,6 +133,7 @@ final class StudioEditorViewModel {
     // MARK: Lifecycle
 
     func onAppear() async {
+        loadHRSeries()
         for clip in clips where !clip.isPhoto && sourceDurations[clip.id] == nil {
             if let d = await composer.sourceDuration(localIdentifier: clip.localIdentifier) {
                 sourceDurations[clip.id] = d
@@ -138,6 +141,20 @@ final class StudioEditorViewModel {
         }
         await rebuildPreview()
     }
+
+    /// Load the session's HR samples (FK by `sessionID`) so the HR chart overlay can render. The
+    /// whole series maps across the whole video; the playhead dot tracks the video's progress.
+    private func loadHRSeries() {
+        guard hrSeries.isEmpty else { return }
+        let sid = project.sessionID
+        if let session = try? context.fetch(
+            FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.id == sid })).first {
+            hrSeries = session.hrSeries
+        }
+    }
+    /// True when the session has enough HR data to draw a chart.
+    var hasHRData: Bool { hrSeries.count >= 2 }
+    var hrOverlay: HROverlayConfig? { snapshot.hrOverlay }
 
     private func rebuildPreview() async {
         isBuildingPreview = true
@@ -149,7 +166,7 @@ final class StudioEditorViewModel {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
             let (comp, vc, audioMix) = try await composer.makeComposition(
-                for: snapshot, sourceDurations: sourceDurations, forPlayback: true)
+                for: snapshot, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
             let item = AVPlayerItem(asset: comp)
             item.audioMix = audioMix
             // `AVPlayerItem.setVideoComposition` validates more strictly than the export path and
@@ -280,6 +297,22 @@ final class StudioEditorViewModel {
         edit { StudioProjectEditor.setOverlayScale($0, id: id, scale: scale) }
     }
 
+    // MARK: Heart-rate chart overlay (preview = SwiftUI layer; export = Core Animation; no rebuild)
+
+    func toggleHROverlay() {
+        let enable = hrOverlay == nil
+        editOverlaysOnly { var s = $0; s.hrOverlay = enable ? .default : nil; return s }
+    }
+    func updateHROverlay(_ config: HROverlayConfig) {
+        editOverlaysOnly { var s = $0; s.hrOverlay = config; return s }
+    }
+    /// Commit the dragged HR chart to a new normalized centre (0…1, top-left).
+    func setHRPosition(_ normalized: CGPoint) {
+        guard var c = hrOverlay else { return }
+        c.position = CGPoint(x: min(max(normalized.x, 0), 1), y: min(max(normalized.y, 0), 1))
+        updateHROverlay(c)
+    }
+
     // MARK: Picture-in-picture (a second video composited over the main track)
 
     /// Source clips available to drop in as a PiP (the session's main-track video clips).
@@ -342,7 +375,7 @@ final class StudioEditorViewModel {
         exportState = .exporting
         do {
             let url = try await composer.export(snapshot, sourceDurations: sourceDurations,
-                                                quality: exportQuality)
+                                                hrSamples: hrSeries, quality: exportQuality)
             exportState = .exported(url)
         } catch {
             exportState = .failed((error as? LocalizedError)?.errorDescription ?? "Export failed.")

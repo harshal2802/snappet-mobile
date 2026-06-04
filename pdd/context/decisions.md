@@ -22,7 +22,23 @@ or accidentally reverse them.
   player); position/scale/delete of a `.video` overlay **rebuild** (it's in the composition), unlike
   text/sticker. Add via the **PiP** action-bar button → pick a session clip.
 
-(HR section appended when it lands.)
+- **Heart-rate chart overlay** (moving-playhead line) — the session's `hrSeries` (fetched by the
+  project's `sessionID` FK in the VM) maps across the **whole video**; a dot tracks the video's 0…1
+  progress. `HROverlayConfig` (optional on `StudioProject` → migration-safe) carries position/scale/
+  colour/showBPM/zoneColored. **Pure `HRChartGeometry`** (normalized points, time→bpm sampling) feeds
+  BOTH renderers, so they match: **preview** = a live SwiftUI chart (`StudioHRChartView` — line + dot +
+  live BPM, draggable), **export** = Core Animation in `StudioOverlays.hrLayer` (the polyline + a dot
+  animated along it via a `CAKeyframeAnimation` keyed to the timeline, bottom-left origin). HR overlay
+  config is threaded through `makeComposition`/`export`/`makeAnimationTool` (`hrSamples` + `hrConfig`);
+  it's not in the playback composition, so edits don't rebuild the player. Customization via the **HR**
+  action-bar tool (enable · colour · size · live-BPM · zone-colour); position by dragging the chart.
+
+**Rules out / caveats**: the **live BPM number is preview-only** (Core Animation can't keyframe a
+`CATextLayer`'s string) — export shows the line + moving dot (+ zone/colour). PiP+filter and PiP+
+transition still degrade (one custom `AVVideoCompositing` is the eventual unifier). **Device-pending
+visual**: PiP placement (Y-flip), the HR dot sync, and the export Core Animation chart need the user's
+device pass (the sim renders the SwiftUI preview chart but not the AV export). Unit suite **206
+(2 skipped), 0 failures**; studio UI walkthrough green on the iPhone 17 sim.
 
 ## [2026-06-04] Studio editor → edits/CapCut layout (multi-phase redesign)
 

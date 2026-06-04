@@ -14,6 +14,7 @@ struct StudioProjectSnapshot: Codable, Hashable, Sendable {
     var transitions: [StudioTransition]
     var overlays: [OverlayItem]
     var audioTracks: [AudioTrack]
+    var hrOverlay: HROverlayConfig? = nil
 
     var aspect: ClipEditGeometry.OutputAspect {
         get { ClipEditGeometry.OutputAspect(rawValue: aspectRaw) ?? .portrait9x16 }
@@ -27,11 +28,13 @@ extension StudioProjectSnapshot {
     init(_ p: StudioProject) {
         title = p.title; aspectRaw = p.aspectRaw; backgroundRaw = p.backgroundRaw
         clips = p.clips; transitions = p.transitions; overlays = p.overlays; audioTracks = p.audioTracks
+        hrOverlay = p.hrOverlay
     }
     /// Write this snapshot back onto a `@Model` (used by undo/redo and after each edit).
     func apply(to p: StudioProject) {
         p.title = title; p.aspectRaw = aspectRaw; p.backgroundRaw = backgroundRaw
         p.clips = clips; p.transitions = transitions; p.overlays = overlays; p.audioTracks = audioTracks
+        p.hrOverlay = hrOverlay
         p.updatedAt = .now
     }
 }
