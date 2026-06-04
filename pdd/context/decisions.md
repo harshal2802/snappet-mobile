@@ -4,7 +4,7 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
-## [2026-06-04] S0 studio-export spike — CONDITIONAL GO; videoComposition export broken on-device
+## [2026-06-04] S0 studio-export spike — **GO** (videoComposition export fixed; root cause = empty audio track)
 
 **Decision / finding**: Ran the S0 device-profiling spike (`StudioComposerProfilingTests`, on the iPhone
 13 Pro Max via free-Personal-Team signing) to gate the S2+ compositor. Verdict **CONDITIONAL GO**, full
@@ -29,8 +29,19 @@ sinking effort into S2+.
 export works on-device — they all ride the failing transcode path. Next task: fix the export (try
 `AVMutableVideoComposition(propertiesOf:)` as the base; else a custom `AVVideoCompositing` +
 `AVAssetReader`/`Writer` pipeline), apply the same fix to `VideoStudio`, and flip the S0 spike from
-`skip` to a timing assertion. **Verified**: spike green on-device + sim (asserts the stitch baseline,
-skips on the documented gap); full unit suite 184 green (1 skipped).
+`skip` to a timing assertion.
+
+**RESOLVED same day — verdict is GO.** The -11838 root cause was **an empty audio track**, not the
+`AVMutableVideoComposition` per se: `StudioComposer.assemble` added an audio track up front, and a source
+with **no audio** (the synthetic test clip, and any audio-less real video) left it 0-duration, which the
+on-device videoComposition export rejects (passthrough tolerates it). Ruled the rest out one device run
+each (preset, pixel format, color tags, bare-vs-propertiesOf init, 1-vs-4 clips). **Fix**: create the
+audio track **lazily** (only when a clip has audio); also kept the one-layer-instruction-per-track fix and
+switched to `videoComposition(withPropertiesOf:)`. **Transform export now works on-device at ~0.2x
+realtime** (a 4 s clip ~0.76 s). **Correction**: `VideoStudio` (clip editor) **already** adds audio
+lazily, so it was never broken — only `StudioComposer`. **Verified**: the S0 spike now PASSES on-device
+(asserts both the stitch and the transform/videoComposition export); full unit suite 184 green (1 skipped,
+on the sim). **S2+ (filters/transitions/keyframes) is unblocked** — no export-mechanism blocker remains.
 
 ## [2026-06-03] Full studio S1 shipped — multi-clip StudioProject + editor (sim-verified)
 

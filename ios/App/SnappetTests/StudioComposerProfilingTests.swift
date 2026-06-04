@@ -42,20 +42,15 @@ final class StudioComposerProfilingTests: XCTestCase {
         XCTAssertTrue(stitch.ok, "multi-clip passthrough stitch should export on-device (status \(stitch.status))")
         XCTAssertLessThan(stitch.sec, 30, "a 16 s stitch should remux quickly on-device")
 
-        // KNOWN DEVICE GAP (the S0 verdict): applying our `AVMutableVideoComposition` (the transform/
-        // crop / future-effects path) fails AVFoundation -11838 ("operation not supported", underlying
-        // OSStatus -16976) on-device for EVERY transcode preset (HighestQuality / HEVC / 1920x1080).
-        // The hand-built video composition is rejected by the encoder — and the SAME pattern ships in
-        // VideoStudio (clip-editor export), which was never device-tested. Fixing the video-composition
-        // export is the gate for S2+ (filters/transitions/keyframes all ride the transcode path).
-        // Skip (not fail) so the suite stays green; this test starts asserting the transform time once
-        // the export is fixed. See RESULTS-S0 in the live-workout-studio prompts.
+        // TRANSFORM/EFFECTS path: applying our `AVMutableVideoComposition` (per-clip transform/crop,
+        // and the surface S2+ filters/transitions/keyframes build on) must export on-device. This used
+        // to fail -11838 until two fixes — one layer instruction per track (not per clip) + a LAZY
+        // audio track (an empty audio track from an audio-less source was the actual culprit). Measured
+        // on MrRobot: ~0.2× realtime (a 4 s clip ≈ 0.76 s). See RESULTS-S0.
         let transform = await export(composition, videoComposition: videoComposition,
                                      preset: AVAssetExportPresetHighestQuality, tag: "transform")
-        guard transform.ok else {
-            throw XCTSkip("S0 known gap: videoComposition export fails on-device (status \(transform.status), \(transform.err ?? "")). Stitch baseline OK in \(String(format: "%.2f", stitch.sec))s.")
-        }
-        XCTAssertLessThan(transform.sec, 60, "a 16 s transform export should finish under 60 s on-device")
+        XCTAssertTrue(transform.ok, "videoComposition (transform) export should succeed on-device (status \(transform.status), \(transform.err ?? ""))")
+        XCTAssertLessThan(transform.sec, 60, "a 16 s transform export should finish well under 60 s on-device")
         #endif
     }
 
@@ -88,7 +83,12 @@ final class StudioComposerProfilingTests: XCTestCase {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(size.width), AVVideoHeightKey: Int(size.height)])
+            AVVideoWidthKey: Int(size.width), AVVideoHeightKey: Int(size.height),
+            // Tag standard color metadata, else a videoComposition export rejects the source (-11838).
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2]])
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
             sourcePixelBufferAttributes: [

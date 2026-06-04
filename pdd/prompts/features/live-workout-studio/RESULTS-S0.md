@@ -2,46 +2,48 @@
 
 **Created**: 2026-06-04
 **Device**: "MrRobot" — iPhone 13 Pro Max (iPhone14,3), iOS, free Personal Team signing.
-**Harness**: `SnappetTests/StudioComposerProfilingTests` — synthesizes a 1080×1920 H.264 clip on-device
+**Harness**: `SnappetTests/StudioComposerProfilingTests` — synthesizes a 1080x1920 H.264 clip on-device
 (`AVAssetWriter`, no Photos needed), builds a 4-clip / ~16 s timeline via the new
 `StudioComposer.assemble(resolved:aspect:)` seam, and exports it. Device-only (skips on the simulator).
 
-## Verdict: **CONDITIONAL GO** — compute is ample; the effects-export path is **broken on-device** and must be fixed before S2+.
+## Verdict: **GO** — the export path works on-device and is fast; S2+ is unblocked.
 
-### What the device measured
-| Path | Result | Time (16 s / 4-clip / 1080×1920) |
+### What the device measured (after the fixes below)
+| Path | Result | Time (1080x1920) |
 |---|---|---|
-| **Multi-clip stitch** (passthrough, no `videoComposition`) | ✅ **works** | **~0.08–0.10 s** (remux — effectively free) |
-| **Transform/effects** (any transcode preset **+ our `AVMutableVideoComposition`**) | ❌ **fails** | n/a — `AVFoundationErrorDomain -11838` "operation not supported", underlying `OSStatus -16976`, at validation (0.00 s) |
+| **Multi-clip stitch** (passthrough, no `videoComposition`) | works | ~0.05-0.10 s to remux 16 s (effectively free) |
+| **Transform/effects** (`HighestQuality` + our `AVMutableVideoComposition`) | **works** | **~0.76 s for a 4 s clip (~0.2x realtime)** -> a 16 s timeline ~3 s |
 
-Presets tried for the transform path, all failing identically: `HighestQuality`, `HEVCHighestQuality`,
-`1920x1080`. The failure is the **`AVMutableVideoComposition` itself**, not the preset, source pixel
-format (32ARGB→32BGRA made no difference), or render size (1080×1920 is valid).
+Compute is NOT the constraint — transcode + transform runs at ~0.2x realtime with headroom for the S2+
+effects (filters/transitions/keyframes ride this same path). The design's worry about export time/memory
+is a non-issue at this scale.
 
-### Two real bugs the spike surfaced
-1. **Fixed here**: `StudioComposer.assemble` created **one layer instruction per clip, all for the same
-   single video track, in one instruction** — a malformed `AVVideoComposition`. Now uses **one** layer
-   instruction with a per-clip `setTransform(at:)` (piecewise-constant transform across the cuts).
-2. **Open (the gate)**: even after fix #1, applying the hand-built `AVMutableVideoComposition` is rejected
-   by the on-device encoder (-11838). **The same `AVMutableVideoComposition()` + manual-instruction
-   pattern ships in `VideoStudio` (the B3 clip editor), which was never device-tested — so clip-editor
-   *export* is almost certainly broken on real hardware too.**
+### The bug hunt (the spike earned its keep)
+The transform export initially failed `AVFoundationError -11838` ("operation not supported", underlying
+`OSStatus -16976`) at validation (0.00 s) for EVERY preset (`HighestQuality`/`HEVC`/`1920x1080`), while
+passthrough worked. Ruled out, one device run each: preset; source pixel format (32ARGB->32BGRA); color
+metadata (added ITU-R 709 tags); `AVMutableVideoComposition()` vs `videoComposition(withPropertiesOf:)`;
+and clip count (1 vs 4 — both failed). **Root cause: an empty audio track.** `StudioComposer.assemble`
+added an audio track UP FRONT; a source with NO audio (the synthetic clip — and real audio-less videos)
+left it 0-duration, which the on-device videoComposition export rejects (passthrough tolerates it).
 
-### Implications for the plan
-- **Capacity is not the constraint.** A 16 s multi-clip stitch remuxes in ~0.1 s; the device has plenty
-  of headroom for transcode + effects. The design's worry was export time/memory — that's a non-issue at
-  this scale.
-- **The export *mechanism* is the constraint.** Before building S2+ (filters/transitions/keyframes — all
-  ride the transcode-with-`videoComposition` path), the video-composition export must be made to work
-  on-device. Likely fixes to try (next task, device-verified via this same spike — flip it from skip to a
-  timing assertion):
-  1. Base the composition on `AVMutableVideoComposition(propertiesOf:)` and layer transforms onto its
-     instructions, rather than a bare `AVMutableVideoComposition()`.
-  2. If that still fails, move to a **custom `AVVideoCompositing`** (the S2 compositor anyway) and/or an
-     `AVAssetReader`/`AVAssetWriter` export pipeline for full control.
-  3. Apply the same fix to `VideoStudio` so the shipped clip editor exports on a device.
+### Fixes applied (`StudioComposer`)
+1. **Lazy audio track** — create it only when a clip actually has audio (the real fix).
+2. **One layer instruction per track** — was one per clip on the same track (a malformed
+   `AVVideoComposition`); now one instruction with a per-clip `setTransform(at:)`.
+3. **`videoComposition(withPropertiesOf:)`** as the base (carries color/format) instead of a bare init.
+4. Refactor: a Photos-decoupled `assemble(resolved:aspect:)` seam so the export is device-testable
+   without a Photos library.
+
+**Correction to the earlier read**: `VideoStudio` (the B3 clip editor) ALREADY creates its audio track
+lazily, so it does NOT have this bug — the clip-editor export is fine. Only `StudioComposer` added the
+empty track.
 
 ### Status of the spike
-`StudioComposerProfilingTests` is committed and **green**: it asserts the stitch baseline exports
-on-device and **skips** with a diagnostic on the videoComposition gap. When the export is fixed it starts
-asserting the transform export time — turning this S0 into a standing on-device perf guard.
+`StudioComposerProfilingTests` is committed and PASSES on-device: it exports a 4-clip stitch AND the
+transform/videoComposition path, asserting both succeed and finish well under the bound — a standing
+on-device perf guard for the studio export. (Skips on the simulator, where export timing is meaningless.)
+
+### Next (S2+ is GO)
+Build the custom `AVVideoCompositing` for filters/LUTs -> transitions -> keyframed overlays, profiling
+each on-device via this spike. No export-mechanism blocker remains.

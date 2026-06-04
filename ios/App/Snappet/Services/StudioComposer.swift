@@ -70,8 +70,10 @@ final class StudioComposer: Sendable {
             withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw ComposerError.noRenderableClips
         }
-        let aTrack = composition.addMutableTrack(
-            withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        // Audio track is created LAZILY (only when a clip actually has audio) — an empty audio track
+        // left in the composition makes the videoComposition export fail -11838 on-device, and real
+        // clips can legitimately have no audio (S0 spike).
+        var aTrack: AVMutableCompositionTrack?
 
         var cursor = CMTime.zero
         // ONE layer instruction for the single video track; each clip sets its transform at its own
@@ -111,13 +113,18 @@ final class StudioComposer: Sendable {
                 vTrack.scaleTimeRange(segment, toDuration: CMTime(seconds: outDuration, preferredTimescale: timescale))
             }
 
-            // Original audio (also speed-scaled), if present.
-            if let aTrack, let srcAudio = try? await source.loadTracks(withMediaType: .audio).first {
-                try? aTrack.insertTimeRange(sourceRange, of: srcAudio, at: insertAt)
-                if abs(clip.speed - 1.0) > 0.001 {
-                    let seg = CMTimeRange(start: insertAt,
-                                          duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
-                    aTrack.scaleTimeRange(seg, toDuration: CMTime(seconds: outDuration, preferredTimescale: timescale))
+            // Original audio (also speed-scaled), if present — create the audio track on first use.
+            if let srcAudio = try? await source.loadTracks(withMediaType: .audio).first {
+                let track = aTrack ?? composition.addMutableTrack(
+                    withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+                aTrack = track
+                if let track {
+                    try? track.insertTimeRange(sourceRange, of: srcAudio, at: insertAt)
+                    if abs(clip.speed - 1.0) > 0.001 {
+                        let seg = CMTimeRange(start: insertAt,
+                                              duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
+                        track.scaleTimeRange(seg, toDuration: CMTime(seconds: outDuration, preferredTimescale: timescale))
+                    }
                 }
             }
 
@@ -132,7 +139,11 @@ final class StudioComposer: Sendable {
 
         guard cursor > .zero, let canvas = renderSize else { throw ComposerError.noRenderableClips }
 
-        let videoComposition = AVMutableVideoComposition()
+        // Build the video composition from the composition's own properties (so color/format tags and
+        // a valid source-track mapping are present) rather than a bare `AVMutableVideoComposition()`,
+        // which the on-device encoder rejects with -11838 (S0 spike). Then override the canvas size
+        // and swap in our per-clip transform instruction.
+        let videoComposition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
         videoComposition.renderSize = canvas
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
         let instruction = AVMutableVideoCompositionInstruction()
