@@ -42,12 +42,15 @@ enum SettleUp {
 
         for expense in expenses {
             if expense.isReceipt {
-                // Itemized: credit the payer the total, debit each person their slice.
-                net[expense.payer, default: 0] += expense.amount
+                // Itemized: credit the payer the grand total, debit each person their slice.
+                // Credit the *recomputed* grand total (not the stored `amount`) so the receipt
+                // always nets to zero — the per-person totals sum exactly to it by construction,
+                // whereas a denormalized `amount` could drift from the items it's derived from.
                 let result = ReceiptSplit.compute(items: expense.items,
                                                   taxAmount: expense.taxAmount,
                                                   discountAmount: expense.discountAmount,
                                                   order: participants)
+                net[expense.payer, default: 0] += result.grandTotal
                 for share in result.perPerson {
                     net[share.name, default: 0] -= share.total
                 }
