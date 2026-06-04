@@ -178,8 +178,10 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                     XCTAssertTrue(app.staticTexts["Preview renders on a device"].waitForExistence(timeout: 3)
                                   || app.otherElements["studioPreview"].exists,
                                   "the studio should show its preview canvas")
-                    // The action bar (always present) is the reliable assertion; the scrubbable
-                    // timeline + per-clip selection are covered in detail by StudioEditorUITests.
+                    // The edits-style chrome (always present): transport, export-quality, action bar.
+                    XCTAssertTrue(app.buttons["studioPlayPause"].waitForExistence(timeout: 3),
+                                  "the studio transport (play/pause) should appear")
+                    XCTAssertTrue(app.buttons["studioQuality"].exists, "the export-quality control should appear")
                     XCTAssertTrue(app.buttons["studioSplit"].waitForExistence(timeout: 3),
                                   "the studio action bar should appear")
                     snap("11c-studio")
@@ -191,6 +193,17 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                         XCTAssertTrue(app.buttons["studioUndo"].isEnabled, "undo enables after a split")
                         snap("11d-studio-edit")
                         app.buttons["studioUndo"].tap()    // undo the split
+                    }
+                    // Open a tool sheet from an on-screen action: "Speed" is near the start of the bar.
+                    // (Deeper interactions on the scrolling action bar / clipped timeline are covered
+                    // by the device verification checklist — they're flaky to drive on the sim.)
+                    let speed = app.buttons["Speed"]
+                    if speed.exists, speed.isHittable, app.buttons["studioSplit"].isEnabled {
+                        speed.tap()
+                        if app.staticTexts["Speed"].waitForExistence(timeout: 2) {
+                            snap("11e-studio-tool-sheet")
+                            app.swipeDown()   // dismiss the sheet
+                        }
                     }
                     app.buttons["studioClose"].tap()
                 } else {
