@@ -25,6 +25,13 @@ struct SessionDetailView: View {
         return WorkoutActivityMapping.dominantCategory(of: cats)
     }
 
+    /// The clip being edited. Hosted HERE (on the `List`, which has no `@Query` so it never
+    /// re-renders from media/app changes) rather than inside `SessionMediaSection` — a `.sheet`
+    /// attached to the section's `Group` (which flattens into the `List`) gets torn down when the
+    /// section re-renders, so it collapsed on the first open and only worked on the second
+    /// (decisions.md: present from a stable host, not a flattened Group).
+    @State private var editingClip: SessionMedia?
+
     var body: some View {
         List {
             Section {
@@ -46,10 +53,13 @@ struct SessionDetailView: View {
             // Unified media + per-set breakdown (the actions header, one section per exercise with
             // per-set tiles + their media, and a General bucket).
             SessionMediaSection(session: session, resolver: resolver, unit: unit,
-                                sport: sport, category: dominantCategory)
+                                sport: sport, category: dominantCategory,
+                                onEditClip: { editingClip = $0 })
         }
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
+        // Presented from the List (a stable host), so opening the editor never tears itself down.
+        .sheet(item: $editingClip) { clip in ClipEditorView(media: clip) }
     }
 }
 
@@ -205,6 +215,8 @@ private struct SessionMediaSection: View {
     /// Activity inputs for the B4 highlight engine (passed down from the detail view).
     let sport: SportTag?
     let category: ExerciseCategory?
+    /// Open the clip editor — presented by the parent on a stable host (see `SessionDetailView`).
+    let onEditClip: (SessionMedia) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -223,23 +235,17 @@ private struct SessionMediaSection: View {
 
     private enum MediaSheet: Identifiable {
         case picker, highlight
-        case clip(SessionMedia)
-        var id: String {
-            switch self {
-            case .picker: return "picker"
-            case .highlight: return "highlight"
-            case .clip(let m): return "clip-\(m.id)"
-            }
-        }
+        var id: String { self == .picker ? "picker" : "highlight" }
     }
 
     init(session: WorkoutSession, resolver: ExerciseResolver, unit: WeightUnit,
-         sport: SportTag?, category: ExerciseCategory?) {
+         sport: SportTag?, category: ExerciseCategory?, onEditClip: @escaping (SessionMedia) -> Void) {
         self.session = session
         self.resolver = resolver
         self.unit = unit
         self.sport = sport
         self.category = category
+        self.onEditClip = onEditClip
         let sid = session.id
         _media = Query(filter: #Predicate<SessionMedia> { $0.sessionID == sid },
                        sort: \SessionMedia.offsetSec, order: .forward)
@@ -278,8 +284,6 @@ private struct SessionMediaSection: View {
             switch sheet {
             case .picker:
                 MediaPicker { ids in addManual(ids) }
-            case .clip(let clip):
-                ClipEditorView(media: clip)
             case .highlight:
                 SessionHighlightView(
                     viewModel: SessionHighlightViewModel(
@@ -378,7 +382,7 @@ private struct SessionMediaSection: View {
             if item.kind == .video { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }
         }
         .contentShape(Rectangle())
-        .onTapGesture { if item.kind == .video { activeSheet = .clip(item) } }
+        .onTapGesture { if item.kind == .video { onEditClip(item) } }
         .contextMenu { thumbMenu(for: item) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) { remove(item) } label: { Label("Remove", systemImage: "trash") }
@@ -397,7 +401,7 @@ private struct SessionMediaSection: View {
 
     @ViewBuilder private func thumbMenu(for item: SessionMedia) -> some View {
         if item.kind == .video {
-            Button { activeSheet = .clip(item) } label: { Label("Edit clip", systemImage: "slider.horizontal.3") }
+            Button { onEditClip(item) } label: { Label("Edit clip", systemImage: "slider.horizontal.3") }
         }
         Menu {
             ForEach(moveTargets) { target in
