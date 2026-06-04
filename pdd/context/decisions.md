@@ -22,11 +22,21 @@ falls back to HighestQuality if the preset is unsupported.
 accretion; the transport + action-bar + tool-sheet shell is the foundation the timeline/adjust/audio
 phases build on. NavigationStack chrome dropped for a custom dark top bar.
 
+**Phase 2 (done)** — `StudioTimelineView`: a **scrubbable** timeline (clip strips laid by output
+duration, a **fixed centre playhead**, a time ruler) where dragging seeks the preview + moves the
+playhead, and during playback the strip auto-advances (it's offset by `vm.currentTime`). Tap a strip to
+select; the selected video clip gets **drag-trim handles** (leading→`trimStart`, trailing→`trimEnd`),
+committed **once on drag-end** (live handle feedback is view-local → one undo entry + one rebuild).
+Clip strips are coloured placeholders — **thumbnail strips are a device-only follow-up**. The strip
+layout uses `StudioGeometry.timeline` placement (so a transition overlap shows clips overlapping; rare).
+
 **Rules out / notes**: the time observer is removed+reattached on each `rebuildPreview` (no leak); the
-end-of-play notification resets the playhead. **Phases 2–4 pending**: scrubbable thumbnail timeline +
-drag-trim, Adjust (color), audio (mute/volume + add-music) + keyframes. Verified Phase 1: studio UI
-walkthrough green on the iPhone 17 sim (opens the new layout, selects a clip, splits, undoes, closes
-via `studioClose`); full unit suite 195 (2 skipped), 0 failures. Device visual pass owed.
+end-of-play notification resets the playhead. At `t=0` the first clip strip starts at the centre
+playhead (so its centre is off-screen) — the studio UI walkthrough therefore asserts the action bar
+(reliable) and treats per-clip timeline selection as best-effort; a dedicated `StudioEditorUITests`
+covers selection/trim. **Phases 3–4 pending**: Adjust (color), audio (mute/volume + add-music) +
+keyframes. Verified Phases 1–2: studio UI walkthrough green on the iPhone 17 sim; unit suite 195
+(2 skipped), 0 failures. Device visual pass owed.
 
 ## [2026-06-04] Studio WYSIWYG overlay positioning — draggable SwiftUI layer over the preview (edits/CapCut pattern)
 

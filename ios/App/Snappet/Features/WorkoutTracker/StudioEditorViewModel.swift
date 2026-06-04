@@ -117,6 +117,16 @@ final class StudioEditorViewModel {
     func outputDuration(of clip: TimelineClip) -> Double {
         StudioGeometry.clipOutputDuration(clip, sourceDuration: sourceDurations[clip.id])
     }
+    /// Clips placed on the output timeline (start/duration in seconds) — the layout the scrubbable
+    /// timeline strip and the playhead share with the composition.
+    var placedClips: [StudioGeometry.PlacedClip] {
+        StudioGeometry.timeline(clips: snapshot.clips, sourceDurations: sourceDurations,
+                                transitions: snapshot.transitions)
+    }
+    /// The resolved source length for a clip (asset duration), or its trimmed end as a fallback.
+    func sourceDuration(of clip: TimelineClip) -> Double {
+        sourceDurations[clip.id] ?? clip.trimEnd ?? outputDuration(of: clip)
+    }
 
     // MARK: Lifecycle
 
@@ -212,6 +222,19 @@ final class StudioEditorViewModel {
     func setSelectedSpeed(_ speed: Double) {
         guard let id = selectedClipID else { return }
         edit { StudioProjectEditor.setClipSpeed($0, id: id, speed: speed) }
+    }
+    /// Commit a trim on the selected clip (seconds within the source). Clamped so the trimmed span
+    /// keeps a minimum length. The timeline view drives this **once on drag-end** (the live handle
+    /// feedback is view-local), so there's one undo entry + one preview rebuild per trim.
+    func trimSelected(startSeconds: Double?, endSeconds: Double?) {
+        guard let clip = selectedClip, !clip.isPhoto else { return }
+        let src = sourceDuration(of: clip)
+        let minLen = 0.1
+        var start = startSeconds ?? clip.trimStart
+        var end = endSeconds ?? clip.trimEnd ?? src
+        start = max(0, min(start, end - minLen))
+        end = min(src, max(end, start + minLen))
+        edit { StudioProjectEditor.trimClip($0, id: clip.id, start: start, end: end) }
     }
     func setSelectedFilter(_ filter: StudioFilter) {
         guard let id = selectedClipID else { return }

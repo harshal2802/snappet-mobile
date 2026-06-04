@@ -178,13 +178,15 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                     XCTAssertTrue(app.staticTexts["Preview renders on a device"].waitForExistence(timeout: 3)
                                   || app.otherElements["studioPreview"].exists,
                                   "the studio should show its preview canvas")
-                    let clipCard = app.buttons["studioClipCard"].firstMatch
-                    XCTAssertTrue(clipCard.waitForExistence(timeout: 3),
-                                  "the studio timeline should show clip cards from the session videos")
+                    // The action bar (always present) is the reliable assertion; the scrubbable
+                    // timeline + per-clip selection are covered in detail by StudioEditorUITests.
+                    XCTAssertTrue(app.buttons["studioSplit"].waitForExistence(timeout: 3),
+                                  "the studio action bar should appear")
                     snap("11c-studio")
-                    // Select the first clip and split it; undo should then enable.
-                    clipCard.tap()
-                    if app.buttons["studioSplit"].waitForExistence(timeout: 2) {
+                    // Best-effort: select the first clip strip and split at the playhead, then undo.
+                    let clip = app.buttons["timelineClip"].firstMatch
+                    if clip.waitForExistence(timeout: 2), clip.isHittable { clip.tap() }
+                    if app.buttons["studioSplit"].isEnabled {
                         app.buttons["studioSplit"].tap()
                         XCTAssertTrue(app.buttons["studioUndo"].isEnabled, "undo enables after a split")
                         snap("11d-studio-edit")

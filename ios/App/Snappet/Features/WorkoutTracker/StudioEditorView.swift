@@ -160,27 +160,11 @@ struct StudioEditorView: View {
         return String(format: "%02d:%02d", total / 60, total % 60)
     }
 
-    // MARK: Timeline (clip strip — selectable; Phase 2 adds scrub/trim handles)
+    // MARK: Timeline (scrubbable, fixed centre playhead, trim handles)
 
     private var timeline: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(Array(vm.clips.enumerated()), id: \.element.id) { idx, clip in
-                    Button { vm.select(clip.id) } label: {
-                        StudioClipCard(index: idx + 1, clip: clip,
-                                       duration: vm.outputDuration(of: clip),
-                                       selected: clip.id == vm.selectedClipID,
-                                       transition: vm.transitionKind(afterClipID: clip.id),
-                                       isLast: idx == vm.clips.count - 1)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("studioClipCard")
-                }
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-        }
-        .frame(height: 96)
-        .background(Color(white: 0.08))
+        StudioTimelineView(vm: vm)
+            .accessibilityIdentifier("studioTimeline")
     }
 
     // MARK: Contextual action bar
@@ -308,40 +292,3 @@ private struct StudioToolSheet: View {
     }
 }
 
-/// One timeline clip card: index, a placeholder/icon, the output duration, the active filter, and a
-/// transition badge to the next clip. Selected state is ringed. Thumbnails are device-only, so the
-/// card uses an icon placeholder (the simulator has no Photos).
-private struct StudioClipCard: View {
-    let index: Int
-    let clip: TimelineClip
-    let duration: Double
-    let selected: Bool
-    let transition: StudioTransitionKind
-    let isLast: Bool
-
-    var body: some View {
-        HStack(spacing: 4) {
-            VStack(spacing: 4) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(white: 0.18))
-                    Image(systemName: clip.isPhoto ? "photo" : "video").foregroundStyle(.secondary)
-                    if clip.filter != .none {
-                        Text(clip.filter.display).font(.system(size: 8, weight: .bold))
-                            .padding(2).background(.thinMaterial, in: Capsule())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(3)
-                    }
-                }
-                .frame(width: 64, height: 50)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(SnappetColor.workout,
-                          lineWidth: selected ? 2.5 : 0))
-                Text("\(index) · \(Int(duration.rounded()))s")
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-            }
-            if !isLast {
-                Image(systemName: transition == .none ? "rectangle.split.2x1" : "arrow.left.arrow.right")
-                    .font(.caption2)
-                    .foregroundStyle(transition == .none ? AnyShapeStyle(.tertiary) : AnyShapeStyle(SnappetColor.workout))
-            }
-        }
-    }
-}
