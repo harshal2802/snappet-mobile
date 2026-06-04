@@ -4,6 +4,34 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] S0 studio-export spike — CONDITIONAL GO; videoComposition export broken on-device
+
+**Decision / finding**: Ran the S0 device-profiling spike (`StudioComposerProfilingTests`, on the iPhone
+13 Pro Max via free-Personal-Team signing) to gate the S2+ compositor. Verdict **CONDITIONAL GO**, full
+write-up in [`live-workout-studio/RESULTS-S0.md`](../prompts/features/live-workout-studio/RESULTS-S0.md):
+- **Capacity is ample** — a 16 s / 4-clip / 1080×1920 multi-clip **stitch** (passthrough) remuxes in
+  **~0.1 s** on-device. Export time/memory is a non-issue at this scale (the design's worry is moot).
+- **The export *mechanism* is the blocker** — applying our hand-built `AVMutableVideoComposition` (the
+  transform/crop / future-effects path) fails `AVFoundationError -11838` ("operation not supported",
+  underlying `OSStatus -16976`) on-device for **every** transcode preset (HighestQuality / HEVC /
+  1920x1080). Passthrough-without-videoComposition is the only path that exports.
+- The spike also **caught + fixed a real composition bug**: `StudioComposer.assemble` emitted one layer
+  instruction per clip on the same single track (malformed) → now one layer instruction with per-clip
+  `setTransform(at:)`. Also refactored `makeComposition` to expose an AVAsset-based `assemble(resolved:)`
+  seam (decoupled from Photos) so the export is testable on-device without a Photos library.
+
+**Why it matters**: the same `AVMutableVideoComposition()` + manual-instruction pattern ships in
+`VideoStudio` (the B3 clip editor), which was **never device-tested** — so clip-editor *export* is almost
+certainly broken on real hardware too. This is exactly the device-gated risk S0 exists to surface before
+sinking effort into S2+.
+
+**Rules out / next**: do **not** start S2 (filters/transitions/keyframes) until the videoComposition
+export works on-device — they all ride the failing transcode path. Next task: fix the export (try
+`AVMutableVideoComposition(propertiesOf:)` as the base; else a custom `AVVideoCompositing` +
+`AVAssetReader`/`Writer` pipeline), apply the same fix to `VideoStudio`, and flip the S0 spike from
+`skip` to a timing assertion. **Verified**: spike green on-device + sim (asserts the stitch baseline,
+skips on the documented gap); full unit suite 184 green (1 skipped).
+
 ## [2026-06-03] Full studio S1 shipped — multi-clip StudioProject + editor (sim-verified)
 
 **Decision**: Built Track S **S1** (the full CapCut-style studio's foundation) as verifiable layers,

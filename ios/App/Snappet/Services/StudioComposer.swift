@@ -46,6 +46,24 @@ final class StudioComposer: Sendable {
         // S1 renders video clips; photos are a Ken-Burns step in S2+.
         let videoClips = StudioGeometry.ordered(snapshot.clips).filter { !$0.isPhoto }
         guard !videoClips.isEmpty else { throw ComposerError.noRenderableClips }
+        // Resolve each clip's PHAsset → AVAsset (the device-only / Photos-bound step), then assemble.
+        var resolved: [(clip: TimelineClip, asset: AVAsset)] = []
+        for clip in videoClips {
+            if let asset = await avAsset(forLocalIdentifier: clip.localIdentifier) {
+                resolved.append((clip, asset))
+            }
+        }
+        return try await assemble(resolved: resolved, aspect: snapshot.aspect, sourceDurations: sourceDurations)
+    }
+
+    /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
+    /// testable seam, decoupled from Photos. The S0 profiling spike drives this directly with a
+    /// synthetic on-device video (no PHAsset needed), so on-device export cost can be measured.
+    func assemble(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
+                  aspect: ClipEditGeometry.OutputAspect,
+                  sourceDurations: [UUID: Double] = [:]) async throws
+        -> sending (AVMutableComposition, AVVideoComposition?) {
+        guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
         let composition = AVMutableComposition()
         guard let vTrack = composition.addMutableTrack(
@@ -56,13 +74,15 @@ final class StudioComposer: Sendable {
             withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
 
         var cursor = CMTime.zero
-        var layerInstructions: [AVMutableVideoCompositionLayerInstruction] = []
+        // ONE layer instruction for the single video track; each clip sets its transform at its own
+        // start time (a piecewise-constant transform across the sequential cuts). Multiple layer
+        // instructions for the same track in one instruction is malformed and fails export.
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
         var renderSize: CGSize?
 
-        for clip in videoClips {
-            guard let source = await avAsset(forLocalIdentifier: clip.localIdentifier),
-                  let srcVideo = try? await source.loadTracks(withMediaType: .video).first else {
-                continue   // unresolved (e.g. on the simulator) → skip this clip, keep the rest
+        for (clip, source) in resolved {
+            guard let srcVideo = try? await source.loadTracks(withMediaType: .video).first else {
+                continue   // no video track → skip this clip, keep the rest
             }
             var assetDuration = sourceDurations[clip.id] ?? 0
             if assetDuration <= 0 { assetDuration = (try? await source.load(.duration).seconds) ?? 0 }
@@ -73,7 +93,7 @@ final class StudioComposer: Sendable {
             let naturalSize = (try? await srcVideo.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
             let preferred = (try? await srcVideo.load(.preferredTransform)) ?? .identity
             let orientedSize = orientedSize(naturalSize, transform: preferred)
-            let canvas = renderSize ?? ClipEditGeometry.renderSize(for: snapshot.aspect, sourceSize: orientedSize)
+            let canvas = renderSize ?? ClipEditGeometry.renderSize(for: aspect, sourceSize: orientedSize)
             renderSize = canvas
 
             let sourceRange = CMTimeRange(
@@ -101,17 +121,13 @@ final class StudioComposer: Sendable {
                 }
             }
 
-            // Per-clip transform: orientation THEN crop→canvas, applied for this clip's output range.
+            // Per-clip transform (orientation THEN crop→canvas), set at this clip's start time on
+            // the shared layer instruction — it holds until the next clip's transform.
             let crop = ClipEditGeometry.cropTransform(
                 cropRect: clip.cropRect, sourceSize: orientedSize, renderSize: canvas)
-            let li = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
-            li.setTransform(preferred.concatenating(crop), at: insertAt)
-            // Hide this clip's layer outside its own segment so layers don't bleed across cuts.
-            let outEnd = CMTimeAdd(insertAt, CMTime(seconds: outDuration, preferredTimescale: timescale))
-            li.setOpacity(0, at: outEnd)
-            layerInstructions.append(li)
+            layerInstruction.setTransform(preferred.concatenating(crop), at: insertAt)
 
-            cursor = outEnd
+            cursor = CMTimeAdd(insertAt, CMTime(seconds: outDuration, preferredTimescale: timescale))
         }
 
         guard cursor > .zero, let canvas = renderSize else { throw ComposerError.noRenderableClips }
@@ -121,7 +137,7 @@ final class StudioComposer: Sendable {
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-        instruction.layerInstructions = layerInstructions
+        instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
 
         return (composition, videoComposition)
