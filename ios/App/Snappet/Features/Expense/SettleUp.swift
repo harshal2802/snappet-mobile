@@ -32,10 +32,28 @@ enum SettleUp {
     /// the recipient's net falls by `amount` (they've been paid back), so an outstanding
     /// debtor/creditor pair converges to zero once a settlement equal to the suggested
     /// transfer is recorded.
+    ///
+    /// An itemized receipt (`items` non-empty) is split per `ReceiptSplit`: the payer is
+    /// credited the grand total, and each person is debited their reconciled per-item share
+    /// plus their proportional tax minus their proportional discount. Because the per-person
+    /// totals sum exactly to the grand total, the receipt nets to zero across the group.
     static func balances(participants: [String], expenses: [ExpenseRecord]) -> [Balance] {
         var net: [String: Double] = Dictionary(uniqueKeysWithValues: participants.map { ($0, 0.0) })
 
         for expense in expenses {
+            if expense.isReceipt {
+                // Itemized: credit the payer the total, debit each person their slice.
+                net[expense.payer, default: 0] += expense.amount
+                let result = ReceiptSplit.compute(items: expense.items,
+                                                  taxAmount: expense.taxAmount,
+                                                  discountAmount: expense.discountAmount,
+                                                  order: participants)
+                for share in result.perPerson {
+                    net[share.name, default: 0] -= share.total
+                }
+                continue
+            }
+
             // Guard against an expense with no split targets (shouldn't happen via the UI).
             guard !expense.participants.isEmpty else { continue }
 

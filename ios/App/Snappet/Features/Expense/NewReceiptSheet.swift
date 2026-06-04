@@ -1,0 +1,283 @@
+import SwiftUI
+import SwiftData
+
+/// Sheet to add — or edit — an itemized **receipt** in a group: a list of line items, each
+/// shared by its own set of people, plus tax and discount that are allocated
+/// proportionally. Paste a receipt's text to auto-fill the items, then tap a line to choose
+/// who shares it. A live `ReceiptSummaryView` shows the running total and per-person split.
+/// Saving writes an `ExpenseRecord` whose `items`/`taxAmount`/`discountAmount` drive the
+/// group balances via `ReceiptSplit`.
+struct NewReceiptSheet: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Environment(SnappetCore.self) private var core
+
+    let group: ExpenseGroup
+    /// The receipt being edited, or `nil` when adding a new one.
+    let record: ExpenseRecord?
+
+    @State private var title: String
+    @State private var payer: String
+    @State private var items: [ReceiptItem]
+    @State private var taxAmount: Double
+    @State private var discountAmount: Double
+    @State private var showingPaste = false
+
+    init(group: ExpenseGroup, record: ExpenseRecord? = nil) {
+        self.group = group
+        self.record = record
+        _title = State(initialValue: record?.title ?? "")
+        _payer = State(initialValue: record?.payer ?? group.participants.first ?? "")
+        _items = State(initialValue: record?.items ?? [])
+        _taxAmount = State(initialValue: record?.taxAmount ?? 0)
+        _discountAmount = State(initialValue: record?.discountAmount ?? 0)
+    }
+
+    private var isEditing: Bool { record != nil }
+    private var currencyCode: String { Locale.current.currency?.identifier ?? "USD" }
+    private func currency(_ value: Double) -> String { value.formatted(.currency(code: currencyCode)) }
+
+    private var result: ReceiptSplit.Result {
+        ReceiptSplit.compute(items: items, taxAmount: taxAmount,
+                             discountAmount: discountAmount, order: group.participants)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                detailsSection
+                pasteSection
+                itemsSection
+                adjustmentsSection
+                ReceiptSummaryView(result: result, currency: currency)
+            }
+            .navigationTitle(isEditing ? "Edit Receipt" : "New Receipt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(!canSave)
+                        .accessibilityIdentifier("expense.receipt.save")
+                }
+            }
+            .sheet(isPresented: $showingPaste) {
+                PasteReceiptSheet { parsed in apply(parsed) }
+            }
+        }
+    }
+
+    // MARK: - Sections
+
+    private var detailsSection: some View {
+        Section("Receipt") {
+            TextField("Title (e.g. Costco run)", text: $title)
+                .accessibilityIdentifier("expense.receipt.title")
+            Picker("Paid by", selection: $payer) {
+                ForEach(group.participants, id: \.self) { Text($0).tag($0) }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("expense.receipt.payer")
+        }
+    }
+
+    private var pasteSection: some View {
+        Section {
+            Button {
+                showingPaste = true
+            } label: {
+                Label("Paste receipt text", systemImage: "doc.text.viewfinder")
+            }
+            .accessibilityIdentifier("expense.receipt.paste")
+        } footer: {
+            Text("Copy a receipt's text (or use the camera's Live Text), paste it, and we'll pull out the line items, tax and discount.")
+        }
+    }
+
+    private var itemsSection: some View {
+        Section {
+            ForEach($items) { $item in
+                ItemRow(item: $item, participants: group.participants,
+                        currencyCode: currencyCode)
+            }
+            .onDelete { items.remove(atOffsets: $0) }
+
+            Button {
+                items.append(ReceiptItem(name: "", price: 0, assignees: group.participants))
+            } label: {
+                Label("Add item", systemImage: "plus.circle")
+            }
+            .accessibilityIdentifier("expense.receipt.addItem")
+        } header: {
+            Text("Items (\(items.count))")
+        } footer: {
+            Text("Tap an item to choose who shares it. New items default to everyone.")
+        }
+    }
+
+    private var adjustmentsSection: some View {
+        Section("Adjustments") {
+            HStack {
+                Text("Discount")
+                Spacer()
+                TextField("Amount", value: $discountAmount,
+                          format: .currency(code: currencyCode))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("expense.receipt.discount")
+            }
+            HStack {
+                Text("Tax")
+                Spacer()
+                TextField("Amount", value: $taxAmount,
+                          format: .currency(code: currencyCode))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("expense.receipt.tax")
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !payer.isEmpty
+            && items.contains { $0.price > 0 && !$0.assignees.isEmpty }
+    }
+
+    /// Merge a parsed receipt into the current draft: append items (defaulting each to
+    /// everyone) and adopt detected tax/discount when present.
+    private func apply(_ parsed: ReceiptParser.ParsedReceipt) {
+        let everyone = group.participants
+        items.append(contentsOf: parsed.items.map {
+            ReceiptItem(name: $0.name, price: $0.price, assignees: everyone)
+        })
+        if parsed.discount > 0 { discountAmount = parsed.discount }
+        if let tax = parsed.tax { taxAmount = tax }
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            title = "Receipt"
+        }
+    }
+
+    private func save() {
+        guard canSave else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Keep only meaningful items; trim names.
+        let cleaned = items
+            .map { ReceiptItem(id: $0.id,
+                               name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                               price: $0.price, assignees: $0.assignees) }
+            .filter { $0.price > 0 }
+        let computed = ReceiptSplit.compute(items: cleaned, taxAmount: taxAmount,
+                                            discountAmount: discountAmount,
+                                            order: group.participants)
+        // Everyone who shares at least one item — used for edit/usage bookkeeping.
+        let sharers = group.participants.filter { person in
+            computed.perPerson.contains { $0.name == person }
+        }
+
+        if let record {
+            record.title = trimmedTitle
+            record.payer = payer
+            record.amount = computed.grandTotal
+            record.participants = sharers
+            record.items = cleaned
+            record.taxAmount = taxAmount
+            record.discountAmount = discountAmount
+        } else {
+            let newRecord = ExpenseRecord(
+                groupID: group.id, title: trimmedTitle, amount: computed.grandTotal,
+                payer: payer, participants: sharers,
+                items: cleaned, taxAmount: taxAmount, discountAmount: discountAmount
+            )
+            modelContext.insert(newRecord)
+        }
+        try? modelContext.save()
+
+        let verb = isEditing ? "Edited" : "Added"
+        core.log(module: "expense", action: "receipt",
+                 summary: "\(verb) \(currency(computed.grandTotal)) receipt (\(cleaned.count) items)",
+                 metric: computed.grandTotal)
+        dismiss()
+    }
+}
+
+/// One editable item line: name, price, and a push to choose who shares it.
+private struct ItemRow: View {
+    @Binding var item: ReceiptItem
+    let participants: [String]
+    let currencyCode: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack {
+                TextField("Item", text: $item.name)
+                    .accessibilityIdentifier("expense.receipt.item.name")
+                TextField("Price", value: $item.price,
+                          format: .currency(code: currencyCode))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 110)
+                    .accessibilityIdentifier("expense.receipt.item.price")
+            }
+            NavigationLink {
+                ItemAssigneePicker(itemName: item.name, participants: participants,
+                                   assignees: $item.assignees)
+            } label: {
+                HStack {
+                    Image(systemName: "person.2")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(AssigneeSummary.label(item.assignees, in: participants))
+                        .font(.caption)
+                        .foregroundStyle(item.assignees.isEmpty ? SnappetColor.pomodoro : .secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityIdentifier("expense.receipt.item.assign")
+        }
+    }
+}
+
+/// Modal text editor for pasting receipt text; hands the parsed result back on "Add".
+private struct PasteReceiptSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onParse: (ReceiptParser.ParsedReceipt) -> Void
+
+    @State private var text = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextEditor(text: $text)
+                        .frame(minHeight: 240)
+                        .font(.system(.body, design: .monospaced))
+                        .accessibilityIdentifier("expense.receipt.pasteText")
+                } header: {
+                    Text("Receipt text")
+                } footer: {
+                    Text("One item per line. Lines ending in a price become items; SUBTOTAL / TAX / TOTAL and instant-savings lines are detected automatically.")
+                }
+            }
+            .navigationTitle("Paste Receipt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add items") {
+                        onParse(ReceiptParser.parse(text))
+                        dismiss()
+                    }
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("expense.receipt.pasteAdd")
+                }
+            }
+        }
+    }
+}

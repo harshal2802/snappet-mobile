@@ -83,7 +83,9 @@ usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches,
 coherent increment, implemented on its own branch by parallel agents and merged one-by-one:
 **Pomodoro** session history + 7-day chart + persisted settings; **Habits** edit + 7-day backfill strip
 + 30-day rate; **Journal** tags + `.searchable`; **Tip** calculation history (its first `@Model`) +
-editable presets + round-up; **Split Expenses** edit expenses/groups + manual settlements; **Budget**
+editable presets + round-up; **Split Expenses** edit expenses/groups + manual settlements + **itemized
+receipts** (paste receipt text → per-item assignment with proportional tax/discount + per-person split);
+**Budget**
 edit transactions + month switcher + 6-month trends. Prompts in `pdd/prompts/features/12–17`. Tests:
 each app has a `SnappetUITests/<App>UITests.swift` driving its flow; UI tests use a `-uiTestFreshStore`
 launch arg (isolated in-memory store) for determinism. **Verified on the iPhone 17 Pro sim: all 10 UI

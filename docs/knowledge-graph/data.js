@@ -206,6 +206,12 @@ const nodes = [
     file: "ios/App/Snappet/Features/Expense/NewExpenseSheet.swift", desc: "Add or edit an expense with a split.", tags: ["editor"] },
   { id: "expense-settlement", label: "RecordSettlementSheet", type: "sheet", group: "expense", category: "finance", platform: "ios",
     file: "ios/App/Snappet/Features/Expense/RecordSettlementSheet.swift", desc: "Record a manual settlement (someone paid someone back).", tags: ["settlement"] },
+  { id: "expense-newreceipt", label: "NewReceiptSheet", type: "sheet", group: "expense", category: "finance", platform: "ios",
+    file: "ios/App/Snappet/Features/Expense/NewReceiptSheet.swift", desc: "Add/edit an itemized receipt: paste receipt text to auto-fill line items, assign each item to people, with proportional tax + discount and a live per-person split.", tags: ["editor","receipt","itemized"] },
+  { id: "expense-receiptdetail", label: "ReceiptDetailView", type: "screen", group: "expense", category: "finance", platform: "ios",
+    file: "ios/App/Snappet/Features/Expense/ReceiptDetailView.swift", desc: "Read-only receipt breakdown: totals (subtotal/tax/discount/total), per-person split, and the item list with who shares each line. Edit reopens NewReceiptSheet.", tags: ["detail","receipt"] },
+  { id: "expense-receiptsplit", label: "ReceiptSplit + ReceiptParser", type: "model", group: "expense", category: "finance", platform: "ios",
+    file: "ios/App/Snappet/Features/Expense/ReceiptSplit.swift", desc: "Pure, device-free receipt math: per-item assignment, proportional tax/discount, penny-perfect reconciliation (ReceiptSplit); plus a text parser that extracts items/tax/discount/total from pasted receipt text (ReceiptParser). Unit-tested.", tags: ["pure","split","ocr-text"] },
 
   // ═════════════════ MODULE: Budget ═════════════════
   { id: "m-budget", label: "Budget", type: "module", group: "budget", category: "finance", platform: "ios+android",
@@ -307,7 +313,7 @@ const nodes = [
   { id: "model-tip", label: "Tip models", type: "model", group: "tip", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Features/Tip/TipModels.swift", desc: "Saved tip calculations + presets.", tags: ["@model"] },
   { id: "model-expense", label: "Expense models", type: "model", group: "expense", category: "finance", platform: "ios+android",
-    file: "ios/App/Snappet/Features/Expense/ExpenseModels.swift", desc: "ExpenseGroup, Expense, Settlement.", tags: ["@model"] },
+    file: "ios/App/Snappet/Features/Expense/ExpenseModels.swift", desc: "ExpenseGroup, ExpenseRecord (even-split, settlement, or itemized receipt with items/tax/discount), and the ReceiptItem line-item value type.", tags: ["@model"] },
   { id: "model-budget", label: "Budget models", type: "model", group: "budget", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Features/Budget/BudgetModels.swift", desc: "BudgetCategory + Transaction.", tags: ["@model"] },
 
@@ -561,8 +567,15 @@ const links = [
   { source: "expense-root", target: "expense-group", type: "navigate" },
   { source: "expense-root", target: "expense-newgroup", type: "present" },
   { source: "expense-group", target: "expense-newexpense", type: "present" },
+  { source: "expense-group", target: "expense-newreceipt", type: "present", label: "Add receipt" },
+  { source: "expense-group", target: "expense-receiptdetail", type: "navigate", label: "Tap receipt" },
+  { source: "expense-receiptdetail", target: "expense-newreceipt", type: "present", label: "Edit" },
+  { source: "expense-newreceipt", target: "expense-receiptsplit", type: "feeds", label: "split + parse" },
+  { source: "expense-receiptdetail", target: "expense-receiptsplit", type: "feeds", label: "breakdown" },
+  { source: "expense-group", target: "expense-receiptsplit", type: "feeds", label: "receipt balances" },
   { source: "expense-group", target: "expense-settlement", type: "present" },
   { source: "expense-group", target: "expense-newgroup", type: "present", label: "Edit group" },
+  { source: "expense-newreceipt", target: "model-expense", type: "persists" },
   { source: "expense-root", target: "model-expense", type: "persists" },
   { source: "expense-root", target: "snappetcore", type: "feeds", label: "log usage" },
 

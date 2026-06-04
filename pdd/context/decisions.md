@@ -4,6 +4,45 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Split Expenses — itemized receipts with per-item assignment + proportional tax/discount
+
+**Decision**: Add an itemized **receipt** path to Split Expenses so a real shopping receipt (e.g. a
+51-line Costco run) can be entered once and split *per item* among different people — not just one
+even split per expense (user report: "put this kind of receipt and help me split stuff for multiple
+people … show total, tax, discounts and per-person split"). Implemented without a new `@Model`:
+`ExpenseRecord` gains three additive, defaulted fields — `items: [ReceiptItem]`, `taxAmount`,
+`discountAmount` — so the SwiftData migration stays lightweight and one record type still drives all
+of even-split / settlement / receipt. A record is a receipt iff `items` is non-empty.
+
+- **`ReceiptItem`** (a `Codable` value type persisted as a SwiftData composite attribute) carries a
+  name, price, and the `assignees` who share that line equally.
+- **`ReceiptSplit`** (pure, device-free, in the app target so it's `@testable`) computes the
+  breakdown: each item is split among its assignees, tax is allocated proportional to each person's
+  pre-tax subtotal, discount is credited the same way, and **every column is reconciled to whole cents
+  with a largest-remainder pass** so the per-person totals sum *exactly* to the grand total. That exact
+  closure is what lets `SettleUp.balances` treat a receipt as "payer credited the grand total, each
+  sharer debited their slice" and still net the group to zero — no penny drift in the balances.
+- **`ReceiptParser`** (also pure/tested) turns pasted or Live-Text receipt text into items + detected
+  tax/discount/total: it strips leading item-codes and trailing tax-flag letters (`28.99 E`,
+  `4.00-A`), routes trailing-minus rows to the discount, and skips SUBTOTAL/TAX/TOTAL/payment rows.
+  This is the "put this kind of receipt" affordance — paste once, then just tap each line to choose who
+  shares it (new items default to everyone).
+- **UX**: `NewReceiptSheet` (entry, with a live `ReceiptSummaryView` showing subtotal/discount/tax/
+  total + per-person split) and `ReceiptDetailView` (read-only breakdown + item list, Edit reopens the
+  sheet). `ExpenseGroupView` gets an "Add Receipt" action; receipt rows show a doc glyph + item/tax/
+  discount summary and tap through to the detail (even-split rows still tap-to-edit).
+
+**Why**: receipts are inherently uneven (one person's beer, shared groceries) and carry tax + savings
+that must follow the items, not be split flat. Keeping the math pure + penny-exact makes it unit-
+testable (`ReceiptSplitTests`, `ReceiptParserTests`, `SettleUpReceiptTests`) and keeps the existing
+balance/settle-up pipeline unchanged. Reusing `ExpenseRecord` (vs. a new `@Model`) keeps per-group
+`#Predicate` fetches and the balance loop single-source. **Rules out**: a separate `Receipt` @Model +
+relationship; storing precomputed per-person `shares` (derive from items so there's one source of
+truth); splitting tax/discount evenly regardless of who bought what; on-device Vision OCR for v1 (the
+paste/Live-Text text path is device-free and testable — camera OCR is a natural follow-up). **Verified**:
+pure logic unit-tested off-device (`swift`-level XCTest); the SwiftUI sheets/detail stay
+**device-unverified** per the repo's macOS/Xcode-only build rule (authored on Linux/cloud).
+
 ## [2026-06-03] BLE band connection — auto-detect already-connected bands + remember the last one
 
 **Decision**: Make Bluetooth heart-rate-band connection automatic instead of a manual "open the picker,
