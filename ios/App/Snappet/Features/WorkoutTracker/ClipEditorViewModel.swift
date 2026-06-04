@@ -165,7 +165,7 @@ final class ClipEditorViewModel {
         }
     }
 
-    /// Save the already-exported file to the user's Photos library (add-only, on-device).
+    /// Save the already-exported file to the user's Photos library as a **new copy** (add-only).
     func saveToPhotos() async {
         guard let url = exportState.exportedURL else { return }
         exportState = exportState.beginningSave()
@@ -175,6 +175,20 @@ final class ClipEditorViewModel {
         } catch {
             exportState = exportState.failed(
                 (error as? LocalizedError)?.errorDescription ?? "Couldn't save to Photos.")
+        }
+    }
+
+    /// **Overwrite the original** video in Photos with the edited render (reversible in Photos).
+    /// Destructive — the view confirms before calling this.
+    func overwriteOriginal() async {
+        guard let url = exportState.exportedURL else { return }
+        exportState = exportState.beginningSave()
+        do {
+            try await library.overwriteVideoAsset(localIdentifier: edit.localIdentifier, with: url)
+            exportState = exportState.saveSucceeded()
+        } catch {
+            exportState = exportState.failed(
+                (error as? LocalizedError)?.errorDescription ?? "Couldn't overwrite the original.")
         }
     }
 

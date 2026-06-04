@@ -31,6 +31,10 @@ struct SessionDetailView: View {
     /// section re-renders, so it collapsed on the first open and only worked on the second
     /// (decisions.md: present from a stable host, not a flattened Group).
     @State private var editingClip: SessionMedia?
+    /// A clip the user asked to remove — drives the destructive confirmation (hosted on the List).
+    @State private var pendingRemoval: SessionMedia?
+    @Environment(\.modelContext) private var context
+    private let mediaLibrary = MediaLibraryService()
 
     var body: some View {
         List {
@@ -54,12 +58,39 @@ struct SessionDetailView: View {
             // per-set tiles + their media, and a General bucket).
             SessionMediaSection(session: session, resolver: resolver, unit: unit,
                                 sport: sport, category: dominantCategory,
-                                onEditClip: { editingClip = $0 })
+                                onEditClip: { editingClip = $0 },
+                                onRemove: { pendingRemoval = $0 })
         }
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
         // Presented from the List (a stable host), so opening the editor never tears itself down.
         .sheet(item: $editingClip) { clip in ClipEditorView(media: clip) }
+        // Destructive remove, confirmed (also hosted on the List). "Delete from Photos" removes the
+        // underlying asset from the library; "Remove from session" only drops the tag.
+        .confirmationDialog(
+            "Remove this \(pendingRemoval?.kind == .video ? "video" : "photo")?",
+            isPresented: Binding(get: { pendingRemoval != nil },
+                                 set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible, presenting: pendingRemoval
+        ) { item in
+            Button("Remove from session only") { removeTag(item) }
+            Button("Delete from Photos too", role: .destructive) { deleteFromPhotos(item) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("“Remove from session” keeps the video in your Photos library. “Delete from Photos” permanently removes it (iOS will ask once more).")
+        }
+    }
+
+    private func removeTag(_ item: SessionMedia) {
+        context.delete(item)
+        try? context.save()
+    }
+
+    private func deleteFromPhotos(_ item: SessionMedia) {
+        let id = item.localIdentifier
+        context.delete(item)
+        try? context.save()
+        Task { try? await mediaLibrary.deleteAssets(localIdentifiers: [id]) }
     }
 }
 
@@ -217,6 +248,8 @@ private struct SessionMediaSection: View {
     let category: ExerciseCategory?
     /// Open the clip editor — presented by the parent on a stable host (see `SessionDetailView`).
     let onEditClip: (SessionMedia) -> Void
+    /// Ask the parent to confirm + perform removal (tag-only or delete-from-Photos).
+    let onRemove: (SessionMedia) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -239,13 +272,16 @@ private struct SessionMediaSection: View {
     }
 
     init(session: WorkoutSession, resolver: ExerciseResolver, unit: WeightUnit,
-         sport: SportTag?, category: ExerciseCategory?, onEditClip: @escaping (SessionMedia) -> Void) {
+         sport: SportTag?, category: ExerciseCategory?,
+         onEditClip: @escaping (SessionMedia) -> Void,
+         onRemove: @escaping (SessionMedia) -> Void) {
         self.session = session
         self.resolver = resolver
         self.unit = unit
         self.sport = sport
         self.category = category
         self.onEditClip = onEditClip
+        self.onRemove = onRemove
         let sid = session.id
         _media = Query(filter: #Predicate<SessionMedia> { $0.sessionID == sid },
                        sort: \SessionMedia.offsetSec, order: .forward)
@@ -385,7 +421,7 @@ private struct SessionMediaSection: View {
         .onTapGesture { if item.kind == .video { onEditClip(item) } }
         .contextMenu { thumbMenu(for: item) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) { remove(item) } label: { Label("Remove", systemImage: "trash") }
+            Button(role: .destructive) { onRemove(item) } label: { Label("Remove", systemImage: "trash") }
         }
         .swipeActions(edge: .leading) {
             Menu {
@@ -412,8 +448,8 @@ private struct SessionMediaSection: View {
         } label: {
             Label("Move to…", systemImage: "arrow.left.arrow.right")
         }
-        Button(role: .destructive) { remove(item) } label: {
-            Label("Remove", systemImage: "trash")
+        Button(role: .destructive) { onRemove(item) } label: {
+            Label("Remove…", systemImage: "trash")
         }
     }
 
@@ -557,11 +593,6 @@ private struct SessionMediaSection: View {
         }
         try? context.save()
         reconcileAssignments()
-    }
-
-    private func remove(_ item: SessionMedia) {
-        context.delete(item)
-        try? context.save()
     }
 
     /// Find or create the session's `StudioProject` (seeded from its video clips, in capture order)

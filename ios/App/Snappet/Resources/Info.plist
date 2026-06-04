@@ -33,7 +33,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Snappet saves your finished highlight reel back to your library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Snappet finds the photos and videos you shot during your workout so it can build your reel automatically.</string>
+	<string>Snappet finds the photos and videos you shot during your workout to build your reel, and — only when you ask — saves your edits over the original or removes a clip from your library.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UILaunchScreen</key>

@@ -347,6 +347,7 @@ private struct ExportShareControls: View {
     @Bindable var vm: ClipEditorViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showShare = false
+    @State private var confirmOverwrite = false
 
     var body: some View {
         ControlCard(title: "Export", systemImage: "square.and.arrow.up") {
@@ -387,7 +388,7 @@ private struct ExportShareControls: View {
                         if vm.exportState.isBusy {
                             ProgressView().frame(maxWidth: .infinity)
                         } else {
-                            Label("Save to Photos", systemImage: "square.and.arrow.down")
+                            Label("Save a copy", systemImage: "square.and.arrow.down")
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -395,7 +396,26 @@ private struct ExportShareControls: View {
                     .disabled(vm.exportState.isBusy)
                     .accessibilityIdentifier("saveClipToPhotos")
                 }
+
+                // Overwrite the ORIGINAL in Photos (destructive — confirm first; reversible in Photos).
+                Button(role: .destructive) {
+                    confirmOverwrite = true
+                } label: {
+                    Label("Overwrite original in Photos", systemImage: "arrow.triangle.2.circlepath")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(vm.exportState.isBusy)
+                .accessibilityIdentifier("overwriteOriginal")
+
                 .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
+                .confirmationDialog("Replace the original video in Photos?",
+                                    isPresented: $confirmOverwrite, titleVisibility: .visible) {
+                    Button("Replace original", role: .destructive) { Task { await vm.overwriteOriginal() } }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Your edits will replace the original video in your Photos library. You can still revert it in Photos.")
+                }
             }
         }
         // Cross-fade between export states (idle → exporting → exported / saved), gated.
