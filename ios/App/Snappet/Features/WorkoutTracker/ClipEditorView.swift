@@ -61,8 +61,23 @@ struct ClipEditorView: View {
             edit: edit, studio: app.videoStudio,
             insert: { context.insert($0) },
             save: { try? context.save() })
+        model.setHRSamples(hrSamplesForClipWindow())
         vm = model
         await model.load()
+    }
+
+    /// The session's HR samples sliced to THIS clip's capture window (`[offsetSec, offsetSec+dur]`),
+    /// rebased to 0 — so the HR chart shows the heart rate during the moment this clip was filmed.
+    private func hrSamplesForClipWindow() -> [HRPoint] {
+        let sid = media.sessionID
+        guard let session = try? context.fetch(
+            FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.id == sid })).first,
+            !session.hrSeries.isEmpty else { return [] }
+        let start = media.offsetSec
+        let span = (media.durationSec ?? 0) > 0 ? media.durationSec! : 15
+        return session.hrSeries
+            .filter { $0.t >= start && $0.t <= start + span }
+            .map { HRPoint(t: $0.t - start, bpm: $0.bpm) }
     }
 
     /// Reuse an existing primary (unsplit / first) edit for this clip if one exists.
@@ -96,6 +111,7 @@ struct ClipEditorView: View {
                 AspectControls(vm: vm)
                 SpeedControls(vm: vm)
                 OverlayControls(vm: vm, editingOverlay: $editingOverlay)
+                HRClipControls(vm: vm)
                 AudioControls(vm: vm)
                 ExportShareControls(vm: vm)
             }
@@ -116,6 +132,15 @@ struct ClipEditorView: View {
                     VideoPlayer(player: player)
                         .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
                         .accessibilityIdentifier("clipEditorPreview")
+                    // Live HR chart over the preview (WYSIWYG; burns into export via Core Animation).
+                    if let hr = vm.edit.hrOverlay {
+                        StudioHRChartView(
+                            samples: vm.hrSamples, config: hr,
+                            ratio: vm.edit.aspect.ratio ?? (9.0 / 16.0),
+                            currentTime: vm.currentTime, totalDuration: vm.outputDuration,
+                            onMove: { vm.setHRPosition($0) }, onResize: { vm.setHRScale($0) })
+                            .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    }
                 }
             case .error(let message):
                 VStack(spacing: 8) {
@@ -317,6 +342,44 @@ private struct TextOverlayEditor: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Heart-rate chart overlay
+
+/// Toggle + customize the HR-chart overlay for this set clip (its HR window). The chart previews
+/// live over the video (drag to move, pinch to resize) and burns into the exported clip. Disabled
+/// when the clip's capture window has too little HR data.
+private struct HRClipControls: View {
+    @Bindable var vm: ClipEditorViewModel
+    private let swatches = ["#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#FFFFFF"]
+
+    var body: some View {
+        ControlCard(title: "Heart rate", systemImage: "waveform.path.ecg") {
+            if vm.hrSamples.count >= 2 {
+                Toggle("Show heart-rate chart", isOn: Binding(
+                    get: { vm.edit.hrOverlay != nil }, set: { _ in vm.toggleHROverlay() }))
+                    .accessibilityIdentifier("clipHREnable")
+                if let cfg = vm.edit.hrOverlay {
+                    HStack(spacing: 10) {
+                        ForEach(swatches, id: \.self) { hex in
+                            Circle().fill(Color(studioHex: hex)).frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(.primary, lineWidth: cfg.colorHex == hex ? 2 : 0))
+                                .onTapGesture { var c = cfg; c.colorHex = hex; c.zoneColored = false; vm.updateHROverlay(c) }
+                        }
+                    }
+                    Toggle("Live BPM number", isOn: Binding(
+                        get: { cfg.showBPM }, set: { var c = cfg; c.showBPM = $0; vm.updateHROverlay(c) }))
+                    Toggle("Colour by HR zone", isOn: Binding(
+                        get: { cfg.zoneColored }, set: { var c = cfg; c.zoneColored = $0; vm.updateHROverlay(c) }))
+                    Text("Drag the chart on the preview to position it; pinch to resize.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            } else {
+                Text("No heart-rate data for this clip's moment (needs a workout recorded with HR).")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
     }

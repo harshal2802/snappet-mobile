@@ -33,19 +33,19 @@ enum StudioOverlays {
             overlayLayer.addSublayer(layer)
         }
         if let hrConfig, hasHR {
-            overlayLayer.addSublayer(hrLayer(samples: hrSamples, config: hrConfig,
-                                             canvas: canvas, totalDuration: totalDuration))
+            overlayLayer.addSublayer(hrChartLayer(samples: hrSamples, config: hrConfig,
+                                                  canvas: canvas, totalDuration: totalDuration))
         }
         parent.addSublayer(videoLayer)
         parent.addSublayer(overlayLayer)
         return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
     }
 
-    /// The export heart-rate chart (moving-playhead line): the whole session's HR polyline + a dot
-    /// animated along it in sync with the video time. Bottom-left origin (the animation tool's layer
-    /// space — same flip as `ClipEditGeometry.layerPoint`).
-    private static func hrLayer(samples: [HRPoint], config: HROverlayConfig,
-                                canvas: CGSize, totalDuration: Double) -> CALayer {
+    /// The export heart-rate chart (moving-playhead line): the HR polyline + a dot animated along it
+    /// in sync with the video time. Bottom-left origin (the animation tool's layer space — same flip
+    /// as `ClipEditGeometry.layerPoint`). Internal so `VideoStudio` (the per-clip editor) reuses it.
+    static func hrChartLayer(samples: [HRPoint], config: HROverlayConfig,
+                             canvas: CGSize, totalDuration: Double) -> CALayer {
         let chartW = max(60, canvas.width * config.scale)
         let chartH = chartW * 0.36
         let cx = config.normalizedX * canvas.width

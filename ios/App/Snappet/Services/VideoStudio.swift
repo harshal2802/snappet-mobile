@@ -51,12 +51,16 @@ final class VideoStudio: Sendable {
     /// Takes an `EditPlan` (a `Sendable` value snapshot of a `ClipEdit`, taken on the
     /// `@MainActor` caller via `EditPlan(edit)`) so the non-Sendable SwiftData `@Model` never
     /// crosses the actor boundary into this nonisolated build path.
-    func makeComposition(for plan: EditPlan) async throws
+    /// `forPlayback`: when **true**, omit the Core Animation overlay tool (text overlays + the HR
+    /// chart), which is **offline-render-only** — `AVPlayerItem.setVideoComposition` raises an
+    /// NSException for it (the studio crash). The live preview gets a tool-free composition (those
+    /// overlays preview as SwiftUI layers instead); **export** (default `false`) keeps the tool.
+    func makeComposition(for plan: EditPlan, forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
-        try await build(plan: plan)
+        try await build(plan: plan, forPlayback: forPlayback)
     }
 
-    private func build(plan: EditPlan) async throws
+    private func build(plan: EditPlan, forPlayback: Bool) async throws
         -> (AVMutableComposition, AVVideoComposition?) {
         guard let source = await avAsset(forLocalIdentifier: plan.localIdentifier) else {
             throw StudioError.sourceUnavailable
@@ -127,10 +131,14 @@ final class VideoStudio: Sendable {
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
 
-        // Text overlays via a CALayer tree (AVVideoCompositionCoreAnimationTool).
-        if !plan.textOverlays.isEmpty {
+        // Text overlays + the heart-rate chart via a CALayer tree (AVVideoCompositionCoreAnimationTool).
+        // Tool is offline-render-only → attach only for export (forPlayback skips it; the live preview
+        // shows those overlays as SwiftUI layers instead).
+        let hasHR = plan.hrOverlay != nil && plan.hrSamples.count >= 2
+        if !forPlayback, !plan.textOverlays.isEmpty || hasHR {
             attachOverlays(plan.textOverlays, to: videoComposition,
-                           renderSize: renderSize, totalDuration: composition.duration.seconds)
+                           renderSize: renderSize, totalDuration: composition.duration.seconds,
+                           hrOverlay: plan.hrOverlay, hrSamples: plan.hrSamples)
         }
 
         return (composition, videoComposition)
@@ -158,7 +166,8 @@ final class VideoStudio: Sendable {
 
     private func attachOverlays(_ overlays: [TextOverlay],
                                 to videoComposition: AVMutableVideoComposition,
-                                renderSize: CGSize, totalDuration: Double) {
+                                renderSize: CGSize, totalDuration: Double,
+                                hrOverlay: HROverlayConfig? = nil, hrSamples: [HRPoint] = []) {
         let parent = CALayer()
         parent.frame = CGRect(origin: .zero, size: renderSize)
         let videoLayer = CALayer()
@@ -207,6 +216,13 @@ final class VideoStudio: Sendable {
                 text.add(anim, forKey: "visibility")
             }
             overlayLayer.addSublayer(text)
+        }
+
+        // The heart-rate chart (reuses the studio's renderer), if enabled for this clip.
+        if let hrOverlay, hrSamples.count >= 2 {
+            overlayLayer.addSublayer(StudioOverlays.hrChartLayer(
+                samples: hrSamples, config: hrOverlay, canvas: renderSize,
+                totalDuration: max(0.01, totalDuration)))
         }
 
         parent.addSublayer(videoLayer)
@@ -263,8 +279,12 @@ struct EditPlan: Sendable {
     let speed: Double
     let textOverlays: [TextOverlay]
     let mutedOriginalAudio: Bool
+    /// Heart-rate chart overlay (nil = off) + the HR samples for this clip's capture window
+    /// (already sliced/rebased to 0 by the caller).
+    let hrOverlay: HROverlayConfig?
+    let hrSamples: [HRPoint]
 
-    @MainActor init(_ e: ClipEdit) {
+    @MainActor init(_ e: ClipEdit, hrSamples: [HRPoint] = []) {
         localIdentifier = e.localIdentifier
         trimStart = e.trimStart
         trimEnd = e.trimEnd
@@ -273,6 +293,8 @@ struct EditPlan: Sendable {
         speed = e.speed
         textOverlays = e.textOverlays
         mutedOriginalAudio = e.mutedOriginalAudio
+        hrOverlay = e.hrOverlay
+        self.hrSamples = hrSamples
     }
 }
 
