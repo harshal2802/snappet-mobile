@@ -232,9 +232,8 @@ private struct SessionMediaSection: View {
     @State private var editingClip: SessionMedia?
     /// Presents the B4 highlight-generation sheet (clip selection → generate → preview).
     @State private var showingHighlight = false
-    /// The full multi-clip studio (S1): the project being edited + its sheet presentation.
+    /// The full multi-clip studio (S1): the project being edited (item-based cover presentation).
     @State private var studioProject: StudioProject?
-    @State private var openingStudio = false
 
     init(session: WorkoutSession, resolver: ExerciseResolver, sport: SportTag?, category: ExerciseCategory?) {
         self.session = session
@@ -350,10 +349,11 @@ private struct SessionMediaSection: View {
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("openStudio")
-            .fullScreenCover(isPresented: $openingStudio) {
-                if let project = studioProject {
-                    StudioEditorView(project: project, context: context)
-                }
+            // Item-based presentation: the cover presents only once `studioProject` is non-nil, so its
+            // content is never an empty (nil) cover — the isPresented + separate-state form races and
+            // can show a black empty screen on device.
+            .fullScreenCover(item: $studioProject) { project in
+                StudioEditorView(project: project, context: context)
             }
         } header: {
             Text("Media from this workout")
@@ -380,7 +380,6 @@ private struct SessionMediaSection: View {
             try? context.save()
             studioProject = project
         }
-        openingStudio = true
     }
 
     private func grid(for items: [SessionMedia]) -> some View {
