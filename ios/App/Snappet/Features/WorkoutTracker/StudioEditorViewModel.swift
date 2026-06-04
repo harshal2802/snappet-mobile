@@ -148,9 +148,10 @@ final class StudioEditorViewModel {
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
-            let (comp, vc) = try await composer.makeComposition(
+            let (comp, vc, audioMix) = try await composer.makeComposition(
                 for: snapshot, sourceDurations: sourceDurations, forPlayback: true)
             let item = AVPlayerItem(asset: comp)
+            item.audioMix = audioMix
             // `AVPlayerItem.setVideoComposition` validates more strictly than the export path and
             // RAISES an NSException (not a Swift error) for a composition it rejects — which the
             // `do/catch` above can't catch, so it would abort the whole app on opening the studio.
@@ -244,6 +245,10 @@ final class StudioEditorViewModel {
         guard let id = selectedClipID else { return }
         edit { StudioProjectEditor.setClipAdjust($0, id: id, adjust: adjust) }
     }
+    func setSelectedVolume(_ volume: Double) {
+        guard let id = selectedClipID else { return }
+        edit { StudioProjectEditor.setClipVolume($0, id: id, volume: volume) }
+    }
     func setTransitionAfterSelected(_ kind: StudioTransitionKind) {
         guard let id = selectedClipID else { return }
         edit { StudioProjectEditor.setTransition($0, afterClipID: id, kind: kind) }
@@ -270,6 +275,37 @@ final class StudioEditorViewModel {
         editOverlaysOnly { StudioProjectEditor.removeOverlay($0, id: id) }
         if selectedOverlayID == id { selectedOverlayID = nil }
     }
+    func setOverlayOpacity(_ id: UUID, _ opacity: Double) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayOpacity($0, id: id, opacity: opacity) }
+    }
+    /// Capture the selected overlay's current opacity as a keyframe at the playhead (the marker
+    /// button). Two keyframes of differing opacity → the overlay fades over output time.
+    func addOverlayKeyframeAtPlayhead() {
+        guard let ov = selectedOverlay else { return }
+        editOverlaysOnly {
+            StudioProjectEditor.addOverlayOpacityKeyframe($0, id: ov.id, timeSec: currentTime, value: ov.opacity)
+        }
+    }
+
+    // MARK: Audio tracks (added music)
+
+    var musicTracks: [AudioTrack] { snapshot.audioTracks.filter { $0.kind != .original } }
+
+    /// Import a picked audio file as a background music track: copy it into the app's Documents (so it
+    /// survives the security-scoped picker URL) and add an `AudioTrack` the composer mixes in.
+    func addMusic(from pickedURL: URL) {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let ext = pickedURL.pathExtension.isEmpty ? "m4a" : pickedURL.pathExtension
+        let filename = "studio-music-\(UUID().uuidString).\(ext)"
+        let dest = docs.appendingPathComponent(filename)
+        let scoped = pickedURL.startAccessingSecurityScopedResource()
+        defer { if scoped { pickedURL.stopAccessingSecurityScopedResource() } }
+        do { try FileManager.default.copyItem(at: pickedURL, to: dest) }
+        catch { Self.log.error("music import failed: \(error.localizedDescription, privacy: .public)"); return }
+        let track = AudioTrack(kind: .music, sourceRef: filename, startSec: 0, volume: 0.8)
+        edit { StudioProjectEditor.addAudioTrack($0, track) }
+    }
+    func removeMusic(_ id: UUID) { edit { StudioProjectEditor.removeAudioTrack($0, id: id) } }
 
     // MARK: Export (device-only render)
 

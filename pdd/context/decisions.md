@@ -44,9 +44,22 @@ adjust+filter **do** render in the live preview (CIFilter compositions are AVPla
 Adjust tool sheet's sliders commit **on release** (`onEditingChanged`) → one rebuild per drag. Export
 quality (`StudioExportQuality`) was wired in Phase 1.
 
-**Phase 4 pending**: audio (mute/volume + add-music) + overlay keyframes. Verified Phases 1–3: studio
-UI walkthrough green on the iPhone 17 sim; unit suite 197 (2 skipped), 0 failures. Device visual pass
-owed.
+**Phase 4 (done)** — **audio + overlay keyframes**. Per-clip **volume/mute** (`TimelineClip.volume`,
+optional → migration-safe) applied via an `AVAudioMix` the composer now returns alongside the
+composition + videoComposition (a triple; `rebuildPreview` sets `item.audioMix`, `export` sets
+`session.audioMix`). **Add music**: a `.fileImporter` (`.audio`) copies the pick into Documents →
+`AudioTrack(.music)`; the composer inserts it on its own audio track at `startSec` and volume-mixes it
+(missing file skipped → export-safe). **Overlay opacity keyframes**: an opacity slider + a marker
+button (`addOverlayKeyframeAtPlayhead`) capture opacity at the playhead into `OverlayItem.opacityKeyframes`
+(the export `StudioOverlays` already animates them). Contextual **overlay controls bar** (opacity ·
+keyframe · delete) replaces the clip action bar when an overlay is selected.
+
+**Rules out / follow-ups**: per-clip volume + **transition** path (transition audio is a plain stitch,
+no mix); music **fades**/trim UI; keyframed overlay **position/scale**; thumbnail timeline strips.
+**Honest caveat**: the audio mix (volume + music) and the music **file import** are device-only — the
+sim has no real clip audio and the import needs Files; the on-device export-success + the *sound* are
+owed by the user's device pass (per the repo rule). Verified Phases 1–4 on the iPhone 17 sim: studio UI
+walkthrough green; unit suite 199 (2 skipped), 0 failures.
 
 ## [2026-06-04] Studio WYSIWYG overlay positioning — draggable SwiftUI layer over the preview (edits/CapCut pattern)
 

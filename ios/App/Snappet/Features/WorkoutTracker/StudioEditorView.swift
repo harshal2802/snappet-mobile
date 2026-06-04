@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVKit
+import UniformTypeIdentifiers
 
 /// The full-studio **multi-clip editor** in an edits/CapCut-style layout: a custom top bar (title ·
 /// export quality · Export), a preview canvas with the WYSIWYG overlay layer + a custom transport
@@ -17,6 +18,7 @@ struct StudioEditorView: View {
     @State private var renaming = false
     @State private var titleDraft = ""
     @State private var activeTool: StudioTool?
+    @State private var importingMusic = false
 
     init(project: StudioProject, context: ModelContext) {
         _vm = State(initialValue: StudioEditorViewModel(project: project, context: context))
@@ -29,7 +31,7 @@ struct StudioEditorView: View {
             transportBar
             timeline
             Divider().overlay(Color.white.opacity(0.1))
-            actionBar
+            if vm.selectedOverlay != nil { overlayBar } else { actionBar }
         }
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
@@ -55,6 +57,9 @@ struct StudioEditorView: View {
             TextField("Title", text: $titleDraft)
             Button("Save") { vm.rename(titleDraft) }
             Button("Cancel", role: .cancel) {}
+        }
+        .fileImporter(isPresented: $importingMusic, allowedContentTypes: [.audio]) { result in
+            if case let .success(url) = result { vm.addMusic(from: url) }
         }
     }
 
@@ -142,6 +147,10 @@ struct StudioEditorView: View {
             }
             .accessibilityIdentifier("studioPlayPause")
             .disabled(vm.previewPlayer == nil)
+            Button { vm.addOverlayKeyframeAtPlayhead() } label: { Image(systemName: "diamond.fill").font(.caption) }
+                .accessibilityIdentifier("studioKeyframe")
+                .disabled(vm.selectedOverlay == nil)
+                .help("Add an opacity keyframe for the selected overlay at the playhead")
             Spacer()
             Text("\(timecode(vm.currentTime)) / \(timecode(vm.totalDuration))")
                 .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.85))
@@ -178,11 +187,14 @@ struct StudioEditorView: View {
                 }
                 .accessibilityIdentifier("studioSplit")
                 barButton("Speed", "speedometer", enabled: hasClip) { activeTool = .speed }
+                barButton("Volume", "speaker.wave.2", enabled: hasClip) { activeTool = .volume }
                 barButton("Filter", "camera.filters", enabled: hasClip) { activeTool = .filter }
                 barButton("Adjust", "slider.horizontal.3", enabled: hasClip) { activeTool = .adjust }
                 barButton("Transition", "arrow.left.arrow.right", enabled: hasClip) { activeTool = .transition }
                 barButton("Text", "textformat") { addingText = true }
                     .accessibilityIdentifier("studioAddText")
+                barButton(vm.musicTracks.isEmpty ? "Music" : "Music ✓", "music.note", action: { importingMusic = true })
+                    .accessibilityIdentifier("studioAddMusic")
                 barButton("Canvas", "aspectratio") { activeTool = .aspect }
                 barButton("Delete", "trash", enabled: hasClip, role: .destructive) { vm.deleteSelected() }
                     .accessibilityIdentifier("studioDelete")
@@ -198,6 +210,42 @@ struct StudioEditorView: View {
         }
         if case let .failed(msg) = vm.exportState {
             Text(msg).font(.footnote).foregroundStyle(.red).padding(6)
+        }
+    }
+
+    // MARK: Overlay controls bar (shown when a text/sticker overlay is selected)
+
+    @ViewBuilder private var overlayBar: some View {
+        if let ov = vm.selectedOverlay {
+            VStack(spacing: 8) {
+                HStack {
+                    Image(systemName: ov.kind == .sticker ? "star.square" : "textformat")
+                        .foregroundStyle(SnappetColor.workout)
+                    Text(ov.content).lineLimit(1).font(.subheadline)
+                    Spacer()
+                    if !ov.opacityKeyframes.isEmpty {
+                        Text("\(ov.opacityKeyframes.count) kf").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Button(role: .destructive) { vm.deleteOverlay(ov.id) } label: { Image(systemName: "trash") }
+                        .accessibilityIdentifier("studioDeleteOverlay")
+                    Button { vm.selectOverlay(nil) } label: { Text("Done").font(.caption.weight(.semibold)) }
+                }
+                HStack {
+                    Image(systemName: "circle.lefthalf.filled").font(.caption)
+                    Slider(value: Binding(get: { ov.opacity },
+                                          set: { vm.setOverlayOpacity(ov.id, $0) }), in: 0...1)
+                        .accessibilityIdentifier("overlayOpacity")
+                    Button { vm.addOverlayKeyframeAtPlayhead() } label: {
+                        Label("Keyframe", systemImage: "diamond").font(.caption2)
+                    }
+                }
+                Text("Drag the overlay on the preview to position it. Set opacity at two playhead times (Keyframe) to fade it.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .foregroundStyle(.white)
+            .background(Color(white: 0.05))
         }
     }
 
@@ -217,7 +265,7 @@ struct StudioEditorView: View {
 
 /// The bottom-sheet tool invoked from the action bar (Speed · Filter · Transition · Canvas) — keeps
 /// the bar to one tap and the value-picking in a focused sheet (the edits pattern).
-enum StudioTool: String, Identifiable { case speed, filter, adjust, transition, aspect; var id: String { rawValue } }
+enum StudioTool: String, Identifiable { case speed, volume, filter, adjust, transition, aspect; var id: String { rawValue } }
 
 private struct StudioToolSheet: View {
     let tool: StudioTool
@@ -237,6 +285,7 @@ private struct StudioToolSheet: View {
     private var title: String {
         switch tool {
         case .speed: return "Speed"
+        case .volume: return "Volume"
         case .filter: return "Filter"
         case .adjust: return "Adjust"
         case .transition: return "Transition"
@@ -266,6 +315,8 @@ private struct StudioToolSheet: View {
                     }
                 }
             }
+        case .volume:
+            StudioVolumeControls(vm: vm)
         case .adjust:
             StudioAdjustControls(vm: vm)
         case .transition:
@@ -293,6 +344,33 @@ private struct StudioToolSheet: View {
                 }
             }
         }
+    }
+}
+
+/// The Volume tool: original-audio volume slider + mute for the selected clip. Commits on release
+/// (one preview rebuild per drag). Maps to `TimelineClip.volume` → an `AVAudioMix` in the composer.
+private struct StudioVolumeControls: View {
+    @Bindable var vm: StudioEditorViewModel
+    @State private var value: Double = 1
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Image(systemName: value == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 28)
+                Slider(value: $value, in: 0...1, onEditingChanged: { editing in
+                    if !editing { vm.setSelectedVolume(value) }
+                })
+                .accessibilityIdentifier("volumeSlider")
+                Text("\(Int(value * 100))%").font(.caption.monospacedDigit()).frame(width: 44)
+            }
+            Button(value == 0 ? "Unmute" : "Mute") {
+                value = value == 0 ? 1 : 0
+                vm.setSelectedVolume(value)
+            }
+            .font(.caption).foregroundStyle(SnappetColor.workout)
+        }
+        .onAppear { value = vm.selectedClip?.volume ?? 1 }
     }
 }
 

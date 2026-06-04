@@ -80,6 +80,9 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
     /// Manual colour adjust (brightness/contrast/saturation). `nil` = neutral. Optional so adding it
     /// is a migration-safe Codable change (old persisted clips decode it as `nil`).
     var adjust: ClipAdjust?
+    /// Original-audio volume 0…1 (`nil` = full = 1; `0` = muted). Optional → migration-safe; applied
+    /// via an `AVAudioMix` in the compositor.
+    var volume: Double?
 
     /// Ken-Burns / zoom scale over the clip's output time (empty = static). Value = scale factor.
     var scaleKeyframes: [StudioKeyframe]
@@ -89,7 +92,7 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
          photoDurationSec: Double = 3,
          cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
          filter: StudioFilter = .none, filterIntensity: Double = 1,
-         adjust: ClipAdjust? = nil,
+         adjust: ClipAdjust? = nil, volume: Double? = nil,
          scaleKeyframes: [StudioKeyframe] = []) {
         self.id = id
         self.sessionMediaID = sessionMediaID
@@ -105,6 +108,7 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
         self.filterRaw = filter.rawValue
         self.filterIntensity = min(1, max(0, filterIntensity))
         self.adjust = adjust
+        self.volume = volume
         self.scaleKeyframes = scaleKeyframes
     }
 

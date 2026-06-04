@@ -50,7 +50,7 @@ final class StudioComposer: Sendable {
     func makeComposition(for snapshot: StudioProjectSnapshot,
                          sourceDurations: [UUID: Double] = [:],
                          forPlayback: Bool = false) async throws
-        -> sending (AVMutableComposition, AVVideoComposition?) {
+        -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
 
         // S1 renders video clips; photos are a Ken-Burns step in S2+.
         let videoClips = StudioGeometry.ordered(snapshot.clips).filter { !$0.isPhoto }
@@ -64,7 +64,8 @@ final class StudioComposer: Sendable {
         }
         return try await assemble(resolved: resolved, aspect: snapshot.aspect,
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
-                                  overlays: snapshot.overlays, forPlayback: forPlayback)
+                                  overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
+                                  forPlayback: forPlayback)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -75,8 +76,9 @@ final class StudioComposer: Sendable {
                   sourceDurations: [UUID: Double] = [:],
                   transitions: [StudioTransition] = [],
                   overlays: [OverlayItem] = [],
+                  audioTracks: [AudioTrack] = [],
                   forPlayback: Bool = false) async throws
-        -> sending (AVMutableComposition, AVVideoComposition?) {
+        -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
         // Transitions need two overlapping tracks (separate path); the CIFilter handler composites
@@ -92,7 +94,7 @@ final class StudioComposer: Sendable {
         }
         return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
                                              sourceDurations: sourceDurations, overlays: overlays,
-                                             forPlayback: forPlayback)
+                                             audioTracks: audioTracks, forPlayback: forPlayback)
     }
 
     /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
@@ -101,8 +103,9 @@ final class StudioComposer: Sendable {
                                      aspect: ClipEditGeometry.OutputAspect,
                                      sourceDurations: [UUID: Double],
                                      overlays: [OverlayItem],
+                                     audioTracks: [AudioTrack] = [],
                                      forPlayback: Bool) async throws
-        -> sending (AVMutableComposition, AVVideoComposition?) {
+        -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         let composition = AVMutableComposition()
         guard let vTrack = composition.addMutableTrack(
             withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
@@ -121,6 +124,8 @@ final class StudioComposer: Sendable {
         var renderSize: CGSize?
         // Per-clip colour filter + manual adjust, by output time range (drives the CIFilter path below).
         var filterRanges: [(range: CMTimeRange, filter: StudioFilter, intensity: Double, adjust: ClipAdjust?)] = []
+        // Per-clip original-audio volume, by the audio segment's start time (drives the AVAudioMix).
+        var audioVolumes: [(at: CMTime, volume: Double)] = []
 
         for (clip, source) in resolved {
             guard let srcVideo = try? await source.loadTracks(withMediaType: .video).first else {
@@ -165,6 +170,7 @@ final class StudioComposer: Sendable {
                                               duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
                         track.scaleTimeRange(seg, toDuration: CMTime(seconds: outDuration, preferredTimescale: timescale))
                     }
+                    audioVolumes.append((insertAt, max(0, min(1, clip.volume ?? 1))))
                 }
             }
 
@@ -228,7 +234,49 @@ final class StudioComposer: Sendable {
             }
         }
 
-        return (composition, videoComposition)
+        // Added **music** tracks (the edits "Add audio"): each is inserted on its own audio track at
+        // its startSec and volume-mixed. Resolved from the app's Documents (where the importer copied
+        // the picked file); a missing file is skipped so export never fails on it.
+        var mixParams: [AVMutableAudioMixInputParameters] = []
+        for music in audioTracks where music.kind != .original {
+            guard let url = Self.musicURL(music.sourceRef),
+                  let mAudio = try? await AVURLAsset(url: url).loadTracks(withMediaType: .audio).first,
+                  let mTrack = composition.addMutableTrack(
+                    withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            let mAsset = AVURLAsset(url: url)
+            let srcDur = (try? await mAsset.load(.duration)) ?? .zero
+            let at = CMTime(seconds: max(0, music.startSec), preferredTimescale: timescale)
+            let avail = composition.duration - at
+            guard avail > .zero, srcDur > .zero else { continue }
+            let dur = min(srcDur, avail)
+            try? mTrack.insertTimeRange(CMTimeRange(start: .zero, duration: dur), of: mAudio, at: at)
+            let p = AVMutableAudioMixInputParameters(track: mTrack)
+            p.setVolume(Float(max(0, min(1, music.volume))), at: at)
+            mixParams.append(p)
+        }
+
+        // Per-clip original-audio volume → AVAudioMix params (only when a clip dials volume off 1).
+        if let aTrack, audioVolumes.contains(where: { $0.volume < 0.999 }) {
+            let params = AVMutableAudioMixInputParameters(track: aTrack)
+            for v in audioVolumes { params.setVolume(Float(v.volume), at: v.at) }
+            mixParams.append(params)
+        }
+
+        let audioMix: AVAudioMix?
+        if mixParams.isEmpty {
+            audioMix = nil
+        } else {
+            let mix = AVMutableAudioMix(); mix.inputParameters = mixParams; audioMix = mix
+        }
+        return (composition, videoComposition, audioMix)
+    }
+
+    /// Resolve a music track's `sourceRef` (the filename the importer copied) to a URL in the app's
+    /// Documents directory.
+    private static func musicURL(_ ref: String) -> URL? {
+        guard !ref.isEmpty else { return nil }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        return docs?.appendingPathComponent(ref)
     }
 
     /// Build a **dissolve-transition** composition (S3). Clips alternate between two video tracks
@@ -243,7 +291,7 @@ final class StudioComposer: Sendable {
         sourceDurations: [UUID: Double],
         overlays: [OverlayItem] = [],
         forPlayback: Bool = false) async throws
-        -> sending (AVMutableComposition, AVVideoComposition?) {
+        -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
 
         let ordered = StudioGeometry.ordered(resolved.map(\.clip))
         let assetByID = Dictionary(resolved.map { ($0.clip.id, $0.asset) }, uniquingKeysWith: { a, _ in a })
@@ -355,7 +403,8 @@ final class StudioComposer: Sendable {
             vc.animationTool = StudioOverlays.makeAnimationTool(
                 overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds)
         }
-        return (composition, vc)
+        // Per-clip volume on the transition path is a follow-up (audio here is a plain stitch).
+        return (composition, vc, nil)
     }
 
     /// Export the composed timeline to a temp `.mp4` (same async export path as `VideoStudio`).
@@ -363,7 +412,7 @@ final class StudioComposer: Sendable {
     /// falls back to HighestQuality so export never fails on an over-ambitious 4K request.
     func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:],
                 quality: StudioExportQuality = .highest) async throws -> URL {
-        let (composition, videoComposition) = try await makeComposition(
+        let (composition, videoComposition, audioMix) = try await makeComposition(
             for: snapshot, sourceDurations: sourceDurations)
         let session = AVAssetExportSession(asset: composition, presetName: quality.presetName)
             ?? AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
@@ -371,6 +420,7 @@ final class StudioComposer: Sendable {
             throw ComposerError.exportFailed("could not create export session")
         }
         session.videoComposition = videoComposition
+        session.audioMix = audioMix
         let out = FileManager.default.temporaryDirectory
             .appendingPathComponent("snappet-studio-\(UUID().uuidString).mp4")
         try await session.export(to: out, as: .mp4)

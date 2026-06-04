@@ -106,6 +106,37 @@ enum StudioProjectEditor {
         return s
     }
 
+    /// Set a clip's original-audio volume (0…1). Full volume (≈1) is stored as `nil` so the
+    /// compositor skips the audio mix for it.
+    static func setClipVolume(_ s: StudioProjectSnapshot, id: UUID, volume: Double) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.clips.firstIndex(where: { $0.id == id }) else { return s }
+        let v = max(0, min(1, volume))
+        s.clips[i].volume = v >= 0.999 ? nil : v
+        return s
+    }
+
+    /// Set an overlay's base opacity (used when it has no opacity keyframes).
+    static func setOverlayOpacity(_ s: StudioProjectSnapshot, id: UUID, opacity: Double) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].opacity = max(0, min(1, opacity))
+        return s
+    }
+
+    /// Add (or replace at the same time) an **opacity keyframe** on an overlay at `timeSec` — the
+    /// marker button. With ≥2 keyframes of differing values the overlay's opacity animates (the export
+    /// `StudioOverlays` samples `opacityKeyframes`).
+    static func addOverlayOpacityKeyframe(_ s: StudioProjectSnapshot, id: UUID,
+                                          timeSec: Double, value: Double) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        var ks = s.overlays[i].opacityKeyframes.filter { abs($0.timeSec - timeSec) > 0.05 }
+        ks.append(StudioKeyframe(timeSec: max(0, timeSec), value: max(0, min(1, value))))
+        s.overlays[i].opacityKeyframes = ks.sorted { $0.timeSec < $1.timeSec }
+        return s
+    }
+
     /// Split a video clip at an **output** offset into two adjacent clips (the `ClipEditGeometry.split`
     /// idea, on the timeline). The offset is converted to source seconds via the clip's speed; a
     /// degenerate split (≤0 or ≥ the trimmed span) is a no-op. Photos aren't split.
@@ -151,6 +182,14 @@ enum StudioProjectEditor {
 
     static func addOverlay(_ s: StudioProjectSnapshot, _ overlay: OverlayItem) -> StudioProjectSnapshot {
         var s = s; s.overlays.append(overlay); return s
+    }
+
+    static func addAudioTrack(_ s: StudioProjectSnapshot, _ track: AudioTrack) -> StudioProjectSnapshot {
+        var s = s; s.audioTracks.append(track); return s
+    }
+
+    static func removeAudioTrack(_ s: StudioProjectSnapshot, id: UUID) -> StudioProjectSnapshot {
+        var s = s; s.audioTracks.removeAll { $0.id == id }; return s
     }
 
     static func removeOverlay(_ s: StudioProjectSnapshot, id: UUID) -> StudioProjectSnapshot {

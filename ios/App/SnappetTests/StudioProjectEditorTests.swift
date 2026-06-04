@@ -52,6 +52,31 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertNil(s.clips.first?.adjust)
     }
 
+    // MARK: - clip volume + overlay opacity/keyframes (audio + animation)
+
+    func testSetClipVolumeStoresAndFullClearsToNil() {
+        let c = video(0)
+        var s = empty(); s.clips = [c]
+        s = StudioProjectEditor.setClipVolume(s, id: c.id, volume: 0.3)
+        XCTAssertEqual(s.clips.first?.volume, 0.3)
+        s = StudioProjectEditor.setClipVolume(s, id: c.id, volume: 1.0)   // full = nil (mix-free)
+        XCTAssertNil(s.clips.first?.volume)
+        s = StudioProjectEditor.setClipVolume(s, id: c.id, volume: -1)    // clamps to 0 (mute)
+        XCTAssertEqual(s.clips.first?.volume, 0)
+    }
+
+    func testOverlayOpacityKeyframesAddSortedAndReplaceSameTime() {
+        let ov = OverlayItem(kind: .text, content: "A", endSec: 5)
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.addOverlayOpacityKeyframe(s, id: ov.id, timeSec: 3, value: 0)
+        s = StudioProjectEditor.addOverlayOpacityKeyframe(s, id: ov.id, timeSec: 1, value: 1)
+        XCTAssertEqual(s.overlays.first?.opacityKeyframes.map(\.timeSec), [1, 3])   // sorted
+        // A keyframe at ~the same time replaces, not duplicates.
+        s = StudioProjectEditor.addOverlayOpacityKeyframe(s, id: ov.id, timeSec: 1.01, value: 0.5)
+        XCTAssertEqual(s.overlays.first?.opacityKeyframes.count, 2)
+        XCTAssertEqual(s.overlays.first?.opacityKeyframes.first?.value, 0.5)
+    }
+
     // MARK: - add / remove / move
 
     func testAddClipAppendsAndIndexes() {

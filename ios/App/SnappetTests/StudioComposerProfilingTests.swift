@@ -32,7 +32,7 @@ final class StudioComposerProfilingTests: XCTestCase {
         }
 
         let composer = StudioComposer()
-        let (composition, videoComposition) = try await composer.assemble(resolved: resolved, aspect: .portrait9x16)
+        let (composition, videoComposition, _) = try await composer.assemble(resolved: resolved, aspect: .portrait9x16)
 
         // BASELINE (works on-device): a multi-clip **passthrough stitch** must export. Measured on
         // MrRobot (iPhone 13 Pro Max): ~0.08–0.10 s to remux a 16 s / 4-clip / 1080×1920 timeline —
@@ -58,7 +58,7 @@ final class StudioComposerProfilingTests: XCTestCase {
             filteredClips.append((TimelineClip(sessionMediaID: nil, localIdentifier: "synthetic",
                                                isPhoto: false, order: i, filter: .vivid), asset))
         }
-        let (fComp, fVC) = try await composer.assemble(resolved: filteredClips, aspect: .portrait9x16)
+        let (fComp, fVC, _) = try await composer.assemble(resolved: filteredClips, aspect: .portrait9x16)
         let filtered = await export(fComp, videoComposition: fVC,
                                     preset: AVAssetExportPresetHighestQuality, tag: "filtered")
         // Measured on MrRobot: a 16 s / 4-clip filtered (vivid) export ~3.0 s, vs ~2.6 s transform-only
@@ -76,7 +76,7 @@ final class StudioComposerProfilingTests: XCTestCase {
             if let p = prevID { transitions.append(StudioTransition(afterClipID: p, kind: .dissolve, durationSec: 0.5)) }
             prevID = c.id
         }
-        let (tComp, tVC) = try await composer.assemble(resolved: transClips, aspect: .portrait9x16, transitions: transitions)
+        let (tComp, tVC, _) = try await composer.assemble(resolved: transClips, aspect: .portrait9x16, transitions: transitions)
         let dissolve = await export(tComp, videoComposition: tVC, preset: AVAssetExportPresetHighestQuality, tag: "dissolve")
         // Measured on MrRobot: a 16 s / 4-clip / 3-dissolve export ~2.8 s. (Export-success verifies the
         // two-track composition is valid + renders; the crossfade's *look* needs a visual check.)
@@ -90,7 +90,7 @@ final class StudioComposerProfilingTests: XCTestCase {
                                               isPhoto: false, order: i), asset))
         }
         let overlays = [OverlayItem(kind: .text, content: "REP PR", startSec: 0, endSec: 3)]
-        let (oComp, oVC) = try await composer.assemble(resolved: overlayClips, aspect: .portrait9x16, overlays: overlays)
+        let (oComp, oVC, _) = try await composer.assemble(resolved: overlayClips, aspect: .portrait9x16, overlays: overlays)
         let overlaid = await export(oComp, videoComposition: oVC, preset: AVAssetExportPresetHighestQuality, tag: "overlay")
         // Measured on MrRobot: a 16 s / 4-clip export with a text overlay ~4.9 s (the Core Animation
         // tool costs more than a CIFilter, still well under realtime). Export-success proves the
@@ -108,7 +108,7 @@ final class StudioComposerProfilingTests: XCTestCase {
             if let p = prevSlideID { slides.append(StudioTransition(afterClipID: p, kind: .slideLeft, durationSec: 0.5)) }
             prevSlideID = c.id
         }
-        let (slComp, slVC) = try await composer.assemble(resolved: slideClips, aspect: .portrait9x16, transitions: slides)
+        let (slComp, slVC, _) = try await composer.assemble(resolved: slideClips, aspect: .portrait9x16, transitions: slides)
         let slide = await export(slComp, videoComposition: slVC, preset: AVAssetExportPresetHighestQuality, tag: "slide")
         XCTAssertTrue(slide.ok, "slide-transition export should succeed on-device (status \(slide.status), \(slide.err ?? ""))")
 
@@ -119,7 +119,7 @@ final class StudioComposerProfilingTests: XCTestCase {
                                          isPhoto: false, order: i, filter: .warm), asset))
         }
         let sticker = [OverlayItem(kind: .sticker, content: "star.fill", startSec: 0, endSec: 4)]
-        let (fsComp, fsVC) = try await composer.assemble(resolved: fsClips, aspect: .portrait9x16, overlays: sticker)
+        let (fsComp, fsVC, _) = try await composer.assemble(resolved: fsClips, aspect: .portrait9x16, overlays: sticker)
         let filterSticker = await export(fsComp, videoComposition: fsVC, preset: AVAssetExportPresetHighestQuality, tag: "filter-sticker")
         XCTAssertTrue(filterSticker.ok, "filter+sticker export should succeed on-device (status \(filterSticker.status), \(filterSticker.err ?? ""))")
         #endif
@@ -150,7 +150,7 @@ final class StudioComposerProfilingTests: XCTestCase {
         var exportClips: [(clip: TimelineClip, asset: AVAsset)] = [
             (TimelineClip(sessionMediaID: nil, localIdentifier: "a", isPhoto: false, order: 0, filter: .vivid), asset),
             (TimelineClip(sessionMediaID: nil, localIdentifier: "b", isPhoto: false, order: 1, filter: .fade), asset)]
-        let (_, exportVC) = try await composer.assemble(resolved: exportClips, aspect: .portrait9x16,
+        let (_, exportVC, _) = try await composer.assemble(resolved: exportClips, aspect: .portrait9x16,
                                                         overlays: overlays, forPlayback: false)
         XCTAssertNotNil(exportVC?.animationTool, "export composition should keep the overlay tool")
 
@@ -158,7 +158,7 @@ final class StudioComposerProfilingTests: XCTestCase {
         var playClips: [(clip: TimelineClip, asset: AVAsset)] = [
             (TimelineClip(sessionMediaID: nil, localIdentifier: "a", isPhoto: false, order: 0, filter: .vivid), asset),
             (TimelineClip(sessionMediaID: nil, localIdentifier: "b", isPhoto: false, order: 1, filter: .fade), asset)]
-        let (playComp, playVC) = try await composer.assemble(resolved: playClips, aspect: .portrait9x16,
+        let (playComp, playVC, _) = try await composer.assemble(resolved: playClips, aspect: .portrait9x16,
                                                             overlays: overlays, forPlayback: true)
         XCTAssertNil(playVC?.animationTool, "playback composition must omit the offline-only overlay tool")
         let item = AVPlayerItem(asset: playComp)
