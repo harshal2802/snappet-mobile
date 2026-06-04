@@ -261,7 +261,9 @@ const nodes = [
   { id: "videostudio", label: "VideoStudio", type: "service", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Services/VideoStudio.swift", desc: "Stateless on-device clip-editing engine: one makeComposition(for: EditPlan) builds the AVMutableComposition + AVVideoComposition reused for both preview and export — trim/split, crop/aspect, speed, time-gated text overlays via AVVideoCompositionCoreAnimationTool.", tags: ["avfoundation","editor","composition"] },
   { id: "studio-composer", label: "StudioComposer", type: "service", group: "workout-log", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Services/StudioComposer.swift", desc: "Multi-clip render engine for the full studio (S1), generalizing VideoStudio from one clip to a StudioProjectSnapshot timeline: ordered video clips inserted sequentially (trim + speed) on a shared output canvas with per-clip orientation+crop transforms, reused for preview + export. Pure placement/keyframe math is StudioGeometry; this is the device-only AVFoundation half. Filters / transitions / overlays / Ken-Burns photos / audio-mix are S2+ compositor extension points (the model carries them already).", tags: ["avfoundation","studio","multi-clip","device-only"] },
+    file: "ios/App/Snappet/Services/StudioComposer.swift", desc: "Multi-clip render engine for the full studio, generalizing VideoStudio from one clip to a StudioProjectSnapshot timeline: ordered video clips inserted sequentially (trim + speed) on a shared output canvas, reused for preview + export. No-filter clips use a per-clip orientation+crop layer-instruction path; any clip with a colour filter (S2) routes through a Core Image compositor (AVMutableVideoComposition applyingCIFiltersWithHandler → StudioFilters). Device-verified on-device (S0/S2 spike): ~0.2x realtime, filters add ~15%. Pure placement/keyframe math is StudioGeometry. Transitions / overlays / Ken-Burns photos / audio-mix remain S2+ extension points.", tags: ["avfoundation","coreimage","studio","multi-clip","filters","device-only"] },
+  { id: "studio-filters", label: "StudioFilters", type: "service", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Services/StudioFilters.swift", desc: "Pure Core Image mapping (no AVFoundation/device, unit-tested on the sim): StudioFilter (mono/noir/fade/vivid/warm/cool) + intensity → a configured CIFilter, plus apply() and aspectFill() helpers. The StudioComposer's CIFilter compositor handler calls these per frame during export/preview.", tags: ["coreimage","filters","pure","studio"] },
   { id: "medialibraryservice", label: "MediaLibraryService", type: "service", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Services/MediaLibraryService.swift", desc: "Saves a finished video back to Photos with add-only authorization (the narrowest grant — write a new asset without read access), entirely on-device.", tags: ["photos","save","add-only"] },
 
@@ -526,6 +528,7 @@ const links = [
   { source: "wt-session-detail", target: "studio-editor", type: "cover", label: "Open studio" },
   { source: "studio-editor", target: "studio-composer", type: "uses", label: "compose / export" },
   { source: "studio-composer", target: "ext-avfoundation", type: "uses" },
+  { source: "studio-composer", target: "studio-filters", type: "uses", label: "per-frame CIFilter" },
   { source: "studio-editor", target: "model-studio-project", type: "persists" },
   { source: "model-sessionmedia", target: "model-studio-project", type: "feeds", label: "seed clips" },
   { source: "videostudio", target: "ext-avfoundation", type: "uses" },

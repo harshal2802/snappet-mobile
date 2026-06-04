@@ -51,6 +51,20 @@ final class StudioComposerProfilingTests: XCTestCase {
                                      preset: AVAssetExportPresetHighestQuality, tag: "transform")
         XCTAssertTrue(transform.ok, "videoComposition (transform) export should succeed on-device (status \(transform.status), \(transform.err ?? ""))")
         XCTAssertLessThan(transform.sec, 60, "a 16 s transform export should finish well under 60 s on-device")
+
+        // S2: a FILTERED export (CIFilter compositor path) must also work on-device.
+        var filteredClips: [(clip: TimelineClip, asset: AVAsset)] = []
+        for i in 0..<clipCount {
+            filteredClips.append((TimelineClip(sessionMediaID: nil, localIdentifier: "synthetic",
+                                               isPhoto: false, order: i, filter: .vivid), asset))
+        }
+        let (fComp, fVC) = try await composer.assemble(resolved: filteredClips, aspect: .portrait9x16)
+        let filtered = await export(fComp, videoComposition: fVC,
+                                    preset: AVAssetExportPresetHighestQuality, tag: "filtered")
+        // Measured on MrRobot: a 16 s / 4-clip filtered (vivid) export ~3.0 s, vs ~2.6 s transform-only
+        // — per-frame Core Image filtering adds ~15%, still ~0.2x realtime.
+        XCTAssertTrue(filtered.ok, "filtered (CIFilter) export should succeed on-device (status \(filtered.status), \(filtered.err ?? ""))")
+        XCTAssertLessThan(filtered.sec, 90, "a 16 s filtered export should finish well under 90 s on-device")
         #endif
     }
 

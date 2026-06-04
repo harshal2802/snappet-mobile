@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Photos
 import CoreGraphics
+import CoreImage
 import UIKit
 
 /// Turns a `StudioProjectSnapshot` (multi-clip timeline) into a playable/exportable AVFoundation
@@ -81,6 +82,8 @@ final class StudioComposer: Sendable {
         // instructions for the same track in one instruction is malformed and fails export.
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
         var renderSize: CGSize?
+        // Per-clip colour filter, by output time range (drives the CIFilter compositor path below).
+        var filterRanges: [(range: CMTimeRange, filter: StudioFilter, intensity: Double)] = []
 
         for (clip, source) in resolved {
             guard let srcVideo = try? await source.loadTracks(withMediaType: .video).first else {
@@ -134,22 +137,42 @@ final class StudioComposer: Sendable {
                 cropRect: clip.cropRect, sourceSize: orientedSize, renderSize: canvas)
             layerInstruction.setTransform(preferred.concatenating(crop), at: insertAt)
 
-            cursor = CMTimeAdd(insertAt, CMTime(seconds: outDuration, preferredTimescale: timescale))
+            let outRange = CMTimeRange(start: insertAt,
+                                       duration: CMTime(seconds: outDuration, preferredTimescale: timescale))
+            filterRanges.append((outRange, clip.filter, clip.filterIntensity))
+            cursor = outRange.end
         }
 
         guard cursor > .zero, let canvas = renderSize else { throw ComposerError.noRenderableClips }
 
-        // Build the video composition from the composition's own properties (so color/format tags and
-        // a valid source-track mapping are present) rather than a bare `AVMutableVideoComposition()`,
-        // which the on-device encoder rejects with -11838 (S0 spike). Then override the canvas size
-        // and swap in our per-clip transform instruction.
-        let videoComposition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
-        videoComposition.renderSize = canvas
-        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-        instruction.layerInstructions = [layerInstruction]
-        videoComposition.instructions = [instruction]
+        let videoComposition: AVMutableVideoComposition
+        if filterRanges.contains(where: { $0.filter != .none }) {
+            // S2 — at least one clip has a colour filter: composite through Core Image. AVFoundation
+            // hands each frame to the handler as a CIImage; we aspect-fill it to the canvas and apply
+            // the active clip's filter. (This path supersedes the per-clip transform/crop instruction;
+            // combining precise crop WITH a filter is a follow-up — the layout here is aspect-fill.)
+            let ranges = filterRanges
+            videoComposition = AVMutableVideoComposition(asset: composition) { request in
+                let t = request.compositionTime
+                var image = StudioFilters.aspectFill(request.sourceImage, to: canvas)
+                if let active = ranges.first(where: { $0.range.containsTime(t) }), active.filter != .none {
+                    image = StudioFilters.apply(active.filter, intensity: active.intensity, to: image)
+                }
+                request.finish(with: image, context: nil)
+            }
+            videoComposition.renderSize = canvas
+        } else {
+            // No filters: the transform/crop path. Build from the composition's own properties (so
+            // color/format tags + a valid source-track mapping are present) rather than a bare
+            // `AVMutableVideoComposition()`, which the on-device encoder rejects with -11838 (S0).
+            videoComposition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
+            videoComposition.renderSize = canvas
+            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+            instruction.layerInstructions = [layerInstruction]
+            videoComposition.instructions = [instruction]
+        }
 
         return (composition, videoComposition)
     }

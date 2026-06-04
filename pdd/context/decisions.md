@@ -4,6 +4,30 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] S2 studio filters — Core Image colour filters, device-verified
+
+**Decision**: Built the first S2 effect — per-clip **colour filters** (mono / noir / fade / vivid / warm /
+cool) — on the device-proven export path (S0). Architecture:
+- **`StudioFilters`** (pure Core Image, unit-tested on the sim): `StudioFilter` + intensity → a configured
+  `CIFilter`, with `apply()` + `aspectFill()` helpers. Warm/cool use a simple `CIColorMatrix` channel
+  shift (avoids `CITemperatureAndTint`'s dual-neutral subtlety); vivid uses `CIColorControls`; mono/noir/
+  fade are `CIPhotoEffect*`.
+- **`StudioComposer`** routes any clip-with-a-filter through `AVMutableVideoComposition(asset:
+  applyingCIFiltersWithHandler:)` — AVFoundation hands each frame to the handler as a `CIImage`, we
+  aspect-fill to the canvas and apply the active clip's filter (looked up by the request's composition
+  time). No-filter clips keep the layer-instruction transform/crop path. **Chose the CIFilter-handler API
+  over a custom `AVVideoCompositing`** — far less coordinate/pixel-buffer risk for the same result.
+- The S1 editor's filter picker now renders end-to-end (preview + export) with no UI change.
+
+**Why it matters / rules out**: this is the template for the rest of S2+ (transitions, keyframed overlays
+ride the same compositor). **Known follow-up**: the filter path currently aspect-fills (it supersedes the
+per-clip *crop* transform) — combining precise crop WITH a filter is deferred.
+
+**Verified on the iPhone 13 Pro Max** (the S0/S2 spike, now asserting it): a 16 s / 4-clip **filtered
+(vivid)** export succeeds in ~3.0 s vs ~2.6 s transform-only — Core Image per-frame adds ~15 %, still
+~0.2x realtime. Full unit suite **188 green** (4 new `StudioFiltersTests` incl. a warm-vs-cool channel
+check; 1 skipped on the sim).
+
 ## [2026-06-04] S0 studio-export spike — **GO** (videoComposition export fixed; root cause = empty audio track)
 
 **Decision / finding**: Ran the S0 device-profiling spike (`StudioComposerProfilingTests`, on the iPhone
