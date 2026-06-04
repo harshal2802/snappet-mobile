@@ -163,6 +163,20 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 snap("11b-reassign-menu-NOTSHOWN")
             }
 
+            // 11g — REGRESSION: tapping a VIDEO opens the clip editor and it STAYS open. It used to
+            // collapse on the first open (creating the ClipEdit saved mid-presentation, tearing the
+            // sheet down). The editor's "Done" must still be present a moment after it appears.
+            if let videoThumb = firstVideoMediaThumb() {
+                videoThumb.tap()
+                if app.buttons["clipEditorDone"].waitForExistence(timeout: 4) {
+                    usleep(900_000)
+                    XCTAssertTrue(app.buttons["clipEditorDone"].exists,
+                                  "the clip editor must stay open on the first tap, not collapse")
+                    snap("11g-clip-editor")
+                    app.buttons["clipEditorDone"].tap()
+                }
+            }
+
             // 11c — The full multi-clip Studio (S1): open it over the session's video clips and
             // exercise the timeline + an edit (split) + undo. The preview render is device-only, so
             // on the sim the canvas shows its placeholder while the timeline + edits work on the
@@ -267,6 +281,18 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                        app.cells.matching(identifier: "mediaThumb")]
         for q in queries {
             let el = q.firstMatch
+            if el.waitForExistence(timeout: 2), el.isHittable { return el }
+        }
+        return nil
+    }
+
+    /// The first **video** media thumb (label "Video at +Ns") — videos open the clip editor on tap.
+    private func firstVideoMediaThumb() -> XCUIElement? {
+        func match(_ base: XCUIElementQuery) -> XCUIElement {
+            base.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "mediaThumb", "Video"))
+                .firstMatch
+        }
+        for el in [match(app.otherElements), match(app.images), match(app.cells)] {
             if el.waitForExistence(timeout: 2), el.isHittable { return el }
         }
         return nil

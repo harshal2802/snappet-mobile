@@ -77,7 +77,11 @@ struct ClipEditorView: View {
     private func makeAndInsertEdit() -> ClipEdit {
         let edit = ClipEdit.makeDefault(for: media)
         context.insert(edit)
-        try? context.save()
+        // NOTE: do NOT `context.save()` here. This runs in the sheet's `.task` as it presents; a
+        // synchronous save fires a SwiftData change that re-renders the presenting media section and
+        // tears the just-presented sheet down (the "editor collapses on the first open, works on the
+        // second" bug). The inserted edit is still fetchable in-context for reuse, and the view model
+        // persists it on the first real edit (its `save` closure) / a later autosave.
         return edit
     }
 
