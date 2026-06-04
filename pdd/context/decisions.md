@@ -4,6 +4,30 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Session detail → per-set tiles (media+HR unified) + HR-overlay pinch + Find-media polish
+
+**Decision**: Follow-up UX from device feedback.
+- **HR chart overlay is pinch-resizable** in the studio preview (`StudioHRChartView` `MagnifyGesture` →
+  `setHRScale`, 0.3…1), matching the PiP resize; the HR tool's size slider still works.
+- **Session detail unified to one tile per set.** `SessionDetailView` no longer renders set logs and
+  the tagged-media gallery in separate places. `SessionMediaSection` now owns the per-exercise sections:
+  each set is a `SetTileRow` (reps/weight + the **heart rate at the set's completion**, nearest
+  `hrSeries` sample, zone-coloured) and its tagged photos/videos render as **rows beneath it** (multiple
+  media → multiple rows). A **General** section holds unassigned media. The big B2 HR chart stays above.
+- **Media removal is discoverable** (#3 — it was context-menu-only): each media row has **swipe-to-remove**
+  (trailing) + **swipe-to-move** (leading) plus the existing long-press menu.
+- **Find-media workflow** (#4) reviewed — the discovery logic was already sound (padded
+  `[start−90s, end+90s]` window, dedupe, offset-align in `SessionMediaService`). Added a **Settings
+  escape hatch** when Photos access is `denied`/`restricted`/`limited` (auto-discovery needs full
+  access; limited can only PHPick), a found-count / explained-empty message that names the searched
+  **time window**, and clearer limited-access copy.
+
+**Rules out / notes**: per-set HR is the **nearest sample at set completion** (not an interval average) —
+simple + meaningful. Walkthrough-critical ids preserved (`openStudio`/`generateHighlight`/`mediaThumb` +
+a "Set N" label + a "General" header). `SessionMediaThumb` gained a `side` param (compact 54 pt in
+rows). Verified: studio UI walkthrough green on the iPhone 17 sim; unit suite 206 (2 skipped), 0
+failures. Device visual pass owed (thumbnails/discovery are device-only).
+
 ## [2026-06-04] Studio timeline zoom + PiP video overlay + HR-chart overlay
 
 **Decision**: Three follow-on studio features (separate commits).
