@@ -4,6 +4,28 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Studio effects batch — sticker/keyframed overlays, slide/zoom, filter+overlay; filter+transition deferred
+
+**Decision**: Filled out the studio effects (all device-export-verified via the spike, 7 paths):
+- **Sticker overlays** (tinted SF-Symbol CALayer) + **keyframed overlay opacity** (drives the visibility
+  animation from `opacityKeyframes` when present) — `StudioOverlays`.
+- **Slide / zoom transitions** — on the two-track path, ramp **track B's transform** over the overlap
+  (slide = full-width translate; zoom = scale about the canvas centre) instead of (or with) the dissolve
+  opacity ramp. B is always on top, so it animates in when incoming / out when outgoing.
+- **Filter + overlay** — attach the overlay animation tool to the CIFilter-handler path too.
+
+**Deliberately CUT (quality call): filter + transition combined.** It needs a custom
+`AVVideoCompositing` (the CIFilter handler composites tracks itself, so it can't cross-dissolve two
+tracks). I built one but it hit Swift 6 `AVVideoCompositing` Sendability friction AND can't be visually
+verified by a headless device test — shipping a blind, concurrency-fighting compositor is the wrong
+trade. **Removed it; the case degrades gracefully** (the dispatch falls through to the filter path →
+filters render, the transition is dropped). The unified compositor is the documented follow-up.
+
+**Rules out / follow-ups**: filter+transition (custom compositor), animated overlay **position** (only
+opacity keyframes today), Ken-Burns photos, audio cross-fade. **Honest caveat (unchanged)**: the spike
+proves each path produces valid, renderable video — NOT that slides/zooms/stickers/keyframes *look*
+right; that needs a visual pass (editor preview / exported file). Full unit suite 188 green (1 skipped).
+
 ## [2026-06-04] S4 studio text overlays — Core Animation overlay tool (device-verified export)
 
 **Decision**: Added **time-gated text overlays**. `StudioOverlays` builds a Core Animation layer tree

@@ -70,9 +70,11 @@ final class StudioComposer: Sendable {
         -> sending (AVMutableComposition, AVVideoComposition?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
-        // Dissolve transitions need two overlapping tracks — a separate path (and it can't combine
-        // with the CIFilter handler, which composites tracks itself). Use it when any transition is
-        // set and no clip has a filter; otherwise the single-track filter/transform path below.
+        // Transitions need two overlapping tracks (separate path); the CIFilter handler composites
+        // tracks itself so it can't combine with them. Use the transition path when a transition is
+        // set and NO clip has a filter. If both are present, fall through to the filter path —
+        // filters render and the transition is dropped (a graceful degradation; combining the two
+        // needs a custom AVVideoCompositing, deferred — decisions.md).
         if transitions.contains(where: { $0.kind != .none }),
            !resolved.contains(where: { $0.clip.filter != .none }) {
             return try await assembleWithTransitions(
@@ -185,6 +187,9 @@ final class StudioComposer: Sendable {
                 request.finish(with: image, context: nil)
             }
             videoComposition.renderSize = canvas
+            // Overlays compose over the filtered frames too (text/sticker on a filtered clip).
+            videoComposition.animationTool = StudioOverlays.makeAnimationTool(
+                overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds)
         } else {
             // No filters: the transform/crop path. Build from the composition's own properties (so
             // color/format tags + a valid source-track mapping are present) rather than a bare
@@ -240,6 +245,7 @@ final class StudioComposer: Sendable {
         var aTrack: AVMutableCompositionTrack?
         var endA = CMTime.zero, endB = CMTime.zero
         var canvas: CGSize?
+        var transformByID: [UUID: CGAffineTransform] = [:]   // each clip's base transform
 
         for (i, clip) in ordered.enumerated() {
             guard let asset = assetByID[clip.id], let p = placeByID[clip.id],
@@ -281,23 +287,35 @@ final class StudioComposer: Sendable {
             }
 
             let crop = ClipEditGeometry.cropTransform(cropRect: clip.cropRect, sourceSize: oriented, renderSize: cv)
-            li.setTransform(pref.concatenating(crop), at: at)
+            let xform = pref.concatenating(crop)
+            li.setTransform(xform, at: at)
+            transformByID[clip.id] = xform
         }
 
         guard let cv = canvas, composition.duration > .zero else { throw ComposerError.noRenderableClips }
 
-        // Dissolve = ramp track B's opacity over each transition's overlap [next.start, current.end].
+        // Each transition animates track B (always on top): IN when B is the incoming clip, OUT when
+        // outgoing, over the overlap [next.start, current.end]. Dissolve/fade ramp opacity; slide/zoom
+        // ramp B's transform between its in-place pose and an off-canvas pose.
         for i in 0 ..< (ordered.count - 1) {
-            guard transitions.contains(where: { $0.afterClipID == ordered[i].id && $0.kind != .none }),
+            guard let t = transitions.first(where: { $0.afterClipID == ordered[i].id && $0.kind != .none }),
                   let cur = placeByID[ordered[i].id], let nxt = placeByID[ordered[i + 1].id] else { continue }
             let start = CMTime(seconds: nxt.startSec, preferredTimescale: timescale)
             let end = CMTime(seconds: cur.endSec, preferredTimescale: timescale)
             guard end > start else { continue }
             let range = CMTimeRange(start: start, end: end)
-            if (i + 1) % 2 == 1 {
-                liB.setOpacityRamp(fromStartOpacity: 0, toEndOpacity: 1, timeRange: range)   // B incoming
-            } else {
-                liB.setOpacityRamp(fromStartOpacity: 1, toEndOpacity: 0, timeRange: range)   // B outgoing
+            let bIncoming = (i + 1) % 2 == 1                         // the incoming clip (i+1) is on track B
+            let base = transformByID[bIncoming ? ordered[i + 1].id : ordered[i].id] ?? .identity
+            switch t.kind {
+            case .dissolve, .fadeThroughBlack:
+                liB.setOpacityRamp(fromStartOpacity: bIncoming ? 0 : 1,
+                                   toEndOpacity: bIncoming ? 1 : 0, timeRange: range)
+            case .slideLeft, .slideRight, .zoomIn:
+                let off = Self.offCanvasTransform(kind: t.kind, base: base, canvas: cv, incoming: bIncoming)
+                liB.setTransformRamp(fromStart: bIncoming ? off : base,
+                                     toEnd: bIncoming ? base : off, timeRange: range)
+            case .none:
+                break
             }
         }
 
@@ -334,6 +352,26 @@ final class StudioComposer: Sendable {
         guard let asset = await avAsset(forLocalIdentifier: id),
               let d = try? await asset.load(.duration).seconds, d > 0 else { return nil }
         return d
+    }
+
+    /// The off-canvas pose for a slide/zoom transition, relative to a clip's in-place `base` transform.
+    /// slide = a full-width translation (enter-from / exit-to a side); zoom = a small scale about the
+    /// canvas centre. `incoming` flips the side so the clip enters from the opposite edge it exits to.
+    private static func offCanvasTransform(kind: StudioTransitionKind, base: CGAffineTransform,
+                                           canvas: CGSize, incoming: Bool) -> CGAffineTransform {
+        switch kind {
+        case .slideLeft:
+            return base.concatenating(CGAffineTransform(translationX: incoming ? canvas.width : -canvas.width, y: 0))
+        case .slideRight:
+            return base.concatenating(CGAffineTransform(translationX: incoming ? -canvas.width : canvas.width, y: 0))
+        case .zoomIn:
+            let cx = canvas.width / 2, cy = canvas.height / 2
+            let scaleAboutCentre = CGAffineTransform(translationX: cx, y: cy)
+                .scaledBy(x: 0.2, y: 0.2).translatedBy(x: -cx, y: -cy)
+            return base.concatenating(scaleAboutCentre)
+        default:
+            return base
+        }
     }
 
     private func orientedSize(_ size: CGSize, transform: CGAffineTransform) -> CGSize {

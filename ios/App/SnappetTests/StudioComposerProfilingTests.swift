@@ -97,6 +97,31 @@ final class StudioComposerProfilingTests: XCTestCase {
         // composition is valid + renders; the overlay's *look* needs a visual check.
         XCTAssertTrue(overlaid.ok, "text-overlay export should succeed on-device (status \(overlaid.status), \(overlaid.err ?? ""))")
         XCTAssertLessThan(overlaid.sec, 120, "a 16 s overlay export should finish well under 2 min on-device")
+
+        // Slide transition (two-track transform-ramp path).
+        var slideClips: [(clip: TimelineClip, asset: AVAsset)] = []
+        var slides: [StudioTransition] = []
+        var prevSlideID: UUID?
+        for i in 0..<clipCount {
+            let c = TimelineClip(sessionMediaID: nil, localIdentifier: "synthetic", isPhoto: false, order: i)
+            slideClips.append((c, asset))
+            if let p = prevSlideID { slides.append(StudioTransition(afterClipID: p, kind: .slideLeft, durationSec: 0.5)) }
+            prevSlideID = c.id
+        }
+        let (slComp, slVC) = try await composer.assemble(resolved: slideClips, aspect: .portrait9x16, transitions: slides)
+        let slide = await export(slComp, videoComposition: slVC, preset: AVAssetExportPresetHighestQuality, tag: "slide")
+        XCTAssertTrue(slide.ok, "slide-transition export should succeed on-device (status \(slide.status), \(slide.err ?? ""))")
+
+        // Filter + sticker overlay combined (CIFilter handler + Core Animation overlay tool).
+        var fsClips: [(clip: TimelineClip, asset: AVAsset)] = []
+        for i in 0..<clipCount {
+            fsClips.append((TimelineClip(sessionMediaID: nil, localIdentifier: "synthetic",
+                                         isPhoto: false, order: i, filter: .warm), asset))
+        }
+        let sticker = [OverlayItem(kind: .sticker, content: "star.fill", startSec: 0, endSec: 4)]
+        let (fsComp, fsVC) = try await composer.assemble(resolved: fsClips, aspect: .portrait9x16, overlays: sticker)
+        let filterSticker = await export(fsComp, videoComposition: fsVC, preset: AVAssetExportPresetHighestQuality, tag: "filter-sticker")
+        XCTAssertTrue(filterSticker.ok, "filter+sticker export should succeed on-device (status \(filterSticker.status), \(filterSticker.err ?? ""))")
         #endif
     }
 

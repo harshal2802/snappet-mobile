@@ -14,22 +14,44 @@ enum StudioOverlays {
 
     static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double)
         -> AVVideoCompositionCoreAnimationTool? {
-        let texts = overlays.filter { $0.kind == .text && !$0.content.isEmpty }
-        guard !texts.isEmpty, canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
+        let visible = overlays.filter { !$0.content.isEmpty }
+        guard !visible.isEmpty, canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
 
         let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: canvas)
         let videoLayer = CALayer(); videoLayer.frame = CGRect(origin: .zero, size: canvas)
         let overlayLayer = CALayer(); overlayLayer.frame = CGRect(origin: .zero, size: canvas)
 
-        for overlay in texts {
-            overlayLayer.addSublayer(textLayer(for: overlay, canvas: canvas, totalDuration: totalDuration))
+        for overlay in visible {
+            let layer = overlay.kind == .sticker
+                ? stickerLayer(for: overlay, canvas: canvas)
+                : textLayer(for: overlay, canvas: canvas)
+            applyVisibility(layer, overlay: overlay, totalDuration: totalDuration)
+            overlayLayer.addSublayer(layer)
         }
         parent.addSublayer(videoLayer)
         parent.addSublayer(overlayLayer)
         return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
     }
 
-    private static func textLayer(for overlay: OverlayItem, canvas: CGSize, totalDuration: Double) -> CATextLayer {
+    /// A sticker overlay: an SF Symbol image (`content` = symbol name) tinted by `colorHex`, sized by
+    /// scale, positioned + rotated. Falls back to a filled circle if the symbol can't be resolved.
+    private static func stickerLayer(for overlay: OverlayItem, canvas: CGSize) -> CALayer {
+        let side = max(24, canvas.height * 0.12 * overlay.scale)
+        let layer = CALayer()
+        let config = UIImage.SymbolConfiguration(pointSize: side, weight: .semibold)
+        let image = UIImage(systemName: overlay.content, withConfiguration: config)?
+            .withTintColor(uiColor(overlay.colorHex), renderingMode: .alwaysOriginal)
+        layer.contents = image?.cgImage
+        layer.contentsGravity = .resizeAspect
+        let center = ClipEditGeometry.layerPoint(normalized: overlay.position, in: canvas)
+        layer.frame = CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side)
+        if abs(overlay.rotationDegrees) > 0.01 {
+            layer.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
+        }
+        return layer
+    }
+
+    private static func textLayer(for overlay: OverlayItem, canvas: CGSize) -> CATextLayer {
         let text = CATextLayer()
         text.string = overlay.content
         let fontSize = max(8, canvas.height * 0.05 * overlay.scale)
@@ -50,25 +72,50 @@ enum StudioOverlays {
         if abs(overlay.rotationDegrees) > 0.01 {
             text.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
         }
+        return text
+    }
 
-        // Time-gate: visible (at `opacity`) only within [start, end], else 0. A keyframe over the whole
-        // timeline so the overlay also DISAPPEARS after `end` (a fillMode-forwards basic animation would
-        // wrongly hold it). Same approach as VideoStudio.attachOverlays.
+    /// Time-gate a layer to `[startSec, endSec]` via an opacity keyframe over the whole timeline (so it
+    /// also DISAPPEARS after `end`). If the overlay carries `opacityKeyframes`, those drive the opacity
+    /// inside the window (animated); otherwise it holds the static `opacity`.
+    private static func applyVisibility(_ layer: CALayer, overlay: OverlayItem, totalDuration: Double) {
         let total = max(0.01, totalDuration)
         let start = max(0, min(overlay.startSec, total))
         let end = max(start, min(overlay.endSec, total))
-        text.opacity = 0
+        layer.opacity = 0
         let anim = CAKeyframeAnimation(keyPath: "opacity")
-        let o = Float(min(1, max(0, overlay.opacity)))
-        anim.values = [0, 0, o, o, 0, 0]
-        anim.keyTimes = [0, NSNumber(value: start / total), NSNumber(value: start / total),
-                         NSNumber(value: end / total), NSNumber(value: end / total), 1]
+
+        var values: [Float] = [0, 0]
+        var keyTimes: [NSNumber] = [0, NSNumber(value: start / total)]
+        let kfs = overlay.opacityKeyframes.sorted { $0.timeSec < $1.timeSec }
+        if kfs.isEmpty {
+            let o = Float(min(1, max(0, overlay.opacity)))
+            values += [o, o]
+            keyTimes += [NSNumber(value: start / total), NSNumber(value: end / total)]
+        } else {
+            // Animated opacity: sample each keyframe (clamped into the window), strictly increasing in t.
+            var lastT = start
+            for k in kfs {
+                let t = min(end, max(start, k.timeSec))
+                if t < lastT { continue }
+                values.append(Float(min(1, max(0, k.value))))
+                keyTimes.append(NSNumber(value: t / total))
+                lastT = t
+            }
+            // Hold the last keyframe value to the window end.
+            values.append(values.last ?? 0)
+            keyTimes.append(NSNumber(value: end / total))
+        }
+        values += [0, 0]
+        keyTimes += [NSNumber(value: end / total), 1]
+
+        anim.values = values
+        anim.keyTimes = keyTimes
         anim.beginTime = AVCoreAnimationBeginTimeAtZero
         anim.duration = total
         anim.isRemovedOnCompletion = false
         anim.fillMode = .both
-        text.add(anim, forKey: "visibility")
-        return text
+        layer.add(anim, forKey: "visibility")
     }
 
     private static func uiColor(_ hex: String) -> UIColor {
