@@ -4,6 +4,44 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Dynamic sessions + Kilter-driven climbing — direction set (design only, no code)
+
+**Decision**: Captured a design review (`pdd/prompts/features/dynamic-sessions/DESIGN.md`) for two
+user-requested capabilities, **design-only** for now (iOS code needs a Mac+Xcode to compile/verify per
+the on-device rules below; this records the model + decomposition a Mac session implements):
+
+- **Dynamic / freeform sessions.** Today every session is routine-locked — the only entry is
+  `startWorkout(from: Routine)` → `makeSession(from:)` and `WorkoutPlayerView` walks a **frozen**
+  `session.exercises` array (mutates set slots, never appends). But the *model is ~80 % ready*:
+  `WorkoutSession.routineID` is already `UUID?` and `exercises`/`sets` are plain Codable arrays, so a
+  routineless **Quick Start** + **add-exercise/add-set live** needs **zero schema change** — it's a
+  player + entry-point job. Ship freeform **lifting first** (self-contained, no migration).
+- **Polymorphic set unit (`SetKind`).** Dynamic gym climbing is **Shape ③ (graded attempts), not
+  reps×weight**, so a "set" must be able to be a climb attempt. Chose: tag the *exercise* with
+  `kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** `SetLog` fields (`durationSec`,
+  `distanceM`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Critical migration nuance:**
+  `SetLog`/`SessionExercise` are nested **Codable composites**, not `@Model`s — SwiftData lightweight
+  migration does NOT cover fields inside an encoded blob, so a new **non-optional** key would make old
+  blobs throw on decode. Hence every added field is `Optional`. **Rejected** a `SetMeasure`
+  enum-with-associated-values (cleaner, but a bigger hand-written-Codable blob-migration surface).
+- **Kilter → WorkoutTracker bridge.** The key enabling fact: `Routine`/`WorkoutSession` and
+  `KilterLogEntry`/`KilterSession` are **all in the same `SnappetSchema.models` store**, so this is an
+  in-process `@Query`, **not** a sync/network path (on-device rule #1 intact). Two features: **(B.1a)** a
+  read-only adapter surfacing board sessions in the unified workout history (no new `@Model`, Kilter
+  stays owner) — *why:* board climbs currently have no HR/reel pipeline; and **(B.2)** a pure
+  `KilterRecommender` that turns the existing grade pyramid into a suggested climbing session
+  (working-grade sends + project attempts + warm-ups), feeding the `.climbAttempt` exercises.
+
+**Why**: closes the two real gaps the user hit — sessions can't grow at runtime, and the Kilter mini-app
+is an island — while reusing the existing on-device store and the pure-logic-at-a-thin-edge pattern
+(`SetKind` formatter/validator + `KilterRecommender` are unit-testable on the cloud box).
+
+**Rules out / notes**: this **partly reverses** `decisions.md` 2026-06-02 ("keep Kilter separate") —
+recorded as an explicit open fork (one-way read recommended, not a two-way merge). Defers: a unified
+`WorkoutSession` projection of board climbs with HR/reels (B.1b, until B.1a proves out), full GPS/splits
+cardio (Shape ②), and the enum-with-payloads measure. **Status: design only** — nothing built; knowledge
+graph untouched until implementation (no node exists yet).
+
 ## [2026-06-04] Photos-level clip ops + HR overlay on set clips + a deep video-feature review
 
 **Decision**: Two user-requested capabilities on the per-clip editor + a review pass.
