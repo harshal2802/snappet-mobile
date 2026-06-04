@@ -12,8 +12,12 @@ import SwiftUI
 struct StudioTimelineView: View {
     @Bindable var vm: StudioEditorViewModel
 
-    /// Horizontal zoom: screen points per output second.
-    private let pps: CGFloat = 50
+    /// Horizontal zoom: screen points per output second. `zoomPps` is the committed level; a live
+    /// pinch multiplies it via `pinchScale`. Clamped 12…200 pt/s. Everything (offset, strip widths,
+    /// ruler) reads `pps`, so the whole timeline zooms together.
+    @State private var zoomPps: CGFloat = 50
+    @GestureState private var pinchScale: CGFloat = 1
+    private var pps: CGFloat { min(200, max(12, zoomPps * pinchScale)) }
     private let trackHeight: CGFloat = 56
     private let rulerHeight: CGFloat = 18
 
@@ -34,9 +38,24 @@ struct StudioTimelineView: View {
             }
             .contentShape(Rectangle())
             .gesture(scrub(width: w))
+            .simultaneousGesture(
+                MagnifyGesture()
+                    .updating($pinchScale) { v, s, _ in s = v.magnification }
+                    .onEnded { v in zoomPps = min(200, max(12, zoomPps * v.magnification)) }
+            )
         }
         .frame(height: rulerHeight + trackHeight + 24)
         .clipped()
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 10) {
+                Button { zoomPps = max(12, zoomPps * 0.8) } label: { Image(systemName: "minus.magnifyingglass") }
+                    .accessibilityIdentifier("timelineZoomOut")
+                Button { zoomPps = min(200, zoomPps * 1.25) } label: { Image(systemName: "plus.magnifyingglass") }
+                    .accessibilityIdentifier("timelineZoomIn")
+            }
+            .font(.footnote).foregroundStyle(.white.opacity(0.85))
+            .padding(6).background(.black.opacity(0.35), in: Capsule()).padding(6)
+        }
     }
 
     // MARK: Content (ruler + clip strips), shifted so currentTime sits under the playhead

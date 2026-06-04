@@ -4,6 +4,16 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Studio timeline zoom + PiP video overlay + HR-chart overlay
+
+**Decision**: Three follow-on studio features (separate commits).
+- **Zoomable timeline** — `StudioTimelineView.pps` is now a computed `zoomPps · pinchScale`, clamped
+  12…200 pt/s, driven by a `MagnifyGesture` (simultaneous with the scrub drag) + `−/+` buttons
+  (`timelineZoomOut/In`). Everything (offset, strip widths, ruler) reads `pps`, so the whole timeline
+  zooms together.
+
+(PiP + HR sections appended as those land.)
+
 ## [2026-06-04] Studio editor → edits/CapCut layout (multi-phase redesign)
 
 **Decision**: Rebuild the multi-clip editor UI to the edits/CapCut layout the user referenced, in
