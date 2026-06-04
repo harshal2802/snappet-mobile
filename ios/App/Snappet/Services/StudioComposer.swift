@@ -54,7 +54,8 @@ final class StudioComposer: Sendable {
                 resolved.append((clip, asset))
             }
         }
-        return try await assemble(resolved: resolved, aspect: snapshot.aspect, sourceDurations: sourceDurations)
+        return try await assemble(resolved: resolved, aspect: snapshot.aspect,
+                                  sourceDurations: sourceDurations, transitions: snapshot.transitions)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -62,10 +63,28 @@ final class StudioComposer: Sendable {
     /// synthetic on-device video (no PHAsset needed), so on-device export cost can be measured.
     func assemble(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
                   aspect: ClipEditGeometry.OutputAspect,
-                  sourceDurations: [UUID: Double] = [:]) async throws
+                  sourceDurations: [UUID: Double] = [:],
+                  transitions: [StudioTransition] = []) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
+        // Dissolve transitions need two overlapping tracks — a separate path (and it can't combine
+        // with the CIFilter handler, which composites tracks itself). Use it when any transition is
+        // set and no clip has a filter; otherwise the single-track filter/transform path below.
+        if transitions.contains(where: { $0.kind != .none }),
+           !resolved.contains(where: { $0.clip.filter != .none }) {
+            return try await assembleWithTransitions(
+                resolved: resolved, transitions: transitions, aspect: aspect, sourceDurations: sourceDurations)
+        }
+        return try await assembleSingleTrack(resolved: resolved, aspect: aspect, sourceDurations: sourceDurations)
+    }
+
+    /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
+    /// per-clip transform/crop layer instruction; any filtered clip routes through a Core Image handler.
+    private func assembleSingleTrack(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
+                                     aspect: ClipEditGeometry.OutputAspect,
+                                     sourceDurations: [UUID: Double]) async throws
+        -> sending (AVMutableComposition, AVVideoComposition?) {
         let composition = AVMutableComposition()
         guard let vTrack = composition.addMutableTrack(
             withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
@@ -175,6 +194,112 @@ final class StudioComposer: Sendable {
         }
 
         return (composition, videoComposition)
+    }
+
+    /// Build a **dissolve-transition** composition (S3). Clips alternate between two video tracks
+    /// (A = even, B = odd) placed with the `StudioGeometry.timeline` overlaps; B is composited on top
+    /// and its opacity is ramped over each overlap — fading B IN when it's the incoming clip, OUT when
+    /// it's outgoing — so A (always opaque, underneath) is revealed/covered to cross-dissolve. Only
+    /// dissolve for now (slide/zoom = transform ramps, and combining with filters, are follow-ups).
+    func assembleWithTransitions(
+        resolved: sending [(clip: TimelineClip, asset: AVAsset)],
+        transitions: [StudioTransition],
+        aspect: ClipEditGeometry.OutputAspect,
+        sourceDurations: [UUID: Double]) async throws
+        -> sending (AVMutableComposition, AVVideoComposition?) {
+
+        let ordered = StudioGeometry.ordered(resolved.map(\.clip))
+        let assetByID = Dictionary(resolved.map { ($0.clip.id, $0.asset) }, uniquingKeysWith: { a, _ in a })
+
+        var durations: [UUID: Double] = [:]
+        for clip in ordered {
+            var d = sourceDurations[clip.id] ?? 0
+            if d <= 0, let a = assetByID[clip.id] { d = (try? await a.load(.duration).seconds) ?? 0 }
+            durations[clip.id] = d
+        }
+        let placed = StudioGeometry.timeline(clips: ordered, sourceDurations: durations, transitions: transitions)
+        let placeByID = Dictionary(placed.map { ($0.clip.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        let composition = AVMutableComposition()
+        guard let trackA = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+              let trackB = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            throw ComposerError.noRenderableClips
+        }
+        let liA = AVMutableVideoCompositionLayerInstruction(assetTrack: trackA)
+        let liB = AVMutableVideoCompositionLayerInstruction(assetTrack: trackB)
+        var aTrack: AVMutableCompositionTrack?
+        var endA = CMTime.zero, endB = CMTime.zero
+        var canvas: CGSize?
+
+        for (i, clip) in ordered.enumerated() {
+            guard let asset = assetByID[clip.id], let p = placeByID[clip.id],
+                  let srcVideo = try? await asset.loadTracks(withMediaType: .video).first else { continue }
+            let dur = durations[clip.id] ?? 0
+            guard let window = ClipEditGeometry.trimWindow(
+                start: clip.trimStart, end: clip.trimEnd ?? dur, assetDuration: dur) else { continue }
+            let nat = (try? await srcVideo.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
+            let pref = (try? await srcVideo.load(.preferredTransform)) ?? .identity
+            let oriented = orientedSize(nat, transform: pref)
+            let cv = canvas ?? ClipEditGeometry.renderSize(for: aspect, sourceSize: oriented)
+            canvas = cv
+
+            let isA = (i % 2 == 0)
+            let vtrack = isA ? trackA : trackB
+            let li = isA ? liA : liB
+            let at = CMTime(seconds: p.startSec, preferredTimescale: timescale)
+            // Pad with an empty range so the clip lands exactly at its placed (overlapped) start.
+            let curEnd = isA ? endA : endB
+            if at > curEnd { vtrack.insertEmptyTimeRange(CMTimeRange(start: curEnd, end: at)) }
+
+            let sourceRange = CMTimeRange(
+                start: CMTime(seconds: window.start, preferredTimescale: timescale),
+                duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
+            do { try vtrack.insertTimeRange(sourceRange, of: srcVideo, at: at) } catch { continue }
+            let outDur = ClipEditGeometry.scaledDuration(sourceDuration: window.duration, speed: clip.speed)
+            if abs(clip.speed - 1.0) > 0.001 {
+                let seg = CMTimeRange(start: at, duration: CMTime(seconds: window.duration, preferredTimescale: timescale))
+                vtrack.scaleTimeRange(seg, toDuration: CMTime(seconds: outDur, preferredTimescale: timescale))
+            }
+            let newEnd = CMTimeAdd(at, CMTime(seconds: outDur, preferredTimescale: timescale))
+            if isA { endA = newEnd } else { endB = newEnd }
+
+            if let aSrc = try? await asset.loadTracks(withMediaType: .audio).first {
+                let track = aTrack ?? composition.addMutableTrack(
+                    withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+                aTrack = track
+                try? track?.insertTimeRange(sourceRange, of: aSrc, at: at)
+            }
+
+            let crop = ClipEditGeometry.cropTransform(cropRect: clip.cropRect, sourceSize: oriented, renderSize: cv)
+            li.setTransform(pref.concatenating(crop), at: at)
+        }
+
+        guard let cv = canvas, composition.duration > .zero else { throw ComposerError.noRenderableClips }
+
+        // Dissolve = ramp track B's opacity over each transition's overlap [next.start, current.end].
+        for i in 0 ..< (ordered.count - 1) {
+            guard transitions.contains(where: { $0.afterClipID == ordered[i].id && $0.kind != .none }),
+                  let cur = placeByID[ordered[i].id], let nxt = placeByID[ordered[i + 1].id] else { continue }
+            let start = CMTime(seconds: nxt.startSec, preferredTimescale: timescale)
+            let end = CMTime(seconds: cur.endSec, preferredTimescale: timescale)
+            guard end > start else { continue }
+            let range = CMTimeRange(start: start, end: end)
+            if (i + 1) % 2 == 1 {
+                liB.setOpacityRamp(fromStartOpacity: 0, toEndOpacity: 1, timeRange: range)   // B incoming
+            } else {
+                liB.setOpacityRamp(fromStartOpacity: 1, toEndOpacity: 0, timeRange: range)   // B outgoing
+            }
+        }
+
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+        instruction.layerInstructions = [liB, liA]   // B on top
+
+        let vc = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
+        vc.renderSize = cv
+        vc.frameDuration = CMTime(value: 1, timescale: 30)
+        vc.instructions = [instruction]
+        return (composition, vc)
     }
 
     /// Export the composed timeline to a temp `.mp4` (same async export path as `VideoStudio`).

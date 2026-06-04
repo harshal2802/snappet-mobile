@@ -65,6 +65,23 @@ final class StudioComposerProfilingTests: XCTestCase {
         // — per-frame Core Image filtering adds ~15%, still ~0.2x realtime.
         XCTAssertTrue(filtered.ok, "filtered (CIFilter) export should succeed on-device (status \(filtered.status), \(filtered.err ?? ""))")
         XCTAssertLessThan(filtered.sec, 90, "a 16 s filtered export should finish well under 90 s on-device")
+
+        // S3: a dissolve-transition export must work on-device (two-track opacity-ramp path).
+        var transClips: [(clip: TimelineClip, asset: AVAsset)] = []
+        var transitions: [StudioTransition] = []
+        var prevID: UUID?
+        for i in 0..<clipCount {
+            let c = TimelineClip(sessionMediaID: nil, localIdentifier: "synthetic", isPhoto: false, order: i)
+            transClips.append((c, asset))
+            if let p = prevID { transitions.append(StudioTransition(afterClipID: p, kind: .dissolve, durationSec: 0.5)) }
+            prevID = c.id
+        }
+        let (tComp, tVC) = try await composer.assemble(resolved: transClips, aspect: .portrait9x16, transitions: transitions)
+        let dissolve = await export(tComp, videoComposition: tVC, preset: AVAssetExportPresetHighestQuality, tag: "dissolve")
+        // Measured on MrRobot: a 16 s / 4-clip / 3-dissolve export ~2.8 s. (Export-success verifies the
+        // two-track composition is valid + renders; the crossfade's *look* needs a visual check.)
+        XCTAssertTrue(dissolve.ok, "dissolve-transition export should succeed on-device (status \(dissolve.status), \(dissolve.err ?? ""))")
+        XCTAssertLessThan(dissolve.sec, 90, "a 16 s dissolve export should finish well under 90 s on-device")
         #endif
     }
 

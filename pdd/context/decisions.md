@@ -4,6 +4,27 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] S3 studio transitions — dissolve via a two-track opacity ramp (device-verified export)
+
+**Decision**: Added **dissolve transitions** between clips. Architecture: when any transition is set
+(and no clip has a filter — the CIFilter handler composites tracks itself, so it can't combine), clips
+**alternate between two video tracks** (A = even, B = odd) placed with the `StudioGeometry.timeline`
+overlaps; **track B is composited on top and its opacity is ramped** over each overlap — fading B IN when
+it's the incoming clip, OUT when it's outgoing — so the always-opaque track A underneath is revealed /
+covered to cross-dissolve. Chosen because a single-track composition can't show two clips at once, and
+this **track-B-ramp-only** scheme avoids per-segment instruction juggling and a custom compositor. Gaps on
+each track are padded with `insertEmptyTimeRange`. The S1 editor's transition picker already drives it.
+
+**Rules out / follow-ups**: slide/zoom transitions (transform ramps), combining a transition WITH a filter
+(needs the unified Core Image compositor), and audio cross-fade during the overlap — all deferred.
+
+**Verified on the iPhone 13 Pro Max** (the spike asserts it): a 16 s / 4-clip / 3-dissolve export succeeds
+in ~2.8 s. **Honest caveat**: export-success proves the two-track composition is valid and renders — it
+does NOT verify the crossfade *looks* right (no automated visual check); that needs the editor preview /
+exported file. Full unit suite 188 green (1 skipped on the sim). The composer now has three feature paths
+(single-track transform · CIFilter handler · two-track dissolve), split into `assembleSingleTrack` /
+`assembleWithTransitions` for clean `sending` ownership.
+
 ## [2026-06-04] S2 studio filters — Core Image colour filters, device-verified
 
 **Decision**: Built the first S2 effect — per-clip **colour filters** (mono / noir / fade / vivid / warm /
