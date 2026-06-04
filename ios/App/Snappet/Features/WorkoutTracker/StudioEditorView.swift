@@ -131,7 +131,8 @@ struct StudioEditorView: View {
             if let hr = vm.hrOverlay {
                 StudioHRChartView(samples: vm.hrSeries, config: hr, ratio: vm.previewRatio,
                                   currentTime: vm.currentTime, totalDuration: vm.totalDuration,
-                                  onMove: { vm.setHRPosition($0) })
+                                  onMove: { vm.setHRPosition($0) },
+                                  onResize: { vm.setHRScale($0) })
                     .accessibilityIdentifier("studioHRChart")
             }
             if let err = vm.previewError {

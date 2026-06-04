@@ -316,6 +316,12 @@ final class StudioEditorViewModel {
         c.position = CGPoint(x: min(max(normalized.x, 0), 1), y: min(max(normalized.y, 0), 1))
         updateHROverlay(c)
     }
+    /// Commit a pinch-resize of the HR chart (width as a fraction of the canvas).
+    func setHRScale(_ scale: Double) {
+        guard var c = hrOverlay else { return }
+        c.scale = min(1, max(0.3, scale))
+        updateHROverlay(c)
+    }
 
     // MARK: Picture-in-picture (a second video composited over the main track)
 

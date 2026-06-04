@@ -12,12 +12,14 @@ struct StudioHRChartView: View {
     let currentTime: Double
     let totalDuration: Double
     let onMove: (CGPoint) -> Void   // normalized centre (0…1, top-left)
+    let onResize: (Double) -> Void  // new scale (0…1 of canvas width)
     @GestureState private var drag: CGSize = .zero
+    @GestureState private var magnify: CGFloat = 1
 
     var body: some View {
         GeometryReader { geo in
             let disp = ClipEditGeometry.displayRect(ratio: ratio, in: geo.size)
-            let chartW = max(60, disp.width * config.scale)
+            let chartW = max(60, disp.width * config.scale * magnify)   // live pinch feedback
             let chartH = chartW * 0.36
             let center = ClipEditGeometry.previewPoint(normalized: config.position, in: disp)
             chart(width: chartW, height: chartH)
@@ -31,6 +33,11 @@ struct StudioHRChartView: View {
                                                   y: center.y + v.translation.height)
                             onMove(ClipEditGeometry.normalizedPoint(fromPreview: dropped, in: disp))
                         }
+                )
+                .simultaneousGesture(
+                    MagnifyGesture()
+                        .updating($magnify) { v, s, _ in s = v.magnification }
+                        .onEnded { v in onResize(min(1, max(0.3, config.scale * v.magnification))) }
                 )
         }
         .allowsHitTesting(true)
