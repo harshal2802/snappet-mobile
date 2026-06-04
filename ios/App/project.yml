@@ -120,6 +120,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.unittests
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: P6U6C88W9J
   SnappetUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -133,6 +134,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.uitests
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: P6U6C88W9J
 schemes:
   Snappet:
     build:
