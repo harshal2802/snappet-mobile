@@ -2,6 +2,7 @@ package com.snappet.mobile.feature.expense
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,10 +13,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,7 +29,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -59,6 +63,9 @@ fun NewReceiptSheet(
     var discountText by rememberSaveable { mutableStateOf(record?.discountAmount?.takeIf { it > 0 }?.let { formatAmount(it) } ?: "") }
     var showPaste by remember { mutableStateOf(false) }
 
+    // The receipt kind used to tune parsing; AUTO resolves via ReceiptClassifier on scan/paste.
+    var receiptType by remember { mutableStateOf(ReceiptType.AUTO) }
+
     // Totals read off the most recent scan/paste, so the validation banner can cross-check the
     // edited items against what the receipt printed.
     var detectedSubtotal by remember { mutableStateOf<Double?>(null) }
@@ -92,7 +99,15 @@ fun NewReceiptSheet(
         detectedItemCount = parsed.itemCount
     }
 
-    val scan = rememberReceiptScanner { text -> if (text.isNotBlank()) applyParsed(ReceiptParser.parse(text)) }
+    // Parse with the selected type's profile; AUTO classifies the text and snaps the picker to it.
+    fun parseAndApply(text: String) {
+        if (text.isBlank()) return
+        val resolved = receiptType.resolved(text)
+        if (receiptType == ReceiptType.AUTO) receiptType = resolved
+        applyParsed(ReceiptParser.parse(text, resolved.profile))
+    }
+
+    val scan = rememberReceiptScanner { text -> parseAndApply(text) }
 
     val canSave = title.trim().isNotEmpty() && payer.isNotEmpty() &&
         cleaned.any { it.assignees.isNotEmpty() }
@@ -121,6 +136,9 @@ fun NewReceiptSheet(
             tag = "expense.receipt.payer",
             onSelect = { payer = it },
         )
+
+        Text("Receipt type", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        ReceiptTypePicker(selected = receiptType, onSelect = { receiptType = it })
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = scan, modifier = Modifier.weight(1f).testTag("expense.receipt.scan")) {
@@ -181,8 +199,32 @@ fun NewReceiptSheet(
     if (showPaste) {
         PasteReceiptDialog(
             onDismiss = { showPaste = false },
-            onAdd = { text -> showPaste = false; if (text.isNotBlank()) applyParsed(ReceiptParser.parse(text)) },
+            onAdd = { text -> showPaste = false; parseAndApply(text) },
         )
+    }
+}
+
+/** Menu-style picker over the [ReceiptType]s, mirroring [ParticipantPicker]. */
+@Composable
+private fun ReceiptTypePicker(selected: ReceiptType, onSelect: (ReceiptType) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth().testTag("expense.receipt.type"),
+        ) {
+            Text(selected.displayName, modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ReceiptType.entries.forEach { type ->
+                DropdownMenuItem(
+                    text = { Text(type.displayName) },
+                    onClick = { onSelect(type); expanded = false },
+                    modifier = Modifier.testTag("expense.receipt.type.${type.name}"),
+                )
+            }
+        }
     }
 }
 

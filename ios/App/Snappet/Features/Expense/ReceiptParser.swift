@@ -38,13 +38,16 @@ enum ReceiptParser {
         "TRM", "TRN", "WHOLESALE", "PURCHASE", "ITEM",
     ]
 
-    static func parse(_ text: String) -> ParsedReceipt {
+    static func parse(_ text: String, profile: ReceiptProfile = .generic) -> ParsedReceipt {
         var items: [ReceiptItem] = []
         var discount = 0.0
         var subtotal: Double?
         var tax: Double?
         var total: Double?
         var itemCount: Int?
+
+        // Base metadata keywords plus any the receipt type adds (e.g. restaurant "SERVER").
+        let skip = skipKeywords + profile.extraSkipKeywords
 
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = String(rawLine).trimmingCharacters(in: .whitespaces)
@@ -66,8 +69,15 @@ enum ReceiptParser {
                 continue
             }
 
+            // Restaurant tip / gratuity → a "Tip" line item (split among the diners).
+            if !profile.tipKeywordPrefixes.isEmpty,
+               profile.tipKeywordPrefixes.contains(where: { upper.hasPrefix($0) }) {
+                items.append(ReceiptItem(name: "Tip", price: money.value))
+                continue
+            }
+
             // Summary / metadata rows: capture subtotal / tax / total, never itemize.
-            if skipKeywords.contains(where: { upper.contains($0) }) {
+            if skip.contains(where: { upper.contains($0) }) {
                 if upper.contains("SUBTOTAL") {
                     subtotal = money.value
                 } else if upper.contains("TAX") && !upper.contains("N/TAX") {
@@ -95,6 +105,12 @@ enum ReceiptParser {
             let name = cleanName(line, priceToken: money.token)
             guard !name.isEmpty else { continue }
             items.append(ReceiptItem(name: name, price: money.value))
+        }
+
+        // Gas: a pump receipt's only "purchase" is the fuel, often printed as the total. When the
+        // profile is fuel-only and nothing itemized, treat the detected total as a single line.
+        if profile.fuelOnly, items.isEmpty, let total {
+            items = [ReceiptItem(name: "Fuel", price: total)]
         }
 
         return ParsedReceipt(items: items, discount: discount, subtotal: subtotal,

@@ -4,6 +4,33 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
+
+**Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),
+and have that type tune extraction. Implemented as **parse-time only** — no persisted column, no
+`ReceiptSplit` change — so it stays additive and migration-free.
+
+- **`ReceiptType`** { auto, grocery, warehouse, restaurant, gas, pharmacy, retail, generic } maps to a
+  pure **`ReceiptProfile`** (extra skip-keywords, tip-line prefixes, a `fuelOnly` flag).
+  `ReceiptParser.parse(text, profile:)` gains an optional profile that defaults to `.generic`, so the
+  existing `parse(text)` behaviour and all current tests are unchanged.
+- **Profiles**: restaurant adds SERVER/TABLE/GUEST… to the skip set and turns a `TIP`/`GRATUITY` line
+  into a "Tip" line item (split among the diners); gas skips PUMP/GALLON/UNLEADED… and collapses to a
+  single "Fuel" item from the detected total; pharmacy/retail add their own metadata skips;
+  warehouse/grocery use the generic Costco-tuned base.
+- **`ReceiptClassifier.classify(text)`** (pure) scores signature keywords per type for **Auto**; the
+  picker then snaps to the detected type so the user sees the guess and can override.
+- **UI**: a "Receipt type" picker in `NewReceiptSheet` (iOS `Picker`, Android dropdown). Scan/paste now
+  hand raw text back to the sheet, which parses it with the resolved profile.
+
+**Why**: a single generic parser mis-reads restaurant tips and gas pumps; a tiny per-type profile fixes
+extraction without complicating the data model. Keeping type parse-time-only (vs. a persisted
+`receiptType` column) honours the "bug-fixes + validation first, types as a thin follow-up" scope and
+avoids a Room migration. **Rules out**: persisting the type this cut; a separate `tipAmount`/proportional
+tip (tip is an equally-split line item for now — proportional tip is a follow-up); per-type split rules.
+**Verified**: `ReceiptClassifierTests`/`Test` cover classification + the restaurant/gas/generic parse
+branches off-device on both platforms. UI pickers stay device-unverified per the repo's build rule.
+
 ## [2026-06-04] Split Expenses — receipt parser fixes + total/discount validation
 
 **Decision**: From a deep review of the receipt PR, fix two parser bugs and add an advisory

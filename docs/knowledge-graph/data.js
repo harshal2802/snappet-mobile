@@ -216,6 +216,8 @@ const nodes = [
     file: "ios/App/Snappet/Services/ReceiptScanner.swift", desc: "On-device receipt OCR: iOS uses VisionKit document scanner + Vision text recognition (ReceiptScanner/ReceiptDocumentScanner); Android uses the camera + ML Kit text recognition (ReceiptScan.kt). Recognized text flows into the pure ReceiptParser.", tags: ["camera","ocr","device-only"] },
   { id: "expense-validation", label: "ReceiptValidation", type: "model", group: "expense", category: "finance", platform: "ios+android",
     file: "ios/App/Snappet/Features/Expense/ReceiptValidation.swift", desc: "Pure cross-check of captured items vs the receipt's printed subtotal/tax/total/item-count: items − discount + tax = total, subtotal match, unassigned/negative-share/tax checks. Advisory banner (Balanced / Needs review / Doesn't add up), never blocks saving. Ported to Android (ReceiptValidation.kt). Unit-tested both.", tags: ["pure","validation","reconcile"] },
+  { id: "expense-receipttype", label: "ReceiptType + Classifier", type: "model", group: "expense", category: "finance", platform: "ios+android",
+    file: "ios/App/Snappet/Features/Expense/ReceiptType.swift", desc: "Receipt-type profiles (Auto/Grocery/Warehouse/Restaurant/Gas/Pharmacy/Retail) that tune ReceiptParser — extra skip keywords, restaurant tip→line item, gas single-fuel-line — plus ReceiptClassifier for keyword-scored auto-detect. Parse-time only (no schema change). Ported to Android (ReceiptType.kt). Unit-tested both.", tags: ["pure","receipt-types","auto-detect"] },
 
   // ═════════════════ MODULE: Budget ═════════════════
   { id: "m-budget", label: "Budget", type: "module", group: "budget", category: "finance", platform: "ios+android",
@@ -578,6 +580,8 @@ const links = [
   { source: "expense-newreceipt", target: "expense-scan", type: "feeds", label: "scan receipt" },
   { source: "expense-scan", target: "expense-receiptsplit", type: "feeds", label: "OCR text → parse" },
   { source: "expense-newreceipt", target: "expense-validation", type: "feeds", label: "verify totals" },
+  { source: "expense-newreceipt", target: "expense-receipttype", type: "feeds", label: "type → profile" },
+  { source: "expense-receipttype", target: "expense-receiptsplit", type: "feeds", label: "tunes parse" },
   { source: "expense-validation", target: "expense-receiptsplit", type: "feeds", label: "cross-check split" },
   { source: "expense-receiptdetail", target: "expense-receiptsplit", type: "feeds", label: "breakdown" },
   { source: "expense-group", target: "expense-receiptsplit", type: "feeds", label: "receipt balances" },

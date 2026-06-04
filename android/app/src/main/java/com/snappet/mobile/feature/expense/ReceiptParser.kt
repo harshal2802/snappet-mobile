@@ -27,13 +27,16 @@ object ReceiptParser {
         "TRM", "TRN", "WHOLESALE", "PURCHASE", "ITEM",
     )
 
-    fun parse(text: String): ParsedReceipt {
+    fun parse(text: String, profile: ReceiptProfile = ReceiptProfile.GENERIC): ParsedReceipt {
         val items = mutableListOf<ReceiptItem>()
         var discount = 0.0
         var subtotal: Double? = null
         var tax: Double? = null
         var total: Double? = null
         var itemCount: Int? = null
+
+        // Base metadata keywords plus any the receipt type adds (e.g. restaurant "SERVER").
+        val skip = skipKeywords + profile.extraSkipKeywords
 
         for (rawLine in text.split('\n', '\r')) {
             val line = rawLine.trim()
@@ -54,8 +57,16 @@ object ReceiptParser {
                 continue
             }
 
+            // Restaurant tip / gratuity → a "Tip" line item (split among the diners).
+            if (profile.tipKeywordPrefixes.isNotEmpty() &&
+                profile.tipKeywordPrefixes.any { upper.startsWith(it) }
+            ) {
+                items.add(ReceiptItem("Tip", money.value))
+                continue
+            }
+
             // Summary / metadata rows: capture subtotal / tax / total, never itemize.
-            if (skipKeywords.any { upper.contains(it) }) {
+            if (skip.any { upper.contains(it) }) {
                 if (upper.contains("SUBTOTAL")) {
                     subtotal = money.value
                 } else if (upper.contains("TAX") && !upper.contains("N/TAX")) {
@@ -82,6 +93,12 @@ object ReceiptParser {
             val name = cleanName(line, money.token)
             if (name.isEmpty()) continue
             items.add(ReceiptItem(name, money.value))
+        }
+
+        // Gas: a pump receipt's only "purchase" is the fuel, often printed as the total. When the
+        // profile is fuel-only and nothing itemized, treat the detected total as a single line.
+        if (profile.fuelOnly && items.isEmpty() && total != null) {
+            items.add(ReceiptItem("Fuel", total))
         }
 
         return ParsedReceipt(items, discount, subtotal, tax, total, itemCount)

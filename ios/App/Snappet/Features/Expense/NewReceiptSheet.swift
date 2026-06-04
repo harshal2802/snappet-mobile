@@ -23,6 +23,8 @@ struct NewReceiptSheet: View {
     @State private var discountAmount: Double
     @State private var showingPaste = false
     @State private var showingScanner = false
+    /// The receipt kind used to tune parsing; `.auto` resolves via `ReceiptClassifier` on scan/paste.
+    @State private var receiptType: ReceiptType = .auto
 
     // Totals read off the most recent scan/paste, kept so `ReceiptValidation` can cross-check the
     // edited items against what the receipt actually printed. Nil until something is parsed.
@@ -92,14 +94,14 @@ struct NewReceiptSheet: View {
                 }
             }
             .sheet(isPresented: $showingPaste) {
-                PasteReceiptSheet { parsed in apply(parsed) }
+                PasteReceiptSheet { text in apply(parseText(text)) }
             }
             .fullScreenCover(isPresented: $showingScanner) {
                 ReceiptDocumentScanner { text in
                     showingScanner = false
                     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !trimmed.isEmpty else { return }
-                    apply(ReceiptParser.parse(text))
+                    apply(parseText(text))
                 }
                 .ignoresSafeArea()
             }
@@ -122,6 +124,14 @@ struct NewReceiptSheet: View {
 
     private var pasteSection: some View {
         Section {
+            Picker("Receipt type", selection: $receiptType) {
+                ForEach(ReceiptType.allCases) { type in
+                    Label(type.displayName, systemImage: type.symbol).tag(type)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("expense.receipt.type")
+
             if ReceiptDocumentScanner.isSupported {
                 Button {
                     showingScanner = true
@@ -191,6 +201,14 @@ struct NewReceiptSheet: View {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !payer.isEmpty
             && items.contains { $0.price > 0 && !$0.assignees.isEmpty }
+    }
+
+    /// Parse `text` with the selected type's profile. When the type is `.auto`, classify the text
+    /// and snap the picker to the detected type so the user sees what it decided.
+    private func parseText(_ text: String) -> ReceiptParser.ParsedReceipt {
+        let resolved = receiptType.resolved(for: text)
+        if receiptType == .auto { receiptType = resolved }
+        return ReceiptParser.parse(text, profile: resolved.profile)
     }
 
     /// Merge a parsed receipt into the current draft: append items (defaulting each to
@@ -295,7 +313,8 @@ private struct ItemRow: View {
 /// Modal text editor for pasting receipt text; hands the parsed result back on "Add".
 private struct PasteReceiptSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let onParse: (ReceiptParser.ParsedReceipt) -> Void
+    /// Hands the pasted text back to the caller, which parses it with the chosen type profile.
+    let onText: (String) -> Void
 
     @State private var text = ""
 
@@ -321,7 +340,7 @@ private struct PasteReceiptSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add items") {
-                        onParse(ReceiptParser.parse(text))
+                        onText(text)
                         dismiss()
                     }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
