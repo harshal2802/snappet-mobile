@@ -4,6 +4,34 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Photos-level clip ops + HR overlay on set clips + a deep video-feature review
+
+**Decision**: Two user-requested capabilities on the per-clip editor + a review pass.
+- **Photos-library operations (every destructive one confirmed).** `MediaLibraryService` gains
+  **`overwriteVideoAsset`** (replace the original in Photos with the edited render via
+  `PHContentEditingOutput` — reversible in Photos; **remove-then-copy** onto `renderedContentURL`,
+  since copying onto Photos' reserved path throws "file exists") and **`deleteAssets`**
+  (`PHAssetChangeRequest.deleteAssets`); both read-write auth, PhotoKit non-Sendables boxed. The clip
+  editor offers **Save a copy** (new asset) + **Overwrite original** (confirm). Session-detail Remove →
+  a confirmation: **Remove from session only** vs **Delete from Photos too** (deletes the asset FIRST,
+  then drops the tag only on success). Hosted on the stable `List`.
+- **HR chart overlay on per-set clips.** `ClipEdit.hrOverlay` (optional) + `EditPlan` carries the HR
+  samples **sliced/rebased to the clip's capture window** (`[offsetSec, +duration]` from the session's
+  `hrSeries`). `VideoStudio` attaches the HR Core Animation layer on **export** (reuses
+  `StudioOverlays.hrChartLayer`); the clip editor previews it as a live SwiftUI `StudioHRChartView`
+  (drag/pinch). A **`forPlayback`** flag was added to `VideoStudio` (mirroring `StudioComposer`) so the
+  preview composition omits the Core Animation tool — this also **fixed a latent crash**: text overlays
+  attached the offline-only tool to the AVPlayerItem preview, which would have raised the same
+  NSException the studio hit.
+- **Deep review (two agents) → fixes**: guarded the clip-editor preview `setVideoComposition`
+  (NSException); strictly-increasing HR-dot `keyTimes` (duplicate timestamps dropped the export
+  animation); honored PiP opacity (removed an `==0?1` bug); the studio time observer only advances the
+  playhead while playing (don't fight a scrub); delete-from-Photos ordered asset-first. **Known minor
+  (not blind-fixed without device visual):** exported `CATextLayer` text sits slightly higher than the
+  preview chip (top-origin glyphs). **Verified:** unit suite 206 (2 skipped), studio UI walkthrough
+  green on the iPhone 17 sim. Photos overwrite/delete + HR-on-clip export are device-only (owed a device
+  visual pass).
+
 ## [2026-06-04] Session detail → per-set tiles (media+HR unified) + HR-overlay pinch + Find-media polish
 
 **Decision**: Follow-up UX from device feedback.
