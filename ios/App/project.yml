@@ -121,6 +121,7 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
         DEVELOPMENT_TEAM: P6U6C88W9J
+        CODE_SIGN_STYLE: Automatic
   SnappetUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -135,6 +136,7 @@ targets:
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
         DEVELOPMENT_TEAM: P6U6C88W9J
+        CODE_SIGN_STYLE: Automatic
 schemes:
   Snappet:
     build:
