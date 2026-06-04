@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import Snappet
 
 /// Unit tests for the **pure** studio editor operations (no device, no SwiftData): structural edits
@@ -14,6 +15,28 @@ final class StudioProjectEditorTests: XCTestCase {
                        speed: Double = 1) -> TimelineClip {
         TimelineClip(id: id, sessionMediaID: nil, localIdentifier: "v\(order)", isPhoto: false,
                      order: order, trimStart: trimStart, trimEnd: trimEnd, speed: speed)
+    }
+
+    // MARK: - overlay position (WYSIWYG drag commit)
+
+    func testSetOverlayPositionMovesTheRightOverlayAndClamps() {
+        let a = OverlayItem(kind: .text, content: "A")
+        let b = OverlayItem(kind: .text, content: "B")
+        var s = empty(); s.overlays = [a, b]
+        // Move b within bounds.
+        s = StudioProjectEditor.setOverlayPosition(s, id: b.id, position: CGPoint(x: 0.3, y: 0.7))
+        XCTAssertEqual(s.overlays.first { $0.id == b.id }?.position, CGPoint(x: 0.3, y: 0.7))
+        XCTAssertEqual(s.overlays.first { $0.id == a.id }?.position, CGPoint(x: 0.5, y: 0.5))  // a untouched
+        // Out-of-bounds drag clamps into the unit square.
+        s = StudioProjectEditor.setOverlayPosition(s, id: a.id, position: CGPoint(x: 1.8, y: -0.4))
+        XCTAssertEqual(s.overlays.first { $0.id == a.id }?.position, CGPoint(x: 1, y: 0))
+    }
+
+    func testSetOverlayPositionUnknownIDIsNoOp() {
+        let a = OverlayItem(kind: .text, content: "A")
+        var s = empty(); s.overlays = [a]
+        s = StudioProjectEditor.setOverlayPosition(s, id: UUID(), position: CGPoint(x: 0.1, y: 0.1))
+        XCTAssertEqual(s.overlays.first?.position, CGPoint(x: 0.5, y: 0.5))
     }
 
     // MARK: - add / remove / move

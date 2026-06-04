@@ -4,6 +4,37 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Studio WYSIWYG overlay positioning — draggable SwiftUI layer over the preview (edits/CapCut pattern)
+
+**Decision**: Make text/sticker overlays **positionable by dragging them on the preview canvas**
+(user ask: "how to make sure / correct the location of the text overlay", with an edits/CapCut
+reference). Crucially, overlays are **NOT** rendered into the live preview video — the Core Animation
+overlay tool is export-only (the crash entry below) — so the editing surface is a **SwiftUI layer on
+top of the player** (`StudioOverlayCanvas`), exactly the edits/CapCut model where the chip is live UI
+and the pixels are burned in only at export.
+
+**Why it's correct (WYSIWYG by construction)**: `OverlayItem.position` is normalized `0…1`, top-left.
+**Export** maps it via `ClipEditGeometry.layerPoint` (→ CALayer, y-flipped); the **preview chip** maps
+the *same* normalized value into the **displayed video rect** (`ClipEditGeometry.displayRect` — the
+aspect-fit area inside the player, NOT the whole player frame) via the new `previewPoint` /
+`normalizedPoint` (inverse, clamped). Both read one normalized value ⇒ what you drag is what exports, at
+any resolution. Chip sizes mirror `StudioOverlays` (font = canvasH·0.05·scale, sticker = canvasH·0.12·
+scale). Because it's pure SwiftUI, **overlay positioning works on the simulator** (no device/Photos).
+
+**Shape**: pure `ClipEditGeometry.displayRect/previewPoint/normalizedPoint` + pure
+`StudioProjectEditor.setOverlayPosition` (clamped) — both unit-tested (6 new cases). VM gains
+`overlays`/`selectedOverlay`/`selectOverlay`/`setOverlayPosition`/`deleteOverlay` and an
+**`editOverlaysOnly`** path that commits+persists but **skips the player rebuild** (overlays aren't in
+the playback composition, so dragging mustn't restart playback). `addText` now selects the new overlay.
+Drag commits once (on end) via a `@GestureState` offset; selected chip shows a dashed ring + a Delete
+affordance.
+
+**Rules out / follow-ups**: overlay **resize/rotate** handles, **time-window** editing UI (still
+`[0,3]s` default), keyframed **position animation**, and exact `.original`-aspect fidelity (the editing
+rect falls back to 9:16 for `.original` since the VM doesn't track source size yet). Unit suite **195
+(2 skipped on sim), 0 failures**; device build + install green. **Visual confirm owed** (drag accuracy +
+the overlay landing in the exported file) — per the repo rule, tests prove the math/shape, not the look.
+
 ## [2026-06-04] Studio multi-clip editor crashed on open — Core Animation tool is export-only (device-found)
 
 **Symptom**: opening the multi-clip Studio **aborted the app** on the device (SIGABRT). Pulled the crash

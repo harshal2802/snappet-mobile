@@ -74,6 +74,13 @@ struct StudioEditorView: View {
                         .font(.caption).foregroundStyle(.white.opacity(0.7))
                 }
             }
+            // WYSIWYG overlay editing layer: text/sticker overlays are draggable here (they're not in
+            // the live preview video — Core Animation overlays are export-only), and map to the same
+            // normalized position export reads, so what you place is what renders.
+            StudioOverlayCanvas(overlays: vm.overlays, ratio: vm.previewRatio,
+                                selectedID: vm.selectedOverlayID,
+                                onSelect: { vm.selectOverlay($0) },
+                                onMove: { vm.setOverlayPosition($0, normalized: $1) })
             if let err = vm.previewError {
                 Text(err)
                     .font(.caption2).foregroundStyle(.yellow)
@@ -194,6 +201,21 @@ struct StudioEditorView: View {
             }
             Button { addingText = true } label: { Label("Add text overlay", systemImage: "textformat") }
                 .accessibilityIdentifier("studioAddText")
+            if let ov = vm.selectedOverlay {
+                HStack {
+                    Image(systemName: ov.kind == .sticker ? "star.square" : "textformat")
+                        .foregroundStyle(SnappetColor.workout)
+                    Text(ov.content).lineLimit(1).font(.subheadline)
+                    Spacer()
+                    Button(role: .destructive) { vm.deleteOverlay(ov.id) } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .accessibilityIdentifier("studioDeleteOverlay")
+                }
+                Text("Drag it on the preview to position it. It renders into the exported video.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if case let .failed(msg) = vm.exportState {
                 Text(msg).font(.footnote).foregroundStyle(.red)
             }

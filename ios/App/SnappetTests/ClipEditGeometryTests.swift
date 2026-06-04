@@ -202,4 +202,42 @@ final class ClipEditGeometryTests: XCTestCase {
         XCTAssertEqual(p.x, 100, accuracy: 1e-9)   // clamped to 1.0 * width
         XCTAssertEqual(p.y, 100, accuracy: 1e-9)   // clamped to 0.0 (top) → flipped to height
     }
+
+    // MARK: - On-screen preview placement (WYSIWYG overlay editing)
+
+    func testDisplayRectLetterboxesTallCanvasInWideContainer() {
+        // 9:16 canvas inside a 400×400 square → fit height, pillarboxed (w = 400*(9/16)=225).
+        let r = G.displayRect(ratio: 9.0 / 16.0, in: CGSize(width: 400, height: 400))
+        XCTAssertEqual(r.height, 400, accuracy: 1e-6)
+        XCTAssertEqual(r.width, 225, accuracy: 1e-6)
+        XCTAssertEqual(r.minX, 87.5, accuracy: 1e-6)   // centered
+        XCTAssertEqual(r.minY, 0, accuracy: 1e-6)
+    }
+
+    func testDisplayRectPillarboxesWideCanvasInTallContainer() {
+        // 16:9 canvas inside a 300×400 container → fit width, letterboxed (h = 300/(16/9)=168.75).
+        let r = G.displayRect(ratio: 16.0 / 9.0, in: CGSize(width: 300, height: 400))
+        XCTAssertEqual(r.width, 300, accuracy: 1e-6)
+        XCTAssertEqual(r.height, 168.75, accuracy: 1e-6)
+        XCTAssertEqual(r.minY, (400 - 168.75) / 2, accuracy: 1e-6)
+    }
+
+    func testPreviewPointAndNormalizedRoundTrip() {
+        let rect = CGRect(x: 50, y: 20, width: 200, height: 360)
+        let normalized = CGPoint(x: 0.25, y: 0.75)
+        let pt = G.previewPoint(normalized: normalized, in: rect)
+        XCTAssertEqual(pt.x, 50 + 0.25 * 200, accuracy: 1e-6)
+        XCTAssertEqual(pt.y, 20 + 0.75 * 360, accuracy: 1e-6)
+        // Inverse recovers the normalized position.
+        let back = G.normalizedPoint(fromPreview: pt, in: rect)
+        XCTAssertEqual(back.x, 0.25, accuracy: 1e-6)
+        XCTAssertEqual(back.y, 0.75, accuracy: 1e-6)
+    }
+
+    func testNormalizedPointClampsADragOffCanvas() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let n = G.normalizedPoint(fromPreview: CGPoint(x: 140, y: -30), in: rect)
+        XCTAssertEqual(n.x, 1, accuracy: 1e-9)
+        XCTAssertEqual(n.y, 0, accuracy: 1e-9)
+    }
 }

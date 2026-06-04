@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// A plain-value snapshot of a `StudioProject`'s editable state — the unit of undo/redo, the input
 /// to the (device-only) `StudioComposer`, and what the **pure** `StudioProjectEditor` operations
@@ -145,6 +146,15 @@ enum StudioProjectEditor {
 
     static func removeOverlay(_ s: StudioProjectSnapshot, id: UUID) -> StudioProjectSnapshot {
         var s = s; s.overlays.removeAll { $0.id == id }; return s
+    }
+
+    /// Move an overlay to a normalized centre (`0…1`, top-left origin), clamped to the canvas — the
+    /// commit point for the WYSIWYG drag on the preview canvas.
+    static func setOverlayPosition(_ s: StudioProjectSnapshot, id: UUID, position: CGPoint) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].position = CGPoint(x: min(max(position.x, 0), 1), y: min(max(position.y, 0), 1))
+        return s
     }
 }
 

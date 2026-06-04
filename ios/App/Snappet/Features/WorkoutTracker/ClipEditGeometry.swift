@@ -201,4 +201,39 @@ enum ClipEditGeometry {
         let yTopDown = min(max(normalized.y, 0), 1) * size.height
         return CGPoint(x: x, y: size.height - yTopDown)   // flip to CALayer's bottom-left origin
     }
+
+    // MARK: - On-screen preview placement (WYSIWYG overlay editing)
+
+    /// The rectangle the video actually occupies inside a preview area of `container` points: the
+    /// canvas `ratio` (width:height) **aspect-fit and centered** (letterboxed/pillarboxed). The
+    /// draggable overlay layer positions against THIS rect — not the whole player frame — so a
+    /// dragged overlay maps to the same normalized 0…1 the export `layerPoint` reads (WYSIWYG).
+    static func displayRect(ratio: CGFloat, in container: CGSize) -> CGRect {
+        guard ratio > 0, container.width > 0, container.height > 0 else {
+            return CGRect(origin: .zero, size: container)
+        }
+        let containerRatio = container.width / container.height
+        let w: CGFloat, h: CGFloat
+        if containerRatio > ratio {        // container is wider than the canvas → fit the height
+            h = container.height; w = h * ratio
+        } else {                           // container is taller/narrower → fit the width
+            w = container.width; h = w / ratio
+        }
+        return CGRect(x: (container.width - w) / 2, y: (container.height - h) / 2, width: w, height: h)
+    }
+
+    /// Normalized overlay position (`0…1`, **top-left origin** — SwiftUI style, the same value the
+    /// export `layerPoint` consumes) → a SwiftUI point (the overlay's centre) inside `rect`.
+    static func previewPoint(normalized: CGPoint, in rect: CGRect) -> CGPoint {
+        CGPoint(x: rect.minX + min(max(normalized.x, 0), 1) * rect.width,
+                y: rect.minY + min(max(normalized.y, 0), 1) * rect.height)
+    }
+
+    /// Inverse of `previewPoint`: a SwiftUI point (e.g. where a drag ended) → normalized `0…1`
+    /// top-left position, clamped to the canvas so an overlay can't be dragged off-frame.
+    static func normalizedPoint(fromPreview point: CGPoint, in rect: CGRect) -> CGPoint {
+        guard rect.width > 0, rect.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+        return CGPoint(x: min(max((point.x - rect.minX) / rect.width, 0), 1),
+                       y: min(max((point.y - rect.minY) / rect.height, 0), 1))
+    }
 }

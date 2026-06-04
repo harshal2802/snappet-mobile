@@ -18,6 +18,7 @@ final class StudioEditorViewModel {
     private var undo: UndoStack<StudioProjectSnapshot>
 
     var selectedClipID: UUID?
+    var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
     var previewPlayer: AVPlayer?
     var isBuildingPreview = false
@@ -41,7 +42,12 @@ final class StudioEditorViewModel {
     var canUndo: Bool { undo.canUndo }
     var canRedo: Bool { undo.canRedo }
     var selectedClip: TimelineClip? { clips.first { $0.id == selectedClipID } }
+    var overlays: [OverlayItem] { snapshot.overlays }
+    var selectedOverlay: OverlayItem? { overlays.first { $0.id == selectedOverlayID } }
     var aspect: ClipEditGeometry.OutputAspect { snapshot.aspect }
+    /// Canvas width:height for placing the overlay layer over the preview. `.original` has no fixed
+    /// ratio (it follows the source) — fall back to the studio's 9:16 default for the editing rect.
+    var previewRatio: CGFloat { aspect.ratio ?? (9.0 / 16.0) }
     var totalDuration: Double {
         StudioGeometry.totalDuration(clips: snapshot.clips, sourceDurations: sourceDurations,
                                      transitions: snapshot.transitions)
@@ -98,6 +104,13 @@ final class StudioEditorViewModel {
         persist()
         Task { await rebuildPreview() }
     }
+    /// An edit that only touches **overlays** — they're not in the playback composition (overlays are
+    /// the WYSIWYG SwiftUI layer on top of the preview), so skip the player rebuild to avoid a flicker
+    /// / playback restart on every drag. Still commits to undo + persists.
+    private func editOverlaysOnly(_ transform: (StudioProjectSnapshot) -> StudioProjectSnapshot) {
+        undo.commit(transform(undo.current))
+        persist()
+    }
     func undoEdit() { undo.undo(); persist(); Task { await rebuildPreview() } }
     func redoEdit() { undo.redo(); persist(); Task { await rebuildPreview() } }
     private func persist() { undo.current.apply(to: project); try? context.save() }
@@ -136,7 +149,23 @@ final class StudioEditorViewModel {
         edit { StudioProjectEditor.setAspect($0, aspect) }
     }
     func addText(_ string: String) {
-        edit { StudioProjectEditor.addOverlay($0, OverlayItem(kind: .text, content: string)) }
+        let overlay = OverlayItem(kind: .text, content: string)
+        editOverlaysOnly { StudioProjectEditor.addOverlay($0, overlay) }
+        selectedOverlayID = overlay.id   // select the new overlay so it's ready to drag
+    }
+
+    // MARK: Overlay editing (WYSIWYG — SwiftUI layer over the preview, not in the composition)
+
+    func selectOverlay(_ id: UUID?) { selectedOverlayID = id }
+
+    /// Commit a dragged overlay to its new normalized centre (`0…1`, top-left). No player rebuild.
+    func setOverlayPosition(_ id: UUID, normalized: CGPoint) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayPosition($0, id: id, position: normalized) }
+    }
+
+    func deleteOverlay(_ id: UUID) {
+        editOverlaysOnly { StudioProjectEditor.removeOverlay($0, id: id) }
+        if selectedOverlayID == id { selectedOverlayID = nil }
     }
 
     // MARK: Export (device-only render)
