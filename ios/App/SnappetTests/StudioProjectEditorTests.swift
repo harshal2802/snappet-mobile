@@ -39,6 +39,19 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(s.overlays.first?.position, CGPoint(x: 0.5, y: 0.5))
     }
 
+    // MARK: - clip adjust (colour)
+
+    func testSetClipAdjustStoresAndClearsNeutral() {
+        let c = video(0)
+        var s = empty(); s.clips = [c]
+        s = StudioProjectEditor.setClipAdjust(s, id: c.id,
+                                              adjust: ClipAdjust(brightness: 0.2, contrast: 1, saturation: 1))
+        XCTAssertEqual(s.clips.first?.adjust?.brightness, 0.2)
+        // A neutral adjust is stored as nil (compositor skips the Core Image pass).
+        s = StudioProjectEditor.setClipAdjust(s, id: c.id, adjust: .neutral)
+        XCTAssertNil(s.clips.first?.adjust)
+    }
+
     // MARK: - add / remove / move
 
     func testAddClipAppendsAndIndexes() {

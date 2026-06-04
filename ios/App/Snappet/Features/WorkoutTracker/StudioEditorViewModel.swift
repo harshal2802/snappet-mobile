@@ -240,6 +240,10 @@ final class StudioEditorViewModel {
         guard let id = selectedClipID else { return }
         edit { StudioProjectEditor.setClipFilter($0, id: id, filter: filter) }
     }
+    func setSelectedAdjust(_ adjust: ClipAdjust) {
+        guard let id = selectedClipID else { return }
+        edit { StudioProjectEditor.setClipAdjust($0, id: id, adjust: adjust) }
+    }
     func setTransitionAfterSelected(_ kind: StudioTransitionKind) {
         guard let id = selectedClipID else { return }
         edit { StudioProjectEditor.setTransition($0, afterClipID: id, kind: kind) }

@@ -35,6 +35,20 @@ enum StudioFilter: String, Codable, Sendable, CaseIterable {
     var display: String { self == .none ? "None" : rawValue.capitalized }
 }
 
+/// Manual colour **Adjust** for a clip (the edits "Adjust" tool) — brightness/contrast/saturation,
+/// applied via `CIColorControls` in the compositor's filter path. Stored as a single optional on
+/// `TimelineClip` (nil = neutral) so adding it is a migration-safe Codable change.
+struct ClipAdjust: Codable, Hashable, Sendable {
+    /// `CIColorControls` ranges: brightness −1…1 (0 = none), contrast 0…2 (1 = none), saturation
+    /// 0…2 (1 = none).
+    var brightness: Double
+    var contrast: Double
+    var saturation: Double
+
+    static let neutral = ClipAdjust(brightness: 0, contrast: 1, saturation: 1)
+    var isNeutral: Bool { brightness == 0 && contrast == 1 && saturation == 1 }
+}
+
 /// One clip on the **main video track**: a source (video or photo) with trim, speed, crop, a
 /// colour filter, and optional Ken-Burns scale keyframes (photos). Non-destructive and
 /// resolution-independent (seconds / normalized 0…1), like `ClipEdit` — generalized to many clips.
@@ -63,6 +77,9 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
     // Colour.
     var filterRaw: String
     var filterIntensity: Double
+    /// Manual colour adjust (brightness/contrast/saturation). `nil` = neutral. Optional so adding it
+    /// is a migration-safe Codable change (old persisted clips decode it as `nil`).
+    var adjust: ClipAdjust?
 
     /// Ken-Burns / zoom scale over the clip's output time (empty = static). Value = scale factor.
     var scaleKeyframes: [StudioKeyframe]
@@ -72,6 +89,7 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
          photoDurationSec: Double = 3,
          cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
          filter: StudioFilter = .none, filterIntensity: Double = 1,
+         adjust: ClipAdjust? = nil,
          scaleKeyframes: [StudioKeyframe] = []) {
         self.id = id
         self.sessionMediaID = sessionMediaID
@@ -86,6 +104,7 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
         self.cropWidth = cropRect.width; self.cropHeight = cropRect.height
         self.filterRaw = filter.rawValue
         self.filterIntensity = min(1, max(0, filterIntensity))
+        self.adjust = adjust
         self.scaleKeyframes = scaleKeyframes
     }
 

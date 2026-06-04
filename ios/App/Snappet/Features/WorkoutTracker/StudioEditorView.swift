@@ -43,7 +43,7 @@ struct StudioEditorView: View {
         }
         .sheet(item: $activeTool) { tool in
             StudioToolSheet(tool: tool, vm: vm)
-                .presentationDetents([.height(260)])
+                .presentationDetents([tool == .adjust ? .height(340) : .height(260)])
                 .presentationDragIndicator(.visible)
         }
         .alert("Add text", isPresented: $addingText) {
@@ -179,6 +179,7 @@ struct StudioEditorView: View {
                 .accessibilityIdentifier("studioSplit")
                 barButton("Speed", "speedometer", enabled: hasClip) { activeTool = .speed }
                 barButton("Filter", "camera.filters", enabled: hasClip) { activeTool = .filter }
+                barButton("Adjust", "slider.horizontal.3", enabled: hasClip) { activeTool = .adjust }
                 barButton("Transition", "arrow.left.arrow.right", enabled: hasClip) { activeTool = .transition }
                 barButton("Text", "textformat") { addingText = true }
                     .accessibilityIdentifier("studioAddText")
@@ -216,7 +217,7 @@ struct StudioEditorView: View {
 
 /// The bottom-sheet tool invoked from the action bar (Speed · Filter · Transition · Canvas) — keeps
 /// the bar to one tap and the value-picking in a focused sheet (the edits pattern).
-enum StudioTool: String, Identifiable { case speed, filter, transition, aspect; var id: String { rawValue } }
+enum StudioTool: String, Identifiable { case speed, filter, adjust, transition, aspect; var id: String { rawValue } }
 
 private struct StudioToolSheet: View {
     let tool: StudioTool
@@ -237,6 +238,7 @@ private struct StudioToolSheet: View {
         switch tool {
         case .speed: return "Speed"
         case .filter: return "Filter"
+        case .adjust: return "Adjust"
         case .transition: return "Transition"
         case .aspect: return "Canvas aspect"
         }
@@ -264,6 +266,8 @@ private struct StudioToolSheet: View {
                     }
                 }
             }
+        case .adjust:
+            StudioAdjustControls(vm: vm)
         case .transition:
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -288,6 +292,35 @@ private struct StudioToolSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// The Adjust tool: brightness/contrast/saturation sliders for the selected clip. Each slider holds a
+/// local value and **commits on release** (`onEditingChanged`) so the preview rebuilds once per drag,
+/// not per tick. Maps to `ClipAdjust` → `CIColorControls` in the composer.
+private struct StudioAdjustControls: View {
+    @Bindable var vm: StudioEditorViewModel
+    @State private var value: ClipAdjust = .neutral
+
+    var body: some View {
+        VStack(spacing: 12) {
+            slider("Brightness", $value.brightness, -0.5...0.5)
+            slider("Contrast", $value.contrast, 0.5...1.5)
+            slider("Saturation", $value.saturation, 0...2)
+            Button("Reset") { value = .neutral; vm.setSelectedAdjust(.neutral) }
+                .font(.caption).foregroundStyle(SnappetColor.workout)
+        }
+        .onAppear { value = vm.selectedClip?.adjust ?? .neutral }
+    }
+
+    private func slider(_ label: String, _ binding: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
+        HStack {
+            Text(label).font(.caption).frame(width: 80, alignment: .leading)
+            Slider(value: binding, in: range, onEditingChanged: { editing in
+                if !editing { vm.setSelectedAdjust(value) }
+            })
+            .accessibilityIdentifier("adjust-\(label)")
         }
     }
 }

@@ -34,9 +34,19 @@ layout uses `StudioGeometry.timeline` placement (so a transition overlap shows c
 end-of-play notification resets the playhead. At `t=0` the first clip strip starts at the centre
 playhead (so its centre is off-screen) — the studio UI walkthrough therefore asserts the action bar
 (reliable) and treats per-clip timeline selection as best-effort; a dedicated `StudioEditorUITests`
-covers selection/trim. **Phases 3–4 pending**: Adjust (color), audio (mute/volume + add-music) +
-keyframes. Verified Phases 1–2: studio UI walkthrough green on the iPhone 17 sim; unit suite 195
-(2 skipped), 0 failures. Device visual pass owed.
+covers selection/trim.
+
+**Phase 3 (done)** — **Adjust (colour)** + export quality. `ClipAdjust` (brightness/contrast/
+saturation) is an **optional** on `TimelineClip` (nil = neutral → migration-safe Codable add); the
+composer's CIFilter path applies it via `StudioFilters.applyAdjust` (`CIColorControls`) after any
+filter, and is now entered when a clip has a filter **or** a non-neutral adjust. Unlike overlays,
+adjust+filter **do** render in the live preview (CIFilter compositions are AVPlayerItem-legal). The
+Adjust tool sheet's sliders commit **on release** (`onEditingChanged`) → one rebuild per drag. Export
+quality (`StudioExportQuality`) was wired in Phase 1.
+
+**Phase 4 pending**: audio (mute/volume + add-music) + overlay keyframes. Verified Phases 1–3: studio
+UI walkthrough green on the iPhone 17 sim; unit suite 197 (2 skipped), 0 failures. Device visual pass
+owed.
 
 ## [2026-06-04] Studio WYSIWYG overlay positioning — draggable SwiftUI layer over the preview (edits/CapCut pattern)
 

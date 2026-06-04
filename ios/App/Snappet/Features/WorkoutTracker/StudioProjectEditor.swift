@@ -97,6 +97,15 @@ enum StudioProjectEditor {
         return s
     }
 
+    /// Set (or clear) a clip's manual colour adjust. A neutral adjust is stored as `nil` so the
+    /// compositor skips the Core Image pass for it.
+    static func setClipAdjust(_ s: StudioProjectSnapshot, id: UUID, adjust: ClipAdjust?) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.clips.firstIndex(where: { $0.id == id }) else { return s }
+        s.clips[i].adjust = (adjust?.isNeutral ?? true) ? nil : adjust
+        return s
+    }
+
     /// Split a video clip at an **output** offset into two adjacent clips (the `ClipEditGeometry.split`
     /// idea, on the timeline). The offset is converted to source seconds via the clip's speed; a
     /// degenerate split (≤0 or ≥ the trimmed span) is a no-op. Photos aren't split.

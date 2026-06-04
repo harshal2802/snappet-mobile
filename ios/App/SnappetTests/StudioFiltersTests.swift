@@ -20,6 +20,16 @@ final class StudioFiltersTests: XCTestCase {
         XCTAssertEqual(StudioFilters.apply(.none, intensity: 1, to: img).extent, img.extent)
     }
 
+    func testAdjustNeutralIsPassthroughAndNonNeutralRenders() {
+        let img = sample(0.4, 0.5, 0.6)
+        XCTAssertEqual(StudioFilters.applyAdjust(nil, to: img).extent, img.extent)
+        XCTAssertEqual(StudioFilters.applyAdjust(.neutral, to: img).extent, img.extent)
+        let adjusted = StudioFilters.applyAdjust(
+            ClipAdjust(brightness: 0.2, contrast: 1.3, saturation: 1.5), to: img)
+        XCTAssertEqual(adjusted.extent, img.extent, "adjust preserves the frame extent")
+        XCTAssertNotNil(context.createCGImage(adjusted, from: adjusted.extent), "adjust renders to a buffer")
+    }
+
     func testEveryFilterRendersAndPreservesExtent() {
         let img = sample(0.4, 0.5, 0.6)
         for f in StudioFilter.allCases where f != .none {

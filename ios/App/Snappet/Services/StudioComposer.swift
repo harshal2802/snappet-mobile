@@ -119,8 +119,8 @@ final class StudioComposer: Sendable {
         // instructions for the same track in one instruction is malformed and fails export.
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
         var renderSize: CGSize?
-        // Per-clip colour filter, by output time range (drives the CIFilter compositor path below).
-        var filterRanges: [(range: CMTimeRange, filter: StudioFilter, intensity: Double)] = []
+        // Per-clip colour filter + manual adjust, by output time range (drives the CIFilter path below).
+        var filterRanges: [(range: CMTimeRange, filter: StudioFilter, intensity: Double, adjust: ClipAdjust?)] = []
 
         for (clip, source) in resolved {
             guard let srcVideo = try? await source.loadTracks(withMediaType: .video).first else {
@@ -176,24 +176,28 @@ final class StudioComposer: Sendable {
 
             let outRange = CMTimeRange(start: insertAt,
                                        duration: CMTime(seconds: outDuration, preferredTimescale: timescale))
-            filterRanges.append((outRange, clip.filter, clip.filterIntensity))
+            filterRanges.append((outRange, clip.filter, clip.filterIntensity, clip.adjust))
             cursor = outRange.end
         }
 
         guard cursor > .zero, let canvas = renderSize else { throw ComposerError.noRenderableClips }
 
         let videoComposition: AVMutableVideoComposition
-        if filterRanges.contains(where: { $0.filter != .none }) {
-            // S2 — at least one clip has a colour filter: composite through Core Image. AVFoundation
-            // hands each frame to the handler as a CIImage; we aspect-fill it to the canvas and apply
-            // the active clip's filter. (This path supersedes the per-clip transform/crop instruction;
-            // combining precise crop WITH a filter is a follow-up — the layout here is aspect-fill.)
+        if filterRanges.contains(where: { $0.filter != .none || ($0.adjust?.isNeutral == false) }) {
+            // S2 — at least one clip has a colour filter or a manual adjust: composite through Core
+            // Image. AVFoundation hands each frame to the handler as a CIImage; we aspect-fill it to
+            // the canvas and apply the active clip's filter THEN its adjust. (This path supersedes the
+            // per-clip transform/crop instruction; combining precise crop WITH a filter is a follow-up
+            // — the layout here is aspect-fill.)
             let ranges = filterRanges
             videoComposition = AVMutableVideoComposition(asset: composition) { request in
                 let t = request.compositionTime
                 var image = StudioFilters.aspectFill(request.sourceImage, to: canvas)
-                if let active = ranges.first(where: { $0.range.containsTime(t) }), active.filter != .none {
-                    image = StudioFilters.apply(active.filter, intensity: active.intensity, to: image)
+                if let active = ranges.first(where: { $0.range.containsTime(t) }) {
+                    if active.filter != .none {
+                        image = StudioFilters.apply(active.filter, intensity: active.intensity, to: image)
+                    }
+                    image = StudioFilters.applyAdjust(active.adjust, to: image)
                 }
                 request.finish(with: image, context: nil)
             }

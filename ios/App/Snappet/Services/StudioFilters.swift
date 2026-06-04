@@ -48,6 +48,18 @@ enum StudioFilters {
         return out.cropped(to: image.extent)
     }
 
+    /// Apply a manual colour **Adjust** (brightness/contrast/saturation via `CIColorControls`) to
+    /// `image`. A neutral adjust (or nil) returns the image unchanged. Pure Core Image (unit-tested).
+    static func applyAdjust(_ adjust: ClipAdjust?, to image: CIImage) -> CIImage {
+        guard let adjust, !adjust.isNeutral, let f = CIFilter(name: "CIColorControls") else { return image }
+        f.setValue(image, forKey: kCIInputImageKey)
+        f.setValue(max(-1, min(1, adjust.brightness)), forKey: kCIInputBrightnessKey)
+        f.setValue(max(0, min(2, adjust.contrast)), forKey: kCIInputContrastKey)
+        f.setValue(max(0, min(2, adjust.saturation)), forKey: kCIInputSaturationKey)
+        guard let out = f.outputImage else { return image }
+        return out.cropped(to: image.extent)
+    }
+
     /// Scale `image` to **fill** a `canvas`-sized frame (cover, centred, cropped to the canvas) — the
     /// frame layout the filter compositor hands back at `renderSize`. Pure Core Image (unit-tested).
     static func aspectFill(_ image: CIImage, to canvas: CGSize) -> CIImage {
