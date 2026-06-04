@@ -19,12 +19,18 @@ object ReceiptParser {
         val itemCount: Int? = null,
     )
 
-    private val skipKeywords = listOf(
-        "SUBTOTAL", "TOTAL", "TAX", "CHANGE", "BALANCE", "VISA", "MASTERCARD",
-        "DEBIT", "CREDIT", "AMOUNT", "INSTANT SAVINGS", "MEMBER", "CHIP READ",
-        "APPROVED", "RESP", "TRAN", "AID", "SEQ", "APP#", "ITEMS SOLD", "FSA",
-        "COUNT", "BOTTOM OF BASKET", "THANK YOU", "PLEASE COME", "OP#", "WHSE",
-        "TRM", "TRN", "WHOLESALE", "PURCHASE", "ITEM",
+    // Short, ambiguous words that label a summary row ("TOTAL 9.00") but also appear *inside*
+    // product names ("COLGATE TOTAL"). Only treated as a summary row when they're the line's
+    // leading label (see [leadingLabel]), never as an arbitrary substring.
+    private val summaryLabels = setOf("SUBTOTAL", "TOTAL", "TAX", "AMOUNT", "CHANGE", "BALANCE")
+
+    // Multi-word / distinctive metadata that never occurs inside a real product description, so
+    // it's safe to match as a case-insensitive substring anywhere on the line.
+    private val metadataKeywords = listOf(
+        "INSTANT SAVINGS", "CHIP READ", "APPROVED", "ITEMS SOLD", "BOTTOM OF BASKET",
+        "THANK YOU", "PLEASE COME", "WHOLESALE", "MASTERCARD", "VISA", "DEBIT", "CREDIT",
+        "MEMBER", "RESP", "TRAN", "AID", "SEQ", "APP#", "OP#", "WHSE", "TRM", "TRN",
+        "PURCHASE", "FSA",
     )
 
     fun parse(text: String, profile: ReceiptProfile = ReceiptProfile.GENERIC): ParsedReceipt {
@@ -35,8 +41,8 @@ object ReceiptParser {
         var total: Double? = null
         var itemCount: Int? = null
 
-        // Base metadata keywords plus any the receipt type adds (e.g. restaurant "SERVER").
-        val skip = skipKeywords + profile.extraSkipKeywords
+        // Distinctive metadata substrings plus any the receipt type adds (e.g. restaurant "SERVER").
+        val metadata = metadataKeywords + profile.extraSkipKeywords
 
         for (rawLine in text.split('\n', '\r')) {
             val line = rawLine.trim()
@@ -65,8 +71,12 @@ object ReceiptParser {
                 continue
             }
 
-            // Summary / metadata rows: capture subtotal / tax / total, never itemize.
-            if (skip.any { upper.contains(it) }) {
+            // Summary / metadata rows: capture subtotal / tax / total, never itemize. A row counts
+            // as summary/metadata when its leading label is a summary word ("TOTAL", "TAX", …) or it
+            // carries a distinctive metadata phrase — so a product whose *name* merely contains one
+            // of those words ("COLGATE TOTAL 5.99") is still treated as an item.
+            val leading = leadingLabel(upper)
+            if ((leading != null && leading in summaryLabels) || metadata.any { upper.contains(it) }) {
                 if (upper.contains("SUBTOTAL")) {
                     subtotal = money.value
                 } else if (upper.contains("TAX") && !upper.contains("N/TAX")) {
@@ -102,6 +112,22 @@ object ReceiptParser {
         }
 
         return ParsedReceipt(items, discount, subtotal, tax, total, itemCount)
+    }
+
+    /**
+     * The line's leading *label* word: the first word-like token, skipping leading tax flags
+     * (single letters), item-codes / numbers, and `%`/`$`-prefixed tokens. Trailing `:` / leading
+     * `*` style punctuation is trimmed. Returns null if the line has no word token.
+     * "**** TOTAL 619.10" → "TOTAL", "AMOUNT: $5.00" → "AMOUNT", "A 10.25% Tax 6.81" → "TAX",
+     * "COLGATE TOTAL 5.99" → "COLGATE".
+     */
+    private fun leadingLabel(upper: String): String? {
+        for (token in upper.split(' ', '\t').filter { it.isNotEmpty() }) {
+            val t = token.trim(':', '#', '*', '$', '.', ',')
+            if (t.length <= 1) continue // skip flags/codes/empties
+            if (t[0].isLetter()) return t
+        }
+        return null
     }
 
     /** The last bare-integer token on a line (used for the "Items Sold" count). */

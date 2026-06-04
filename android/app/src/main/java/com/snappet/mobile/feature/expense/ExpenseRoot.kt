@@ -415,11 +415,13 @@ private fun SectionHeader(title: String) {
 
 @Composable
 private fun ExpenseRow(expense: ExpenseRecord, onTap: () -> Unit) {
+    // Settlements have no detail/editor, so the row isn't tappable for them (no inert ripple).
+    val tappable = !expense.isSettlement
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onTap)
+            .then(if (tappable) Modifier.clickable(onClick = onTap) else Modifier)
             .padding(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -536,5 +538,3 @@ private suspend fun persistReceipt(
     }
 }
 
-/** Currency-style amount, e.g. "$50.00". Plain formatting keeps the settle-up math display simple. */
-private fun money(value: Double): String = "$" + String.format("%.2f", value)

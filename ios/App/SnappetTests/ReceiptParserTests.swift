@@ -107,6 +107,25 @@ final class ReceiptParserTests: XCTestCase {
         XCTAssertEqual(r.items.first?.price ?? -1, 1234.50, accuracy: 0.0001)
     }
 
+    // Regression: a product whose name merely *contains* a summary word ("TOTAL", "TAX",
+    // "AMOUNT") must stay an item — only a leading-label row is a summary row. See review finding #1.
+    func testItemsNamedLikeSummaryWordsAreNotDropped() {
+        let text = """
+        96101 COLGATE TOTAL 5.99 A
+        2027490 BODY WASH AMOUNT 8.49 E
+        SUBTOTAL 14.48
+        TAX 1.00
+        **** TOTAL 15.48
+        """
+        let r = ReceiptParser.parse(text)
+        XCTAssertEqual(r.items.map(\.name), ["COLGATE TOTAL", "BODY WASH AMOUNT"],
+                       "items whose names contain TOTAL/AMOUNT must not be swallowed as summary rows")
+        XCTAssertEqual(r.items.map(\.price), [5.99, 8.49])
+        XCTAssertEqual(r.subtotal ?? -1, 14.48, accuracy: 0.0001)
+        XCTAssertEqual(r.tax ?? -1, 1.00, accuracy: 0.0001)
+        XCTAssertEqual(r.total ?? -1, 15.48, accuracy: 0.0001, "the real leading-label TOTAL still wins")
+    }
+
     func testBlankAndNoiseLinesIgnored() {
         let text = """
 

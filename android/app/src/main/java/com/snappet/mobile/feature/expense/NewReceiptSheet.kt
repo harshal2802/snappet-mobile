@@ -82,16 +82,26 @@ fun NewReceiptSheet(
     val tax = taxText.toDoubleOrNull() ?: 0.0
     val discount = discountText.toDoubleOrNull() ?: 0.0
     val cleaned = items.map { ReceiptItem(it.name.trim(), it.price, it.assignees.toList()) }.filter { it.price > 0 }
-    val result = ReceiptSplit.compute(cleaned, tax, discount, participants)
-    val report = ReceiptValidation.validate(
-        result, detectedSubtotal, detectedTax, detectedTotal, detectedItemCount, cleaned.size,
-    )
+    // Memoize the split + validation so they only recompute when their inputs actually change,
+    // not on every recomposition (e.g. an unrelated state change).
+    val result = remember(cleaned, tax, discount, participants) {
+        ReceiptSplit.compute(cleaned, tax, discount, participants)
+    }
+    val report = remember(result, detectedSubtotal, detectedTax, detectedTotal, detectedItemCount) {
+        ReceiptValidation.validate(
+            result, detectedSubtotal, detectedTax, detectedTotal, detectedItemCount, cleaned.size,
+        )
+    }
     val showValidation = detectedTotal != null || report.overall != ReceiptValidation.Status.PASS
 
     fun applyParsed(parsed: ReceiptParser.ParsedReceipt) {
         parsed.items.forEach { items.add(ItemEdit(it.name, formatAmount(it.price), participants)) }
-        if (parsed.discount > 0) discountText = formatAmount(parsed.discount)
-        parsed.tax?.let { taxText = formatAmount(it) }
+        // Accumulate (not overwrite) detected tax/discount so a second paste / multi-page scan
+        // stays consistent with the way items append, and never clobbers a hand-typed value.
+        if (parsed.discount > 0) {
+            discountText = formatAmount((discountText.toDoubleOrNull() ?: 0.0) + parsed.discount)
+        }
+        parsed.tax?.let { taxText = formatAmount((taxText.toDoubleOrNull() ?: 0.0) + it) }
         if (title.isBlank()) title = "Receipt"
         detectedSubtotal = parsed.subtotal
         detectedTax = parsed.tax

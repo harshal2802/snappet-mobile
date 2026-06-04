@@ -98,5 +98,3 @@ fun assigneeLabel(assignees: List<String>, participants: List<String>): String =
 
 private fun dateLabel(epochMillis: Long): String =
     SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(epochMillis))
-
-private fun money(value: Double): String = "$" + String.format("%.2f", value)

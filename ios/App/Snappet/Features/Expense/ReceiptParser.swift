@@ -28,14 +28,21 @@ enum ReceiptParser {
         var itemCount: Int?
     }
 
-    /// Keyword fragments that mark a line as a receipt summary / metadata row rather than a
-    /// purchasable item. Matched case-insensitively as substrings.
-    private static let skipKeywords = [
-        "SUBTOTAL", "TOTAL", "TAX", "CHANGE", "BALANCE", "VISA", "MASTERCARD",
-        "DEBIT", "CREDIT", "AMOUNT", "INSTANT SAVINGS", "MEMBER", "CHIP READ",
-        "APPROVED", "RESP", "TRAN", "AID", "SEQ", "APP#", "ITEMS SOLD", "FSA",
-        "COUNT", "BOTTOM OF BASKET", "THANK YOU", "PLEASE COME", "OP#", "WHSE",
-        "TRM", "TRN", "WHOLESALE", "PURCHASE", "ITEM",
+    /// Short, ambiguous words that label a summary row (`TOTAL 9.00`) but also appear *inside*
+    /// product names (`COLGATE TOTAL`, `BODY WASH`). To avoid dropping such items, these are
+    /// only treated as a summary row when they're the line's **leading label** (see `leadingLabel`),
+    /// never as an arbitrary substring.
+    private static let summaryLabels: Set<String> = [
+        "SUBTOTAL", "TOTAL", "TAX", "AMOUNT", "CHANGE", "BALANCE",
+    ]
+
+    /// Multi-word or distinctive metadata that never occurs inside a real product description, so
+    /// it's safe to match as a case-insensitive substring anywhere on the line.
+    private static let metadataKeywords = [
+        "INSTANT SAVINGS", "CHIP READ", "APPROVED", "ITEMS SOLD", "BOTTOM OF BASKET",
+        "THANK YOU", "PLEASE COME", "WHOLESALE", "MASTERCARD", "VISA", "DEBIT", "CREDIT",
+        "MEMBER", "RESP", "TRAN", "AID", "SEQ", "APP#", "OP#", "WHSE", "TRM", "TRN",
+        "PURCHASE", "FSA",
     ]
 
     static func parse(_ text: String, profile: ReceiptProfile = .generic) -> ParsedReceipt {
@@ -46,8 +53,8 @@ enum ReceiptParser {
         var total: Double?
         var itemCount: Int?
 
-        // Base metadata keywords plus any the receipt type adds (e.g. restaurant "SERVER").
-        let skip = skipKeywords + profile.extraSkipKeywords
+        // Distinctive metadata substrings plus any the receipt type adds (e.g. restaurant "SERVER").
+        let metadata = metadataKeywords + profile.extraSkipKeywords
 
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = String(rawLine).trimmingCharacters(in: .whitespaces)
@@ -76,8 +83,13 @@ enum ReceiptParser {
                 continue
             }
 
-            // Summary / metadata rows: capture subtotal / tax / total, never itemize.
-            if skip.contains(where: { upper.contains($0) }) {
+            // Summary / metadata rows: capture subtotal / tax / total, never itemize. A row counts
+            // as summary/metadata when its leading label is a summary word (`TOTAL`, `TAX`, …) or it
+            // carries a distinctive metadata phrase — so a product whose *name* merely contains one
+            // of those words (`COLGATE TOTAL 5.99`) is still treated as an item.
+            let leading = leadingLabel(in: upper)
+            if (leading.map(summaryLabels.contains) ?? false)
+                || metadata.contains(where: { upper.contains($0) }) {
                 if upper.contains("SUBTOTAL") {
                     subtotal = money.value
                 } else if upper.contains("TAX") && !upper.contains("N/TAX") {
@@ -115,6 +127,21 @@ enum ReceiptParser {
 
         return ParsedReceipt(items: items, discount: discount, subtotal: subtotal,
                              tax: tax, total: total, itemCount: itemCount)
+    }
+
+    /// The line's leading *label* word: the first word-like token, skipping leading tax flags
+    /// (single letters), item-codes / numbers, and `%`/`$`-prefixed tokens. Punctuation like a
+    /// trailing `:` or leading `*` is trimmed. Returns nil if the line has no word token.
+    /// `"**** TOTAL 619.10"` → `"TOTAL"`, `"AMOUNT: $5.00"` → `"AMOUNT"`,
+    /// `"A 10.25% Tax 6.81"` → `"TAX"`, `"COLGATE TOTAL 5.99"` → `"COLGATE"`.
+    private static func leadingLabel(in upper: String) -> String? {
+        let trim = CharacterSet(charactersIn: ":#*$.,")
+        for token in upper.split(whereSeparator: { $0 == " " || $0 == "\t" }) {
+            let t = String(token).trimmingCharacters(in: trim)
+            guard t.count > 1, let first = t.first else { continue } // skip flags/codes/empties
+            if first.isLetter { return t }
+        }
+        return nil
     }
 
     /// The last bare-integer token on a line (used for the "Items Sold" count).

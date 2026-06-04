@@ -73,6 +73,3 @@ private fun detail(share: ReceiptSplit.PersonShare): String {
     if (share.tax > 0.005) parts.add("+${money(share.tax)} tax")
     return parts.joinToString("  ")
 }
-
-/** Plain currency-style amount, e.g. "$12.34" — matches the rest of the Split Expenses UI. */
-private fun money(value: Double): String = "$" + String.format("%.2f", value)

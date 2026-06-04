@@ -7,8 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
@@ -52,7 +52,10 @@ object ReceiptTextRecognizer {
 fun rememberReceiptScanner(onText: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    // rememberSaveable (Uri is Parcelable) so the pending capture survives a config change or
+    // process death while the camera activity is foregrounded — otherwise the returned photo would
+    // come back with a null Uri and be silently dropped.
+    var pendingUri by rememberSaveable { mutableStateOf<Uri?>(null) }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val uri = pendingUri

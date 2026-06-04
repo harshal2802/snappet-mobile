@@ -52,9 +52,9 @@ struct NewReceiptSheet: View {
                              discountAmount: discountAmount, order: group.participants)
     }
 
-    /// Live cross-check of the current items against the scanned totals. Shown once a receipt
-    /// has been parsed (a total was detected) or whenever a check is failing/warning.
-    private var validation: ReceiptValidation.Report {
+    /// Live cross-check of the current items against the scanned totals. Takes the already-computed
+    /// `result` so the split isn't recomputed for the banner — `body` computes it once and reuses it.
+    private func validation(for result: ReceiptSplit.Result) -> ReceiptValidation.Report {
         ReceiptValidation.validate(
             result: result,
             detectedSubtotal: detectedSubtotal,
@@ -65,17 +65,18 @@ struct NewReceiptSheet: View {
         )
     }
 
-    private var showValidation: Bool {
-        detectedTotal != nil || validation.overall != .pass
-    }
-
     var body: some View {
-        NavigationStack {
+        // Compute the split (and its validation) once per render and reuse them for the banner and
+        // the summary, rather than recomputing via separate computed properties.
+        let result = result
+        let report = validation(for: result)
+        let showValidation = detectedTotal != nil || report.overall != .pass
+        return NavigationStack {
             Form {
                 detailsSection
                 pasteSection
                 if showValidation {
-                    ReceiptValidationBanner(report: validation)
+                    ReceiptValidationBanner(report: report)
                 }
                 itemsSection
                 adjustmentsSection
@@ -211,15 +212,17 @@ struct NewReceiptSheet: View {
         return ReceiptParser.parse(text, profile: resolved.profile)
     }
 
-    /// Merge a parsed receipt into the current draft: append items (defaulting each to
-    /// everyone) and adopt detected tax/discount when present.
+    /// Merge a parsed receipt into the current draft: append its items (defaulting each to
+    /// everyone) and *add* its detected tax/discount. Accumulating (rather than overwriting) keeps
+    /// a second paste / multi-page scan consistent with the way items append, and never silently
+    /// clobbers a tax or discount the user typed in by hand.
     private func apply(_ parsed: ReceiptParser.ParsedReceipt) {
         let everyone = group.participants
         items.append(contentsOf: parsed.items.map {
             ReceiptItem(name: $0.name, price: $0.price, assignees: everyone)
         })
-        if parsed.discount > 0 { discountAmount = parsed.discount }
-        if let tax = parsed.tax { taxAmount = tax }
+        discountAmount += parsed.discount
+        if let tax = parsed.tax { taxAmount += tax }
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             title = "Receipt"
         }

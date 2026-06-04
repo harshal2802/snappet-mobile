@@ -108,6 +108,5 @@ object ReceiptValidation {
     }
 
     private fun round2(value: Double): Double = (value * 100).roundToInt() / 100.0
-
-    private fun money(value: Double): String = "$" + String.format("%.2f", value)
+    // Currency strings come from the shared top-level [money] in CurrencyFormat.kt.
 }

@@ -173,14 +173,18 @@ struct ExpenseGroupView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { open(expense) }
                     .swipeActions(edge: .leading) {
-                        Button {
-                            open(expense)
-                        } label: {
-                            Label(expense.isReceipt ? "View" : "Edit",
-                                  systemImage: expense.isReceipt ? "list.bullet.rectangle" : "pencil")
+                        // Settlements have no detail/editor (open() is a no-op for them), so don't
+                        // offer a swipe action that would do nothing.
+                        if !expense.isSettlement {
+                            Button {
+                                open(expense)
+                            } label: {
+                                Label(expense.isReceipt ? "View" : "Edit",
+                                      systemImage: expense.isReceipt ? "list.bullet.rectangle" : "pencil")
+                            }
+                            .tint(.blue)
+                            .accessibilityIdentifier("expense.editExpense")
                         }
-                        .tint(.blue)
-                        .accessibilityIdentifier("expense.editExpense")
                     }
             }
             .onDelete(perform: deleteExpenses)

@@ -121,4 +121,22 @@ class ReceiptParserTest {
         val r = ReceiptParser.parse(text)
         assertEquals(listOf("SWEET CORN"), r.items.map { it.name })
     }
+
+    // Regression: a product whose name merely *contains* a summary word ("TOTAL", "AMOUNT") must
+    // stay an item — only a leading-label row is a summary row. See review finding #1.
+    @Test fun itemsNamedLikeSummaryWordsAreNotDropped() {
+        val text = """
+            96101 COLGATE TOTAL 5.99 A
+            2027490 BODY WASH AMOUNT 8.49 E
+            SUBTOTAL 14.48
+            TAX 1.00
+            **** TOTAL 15.48
+        """.trimIndent()
+        val r = ReceiptParser.parse(text)
+        assertEquals(listOf("COLGATE TOTAL", "BODY WASH AMOUNT"), r.items.map { it.name })
+        assertEquals(listOf(5.99, 8.49), r.items.map { it.price })
+        assertEquals(14.48, r.subtotal ?: -1.0, 0.0001)
+        assertEquals(1.00, r.tax ?: -1.0, 0.0001)
+        assertEquals(15.48, r.total ?: -1.0, 0.0001)
+    }
 }
