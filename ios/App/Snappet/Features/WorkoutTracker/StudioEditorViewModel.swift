@@ -162,6 +162,9 @@ final class StudioEditorViewModel {
         previewError = nil
         detachTransport()
         isPlaying = false
+        // Preserve the playhead across the rebuild — an edit (split/trim/filter/…) shouldn't snap it
+        // back to the start. Restored (clamped to the new total) on the new player below.
+        let resumeAt = currentTime
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
@@ -183,7 +186,8 @@ final class StudioEditorViewModel {
             let player = AVPlayer(playerItem: item)
             previewPlayer = player
             attachTransport(to: player)
-            currentTime = 0
+            // Restore the playhead (clamped to the possibly-changed total) instead of resetting to 0.
+            seek(to: resumeAt)
         } catch {
             previewPlayer = nil   // device-only: no resolvable assets on the simulator
         }
