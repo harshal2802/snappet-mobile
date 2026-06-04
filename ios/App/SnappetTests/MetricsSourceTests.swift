@@ -282,7 +282,13 @@ final class MetricsSourceSelectionTests: XCTestCase {
 
     @MainActor
     func testCoordinatorForwardsToActiveSource() {
-        let coordinator = LiveMetricsCoordinator()
+        // Hermetic: back the BLE source with a clean, throwaway BandMemory so a *real* remembered
+        // band on a physical device (e.g. "Google Fitbit Air") can't leak into displayName.
+        let suite = "snappet.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = LiveMetricsCoordinator(
+            ble: BLEHeartRateMetricsSource(memory: BandMemory(defaults: defaults)))
         // No watch usable in the test env; pick BLE explicitly and feed a sample.
         coordinator.selectedSource = .ble
         coordinator.ble.ingest(bpm: 142)

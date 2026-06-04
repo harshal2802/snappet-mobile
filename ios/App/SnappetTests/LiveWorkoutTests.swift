@@ -165,7 +165,13 @@ final class LiveWorkoutOffsetTests: XCTestCase {
     func testCoordinatorForwardsPauseToActiveSource() {
         // With no watch/BLE available the coordinator defaults to the Apple-Watch source; pausing
         // the coordinator must flip the watch source (and thus the coordinator's own `isPaused`).
-        let coordinator = LiveMetricsCoordinator()
+        // Back the BLE source with a clean, throwaway BandMemory so a *real* remembered band on a
+        // physical device doesn't auto-connect BLE and steal "active source" from the watch.
+        let suite = "snappet.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = LiveMetricsCoordinator(
+            ble: BLEHeartRateMetricsSource(memory: BandMemory(defaults: defaults)))
         XCTAssertFalse(coordinator.isPaused)
         coordinator.pause()
         XCTAssertTrue(coordinator.isPaused)
