@@ -4,6 +4,17 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Present sheets/covers with `item:`, not `isPresented:` + separate state (device gotcha)
+
+**Decision**: The Studio cover opened as a **black empty screen on the device** (but worked on the
+simulator). Cause: `.fullScreenCover(isPresented: $openingStudio)` whose content read a **separate**
+`@State studioProject` — if SwiftUI evaluates the cover content before that assignment propagates,
+`if let project = studioProject` is nil → an empty (black) cover. Simulator timing hid it; the device
+exposed it. **Fix + rule**: when a presentation's content depends on a value, present **item-based**
+(`.fullScreenCover(item: $studioProject) { project in … }` / `.sheet(item:)`), so the cover presents only
+once the item is non-nil and the closure receives it — never an empty cover. Don't pair `isPresented:` with
+a separate "the thing to show" `@State`. (Found by on-device testing; confirmed fixed on the device.)
+
 ## [2026-06-04] S3 studio transitions — dissolve via a two-track opacity ramp (device-verified export)
 
 **Decision**: Added **dissolve transitions** between clips. Architecture: when any transition is set
