@@ -2,62 +2,96 @@ import SwiftUI
 import SwiftData
 import AVKit
 
-/// The full-studio **multi-clip editor** (S1): a preview canvas over the live `StudioComposer`
-/// composition, a horizontal **timeline** of clips (select · reorder · split · delete), per-clip
-/// controls (speed · filter · transition-to-next), project aspect, text overlay, undo/redo, and
-/// export → share. Presented as a sheet, so it owns its own `NavigationStack`.
-///
-/// Editing is model-driven and works on the simulator; the preview/export render through PHAsset →
-/// AVFoundation and are **device-only**, so on the simulator the canvas shows a device-only
-/// placeholder while the timeline + every edit still function.
+/// The full-studio **multi-clip editor** in an edits/CapCut-style layout: a custom top bar (title ·
+/// export quality · Export), a preview canvas with the WYSIWYG overlay layer + a custom transport
+/// (play/pause + live timecode), a horizontal clip timeline (select · trim · split · reorder), and a
+/// **contextual bottom action bar** (Split · Speed · Filter · Transition · Delete, plus project-level
+/// Text/Aspect). Editing is model-driven (works on the simulator); preview/export render through
+/// PHAsset → AVFoundation and are device-only (the canvas shows a device-only placeholder on the sim).
 struct StudioEditorView: View {
     @State private var vm: StudioEditorViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingShare = false
     @State private var addingText = false
     @State private var textDraft = ""
+    @State private var renaming = false
+    @State private var titleDraft = ""
+    @State private var activeTool: StudioTool?
 
     init(project: StudioProject, context: ModelContext) {
         _vm = State(initialValue: StudioEditorViewModel(project: project, context: context))
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                preview
-                timeline
-                Divider()
-                controls
-            }
-            .navigationTitle("Studio")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarLeading) {
-                    Button { vm.undoEdit() } label: { Image(systemName: "arrow.uturn.backward") }
-                        .disabled(!vm.canUndo).accessibilityIdentifier("studioUndo")
-                    Button { vm.redoEdit() } label: { Image(systemName: "arrow.uturn.forward") }
-                        .disabled(!vm.canRedo).accessibilityIdentifier("studioRedo")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Export") { Task { await vm.export() } }
-                        .accessibilityIdentifier("studioExport")
-                        .disabled(vm.clips.isEmpty)
-                }
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-            }
-            .task { await vm.onAppear() }
-            .onChange(of: vm.exportState) { _, state in
-                if case .exported = state { showingShare = true }
-            }
-            .sheet(isPresented: $showingShare) {
-                if case let .exported(url) = vm.exportState { ShareSheet(items: [url]) }
-            }
-            .alert("Add text", isPresented: $addingText) {
-                TextField("Text", text: $textDraft)
-                Button("Add") { if !textDraft.isEmpty { vm.addText(textDraft) }; textDraft = "" }
-                Button("Cancel", role: .cancel) { textDraft = "" }
-            }
+        VStack(spacing: 0) {
+            topBar
+            preview
+            transportBar
+            timeline
+            Divider().overlay(Color.white.opacity(0.1))
+            actionBar
         }
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .tint(SnappetColor.workout)
+        .task { await vm.onAppear() }
+        .onChange(of: vm.exportState) { _, state in
+            if case .exported = state { showingShare = true }
+        }
+        .sheet(isPresented: $showingShare) {
+            if case let .exported(url) = vm.exportState { ShareSheet(items: [url]) }
+        }
+        .sheet(item: $activeTool) { tool in
+            StudioToolSheet(tool: tool, vm: vm)
+                .presentationDetents([.height(260)])
+                .presentationDragIndicator(.visible)
+        }
+        .alert("Add text", isPresented: $addingText) {
+            TextField("Text", text: $textDraft)
+            Button("Add") { if !textDraft.isEmpty { vm.addText(textDraft) }; textDraft = "" }
+            Button("Cancel", role: .cancel) { textDraft = "" }
+        }
+        .alert("Rename", isPresented: $renaming) {
+            TextField("Title", text: $titleDraft)
+            Button("Save") { vm.rename(titleDraft) }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    // MARK: Top bar
+
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: { Image(systemName: "xmark").font(.headline) }
+                .accessibilityIdentifier("studioClose")
+            Button { titleDraft = vm.title; renaming = true } label: {
+                HStack(spacing: 4) {
+                    Text(vm.title).lineLimit(1).font(.subheadline.weight(.semibold))
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+            }
+            .foregroundStyle(.white)
+            Spacer()
+            Menu {
+                Picker("Quality", selection: Binding(get: { vm.exportQuality }, set: { vm.exportQuality = $0 })) {
+                    ForEach(StudioExportQuality.allCases) { q in Text(q.label).tag(q) }
+                }
+            } label: {
+                Text(vm.exportQuality.label).font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.3)))
+            }
+            .accessibilityIdentifier("studioQuality")
+            Button { Task { await vm.export() } } label: {
+                Text("Export").font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityIdentifier("studioExport")
+            .disabled(vm.clips.isEmpty)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
     }
 
     // MARK: Preview
@@ -66,7 +100,7 @@ struct StudioEditorView: View {
         ZStack {
             Color.black
             if let player = vm.previewPlayer {
-                VideoPlayer(player: player)
+                StudioPlayerLayerView(player: player)
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "film.stack").font(.largeTitle).foregroundStyle(.white.opacity(0.7))
@@ -91,14 +125,42 @@ struct StudioEditorView: View {
                     .accessibilityIdentifier("studioPreviewError")
             }
             if case .exporting = vm.exportState {
-                ProgressView("Exporting…").padding().background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                ProgressView("Exporting…").padding()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
-        .frame(height: 240)
+        .frame(maxHeight: .infinity)
         .accessibilityIdentifier("studioPreview")
     }
 
-    // MARK: Timeline
+    // MARK: Transport (play/pause + live timecode + undo/redo)
+
+    private var transportBar: some View {
+        HStack(spacing: 16) {
+            Button { vm.togglePlay() } label: {
+                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill").font(.title3)
+            }
+            .accessibilityIdentifier("studioPlayPause")
+            .disabled(vm.previewPlayer == nil)
+            Spacer()
+            Text("\(timecode(vm.currentTime)) / \(timecode(vm.totalDuration))")
+                .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.85))
+            Spacer()
+            Button { vm.undoEdit() } label: { Image(systemName: "arrow.uturn.backward") }
+                .disabled(!vm.canUndo).accessibilityIdentifier("studioUndo")
+            Button { vm.redoEdit() } label: { Image(systemName: "arrow.uturn.forward") }
+                .disabled(!vm.canRedo).accessibilityIdentifier("studioRedo")
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private func timecode(_ s: Double) -> String {
+        let total = Int(s.rounded())
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    // MARK: Timeline (clip strip — selectable; Phase 2 adds scrub/trim handles)
 
     private var timeline: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -118,106 +180,129 @@ struct StudioEditorView: View {
             .padding(.horizontal, 12).padding(.vertical, 10)
         }
         .frame(height: 96)
-        .background(Color(.secondarySystemBackground))
+        .background(Color(white: 0.08))
     }
 
-    // MARK: Controls
+    // MARK: Contextual action bar
 
-    @ViewBuilder private var controls: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                if let clip = vm.selectedClip {
-                    selectedClipControls(clip)
-                } else {
-                    Text("Tap a clip to edit it").font(.subheadline).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity).padding(.top, 8)
+    @ViewBuilder private var actionBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                let hasClip = vm.selectedClip != nil
+                barButton("Split", "scissors", enabled: hasClip || vm.previewPlayer != nil) {
+                    vm.splitAtPlayhead()
                 }
-                Divider()
-                projectControls
-            }
-            .padding()
-        }
-    }
-
-    private func selectedClipControls(_ clip: TimelineClip) -> some View {
-        VStack(spacing: 14) {
-            HStack {
-                Button { vm.moveSelected(by: -1) } label: { Image(systemName: "chevron.left.2") }
-                Button { vm.moveSelected(by: 1) } label: { Image(systemName: "chevron.right.2") }
-                Spacer()
-                if !clip.isPhoto {
-                    Button { vm.splitSelected() } label: { Label("Split", systemImage: "scissors") }
-                        .accessibilityIdentifier("studioSplit")
-                }
-                Button(role: .destructive) { vm.deleteSelected() } label: { Label("Delete", systemImage: "trash") }
+                .accessibilityIdentifier("studioSplit")
+                barButton("Speed", "speedometer", enabled: hasClip) { activeTool = .speed }
+                barButton("Filter", "camera.filters", enabled: hasClip) { activeTool = .filter }
+                barButton("Transition", "arrow.left.arrow.right", enabled: hasClip) { activeTool = .transition }
+                barButton("Text", "textformat") { addingText = true }
+                    .accessibilityIdentifier("studioAddText")
+                barButton("Canvas", "aspectratio") { activeTool = .aspect }
+                barButton("Delete", "trash", enabled: hasClip, role: .destructive) { vm.deleteSelected() }
                     .accessibilityIdentifier("studioDelete")
             }
-            .buttonStyle(.bordered)
-
-            if !clip.isPhoto {
-                HStack {
-                    Text("Speed").font(.subheadline)
-                    Spacer()
-                    Picker("Speed", selection: Binding(
-                        get: { clip.speed },
-                        set: { vm.setSelectedSpeed($0) })) {
-                        ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { Text("\($0, specifier: "%g")×").tag($0) }
-                    }.pickerStyle(.segmented).frame(width: 220)
-                }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+        }
+        .background(Color(white: 0.05))
+        .overlay(alignment: .top) {
+            if vm.selectedClip == nil {
+                Text("Tap a clip to edit it").font(.caption2).foregroundStyle(.secondary)
+                    .padding(.top, 2)
             }
-
-            HStack {
-                Text("Filter").font(.subheadline)
-                Spacer()
-                Menu(clip.filter.display) {
-                    ForEach(StudioFilter.allCases, id: \.self) { f in
-                        Button(f.display) { vm.setSelectedFilter(f) }
-                    }
-                }
-            }
-
-            HStack {
-                Text("Transition →").font(.subheadline)
-                Spacer()
-                Menu(vm.transitionKind(afterClipID: clip.id).display) {
-                    ForEach(StudioTransitionKind.allCases, id: \.self) { k in
-                        Button(k.display) { vm.setTransitionAfterSelected(k) }
-                    }
-                }
-            }
+        }
+        if case let .failed(msg) = vm.exportState {
+            Text(msg).font(.footnote).foregroundStyle(.red).padding(6)
         }
     }
 
-    private var projectControls: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Text("Canvas").font(.subheadline)
-                Spacer()
-                Menu(vm.aspect.label) {
-                    ForEach(ClipEditGeometry.OutputAspect.allCases, id: \.self) { a in
-                        Button(a.label) { vm.setAspect(a) }
+    private func barButton(_ title: String, _ icon: String, enabled: Bool = true,
+                           role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 18))
+                Text(title).font(.caption2)
+            }
+            .frame(minWidth: 60)
+            .foregroundStyle(enabled ? .white : Color.white.opacity(0.3))
+        }
+        .disabled(!enabled)
+    }
+}
+
+/// The bottom-sheet tool invoked from the action bar (Speed · Filter · Transition · Canvas) — keeps
+/// the bar to one tap and the value-picking in a focused sheet (the edits pattern).
+enum StudioTool: String, Identifiable { case speed, filter, transition, aspect; var id: String { rawValue } }
+
+private struct StudioToolSheet: View {
+    let tool: StudioTool
+    @Bindable var vm: StudioEditorViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title).font(.headline)
+            content
+            Spacer()
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var title: String {
+        switch tool {
+        case .speed: return "Speed"
+        case .filter: return "Filter"
+        case .transition: return "Transition"
+        case .aspect: return "Canvas aspect"
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch tool {
+        case .speed:
+            if let clip = vm.selectedClip {
+                Picker("Speed", selection: Binding(get: { clip.speed }, set: { vm.setSelectedSpeed($0) })) {
+                    ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { Text("\($0, specifier: "%g")×").tag($0) }
+                }.pickerStyle(.segmented)
+            }
+        case .filter:
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(StudioFilter.allCases, id: \.self) { f in
+                        Button { vm.setSelectedFilter(f); dismiss() } label: {
+                            Text(f.display).font(.caption)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background((vm.selectedClip?.filter == f) ? SnappetColor.workout : Color(white: 0.15),
+                                            in: Capsule())
+                                .foregroundStyle(.white)
+                        }
                     }
                 }
             }
-            Button { addingText = true } label: { Label("Add text overlay", systemImage: "textformat") }
-                .accessibilityIdentifier("studioAddText")
-            if let ov = vm.selectedOverlay {
-                HStack {
-                    Image(systemName: ov.kind == .sticker ? "star.square" : "textformat")
-                        .foregroundStyle(SnappetColor.workout)
-                    Text(ov.content).lineLimit(1).font(.subheadline)
-                    Spacer()
-                    Button(role: .destructive) { vm.deleteOverlay(ov.id) } label: {
-                        Label("Delete", systemImage: "trash")
+        case .transition:
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(StudioTransitionKind.allCases, id: \.self) { k in
+                        Button { vm.setTransitionAfterSelected(k); dismiss() } label: {
+                            Text(k.display).font(.caption)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(Color(white: 0.15), in: Capsule())
+                                .foregroundStyle(.white)
+                        }
                     }
-                    .accessibilityIdentifier("studioDeleteOverlay")
                 }
-                Text("Drag it on the preview to position it. It renders into the exported video.")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if case let .failed(msg) = vm.exportState {
-                Text(msg).font(.footnote).foregroundStyle(.red)
+        case .aspect:
+            HStack(spacing: 10) {
+                ForEach(ClipEditGeometry.OutputAspect.allCases, id: \.self) { a in
+                    Button { vm.setAspect(a); dismiss() } label: {
+                        Text(a.label).font(.caption)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background((vm.aspect == a) ? SnappetColor.workout : Color(white: 0.15), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
             }
         }
     }
@@ -238,7 +323,7 @@ private struct StudioClipCard: View {
         HStack(spacing: 4) {
             VStack(spacing: 4) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(white: 0.18))
                     Image(systemName: clip.isPhoto ? "photo" : "video").foregroundStyle(.secondary)
                     if clip.filter != .none {
                         Text(clip.filter.display).font(.system(size: 8, weight: .bold))

@@ -355,11 +355,15 @@ final class StudioComposer: Sendable {
     }
 
     /// Export the composed timeline to a temp `.mp4` (same async export path as `VideoStudio`).
-    func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:]) async throws -> URL {
+    /// `quality` picks the `AVAssetExportSession` preset; an unsupported preset for this composition
+    /// falls back to HighestQuality so export never fails on an over-ambitious 4K request.
+    func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:],
+                quality: StudioExportQuality = .highest) async throws -> URL {
         let (composition, videoComposition) = try await makeComposition(
             for: snapshot, sourceDurations: sourceDurations)
-        guard let session = AVAssetExportSession(
-            asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+        let session = AVAssetExportSession(asset: composition, presetName: quality.presetName)
+            ?? AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
+        guard let session else {
             throw ComposerError.exportFailed("could not create export session")
         }
         session.videoComposition = videoComposition

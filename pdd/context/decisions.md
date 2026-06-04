@@ -4,6 +4,30 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Studio editor → edits/CapCut layout (multi-phase redesign)
+
+**Decision**: Rebuild the multi-clip editor UI to the edits/CapCut layout the user referenced, in
+phases (separate commits, sim-UI-tested each). **Phase 1 (done)**: a custom **top bar** (X · editable
+title · export-quality menu · Export), a preview with a **controls-free `AVPlayerLayer`**
+(`StudioPlayerLayerView`, `.resizeAspect` so its displayed rect matches `ClipEditGeometry.displayRect`
+for overlay alignment) + a **custom transport** (play/pause + live `MM:SS / MM:SS` timecode driven by a
+periodic `AVPlayer` time observer in the VM, Swift-6-safe via `MainActor.assumeIsolated`), and a
+**contextual bottom action bar** (Split · Speed · Filter · Transition · Text · Canvas · Delete) whose
+value-pickers open a focused **bottom sheet** (`StudioToolSheet`). Split is now **playhead-driven**
+(`splitAtPlayhead` cuts the clip under `currentTime`). Export quality is a pure
+`StudioExportQuality` (preset-name string, no AVFoundation import) passed to `composer.export`, which
+falls back to HighestQuality if the preset is unsupported.
+
+**Why**: the prior vertical stack (preview / cards / controls list) couldn't reach edits-parity by
+accretion; the transport + action-bar + tool-sheet shell is the foundation the timeline/adjust/audio
+phases build on. NavigationStack chrome dropped for a custom dark top bar.
+
+**Rules out / notes**: the time observer is removed+reattached on each `rebuildPreview` (no leak); the
+end-of-play notification resets the playhead. **Phases 2–4 pending**: scrubbable thumbnail timeline +
+drag-trim, Adjust (color), audio (mute/volume + add-music) + keyframes. Verified Phase 1: studio UI
+walkthrough green on the iPhone 17 sim (opens the new layout, selects a clip, splits, undoes, closes
+via `studioClose`); full unit suite 195 (2 skipped), 0 failures. Device visual pass owed.
+
 ## [2026-06-04] Studio WYSIWYG overlay positioning — draggable SwiftUI layer over the preview (edits/CapCut pattern)
 
 **Decision**: Make text/sticker overlays **positionable by dragging them on the preview canvas**

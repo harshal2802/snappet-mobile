@@ -190,7 +190,7 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                         snap("11d-studio-edit")
                         app.buttons["studioUndo"].tap()    // undo the split
                     }
-                    app.buttons["Done"].tap()
+                    app.buttons["studioClose"].tap()
                 } else {
                     snap("11c-studio-NOTREACHED")
                 }
