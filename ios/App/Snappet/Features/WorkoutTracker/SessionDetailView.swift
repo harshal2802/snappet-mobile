@@ -212,13 +212,26 @@ private struct SessionMediaSection: View {
 
     @Query private var media: [SessionMedia]
 
-    @State private var showingPicker = false
     @State private var isDiscovering = false
     @State private var didAppear = false
     @State private var message: String?
-    @State private var editingClip: SessionMedia?
-    @State private var showingHighlight = false
     @State private var studioProject: StudioProject?
+    /// One sheet at a time. Stacking several `.sheet` modifiers on this `Group` (which flattens into
+    /// the parent `List`) makes them fight — the first presentation collapses immediately, the second
+    /// works. A single `item:`-driven sheet (stable identity) presents reliably on the first tap.
+    @State private var activeSheet: MediaSheet?
+
+    private enum MediaSheet: Identifiable {
+        case picker, highlight
+        case clip(SessionMedia)
+        var id: String {
+            switch self {
+            case .picker: return "picker"
+            case .highlight: return "highlight"
+            case .clip(let m): return "clip-\(m.id)"
+            }
+        }
+    }
 
     init(session: WorkoutSession, resolver: ExerciseResolver, unit: WeightUnit,
          sport: SportTag?, category: ExerciseCategory?) {
@@ -261,18 +274,23 @@ private struct SessionMediaSection: View {
                 }
             }
         }
-        .sheet(isPresented: $showingPicker) { MediaPicker { ids in addManual(ids) } }
-        .sheet(item: $editingClip) { clip in ClipEditorView(media: clip) }
-        .sheet(isPresented: $showingHighlight) {
-            SessionHighlightView(
-                viewModel: SessionHighlightViewModel(
-                    app: app, hrSeries: session.hrSeries,
-                    clips: media.map {
-                        SessionHighlightInput.Clip(
-                            localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
-                            offsetSec: $0.offsetSec, durationSec: $0.durationSec)
-                    },
-                    duration: session.duration, sport: sport, category: category))
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .picker:
+                MediaPicker { ids in addManual(ids) }
+            case .clip(let clip):
+                ClipEditorView(media: clip)
+            case .highlight:
+                SessionHighlightView(
+                    viewModel: SessionHighlightViewModel(
+                        app: app, hrSeries: session.hrSeries,
+                        clips: media.map {
+                            SessionHighlightInput.Clip(
+                                localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
+                                offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+                        },
+                        duration: session.duration, sport: sport, category: category))
+            }
         }
         .task {
             guard !didAppear else { return }
@@ -327,7 +345,7 @@ private struct SessionMediaSection: View {
                 .font(.footnote)
             }
 
-            Button { showingHighlight = true } label: {
+            Button { activeSheet = .highlight } label: {
                 Label("Generate highlight", systemImage: "sparkles.tv")
             }
             .disabled(!hasVideo)
@@ -360,7 +378,7 @@ private struct SessionMediaSection: View {
             if item.kind == .video { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }
         }
         .contentShape(Rectangle())
-        .onTapGesture { if item.kind == .video { editingClip = item } }
+        .onTapGesture { if item.kind == .video { activeSheet = .clip(item) } }
         .contextMenu { thumbMenu(for: item) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) { remove(item) } label: { Label("Remove", systemImage: "trash") }
@@ -379,7 +397,7 @@ private struct SessionMediaSection: View {
 
     @ViewBuilder private func thumbMenu(for item: SessionMedia) -> some View {
         if item.kind == .video {
-            Button { editingClip = item } label: { Label("Edit clip", systemImage: "slider.horizontal.3") }
+            Button { activeSheet = .clip(item) } label: { Label("Edit clip", systemImage: "slider.horizontal.3") }
         }
         Menu {
             ForEach(moveTargets) { target in
@@ -476,7 +494,7 @@ private struct SessionMediaSection: View {
             app.photoAccess = status
             if status == .limited {
                 message = "Limited Photo access can't auto-search — pick the clips by hand, or allow full access in Settings."
-                showingPicker = true
+                activeSheet = .picker
                 return
             }
             guard status == .authorized else {
@@ -515,7 +533,7 @@ private struct SessionMediaSection: View {
         if app.sessionMedia.currentStatus == .notDetermined {
             app.photoAccess = await app.sessionMedia.requestAccess()
         }
-        showingPicker = true
+        activeSheet = .picker
     }
 
     private func addManual(_ ids: [String]) {
