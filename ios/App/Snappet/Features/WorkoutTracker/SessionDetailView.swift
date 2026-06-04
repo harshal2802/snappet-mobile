@@ -87,10 +87,18 @@ struct SessionDetailView: View {
     }
 
     private func deleteFromPhotos(_ item: SessionMedia) {
+        // Delete the Photos asset FIRST (iOS shows its own confirmation); only drop the session tag
+        // if that succeeds, so a denied/cancelled delete doesn't orphan the tag from a still-present asset.
         let id = item.localIdentifier
-        context.delete(item)
-        try? context.save()
-        Task { try? await mediaLibrary.deleteAssets(localIdentifiers: [id]) }
+        Task {
+            do {
+                try await mediaLibrary.deleteAssets(localIdentifiers: [id])
+                context.delete(item)
+                try? context.save()
+            } catch {
+                // Asset not deleted (denied/cancelled) — keep the tag so the clip still shows.
+            }
+        }
     }
 }
 

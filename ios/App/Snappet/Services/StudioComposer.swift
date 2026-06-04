@@ -323,8 +323,9 @@ final class StudioComposer: Sendable {
         let center = CGPoint(x: ov.normalizedX, y: 1 - ov.normalizedY)   // flip Y to bottom-left origin
         let rect = ClipEditGeometry.pipRect(normalizedCenter: center, scale: ov.scale, canvas: canvas)
         li.setTransform(pref.concatenating(ClipEditGeometry.fillTransform(sourceSize: oriented, into: rect)), at: .zero)
-        // Visible only within the window (opacity 0 outside).
-        let op = Float(min(1, max(0, ov.opacity == 0 ? 1 : ov.opacity)))
+        // Visible only within the window (opacity 0 outside). Honor the overlay's opacity (it
+        // defaults to 1 in the initializer, so no special-casing 0).
+        let op = Float(min(1, max(0, ov.opacity)))
         if at > .zero { li.setOpacity(0, at: .zero); li.setOpacity(op, at: at) } else { li.setOpacity(op, at: .zero) }
         let endTime = CMTime(seconds: winEnd, preferredTimescale: timescale)
         if endTime < composition.duration { li.setOpacity(0, at: endTime) }

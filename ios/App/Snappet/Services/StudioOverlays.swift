@@ -84,18 +84,35 @@ enum StudioOverlays {
         inner.cornerRadius = 2.5; inner.backgroundColor = lineColor.cgColor
         dot.addSublayer(inner)
         if !pts.isEmpty {
-            let anim = CAKeyframeAnimation(keyPath: "position")
-            anim.values = pts.map { NSValue(cgPoint: local($0)) }
-            var keyTimes = pts.map { NSNumber(value: min(1, max(0, $0.x))) }
-            keyTimes[0] = 0; keyTimes[keyTimes.count - 1] = 1     // must span [0,1]
-            anim.keyTimes = keyTimes
-            anim.calculationMode = .linear
-            anim.beginTime = AVCoreAnimationBeginTimeAtZero
-            anim.duration = totalDuration
-            anim.isRemovedOnCompletion = false
-            anim.fillMode = .both
-            dot.position = local(pts[0])
-            dot.add(anim, forKey: "hrPlayhead")
+            // Build STRICTLY-INCREASING keyTimes in [0,1] (Core Animation drops a `.linear` keyframe
+            // animation with equal/decreasing keyTimes — duplicate sample timestamps would otherwise
+            // freeze the export dot). Keep values aligned to the kept keyTimes; span [0,1].
+            var values: [NSValue] = []
+            var keyTimes: [NSNumber] = []
+            var last = -1.0
+            let eps = 1e-4
+            for p in pts {
+                let kt = min(1, max(0, p.x))
+                if kt > last + eps {
+                    values.append(NSValue(cgPoint: local(p))); keyTimes.append(NSNumber(value: kt)); last = kt
+                }
+            }
+            if keyTimes.count >= 2 {
+                keyTimes[0] = 0
+                keyTimes[keyTimes.count - 1] = 1
+                let anim = CAKeyframeAnimation(keyPath: "position")
+                anim.values = values
+                anim.keyTimes = keyTimes
+                anim.calculationMode = .linear
+                anim.beginTime = AVCoreAnimationBeginTimeAtZero
+                anim.duration = totalDuration
+                anim.isRemovedOnCompletion = false
+                anim.fillMode = .both
+                dot.position = local(pts[0])
+                dot.add(anim, forKey: "hrPlayhead")
+            } else {
+                dot.position = local(pts[0])
+            }
         }
         container.addSublayer(dot)
         return container

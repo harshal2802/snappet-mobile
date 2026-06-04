@@ -79,7 +79,10 @@ final class StudioEditorViewModel {
         detachTransport()
         let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] t in
-            MainActor.assumeIsolated { self?.currentTime = t.seconds }
+            MainActor.assumeIsolated {
+                guard let self, self.isPlaying else { return }   // don't fight an active scrub/seek
+                self.currentTime = t.seconds
+            }
         }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { [weak self] _ in

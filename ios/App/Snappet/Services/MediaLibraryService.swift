@@ -82,6 +82,9 @@ final class MediaLibraryService: Sendable {
             formatIdentifier: "com.snappet.app.clip-edit", formatVersion: "1",
             data: Data("snappet-edit".utf8))
         do {
+            // `renderedContentURL` is a path Photos already reserved on disk — copying ONTO it throws
+            // "file exists". Replace its contents instead.
+            try? FileManager.default.removeItem(at: output.renderedContentURL)
             try FileManager.default.copyItem(at: url, to: output.renderedContentURL)
         } catch { throw SaveError.failed(error.localizedDescription) }
 

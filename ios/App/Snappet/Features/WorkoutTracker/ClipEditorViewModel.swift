@@ -46,6 +46,10 @@ final class ClipEditorViewModel {
         self.save = save
     }
 
+    // The periodic time observer is removed before each `rebuild` reattaches one; at dealloc the
+    // player and its `[weak self]` observer block are released together (a nonisolated `deinit` can't
+    // touch these @MainActor properties under Swift 6), so it doesn't accumulate or dangle.
+
     // MARK: - Lifecycle
 
     /// Load the source duration (for the trim handles) and build the first preview.
@@ -69,7 +73,12 @@ final class ClipEditorViewModel {
             let (composition, videoComposition) = try await studio.makeComposition(for: plan, forPlayback: true)
             guard token == buildToken else { return }   // a newer edit superseded this build
             let item = AVPlayerItem(asset: composition)
-            item.videoComposition = videoComposition
+            // `AVPlayerItem.setVideoComposition` raises an ObjC NSException (uncatchable by Swift) for a
+            // composition it rejects — guard via the ObjC bridge so the editor never aborts; fall back
+            // to the raw composition (the preview omits the offline-only animation tool already).
+            if let videoComposition, ObjCException.catching({ item.videoComposition = videoComposition }) != nil {
+                item.videoComposition = nil
+            }
             previewPlayer?.pause()
             if let timeObserver { previewPlayer?.removeTimeObserver(timeObserver); self.timeObserver = nil }
             let player = AVPlayer(playerItem: item)
