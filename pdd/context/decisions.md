@@ -4,6 +4,26 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] S4 studio text overlays — Core Animation overlay tool (device-verified export)
+
+**Decision**: Added **time-gated text overlays**. `StudioOverlays` builds a Core Animation layer tree
+(a `CATextLayer` per `OverlayItem` — positioned via `ClipEditGeometry.layerPoint`, scaled/rotated/
+coloured, opacity-keyframed to appear only within `[startSec, endSec]`) composited via
+`AVVideoCompositionCoreAnimationTool` — the proven `VideoStudio.attachOverlays` pattern, generalized to
+`OverlayItem`. `StudioComposer` attaches it on the **instruction-based paths** (no-filter single-track /
+two-track transition); the editor's "Add text overlay" action now renders end-to-end.
+
+**Rules out / follow-ups**: **sticker** overlays (need image layers), **keyframed/animated** opacity &
+position, and **overlay-with-filter** (the CIFilter handler composites tracks itself, so the animation
+tool isn't wired on that path) — all deferred. The composer's three feature paths are unchanged; overlays
+ride the two instruction paths.
+
+**Verified on the iPhone 13 Pro Max** (the spike asserts it): a 16 s / 4-clip export **with a text
+overlay** succeeds in ~4.9 s (the Core Animation tool costs more than a CIFilter, still well under
+realtime). **Honest caveat**: export-success proves the composition is valid + renders — NOT that the
+text's position/size/timing *look* right; that needs the editor preview / exported file. Full unit suite
+188 green (1 skipped on the sim).
+
 ## [2026-06-04] Present sheets/covers with `item:`, not `isPresented:` + separate state (device gotcha)
 
 **Decision**: The Studio cover opened as a **black empty screen on the device** (but worked on the

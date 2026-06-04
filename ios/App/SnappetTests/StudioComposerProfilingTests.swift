@@ -82,6 +82,21 @@ final class StudioComposerProfilingTests: XCTestCase {
         // two-track composition is valid + renders; the crossfade's *look* needs a visual check.)
         XCTAssertTrue(dissolve.ok, "dissolve-transition export should succeed on-device (status \(dissolve.status), \(dissolve.err ?? ""))")
         XCTAssertLessThan(dissolve.sec, 90, "a 16 s dissolve export should finish well under 90 s on-device")
+
+        // S4: an export with a text overlay must work on-device (Core Animation overlay-tool path).
+        var overlayClips: [(clip: TimelineClip, asset: AVAsset)] = []
+        for i in 0..<clipCount {
+            overlayClips.append((TimelineClip(sessionMediaID: nil, localIdentifier: "synthetic",
+                                              isPhoto: false, order: i), asset))
+        }
+        let overlays = [OverlayItem(kind: .text, content: "REP PR", startSec: 0, endSec: 3)]
+        let (oComp, oVC) = try await composer.assemble(resolved: overlayClips, aspect: .portrait9x16, overlays: overlays)
+        let overlaid = await export(oComp, videoComposition: oVC, preset: AVAssetExportPresetHighestQuality, tag: "overlay")
+        // Measured on MrRobot: a 16 s / 4-clip export with a text overlay ~4.9 s (the Core Animation
+        // tool costs more than a CIFilter, still well under realtime). Export-success proves the
+        // composition is valid + renders; the overlay's *look* needs a visual check.
+        XCTAssertTrue(overlaid.ok, "text-overlay export should succeed on-device (status \(overlaid.status), \(overlaid.err ?? ""))")
+        XCTAssertLessThan(overlaid.sec, 120, "a 16 s overlay export should finish well under 2 min on-device")
         #endif
     }
 

@@ -55,7 +55,8 @@ final class StudioComposer: Sendable {
             }
         }
         return try await assemble(resolved: resolved, aspect: snapshot.aspect,
-                                  sourceDurations: sourceDurations, transitions: snapshot.transitions)
+                                  sourceDurations: sourceDurations, transitions: snapshot.transitions,
+                                  overlays: snapshot.overlays)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -64,7 +65,8 @@ final class StudioComposer: Sendable {
     func assemble(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
                   aspect: ClipEditGeometry.OutputAspect,
                   sourceDurations: [UUID: Double] = [:],
-                  transitions: [StudioTransition] = []) async throws
+                  transitions: [StudioTransition] = [],
+                  overlays: [OverlayItem] = []) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
@@ -74,16 +76,19 @@ final class StudioComposer: Sendable {
         if transitions.contains(where: { $0.kind != .none }),
            !resolved.contains(where: { $0.clip.filter != .none }) {
             return try await assembleWithTransitions(
-                resolved: resolved, transitions: transitions, aspect: aspect, sourceDurations: sourceDurations)
+                resolved: resolved, transitions: transitions, aspect: aspect,
+                sourceDurations: sourceDurations, overlays: overlays)
         }
-        return try await assembleSingleTrack(resolved: resolved, aspect: aspect, sourceDurations: sourceDurations)
+        return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
+                                             sourceDurations: sourceDurations, overlays: overlays)
     }
 
     /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
     /// per-clip transform/crop layer instruction; any filtered clip routes through a Core Image handler.
     private func assembleSingleTrack(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
                                      aspect: ClipEditGeometry.OutputAspect,
-                                     sourceDurations: [UUID: Double]) async throws
+                                     sourceDurations: [UUID: Double],
+                                     overlays: [OverlayItem]) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
         let composition = AVMutableComposition()
         guard let vTrack = composition.addMutableTrack(
@@ -191,6 +196,10 @@ final class StudioComposer: Sendable {
             instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
             instruction.layerInstructions = [layerInstruction]
             videoComposition.instructions = [instruction]
+            // S4: time-gated text overlays via Core Animation (nil when there are none). Combining
+            // overlays with a colour filter is a follow-up (the filter path composites differently).
+            videoComposition.animationTool = StudioOverlays.makeAnimationTool(
+                overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds)
         }
 
         return (composition, videoComposition)
@@ -205,7 +214,8 @@ final class StudioComposer: Sendable {
         resolved: sending [(clip: TimelineClip, asset: AVAsset)],
         transitions: [StudioTransition],
         aspect: ClipEditGeometry.OutputAspect,
-        sourceDurations: [UUID: Double]) async throws
+        sourceDurations: [UUID: Double],
+        overlays: [OverlayItem] = []) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
 
         let ordered = StudioGeometry.ordered(resolved.map(\.clip))
@@ -299,6 +309,8 @@ final class StudioComposer: Sendable {
         vc.renderSize = cv
         vc.frameDuration = CMTime(value: 1, timescale: 30)
         vc.instructions = [instruction]
+        vc.animationTool = StudioOverlays.makeAnimationTool(   // S4 text overlays (nil when none)
+            overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds)
         return (composition, vc)
     }
 
