@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import os
 
 /// View model for the full-studio multi-clip editor (S1). Holds the `StudioProject` `@Model` and an
 /// `UndoStack<StudioProjectSnapshot>`; every edit goes through the **pure** `StudioProjectEditor`
@@ -20,7 +21,12 @@ final class StudioEditorViewModel {
     private(set) var sourceDurations: [UUID: Double] = [:]
     var previewPlayer: AVPlayer?
     var isBuildingPreview = false
+    /// Set when the player rejects the composition (see `rebuildPreview`) — the studio stays open
+    /// (no crash) and the canvas shows this instead of a silent black frame; export still works.
+    var previewError: String?
     var exportState: ExportShareState = .idle
+
+    private static let log = Logger(subsystem: "com.snappet.app", category: "studio")
 
     init(project: StudioProject, context: ModelContext) {
         self.project = project
@@ -61,10 +67,24 @@ final class StudioEditorViewModel {
     private func rebuildPreview() async {
         isBuildingPreview = true
         defer { isBuildingPreview = false }
+        previewError = nil
         do {
-            let (comp, vc) = try await composer.makeComposition(for: snapshot, sourceDurations: sourceDurations)
+            // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
+            // (export-only). Overlays therefore don't show in the live preview — they DO in export.
+            let (comp, vc) = try await composer.makeComposition(
+                for: snapshot, sourceDurations: sourceDurations, forPlayback: true)
             let item = AVPlayerItem(asset: comp)
-            item.videoComposition = vc
+            // `AVPlayerItem.setVideoComposition` validates more strictly than the export path and
+            // RAISES an NSException (not a Swift error) for a composition it rejects — which the
+            // `do/catch` above can't catch, so it would abort the whole app on opening the studio.
+            // Guard it via the ObjC bridge: on rejection, keep the studio open with an unstyled
+            // preview (export, which tolerates the same composition, still works) and report why.
+            if let vc, let ex = ObjCException.catching({ item.videoComposition = vc }) {
+                let reason = ex.reason ?? ex.name.rawValue
+                Self.log.error("AVPlayerItem rejected videoComposition: \(reason, privacy: .public)")
+                previewError = "Preview unavailable: \(reason)"
+                item.videoComposition = nil   // play the raw stitch rather than nothing
+            }
             previewPlayer = AVPlayer(playerItem: item)
         } catch {
             previewPlayer = nil   // device-only: no resolvable assets on the simulator

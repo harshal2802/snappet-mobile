@@ -74,6 +74,15 @@ struct StudioEditorView: View {
                         .font(.caption).foregroundStyle(.white.opacity(0.7))
                 }
             }
+            if let err = vm.previewError {
+                Text(err)
+                    .font(.caption2).foregroundStyle(.yellow)
+                    .multilineTextAlignment(.center).padding(8)
+                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .accessibilityIdentifier("studioPreviewError")
+            }
             if case .exporting = vm.exportState {
                 ProgressView("Exporting…").padding().background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }

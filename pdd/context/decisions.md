@@ -4,6 +4,43 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Studio multi-clip editor crashed on open — Core Animation tool is export-only (device-found)
+
+**Symptom**: opening the multi-clip Studio **aborted the app** on the device (SIGABRT). Pulled the crash
+report off MrRobot (`idevicecrashreport`; the `.ips` doesn't carry the NSException *reason*, but the
+backtrace did): `objc_exception_throw` → `-[AVPlayerItem setVideoComposition:]` →
+`StudioEditorViewModel.rebuildPreview()`. The on-device reason (captured by guarding the call, below):
+> *AVVideoCompositions using `AVVideoCompositionCoreAnimationTool` cannot be used with AVPlayerItem.
+> `AVVideoCompositionCoreAnimationTool` is for offline rendering only.*
+
+**Root cause**: `StudioComposer.makeComposition` attached the overlay `animationTool` to the **one**
+videoComposition reused for **both** export and the live `AVPlayer` **preview**. The tool is legal for
+export (`AVAssetExportSession`) but `AVPlayerItem` **rejects** it — and it rejects by raising an
+**Objective-C `NSException`, which a Swift `do/catch` cannot catch**, so the `rebuildPreview` try/catch
+didn't save it → process abort. The S0–S4 spike never caught this because it only ever drove the
+**export** path (`AVAssetExportSession`), never `AVPlayerItem` — preview on a real device was never
+exercised (the editor was sim-only + the cover-presentation fix).
+
+**Fix** (two parts):
+- **`forPlayback` flag** through `StudioComposer.makeComposition` / `assemble` / `assembleSingleTrack` /
+  `assembleWithTransitions`: when **true** the videoComposition **omits** the Core Animation tool.
+  `rebuildPreview` requests `forPlayback: true`; **export keeps `false`** (overlays still burn into the
+  file). Net: filters/transitions/transforms now preview live; **overlays don't show in the live
+  preview** (they do in export) — live overlay preview is a SwiftUI-overlay-layer follow-up (the
+  edits/CapCut WYSIWYG pattern), NOT `AVSynchronizedLayer` inside the composition.
+- **`Services/ObjCException`** (tiny ObjC `@try/@catch` + `Snappet-Bridging-Header.h`, wired via
+  `SWIFT_OBJC_BRIDGING_HEADER` on the app target): lets Swift catch AVFoundation `NSException`s.
+  `rebuildPreview` wraps `item.videoComposition = vc` in it — so an AVFoundation throw can **never**
+  abort the studio again; it degrades to an on-canvas message + an `os.Logger` line. **Keep this** — AV
+  raises ObjC exceptions in many places.
+
+**Rules out / notes**: don't reuse one videoComposition for both `AVPlayerItem` and export when it uses
+an `animationTool`. Verified on MrRobot: new `testPlaybackCompositionOmitsCoreAnimationToolAndExportKeepsIt`
+(playback omits the tool + `AVPlayerItem` accepts it; export keeps it) + the 7-path export spike both
+green; full unit suite **189 (2 skipped on sim), 0 failures**. **Honest caveat (unchanged)**: the device
+test proves no-crash + a valid composition, NOT that the preview *looks* right — that's the user's visual
+pass.
+
 ## [2026-06-04] Studio effects batch — sticker/keyframed overlays, slide/zoom, filter+overlay; filter+transition deferred
 
 **Decision**: Filled out the studio effects (all device-export-verified via the spike, 7 paths):

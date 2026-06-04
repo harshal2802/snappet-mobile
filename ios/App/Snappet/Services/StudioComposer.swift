@@ -40,8 +40,16 @@ final class StudioComposer: Sendable {
 
     /// Build the multi-clip composition. `sourceDurations` (clip id → seconds) lets the caller pass
     /// already-resolved durations; any missing one is loaded from the asset here.
+    ///
+    /// `forPlayback`: when **true**, the returned videoComposition omits the Core Animation overlay
+    /// tool (`AVVideoCompositionCoreAnimationTool`), which is **offline-render-only** —
+    /// `AVPlayerItem.setVideoComposition` raises an NSException for any composition that uses it. So
+    /// the live preview gets a tool-free composition (overlays don't show in preview; everything else
+    /// — transforms / filters / transitions — does), while **export** (default `false`) keeps the
+    /// tool so overlays render into the file.
     func makeComposition(for snapshot: StudioProjectSnapshot,
-                         sourceDurations: [UUID: Double] = [:]) async throws
+                         sourceDurations: [UUID: Double] = [:],
+                         forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
 
         // S1 renders video clips; photos are a Ken-Burns step in S2+.
@@ -56,7 +64,7 @@ final class StudioComposer: Sendable {
         }
         return try await assemble(resolved: resolved, aspect: snapshot.aspect,
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
-                                  overlays: snapshot.overlays)
+                                  overlays: snapshot.overlays, forPlayback: forPlayback)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -66,7 +74,8 @@ final class StudioComposer: Sendable {
                   aspect: ClipEditGeometry.OutputAspect,
                   sourceDurations: [UUID: Double] = [:],
                   transitions: [StudioTransition] = [],
-                  overlays: [OverlayItem] = []) async throws
+                  overlays: [OverlayItem] = [],
+                  forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
 
@@ -79,10 +88,11 @@ final class StudioComposer: Sendable {
            !resolved.contains(where: { $0.clip.filter != .none }) {
             return try await assembleWithTransitions(
                 resolved: resolved, transitions: transitions, aspect: aspect,
-                sourceDurations: sourceDurations, overlays: overlays)
+                sourceDurations: sourceDurations, overlays: overlays, forPlayback: forPlayback)
         }
         return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
-                                             sourceDurations: sourceDurations, overlays: overlays)
+                                             sourceDurations: sourceDurations, overlays: overlays,
+                                             forPlayback: forPlayback)
     }
 
     /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
@@ -90,7 +100,8 @@ final class StudioComposer: Sendable {
     private func assembleSingleTrack(resolved: sending [(clip: TimelineClip, asset: AVAsset)],
                                      aspect: ClipEditGeometry.OutputAspect,
                                      sourceDurations: [UUID: Double],
-                                     overlays: [OverlayItem]) async throws
+                                     overlays: [OverlayItem],
+                                     forPlayback: Bool) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
         let composition = AVMutableComposition()
         guard let vTrack = composition.addMutableTrack(
@@ -187,9 +198,12 @@ final class StudioComposer: Sendable {
                 request.finish(with: image, context: nil)
             }
             videoComposition.renderSize = canvas
-            // Overlays compose over the filtered frames too (text/sticker on a filtered clip).
-            videoComposition.animationTool = StudioOverlays.makeAnimationTool(
-                overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds)
+            // Overlays compose over the filtered frames too (text/sticker on a filtered clip) — but
+            // the Core Animation tool is export-only (AVPlayerItem rejects it), so skip it for preview.
+            if !forPlayback {
+                videoComposition.animationTool = StudioOverlays.makeAnimationTool(
+                    overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds)
+            }
         } else {
             // No filters: the transform/crop path. Build from the composition's own properties (so
             // color/format tags + a valid source-track mapping are present) rather than a bare
@@ -203,8 +217,11 @@ final class StudioComposer: Sendable {
             videoComposition.instructions = [instruction]
             // S4: time-gated text overlays via Core Animation (nil when there are none). Combining
             // overlays with a colour filter is a follow-up (the filter path composites differently).
-            videoComposition.animationTool = StudioOverlays.makeAnimationTool(
-                overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds)
+            // The Core Animation tool is export-only (AVPlayerItem rejects it), so skip it for preview.
+            if !forPlayback {
+                videoComposition.animationTool = StudioOverlays.makeAnimationTool(
+                    overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds)
+            }
         }
 
         return (composition, videoComposition)
@@ -220,7 +237,8 @@ final class StudioComposer: Sendable {
         transitions: [StudioTransition],
         aspect: ClipEditGeometry.OutputAspect,
         sourceDurations: [UUID: Double],
-        overlays: [OverlayItem] = []) async throws
+        overlays: [OverlayItem] = [],
+        forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
 
         let ordered = StudioGeometry.ordered(resolved.map(\.clip))
@@ -327,8 +345,12 @@ final class StudioComposer: Sendable {
         vc.renderSize = cv
         vc.frameDuration = CMTime(value: 1, timescale: 30)
         vc.instructions = [instruction]
-        vc.animationTool = StudioOverlays.makeAnimationTool(   // S4 text overlays (nil when none)
-            overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds)
+        // S4 text overlays via the Core Animation tool — export-only (AVPlayerItem rejects it), so
+        // skip it for the live preview.
+        if !forPlayback {
+            vc.animationTool = StudioOverlays.makeAnimationTool(
+                overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds)
+        }
         return (composition, vc)
     }
 

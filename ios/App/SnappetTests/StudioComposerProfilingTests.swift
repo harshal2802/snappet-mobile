@@ -125,6 +125,48 @@ final class StudioComposerProfilingTests: XCTestCase {
         #endif
     }
 
+    /// REGRESSION: the studio PREVIEW assigns the composition to an `AVPlayerItem`. A videoComposition
+    /// that uses `AVVideoCompositionCoreAnimationTool` (our overlay tool) is **offline-render-only** —
+    /// `AVPlayerItem.setVideoComposition` raises an NSException ("…cannot be used with AVPlayerItem…"),
+    /// which Swift can't catch → it aborted the app on opening the studio. So the playback composition
+    /// (`forPlayback: true`) must OMIT the tool, while export keeps it (overlays render into the file).
+    /// Builds an overlay + filtered project (the real crashing shape) and proves the playback path is
+    /// accepted by AVPlayerItem — if the tool ever leaks back into playback, this test crashes.
+    @MainActor
+    func testPlaybackCompositionOmitsCoreAnimationToolAndExportKeepsIt() async throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Device-only (Photos/AV).")
+        #else
+        let srcURL = FileManager.default.temporaryDirectory.appendingPathComponent("prev-\(UUID()).mp4")
+        defer { try? FileManager.default.removeItem(at: srcURL) }
+        try makeSyntheticVideo(seconds: 3, size: CGSize(width: 1080, height: 1920), to: srcURL)
+        let asset = AVURLAsset(url: srcURL)
+        let overlays = [OverlayItem(kind: .text, content: "REP PR", startSec: 0, endSec: 3)]
+        let composer = StudioComposer()
+        // The crashing shape: clips WITH a colour filter AND a text overlay. `assemble` consumes its
+        // `resolved` arg (Swift-6 `sending`), so build a fresh inline array for each call.
+
+        // Export composition KEEPS the Core Animation tool (so overlays render into the file).
+        var exportClips: [(clip: TimelineClip, asset: AVAsset)] = [
+            (TimelineClip(sessionMediaID: nil, localIdentifier: "a", isPhoto: false, order: 0, filter: .vivid), asset),
+            (TimelineClip(sessionMediaID: nil, localIdentifier: "b", isPhoto: false, order: 1, filter: .fade), asset)]
+        let (_, exportVC) = try await composer.assemble(resolved: exportClips, aspect: .portrait9x16,
+                                                        overlays: overlays, forPlayback: false)
+        XCTAssertNotNil(exportVC?.animationTool, "export composition should keep the overlay tool")
+
+        // Playback composition OMITS it, and AVPlayerItem must accept it without raising.
+        var playClips: [(clip: TimelineClip, asset: AVAsset)] = [
+            (TimelineClip(sessionMediaID: nil, localIdentifier: "a", isPhoto: false, order: 0, filter: .vivid), asset),
+            (TimelineClip(sessionMediaID: nil, localIdentifier: "b", isPhoto: false, order: 1, filter: .fade), asset)]
+        let (playComp, playVC) = try await composer.assemble(resolved: playClips, aspect: .portrait9x16,
+                                                            overlays: overlays, forPlayback: true)
+        XCTAssertNil(playVC?.animationTool, "playback composition must omit the offline-only overlay tool")
+        let item = AVPlayerItem(asset: playComp)
+        item.videoComposition = playVC   // would raise NSException (→ SIGABRT) if the tool leaked in
+        _ = AVPlayer(playerItem: item)
+        #endif
+    }
+
     /// Export `composition` (optionally with `videoComposition`) to a throwaway file; returns the
     /// wall-clock seconds, whether it completed, the raw status, and any error string.
     private func export(_ composition: AVMutableComposition, videoComposition: AVVideoComposition?,

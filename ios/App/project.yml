@@ -48,6 +48,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: NO
+        # Lets Swift catch NSException raised by AVFoundation (e.g. AVPlayerItem.setVideoComposition)
+        # via Services/ObjCException — Swift do/catch can't, and an uncaught one aborts the app.
+        SWIFT_OBJC_BRIDGING_HEADER: Snappet/Snappet-Bridging-Header.h
     entitlements:
       path: Snappet/Resources/Snappet.entitlements
       properties:
