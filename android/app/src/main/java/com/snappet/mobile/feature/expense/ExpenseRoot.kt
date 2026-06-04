@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -190,8 +191,34 @@ private fun GroupDetail(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var showNewExpense by remember { mutableStateOf(false) }
+    var showNewReceipt by remember { mutableStateOf(false) }
     var showSettle by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ExpenseRecord?>(null) }
+    var editingReceipt by remember { mutableStateOf<ExpenseRecord?>(null) }
+    var viewingReceipt by remember { mutableStateOf<ExpenseRecord?>(null) }
+
+    // Keep the viewed receipt in sync with the latest DB row (e.g. after an edit), and close the
+    // detail if it was deleted.
+    val activeReceipt = viewingReceipt?.let { v -> expenses.firstOrNull { it.id == v.id } }
+    if (activeReceipt != null) {
+        ReceiptDetail(
+            group = group,
+            record = activeReceipt,
+            onBack = { viewingReceipt = null },
+            onEdit = { editingReceipt = activeReceipt },
+        )
+        ReceiptSheets(
+            group = group,
+            showNew = false,
+            editing = editingReceipt,
+            dao = dao,
+            core = core,
+            scope = scope,
+            onCloseNew = {},
+            onCloseEdit = { editingReceipt = null },
+        )
+        return
+    }
 
     val balances = SettleUp.balances(group.participants, expenses)
     val transfers = SettleUp.transfers(balances)
@@ -209,6 +236,11 @@ private fun GroupDetail(
                         text = { Text("New expense") },
                         onClick = { menuOpen = false; showNewExpense = true },
                         modifier = Modifier.testTag("expense.newExpense"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text("New receipt") },
+                        onClick = { menuOpen = false; showNewReceipt = true },
+                        modifier = Modifier.testTag("expense.newReceipt"),
                     )
                     DropdownMenuItem(
                         text = { Text("Settle up") },
@@ -256,7 +288,14 @@ private fun GroupDetail(
 
                 item { SectionHeader("Expenses") }
                 items(expenses, key = { it.id }) { expense ->
-                    ExpenseRow(expense) { editing = expense }
+                    ExpenseRow(expense) {
+                        // A receipt opens its per-person breakdown; an even-split expense edits in
+                        // place; a settlement has no editor.
+                        when {
+                            expense.isReceipt -> viewingReceipt = expense
+                            !expense.isSettlement -> editing = expense
+                        }
+                    }
                 }
             }
         }
@@ -301,6 +340,17 @@ private fun GroupDetail(
             }
         }
     }
+
+    ReceiptSheets(
+        group = group,
+        showNew = showNewReceipt,
+        editing = null,
+        dao = dao,
+        core = core,
+        scope = scope,
+        onCloseNew = { showNewReceipt = false },
+        onCloseEdit = {},
+    )
 
     if (showSettle) {
         ModalBottomSheet(onDismissRequest = { showSettle = false }, sheetState = rememberModalBottomSheetState()) {
@@ -376,6 +426,8 @@ private fun ExpenseRow(expense: ExpenseRecord, onTap: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (expense.isSettlement) {
                 Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = null, tint = Green, modifier = Modifier.size(18.dp))
+            } else if (expense.isReceipt) {
+                Icon(Icons.Filled.ReceiptLong, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
             Text(expense.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Text(money(expense.amount), fontWeight = FontWeight.SemiBold, color = if (expense.isSettlement) Green else MaterialTheme.colorScheme.onSurface)
@@ -389,12 +441,100 @@ private fun ExpenseRow(expense: ExpenseRecord, onTap: () -> Unit) {
 }
 
 private fun detailText(expense: ExpenseRecord): String =
-    if (expense.isSettlement) {
-        val recipient = expense.participants.firstOrNull() ?: "someone"
-        "Settlement · ${expense.payer} paid $recipient"
-    } else {
-        "${expense.payer} paid · split ${expense.participants.size} ways"
+    when {
+        expense.isSettlement -> {
+            val recipient = expense.participants.firstOrNull() ?: "someone"
+            "Settlement · ${expense.payer} paid $recipient"
+        }
+        expense.isReceipt -> {
+            val bits = mutableListOf("${expense.payer} paid", "${expense.items.size} items")
+            if (expense.discountAmount > 0.005) bits.add("-${money(expense.discountAmount)}")
+            if (expense.taxAmount > 0.005) bits.add("+${money(expense.taxAmount)} tax")
+            bits.joinToString(" · ")
+        }
+        else -> "${expense.payer} paid · split ${expense.participants.size} ways"
     }
+
+/**
+ * The add/edit receipt bottom sheets. Reused from both the group screen (add) and the receipt
+ * detail screen (edit). Persisting computes the grand total + the set of people who share at least
+ * one item via [ReceiptSplit], mirroring the iOS `NewReceiptSheet.save`.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReceiptSheets(
+    group: ExpenseGroup,
+    showNew: Boolean,
+    editing: ExpenseRecord?,
+    dao: ExpenseDao,
+    core: SnappetCore,
+    scope: CoroutineScope,
+    onCloseNew: () -> Unit,
+    onCloseEdit: () -> Unit,
+) {
+    if (showNew) {
+        ModalBottomSheet(onDismissRequest = onCloseNew, sheetState = rememberModalBottomSheetState()) {
+            NewReceiptSheet(group = group, record = null) { title, payer, items, tax, discount ->
+                onCloseNew()
+                scope.launch { persistReceipt(dao, core, group, null, title, payer, items, tax, discount) }
+            }
+        }
+    }
+    editing?.let { record ->
+        ModalBottomSheet(onDismissRequest = onCloseEdit, sheetState = rememberModalBottomSheetState()) {
+            NewReceiptSheet(group = group, record = record) { title, payer, items, tax, discount ->
+                onCloseEdit()
+                scope.launch { persistReceipt(dao, core, group, record, title, payer, items, tax, discount) }
+            }
+        }
+    }
+}
+
+private suspend fun persistReceipt(
+    dao: ExpenseDao,
+    core: SnappetCore,
+    group: ExpenseGroup,
+    existing: ExpenseRecord?,
+    title: String,
+    payer: String,
+    items: List<ReceiptItem>,
+    tax: Double,
+    discount: Double,
+) {
+    val computed = ReceiptSplit.compute(items, tax, discount, group.participants)
+    val sharers = group.participants.filter { p -> computed.perPerson.any { it.name == p } }
+    val itemsRaw = ExpenseRecord.encodeItems(items)
+    val summary = "${money(computed.grandTotal)} receipt (${items.size} items)"
+    if (existing == null) {
+        dao.insertExpense(
+            ExpenseRecord(
+                groupId = group.groupId,
+                title = title,
+                amount = computed.grandTotal,
+                payer = payer,
+                participantsRaw = ExpenseRecord.joinParticipants(sharers),
+                date = System.currentTimeMillis(),
+                itemsRaw = itemsRaw,
+                taxAmount = tax,
+                discountAmount = discount,
+            )
+        )
+        core.log("expense", "receipt", "Added $summary", computed.grandTotal)
+    } else {
+        dao.updateExpense(
+            existing.copy(
+                title = title,
+                amount = computed.grandTotal,
+                payer = payer,
+                participantsRaw = ExpenseRecord.joinParticipants(sharers),
+                itemsRaw = itemsRaw,
+                taxAmount = tax,
+                discountAmount = discount,
+            )
+        )
+        core.log("expense", "receipt", "Edited $summary", computed.grandTotal)
+    }
+}
 
 /** Currency-style amount, e.g. "$50.00". Plain formatting keeps the settle-up math display simple. */
 private fun money(value: Double): String = "$" + String.format("%.2f", value)

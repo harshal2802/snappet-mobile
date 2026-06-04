@@ -22,6 +22,7 @@ struct NewReceiptSheet: View {
     @State private var taxAmount: Double
     @State private var discountAmount: Double
     @State private var showingPaste = false
+    @State private var showingScanner = false
 
     init(group: ExpenseGroup, record: ExpenseRecord? = nil) {
         self.group = group
@@ -66,6 +67,15 @@ struct NewReceiptSheet: View {
             .sheet(isPresented: $showingPaste) {
                 PasteReceiptSheet { parsed in apply(parsed) }
             }
+            .fullScreenCover(isPresented: $showingScanner) {
+                ReceiptDocumentScanner { text in
+                    showingScanner = false
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    apply(ReceiptParser.parse(text))
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -85,6 +95,14 @@ struct NewReceiptSheet: View {
 
     private var pasteSection: some View {
         Section {
+            if ReceiptDocumentScanner.isSupported {
+                Button {
+                    showingScanner = true
+                } label: {
+                    Label("Scan receipt with camera", systemImage: "camera.viewfinder")
+                }
+                .accessibilityIdentifier("expense.receipt.scan")
+            }
             Button {
                 showingPaste = true
             } label: {
@@ -92,7 +110,7 @@ struct NewReceiptSheet: View {
             }
             .accessibilityIdentifier("expense.receipt.paste")
         } footer: {
-            Text("Copy a receipt's text (or use the camera's Live Text), paste it, and we'll pull out the line items, tax and discount.")
+            Text("Scan a receipt with the camera, or paste its text (e.g. from the camera's Live Text), and we'll pull out the line items, tax and discount.")
         }
     }
 

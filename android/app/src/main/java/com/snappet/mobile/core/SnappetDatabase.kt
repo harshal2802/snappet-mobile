@@ -47,7 +47,7 @@ import com.snappet.mobile.feature.workout.WorkoutSession
         WorkoutRoutine::class, WorkoutSession::class, WorkoutCustomExercise::class,
         KilterLogEntry::class, KilterSession::class, KilterFavorite::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class SnappetDatabase : RoomDatabase() {

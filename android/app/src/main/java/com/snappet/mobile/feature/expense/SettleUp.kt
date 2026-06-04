@@ -24,6 +24,18 @@ object SettleUp {
         participants.forEach { net[it] = 0.0 }
 
         for (expense in expenses) {
+            if (expense.isReceipt) {
+                // Itemized: credit the payer the grand total, debit each person their slice.
+                net[expense.payer] = (net[expense.payer] ?: 0.0) + expense.amount
+                val result = ReceiptSplit.compute(
+                    expense.items, expense.taxAmount, expense.discountAmount, participants,
+                )
+                for (share in result.perPerson) {
+                    net[share.name] = (net[share.name] ?: 0.0) - share.total
+                }
+                continue
+            }
+
             val splitters = expense.participants
             // Guard against an expense with no split targets (shouldn't happen via the UI).
             if (splitters.isEmpty()) continue

@@ -4,6 +4,43 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Split Expenses — Android receipt parity + on-device camera OCR (both platforms)
+
+**Decision**: Mirror the iOS itemized-receipt feature to Android and add **on-device camera OCR** to
+both platforms so a receipt can be captured by photo, not only pasted.
+
+- **Android mirror (Kotlin/Compose, Room).** `ExpenseRecord` gains additive, defaulted columns
+  `itemsRaw` / `taxAmount` / `discountAmount`; the DB version bumps 2→3 and rides the existing
+  `fallbackToDestructiveMigration` (on-device-only data, no hand-written migration). Items persist as
+  a control-character-delimited `itemsRaw` string (RS/US/GS) — the same "raw string, no TypeConverter"
+  approach already used for `participantsRaw`. `ReceiptSplit.kt` and `ReceiptParser.kt` are 1:1 ports
+  of the Swift logic (same largest-remainder reconciliation, same parser heuristics) and get JVM unit
+  tests under `src/test` (`ReceiptSplitTest`, `ReceiptParserTest`, `SettleUpReceiptTest`). UI:
+  `NewReceiptSheet.kt` (items + per-item assignee FilterChips + tax/discount + live `ReceiptSummary`),
+  `ReceiptDetail.kt` (read-only breakdown), wired into `ExpenseRoot.GroupDetail` with a "New receipt"
+  menu item and receipt rows that open the detail.
+- **Camera OCR.** iOS: `ReceiptDocumentScanner` (VisionKit `VNDocumentCameraViewController`) +
+  `ReceiptScanner` (Vision `VNRecognizeTextRequest`, **synchronous** so no `CGImage` Sendable-crossing,
+  mirroring `MediaPicker`'s direct-callback coordinator); gated on `isSupported` (hidden on the
+  simulator) and presented in a `fullScreenCover` whose binding drives dismissal. Android: `ReceiptScan.kt`
+  captures via `ActivityResultContracts.TakePicture()` through a `FileProvider` temp file (so **no
+  CAMERA permission** is needed) and recognizes with **ML Kit** `text-recognition` (one new dependency).
+  On both platforms the recognized text flows straight into the already-tested `ReceiptParser` — the OCR
+  layer stays a thin, untested platform edge; all the brittle "what's an item / tax / discount" logic is
+  pure and unit-tested.
+
+**Why**: keeping the algorithm identical and pure on both platforms means the hard part is tested once
+per language and the camera/Vision/ML-Kit code is a trivial pixels→text adapter. Using ACTION_IMAGE_CAPTURE
++ FileProvider on Android avoids a runtime camera-permission flow; using a synchronous Vision call on iOS
+sidesteps Swift 6 `Sendable` friction. **Rules out**: a Room TypeConverter / JSON dependency for items
+(control-char string matches the repo); a hand-written Room migration (destructive fallback is the repo's
+norm for on-device data); CameraX / a bundled cropping UI on Android; bridging ML Kit's `Task` with an
+extra coroutines-play-services dep (used `suspendCancellableCoroutine` instead). **Verified**: pure
+logic unit-tested off-device on both platforms (iOS XCTest, Android JVM `src/test`). All SwiftUI/Compose
+surfaces and the camera/Vision/ML-Kit paths stay **device-unverified** per the repo's macOS+Xcode /
+Android-SDK build rule (authored on Linux/cloud) — they need a `xcodebuild test` and a Gradle
+`testDebugUnitTest` + on-device run to confirm.
+
 ## [2026-06-04] Split Expenses — itemized receipts with per-item assignment + proportional tax/discount
 
 **Decision**: Add an itemized **receipt** path to Split Expenses so a real shopping receipt (e.g. a
