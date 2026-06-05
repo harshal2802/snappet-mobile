@@ -4,6 +4,139 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
+
+**Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),
+and have that type tune extraction. Implemented as **parse-time only** — no persisted column, no
+`ReceiptSplit` change — so it stays additive and migration-free.
+
+- **`ReceiptType`** { auto, grocery, warehouse, restaurant, gas, pharmacy, retail, generic } maps to a
+  pure **`ReceiptProfile`** (extra skip-keywords, tip-line prefixes, a `fuelOnly` flag).
+  `ReceiptParser.parse(text, profile:)` gains an optional profile that defaults to `.generic`, so the
+  existing `parse(text)` behaviour and all current tests are unchanged.
+- **Profiles**: restaurant adds SERVER/TABLE/GUEST… to the skip set and turns a `TIP`/`GRATUITY` line
+  into a "Tip" line item (split among the diners); gas skips PUMP/GALLON/UNLEADED… and collapses to a
+  single "Fuel" item from the detected total; pharmacy/retail add their own metadata skips;
+  warehouse/grocery use the generic Costco-tuned base.
+- **`ReceiptClassifier.classify(text)`** (pure) scores signature keywords per type for **Auto**; the
+  picker then snaps to the detected type so the user sees the guess and can override.
+- **UI**: a "Receipt type" picker in `NewReceiptSheet` (iOS `Picker`, Android dropdown). Scan/paste now
+  hand raw text back to the sheet, which parses it with the resolved profile.
+
+**Why**: a single generic parser mis-reads restaurant tips and gas pumps; a tiny per-type profile fixes
+extraction without complicating the data model. Keeping type parse-time-only (vs. a persisted
+`receiptType` column) honours the "bug-fixes + validation first, types as a thin follow-up" scope and
+avoids a Room migration. **Rules out**: persisting the type this cut; a separate `tipAmount`/proportional
+tip (tip is an equally-split line item for now — proportional tip is a follow-up); per-type split rules.
+**Verified**: `ReceiptClassifierTests`/`Test` cover classification + the restaurant/gas/generic parse
+branches off-device on both platforms. UI pickers stay device-unverified per the repo's build rule.
+
+## [2026-06-04] Split Expenses — receipt parser fixes + total/discount validation
+
+**Decision**: From a deep review of the receipt PR, fix two parser bugs and add an advisory
+**validation** pass that reconciles the captured items against the receipt's printed totals.
+
+- **Bug 1 — tax mis-detection.** `ReceiptParser` set `tax = value` on *every* line containing "TAX",
+  so the **last** one won — on the real Costco receipt that's `FSA TAX = 1.64`, not `TOTAL TAX 14.01`.
+  Fix: tax now comes from the authoritative `TOTAL TAX` line (a bare `TAX` line is a fallback), and
+  per-rate `%` component lines and `FSA` lines are ignored; the grand-total scan also excludes `FSA`.
+- **Bug 2 — leading-minus discounts dropped.** `money()` only handled a trailing minus (`4.00-`); a
+  `-4.00` token failed the digit check and vanished. It now strips a leading **or** trailing `-`.
+- **Parser now also reads** `subtotal` and `itemCount` ("Items Sold: 51", handled before the money
+  guard since it's a bare integer) so validation has more to check against.
+- **`ReceiptValidation`** (pure, both platforms, unit-tested): builds a `Report` of independent checks
+  — items − discount + tax = total (the headline; `FAIL` on mismatch with the off-by amount),
+  subtotal match, tax-vs-detected, item-count, unassigned remainder, negative share. Surfaced as a
+  `ReceiptValidationBanner` (Balanced / Needs review / Doesn't add up) in `NewReceiptSheet` that
+  expands to the checklist; it **never blocks saving**. The detected totals are held in sheet state
+  from the last scan/paste — **not persisted** (no schema change this cut), so validation runs at
+  capture time where it matters; persisting a stored mismatch flag is a follow-up.
+
+**Why**: the split is only as trustworthy as the OCR, so the app should *show its work* and flag a
+bad read instead of silently producing a wrong per-person total. Keeping validation pure makes the
+reconciliation logic testable without a device. Scoped per the request to **bug-fixes + validation
+first** (Warehouse/Grocery profile only); typed receipts (restaurant/gas/pharmacy auto-detect) remain
+a planned follow-up — see `docs/wireframes/receipt-types-validation.svg`. **Rules out**: blocking save
+on a mismatch (advisory only); a new persisted column this cut; trusting the last TAX line.
+**Verified**: pure logic unit-tested off-device on both platforms (`ReceiptParserTests`/`Test`,
+`ReceiptValidationTests`/`Test`). UI banners stay device-unverified per the repo's build rule.
+
+## [2026-06-04] Split Expenses — Android receipt parity + on-device camera OCR (both platforms)
+
+**Decision**: Mirror the iOS itemized-receipt feature to Android and add **on-device camera OCR** to
+both platforms so a receipt can be captured by photo, not only pasted.
+
+- **Android mirror (Kotlin/Compose, Room).** `ExpenseRecord` gains additive, defaulted columns
+  `itemsRaw` / `taxAmount` / `discountAmount`; the DB version bumps 2→3 and rides the existing
+  `fallbackToDestructiveMigration` (on-device-only data, no hand-written migration). Items persist as
+  a control-character-delimited `itemsRaw` string (RS/US/GS) — the same "raw string, no TypeConverter"
+  approach already used for `participantsRaw`. `ReceiptSplit.kt` and `ReceiptParser.kt` are 1:1 ports
+  of the Swift logic (same largest-remainder reconciliation, same parser heuristics) and get JVM unit
+  tests under `src/test` (`ReceiptSplitTest`, `ReceiptParserTest`, `SettleUpReceiptTest`). UI:
+  `NewReceiptSheet.kt` (items + per-item assignee FilterChips + tax/discount + live `ReceiptSummary`),
+  `ReceiptDetail.kt` (read-only breakdown), wired into `ExpenseRoot.GroupDetail` with a "New receipt"
+  menu item and receipt rows that open the detail.
+- **Camera OCR.** iOS: `ReceiptDocumentScanner` (VisionKit `VNDocumentCameraViewController`) +
+  `ReceiptScanner` (Vision `VNRecognizeTextRequest`, **synchronous** so no `CGImage` Sendable-crossing,
+  mirroring `MediaPicker`'s direct-callback coordinator); gated on `isSupported` (hidden on the
+  simulator) and presented in a `fullScreenCover` whose binding drives dismissal. Android: `ReceiptScan.kt`
+  captures via `ActivityResultContracts.TakePicture()` through a `FileProvider` temp file (so **no
+  CAMERA permission** is needed) and recognizes with **ML Kit** `text-recognition` (one new dependency).
+  On both platforms the recognized text flows straight into the already-tested `ReceiptParser` — the OCR
+  layer stays a thin, untested platform edge; all the brittle "what's an item / tax / discount" logic is
+  pure and unit-tested.
+
+**Why**: keeping the algorithm identical and pure on both platforms means the hard part is tested once
+per language and the camera/Vision/ML-Kit code is a trivial pixels→text adapter. Using ACTION_IMAGE_CAPTURE
++ FileProvider on Android avoids a runtime camera-permission flow; using a synchronous Vision call on iOS
+sidesteps Swift 6 `Sendable` friction. **Rules out**: a Room TypeConverter / JSON dependency for items
+(control-char string matches the repo); a hand-written Room migration (destructive fallback is the repo's
+norm for on-device data); CameraX / a bundled cropping UI on Android; bridging ML Kit's `Task` with an
+extra coroutines-play-services dep (used `suspendCancellableCoroutine` instead). **Verified**: pure
+logic unit-tested off-device on both platforms (iOS XCTest, Android JVM `src/test`). All SwiftUI/Compose
+surfaces and the camera/Vision/ML-Kit paths stay **device-unverified** per the repo's macOS+Xcode /
+Android-SDK build rule (authored on Linux/cloud) — they need a `xcodebuild test` and a Gradle
+`testDebugUnitTest` + on-device run to confirm.
+
+## [2026-06-04] Split Expenses — itemized receipts with per-item assignment + proportional tax/discount
+
+**Decision**: Add an itemized **receipt** path to Split Expenses so a real shopping receipt (e.g. a
+51-line Costco run) can be entered once and split *per item* among different people — not just one
+even split per expense (user report: "put this kind of receipt and help me split stuff for multiple
+people … show total, tax, discounts and per-person split"). Implemented without a new `@Model`:
+`ExpenseRecord` gains three additive, defaulted fields — `items: [ReceiptItem]`, `taxAmount`,
+`discountAmount` — so the SwiftData migration stays lightweight and one record type still drives all
+of even-split / settlement / receipt. A record is a receipt iff `items` is non-empty.
+
+- **`ReceiptItem`** (a `Codable` value type persisted as a SwiftData composite attribute) carries a
+  name, price, and the `assignees` who share that line equally.
+- **`ReceiptSplit`** (pure, device-free, in the app target so it's `@testable`) computes the
+  breakdown: each item is split among its assignees, tax is allocated proportional to each person's
+  pre-tax subtotal, discount is credited the same way, and **every column is reconciled to whole cents
+  with a largest-remainder pass** so the per-person totals sum *exactly* to the grand total. That exact
+  closure is what lets `SettleUp.balances` treat a receipt as "payer credited the grand total, each
+  sharer debited their slice" and still net the group to zero — no penny drift in the balances.
+- **`ReceiptParser`** (also pure/tested) turns pasted or Live-Text receipt text into items + detected
+  tax/discount/total: it strips leading item-codes and trailing tax-flag letters (`28.99 E`,
+  `4.00-A`), routes trailing-minus rows to the discount, and skips SUBTOTAL/TAX/TOTAL/payment rows.
+  This is the "put this kind of receipt" affordance — paste once, then just tap each line to choose who
+  shares it (new items default to everyone).
+- **UX**: `NewReceiptSheet` (entry, with a live `ReceiptSummaryView` showing subtotal/discount/tax/
+  total + per-person split) and `ReceiptDetailView` (read-only breakdown + item list, Edit reopens the
+  sheet). `ExpenseGroupView` gets an "Add Receipt" action; receipt rows show a doc glyph + item/tax/
+  discount summary and tap through to the detail (even-split rows still tap-to-edit).
+
+**Why**: receipts are inherently uneven (one person's beer, shared groceries) and carry tax + savings
+that must follow the items, not be split flat. Keeping the math pure + penny-exact makes it unit-
+testable (`ReceiptSplitTests`, `ReceiptParserTests`, `SettleUpReceiptTests`) and keeps the existing
+balance/settle-up pipeline unchanged. Reusing `ExpenseRecord` (vs. a new `@Model`) keeps per-group
+`#Predicate` fetches and the balance loop single-source. **Rules out**: a separate `Receipt` @Model +
+relationship; storing precomputed per-person `shares` (derive from items so there's one source of
+truth); splitting tax/discount evenly regardless of who bought what; on-device Vision OCR for v1 (the
+paste/Live-Text text path is device-free and testable — camera OCR is a natural follow-up). **Verified**:
+pure logic unit-tested off-device (`swift`-level XCTest); the SwiftUI sheets/detail stay
+**device-unverified** per the repo's macOS/Xcode-only build rule (authored on Linux/cloud).
+
 ## [2026-06-04] Photos-level clip ops + HR overlay on set clips + a deep video-feature review
 
 **Decision**: Two user-requested capabilities on the per-clip editor + a review pass.

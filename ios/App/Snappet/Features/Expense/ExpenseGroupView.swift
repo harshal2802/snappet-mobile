@@ -7,11 +7,13 @@ import SwiftData
 struct ExpenseGroupView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SnappetCore.self) private var core
+    @Environment(SuiteRouter.self) private var router
 
     let group: ExpenseGroup
     @Query private var expenses: [ExpenseRecord]
 
     @State private var showingNewExpense = false
+    @State private var showingNewReceipt = false
     @State private var showingSettlement = false
     @State private var showingEditGroup = false
     /// The expense currently being edited via `NewExpenseSheet`, if any.
@@ -49,6 +51,13 @@ struct ExpenseGroupView: View {
                     .accessibilityIdentifier("expense.newExpense")
 
                     Button {
+                        showingNewReceipt = true
+                    } label: {
+                        Label("Add Receipt", systemImage: "doc.text.viewfinder")
+                    }
+                    .accessibilityIdentifier("expense.newReceipt")
+
+                    Button {
                         showingSettlement = true
                     } label: {
                         Label("Record Settlement", systemImage: "arrow.left.arrow.right")
@@ -67,8 +76,14 @@ struct ExpenseGroupView: View {
                 .accessibilityIdentifier("expense.groupActions")
             }
         }
+        .navigationDestination(for: ExpenseRecord.self) { record in
+            ReceiptDetailView(group: group, record: record)
+        }
         .sheet(isPresented: $showingNewExpense) {
             NewExpenseSheet(group: group)
+        }
+        .sheet(isPresented: $showingNewReceipt) {
+            NewReceiptSheet(group: group)
         }
         .sheet(item: $editingExpense) { expense in
             NewExpenseSheet(group: group, record: expense)
@@ -156,18 +171,33 @@ struct ExpenseGroupView: View {
             ForEach(expenses) { expense in
                 ExpenseRow(expense: expense, currency: currency)
                     .contentShape(Rectangle())
-                    .onTapGesture { editingExpense = expense }
+                    .onTapGesture { open(expense) }
                     .swipeActions(edge: .leading) {
-                        Button {
-                            editingExpense = expense
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
+                        // Settlements have no detail/editor (open() is a no-op for them), so don't
+                        // offer a swipe action that would do nothing.
+                        if !expense.isSettlement {
+                            Button {
+                                open(expense)
+                            } label: {
+                                Label(expense.isReceipt ? "View" : "Edit",
+                                      systemImage: expense.isReceipt ? "list.bullet.rectangle" : "pencil")
+                            }
+                            .tint(.blue)
+                            .accessibilityIdentifier("expense.editExpense")
                         }
-                        .tint(.blue)
-                        .accessibilityIdentifier("expense.editExpense")
                     }
             }
             .onDelete(perform: deleteExpenses)
+        }
+    }
+
+    /// Tapping a receipt opens its per-person breakdown; an even-split expense opens the
+    /// edit sheet directly. (Settlements have no editor — tap is a no-op for them.)
+    private func open(_ expense: ExpenseRecord) {
+        if expense.isReceipt {
+            router.push(expense)
+        } else if !expense.isSettlement {
+            editingExpense = expense
         }
     }
 
@@ -195,10 +225,10 @@ private struct ExpenseRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                if expense.isSettlement {
-                    Image(systemName: "arrow.left.arrow.right")
+                if let glyph {
+                    Image(systemName: glyph)
                         .font(.subheadline)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(expense.isSettlement ? .green : .secondary)
                 }
                 Text(expense.title)
                     .font(.headline)
@@ -216,10 +246,26 @@ private struct ExpenseRow: View {
         }
     }
 
+    private var glyph: String? {
+        if expense.isSettlement { return "arrow.left.arrow.right" }
+        if expense.isReceipt { return "doc.text" }
+        return nil
+    }
+
     private var detail: String {
         if expense.isSettlement {
             let recipient = expense.participants.first ?? "someone"
             return "Settlement · \(expense.payer) paid \(recipient)"
+        }
+        if expense.isReceipt {
+            var bits = ["\(expense.payer) paid", "\(expense.items.count) items"]
+            if expense.discountAmount > 0.005 {
+                bits.append("−\(currency(expense.discountAmount))")
+            }
+            if expense.taxAmount > 0.005 {
+                bits.append("+\(currency(expense.taxAmount)) tax")
+            }
+            return bits.joined(separator: " · ")
         }
         return "\(expense.payer) paid · split \(expense.participants.count) ways"
     }
