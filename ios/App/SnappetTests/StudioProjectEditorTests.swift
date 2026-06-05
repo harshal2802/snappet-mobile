@@ -88,6 +88,53 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(s.overlays.first?.opacityKeyframes.first?.value, 0.5)
     }
 
+    func testSetOverlayContentReplacesText() {
+        let ov = OverlayItem(kind: .climbName, content: "Old")
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayContent(s, id: ov.id, content: "New\nLine")
+        XCTAssertEqual(s.overlays.first?.content, "New\nLine")
+        // Unknown id is a no-op.
+        s = StudioProjectEditor.setOverlayContent(s, id: UUID(), content: "X")
+        XCTAssertEqual(s.overlays.first?.content, "New\nLine")
+    }
+
+    func testSetOverlayTimeRangeClampsAndKeepsMinLength() {
+        let ov = OverlayItem(kind: .text, content: "A", startSec: 0, endSec: 3)
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayTimeRange(s, id: ov.id, start: 2, end: 6)
+        XCTAssertEqual(s.overlays.first?.startSec, 2); XCTAssertEqual(s.overlays.first?.endSec, 6)
+        // Negative start clamps to 0; an inverted/collapsed range keeps a 0.2s minimum length.
+        s = StudioProjectEditor.setOverlayTimeRange(s, id: ov.id, start: -1, end: -1)
+        XCTAssertEqual(s.overlays.first?.startSec, 0)
+        XCTAssertEqual(s.overlays.first?.endSec ?? 0, 0.2, accuracy: 1e-9)
+    }
+
+    func testSetOverlayFrameWritesPerAxisSizeAndClamps() {
+        let ov = OverlayItem(kind: .video, content: "pip")
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayFrame(s, id: ov.id, center: CGPoint(x: 0.25, y: 0.5),
+                                                size: CGSize(width: 0.5, height: 1))
+        XCTAssertEqual(s.overlays.first?.position, CGPoint(x: 0.25, y: 0.5))
+        XCTAssertEqual(s.overlays.first?.pipSize, CGSize(width: 0.5, height: 1))
+        // Out-of-range size clamps each axis to 0.1…1; centre clamps to the unit square.
+        s = StudioProjectEditor.setOverlayFrame(s, id: ov.id, center: CGPoint(x: 1.5, y: -0.2),
+                                                size: CGSize(width: 0, height: 9))
+        XCTAssertEqual(s.overlays.first?.position, CGPoint(x: 1, y: 0))
+        XCTAssertEqual(s.overlays.first?.pipSize, CGSize(width: 0.1, height: 1))
+    }
+
+    func testApplyPiPGridTilesVideoOverlaysInOrder() {
+        let a = OverlayItem(kind: .video, content: "a")
+        let txt = OverlayItem(kind: .text, content: "skip")   // non-video is left alone
+        let b = OverlayItem(kind: .video, content: "b")
+        var s = empty(); s.overlays = [a, txt, b]
+        s = StudioProjectEditor.applyPiPGrid(s, preset: .sideBySide)
+        XCTAssertEqual(s.overlays.first { $0.id == a.id }?.position, CGPoint(x: 0.25, y: 0.5))
+        XCTAssertEqual(s.overlays.first { $0.id == b.id }?.position, CGPoint(x: 0.75, y: 0.5))
+        XCTAssertEqual(s.overlays.first { $0.id == a.id }?.pipSize, CGSize(width: 0.5, height: 1))
+        XCTAssertEqual(s.overlays.first { $0.id == txt.id }?.position, CGPoint(x: 0.5, y: 0.5))  // untouched
+    }
+
     // MARK: - add / remove / move
 
     func testAddClipAppendsAndIndexes() {

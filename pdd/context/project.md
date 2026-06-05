@@ -154,6 +154,20 @@ additive (SwiftData lightweight migration); pure cores (`KilterSessionStats`, `K
 `HighlightEngine` 18/18. Device-only paths (live HR, Live Activity render, board auto-session-open, Photos
 discovery + reel export) are deferred to a real board + watch/HR band.
 
+🟢 **Kilter clip-scoped editing (2026-06-05, `20-ios-kilter-clip-scoped-editing.md`).** Tapping a Kilter
+clip opens a scope-filtered Studio (one clip, or a climb's clips via "Edit all · N", or session-wide),
+with a floating Climb panel to edit the climb's log in place — all sharing one session `StudioProject`.
+
+🟢 **Studio overlays & grids (2026-06-05, `21-ios-studio-overlays-grids.md`).** Editor + browse polish:
+the Kilter browse bar's grade filter split into **two independent chips** (Min / Max); a **climb-name
+overlay** (a lower-third `OverlayItem.Kind.climbName` auto-filled with name · grade · angle from
+`KilterLogEntry`, a setter toggle from the catalog, freely editable, time-gated + keyframable like text);
+a **timeline lane** to move/trim any overlay's on-screen window; and **PiP grids** — PiP gained optional
+per-axis size (`normalizedWidth/Height`, default = `scale`, back-compatible) for true split-screen, with
+one-tap collage presets (`StudioGridLayout`), corner-resize handles, and rule-of-thirds snap guides. Pure
+cores (`KilterClimbCaption`, `StudioGridLayout`, the new `StudioProjectEditor`/`ClipEditGeometry` ops) are
+unit-tested; export/preview render paths are device-deferred.
+
 ## License
 
 TBD.

@@ -1974,3 +1974,43 @@ An **unassigned** single clip can now be tagged to a climb from inside the scope
 floating button for any per-clip scope and resolves the climb **live** from the clip's `assignedClimbUUID`
 (reading the `@Model` clip) — so assigning upgrades the button/panel to the full Climb panel in place,
 without reopening. Previously an unassigned clip's only reassignment path was the gallery long-press menu.
+
+## 2026-06-05 — Studio overlays & grids: climb-name overlay, overlay timeline, per-axis PiP grids; split grade filter (P21)
+
+Four editor/browse improvements (prompt `21-ios-studio-overlays-grids.md`), built on the existing overlay
+seams rather than new infrastructure. **(1) Grade filter split** — the Kilter browse bar's one "Grade" chip
+(a From+To `Menu`) became **two independent chips** (`kilter.minGrade` / `kilter.maxGrade`) over the same
+`gradeScale`, with `.onChange` coupling (set Min above Max ⇒ Max follows, and vice-versa). No model/query
+change: state stayed `@AppStorage minGrade/maxGrade` and `KilterCatalog.list` already min/max-swaps. **(2)
+Climb-name overlay** reuses **one** `OverlayItem` with a new `Kind.climbName` (not a separate config like
+`HROverlayConfig`) — deliberately, so the new overlay timeline + the existing opacity keyframes/drag apply to
+it for free; it renders like text but as a lower-third chip (export: `StudioOverlays.climbNameLayer` = a
+`CATextLayer` on a rounded background container, time-gated by the same `applyVisibility`; preview: a
+`.climbName` chip case). The caption is built by a **pure** `KilterClimbCaption.caption(name·grade·angle[·
+by setter])` and the text stays freely editable ("Edit text"); a "Show setter" toggle re-derives it. Climb
+metadata is resolved **without the SQLite catalog** for name/grade/angle — from the persisted
+`KilterLogEntry` keyed by `(sessionId, climbUUID)` (the clip → `SessionMedia.assignedClimbUUID` lookup) — and
+only the **setter** touches `KilterCatalog.shared.climb(uuid)` (nil on the simulator ⇒ caption simply omits
+it). **(3) Overlay timeline** — every overlay already had `[startSec, endSec]`, so duration control is a
+second lane in `StudioTimelineView` (`OverlayBar`: high-priority body-drag to move the whole window keeping
+its length, edge handles to trim) sharing the clip lane's `pps`/offset, committing once on drag-end via the
+pure `StudioProjectEditor.setOverlayTimeRange` (clamped, min 0.2s); selection is shared with the bottom
+overlay controls. **(4) PiP grids** — PiP went from a single uniform `scale` to optional **per-axis**
+`OverlayItem.normalizedWidth/Height` (a `pipSize` accessor falling back to `scale` when nil, so old
+snapshots decode and render **unchanged**), enabling true split-screen cells and free corner resize. A new
+`ClipEditGeometry.pipRect(center:size:canvas:)` overload (the `scale` one delegates to it) feeds both the
+preview frame and `StudioComposer.insertPiPTrack`. A **pure** `StudioGridLayout` provides collage `Preset`
+cells (1×2 / 2×1 / 2×2 / 1×3 / 3×1) and `snap(center:size:)` → alignment guides (rule-of-thirds / centre /
+edges); `StudioOverlayCanvas` gains corner-resize handles (opposite corner fixed) + live guide drawing, and
+a "Grid" tool sheet exposes the presets + a snap toggle. **Why**: extending `OverlayItem` (one new kind, two
+optional fields) keeps the timeline/keyframe/undo machinery uniform across text/climb-name/PiP and avoids a
+parallel config type or a forked editor; per-axis size is the minimal model change that satisfies both
+"split-screen grids" and "corner resize". **Rules out**: a dedicated `ClimbNameOverlayConfig`; baking the
+caption into a fixed string (it stays editable); a normalized `CGRect` field on `OverlayItem` (two optional
+scalars decode more cleanly for SwiftData lightweight migration). **Verified**: new pure unit tests —
+`KilterClimbCaptionTests` (setter on/off/missing, empty name/grade/zero-angle), `StudioGridLayoutTests`
+(preset cells tile the canvas, `frames(count:)` caps at capacity, snap within/outside threshold + edge
+snap), `ClipEditGeometryTests` (per-axis `pipRect`), `StudioProjectEditorTests`
+(`setOverlayContent`/`setOverlayTimeRange`/`setOverlayFrame`/`applyPiPGrid`). **Device-unverified** per the
+device-only rule: the climb-name **export** layer, PiP collage/corner-resize on real footage, and the
+overlay-lane gesture feel — deferred to a device with clips + a logged Kilter session.

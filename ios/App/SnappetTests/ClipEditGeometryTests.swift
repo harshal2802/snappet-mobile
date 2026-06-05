@@ -243,6 +243,25 @@ final class ClipEditGeometryTests: XCTestCase {
         XCTAssertEqual(r.midY, 1000, accuracy: 1e-6)
     }
 
+    func testPipRectPerAxisSizeForCollageCell() {
+        // A 1×2 left cell: half width, full height, centred at x=0.25.
+        let canvas = CGSize(width: 1000, height: 2000)
+        let r = G.pipRect(normalizedCenter: CGPoint(x: 0.25, y: 0.5),
+                          size: CGSize(width: 0.5, height: 1), canvas: canvas)
+        XCTAssertEqual(r.width, 500, accuracy: 1e-6)
+        XCTAssertEqual(r.height, 2000, accuracy: 1e-6)
+        XCTAssertEqual(r.midX, 250, accuracy: 1e-6)
+        XCTAssertEqual(r.midY, 1000, accuracy: 1e-6)
+    }
+
+    func testPipRectPerAxisClampsEachSide() {
+        let canvas = CGSize(width: 1000, height: 1000)
+        let r = G.pipRect(normalizedCenter: CGPoint(x: 0.5, y: 0.5),
+                          size: CGSize(width: 0, height: 9), canvas: canvas)   // → 0.1 … 1
+        XCTAssertEqual(r.width, 100, accuracy: 1e-6)
+        XCTAssertEqual(r.height, 1000, accuracy: 1e-6)
+    }
+
     func testFillTransformAspectFillsIntoRect() {
         // A 1000×1000 source filling a 400×800 rect → scale by max(400/1000, 800/1000)=0.8 (cover).
         let t = G.fillTransform(sourceSize: CGSize(width: 1000, height: 1000),
