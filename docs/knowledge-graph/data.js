@@ -390,7 +390,11 @@ const nodes = [
     file: "ios/App/Snappet/Features/Kilter/KilterModels.swift", desc: "User data persisted in SnappetCore (separate from the read-only catalog): KilterLogEntry (now with per-climb startedAt/endedAt + attemptTimestamps), KilterSession (now with an hrSeries + HR bounds + metrics-source label), KilterFavorite — keyed by climb_uuid.", tags: ["swiftdata","room","user-data","hr","timing"] },
   // Workout-grade session enrichment (HR + per-climb timing + media + highlight reel + Live Activity).
   { id: "kilter-session-detail", label: "KilterSessionDetailView", type: "screen", group: "kilter", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/Kilter/KilterSessionDetailView.swift", desc: "Rich post-session (or live) summary: duration, send/attempt counts, hardest send, a grade pyramid, heart-rate stats + time-in-zone bar + line chart (when HR was captured), and a per-climb timeline (time-on-climb / attempts / rest) with each climb's tagged photos/videos shown beneath it. Full workout-grade media control, all reused: tap a clip to edit it (ClipEditorView), reassign clips between climbs, open the multi-clip Studio (StudioEditorView), and build a full-length highlight reel via the shared ReelView. Stats come from the pure KilterSessionStats / WorkoutHRStats / KilterMediaGrouping helpers.", tags: ["summary","hr","pyramid","timeline","reel","gallery","editing"] },
+    file: "ios/App/Snappet/Features/Kilter/KilterSessionDetailView.swift", desc: "Rich post-session (or live) summary: duration, send/attempt counts, hardest send, a grade pyramid, heart-rate stats + time-in-zone bar + line chart (when HR was captured), and a per-climb timeline (time-on-climb / attempts / rest) with each climb's tagged photos/videos shown beneath it. Full workout-grade media control, all reused: tap a clip to edit just that clip (scoped Studio + Climb panel via KilterClipStudio), an 'Edit all · N' per climb (≥2 clips) for that climb's clips together, reassign clips between climbs, open the whole-session multi-clip Studio, and build a full-length highlight reel via the shared ReelView. Stats come from the pure KilterSessionStats / WorkoutHRStats / KilterMediaGrouping helpers.", tags: ["summary","hr","pyramid","timeline","reel","gallery","editing"] },
+  { id: "kilter-clip-studio", label: "KilterClipStudio", type: "cover", group: "kilter", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Kilter/KilterClipStudio.swift", desc: "Container that wraps the shared StudioEditorView, scoped to a clip subset (visibleClipMediaIDs) so Kilter gets per-clip and per-climb editing over the ONE session StudioProject — edits carry across scopes because they target the full project by clip id; only display/preview/export are filtered. Adds a floating 'Climb ✎' button (shown only when a single climb is known) presenting KilterClimbPanel. Session-wide presentations pass no climb → bare studio.", tags: ["studio","scoped","per-clip","per-climb","container"] },
+  { id: "kilter-climb-panel", label: "KilterClimbPanel", type: "sheet", group: "kilter", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Kilter/KilterClimbPanel.swift", desc: "Climb details sheet over the scoped clip studio: read-only catalog info (name / grade / board, via KilterCatalog) plus the editable in-session KilterLogEntry — angle (picker over the climb's stat angles), result + tries, and a personal note — written through to SwiftData on change. Per-clip presentations also offer 'Move clip to another climb' (SessionMedia.assignedClimbUUID). Resolves the entry with the same (sessionId, climbUUID) fetch the climb logger uses.", tags: ["climb","edit","angle","result","note","reassign"] },
   { id: "kilter-session-mgr", label: "KilterSessionManager", type: "service", group: "kilter", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Kilter/KilterBoardController.swift", desc: "Tracks the active board session and — bound to the app's live-metrics / Live-Activity / media services — drives live HR (Apple Watch or BLE band via LiveMetricsCoordinator), a Lock Screen / Dynamic Island Live Activity, per-climb timing (active-climb tracking), and post-session photo/video discovery + clip→climb auto-assignment.", tags: ["session","hr","live-activity","timing","media"] },
   { id: "kilter-live-activity-ctrl", label: "KilterLiveActivityController", type: "service", group: "kilter", category: "fitness", platform: "ios",
@@ -707,10 +711,16 @@ const links = [
   { source: "kilter-session-detail", target: "kilter-models", type: "persists" },
   // Editing parity: per-climb galleries + the shared clip editor / studio / reel (reused as-is).
   { source: "kilter-session-detail", target: "model-sessionmedia", type: "persists", label: "per-climb galleries + reassign" },
-  { source: "kilter-session-detail", target: "wt-clip-editor", type: "present", label: "edit clip" },
-  { source: "kilter-session-detail", target: "studio-editor", type: "present", label: "multi-clip studio" },
+  { source: "kilter-session-detail", target: "studio-editor", type: "present", label: "session-wide studio" },
   { source: "kilter-session-detail", target: "reel", type: "navigate", label: "shared ReelView" },
   { source: "kilter-workout-builder", target: "reel-vm", type: "feeds", label: "ReelSource.kilterSession" },
+  // Scoped editing: tap a clip / 'Edit all' a climb → KilterClipStudio (scoped StudioEditorView) + Climb panel.
+  { source: "kilter-session-detail", target: "kilter-clip-studio", type: "present", label: "per-clip / Edit all" },
+  { source: "kilter-clip-studio", target: "studio-editor", type: "contains", label: "scoped (visibleClipMediaIDs)" },
+  { source: "kilter-clip-studio", target: "kilter-climb-panel", type: "present", label: "Climb ✎" },
+  { source: "kilter-climb-panel", target: "kilter-catalog", type: "uses", label: "name / grade / board" },
+  { source: "kilter-climb-panel", target: "kilter-models", type: "persists", label: "angle / result / tries / note" },
+  { source: "kilter-climb-panel", target: "model-sessionmedia", type: "persists", label: "move clip → climb" },
 ];
 
 // Expose for the renderer (also works as an ES module if imported).

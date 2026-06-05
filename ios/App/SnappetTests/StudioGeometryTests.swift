@@ -126,4 +126,36 @@ final class StudioGeometryTests: XCTestCase {
         XCTAssertEqual(video(0, speed: 99).speed, 4.0)
         XCTAssertEqual(video(0, speed: 0.01).speed, 0.25)
     }
+
+    // MARK: - filterByMedia (the per-clip / per-climb scope filter)
+
+    private func mediaClip(_ order: Int, mediaID: UUID?) -> TimelineClip {
+        TimelineClip(id: UUID(), sessionMediaID: mediaID, localIdentifier: "m\(order)",
+                     isPhoto: false, order: order)
+    }
+
+    func testFilterByMediaNilPassesEverythingThrough() {
+        let clips = [mediaClip(0, mediaID: UUID()), mediaClip(1, mediaID: nil)]
+        XCTAssertEqual(StudioGeometry.filterByMedia(clips, to: nil).map(\.localIdentifier),
+                       clips.map(\.localIdentifier))   // workout default: no scoping
+    }
+
+    func testFilterByMediaKeepsOnlyMatchingSessionMediaIDs() {
+        let keep = UUID(), drop = UUID()
+        let a = mediaClip(0, mediaID: keep), b = mediaClip(1, mediaID: drop)
+        let result = StudioGeometry.filterByMedia([a, b], to: [keep])
+        XCTAssertEqual(result.map(\.id), [a.id])        // only the in-scope clip survives
+    }
+
+    func testFilterByMediaExcludesClipsWithNoMediaIDWhenScoped() {
+        let keep = UUID()
+        let a = mediaClip(0, mediaID: keep), orphan = mediaClip(1, mediaID: nil)
+        XCTAssertEqual(StudioGeometry.filterByMedia([a, orphan], to: [keep]).map(\.id), [a.id])
+    }
+
+    func testFilterByMediaSingleClipScopeIsJustThatClip() {
+        let one = UUID(), two = UUID(), three = UUID()
+        let clips = [mediaClip(0, mediaID: one), mediaClip(1, mediaID: two), mediaClip(2, mediaID: three)]
+        XCTAssertEqual(StudioGeometry.filterByMedia(clips, to: [two]).map(\.sessionMediaID), [two])
+    }
 }
