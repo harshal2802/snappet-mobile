@@ -188,8 +188,15 @@ struct KilterClimbDetailView: View {
     }
 
     private var anglePicker: some View {
-        Menu {
-            Picker("Angle", selection: $selectedAngle) {
+        // Persist the shared angle only on an *explicit* pick — not on the programmatic `selectedAngle`
+        // writes `load()` makes for each climb. Otherwise swiping to a climb that lacks the preferred
+        // angle would silently clobber the global `kilter.angle` preference for the whole catalog.
+        let angleSelection = Binding(
+            get: { selectedAngle },
+            set: { selectedAngle = $0; sharedAngle = $0 }
+        )
+        return Menu {
+            Picker("Angle", selection: angleSelection) {
                 ForEach(stats) { Text("\($0.angle)°  ·  \(catalog.gradeLabel($0.difficulty))").tag($0.angle) }
             }
         } label: {
@@ -198,7 +205,6 @@ struct KilterClimbDetailView: View {
                 .background(Color(.secondarySystemBackground), in: Capsule())
         }
         .accessibilityIdentifier("kilter.angle")
-        .onChange(of: selectedAngle) { _, new in sharedAngle = new }
     }
 
     private var statRow: some View {
