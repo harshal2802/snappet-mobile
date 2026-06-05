@@ -1806,3 +1806,45 @@ radio. **Rules out**: filtering the scan by service UUID; a single `unsupported`
 the user with no cancel. **Verified**: pure matcher unit-tested (iOS `KilterBoardMatchTests`). The
 live BLE path stays **device-unverified** per the repo's device-only rule — `xcodebuild`/Gradle build
 + on-board validation deferred to a macOS/Android run (this change was authored on Linux/cloud).
+
+## 2026-06-05 — All development goes through the PDD layer (standing process decision)
+
+**Decision**: Every change to Snappet Mobile — features, fixes, spikes — is driven through this
+repo's **Prompt-Driven Development** layer (`pdd/`), per the user's standing instruction. Concretely:
+author/commit a feature prompt from `pdd/prompts/templates/feature-prompt.md` (one prompt = one job =
+one PR) **before/with** the implementation; keep `pdd/context/` (project / conventions / decisions /
+schema) true to reality in the same change; and record any non-obvious choice in this file the same
+day. The committed prompt is part of the codebase and ships alongside the output it produced. **Why**:
+the prompt is the spec and the review surface; without it, intent and rationale drift out of the repo.
+**Rules out**: landing code with no committed prompt; deferring the decisions/context update to "later".
+Also mirrored as a standing instruction in `CLAUDE.md`.
+
+## 2026-06-05 — Kilter Board UX pass: adopt system-connected board, swipe-to-browse, QR climb share
+
+**Decision**: Three user-reported UX gaps in the Kilter mini-app, all authored under the PDD prompt
+`pdd/prompts/features/kilter-board/UX-connection-swipe-qr.md`.
+**(1) Connection — adopt a system-connected board.** `KilterBoardController.connect()` now runs
+`beginConnect()`, which first tries `retrieveConnectedPeripherals(withServices:[serviceUUID])` and, if a
+board is already connected at the **system** level (paired in Settings, or held by the official
+Aurora/Kilter app), connects to it directly via a shared `connect(to:)`; only if none is found does it
+fall back to the name-matched scan. Such a board has **stopped advertising**, so the scan-only path
+could never re-discover it — the reported "won't connect, but it connects in the Kilter app" case, after
+which our flow never reached `.connected` and so never offered illumination. **(2) Auto-light.** When a
+board is connected, the detail view illuminates the on-screen holds automatically — on connect
+(`.onChange(of:board.isConnected)`) and on each swipe (end of `load()`) — keeping the manual "Light up
+this climb" button for a re-send. **(3) Swipe-to-browse.** `KilterClimbDetailView` takes the browsed
+list's ordered uuids (`siblings`, passed from `KilterRootView` at push time — no `NavigationPath`
+bloat) and tracks a `currentUUID`; a horizontal `DragGesture` + chevrons + a "n / total" pill move
+through it, reloading via `.task(id:)` without growing the nav stack. **(4) QR share.** A pure
+`KilterClimbLink` codec (`snappet://kilter/climb/<uuid>?angle=<n>`) backs `KilterShareView` (CoreImage
+QR + `ShareLink`) and `KilterScannerView` (`AVCaptureMetadataOutput`, reached from the catalog's More
+menu); a scanned link pushes the climb. **Offline by design** — both phones ship the same read-only
+catalog, so a `climb_uuid` resolves locally with no account/network. **Scope (with user)**: in-app
+scanner **only** this pass — no `snappet://` URL scheme / `onOpenURL` cross-app deep link yet.
+**Why**: `retrieveConnectedPeripherals` is the canonical CoreBluetooth fix for "another app/Settings
+holds the peripheral"; keeping the share payload a pure value type keeps the camera/CoreImage edges
+thin and the codec unit-testable. **Rules out**: a scan-only connect path; carrying the sibling list
+inside the route value; a networked share. **Verified**: `KilterDeepLinkTests` covers the codec
+round-trip + foreign-code rejection (no device). The BLE adopt path and the camera path stay
+**device-unverified** per the device-only rule — `xcodebuild` + a real board/camera run is deferred to
+macOS (authored on Linux/cloud). Android mirror is a follow-up.

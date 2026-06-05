@@ -28,6 +28,7 @@ struct KilterRootView: View {
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
     @State private var savedOnly = false
     @State private var items: [KilterListItem] = []
+    @State private var showingScanner = false
 
     // Search + advanced filters.
     @State private var search = ""
@@ -50,6 +51,17 @@ struct KilterRootView: View {
                      minDifficulty: Double(minGrade), maxDifficulty: Double(maxGrade),
                      search: search, sort: sort, benchmarksOnly: benchmarksOnly,
                      minAscents: minAscents, minQuality: minQuality)
+    }
+
+    /// The climbs currently on screen, in display order — handed to the detail view so the user can
+    /// swipe left/right between them. Climb-of-the-day leads when shown; deduped (it often recurs in
+    /// the list).
+    private var browseUUIDs: [String] {
+        var ids: [String] = []
+        if showDiscovery, let cotd { ids.append(cotd.uuid) }
+        ids.append(contentsOf: items.map(\.uuid))
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 
     private var layouts: [KilterLayout] { catalog.layouts() }
@@ -96,6 +108,10 @@ struct KilterRootView: View {
                     }
                     Button { surpriseMe() } label: { Label("Surprise me", systemImage: "dice") }
                         .accessibilityIdentifier("kilter.surprise")
+                    Button { showingScanner = true } label: {
+                        Label("Scan QR code", systemImage: "qrcode.viewfinder")
+                    }
+                    .accessibilityIdentifier("kilter.scan")
                     Divider()
                     Button { router.push(KilterSettingsRoute()) } label: {
                         Label("Settings", systemImage: "gearshape")
@@ -110,8 +126,15 @@ struct KilterRootView: View {
             KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
                                minAscents: $minAscents, minQuality: $minQuality)
         }
+        .sheet(isPresented: $showingScanner) {
+            KilterScannerView { link in
+                // Open at the shared angle the sharer used, when it's one this board offers.
+                if let a = link.angle, availableAngles.contains(a) { angle = a }
+                router.push(KilterClimbRoute(uuid: link.uuid))
+            }
+        }
         .navigationDestination(for: KilterClimbRoute.self) { route in
-            KilterClimbDetailView(uuid: route.uuid, board: board, sessions: sessions)
+            KilterClimbDetailView(uuid: route.uuid, siblings: browseUUIDs, board: board, sessions: sessions)
         }
         .navigationDestination(for: KilterHistoryRoute.self) { _ in
             KilterHistoryView()
