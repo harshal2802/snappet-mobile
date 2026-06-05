@@ -310,6 +310,84 @@ final class StudioEditorViewModel {
         selectedOverlayID = overlay.id   // select the new overlay so it's ready to drag
     }
 
+    /// Replace a text / climb-name overlay's content (the studio's "Edit text").
+    func editOverlayText(_ id: UUID, _ text: String) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayContent($0, id: id, content: text) }
+    }
+
+    // MARK: - Climb-name overlay (auto-filled from the clip's assigned climb; mirrors the HR overlay)
+
+    /// Overlay ids whose caption currently includes the setter (transient — the caption string itself
+    /// is the persisted source of truth; this just remembers the toggle for re-deriving on change).
+    private var climbSetterEnabled: Set<UUID> = []
+
+    /// True when a climb resolves for the selected (or any) clip — gates the "Climb" action button.
+    var hasClimbInfo: Bool { resolvedClimbUUID != nil }
+
+    /// Add a climb-name overlay (a styled lower-third), prefilled with the resolved climb's
+    /// name · grade · angle, positioned low-centre. The text stays freely editable afterwards.
+    func addClimbNameOverlay() {
+        guard let uuid = resolvedClimbUUID else { return }
+        let caption = climbCaption(uuid: uuid, includeSetter: false)
+        let overlay = OverlayItem(kind: .climbName, content: caption, startSec: 0,
+                                  endSec: max(3, totalDuration),
+                                  position: CGPoint(x: 0.5, y: 0.85))
+        editOverlaysOnly { StudioProjectEditor.addOverlay($0, overlay) }
+        selectedOverlayID = overlay.id
+    }
+
+    /// True when the selected climb-name overlay's caption includes the setter.
+    var selectedClimbShowsSetter: Bool {
+        guard let id = selectedOverlayID else { return false }
+        return climbSetterEnabled.contains(id)
+    }
+
+    /// Toggle the setter on the selected climb-name overlay, re-deriving its caption from the climb.
+    /// (Resets any manual text edit — the toggle re-fills from the climb data.)
+    func setSelectedClimbShowsSetter(_ on: Bool) {
+        guard let ov = selectedOverlay, ov.kind == .climbName, let uuid = resolvedClimbUUID else { return }
+        if on { climbSetterEnabled.insert(ov.id) } else { climbSetterEnabled.remove(ov.id) }
+        let caption = climbCaption(uuid: uuid, includeSetter: on)
+        editOverlayText(ov.id, caption)
+    }
+
+    /// The climb uuid backing the caption: the selected clip's assignment, else the first assigned clip.
+    private var resolvedClimbUUID: String? {
+        if let u = assignedClimbUUID(for: selectedClip) { return u }
+        return clips.lazy.compactMap { self.assignedClimbUUID(for: $0) }.first
+    }
+
+    /// A clip's assigned climb uuid via its `SessionMedia` (nil for unassigned / non-Kilter clips).
+    private func assignedClimbUUID(for clip: TimelineClip?) -> String? {
+        guard let mediaID = clip?.sessionMediaID else { return nil }
+        var d = FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.id == mediaID })
+        d.fetchLimit = 1
+        return (try? context.fetch(d))?.first?.assignedClimbUUID
+    }
+
+    /// Build the caption for a climb: name · grade · angle from the persisted `KilterLogEntry`
+    /// (queryable without the SQLite catalog); the setter from the read-only `KilterCatalog`.
+    private func climbCaption(uuid: String, includeSetter: Bool) -> String {
+        let entry = logEntry(climbUUID: uuid)
+        let setter = includeSetter ? KilterCatalog.shared.climb(uuid)?.setter : nil
+        return KilterClimbCaption.caption(name: entry?.climbName ?? "",
+                                          gradeLabel: entry?.gradeLabel ?? "",
+                                          angle: entry?.angle ?? 0,
+                                          setter: setter, includeSetter: includeSetter)
+    }
+
+    /// The log entry for a climb — prefer one tagged to this session, else any entry for the climb.
+    private func logEntry(climbUUID: String) -> KilterLogEntry? {
+        let sid: UUID? = project.sessionID
+        var inSession = FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.climbUUID == climbUUID && $0.sessionId == sid })
+        inSession.fetchLimit = 1
+        if let hit = (try? context.fetch(inSession))?.first { return hit }
+        var any = FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.climbUUID == climbUUID })
+        any.fetchLimit = 1
+        return (try? context.fetch(any))?.first
+    }
+
     // MARK: Overlay editing (WYSIWYG — SwiftUI layer over the preview, not in the composition)
 
     func selectOverlay(_ id: UUID?) { selectedOverlayID = id }
@@ -326,6 +404,37 @@ final class StudioEditorViewModel {
     /// Resize a PiP overlay's frame (fraction of canvas). Rebuilds (it's in the composition).
     func setOverlayScale(_ id: UUID, _ scale: Double) {
         edit { StudioProjectEditor.setOverlayScale($0, id: id, scale: scale) }
+    }
+
+    // MARK: - Overlay timeline (how long an overlay stays on screen — the timeline lane)
+
+    /// Overlays shown as bars in the timeline lane (every overlay carries a `[startSec, endSec]`).
+    var timelineOverlays: [OverlayItem] { overlays }
+
+    /// Set an overlay's on-screen window (output seconds) — the timeline lane's move/trim commit. A
+    /// `.video` PiP is in the playback composition (rebuild); text/sticker/climbName are not.
+    func setOverlayTimeRange(_ id: UUID, start: Double, end: Double) {
+        let isVideo = overlays.first { $0.id == id }?.kind == .video
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.setOverlayTimeRange($0, id: id, start: start, end: end)
+        }
+        isVideo ? edit(t) : editOverlaysOnly(t)
+    }
+
+    // MARK: - PiP frames + collage grids (per-axis size; in the composition → rebuild)
+
+    /// Whether dragging/resizing a PiP snaps to the alignment grid (rule-of-thirds / centre / edges).
+    var snapEnabled = true
+
+    /// Commit a PiP's per-axis frame (normalized centre + size), snapping to the grid when enabled.
+    func setOverlayFrame(_ id: UUID, center: CGPoint, size: CGSize) {
+        let c = snapEnabled ? StudioGridLayout.snap(center: center, size: size).center : center
+        edit { StudioProjectEditor.setOverlayFrame($0, id: id, center: c, size: size) }
+    }
+
+    /// Arrange the PiP overlays into a one-tap collage layout.
+    func applyPiPGrid(_ preset: StudioGridLayout.Preset) {
+        edit { StudioProjectEditor.applyPiPGrid($0, preset: preset) }
     }
 
     // MARK: Heart-rate chart overlay (preview = SwiftUI layer; export = Core Animation; no rebuild)
@@ -351,6 +460,9 @@ final class StudioEditorViewModel {
     }
 
     // MARK: Picture-in-picture (a second video composited over the main track)
+
+    /// True when the project has at least one picture-in-picture overlay (gates the Grid tool).
+    var hasPiP: Bool { overlays.contains { $0.kind == .video } }
 
     /// Source clips available to drop in as a PiP (the session's main-track video clips).
     var pipSources: [(id: UUID, label: String, localIdentifier: String)] {

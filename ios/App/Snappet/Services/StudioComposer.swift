@@ -321,7 +321,7 @@ final class StudioComposer: Sendable {
 
         let li = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
         let center = CGPoint(x: ov.normalizedX, y: 1 - ov.normalizedY)   // flip Y to bottom-left origin
-        let rect = ClipEditGeometry.pipRect(normalizedCenter: center, scale: ov.scale, canvas: canvas)
+        let rect = ClipEditGeometry.pipRect(normalizedCenter: center, size: ov.pipSize, canvas: canvas)
         li.setTransform(pref.concatenating(ClipEditGeometry.fillTransform(sourceSize: oriented, into: rect)), at: .zero)
         // Visible only within the window (opacity 0 outside). Honor the overlay's opacity (it
         // defaults to 1 in the initializer, so no special-casing 0).

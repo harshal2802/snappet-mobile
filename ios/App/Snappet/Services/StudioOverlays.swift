@@ -26,9 +26,12 @@ enum StudioOverlays {
         let overlayLayer = CALayer(); overlayLayer.frame = CGRect(origin: .zero, size: canvas)
 
         for overlay in visible {
-            let layer = overlay.kind == .sticker
-                ? stickerLayer(for: overlay, canvas: canvas)
-                : textLayer(for: overlay, canvas: canvas)
+            let layer: CALayer
+            switch overlay.kind {
+            case .sticker:   layer = stickerLayer(for: overlay, canvas: canvas)
+            case .climbName: layer = climbNameLayer(for: overlay, canvas: canvas)
+            default:         layer = textLayer(for: overlay, canvas: canvas)
+            }
             applyVisibility(layer, overlay: overlay, totalDuration: totalDuration)
             overlayLayer.addSublayer(layer)
         }
@@ -139,6 +142,41 @@ enum StudioOverlays {
             layer.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
         }
         return layer
+    }
+
+    /// The **climb-name** overlay: the text on a translucent rounded "lower-third" chip (so it reads
+    /// over any footage). Same normalized placement as text; a background container sized to the text
+    /// box hosts the `CATextLayer`. Returns the container so `applyVisibility` time-gates the whole chip.
+    private static func climbNameLayer(for overlay: OverlayItem, canvas: CGSize) -> CALayer {
+        let fontSize = max(8, canvas.height * 0.04 * overlay.scale)
+        let lines = overlay.content.components(separatedBy: "\n").count
+        let boxW = min(canvas.width * 0.9, fontSize * 0.62 * CGFloat(longestLineCount(overlay.content)) + 28)
+        let boxH = fontSize * 1.35 * CGFloat(max(1, lines)) + 12
+        let center = ClipEditGeometry.layerPoint(normalized: overlay.position, in: canvas)
+
+        let container = CALayer()
+        container.frame = CGRect(x: center.x - boxW / 2, y: center.y - boxH / 2, width: boxW, height: boxH)
+        container.backgroundColor = UIColor.black.withAlphaComponent(0.45).cgColor
+        container.cornerRadius = 8
+
+        let text = CATextLayer()
+        text.string = overlay.content
+        text.fontSize = fontSize
+        text.foregroundColor = uiColor(overlay.colorHex).cgColor
+        text.alignmentMode = .center
+        text.isWrapped = true
+        text.contentsScale = 2
+        text.frame = container.bounds.insetBy(dx: 8, dy: 6)
+        container.addSublayer(text)
+
+        if abs(overlay.rotationDegrees) > 0.01 {
+            container.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
+        }
+        return container
+    }
+
+    private static func longestLineCount(_ s: String) -> Int {
+        s.components(separatedBy: "\n").map(\.count).max() ?? s.count
     }
 
     private static func textLayer(for overlay: OverlayItem, canvas: CGSize) -> CATextLayer {
