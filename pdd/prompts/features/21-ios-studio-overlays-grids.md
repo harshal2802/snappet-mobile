@@ -84,3 +84,40 @@ trim); (4) **PiP "grids"** — resize PiP clips with **corner handles**, one-tap
    incl. the new `KilterClimbCaptionTests` / `StudioGridLayoutTests` and the added editor/geometry cases.
 2. Device: split-grade browse; add a climb overlay (setter toggle + edit); move/trim it in the timeline;
    add 2 PiPs → apply a grid, corner-resize, confirm guides/snap and that export matches the preview.
+
+---
+
+## Follow-up — device pass fixes (2026-06-05)
+
+A device pass on the above surfaced four issues; fixed in the same PR (see `decisions.md`,
+2026-06-05 "Studio overlay/PiP follow-up").
+
+1. **Resize text / climb-name overlays** — add a **Size** slider to the overlay controls bar and
+   **pinch-to-scale** on the canvas (both → `setOverlayScale`, made overlay-aware so text doesn't
+   rebuild the player); widen the `setOverlayScale` clamp `0.1…1 → 0.2…6` so text can grow past 1×.
+2. **PiP frame must track the gesture live** — the outline + all four corner handles follow the
+   corner-drag / pinch in real time (shared `ResizableFrame` view, `liveResize` state); the model is
+   still written once on gesture end. Fixes the jump-on-release "doesn't match the bounding box".
+3. **Kill the PiP-edit flicker** — memoize `PHAsset→AVAsset` in an actor `AssetCache` in
+   `StudioComposer`; reuse the `AVPlayer` (`replaceCurrentItem`) across rebuilds instead of building a
+   new one; a generation token drops stale overlapping rebuilds.
+4. **Resize the original (base) video** — add optional `StudioProject.baseFrame: StudioFrameRect?`
+   (nil = full-frame, migration-safe); the composer aspect-fills the main track into that collage
+   sub-rect (`mainClipTransform`, single-track + transition paths); a draggable "Main" frame on the
+   canvas + a "Resize the main video" toggle in the Grid tool.
+
+### Acceptance criteria (follow-up)
+
+- [ ] A selected text/climb-name overlay shows a Size slider; pinching it on the preview scales the
+      font; both persist and render scaled in **export**.
+- [ ] Dragging a PiP corner resizes the outline + handles live (no jump on release); the composited
+      PiP matches the frame.
+- [ ] Nudging a PiP does not flash/reload the preview.
+- [ ] "Resize the main video" frames the main clip into a draggable/resizable cell; export matches the
+      preview; turning it off restores full-frame. Old projects (no `baseFrame`) render unchanged.
+
+### Verified
+
+Builds clean; full simulator suite green (298 unit tests incl. `setBaseFrame`/`clearBaseFrame`,
+`StudioFrameRect.isFull`, widened `setOverlayScale`). **Device-unverified**: flicker-free feel,
+base-frame export on real footage, climb-name pinch/Size sizing in the rendered file.

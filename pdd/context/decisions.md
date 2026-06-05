@@ -2014,3 +2014,39 @@ snap), `ClipEditGeometryTests` (per-axis `pipRect`), `StudioProjectEditorTests`
 (`setOverlayContent`/`setOverlayTimeRange`/`setOverlayFrame`/`applyPiPGrid`). **Device-unverified** per the
 device-only rule: the climb-name **export** layer, PiP collage/corner-resize on real footage, and the
 overlay-lane gesture feel — deferred to a device with clips + a logged Kilter session.
+
+## 2026-06-05 — Studio overlay/PiP follow-up: live-resize, text sizing, base-video collage cell, flicker fix (P21)
+
+Device pass on P21 surfaced four issues; fixes built on the same seams. **(1) Text/climb-name couldn't be
+resized** — the export AND preview already honoured `OverlayItem.scale` for font size, but no control ever
+set it for the Core-Animation kinds (handles were `.video`-only). Fix: a **Size slider** in the overlay
+controls bar + **pinch-to-scale** on the canvas (`TextOverlayChip`), both → `setOverlayScale`, which is now
+overlay-aware in the VM (text = `editOverlaysOnly`, no player rebuild) and whose clamp **widened `0.1…1` →
+`0.2…6`** so text can grow past 1× (the old clamp was sized for a PiP frame fraction; PiP sizing moved to the
+per-axis `setOverlayFrame` in P21, so widening is safe). **(2) PiP frame "didn't match the bounding box"** —
+corner-resize only wrote the model on drag-END (`commitResize(ended:false)` updated only the snap guides), so
+the white outline + the composited PiP stayed put while the handle moved, then jumped on release. Fix: a
+shared **`ResizableFrame`** view (used by BOTH the PiP cell and the new base-video cell) tracks the gesture
+**live** via `liveResize` state — the outline and all four handles recompute from the in-progress
+corner/pinch each frame; the model is still written once on end. Handles dropped their local `.offset` (the
+parent repositions them from the live frame, so the dragged dot sits under the finger). **(3) "Very
+flickery"** — every PiP edit ran `rebuildPreview`, which tore down the whole `AVPlayer` AND re-resolved every
+PHAsset→AVAsset through `PHImageManager` (slow/async) → a black flash + reload per nudge. Fix: an **actor
+`AssetCache`** in `StudioComposer` memoizes resolution for the session, and `rebuildPreview` now **reuses the
+player** (`replaceCurrentItem`) instead of constructing a new `AVPlayer` (no layer detach/reattach), keeps
+playing across a live edit, and a **generation token** drops a stale rebuild whose async composition returns
+after a newer one. **(4) Couldn't resize the original video** — the main track always aspect-filled the full
+canvas. Added an optional **`StudioProject.baseFrame: StudioFrameRect?`** (normalized centre+size, nil =
+legacy full-frame, migration-safe additive `@Model` property like `hrOverlay`); the composer's new
+`mainClipTransform` aspect-fills the main track into that sub-rect (same flipped-Y / `pipRect` convention as a
+PiP, so base + PiP cells align; the canvas `background` shows behind it) on **both** the single-track and
+transition paths. On the canvas it's a draggable "Main" `ResizableFrame`; the **Grid tool** gained a "Resize
+the main video" toggle (`toggleBaseFrame`, default = a centred half-cell) and the Grid button is no longer
+PiP-gated. **Why a frame on the project, not a per-clip field or a `.baseVideo` overlay kind**: framing is a
+canvas-level layout (all clips share it), and a new overlay kind would ripple through every overlay switch +
+the export tool; one optional struct is the minimal, migration-safe change and reuses the PiP geometry.
+**Rules out**: per-clip base frames; crop-WITH-base-frame (a framed main track ignores per-clip crop — a
+follow-up); base video as a grid-preset cell (presets stay PiP-only). **Verified**: builds clean + full suite
+green on the simulator (298 unit tests) — `setBaseFrame`/`clearBaseFrame` clamp+toggle, `StudioFrameRect.isFull`,
+the widened `setOverlayScale` clamp. **Device-unverified** (device-only rule): the actual flicker-free feel,
+base-frame **export** on real footage, and pinch/Size sizing of the climb-name in the rendered file.

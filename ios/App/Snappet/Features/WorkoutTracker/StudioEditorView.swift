@@ -62,7 +62,7 @@ struct StudioEditorView: View {
         }
         .sheet(item: $activeTool) { tool in
             StudioToolSheet(tool: tool, vm: vm)
-                .presentationDetents([(tool == .adjust || tool == .hr) ? .height(380) : .height(260)])
+                .presentationDetents([(tool == .adjust || tool == .hr || tool == .grid) ? .height(380) : .height(260)])
                 .presentationDragIndicator(.visible)
         }
         .alert("Add text", isPresented: $addingText) {
@@ -146,9 +146,12 @@ struct StudioEditorView: View {
             StudioOverlayCanvas(overlays: vm.overlays, ratio: vm.previewRatio,
                                 selectedID: vm.selectedOverlayID,
                                 snapEnabled: vm.snapEnabled,
+                                baseFrame: vm.baseFrame,
                                 onSelect: { vm.selectOverlay($0) },
                                 onMove: { vm.setOverlayPosition($0, normalized: $1) },
-                                onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) })
+                                onScale: { vm.setOverlayScale($0, $1) },
+                                onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
+                                onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
             // Live heart-rate chart overlay (moving-playhead line), draggable to reposition.
             if let hr = vm.hrOverlay {
                 StudioHRChartView(samples: vm.hrSeries, config: hr, ratio: vm.previewRatio,
@@ -234,7 +237,7 @@ struct StudioEditorView: View {
                     .accessibilityIdentifier("studioAddMusic")
                 barButton("PiP", "rectangle.on.rectangle", enabled: !vm.pipSources.isEmpty) { choosingPiP = true }
                     .accessibilityIdentifier("studioAddPiP")
-                barButton("Grid", "square.grid.2x2", enabled: vm.hasPiP) { activeTool = .grid }
+                barButton("Grid", "square.grid.2x2") { activeTool = .grid }
                     .accessibilityIdentifier("studioGridTool")
                 barButton("Climb", "signpost.right", enabled: vm.hasClimbInfo) { vm.addClimbNameOverlay() }
                     .accessibilityIdentifier("studioAddClimbName")
@@ -288,6 +291,16 @@ struct StudioEditorView: View {
                         .font(.caption)
                         .accessibilityIdentifier("studioClimbSetter")
                 }
+                if ov.kind != .video {
+                    HStack {
+                        Image(systemName: "textformat.size").font(.caption)
+                        Slider(value: Binding(get: { ov.scale },
+                                              set: { vm.setOverlayScale(ov.id, $0) }), in: 0.5...3)
+                            .accessibilityIdentifier("overlaySize")
+                        Text("\(Int(ov.scale * 100))%").font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary).frame(width: 40)
+                    }
+                }
                 HStack {
                     Image(systemName: "circle.lefthalf.filled").font(.caption)
                     Slider(value: Binding(get: { ov.opacity },
@@ -297,7 +310,7 @@ struct StudioEditorView: View {
                         Label("Keyframe", systemImage: "diamond").font(.caption2)
                     }
                 }
-                Text("Drag the overlay on the preview to position it. Set opacity at two playhead times (Keyframe) to fade it.")
+                Text("Drag the overlay on the preview to position it; pinch or use Size to scale it. Set opacity at two playhead times (Keyframe) to fade it.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -466,6 +479,15 @@ private struct StudioGridControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Toggle("Resize the main video", isOn: Binding(get: { vm.baseFramed },
+                                                          set: { _ in vm.toggleBaseFrame() }))
+                .font(.subheadline)
+                .accessibilityIdentifier("baseFrameToggle")
+            Text(vm.baseFramed
+                 ? "Drag the \"Main\" frame's corners on the preview to resize the main video; drag its body to move it."
+                 : "Turn on to make the main video a resizable cell instead of filling the whole frame.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Divider().overlay(Color.white.opacity(0.1))
             Text("Arrange picture-in-picture clips into a grid.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 10) {
@@ -474,8 +496,9 @@ private struct StudioGridControls: View {
                         Text(preset.label).font(.caption.weight(.semibold))
                             .frame(minWidth: 44).padding(.vertical, 10).padding(.horizontal, 6)
                             .background(Color(white: 0.15), in: RoundedRectangle(cornerRadius: 8))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(vm.hasPiP ? .white : Color.white.opacity(0.35))
                     }
+                    .disabled(!vm.hasPiP)
                     .accessibilityIdentifier("grid-\(preset.rawValue)")
                 }
             }

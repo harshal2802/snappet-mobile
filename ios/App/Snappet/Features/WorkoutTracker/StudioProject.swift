@@ -214,6 +214,42 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+// MARK: - Base-video frame (collage)
+
+/// A normalized **centre + size** frame (fractions of the canvas, 0…1) used to place the **main
+/// video track** into a sub-rect of the canvas — so the original footage can become one cell of a
+/// collage alongside picture-in-picture clips, instead of always filling the whole frame. `nil` on a
+/// project means the legacy full-frame behaviour. Same convention as a PiP frame (`pipRect`), so the
+/// composer reuses `ClipEditGeometry.fillTransform` for both. The canvas `background` shows behind it.
+struct StudioFrameRect: Codable, Hashable, Sendable {
+    var centerX: Double
+    var centerY: Double
+    var width: Double
+    var height: Double
+
+    init(centerX: Double, centerY: Double, width: Double, height: Double) {
+        self.centerX = min(1, max(0, centerX))
+        self.centerY = min(1, max(0, centerY))
+        self.width = min(1, max(0.1, width))
+        self.height = min(1, max(0.1, height))
+    }
+
+    var center: CGPoint {
+        get { CGPoint(x: centerX, y: centerY) }
+        set { centerX = min(1, max(0, newValue.x)); centerY = min(1, max(0, newValue.y)) }
+    }
+    var size: CGSize {
+        get { CGSize(width: width, height: height) }
+        set { width = min(1, max(0.1, newValue.width)); height = min(1, max(0.1, newValue.height)) }
+    }
+    /// True when the frame is (effectively) the whole canvas — treated as "no framing".
+    var isFull: Bool { width >= 0.999 && height >= 0.999 }
+
+    /// The default a user gets when first enabling base framing: a centred half-height cell (so a PiP
+    /// can share the other half).
+    static let half = StudioFrameRect(centerX: 0.5, centerY: 0.27, width: 1, height: 0.5)
+}
+
 // MARK: - Heart-rate overlay
 
 /// Config for the **heart-rate chart overlay** (the moving-playhead line): the whole session's HR is
@@ -301,6 +337,9 @@ final class StudioProject {
     var audioTracks: [AudioTrack]
     /// Heart-rate chart overlay config (nil = off). Optional → migration-safe additive @Model property.
     var hrOverlay: HROverlayConfig?
+    /// Frame the **main video** into a sub-rect of the canvas (collage). `nil` = fill the whole frame
+    /// (legacy). Optional → migration-safe additive @Model property.
+    var baseFrame: StudioFrameRect?
     var createdAt: Date
     var updatedAt: Date
 
@@ -309,7 +348,7 @@ final class StudioProject {
          background: StudioBackground = .black,
          clips: [TimelineClip] = [], transitions: [StudioTransition] = [],
          overlays: [OverlayItem] = [], audioTracks: [AudioTrack] = [],
-         hrOverlay: HROverlayConfig? = nil,
+         hrOverlay: HROverlayConfig? = nil, baseFrame: StudioFrameRect? = nil,
          createdAt: Date = .now) {
         self.id = id
         self.sessionID = sessionID
@@ -321,6 +360,7 @@ final class StudioProject {
         self.overlays = overlays
         self.audioTracks = audioTracks
         self.hrOverlay = hrOverlay
+        self.baseFrame = baseFrame
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }

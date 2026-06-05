@@ -66,14 +66,39 @@ final class StudioProjectEditorTests: XCTestCase {
     }
 
     func testSetOverlayScaleClamps() {
-        let ov = OverlayItem(kind: .video, content: "pip-id")
+        // Text/sticker/climb-name font scale: ranges past 1 (bigger text), clamped to 0.2…6.
+        let ov = OverlayItem(kind: .climbName, content: "5c · 40°")
         var s = empty(); s.overlays = [ov]
-        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0.5)
-        XCTAssertEqual(s.overlays.first?.scale, 0.5)
-        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 5)   // clamps to 1
-        XCTAssertEqual(s.overlays.first?.scale, 1)
-        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0)   // clamps to 0.1
-        XCTAssertEqual(s.overlays.first?.scale, 0.1)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 2.5)
+        XCTAssertEqual(s.overlays.first?.scale, 2.5)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 99)  // clamps to 6
+        XCTAssertEqual(s.overlays.first?.scale, 6)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0)   // clamps to 0.2
+        XCTAssertEqual(s.overlays.first?.scale, 0.2)
+    }
+
+    // MARK: - base-video collage frame
+
+    func testSetAndClearBaseFrameClampsAndToggles() {
+        var s = empty()
+        XCTAssertNil(s.baseFrame)
+        s = StudioProjectEditor.setBaseFrame(s, center: CGPoint(x: 0.5, y: 0.3),
+                                             size: CGSize(width: 0.8, height: 0.45))
+        XCTAssertEqual(s.baseFrame?.center, CGPoint(x: 0.5, y: 0.3))
+        XCTAssertEqual(s.baseFrame?.size, CGSize(width: 0.8, height: 0.45))
+        // Out-of-range centre clamps to the unit square; size clamps each axis to 0.1…1.
+        s = StudioProjectEditor.setBaseFrame(s, center: CGPoint(x: 1.4, y: -0.2),
+                                             size: CGSize(width: 0.02, height: 9))
+        XCTAssertEqual(s.baseFrame?.center, CGPoint(x: 1, y: 0))
+        XCTAssertEqual(s.baseFrame?.size, CGSize(width: 0.1, height: 1))
+        // Clearing restores the full-canvas (legacy) behaviour.
+        s = StudioProjectEditor.clearBaseFrame(s)
+        XCTAssertNil(s.baseFrame)
+    }
+
+    func testStudioFrameRectIsFull() {
+        XCTAssertTrue(StudioFrameRect(centerX: 0.5, centerY: 0.5, width: 1, height: 1).isFull)
+        XCTAssertFalse(StudioFrameRect.half.isFull)   // half-height cell is not "full"
     }
 
     func testOverlayOpacityKeyframesAddSortedAndReplaceSameTime() {

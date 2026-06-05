@@ -177,20 +177,27 @@ final class StudioEditorViewModel {
     var hasHRData: Bool { hrSeries.count >= 2 }
     var hrOverlay: HROverlayConfig? { snapshot.hrOverlay }
 
+    /// Bumped on each rebuild so a slow, superseded rebuild (e.g. two quick PiP nudges) doesn't
+    /// clobber the newer player once its async composition finally returns.
+    private var rebuildGeneration = 0
+
     private func rebuildPreview() async {
+        rebuildGeneration += 1
+        let generation = rebuildGeneration
         isBuildingPreview = true
-        defer { isBuildingPreview = false }
+        defer { if generation == rebuildGeneration { isBuildingPreview = false } }
         previewError = nil
-        detachTransport()
-        isPlaying = false
         // Preserve the playhead across the rebuild — an edit (split/trim/filter/…) shouldn't snap it
-        // back to the start. Restored (clamped to the new total) on the new player below.
+        // back to the start. Restored (clamped to the new total) on the player below.
         let resumeAt = currentTime
+        let wasPlaying = isPlaying
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
             let (comp, vc, audioMix) = try await composer.makeComposition(
                 for: scopedSnapshot, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
+            // A newer edit already kicked off a rebuild while we awaited — drop this stale result.
+            guard generation == rebuildGeneration else { return }
             let item = AVPlayerItem(asset: comp)
             item.audioMix = audioMix
             // `AVPlayerItem.setVideoComposition` validates more strictly than the export path and
@@ -204,12 +211,25 @@ final class StudioEditorViewModel {
                 previewError = "Preview unavailable: \(reason)"
                 item.videoComposition = nil   // play the raw stitch rather than nothing
             }
-            let player = AVPlayer(playerItem: item)
-            previewPlayer = player
-            attachTransport(to: player)
+            // REUSE the existing AVPlayer (swap only its item) rather than building a new one. A fresh
+            // AVPlayer makes the player layer detach/reattach → a black flash on every edit (the PiP
+            // "flicker"). `replaceCurrentItem` keeps the same render surface; paired with the asset
+            // cache the swap is quick and seamless.
+            detachTransport()
+            isPlaying = false
+            if let player = previewPlayer {
+                player.replaceCurrentItem(with: item)
+                attachTransport(to: player)
+            } else {
+                let player = AVPlayer(playerItem: item)
+                previewPlayer = player
+                attachTransport(to: player)
+            }
             // Restore the playhead (clamped to the possibly-changed total) instead of resetting to 0.
             seek(to: resumeAt)
+            if wasPlaying { play() }   // keep playing across a live edit instead of pausing.
         } catch {
+            guard generation == rebuildGeneration else { return }
             previewPlayer = nil   // device-only: no resolvable assets on the simulator
         }
     }
@@ -401,9 +421,16 @@ final class StudioEditorViewModel {
         }
         isVideo ? edit(t) : editOverlaysOnly(t)
     }
-    /// Resize a PiP overlay's frame (fraction of canvas). Rebuilds (it's in the composition).
+    /// Resize an overlay. For text/sticker/climb-name this scales the font (no playback rebuild — they
+    /// render via the export-only Core Animation tool); a PiP `.video` is in the composition so it
+    /// rebuilds. PiP frame sizing normally goes through `setOverlayFrame` (per-axis); this is the
+    /// uniform-scale path used by the Size slider / pinch.
     func setOverlayScale(_ id: UUID, _ scale: Double) {
-        edit { StudioProjectEditor.setOverlayScale($0, id: id, scale: scale) }
+        let isVideo = overlays.first { $0.id == id }?.kind == .video
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.setOverlayScale($0, id: id, scale: scale)
+        }
+        isVideo ? edit(t) : editOverlaysOnly(t)
     }
 
     // MARK: - Overlay timeline (how long an overlay stays on screen — the timeline lane)
@@ -435,6 +462,28 @@ final class StudioEditorViewModel {
     /// Arrange the PiP overlays into a one-tap collage layout.
     func applyPiPGrid(_ preset: StudioGridLayout.Preset) {
         edit { StudioProjectEditor.applyPiPGrid($0, preset: preset) }
+    }
+
+    // MARK: - Base-video frame (collage — the main video as a resizable cell; in the composition)
+
+    /// The main video's collage frame, or `nil` when it fills the whole canvas (legacy).
+    var baseFrame: StudioFrameRect? { snapshot.baseFrame }
+    /// Whether the main video is currently framed into a sub-rect (drives the canvas handle + toggle).
+    var baseFramed: Bool { snapshot.baseFrame != nil }
+
+    /// Toggle base framing: on → a centred half-cell the user can then drag/resize; off → full canvas.
+    func toggleBaseFrame() {
+        if baseFramed { edit { StudioProjectEditor.clearBaseFrame($0) } }
+        else {
+            edit { StudioProjectEditor.setBaseFrame($0, center: StudioFrameRect.half.center,
+                                                    size: StudioFrameRect.half.size) }
+        }
+    }
+
+    /// Commit a dragged/resized base frame (normalized centre + size), snapping to the grid when on.
+    func setBaseFrame(center: CGPoint, size: CGSize) {
+        let c = snapEnabled ? StudioGridLayout.snap(center: center, size: size).center : center
+        edit { StudioProjectEditor.setBaseFrame($0, center: c, size: size) }
     }
 
     // MARK: Heart-rate chart overlay (preview = SwiftUI layer; export = Core Animation; no rebuild)

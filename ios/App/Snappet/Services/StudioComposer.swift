@@ -26,6 +26,18 @@ final class StudioComposer: Sendable {
 
     private struct Box<T>: @unchecked Sendable { let value: T; init(_ v: T) { value = v } }
 
+    /// Memoizes `PHAsset → AVAsset` resolution for the lifetime of one editor session. Resolving an
+    /// asset goes through `PHImageManager.requestAVAsset` (slow + async); without caching, EVERY
+    /// preview rebuild (one per edit) re-resolves every clip, which is the visible "flicker"/reload
+    /// when nudging a PiP. The cache makes a rebuild after the first load near-instant. `AVAsset` isn't
+    /// `Sendable`, so it's wrapped in the `@unchecked Sendable` `Box` to cross the actor boundary.
+    private actor AssetCache {
+        private var store: [String: Box<AVAsset>] = [:]
+        func get(_ id: String) -> Box<AVAsset>? { store[id] }
+        func set(_ id: String, _ box: Box<AVAsset>) { store[id] = box }
+    }
+    private let assetCache = AssetCache()
+
     enum ComposerError: LocalizedError {
         case noRenderableClips, exportFailed(String)
         var errorDescription: String? {
@@ -72,7 +84,8 @@ final class StudioComposer: Sendable {
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
                                   overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
                                   videoOverlays: videoOverlays, hrSamples: hrSamples,
-                                  hrConfig: snapshot.hrOverlay, forPlayback: forPlayback)
+                                  hrConfig: snapshot.hrOverlay, baseFrame: snapshot.baseFrame,
+                                  forPlayback: forPlayback)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -86,6 +99,7 @@ final class StudioComposer: Sendable {
                   audioTracks: [AudioTrack] = [],
                   videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
                   hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+                  baseFrame: StudioFrameRect? = nil,
                   forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         guard !resolved.isEmpty else { throw ComposerError.noRenderableClips }
@@ -100,12 +114,13 @@ final class StudioComposer: Sendable {
             return try await assembleWithTransitions(
                 resolved: resolved, transitions: transitions, aspect: aspect,
                 sourceDurations: sourceDurations, overlays: overlays,
-                hrSamples: hrSamples, hrConfig: hrConfig, forPlayback: forPlayback)
+                hrSamples: hrSamples, hrConfig: hrConfig, baseFrame: baseFrame, forPlayback: forPlayback)
         }
         return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
                                              sourceDurations: sourceDurations, overlays: overlays,
                                              audioTracks: audioTracks, videoOverlays: videoOverlays,
-                                             hrSamples: hrSamples, hrConfig: hrConfig, forPlayback: forPlayback)
+                                             hrSamples: hrSamples, hrConfig: hrConfig,
+                                             baseFrame: baseFrame, forPlayback: forPlayback)
     }
 
     /// The single-track path: clips inserted sequentially on one video track. No-filter clips use a
@@ -117,6 +132,7 @@ final class StudioComposer: Sendable {
                                      audioTracks: [AudioTrack] = [],
                                      videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
                                      hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+                                     baseFrame: StudioFrameRect? = nil,
                                      forPlayback: Bool) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
         let composition = AVMutableComposition()
@@ -187,11 +203,12 @@ final class StudioComposer: Sendable {
                 }
             }
 
-            // Per-clip transform (orientation THEN crop→canvas), set at this clip's start time on
-            // the shared layer instruction — it holds until the next clip's transform.
-            let crop = ClipEditGeometry.cropTransform(
-                cropRect: clip.cropRect, sourceSize: orientedSize, renderSize: canvas)
-            layerInstruction.setTransform(preferred.concatenating(crop), at: insertAt)
+            // Per-clip transform (orientation THEN crop→canvas, OR orientation THEN fit-into-base-
+            // frame when the main video is framed into a collage cell), set at this clip's start time
+            // on the shared layer instruction — it holds until the next clip's transform.
+            let xform = mainClipTransform(preferred: preferred, orientedSize: orientedSize,
+                                          cropRect: clip.cropRect, canvas: canvas, baseFrame: baseFrame)
+            layerInstruction.setTransform(xform, at: insertAt)
 
             let outRange = CMTimeRange(start: insertAt,
                                        duration: CMTime(seconds: outDuration, preferredTimescale: timescale))
@@ -352,6 +369,7 @@ final class StudioComposer: Sendable {
         sourceDurations: [UUID: Double],
         overlays: [OverlayItem] = [],
         hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+        baseFrame: StudioFrameRect? = nil,
         forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
 
@@ -418,8 +436,8 @@ final class StudioComposer: Sendable {
                 try? track?.insertTimeRange(sourceRange, of: aSrc, at: at)
             }
 
-            let crop = ClipEditGeometry.cropTransform(cropRect: clip.cropRect, sourceSize: oriented, renderSize: cv)
-            let xform = pref.concatenating(crop)
+            let xform = mainClipTransform(preferred: pref, orientedSize: oriented,
+                                          cropRect: clip.cropRect, canvas: cv, baseFrame: baseFrame)
             li.setTransform(xform, at: at)
             transformByID[clip.id] = xform
         }
@@ -517,12 +535,30 @@ final class StudioComposer: Sendable {
         }
     }
 
+    /// The transform that places a main-track clip onto the canvas: orientation THEN either the normal
+    /// crop→full-canvas (no base frame) OR an aspect-fill into the base **collage frame** (a sub-rect
+    /// of the canvas — the rest shows the canvas background). The frame uses the same bottom-left,
+    /// flipped-Y convention as a PiP (`insertPiPTrack`), so base + PiP cells line up. A per-clip crop
+    /// is ignored while framed (crop-WITH-frame is a follow-up — decisions.md).
+    private func mainClipTransform(preferred: CGAffineTransform, orientedSize: CGSize,
+                                   cropRect: CGRect, canvas: CGSize,
+                                   baseFrame: StudioFrameRect?) -> CGAffineTransform {
+        if let bf = baseFrame, !bf.isFull {
+            let center = CGPoint(x: bf.centerX, y: 1 - bf.centerY)   // flip Y to bottom-left origin
+            let rect = ClipEditGeometry.pipRect(normalizedCenter: center, size: bf.size, canvas: canvas)
+            return preferred.concatenating(ClipEditGeometry.fillTransform(sourceSize: orientedSize, into: rect))
+        }
+        let crop = ClipEditGeometry.cropTransform(cropRect: cropRect, sourceSize: orientedSize, renderSize: canvas)
+        return preferred.concatenating(crop)
+    }
+
     private func orientedSize(_ size: CGSize, transform: CGAffineTransform) -> CGSize {
         let rect = CGRect(origin: .zero, size: size).applying(transform)
         return CGSize(width: abs(rect.width), height: abs(rect.height))
     }
 
     private func avAsset(forLocalIdentifier id: String) async -> AVAsset? {
+        if let cached = await assetCache.get(id) { return cached.value }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
         guard let phAsset = assets.firstObject else { return nil }
         let boxed: Box<AVAsset?> = await withCheckedContinuation { cont in
@@ -533,6 +569,7 @@ final class StudioComposer: Sendable {
                 cont.resume(returning: Box(avAsset))
             }
         }
+        if let asset = boxed.value { await assetCache.set(id, Box(asset)) }
         return boxed.value
     }
 }

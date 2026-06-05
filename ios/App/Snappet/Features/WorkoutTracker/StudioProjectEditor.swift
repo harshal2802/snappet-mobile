@@ -15,6 +15,7 @@ struct StudioProjectSnapshot: Codable, Hashable, Sendable {
     var overlays: [OverlayItem]
     var audioTracks: [AudioTrack]
     var hrOverlay: HROverlayConfig? = nil
+    var baseFrame: StudioFrameRect? = nil
 
     var aspect: ClipEditGeometry.OutputAspect {
         get { ClipEditGeometry.OutputAspect(rawValue: aspectRaw) ?? .portrait9x16 }
@@ -29,12 +30,14 @@ extension StudioProjectSnapshot {
         title = p.title; aspectRaw = p.aspectRaw; backgroundRaw = p.backgroundRaw
         clips = p.clips; transitions = p.transitions; overlays = p.overlays; audioTracks = p.audioTracks
         hrOverlay = p.hrOverlay
+        baseFrame = p.baseFrame
     }
     /// Write this snapshot back onto a `@Model` (used by undo/redo and after each edit).
     func apply(to p: StudioProject) {
         p.title = title; p.aspectRaw = aspectRaw; p.backgroundRaw = backgroundRaw
         p.clips = clips; p.transitions = transitions; p.overlays = overlays; p.audioTracks = audioTracks
         p.hrOverlay = hrOverlay
+        p.baseFrame = baseFrame
         p.updatedAt = .now
     }
 }
@@ -119,11 +122,13 @@ enum StudioProjectEditor {
         return s
     }
 
-    /// Set an overlay's scale (PiP frame size as a fraction of the canvas), clamped 0.1…1.
+    /// Set an overlay's `scale`. For text/sticker/climb-name overlays this multiplies the rendered
+    /// font/symbol size (so it ranges past 1 — bigger text); clamped to a sane 0.2…6. A PiP's frame
+    /// size is set per-axis via `setOverlayFrame`, not here.
     static func setOverlayScale(_ s: StudioProjectSnapshot, id: UUID, scale: Double) -> StudioProjectSnapshot {
         var s = s
         guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
-        s.overlays[i].scale = min(1, max(0.1, scale))
+        s.overlays[i].scale = min(6, max(0.2, scale))
         return s
     }
 
@@ -248,6 +253,20 @@ enum StudioProjectEditor {
         s.overlays[i].pipSize = CGSize(width: min(1, max(0.1, size.width)),
                                        height: min(1, max(0.1, size.height)))
         return s
+    }
+
+    /// Enable / move / resize the **base-video frame** (collage): place the main track into a
+    /// normalized centre + size sub-rect of the canvas. Clamped via `StudioFrameRect`'s own init.
+    static func setBaseFrame(_ s: StudioProjectSnapshot, center: CGPoint, size: CGSize) -> StudioProjectSnapshot {
+        var s = s
+        s.baseFrame = StudioFrameRect(centerX: center.x, centerY: center.y,
+                                      width: size.width, height: size.height)
+        return s
+    }
+
+    /// Clear base framing — the main video fills the whole canvas again (legacy behaviour).
+    static func clearBaseFrame(_ s: StudioProjectSnapshot) -> StudioProjectSnapshot {
+        var s = s; s.baseFrame = nil; return s
     }
 
     /// Arrange the PiP (`.video`) overlays into a collage `preset`, in track order, by assigning each
