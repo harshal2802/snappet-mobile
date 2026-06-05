@@ -47,9 +47,12 @@ final class StudioGridLayoutTests: XCTestCase {
     }
 
     func testSnapLeavesFrameAloneOutsideThreshold() {
-        let r = StudioGridLayout.snap(center: CGPoint(x: 0.4, y: 0.6),
-                                      size: CGSize(width: 0.2, height: 0.2), threshold: 0.02)
-        XCTAssertEqual(r.center, CGPoint(x: 0.4, y: 0.6))
+        // Centre AND both edges must clear every snap line ([0, 1/3, 0.5, 2/3, 1]) by > threshold,
+        // since snap() aligns edges too — not just the centre. A 0.1-wide box at 0.42 sits in the
+        // 1/3→1/2 gap with edges at 0.37 / 0.47, all ≥ 0.03 from any line.
+        let r = StudioGridLayout.snap(center: CGPoint(x: 0.42, y: 0.42),
+                                      size: CGSize(width: 0.1, height: 0.1), threshold: 0.02)
+        XCTAssertEqual(r.center, CGPoint(x: 0.42, y: 0.42))
         XCTAssertTrue(r.guides.isEmpty)
     }
 
