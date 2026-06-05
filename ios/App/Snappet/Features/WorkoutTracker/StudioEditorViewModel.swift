@@ -26,6 +26,9 @@ final class StudioEditorViewModel {
     var selectedClipID: UUID?
     var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
+    /// Resolved oriented aspect ratio (w/h) per source `localIdentifier` — sizes a new PiP / base cell
+    /// to its footage so the editor outline matches the aspect-fit video. Empty on the simulator.
+    private(set) var sourceAspects: [String: CGFloat] = [:]
     /// The session's heart-rate samples (for the HR chart overlay), loaded on appear from the FK.
     private(set) var hrSeries: [HRPoint] = []
     var previewPlayer: AVPlayer?
@@ -162,6 +165,10 @@ final class StudioEditorViewModel {
             if let d = await composer.sourceDuration(localIdentifier: clip.localIdentifier) {
                 sourceDurations[clip.id] = d
             }
+            if sourceAspects[clip.localIdentifier] == nil,
+               let a = await composer.sourceAspect(localIdentifier: clip.localIdentifier) {
+                sourceAspects[clip.localIdentifier] = a
+            }
         }
         await rebuildPreview()
     }
@@ -177,20 +184,27 @@ final class StudioEditorViewModel {
     var hasHRData: Bool { hrSeries.count >= 2 }
     var hrOverlay: HROverlayConfig? { snapshot.hrOverlay }
 
+    /// Bumped on each rebuild so a slow, superseded rebuild (e.g. two quick PiP nudges) doesn't
+    /// clobber the newer player once its async composition finally returns.
+    private var rebuildGeneration = 0
+
     private func rebuildPreview() async {
+        rebuildGeneration += 1
+        let generation = rebuildGeneration
         isBuildingPreview = true
-        defer { isBuildingPreview = false }
+        defer { if generation == rebuildGeneration { isBuildingPreview = false } }
         previewError = nil
-        detachTransport()
-        isPlaying = false
         // Preserve the playhead across the rebuild — an edit (split/trim/filter/…) shouldn't snap it
-        // back to the start. Restored (clamped to the new total) on the new player below.
+        // back to the start. Restored (clamped to the new total) on the player below.
         let resumeAt = currentTime
+        let wasPlaying = isPlaying
         do {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
             let (comp, vc, audioMix) = try await composer.makeComposition(
                 for: scopedSnapshot, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
+            // A newer edit already kicked off a rebuild while we awaited — drop this stale result.
+            guard generation == rebuildGeneration else { return }
             let item = AVPlayerItem(asset: comp)
             item.audioMix = audioMix
             // `AVPlayerItem.setVideoComposition` validates more strictly than the export path and
@@ -204,12 +218,25 @@ final class StudioEditorViewModel {
                 previewError = "Preview unavailable: \(reason)"
                 item.videoComposition = nil   // play the raw stitch rather than nothing
             }
-            let player = AVPlayer(playerItem: item)
-            previewPlayer = player
-            attachTransport(to: player)
+            // REUSE the existing AVPlayer (swap only its item) rather than building a new one. A fresh
+            // AVPlayer makes the player layer detach/reattach → a black flash on every edit (the PiP
+            // "flicker"). `replaceCurrentItem` keeps the same render surface; paired with the asset
+            // cache the swap is quick and seamless.
+            detachTransport()
+            isPlaying = false
+            if let player = previewPlayer {
+                player.replaceCurrentItem(with: item)
+                attachTransport(to: player)
+            } else {
+                let player = AVPlayer(playerItem: item)
+                previewPlayer = player
+                attachTransport(to: player)
+            }
             // Restore the playhead (clamped to the possibly-changed total) instead of resetting to 0.
             seek(to: resumeAt)
+            if wasPlaying { play() }   // keep playing across a live edit instead of pausing.
         } catch {
+            guard generation == rebuildGeneration else { return }
             previewPlayer = nil   // device-only: no resolvable assets on the simulator
         }
     }
@@ -310,6 +337,84 @@ final class StudioEditorViewModel {
         selectedOverlayID = overlay.id   // select the new overlay so it's ready to drag
     }
 
+    /// Replace a text / climb-name overlay's content (the studio's "Edit text").
+    func editOverlayText(_ id: UUID, _ text: String) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayContent($0, id: id, content: text) }
+    }
+
+    // MARK: - Climb-name overlay (auto-filled from the clip's assigned climb; mirrors the HR overlay)
+
+    /// Overlay ids whose caption currently includes the setter (transient — the caption string itself
+    /// is the persisted source of truth; this just remembers the toggle for re-deriving on change).
+    private var climbSetterEnabled: Set<UUID> = []
+
+    /// True when a climb resolves for the selected (or any) clip — gates the "Climb" action button.
+    var hasClimbInfo: Bool { resolvedClimbUUID != nil }
+
+    /// Add a climb-name overlay (a styled lower-third), prefilled with the resolved climb's
+    /// name · grade · angle, positioned low-centre. The text stays freely editable afterwards.
+    func addClimbNameOverlay() {
+        guard let uuid = resolvedClimbUUID else { return }
+        let caption = climbCaption(uuid: uuid, includeSetter: false)
+        let overlay = OverlayItem(kind: .climbName, content: caption, startSec: 0,
+                                  endSec: max(3, totalDuration),
+                                  position: CGPoint(x: 0.5, y: 0.85))
+        editOverlaysOnly { StudioProjectEditor.addOverlay($0, overlay) }
+        selectedOverlayID = overlay.id
+    }
+
+    /// True when the selected climb-name overlay's caption includes the setter.
+    var selectedClimbShowsSetter: Bool {
+        guard let id = selectedOverlayID else { return false }
+        return climbSetterEnabled.contains(id)
+    }
+
+    /// Toggle the setter on the selected climb-name overlay, re-deriving its caption from the climb.
+    /// (Resets any manual text edit — the toggle re-fills from the climb data.)
+    func setSelectedClimbShowsSetter(_ on: Bool) {
+        guard let ov = selectedOverlay, ov.kind == .climbName, let uuid = resolvedClimbUUID else { return }
+        if on { climbSetterEnabled.insert(ov.id) } else { climbSetterEnabled.remove(ov.id) }
+        let caption = climbCaption(uuid: uuid, includeSetter: on)
+        editOverlayText(ov.id, caption)
+    }
+
+    /// The climb uuid backing the caption: the selected clip's assignment, else the first assigned clip.
+    private var resolvedClimbUUID: String? {
+        if let u = assignedClimbUUID(for: selectedClip) { return u }
+        return clips.lazy.compactMap { self.assignedClimbUUID(for: $0) }.first
+    }
+
+    /// A clip's assigned climb uuid via its `SessionMedia` (nil for unassigned / non-Kilter clips).
+    private func assignedClimbUUID(for clip: TimelineClip?) -> String? {
+        guard let mediaID = clip?.sessionMediaID else { return nil }
+        var d = FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.id == mediaID })
+        d.fetchLimit = 1
+        return (try? context.fetch(d))?.first?.assignedClimbUUID
+    }
+
+    /// Build the caption for a climb: name · grade · angle from the persisted `KilterLogEntry`
+    /// (queryable without the SQLite catalog); the setter from the read-only `KilterCatalog`.
+    private func climbCaption(uuid: String, includeSetter: Bool) -> String {
+        let entry = logEntry(climbUUID: uuid)
+        let setter = includeSetter ? KilterCatalog.shared.climb(uuid)?.setter : nil
+        return KilterClimbCaption.caption(name: entry?.climbName ?? "",
+                                          gradeLabel: entry?.gradeLabel ?? "",
+                                          angle: entry?.angle ?? 0,
+                                          setter: setter, includeSetter: includeSetter)
+    }
+
+    /// The log entry for a climb — prefer one tagged to this session, else any entry for the climb.
+    private func logEntry(climbUUID: String) -> KilterLogEntry? {
+        let sid: UUID? = project.sessionID
+        var inSession = FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.climbUUID == climbUUID && $0.sessionId == sid })
+        inSession.fetchLimit = 1
+        if let hit = (try? context.fetch(inSession))?.first { return hit }
+        var any = FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.climbUUID == climbUUID })
+        any.fetchLimit = 1
+        return (try? context.fetch(any))?.first
+    }
+
     // MARK: Overlay editing (WYSIWYG — SwiftUI layer over the preview, not in the composition)
 
     func selectOverlay(_ id: UUID?) { selectedOverlayID = id }
@@ -323,9 +428,69 @@ final class StudioEditorViewModel {
         }
         isVideo ? edit(t) : editOverlaysOnly(t)
     }
-    /// Resize a PiP overlay's frame (fraction of canvas). Rebuilds (it's in the composition).
+    /// Resize an overlay. For text/sticker/climb-name this scales the font (no playback rebuild — they
+    /// render via the export-only Core Animation tool); a PiP `.video` is in the composition so it
+    /// rebuilds. PiP frame sizing normally goes through `setOverlayFrame` (per-axis); this is the
+    /// uniform-scale path used by the Size slider / pinch.
     func setOverlayScale(_ id: UUID, _ scale: Double) {
-        edit { StudioProjectEditor.setOverlayScale($0, id: id, scale: scale) }
+        let isVideo = overlays.first { $0.id == id }?.kind == .video
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.setOverlayScale($0, id: id, scale: scale)
+        }
+        isVideo ? edit(t) : editOverlaysOnly(t)
+    }
+
+    // MARK: - Overlay timeline (how long an overlay stays on screen — the timeline lane)
+
+    /// Overlays shown as bars in the timeline lane (every overlay carries a `[startSec, endSec]`).
+    var timelineOverlays: [OverlayItem] { overlays }
+
+    /// Set an overlay's on-screen window (output seconds) — the timeline lane's move/trim commit. A
+    /// `.video` PiP is in the playback composition (rebuild); text/sticker/climbName are not.
+    func setOverlayTimeRange(_ id: UUID, start: Double, end: Double) {
+        let isVideo = overlays.first { $0.id == id }?.kind == .video
+        let t: (StudioProjectSnapshot) -> StudioProjectSnapshot = {
+            StudioProjectEditor.setOverlayTimeRange($0, id: id, start: start, end: end)
+        }
+        isVideo ? edit(t) : editOverlaysOnly(t)
+    }
+
+    // MARK: - PiP frames + collage grids (per-axis size; in the composition → rebuild)
+
+    /// Whether dragging/resizing a PiP snaps to the alignment grid (rule-of-thirds / centre / edges).
+    var snapEnabled = true
+
+    /// Commit a PiP's per-axis frame (normalized centre + size), snapping to the grid when enabled.
+    func setOverlayFrame(_ id: UUID, center: CGPoint, size: CGSize) {
+        let c = snapEnabled ? StudioGridLayout.snap(center: center, size: size).center : center
+        edit { StudioProjectEditor.setOverlayFrame($0, id: id, center: c, size: size) }
+    }
+
+    /// Arrange the PiP overlays into a one-tap collage layout.
+    func applyPiPGrid(_ preset: StudioGridLayout.Preset) {
+        edit { StudioProjectEditor.applyPiPGrid($0, preset: preset) }
+    }
+
+    // MARK: - Base-video frame (collage — the main video as a resizable cell; in the composition)
+
+    /// The main video's collage frame, or `nil` when it fills the whole canvas (legacy).
+    var baseFrame: StudioFrameRect? { snapshot.baseFrame }
+    /// Whether the main video is currently framed into a sub-rect (drives the canvas handle + toggle).
+    var baseFramed: Bool { snapshot.baseFrame != nil }
+
+    /// Toggle base framing: on → a centred half-cell the user can then drag/resize; off → full canvas.
+    func toggleBaseFrame() {
+        if baseFramed { edit { StudioProjectEditor.clearBaseFrame($0) } }
+        else {
+            edit { StudioProjectEditor.setBaseFrame($0, center: StudioFrameRect.half.center,
+                                                    size: StudioFrameRect.half.size) }
+        }
+    }
+
+    /// Commit a dragged/resized base frame (normalized centre + size), snapping to the grid when on.
+    func setBaseFrame(center: CGPoint, size: CGSize) {
+        let c = snapEnabled ? StudioGridLayout.snap(center: center, size: size).center : center
+        edit { StudioProjectEditor.setBaseFrame($0, center: c, size: size) }
     }
 
     // MARK: Heart-rate chart overlay (preview = SwiftUI layer; export = Core Animation; no rebuild)
@@ -352,6 +517,9 @@ final class StudioEditorViewModel {
 
     // MARK: Picture-in-picture (a second video composited over the main track)
 
+    /// True when the project has at least one picture-in-picture overlay (gates the Grid tool).
+    var hasPiP: Bool { overlays.contains { $0.kind == .video } }
+
     /// Source clips available to drop in as a PiP (the session's main-track video clips).
     var pipSources: [(id: UUID, label: String, localIdentifier: String)] {
         clips.enumerated().compactMap { i, c in
@@ -359,13 +527,31 @@ final class StudioEditorViewModel {
         }
     }
     /// Add a picture-in-picture overlay from a source clip's `localIdentifier`, defaulting to a small
-    /// top-right frame spanning the whole timeline.
+    /// top-right frame (sized to the source's aspect, so the outline matches the aspect-fit video).
     func addPiP(localIdentifier: String) {
+        let size = defaultPiPSize(localIdentifier: localIdentifier)
         let ov = OverlayItem(kind: .video, content: localIdentifier, startSec: 0,
                              endSec: max(3, totalDuration),
-                             position: CGPoint(x: 0.72, y: 0.28), scale: 0.4)
+                             position: CGPoint(x: 0.72, y: 0.28),
+                             normalizedWidth: size.width, normalizedHeight: size.height)
         edit { StudioProjectEditor.addOverlay($0, ov) }
         selectedOverlayID = ov.id
+    }
+
+    /// A default PiP frame (fraction of canvas) whose **on-screen** aspect matches the source footage —
+    /// so the aspect-fit PiP fills its frame with no letterbox. Falls back to a square when the source
+    /// aspect isn't resolved (simulator). `pipSize.w/pipSize.h = sourceAspect / canvasAspect` because the
+    /// frame is normalized to the (non-square) canvas.
+    private func defaultPiPSize(localIdentifier: String) -> CGSize {
+        let canvasAspect = previewRatio
+        guard let a = sourceAspects[localIdentifier], a > 0, canvasAspect > 0 else {
+            return CGSize(width: 0.4, height: 0.4)
+        }
+        let ratio = a / canvasAspect       // pipSize.width / pipSize.height
+        let base = 0.45
+        return ratio >= 1
+            ? CGSize(width: base, height: min(1, base / ratio))
+            : CGSize(width: min(1, base * ratio), height: base)
     }
 
     func deleteOverlay(_ id: UUID) {

@@ -197,19 +197,44 @@ enum ClipEditGeometry {
     /// position (0…1, top-left). Clamped so it stays a sane size. Both the on-screen editing frame
     /// and the composer transform derive from this, so what you place is what renders.
     static func pipRect(normalizedCenter: CGPoint, scale: Double, canvas: CGSize) -> CGRect {
-        let s = min(1, max(0.1, scale))
-        let w = canvas.width * s
-        let h = canvas.height * s
+        pipRect(normalizedCenter: normalizedCenter,
+                size: CGSize(width: scale, height: scale), canvas: canvas)
+    }
+
+    /// Per-axis variant: the PiP frame for an explicit normalized `size` (width/height as fractions of
+    /// the canvas, clamped 0.1…1) — supports non-square collage cells (split-screen) and free corner
+    /// resize. The uniform `scale` overload delegates here with a square size.
+    static func pipRect(normalizedCenter: CGPoint, size: CGSize, canvas: CGSize) -> CGRect {
+        let sw = min(1, max(0.1, size.width))
+        let sh = min(1, max(0.1, size.height))
+        let w = canvas.width * sw
+        let h = canvas.height * sh
         let cx = min(max(normalizedCenter.x, 0), 1) * canvas.width
         let cy = min(max(normalizedCenter.y, 0), 1) * canvas.height
         return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
     }
 
     /// Affine transform that **aspect-fills** an oriented `sourceSize` into `rect` (centred, cropped to
-    /// the rect's aspect) — applied AFTER the track's `preferredTransform`. Used to place a PiP video.
+    /// the rect's aspect) — applied AFTER the track's `preferredTransform`.
     static func fillTransform(sourceSize: CGSize, into rect: CGRect) -> CGAffineTransform {
+        frameTransform(sourceSize: sourceSize, into: rect, fill: true)
+    }
+
+    /// Affine transform that **aspect-fits** (contains) an oriented `sourceSize` into `rect` (centred,
+    /// letterboxed). Used to place a PiP / base-video collage cell: an `AVMutableVideoCompositionLayer
+    /// Instruction` transform can't clip its track to a sub-rect, so a *fill* would spill past the
+    /// frame into the rest of the canvas — *fit* keeps the whole source inside its frame.
+    static func fitTransform(sourceSize: CGSize, into rect: CGRect) -> CGAffineTransform {
+        frameTransform(sourceSize: sourceSize, into: rect, fill: false)
+    }
+
+    /// Shared scale-and-centre into `rect`; `fill` picks cover (max) vs contain (min) scaling. The
+    /// render coordinate space for a layer-instruction transform is **top-left origin** (the same space
+    /// `cropTransform` targets), so `rect` is consumed as-is with NO Y flip.
+    private static func frameTransform(sourceSize: CGSize, into rect: CGRect, fill: Bool) -> CGAffineTransform {
         let srcW = max(1, abs(sourceSize.width)), srcH = max(1, abs(sourceSize.height))
-        let scale = max(rect.width / srcW, rect.height / srcH)
+        let scale = fill ? max(rect.width / srcW, rect.height / srcH)
+                         : min(rect.width / srcW, rect.height / srcH)
         let scaledW = srcW * scale, scaledH = srcH * scale
         let tx = rect.minX + (rect.width - scaledW) / 2
         let ty = rect.minY + (rect.height - scaledH) / 2

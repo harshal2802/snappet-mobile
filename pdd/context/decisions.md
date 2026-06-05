@@ -1974,3 +1974,106 @@ An **unassigned** single clip can now be tagged to a climb from inside the scope
 floating button for any per-clip scope and resolves the climb **live** from the clip's `assignedClimbUUID`
 (reading the `@Model` clip) — so assigning upgrades the button/panel to the full Climb panel in place,
 without reopening. Previously an unassigned clip's only reassignment path was the gallery long-press menu.
+
+## 2026-06-05 — Studio overlays & grids: climb-name overlay, overlay timeline, per-axis PiP grids; split grade filter (P21)
+
+Four editor/browse improvements (prompt `21-ios-studio-overlays-grids.md`), built on the existing overlay
+seams rather than new infrastructure. **(1) Grade filter split** — the Kilter browse bar's one "Grade" chip
+(a From+To `Menu`) became **two independent chips** (`kilter.minGrade` / `kilter.maxGrade`) over the same
+`gradeScale`, with `.onChange` coupling (set Min above Max ⇒ Max follows, and vice-versa). No model/query
+change: state stayed `@AppStorage minGrade/maxGrade` and `KilterCatalog.list` already min/max-swaps. **(2)
+Climb-name overlay** reuses **one** `OverlayItem` with a new `Kind.climbName` (not a separate config like
+`HROverlayConfig`) — deliberately, so the new overlay timeline + the existing opacity keyframes/drag apply to
+it for free; it renders like text but as a lower-third chip (export: `StudioOverlays.climbNameLayer` = a
+`CATextLayer` on a rounded background container, time-gated by the same `applyVisibility`; preview: a
+`.climbName` chip case). The caption is built by a **pure** `KilterClimbCaption.caption(name·grade·angle[·
+by setter])` and the text stays freely editable ("Edit text"); a "Show setter" toggle re-derives it. Climb
+metadata is resolved **without the SQLite catalog** for name/grade/angle — from the persisted
+`KilterLogEntry` keyed by `(sessionId, climbUUID)` (the clip → `SessionMedia.assignedClimbUUID` lookup) — and
+only the **setter** touches `KilterCatalog.shared.climb(uuid)` (nil on the simulator ⇒ caption simply omits
+it). **(3) Overlay timeline** — every overlay already had `[startSec, endSec]`, so duration control is a
+second lane in `StudioTimelineView` (`OverlayBar`: high-priority body-drag to move the whole window keeping
+its length, edge handles to trim) sharing the clip lane's `pps`/offset, committing once on drag-end via the
+pure `StudioProjectEditor.setOverlayTimeRange` (clamped, min 0.2s); selection is shared with the bottom
+overlay controls. **(4) PiP grids** — PiP went from a single uniform `scale` to optional **per-axis**
+`OverlayItem.normalizedWidth/Height` (a `pipSize` accessor falling back to `scale` when nil, so old
+snapshots decode and render **unchanged**), enabling true split-screen cells and free corner resize. A new
+`ClipEditGeometry.pipRect(center:size:canvas:)` overload (the `scale` one delegates to it) feeds both the
+preview frame and `StudioComposer.insertPiPTrack`. A **pure** `StudioGridLayout` provides collage `Preset`
+cells (1×2 / 2×1 / 2×2 / 1×3 / 3×1) and `snap(center:size:)` → alignment guides (rule-of-thirds / centre /
+edges); `StudioOverlayCanvas` gains corner-resize handles (opposite corner fixed) + live guide drawing, and
+a "Grid" tool sheet exposes the presets + a snap toggle. **Why**: extending `OverlayItem` (one new kind, two
+optional fields) keeps the timeline/keyframe/undo machinery uniform across text/climb-name/PiP and avoids a
+parallel config type or a forked editor; per-axis size is the minimal model change that satisfies both
+"split-screen grids" and "corner resize". **Rules out**: a dedicated `ClimbNameOverlayConfig`; baking the
+caption into a fixed string (it stays editable); a normalized `CGRect` field on `OverlayItem` (two optional
+scalars decode more cleanly for SwiftData lightweight migration). **Verified**: new pure unit tests —
+`KilterClimbCaptionTests` (setter on/off/missing, empty name/grade/zero-angle), `StudioGridLayoutTests`
+(preset cells tile the canvas, `frames(count:)` caps at capacity, snap within/outside threshold + edge
+snap), `ClipEditGeometryTests` (per-axis `pipRect`), `StudioProjectEditorTests`
+(`setOverlayContent`/`setOverlayTimeRange`/`setOverlayFrame`/`applyPiPGrid`). **Device-unverified** per the
+device-only rule: the climb-name **export** layer, PiP collage/corner-resize on real footage, and the
+overlay-lane gesture feel — deferred to a device with clips + a logged Kilter session.
+
+## 2026-06-05 — Studio overlay/PiP follow-up: live-resize, text sizing, base-video collage cell, flicker fix (P21)
+
+Device pass on P21 surfaced four issues; fixes built on the same seams. **(1) Text/climb-name couldn't be
+resized** — the export AND preview already honoured `OverlayItem.scale` for font size, but no control ever
+set it for the Core-Animation kinds (handles were `.video`-only). Fix: a **Size slider** in the overlay
+controls bar + **pinch-to-scale** on the canvas (`TextOverlayChip`), both → `setOverlayScale`, which is now
+overlay-aware in the VM (text = `editOverlaysOnly`, no player rebuild) and whose clamp **widened `0.1…1` →
+`0.2…6`** so text can grow past 1× (the old clamp was sized for a PiP frame fraction; PiP sizing moved to the
+per-axis `setOverlayFrame` in P21, so widening is safe). **(2) PiP frame "didn't match the bounding box"** —
+corner-resize only wrote the model on drag-END (`commitResize(ended:false)` updated only the snap guides), so
+the white outline + the composited PiP stayed put while the handle moved, then jumped on release. Fix: a
+shared **`ResizableFrame`** view (used by BOTH the PiP cell and the new base-video cell) tracks the gesture
+**live** via `liveResize` state — the outline and all four handles recompute from the in-progress
+corner/pinch each frame; the model is still written once on end. Handles dropped their local `.offset` (the
+parent repositions them from the live frame, so the dragged dot sits under the finger). **(3) "Very
+flickery"** — every PiP edit ran `rebuildPreview`, which tore down the whole `AVPlayer` AND re-resolved every
+PHAsset→AVAsset through `PHImageManager` (slow/async) → a black flash + reload per nudge. Fix: an **actor
+`AssetCache`** in `StudioComposer` memoizes resolution for the session, and `rebuildPreview` now **reuses the
+player** (`replaceCurrentItem`) instead of constructing a new `AVPlayer` (no layer detach/reattach), keeps
+playing across a live edit, and a **generation token** drops a stale rebuild whose async composition returns
+after a newer one. **(4) Couldn't resize the original video** — the main track always aspect-filled the full
+canvas. Added an optional **`StudioProject.baseFrame: StudioFrameRect?`** (normalized centre+size, nil =
+legacy full-frame, migration-safe additive `@Model` property like `hrOverlay`); the composer's new
+`mainClipTransform` aspect-fills the main track into that sub-rect (same flipped-Y / `pipRect` convention as a
+PiP, so base + PiP cells align; the canvas `background` shows behind it) on **both** the single-track and
+transition paths. On the canvas it's a draggable "Main" `ResizableFrame`; the **Grid tool** gained a "Resize
+the main video" toggle (`toggleBaseFrame`, default = a centred half-cell) and the Grid button is no longer
+PiP-gated. **Why a frame on the project, not a per-clip field or a `.baseVideo` overlay kind**: framing is a
+canvas-level layout (all clips share it), and a new overlay kind would ripple through every overlay switch +
+the export tool; one optional struct is the minimal, migration-safe change and reuses the PiP geometry.
+**Rules out**: per-clip base frames; crop-WITH-base-frame (a framed main track ignores per-clip crop — a
+follow-up); base video as a grid-preset cell (presets stay PiP-only). **Verified**: builds clean + full suite
+green on the simulator (298 unit tests) — `setBaseFrame`/`clearBaseFrame` clamp+toggle, `StudioFrameRect.isFull`,
+the widened `setOverlayScale` clamp. **Device-unverified** (device-only rule): the actual flicker-free feel,
+base-frame **export** on real footage, and pinch/Size sizing of the climb-name in the rendered file.
+
+## 2026-06-05 — PiP/base placement: top-left render space + aspect-FIT + source-aspect default (P21)
+
+A device screenshot showed the composited PiP **offset down** from its editor outline AND **wider than
+the frame**. Root-caused to two composer bugs in `insertPiPTrack` / `mainClipTransform`. **(1) Wrong Y
+origin** — the PiP frame flipped Y (`1 - normalizedY`) assuming the `AVMutableVideoCompositionLayer
+Instruction` render space is bottom-left (the convention the Core-Animation OVERLAY tool genuinely uses,
+`layerPoint`). But the layer-INSTRUCTION space is **top-left** — proven by the device-verified
+`cropTransform` (clip-editor zoom-crop), which targets the same space and does NOT flip. The flip pushed
+the PiP down by `(1−2y)·H`, matching the screenshot. Fix: drop the flip, place against `ov.position`
+directly (top-left), so the composited PiP lands exactly where the SwiftUI outline shows it. **(2)
+Overflow** — `fillTransform` aspect-FILLS (cover), but a layer instruction can't clip its track to a
+sub-rect, so the excess spills past the frame onto the rest of the canvas. Fix: a new
+`ClipEditGeometry.fitTransform` (aspect-FIT / contain) keeps the whole source inside its frame; PiP and
+base both use it. **(3) Square default** — a new PiP defaulted to a `0.4×0.4` (canvas-aspect) frame, so a
+non-9:16 source letterboxed inside it (looks misaligned). Fix: `addPiP` sizes the frame to the source's
+oriented aspect (`StudioComposer.sourceAspect`, resolved on appear into `sourceAspects`), so
+`pipSize.w/pipSize.h = sourceAspect / canvasAspect` and the aspect-fit PiP fills its frame. **Why top-left,
+not bottom-left**: the two render spaces (layer-instruction vs the Core-Animation overlay tree) genuinely
+differ; the original code conflated them. Matching `cropTransform` (verified) is the reliable tiebreak.
+**Why fit, not fill+crop**: precise per-PiP cropping needs a mask layer (custom `AVVideoCompositing`),
+deferred; fit is the no-overflow, no-mask choice. **Rules out**: a bottom-left flip for PiP/base; aspect-
+fill without a clip; a fixed square PiP default. **Follow-up**: when a user resizes a PiP frame to an
+aspect ≠ its source, the video fits within (a small letterbox) — drawing the outline at the exact fitted
+rect (needs the source aspect in the canvas) is a further polish. **Verified**: builds clean, full suite
+green incl. a new `fitTransform` containment test. **Device-unverified**: that the PiP/base now sit exactly
+under the outline in preview AND export.

@@ -158,9 +158,11 @@ struct StudioTransition: Codable, Hashable, Sendable, Identifiable {
 /// same shape later). Visible while `startSec ≤ playhead ≤ endSec` (output time); position/opacity
 /// can be keyframed. Normalized position is the centre in 0…1 (top-left origin, SwiftUI-style).
 struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
-    /// `text`/`sticker` are Core-Animation overlays (export-only render); `video` is a
+    /// `text`/`sticker`/`climbName` are Core-Animation overlays (export-only render); `video` is a
     /// **picture-in-picture** clip composited as a second video track (renders in preview + export).
-    enum Kind: String, Codable, Sendable { case text, sticker, video }
+    /// `climbName` renders like text but as a styled lower-third chip, auto-filled from the clip's
+    /// assigned climb (name · grade · angle, optionally the setter) — the text stays freely editable.
+    enum Kind: String, Codable, Sendable { case text, sticker, video, climbName }
 
     var id: UUID
     var kindRaw: String
@@ -170,6 +172,11 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var endSec: Double
     var normalizedX: Double, normalizedY: Double
     var scale: Double
+    /// PiP (`.video`) **per-axis** frame size as a fraction of the canvas (0…1). `nil` falls back to
+    /// the uniform `scale` (the pre-grid behaviour), so old projects decode unchanged; grid layouts +
+    /// corner-resize write these to make true split-screen cells possible.
+    var normalizedWidth: Double? = nil
+    var normalizedHeight: Double? = nil
     var rotationDegrees: Double
     var opacity: Double
     var colorHex: String
@@ -177,7 +184,8 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var opacityKeyframes: [StudioKeyframe]
 
     init(id: UUID = UUID(), kind: Kind, content: String, startSec: Double = 0, endSec: Double = 3,
-         position: CGPoint = CGPoint(x: 0.5, y: 0.5), scale: Double = 1, rotationDegrees: Double = 0,
+         position: CGPoint = CGPoint(x: 0.5, y: 0.5), scale: Double = 1,
+         normalizedWidth: Double? = nil, normalizedHeight: Double? = nil, rotationDegrees: Double = 0,
          opacity: Double = 1, colorHex: String = "#FFFFFF", opacityKeyframes: [StudioKeyframe] = []) {
         self.id = id
         self.kindRaw = kind.rawValue
@@ -186,6 +194,8 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
         self.endSec = endSec
         self.normalizedX = position.x; self.normalizedY = position.y
         self.scale = scale
+        self.normalizedWidth = normalizedWidth
+        self.normalizedHeight = normalizedHeight
         self.rotationDegrees = rotationDegrees
         self.opacity = min(1, max(0, opacity))
         self.colorHex = colorHex
@@ -196,6 +206,48 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
         get { CGPoint(x: normalizedX, y: normalizedY) }
         set { normalizedX = newValue.x; normalizedY = newValue.y }
     }
+    /// The PiP frame size (width, height) as fractions of the canvas — per-axis when set, else the
+    /// uniform `scale` on both axes (back-compatible default).
+    var pipSize: CGSize {
+        get { CGSize(width: normalizedWidth ?? scale, height: normalizedHeight ?? scale) }
+        set { normalizedWidth = newValue.width; normalizedHeight = newValue.height }
+    }
+}
+
+// MARK: - Base-video frame (collage)
+
+/// A normalized **centre + size** frame (fractions of the canvas, 0…1) used to place the **main
+/// video track** into a sub-rect of the canvas — so the original footage can become one cell of a
+/// collage alongside picture-in-picture clips, instead of always filling the whole frame. `nil` on a
+/// project means the legacy full-frame behaviour. Same convention as a PiP frame (`pipRect`), so the
+/// composer reuses `ClipEditGeometry.fillTransform` for both. The canvas `background` shows behind it.
+struct StudioFrameRect: Codable, Hashable, Sendable {
+    var centerX: Double
+    var centerY: Double
+    var width: Double
+    var height: Double
+
+    init(centerX: Double, centerY: Double, width: Double, height: Double) {
+        self.centerX = min(1, max(0, centerX))
+        self.centerY = min(1, max(0, centerY))
+        self.width = min(1, max(0.1, width))
+        self.height = min(1, max(0.1, height))
+    }
+
+    var center: CGPoint {
+        get { CGPoint(x: centerX, y: centerY) }
+        set { centerX = min(1, max(0, newValue.x)); centerY = min(1, max(0, newValue.y)) }
+    }
+    var size: CGSize {
+        get { CGSize(width: width, height: height) }
+        set { width = min(1, max(0.1, newValue.width)); height = min(1, max(0.1, newValue.height)) }
+    }
+    /// True when the frame is (effectively) the whole canvas — treated as "no framing".
+    var isFull: Bool { width >= 0.999 && height >= 0.999 }
+
+    /// The default a user gets when first enabling base framing: a centred half-height cell (so a PiP
+    /// can share the other half).
+    static let half = StudioFrameRect(centerX: 0.5, centerY: 0.27, width: 1, height: 0.5)
 }
 
 // MARK: - Heart-rate overlay
@@ -285,6 +337,9 @@ final class StudioProject {
     var audioTracks: [AudioTrack]
     /// Heart-rate chart overlay config (nil = off). Optional → migration-safe additive @Model property.
     var hrOverlay: HROverlayConfig?
+    /// Frame the **main video** into a sub-rect of the canvas (collage). `nil` = fill the whole frame
+    /// (legacy). Optional → migration-safe additive @Model property.
+    var baseFrame: StudioFrameRect?
     var createdAt: Date
     var updatedAt: Date
 
@@ -293,7 +348,7 @@ final class StudioProject {
          background: StudioBackground = .black,
          clips: [TimelineClip] = [], transitions: [StudioTransition] = [],
          overlays: [OverlayItem] = [], audioTracks: [AudioTrack] = [],
-         hrOverlay: HROverlayConfig? = nil,
+         hrOverlay: HROverlayConfig? = nil, baseFrame: StudioFrameRect? = nil,
          createdAt: Date = .now) {
         self.id = id
         self.sessionID = sessionID
@@ -305,6 +360,7 @@ final class StudioProject {
         self.overlays = overlays
         self.audioTracks = audioTracks
         self.hrOverlay = hrOverlay
+        self.baseFrame = baseFrame
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }
