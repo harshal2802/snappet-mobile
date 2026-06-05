@@ -285,15 +285,23 @@ struct KilterRootView: View {
                     } label: { chip("Angle", "\(angle)°") }
                     .accessibilityIdentifier("kilter.angle")
 
+                    // Lower/upper grade are two independent chips. Selecting a min above the current
+                    // max (or a max below the min) drags the other end along so the range stays valid.
                     Menu {
-                        Picker("From", selection: $minGrade) {
+                        Picker("Min grade", selection: $minGrade) {
                             ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
                         }
-                        Picker("To", selection: $maxGrade) {
+                    } label: { chip("Min", catalog.gradeLabel(Double(minGrade))) }
+                    .accessibilityIdentifier("kilter.minGrade")
+                    .onChange(of: minGrade) { _, newMin in if newMin > maxGrade { maxGrade = newMin } }
+
+                    Menu {
+                        Picker("Max grade", selection: $maxGrade) {
                             ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
                         }
-                    } label: { chip("Grade", "\(catalog.gradeLabel(Double(minGrade)))–\(catalog.gradeLabel(Double(maxGrade)))") }
-                    .accessibilityIdentifier("kilter.grade")
+                    } label: { chip("Max", catalog.gradeLabel(Double(maxGrade))) }
+                    .accessibilityIdentifier("kilter.maxGrade")
+                    .onChange(of: maxGrade) { _, newMax in if newMax < minGrade { minGrade = newMax } }
                 }
                 .padding(.leading)
                 .padding(.vertical, 8)
