@@ -4,6 +4,41 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-05] Kilter catalog redistribution — legality assessment + direction
+
+**Decision**: The bundled `kilter.sqlite3` (a trimmed copy of Aurora Climbing's proprietary climb
+catalog, produced dev-time via `boardlib`) **must not ship in a public build as-is**. This confirms
+and hardens #32 open question **#11.2**. Aurora's [Terms of Use](https://kilterboardapp.com/terms-of-use)
+assert all Aurora IP — including "Usage Data" and derivative works — is their "sole and exclusive
+property," usable only "with express written consent," with no rights granted "by implication." A
+trimmed, rebundled copy of their catalog is a derivative of that data, so redistributing it inside the
+app is not clearly legal. `boardlib` being MIT-licensed covers the *tool*, not the *data* it fetches.
+
+**Two paths chosen (not mutually exclusive):**
+- **Path 1 — de-bundle, fetch on-device (primary, tracked in
+  [#42](https://github.com/harshal2802/snappet-mobile/issues/42)).** Ship **zero** Aurora data; the
+  user's device fetches/imports the catalog under their own relationship with Aurora. Removes the legal
+  exposure architecturally. Requires a **narrow, named exception** to the on-device-only rule
+  (`project.md:64`): a *user-initiated* catalog fetch, no background sync, no analytics, no Snappet
+  backend — health/media still never leave the device. The exception is scoped to the Kilter catalog
+  only and must not be cited to justify networking elsewhere.
+
+**Future scope — Path 2 (option 2): seek express written permission from Aurora.** Pursue an explicit
+data-use / attribution arrangement (or a "no") with Aurora Climbing. Written consent is the one thing
+their ToU actually accepts, and it would let us *additionally* offer a bundled fast-path on top of the
+fetch mechanism. Not blocking Path 1; it's a product/legal action item, not an engineering one. Design
+the catalog-provider seam in #42 so a permitted bundled source drops in cleanly if/when permission
+lands. **Owner action**: contact Aurora; record the outcome here when known.
+
+**Related — generative climbs ([#43](https://github.com/harshal2802/snappet-mobile/issues/43)).** An
+on-device generator emits *novel* climbs (not a copy of the catalog), but training on Aurora's catalog
+carries its own IP/ToU question — same review gate as #11.2; do the spike on a dev box, don't ship a
+model trained on Aurora data publicly until cleared.
+
+**Rules out**: shipping the bundled catalog in a public build; obfuscation/rename "workarounds" (still
+the same redistribution, dressed up); treating `boardlib`'s MIT license as a data license.
+**Verified**: assessment only — no code change here. Implementation tracked in #42/#43.
+
 ## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
 
 **Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),
