@@ -137,6 +137,440 @@ paste/Live-Text text path is device-free and testable — camera OCR is a natura
 pure logic unit-tested off-device (`swift`-level XCTest); the SwiftUI sheets/detail stay
 **device-unverified** per the repo's macOS/Xcode-only build rule (authored on Linux/cloud).
 
+## [2026-06-04] Photos-level clip ops + HR overlay on set clips + a deep video-feature review
+
+**Decision**: Two user-requested capabilities on the per-clip editor + a review pass.
+- **Photos-library operations (every destructive one confirmed).** `MediaLibraryService` gains
+  **`overwriteVideoAsset`** (replace the original in Photos with the edited render via
+  `PHContentEditingOutput` — reversible in Photos; **remove-then-copy** onto `renderedContentURL`,
+  since copying onto Photos' reserved path throws "file exists") and **`deleteAssets`**
+  (`PHAssetChangeRequest.deleteAssets`); both read-write auth, PhotoKit non-Sendables boxed. The clip
+  editor offers **Save a copy** (new asset) + **Overwrite original** (confirm). Session-detail Remove →
+  a confirmation: **Remove from session only** vs **Delete from Photos too** (deletes the asset FIRST,
+  then drops the tag only on success). Hosted on the stable `List`.
+- **HR chart overlay on per-set clips.** `ClipEdit.hrOverlay` (optional) + `EditPlan` carries the HR
+  samples **sliced/rebased to the clip's capture window** (`[offsetSec, +duration]` from the session's
+  `hrSeries`). `VideoStudio` attaches the HR Core Animation layer on **export** (reuses
+  `StudioOverlays.hrChartLayer`); the clip editor previews it as a live SwiftUI `StudioHRChartView`
+  (drag/pinch). A **`forPlayback`** flag was added to `VideoStudio` (mirroring `StudioComposer`) so the
+  preview composition omits the Core Animation tool — this also **fixed a latent crash**: text overlays
+  attached the offline-only tool to the AVPlayerItem preview, which would have raised the same
+  NSException the studio hit.
+- **Deep review (two agents) → fixes**: guarded the clip-editor preview `setVideoComposition`
+  (NSException); strictly-increasing HR-dot `keyTimes` (duplicate timestamps dropped the export
+  animation); honored PiP opacity (removed an `==0?1` bug); the studio time observer only advances the
+  playhead while playing (don't fight a scrub); delete-from-Photos ordered asset-first. **Known minor
+  (not blind-fixed without device visual):** exported `CATextLayer` text sits slightly higher than the
+  preview chip (top-origin glyphs). **Verified:** unit suite 206 (2 skipped), studio UI walkthrough
+  green on the iPhone 17 sim. Photos overwrite/delete + HR-on-clip export are device-only (owed a device
+  visual pass).
+
+## [2026-06-04] Session detail → per-set tiles (media+HR unified) + HR-overlay pinch + Find-media polish
+
+**Decision**: Follow-up UX from device feedback.
+- **HR chart overlay is pinch-resizable** in the studio preview (`StudioHRChartView` `MagnifyGesture` →
+  `setHRScale`, 0.3…1), matching the PiP resize; the HR tool's size slider still works.
+- **Session detail unified to one tile per set.** `SessionDetailView` no longer renders set logs and
+  the tagged-media gallery in separate places. `SessionMediaSection` now owns the per-exercise sections:
+  each set is a `SetTileRow` (reps/weight + the **heart rate at the set's completion**, nearest
+  `hrSeries` sample, zone-coloured) and its tagged photos/videos render as **rows beneath it** (multiple
+  media → multiple rows). A **General** section holds unassigned media. The big B2 HR chart stays above.
+- **Media removal is discoverable** (#3 — it was context-menu-only): each media row has **swipe-to-remove**
+  (trailing) + **swipe-to-move** (leading) plus the existing long-press menu.
+- **Find-media workflow** (#4) reviewed — the discovery logic was already sound (padded
+  `[start−90s, end+90s]` window, dedupe, offset-align in `SessionMediaService`). Added a **Settings
+  escape hatch** when Photos access is `denied`/`restricted`/`limited` (auto-discovery needs full
+  access; limited can only PHPick), a found-count / explained-empty message that names the searched
+  **time window**, and clearer limited-access copy.
+
+**Rules out / notes**: per-set HR is the **nearest sample at set completion** (not an interval average) —
+simple + meaningful. Walkthrough-critical ids preserved (`openStudio`/`generateHighlight`/`mediaThumb` +
+a "Set N" label + a "General" header). `SessionMediaThumb` gained a `side` param (compact 54 pt in
+rows). Verified: studio UI walkthrough green on the iPhone 17 sim; unit suite 206 (2 skipped), 0
+failures. Device visual pass owed (thumbnails/discovery are device-only).
+
+## [2026-06-04] Studio timeline zoom + PiP video overlay + HR-chart overlay
+
+**Decision**: Three follow-on studio features (separate commits).
+- **Zoomable timeline** — `StudioTimelineView.pps` is now a computed `zoomPps · pinchScale`, clamped
+  12…200 pt/s, driven by a `MagnifyGesture` (simultaneous with the scrub drag) + `−/+` buttons
+  (`timelineZoomOut/In`). Everything (offset, strip widths, ruler) reads `pps`, so the whole timeline
+  zooms together.
+
+- **PiP video-over-video** — `OverlayItem.Kind.video` (content = a session clip's `localIdentifier`).
+  The composer adds a **second video track** per PiP, aspect-filled into a frame
+  (`ClipEditGeometry.pipRect` + `fillTransform`, Y flipped to the composition's bottom-left origin),
+  oriented, and **time-gated** via opacity (0 outside `[startSec, endSec]`). PiP forces the
+  **instruction path** (renders in preview AND export, unlike the export-only text/sticker tool) — so
+  with a PiP present, per-clip filters are dropped (degradation; transitions+PiP also deferred). The
+  WYSIWYG canvas renders a draggable + **pinchable** frame outline (the real PiP shows through from the
+  player); position/scale/delete of a `.video` overlay **rebuild** (it's in the composition), unlike
+  text/sticker. Add via the **PiP** action-bar button → pick a session clip.
+
+- **Heart-rate chart overlay** (moving-playhead line) — the session's `hrSeries` (fetched by the
+  project's `sessionID` FK in the VM) maps across the **whole video**; a dot tracks the video's 0…1
+  progress. `HROverlayConfig` (optional on `StudioProject` → migration-safe) carries position/scale/
+  colour/showBPM/zoneColored. **Pure `HRChartGeometry`** (normalized points, time→bpm sampling) feeds
+  BOTH renderers, so they match: **preview** = a live SwiftUI chart (`StudioHRChartView` — line + dot +
+  live BPM, draggable), **export** = Core Animation in `StudioOverlays.hrLayer` (the polyline + a dot
+  animated along it via a `CAKeyframeAnimation` keyed to the timeline, bottom-left origin). HR overlay
+  config is threaded through `makeComposition`/`export`/`makeAnimationTool` (`hrSamples` + `hrConfig`);
+  it's not in the playback composition, so edits don't rebuild the player. Customization via the **HR**
+  action-bar tool (enable · colour · size · live-BPM · zone-colour); position by dragging the chart.
+
+**Rules out / caveats**: the **live BPM number is preview-only** (Core Animation can't keyframe a
+`CATextLayer`'s string) — export shows the line + moving dot (+ zone/colour). PiP+filter and PiP+
+transition still degrade (one custom `AVVideoCompositing` is the eventual unifier). **Device-pending
+visual**: PiP placement (Y-flip), the HR dot sync, and the export Core Animation chart need the user's
+device pass (the sim renders the SwiftUI preview chart but not the AV export). Unit suite **206
+(2 skipped), 0 failures**; studio UI walkthrough green on the iPhone 17 sim.
+
+## [2026-06-04] Studio editor → edits/CapCut layout (multi-phase redesign)
+
+**Decision**: Rebuild the multi-clip editor UI to the edits/CapCut layout the user referenced, in
+phases (separate commits, sim-UI-tested each). **Phase 1 (done)**: a custom **top bar** (X · editable
+title · export-quality menu · Export), a preview with a **controls-free `AVPlayerLayer`**
+(`StudioPlayerLayerView`, `.resizeAspect` so its displayed rect matches `ClipEditGeometry.displayRect`
+for overlay alignment) + a **custom transport** (play/pause + live `MM:SS / MM:SS` timecode driven by a
+periodic `AVPlayer` time observer in the VM, Swift-6-safe via `MainActor.assumeIsolated`), and a
+**contextual bottom action bar** (Split · Speed · Filter · Transition · Text · Canvas · Delete) whose
+value-pickers open a focused **bottom sheet** (`StudioToolSheet`). Split is now **playhead-driven**
+(`splitAtPlayhead` cuts the clip under `currentTime`). Export quality is a pure
+`StudioExportQuality` (preset-name string, no AVFoundation import) passed to `composer.export`, which
+falls back to HighestQuality if the preset is unsupported.
+
+**Why**: the prior vertical stack (preview / cards / controls list) couldn't reach edits-parity by
+accretion; the transport + action-bar + tool-sheet shell is the foundation the timeline/adjust/audio
+phases build on. NavigationStack chrome dropped for a custom dark top bar.
+
+**Phase 2 (done)** — `StudioTimelineView`: a **scrubbable** timeline (clip strips laid by output
+duration, a **fixed centre playhead**, a time ruler) where dragging seeks the preview + moves the
+playhead, and during playback the strip auto-advances (it's offset by `vm.currentTime`). Tap a strip to
+select; the selected video clip gets **drag-trim handles** (leading→`trimStart`, trailing→`trimEnd`),
+committed **once on drag-end** (live handle feedback is view-local → one undo entry + one rebuild).
+Clip strips are coloured placeholders — **thumbnail strips are a device-only follow-up**. The strip
+layout uses `StudioGeometry.timeline` placement (so a transition overlap shows clips overlapping; rare).
+
+**Rules out / notes**: the time observer is removed+reattached on each `rebuildPreview` (no leak); the
+end-of-play notification resets the playhead. At `t=0` the first clip strip starts at the centre
+playhead (so its centre is off-screen) — the studio UI walkthrough therefore asserts the action bar
+(reliable) and treats per-clip timeline selection as best-effort; a dedicated `StudioEditorUITests`
+covers selection/trim.
+
+**Phase 3 (done)** — **Adjust (colour)** + export quality. `ClipAdjust` (brightness/contrast/
+saturation) is an **optional** on `TimelineClip` (nil = neutral → migration-safe Codable add); the
+composer's CIFilter path applies it via `StudioFilters.applyAdjust` (`CIColorControls`) after any
+filter, and is now entered when a clip has a filter **or** a non-neutral adjust. Unlike overlays,
+adjust+filter **do** render in the live preview (CIFilter compositions are AVPlayerItem-legal). The
+Adjust tool sheet's sliders commit **on release** (`onEditingChanged`) → one rebuild per drag. Export
+quality (`StudioExportQuality`) was wired in Phase 1.
+
+**Phase 4 (done)** — **audio + overlay keyframes**. Per-clip **volume/mute** (`TimelineClip.volume`,
+optional → migration-safe) applied via an `AVAudioMix` the composer now returns alongside the
+composition + videoComposition (a triple; `rebuildPreview` sets `item.audioMix`, `export` sets
+`session.audioMix`). **Add music**: a `.fileImporter` (`.audio`) copies the pick into Documents →
+`AudioTrack(.music)`; the composer inserts it on its own audio track at `startSec` and volume-mixes it
+(missing file skipped → export-safe). **Overlay opacity keyframes**: an opacity slider + a marker
+button (`addOverlayKeyframeAtPlayhead`) capture opacity at the playhead into `OverlayItem.opacityKeyframes`
+(the export `StudioOverlays` already animates them). Contextual **overlay controls bar** (opacity ·
+keyframe · delete) replaces the clip action bar when an overlay is selected.
+
+**Rules out / follow-ups**: per-clip volume + **transition** path (transition audio is a plain stitch,
+no mix); music **fades**/trim UI; keyframed overlay **position/scale**; thumbnail timeline strips.
+**Honest caveat**: the audio mix (volume + music) and the music **file import** are device-only — the
+sim has no real clip audio and the import needs Files; the on-device export-success + the *sound* are
+owed by the user's device pass (per the repo rule). Verified Phases 1–4 on the iPhone 17 sim: studio UI
+walkthrough green; unit suite 199 (2 skipped), 0 failures.
+
+## [2026-06-04] Studio WYSIWYG overlay positioning — draggable SwiftUI layer over the preview (edits/CapCut pattern)
+
+**Decision**: Make text/sticker overlays **positionable by dragging them on the preview canvas**
+(user ask: "how to make sure / correct the location of the text overlay", with an edits/CapCut
+reference). Crucially, overlays are **NOT** rendered into the live preview video — the Core Animation
+overlay tool is export-only (the crash entry below) — so the editing surface is a **SwiftUI layer on
+top of the player** (`StudioOverlayCanvas`), exactly the edits/CapCut model where the chip is live UI
+and the pixels are burned in only at export.
+
+**Why it's correct (WYSIWYG by construction)**: `OverlayItem.position` is normalized `0…1`, top-left.
+**Export** maps it via `ClipEditGeometry.layerPoint` (→ CALayer, y-flipped); the **preview chip** maps
+the *same* normalized value into the **displayed video rect** (`ClipEditGeometry.displayRect` — the
+aspect-fit area inside the player, NOT the whole player frame) via the new `previewPoint` /
+`normalizedPoint` (inverse, clamped). Both read one normalized value ⇒ what you drag is what exports, at
+any resolution. Chip sizes mirror `StudioOverlays` (font = canvasH·0.05·scale, sticker = canvasH·0.12·
+scale). Because it's pure SwiftUI, **overlay positioning works on the simulator** (no device/Photos).
+
+**Shape**: pure `ClipEditGeometry.displayRect/previewPoint/normalizedPoint` + pure
+`StudioProjectEditor.setOverlayPosition` (clamped) — both unit-tested (6 new cases). VM gains
+`overlays`/`selectedOverlay`/`selectOverlay`/`setOverlayPosition`/`deleteOverlay` and an
+**`editOverlaysOnly`** path that commits+persists but **skips the player rebuild** (overlays aren't in
+the playback composition, so dragging mustn't restart playback). `addText` now selects the new overlay.
+Drag commits once (on end) via a `@GestureState` offset; selected chip shows a dashed ring + a Delete
+affordance.
+
+**Rules out / follow-ups**: overlay **resize/rotate** handles, **time-window** editing UI (still
+`[0,3]s` default), keyframed **position animation**, and exact `.original`-aspect fidelity (the editing
+rect falls back to 9:16 for `.original` since the VM doesn't track source size yet). Unit suite **195
+(2 skipped on sim), 0 failures**; device build + install green. **Visual confirm owed** (drag accuracy +
+the overlay landing in the exported file) — per the repo rule, tests prove the math/shape, not the look.
+
+## [2026-06-04] Studio multi-clip editor crashed on open — Core Animation tool is export-only (device-found)
+
+**Symptom**: opening the multi-clip Studio **aborted the app** on the device (SIGABRT). Pulled the crash
+report off MrRobot (`idevicecrashreport`; the `.ips` doesn't carry the NSException *reason*, but the
+backtrace did): `objc_exception_throw` → `-[AVPlayerItem setVideoComposition:]` →
+`StudioEditorViewModel.rebuildPreview()`. The on-device reason (captured by guarding the call, below):
+> *AVVideoCompositions using `AVVideoCompositionCoreAnimationTool` cannot be used with AVPlayerItem.
+> `AVVideoCompositionCoreAnimationTool` is for offline rendering only.*
+
+**Root cause**: `StudioComposer.makeComposition` attached the overlay `animationTool` to the **one**
+videoComposition reused for **both** export and the live `AVPlayer` **preview**. The tool is legal for
+export (`AVAssetExportSession`) but `AVPlayerItem` **rejects** it — and it rejects by raising an
+**Objective-C `NSException`, which a Swift `do/catch` cannot catch**, so the `rebuildPreview` try/catch
+didn't save it → process abort. The S0–S4 spike never caught this because it only ever drove the
+**export** path (`AVAssetExportSession`), never `AVPlayerItem` — preview on a real device was never
+exercised (the editor was sim-only + the cover-presentation fix).
+
+**Fix** (two parts):
+- **`forPlayback` flag** through `StudioComposer.makeComposition` / `assemble` / `assembleSingleTrack` /
+  `assembleWithTransitions`: when **true** the videoComposition **omits** the Core Animation tool.
+  `rebuildPreview` requests `forPlayback: true`; **export keeps `false`** (overlays still burn into the
+  file). Net: filters/transitions/transforms now preview live; **overlays don't show in the live
+  preview** (they do in export) — live overlay preview is a SwiftUI-overlay-layer follow-up (the
+  edits/CapCut WYSIWYG pattern), NOT `AVSynchronizedLayer` inside the composition.
+- **`Services/ObjCException`** (tiny ObjC `@try/@catch` + `Snappet-Bridging-Header.h`, wired via
+  `SWIFT_OBJC_BRIDGING_HEADER` on the app target): lets Swift catch AVFoundation `NSException`s.
+  `rebuildPreview` wraps `item.videoComposition = vc` in it — so an AVFoundation throw can **never**
+  abort the studio again; it degrades to an on-canvas message + an `os.Logger` line. **Keep this** — AV
+  raises ObjC exceptions in many places.
+
+**Rules out / notes**: don't reuse one videoComposition for both `AVPlayerItem` and export when it uses
+an `animationTool`. Verified on MrRobot: new `testPlaybackCompositionOmitsCoreAnimationToolAndExportKeepsIt`
+(playback omits the tool + `AVPlayerItem` accepts it; export keeps it) + the 7-path export spike both
+green; full unit suite **189 (2 skipped on sim), 0 failures**. **Honest caveat (unchanged)**: the device
+test proves no-crash + a valid composition, NOT that the preview *looks* right — that's the user's visual
+pass.
+
+## [2026-06-04] Studio effects batch — sticker/keyframed overlays, slide/zoom, filter+overlay; filter+transition deferred
+
+**Decision**: Filled out the studio effects (all device-export-verified via the spike, 7 paths):
+- **Sticker overlays** (tinted SF-Symbol CALayer) + **keyframed overlay opacity** (drives the visibility
+  animation from `opacityKeyframes` when present) — `StudioOverlays`.
+- **Slide / zoom transitions** — on the two-track path, ramp **track B's transform** over the overlap
+  (slide = full-width translate; zoom = scale about the canvas centre) instead of (or with) the dissolve
+  opacity ramp. B is always on top, so it animates in when incoming / out when outgoing.
+- **Filter + overlay** — attach the overlay animation tool to the CIFilter-handler path too.
+
+**Deliberately CUT (quality call): filter + transition combined.** It needs a custom
+`AVVideoCompositing` (the CIFilter handler composites tracks itself, so it can't cross-dissolve two
+tracks). I built one but it hit Swift 6 `AVVideoCompositing` Sendability friction AND can't be visually
+verified by a headless device test — shipping a blind, concurrency-fighting compositor is the wrong
+trade. **Removed it; the case degrades gracefully** (the dispatch falls through to the filter path →
+filters render, the transition is dropped). The unified compositor is the documented follow-up.
+
+**Rules out / follow-ups**: filter+transition (custom compositor), animated overlay **position** (only
+opacity keyframes today), Ken-Burns photos, audio cross-fade. **Honest caveat (unchanged)**: the spike
+proves each path produces valid, renderable video — NOT that slides/zooms/stickers/keyframes *look*
+right; that needs a visual pass (editor preview / exported file). Full unit suite 188 green (1 skipped).
+
+## [2026-06-04] S4 studio text overlays — Core Animation overlay tool (device-verified export)
+
+**Decision**: Added **time-gated text overlays**. `StudioOverlays` builds a Core Animation layer tree
+(a `CATextLayer` per `OverlayItem` — positioned via `ClipEditGeometry.layerPoint`, scaled/rotated/
+coloured, opacity-keyframed to appear only within `[startSec, endSec]`) composited via
+`AVVideoCompositionCoreAnimationTool` — the proven `VideoStudio.attachOverlays` pattern, generalized to
+`OverlayItem`. `StudioComposer` attaches it on the **instruction-based paths** (no-filter single-track /
+two-track transition); the editor's "Add text overlay" action now renders end-to-end.
+
+**Rules out / follow-ups**: **sticker** overlays (need image layers), **keyframed/animated** opacity &
+position, and **overlay-with-filter** (the CIFilter handler composites tracks itself, so the animation
+tool isn't wired on that path) — all deferred. The composer's three feature paths are unchanged; overlays
+ride the two instruction paths.
+
+**Verified on the iPhone 13 Pro Max** (the spike asserts it): a 16 s / 4-clip export **with a text
+overlay** succeeds in ~4.9 s (the Core Animation tool costs more than a CIFilter, still well under
+realtime). **Honest caveat**: export-success proves the composition is valid + renders — NOT that the
+text's position/size/timing *look* right; that needs the editor preview / exported file. Full unit suite
+188 green (1 skipped on the sim).
+
+## [2026-06-04] Present sheets/covers with `item:`, not `isPresented:` + separate state (device gotcha)
+
+**Decision**: The Studio cover opened as a **black empty screen on the device** (but worked on the
+simulator). Cause: `.fullScreenCover(isPresented: $openingStudio)` whose content read a **separate**
+`@State studioProject` — if SwiftUI evaluates the cover content before that assignment propagates,
+`if let project = studioProject` is nil → an empty (black) cover. Simulator timing hid it; the device
+exposed it. **Fix + rule**: when a presentation's content depends on a value, present **item-based**
+(`.fullScreenCover(item: $studioProject) { project in … }` / `.sheet(item:)`), so the cover presents only
+once the item is non-nil and the closure receives it — never an empty cover. Don't pair `isPresented:` with
+a separate "the thing to show" `@State`. (Found by on-device testing; confirmed fixed on the device.)
+
+## [2026-06-04] S3 studio transitions — dissolve via a two-track opacity ramp (device-verified export)
+
+**Decision**: Added **dissolve transitions** between clips. Architecture: when any transition is set
+(and no clip has a filter — the CIFilter handler composites tracks itself, so it can't combine), clips
+**alternate between two video tracks** (A = even, B = odd) placed with the `StudioGeometry.timeline`
+overlaps; **track B is composited on top and its opacity is ramped** over each overlap — fading B IN when
+it's the incoming clip, OUT when it's outgoing — so the always-opaque track A underneath is revealed /
+covered to cross-dissolve. Chosen because a single-track composition can't show two clips at once, and
+this **track-B-ramp-only** scheme avoids per-segment instruction juggling and a custom compositor. Gaps on
+each track are padded with `insertEmptyTimeRange`. The S1 editor's transition picker already drives it.
+
+**Rules out / follow-ups**: slide/zoom transitions (transform ramps), combining a transition WITH a filter
+(needs the unified Core Image compositor), and audio cross-fade during the overlap — all deferred.
+
+**Verified on the iPhone 13 Pro Max** (the spike asserts it): a 16 s / 4-clip / 3-dissolve export succeeds
+in ~2.8 s. **Honest caveat**: export-success proves the two-track composition is valid and renders — it
+does NOT verify the crossfade *looks* right (no automated visual check); that needs the editor preview /
+exported file. Full unit suite 188 green (1 skipped on the sim). The composer now has three feature paths
+(single-track transform · CIFilter handler · two-track dissolve), split into `assembleSingleTrack` /
+`assembleWithTransitions` for clean `sending` ownership.
+
+## [2026-06-04] S2 studio filters — Core Image colour filters, device-verified
+
+**Decision**: Built the first S2 effect — per-clip **colour filters** (mono / noir / fade / vivid / warm /
+cool) — on the device-proven export path (S0). Architecture:
+- **`StudioFilters`** (pure Core Image, unit-tested on the sim): `StudioFilter` + intensity → a configured
+  `CIFilter`, with `apply()` + `aspectFill()` helpers. Warm/cool use a simple `CIColorMatrix` channel
+  shift (avoids `CITemperatureAndTint`'s dual-neutral subtlety); vivid uses `CIColorControls`; mono/noir/
+  fade are `CIPhotoEffect*`.
+- **`StudioComposer`** routes any clip-with-a-filter through `AVMutableVideoComposition(asset:
+  applyingCIFiltersWithHandler:)` — AVFoundation hands each frame to the handler as a `CIImage`, we
+  aspect-fill to the canvas and apply the active clip's filter (looked up by the request's composition
+  time). No-filter clips keep the layer-instruction transform/crop path. **Chose the CIFilter-handler API
+  over a custom `AVVideoCompositing`** — far less coordinate/pixel-buffer risk for the same result.
+- The S1 editor's filter picker now renders end-to-end (preview + export) with no UI change.
+
+**Why it matters / rules out**: this is the template for the rest of S2+ (transitions, keyframed overlays
+ride the same compositor). **Known follow-up**: the filter path currently aspect-fills (it supersedes the
+per-clip *crop* transform) — combining precise crop WITH a filter is deferred.
+
+**Verified on the iPhone 13 Pro Max** (the S0/S2 spike, now asserting it): a 16 s / 4-clip **filtered
+(vivid)** export succeeds in ~3.0 s vs ~2.6 s transform-only — Core Image per-frame adds ~15 %, still
+~0.2x realtime. Full unit suite **188 green** (4 new `StudioFiltersTests` incl. a warm-vs-cool channel
+check; 1 skipped on the sim).
+
+## [2026-06-04] S0 studio-export spike — **GO** (videoComposition export fixed; root cause = empty audio track)
+
+**Decision / finding**: Ran the S0 device-profiling spike (`StudioComposerProfilingTests`, on the iPhone
+13 Pro Max via free-Personal-Team signing) to gate the S2+ compositor. Verdict **CONDITIONAL GO**, full
+write-up in [`live-workout-studio/RESULTS-S0.md`](../prompts/features/live-workout-studio/RESULTS-S0.md):
+- **Capacity is ample** — a 16 s / 4-clip / 1080×1920 multi-clip **stitch** (passthrough) remuxes in
+  **~0.1 s** on-device. Export time/memory is a non-issue at this scale (the design's worry is moot).
+- **The export *mechanism* is the blocker** — applying our hand-built `AVMutableVideoComposition` (the
+  transform/crop / future-effects path) fails `AVFoundationError -11838` ("operation not supported",
+  underlying `OSStatus -16976`) on-device for **every** transcode preset (HighestQuality / HEVC /
+  1920x1080). Passthrough-without-videoComposition is the only path that exports.
+- The spike also **caught + fixed a real composition bug**: `StudioComposer.assemble` emitted one layer
+  instruction per clip on the same single track (malformed) → now one layer instruction with per-clip
+  `setTransform(at:)`. Also refactored `makeComposition` to expose an AVAsset-based `assemble(resolved:)`
+  seam (decoupled from Photos) so the export is testable on-device without a Photos library.
+
+**Why it matters**: the same `AVMutableVideoComposition()` + manual-instruction pattern ships in
+`VideoStudio` (the B3 clip editor), which was **never device-tested** — so clip-editor *export* is almost
+certainly broken on real hardware too. This is exactly the device-gated risk S0 exists to surface before
+sinking effort into S2+.
+
+**Rules out / next**: do **not** start S2 (filters/transitions/keyframes) until the videoComposition
+export works on-device — they all ride the failing transcode path. Next task: fix the export (try
+`AVMutableVideoComposition(propertiesOf:)` as the base; else a custom `AVVideoCompositing` +
+`AVAssetReader`/`Writer` pipeline), apply the same fix to `VideoStudio`, and flip the S0 spike from
+`skip` to a timing assertion.
+
+**RESOLVED same day — verdict is GO.** The -11838 root cause was **an empty audio track**, not the
+`AVMutableVideoComposition` per se: `StudioComposer.assemble` added an audio track up front, and a source
+with **no audio** (the synthetic test clip, and any audio-less real video) left it 0-duration, which the
+on-device videoComposition export rejects (passthrough tolerates it). Ruled the rest out one device run
+each (preset, pixel format, color tags, bare-vs-propertiesOf init, 1-vs-4 clips). **Fix**: create the
+audio track **lazily** (only when a clip has audio); also kept the one-layer-instruction-per-track fix and
+switched to `videoComposition(withPropertiesOf:)`. **Transform export now works on-device at ~0.2x
+realtime** (a 4 s clip ~0.76 s). **Correction**: `VideoStudio` (clip editor) **already** adds audio
+lazily, so it was never broken — only `StudioComposer`. **Verified**: the S0 spike now PASSES on-device
+(asserts both the stitch and the transform/videoComposition export); full unit suite 184 green (1 skipped,
+on the sim). **S2+ (filters/transitions/keyframes) is unblocked** — no export-mechanism blocker remains.
+
+## [2026-06-03] Full studio S1 shipped — multi-clip StudioProject + editor (sim-verified)
+
+**Decision**: Built Track S **S1** (the full CapCut-style studio's foundation) as verifiable layers,
+deliberately keeping the pixel pipeline honest:
+- **Pure, unit-tested core** (no device): `StudioProject` `@Model` (multi-clip timeline — TimelineClips
+  with trim/speed/crop/filter/Ken-Burns keyframes, transitions, overlays, audio tracks, canvas
+  aspect/background); `StudioGeometry` (timeline placement with transition overlaps, clip durations,
+  keyframe interpolation); `StudioProjectEditor` (snapshot edit ops) + a generic `UndoStack`. **31 unit
+  tests** (16 geometry + 15 editor/undo) — the two that initially failed caught a real reorder bug
+  (reindex was re-sorting by the stale `order`).
+- **Device-only render** (`StudioComposer`, build-verified only): generalizes `VideoStudio` to a
+  multi-clip composition (sequential trim+speed clips, per-clip orientation+crop on a shared canvas),
+  reused for preview + export.
+- **Editor UI** (`StudioEditorView` + VM): timeline (select/reorder/split/delete), per-clip
+  speed/filter/transition, aspect, text, undo/redo, Export → Share; opened from `SessionDetailView` over
+  the session's `StudioProject` (seeded from its video clips). Preview/export show a device-only
+  placeholder on the sim.
+
+**Why**: a multi-clip editor can't grow out of the single-clip `ClipEdit` by accretion — it needs a
+timeline document + a generalized composer. Making the edit model a value snapshot kept undo/redo and
+every edit op **pure and testable without a device**.
+
+**Verified**: iPhone 17 sim — the studio walkthrough opens the editor, renders the two seeded clips in
+the timeline, splits one, and undoes it (11c/11d frames); full unit + UI suites green. The UI test caught
+a real presentation bug (a `.fullScreenCover` on a Group-of-Sections inside a List never presents — moved
+it onto the launching Button).
+
+**Deferred (S2+, device-only, gated by the S0 profiling spike — NOT built)**: the custom
+`AVVideoCompositing` that actually *renders* filters/LUTs, transitions, keyframed overlay effects,
+captions, and masks; Ken-Burns photos; the audio mix. The `StudioProject` model already carries all of
+this intent — only the compositor pass is pending. **Rules out** writing that compositor blind: it can't
+be sim-verified, and device verification is itself blocked on Xcode signing setup (no Apple ID / profiles
+yet — `feat/live-workout-per-set-media` builds for the sim but a device install needs the team account
+added in Xcode).
+
+## [2026-06-03] Per-set media + full CapCut studio — direction set (design only, no code yet)
+
+**Decision**: Extend the live-workout-studio initiative with two user-requested capabilities, captured
+as a design review in [`pdd/prompts/features/live-workout-studio/DESIGN-full-studio.md`](../prompts/features/live-workout-studio/DESIGN-full-studio.md)
+(decomposed into a Track M + Track S prompt chain). Three forks were resolved by the user (2026-06-03):
+
+- **"Side" = each set**, with reassignment + a non-set **General** bucket. Media gets *set-scoped* on top
+  of session-scoped: additive `assignedExerciseID` / `assignedSetIndex` / `assignmentSourceRaw` on
+  `SessionMedia` (lightweight migration; existing rows fall into General). A set is referenced by
+  `(SessionExercise.id, setIndex)` — **not** a new `SetLog.id` — because `SetLog` is a positional Codable
+  value and a `Codable` default-UUID id mints fresh ids on each decode of old data until re-saved (a
+  silent-break migration hazard). Auto-assignment is a **pure, unit-tested** function
+  (`SessionMediaAssignment`, the `SessionHighlightInput`/`ClipEditGeometry` edge pattern): a clip is
+  assigned to the set whose `(prevCompletion, thisCompletion]` interval contains its offset; a rest-period
+  clip belongs to the set just completed. A `manual`/`general` provenance flag makes user choices sticky
+  against re-runs.
+- **Full CapCut parity** for the editor. The current single-`ClipEdit` editor **cannot** reach parity by
+  accretion; it's superseded by a `StudioProject` timeline document (multi-clip main track + overlay/audio
+  tracks + transitions + keyframes), a custom `StudioCompositor: AVVideoCompositing` (Core Image/Metal) for
+  filters/LUTs/transitions/masks, and an incremental-recomposition preview for smoothness. `B3`'s
+  single-clip behavior survives as the one-clip-project case. **GO, fully on-device** (AVFoundation + Core
+  Image + Vision + Speech), no backend — the only real risk is multi-clip+effects export/preview perf,
+  gated by an **S0 device profiling spike** before committing compositor depth.
+- **Capture = library auto-discover + PHPicker** (no in-app `AVCaptureSession` camera this round) — so the
+  set is *inferred* from capture time, which is exactly why M1 is a pure assignment algorithm with
+  manual-override.
+
+**Why**: closes the two real gaps the user hit — media is session-scoped (no per-set link) and the editor
+is single-clip — while reusing the proven non-destructive / pure-math-at-the-edge pipeline and keeping
+`HighlightEngine` untouched.
+
+**Rules out**: per-rep/per-exercise granularity (chose per-set); a `SetLog.id` FK this round; in-app camera
+capture this round; growing `ClipEdit` into a multi-clip model (a new `StudioProject` instead); any
+cloud/off-device render (unchanged hard constraint).
+
+**Implemented same day (Track M — per-set media)**: shipped `SessionMediaAssignment` (pure, Foundation-only)
++ additive `SessionMedia` assignment fields; rebuilt `SessionDetailView`'s gallery into per-set groups +
+a General bucket with a per-clip **Move to…** reassignment menu (sticky `manual`/`general`, reconciled on
+appear / after discovery); extended `StudioDemoSeed` with spaced per-set completions + 4 synthetic clips
+(3 sets + General) for the walkthrough. **Verified on the iPhone 17 sim**: full unit suite green incl. the
+new `SessionMediaAssignmentTests` (7 cases), **all 16 UI cases across 12 classes green** (incl. the studio
+walkthrough, which now captures the grouped gallery + the reassignment menu), `HighlightEngine` unchanged.
+A screenshot walkthrough video was produced (`docs/walkthroughs/per-set-media-studio-walkthrough.mp4`).
+
+**Still design-only / unproven (Track S — full CapCut studio)**: the `StudioProject` timeline, custom
+`StudioCompositor`, filters/transitions/keyframes/captions are **not** built — they're device-only and
+gated by the S0 profiling spike (can't be honestly sim-verified, so deliberately not faked in the
+walkthrough). That is the next executable step.
+
 ## [2026-06-03] BLE band connection — auto-detect already-connected bands + remember the last one
 
 **Decision**: Make Bluetooth heart-rate-band connection automatic instead of a manual "open the picker,

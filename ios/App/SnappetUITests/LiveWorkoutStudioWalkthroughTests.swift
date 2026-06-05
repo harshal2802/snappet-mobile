@@ -15,10 +15,12 @@ import XCTest
 /// the real state):
 ///  - RENDERS: suite home, app library, dashboard, routines, routine detail / Start bar, the
 ///    live player (A2 overall-timer header + A4 live-metrics overlay no-source state), the rest
-///    screen, finish, History, the seeded session's **B2 HR summary**, the B1 media section's
-///    empty state + the B4 "Generate highlight" entry (disabled — no video on the sim), Settings,
-///    the A3 heart-rate source picker sheet.
-///  - DEVICE-ONLY (not shown here): a real live-HR overlay value, tagged media thumbnails, the
+///    screen, finish, History, the seeded session's **B2 HR summary**, the **media gallery grouped
+///    by set + a General bucket** (seeded synthetic clips) with the per-clip "Move to…"
+///    reassignment menu + the now-enabled "Generate highlight" entry, Settings, the A3 heart-rate
+///    source picker sheet.
+///  - DEVICE-ONLY (not shown here): a real live-HR overlay value, real media thumbnails (the
+///    seeded clips render their placeholder — the grouping/reassignment UI is model-driven), the
 ///    B3 clip editor, an actual generated highlight reel — they need a paired Apple Watch / BLE
 ///    band + a real Photos video. Expected; the seed showcases the HR summary + the live UI.
 final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
@@ -80,6 +82,14 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                     || app.staticTexts["liveMetricsOverlay"].waitForExistence(timeout: 1),
                     "the player should show the A4 live-metrics overlay (no-source state)")
 
+                // 6b — M3: the per-set "attach clip to this set" affordance is reachable in the
+                // player (the PHPicker pick itself is device-only; the affordance renders anywhere).
+                let attach = app.buttons["attachClipToSet"]
+                if !attach.exists { app.swipeUp() }
+                XCTAssertTrue(attach.waitForExistence(timeout: 3),
+                    "the player should offer the M3 per-set media attach affordance")
+                snap("06b-attach-to-set")
+
                 // 7 — Drive a couple of sets to reach the rest screen (overall timer + overlay
                 // + rest countdown), then finish.
                 driveToRestThenFinish()
@@ -110,16 +120,110 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 "the seeded session's summary should render the B2 HR chart / Heart rate section")
             sleep(1); snap("10-session-summary-hr")
 
-            // 11 — The B1 tagged-media section + the B4 "Generate highlight" entry (empty/
-            // disabled on the sim — snap the real state). Scroll down to bring it into view.
+            // 11 — The tagged-media gallery, now grouped **by set** with a **General** bucket
+            // (seeded synthetic clips — thumbnails are placeholders on the sim, but the per-set
+            // grouping + reassignment UI is model-driven and renders fully). Scroll it into view.
             let summary = app.collectionViews.firstMatch.exists
                 ? app.collectionViews.firstMatch : app.tables.firstMatch
             if app.staticTexts["Media from this workout"].waitForExistence(timeout: 3) == false {
                 summary.swipeUp(); summary.swipeUp()
             }
-            snap("11-media-and-highlight")
-            // The Generate-highlight button exists but is disabled (no video on the sim).
+            // A per-set group header (e.g. "… · Set 1") and the General bucket should be present.
+            let setHeader = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "Set 1")).firstMatch
+            let generalHeader = app.staticTexts["General"]
+            for _ in 0..<3 where !(setHeader.exists && generalHeader.exists) { summary.swipeUp() }
+            XCTAssertTrue(setHeader.waitForExistence(timeout: 3) || generalHeader.exists,
+                          "the gallery should group clips by set and/or a General bucket")
+            snap("11-media-grouped-by-set")
+            // The Generate-highlight button now enables (the seed includes videos).
             _ = app.buttons["generateHighlight"].waitForExistence(timeout: 3)
+
+            // 11b — The per-clip "Move to…" reassignment menu (fix a wrong auto-guess / pin to
+            // General). Long-press a media thumbnail to surface the context menu. The thumb is an
+            // accessibility element labelled "<kind> at +Ns"; it surfaces as an otherElement /
+            // image / cell, so try each. Best-effort: snap the menu if it opens, else snap the
+            // gallery state (never flakes the run).
+            // A SwiftUI context menu via long-press is flaky in XCUITest, so retry a few times,
+            // pressing the thumb's centre coordinate (more reliable than element.press) and
+            // nudging the scroll between attempts to re-seat the layout.
+            var openedMenu = false
+            for attempt in 0..<3 {
+                guard let thumb = firstMediaThumb() else { break }
+                thumb.press(forDuration: 2.0)
+                if app.buttons["Move to…"].waitForExistence(timeout: 3) { openedMenu = true; break }
+                thumb.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 2.0)
+                if app.buttons["Move to…"].waitForExistence(timeout: 3) { openedMenu = true; break }
+                if attempt < 2 { summary.swipeUp() }
+            }
+            if openedMenu {
+                snap("11b-reassign-menu")
+                app.tap()   // dismiss the context menu without changing anything
+            } else {
+                snap("11b-reassign-menu-NOTSHOWN")
+            }
+
+            // 11g — REGRESSION: tapping a VIDEO opens the clip editor and it STAYS open. It used to
+            // collapse on the first open (creating the ClipEdit saved mid-presentation, tearing the
+            // sheet down). The editor's "Done" must still be present a moment after it appears.
+            if let videoThumb = firstVideoMediaThumb() {
+                videoThumb.tap()
+                if app.buttons["clipEditorDone"].waitForExistence(timeout: 4) {
+                    usleep(900_000)
+                    XCTAssertTrue(app.buttons["clipEditorDone"].exists,
+                                  "the clip editor must stay open on the first tap, not collapse")
+                    snap("11g-clip-editor")
+                    app.buttons["clipEditorDone"].tap()
+                }
+            }
+
+            // 11c — The full multi-clip Studio (S1): open it over the session's video clips and
+            // exercise the timeline + an edit (split) + undo. The preview render is device-only, so
+            // on the sim the canvas shows its placeholder while the timeline + edits work on the
+            // model. Best-effort (the editor is reachable only when the session has videos).
+            // The "Open studio" button is in the actions section (above the grouped clips); steps
+            // 11/11b scrolled DOWN to General, so scroll back UP (swipeDown) to bring it into view.
+            let openStudio = app.buttons["openStudio"]
+            for _ in 0..<5 where !openStudio.exists { summary.swipeDown() }
+            if openStudio.waitForExistence(timeout: 3), openStudio.isEnabled {
+                openStudio.tap()
+                if app.buttons["studioExport"].waitForExistence(timeout: 6)
+                    || app.navigationBars["Studio"].waitForExistence(timeout: 1) {
+                    XCTAssertTrue(app.staticTexts["Preview renders on a device"].waitForExistence(timeout: 3)
+                                  || app.otherElements["studioPreview"].exists,
+                                  "the studio should show its preview canvas")
+                    // The edits-style chrome (always present): transport, export-quality, action bar.
+                    XCTAssertTrue(app.buttons["studioPlayPause"].waitForExistence(timeout: 3),
+                                  "the studio transport (play/pause) should appear")
+                    XCTAssertTrue(app.buttons["studioQuality"].exists, "the export-quality control should appear")
+                    XCTAssertTrue(app.buttons["studioSplit"].waitForExistence(timeout: 3),
+                                  "the studio action bar should appear")
+                    snap("11c-studio")
+                    // Best-effort: select the first clip strip and split at the playhead, then undo.
+                    let clip = app.buttons["timelineClip"].firstMatch
+                    if clip.waitForExistence(timeout: 2), clip.isHittable { clip.tap() }
+                    if app.buttons["studioSplit"].isEnabled {
+                        app.buttons["studioSplit"].tap()
+                        XCTAssertTrue(app.buttons["studioUndo"].isEnabled, "undo enables after a split")
+                        snap("11d-studio-edit")
+                        app.buttons["studioUndo"].tap()    // undo the split
+                    }
+                    // Open a tool sheet from an on-screen action: "Speed" is near the start of the bar.
+                    // (Deeper interactions on the scrolling action bar / clipped timeline are covered
+                    // by the device verification checklist — they're flaky to drive on the sim.)
+                    let speed = app.buttons["Speed"]
+                    if speed.exists, speed.isHittable, app.buttons["studioSplit"].isEnabled {
+                        speed.tap()
+                        if app.staticTexts["Speed"].waitForExistence(timeout: 2) {
+                            snap("11e-studio-tool-sheet")
+                            app.swipeDown()   // dismiss the sheet
+                        }
+                    }
+                    app.buttons["studioClose"].tap()
+                } else {
+                    snap("11c-studio-NOTREACHED")
+                }
+            }
 
             // Pop back to the section view for Settings.
             app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -166,6 +270,32 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
             if sheetMarker.waitForExistence(timeout: 4) { return true }
         }
         return false
+    }
+
+    /// A media thumbnail in the grouped gallery (accessibilityIdentifier "mediaThumb"). It can
+    /// surface as an otherElement / image / cell depending on layout, so try each. Returns the
+    /// first hittable match (or `nil` — the 11b snap is best-effort, never flakes the run).
+    private func firstMediaThumb() -> XCUIElement? {
+        let queries = [app.otherElements.matching(identifier: "mediaThumb"),
+                       app.images.matching(identifier: "mediaThumb"),
+                       app.cells.matching(identifier: "mediaThumb")]
+        for q in queries {
+            let el = q.firstMatch
+            if el.waitForExistence(timeout: 2), el.isHittable { return el }
+        }
+        return nil
+    }
+
+    /// The first **video** media thumb (label "Video at +Ns") — videos open the clip editor on tap.
+    private func firstVideoMediaThumb() -> XCUIElement? {
+        func match(_ base: XCUIElementQuery) -> XCUIElement {
+            base.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "mediaThumb", "Video"))
+                .firstMatch
+        }
+        for el in [match(app.otherElements), match(app.images), match(app.cells)] {
+            if el.waitForExistence(timeout: 2), el.isHittable { return el }
+        }
+        return nil
     }
 
     // MARK: - Player driving

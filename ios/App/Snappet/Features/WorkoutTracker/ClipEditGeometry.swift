@@ -191,6 +191,31 @@ enum ClipEditGeometry {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
+    // MARK: - Picture-in-picture rect + transform
+
+    /// The PiP frame in canvas pixels: a box of `scale` × the canvas, centred at the normalized
+    /// position (0…1, top-left). Clamped so it stays a sane size. Both the on-screen editing frame
+    /// and the composer transform derive from this, so what you place is what renders.
+    static func pipRect(normalizedCenter: CGPoint, scale: Double, canvas: CGSize) -> CGRect {
+        let s = min(1, max(0.1, scale))
+        let w = canvas.width * s
+        let h = canvas.height * s
+        let cx = min(max(normalizedCenter.x, 0), 1) * canvas.width
+        let cy = min(max(normalizedCenter.y, 0), 1) * canvas.height
+        return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
+    }
+
+    /// Affine transform that **aspect-fills** an oriented `sourceSize` into `rect` (centred, cropped to
+    /// the rect's aspect) — applied AFTER the track's `preferredTransform`. Used to place a PiP video.
+    static func fillTransform(sourceSize: CGSize, into rect: CGRect) -> CGAffineTransform {
+        let srcW = max(1, abs(sourceSize.width)), srcH = max(1, abs(sourceSize.height))
+        let scale = max(rect.width / srcW, rect.height / srcH)
+        let scaledW = srcW * scale, scaledH = srcH * scale
+        let tx = rect.minX + (rect.width - scaledW) / 2
+        let ty = rect.minY + (rect.height - scaledH) / 2
+        return CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: tx, ty: ty)
+    }
+
     // MARK: - Normalized overlay position → layer point
 
     /// Map a normalized overlay position (`x,y` in 0…1, **top-left origin** like SwiftUI) to a
@@ -200,5 +225,40 @@ enum ClipEditGeometry {
         let x = min(max(normalized.x, 0), 1) * size.width
         let yTopDown = min(max(normalized.y, 0), 1) * size.height
         return CGPoint(x: x, y: size.height - yTopDown)   // flip to CALayer's bottom-left origin
+    }
+
+    // MARK: - On-screen preview placement (WYSIWYG overlay editing)
+
+    /// The rectangle the video actually occupies inside a preview area of `container` points: the
+    /// canvas `ratio` (width:height) **aspect-fit and centered** (letterboxed/pillarboxed). The
+    /// draggable overlay layer positions against THIS rect — not the whole player frame — so a
+    /// dragged overlay maps to the same normalized 0…1 the export `layerPoint` reads (WYSIWYG).
+    static func displayRect(ratio: CGFloat, in container: CGSize) -> CGRect {
+        guard ratio > 0, container.width > 0, container.height > 0 else {
+            return CGRect(origin: .zero, size: container)
+        }
+        let containerRatio = container.width / container.height
+        let w: CGFloat, h: CGFloat
+        if containerRatio > ratio {        // container is wider than the canvas → fit the height
+            h = container.height; w = h * ratio
+        } else {                           // container is taller/narrower → fit the width
+            w = container.width; h = w / ratio
+        }
+        return CGRect(x: (container.width - w) / 2, y: (container.height - h) / 2, width: w, height: h)
+    }
+
+    /// Normalized overlay position (`0…1`, **top-left origin** — SwiftUI style, the same value the
+    /// export `layerPoint` consumes) → a SwiftUI point (the overlay's centre) inside `rect`.
+    static func previewPoint(normalized: CGPoint, in rect: CGRect) -> CGPoint {
+        CGPoint(x: rect.minX + min(max(normalized.x, 0), 1) * rect.width,
+                y: rect.minY + min(max(normalized.y, 0), 1) * rect.height)
+    }
+
+    /// Inverse of `previewPoint`: a SwiftUI point (e.g. where a drag ended) → normalized `0…1`
+    /// top-left position, clamped to the canvas so an overlay can't be dragged off-frame.
+    static func normalizedPoint(fromPreview point: CGPoint, in rect: CGRect) -> CGPoint {
+        guard rect.width > 0, rect.height > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+        return CGPoint(x: min(max((point.x - rect.minX) / rect.width, 0), 1),
+                       y: min(max((point.y - rect.minY) / rect.height, 0), 1))
     }
 }

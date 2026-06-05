@@ -36,7 +36,7 @@ targets:
       base:
         INFOPLIST_FILE: Snappet/Resources/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app
-        DEVELOPMENT_TEAM: P6U6C88W9J
+        DEVELOPMENT_TEAM: 8TRC99V9PN
         # App icon comes from Resources/Assets.xcassets/AppIcon.appiconset
         # (Snappet/ is already a source path, so the catalog + PrivacyInfo.xcprivacy
         # are compiled/bundled automatically — only the icon name needs declaring).
@@ -48,6 +48,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: NO
+        # Lets Swift catch NSException raised by AVFoundation (e.g. AVPlayerItem.setVideoComposition)
+        # via Services/ObjCException — Swift do/catch can't, and an uncaught one aborts the app.
+        SWIFT_OBJC_BRIDGING_HEADER: Snappet/Snappet-Bridging-Header.h
     entitlements:
       path: Snappet/Resources/Snappet.entitlements
       properties:
@@ -66,7 +69,7 @@ targets:
       base:
         INFOPLIST_FILE: SnappetWatch/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app.watchkitapp
-        DEVELOPMENT_TEAM: P6U6C88W9J
+        DEVELOPMENT_TEAM: 8TRC99V9PN
         INFOPLIST_KEY_CFBundleDisplayName: Snappet
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.snappet.app
         MARKETING_VERSION: "0.1.0"
@@ -95,7 +98,7 @@ targets:
       base:
         INFOPLIST_FILE: SnappetWidgets/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.app.widgets
-        DEVELOPMENT_TEAM: P6U6C88W9J
+        DEVELOPMENT_TEAM: 8TRC99V9PN
         INFOPLIST_KEY_CFBundleDisplayName: Snappet
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -120,6 +123,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.unittests
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: 8TRC99V9PN
+        CODE_SIGN_STYLE: Automatic
   SnappetUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -133,6 +138,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.snappet.uitests
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: YES
+        DEVELOPMENT_TEAM: 8TRC99V9PN
+        CODE_SIGN_STYLE: Automatic
 schemes:
   Snappet:
     build:

@@ -88,6 +88,10 @@ final class ClipEdit {
     /// keeps the original audio per `mutedOriginalAudio`).
     var musicTrackName: String?
 
+    /// Heart-rate chart overlay config (nil = off). Optional → migration-safe additive field. The HR
+    /// samples come from the session (sliced to this clip's capture window) at edit/export time.
+    var hrOverlay: HROverlayConfig?
+
     var createdAt: Date
     var updatedAt: Date
 
@@ -97,6 +101,7 @@ final class ClipEdit {
          aspect: ClipEditGeometry.OutputAspect = .portrait9x16,
          speed: Double = 1.0, textOverlays: [TextOverlay] = [],
          mutedOriginalAudio: Bool = false, musicTrackName: String? = nil,
+         hrOverlay: HROverlayConfig? = nil,
          createdAt: Date = .now) {
         self.id = id
         self.sessionMediaID = sessionMediaID
@@ -113,6 +118,7 @@ final class ClipEdit {
         self.textOverlays = textOverlays
         self.mutedOriginalAudio = mutedOriginalAudio
         self.musicTrackName = musicTrackName
+        self.hrOverlay = hrOverlay
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }

@@ -10,6 +10,9 @@ to the existing `HighlightEngine`.
 **Tracking**: GitHub issue [#15](https://github.com/harshal2802/snappet-mobile/issues/15).
 **Chosen direction (user, 2026-06-01)**: Apple Watch companion first · unify WorkoutTracker + engine ·
 full CapCut-style editor.
+**Follow-on (user, 2026-06-03)**: per-**set** media (with reassignment + a General bucket) and **full
+CapCut parity** — designed in [`DESIGN-full-studio.md`](./DESIGN-full-studio.md) (Track M + Track S
+prompt chain; supersedes the single-clip `B3`, extends `B1`). Read it before authoring M/S prompts.
 
 ## Where we are
 

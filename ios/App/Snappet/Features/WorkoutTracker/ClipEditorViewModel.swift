@@ -20,6 +20,11 @@ final class ClipEditorViewModel {
 
     private(set) var state: State = .idle
     private(set) var previewPlayer: AVPlayer?
+    /// Playhead seconds (for the live HR-chart overlay dot), updated by a periodic observer.
+    private(set) var currentTime: Double = 0
+    private var timeObserver: Any?
+    /// The session's HR samples sliced to this clip's capture window (rebased to 0), set by the view.
+    private(set) var hrSamples: [HRPoint] = []
 
     /// B5: the export → share / save-to-Photos flow (the rendered `.mp4` is carried in `.exported`
     /// so share + save reuse the single render). Drives the editor's bottom action bar.
@@ -41,6 +46,10 @@ final class ClipEditorViewModel {
         self.save = save
     }
 
+    // The periodic time observer is removed before each `rebuild` reattaches one; at dealloc the
+    // player and its `[weak self]` observer block are released together (a nonisolated `deinit` can't
+    // touch these @MainActor properties under Swift 6), so it doesn't accumulate or dangle.
+
     // MARK: - Lifecycle
 
     /// Load the source duration (for the trim handles) and build the first preview.
@@ -56,14 +65,29 @@ final class ClipEditorViewModel {
         buildToken += 1
         let token = buildToken
         state = .building
+        // The preview composition does NOT include the HR chart (Core Animation overlays are
+        // export-only — AVPlayerItem rejects them); the HR chart previews as a SwiftUI layer. So
+        // build the player WITHOUT hrSamples; export passes them.
         let plan = EditPlan(edit)   // snapshot on the MainActor; the @Model never crosses actors
         do {
-            let (composition, videoComposition) = try await studio.makeComposition(for: plan)
+            let (composition, videoComposition) = try await studio.makeComposition(for: plan, forPlayback: true)
             guard token == buildToken else { return }   // a newer edit superseded this build
             let item = AVPlayerItem(asset: composition)
-            item.videoComposition = videoComposition
+            // `AVPlayerItem.setVideoComposition` raises an ObjC NSException (uncatchable by Swift) for a
+            // composition it rejects — guard via the ObjC bridge so the editor never aborts; fall back
+            // to the raw composition (the preview omits the offline-only animation tool already).
+            if let videoComposition, ObjCException.catching({ item.videoComposition = videoComposition }) != nil {
+                item.videoComposition = nil
+            }
             previewPlayer?.pause()
-            previewPlayer = AVPlayer(playerItem: item)
+            if let timeObserver { previewPlayer?.removeTimeObserver(timeObserver); self.timeObserver = nil }
+            let player = AVPlayer(playerItem: item)
+            timeObserver = player.addPeriodicTimeObserver(
+                forInterval: CMTime(seconds: 0.05, preferredTimescale: 600), queue: .main) { [weak self] t in
+                MainActor.assumeIsolated { self?.currentTime = t.seconds }
+            }
+            previewPlayer = player
+            currentTime = 0
             state = .ready
         } catch {
             guard token == buildToken else { return }
@@ -155,7 +179,7 @@ final class ClipEditorViewModel {
     /// to Photos. Re-exporting from any state is allowed (a later edit produces a fresh render).
     func export() async {
         exportState = exportState.beginningExport()
-        let plan = EditPlan(edit)   // snapshot on the MainActor; the @Model never crosses actors
+        let plan = EditPlan(edit, hrSamples: hrSamples)   // snapshot on the MainActor; HR burns into export
         do {
             let url = try await studio.export(plan)
             exportState = exportState.exportSucceeded(url)
@@ -165,7 +189,7 @@ final class ClipEditorViewModel {
         }
     }
 
-    /// Save the already-exported file to the user's Photos library (add-only, on-device).
+    /// Save the already-exported file to the user's Photos library as a **new copy** (add-only).
     func saveToPhotos() async {
         guard let url = exportState.exportedURL else { return }
         exportState = exportState.beginningSave()
@@ -176,6 +200,50 @@ final class ClipEditorViewModel {
             exportState = exportState.failed(
                 (error as? LocalizedError)?.errorDescription ?? "Couldn't save to Photos.")
         }
+    }
+
+    /// **Overwrite the original** video in Photos with the edited render (reversible in Photos).
+    /// Destructive — the view confirms before calling this.
+    func overwriteOriginal() async {
+        guard let url = exportState.exportedURL else { return }
+        exportState = exportState.beginningSave()
+        do {
+            try await library.overwriteVideoAsset(localIdentifier: edit.localIdentifier, with: url)
+            exportState = exportState.saveSucceeded()
+        } catch {
+            exportState = exportState.failed(
+                (error as? LocalizedError)?.errorDescription ?? "Couldn't overwrite the original.")
+        }
+    }
+
+    // MARK: - Heart-rate chart overlay (preview = SwiftUI layer; export = Core Animation)
+
+    /// The clip's output duration (trimmed span ÷ speed) — the HR chart maps over this.
+    var outputDuration: Double {
+        ClipEditGeometry.scaledDuration(sourceDuration: max(0, effectiveTrimEnd - edit.trimStart), speed: edit.speed)
+    }
+
+    /// Set the HR samples for this clip's capture window (the view slices them from the session).
+    func setHRSamples(_ samples: [HRPoint]) { hrSamples = samples }
+
+    func toggleHROverlay() { edit.hrOverlay = edit.hrOverlay == nil ? .default : nil; persistHRChange() }
+    func updateHROverlay(_ config: HROverlayConfig) { edit.hrOverlay = config; persistHRChange() }
+    func setHRPosition(_ normalized: CGPoint) {
+        guard var c = edit.hrOverlay else { return }
+        c.position = CGPoint(x: min(max(normalized.x, 0), 1), y: min(max(normalized.y, 0), 1))
+        updateHROverlay(c)
+    }
+    func setHRScale(_ scale: Double) {
+        guard var c = edit.hrOverlay else { return }
+        c.scale = min(1, max(0.3, scale)); updateHROverlay(c)
+    }
+
+    /// HR config isn't in the preview composition (it's a SwiftUI overlay), so persist WITHOUT a
+    /// player rebuild — but invalidate any prior export (the rendered file no longer matches).
+    private func persistHRChange() {
+        edit.updatedAt = .now
+        save()
+        if !exportState.isBusy { exportState = .idle }
     }
 
     // MARK: - Persist + invalidate
