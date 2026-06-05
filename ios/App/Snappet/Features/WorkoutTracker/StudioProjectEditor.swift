@@ -215,6 +215,53 @@ enum StudioProjectEditor {
         s.overlays[i].position = CGPoint(x: min(max(position.x, 0), 1), y: min(max(position.y, 0), 1))
         return s
     }
+
+    /// Replace an overlay's text/content (the studio's "Edit text", or re-deriving a climb caption).
+    static func setOverlayContent(_ s: StudioProjectSnapshot, id: UUID, content: String) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].content = content
+        return s
+    }
+
+    /// Set an overlay's on-screen window `[start, end]` (output seconds) — the timeline lane's
+    /// move/trim commit. Clamped to `start ≥ 0` with a minimum 0.2s length so the bar can't collapse.
+    static func setOverlayTimeRange(_ s: StudioProjectSnapshot, id: UUID,
+                                    start: Double, end: Double) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        let minLen = 0.2
+        let lo = max(0, min(start, end))
+        let hi = max(lo + minLen, max(start, end))
+        s.overlays[i].startSec = lo
+        s.overlays[i].endSec = hi
+        return s
+    }
+
+    /// Set a PiP (`.video`) overlay's per-axis frame: a normalized centre + size (fractions of the
+    /// canvas, each clamped 0.1…1) — the commit point for corner-resize / grid placement.
+    static func setOverlayFrame(_ s: StudioProjectSnapshot, id: UUID,
+                                center: CGPoint, size: CGSize) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].position = CGPoint(x: min(max(center.x, 0), 1), y: min(max(center.y, 0), 1))
+        s.overlays[i].pipSize = CGSize(width: min(1, max(0.1, size.width)),
+                                       height: min(1, max(0.1, size.height)))
+        return s
+    }
+
+    /// Arrange the PiP (`.video`) overlays into a collage `preset`, in track order, by assigning each
+    /// the corresponding cell's frame. Overlays beyond the preset's capacity keep their frame.
+    static func applyPiPGrid(_ s: StudioProjectSnapshot, preset: StudioGridLayout.Preset) -> StudioProjectSnapshot {
+        var s = s
+        let videoIdx = s.overlays.indices.filter { s.overlays[$0].kind == .video }
+        let cells = StudioGridLayout.frames(preset: preset, count: videoIdx.count)
+        for (n, i) in videoIdx.enumerated() where n < cells.count {
+            s.overlays[i].position = cells[n].center
+            s.overlays[i].pipSize = cells[n].size
+        }
+        return s
+    }
 }
 
 /// A minimal generic undo/redo stack of immutable states. Pure and value-typed, so it's unit-tested

@@ -158,9 +158,11 @@ struct StudioTransition: Codable, Hashable, Sendable, Identifiable {
 /// same shape later). Visible while `startSec ≤ playhead ≤ endSec` (output time); position/opacity
 /// can be keyframed. Normalized position is the centre in 0…1 (top-left origin, SwiftUI-style).
 struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
-    /// `text`/`sticker` are Core-Animation overlays (export-only render); `video` is a
+    /// `text`/`sticker`/`climbName` are Core-Animation overlays (export-only render); `video` is a
     /// **picture-in-picture** clip composited as a second video track (renders in preview + export).
-    enum Kind: String, Codable, Sendable { case text, sticker, video }
+    /// `climbName` renders like text but as a styled lower-third chip, auto-filled from the clip's
+    /// assigned climb (name · grade · angle, optionally the setter) — the text stays freely editable.
+    enum Kind: String, Codable, Sendable { case text, sticker, video, climbName }
 
     var id: UUID
     var kindRaw: String
@@ -170,6 +172,11 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var endSec: Double
     var normalizedX: Double, normalizedY: Double
     var scale: Double
+    /// PiP (`.video`) **per-axis** frame size as a fraction of the canvas (0…1). `nil` falls back to
+    /// the uniform `scale` (the pre-grid behaviour), so old projects decode unchanged; grid layouts +
+    /// corner-resize write these to make true split-screen cells possible.
+    var normalizedWidth: Double? = nil
+    var normalizedHeight: Double? = nil
     var rotationDegrees: Double
     var opacity: Double
     var colorHex: String
@@ -177,7 +184,8 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var opacityKeyframes: [StudioKeyframe]
 
     init(id: UUID = UUID(), kind: Kind, content: String, startSec: Double = 0, endSec: Double = 3,
-         position: CGPoint = CGPoint(x: 0.5, y: 0.5), scale: Double = 1, rotationDegrees: Double = 0,
+         position: CGPoint = CGPoint(x: 0.5, y: 0.5), scale: Double = 1,
+         normalizedWidth: Double? = nil, normalizedHeight: Double? = nil, rotationDegrees: Double = 0,
          opacity: Double = 1, colorHex: String = "#FFFFFF", opacityKeyframes: [StudioKeyframe] = []) {
         self.id = id
         self.kindRaw = kind.rawValue
@@ -186,6 +194,8 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
         self.endSec = endSec
         self.normalizedX = position.x; self.normalizedY = position.y
         self.scale = scale
+        self.normalizedWidth = normalizedWidth
+        self.normalizedHeight = normalizedHeight
         self.rotationDegrees = rotationDegrees
         self.opacity = min(1, max(0, opacity))
         self.colorHex = colorHex
@@ -195,6 +205,12 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var position: CGPoint {
         get { CGPoint(x: normalizedX, y: normalizedY) }
         set { normalizedX = newValue.x; normalizedY = newValue.y }
+    }
+    /// The PiP frame size (width, height) as fractions of the canvas — per-axis when set, else the
+    /// uniform `scale` on both axes (back-compatible default).
+    var pipSize: CGSize {
+        get { CGSize(width: normalizedWidth ?? scale, height: normalizedHeight ?? scale) }
+        set { normalizedWidth = newValue.width; normalizedHeight = newValue.height }
     }
 }
 

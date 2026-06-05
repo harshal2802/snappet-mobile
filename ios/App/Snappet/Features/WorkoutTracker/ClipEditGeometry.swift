@@ -197,9 +197,18 @@ enum ClipEditGeometry {
     /// position (0…1, top-left). Clamped so it stays a sane size. Both the on-screen editing frame
     /// and the composer transform derive from this, so what you place is what renders.
     static func pipRect(normalizedCenter: CGPoint, scale: Double, canvas: CGSize) -> CGRect {
-        let s = min(1, max(0.1, scale))
-        let w = canvas.width * s
-        let h = canvas.height * s
+        pipRect(normalizedCenter: normalizedCenter,
+                size: CGSize(width: scale, height: scale), canvas: canvas)
+    }
+
+    /// Per-axis variant: the PiP frame for an explicit normalized `size` (width/height as fractions of
+    /// the canvas, clamped 0.1…1) — supports non-square collage cells (split-screen) and free corner
+    /// resize. The uniform `scale` overload delegates here with a square size.
+    static func pipRect(normalizedCenter: CGPoint, size: CGSize, canvas: CGSize) -> CGRect {
+        let sw = min(1, max(0.1, size.width))
+        let sh = min(1, max(0.1, size.height))
+        let w = canvas.width * sw
+        let h = canvas.height * sh
         let cx = min(max(normalizedCenter.x, 0), 1) * canvas.width
         let cy = min(max(normalizedCenter.y, 0), 1) * canvas.height
         return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
