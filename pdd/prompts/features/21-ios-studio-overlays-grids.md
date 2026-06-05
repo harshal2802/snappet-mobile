@@ -121,3 +121,16 @@ A device pass on the above surfaced four issues; fixed in the same PR (see `deci
 Builds clean; full simulator suite green (298 unit tests incl. `setBaseFrame`/`clearBaseFrame`,
 `StudioFrameRect.isFull`, widened `setOverlayScale`). **Device-unverified**: flicker-free feel,
 base-frame export on real footage, climb-name pinch/Size sizing in the rendered file.
+
+### Follow-up 2 — PiP/base placement (2026-06-05)
+
+Device screenshot showed the composited PiP offset down + wider than its outline. Two composer bugs:
+- **Wrong Y origin**: `insertPiPTrack`/`mainClipTransform` flipped Y assuming a bottom-left layer-
+  instruction space; it's actually **top-left** (proven by the verified `cropTransform`). Dropped the flip.
+- **Overflow**: aspect-**fill** spilled past the frame (a layer instruction can't clip a sub-rect).
+  Added `ClipEditGeometry.fitTransform` (aspect-fit); PiP + base use it.
+- **Square default**: `addPiP` now sizes the frame to the source aspect (`StudioComposer.sourceAspect`)
+  so the aspect-fit PiP fills its frame without letterbox.
+
+Verified: full suite green (299) incl. a `fitTransform` containment test. Device-unverified: PiP/base sit
+exactly under the outline in preview + export.

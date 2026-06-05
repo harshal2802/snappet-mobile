@@ -26,6 +26,9 @@ final class StudioEditorViewModel {
     var selectedClipID: UUID?
     var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
+    /// Resolved oriented aspect ratio (w/h) per source `localIdentifier` — sizes a new PiP / base cell
+    /// to its footage so the editor outline matches the aspect-fit video. Empty on the simulator.
+    private(set) var sourceAspects: [String: CGFloat] = [:]
     /// The session's heart-rate samples (for the HR chart overlay), loaded on appear from the FK.
     private(set) var hrSeries: [HRPoint] = []
     var previewPlayer: AVPlayer?
@@ -161,6 +164,10 @@ final class StudioEditorViewModel {
         for clip in clips where !clip.isPhoto && sourceDurations[clip.id] == nil {
             if let d = await composer.sourceDuration(localIdentifier: clip.localIdentifier) {
                 sourceDurations[clip.id] = d
+            }
+            if sourceAspects[clip.localIdentifier] == nil,
+               let a = await composer.sourceAspect(localIdentifier: clip.localIdentifier) {
+                sourceAspects[clip.localIdentifier] = a
             }
         }
         await rebuildPreview()
@@ -520,13 +527,31 @@ final class StudioEditorViewModel {
         }
     }
     /// Add a picture-in-picture overlay from a source clip's `localIdentifier`, defaulting to a small
-    /// top-right frame spanning the whole timeline.
+    /// top-right frame (sized to the source's aspect, so the outline matches the aspect-fit video).
     func addPiP(localIdentifier: String) {
+        let size = defaultPiPSize(localIdentifier: localIdentifier)
         let ov = OverlayItem(kind: .video, content: localIdentifier, startSec: 0,
                              endSec: max(3, totalDuration),
-                             position: CGPoint(x: 0.72, y: 0.28), scale: 0.4)
+                             position: CGPoint(x: 0.72, y: 0.28),
+                             normalizedWidth: size.width, normalizedHeight: size.height)
         edit { StudioProjectEditor.addOverlay($0, ov) }
         selectedOverlayID = ov.id
+    }
+
+    /// A default PiP frame (fraction of canvas) whose **on-screen** aspect matches the source footage —
+    /// so the aspect-fit PiP fills its frame with no letterbox. Falls back to a square when the source
+    /// aspect isn't resolved (simulator). `pipSize.w/pipSize.h = sourceAspect / canvasAspect` because the
+    /// frame is normalized to the (non-square) canvas.
+    private func defaultPiPSize(localIdentifier: String) -> CGSize {
+        let canvasAspect = previewRatio
+        guard let a = sourceAspects[localIdentifier], a > 0, canvasAspect > 0 else {
+            return CGSize(width: 0.4, height: 0.4)
+        }
+        let ratio = a / canvasAspect       // pipSize.width / pipSize.height
+        let base = 0.45
+        return ratio >= 1
+            ? CGSize(width: base, height: min(1, base / ratio))
+            : CGSize(width: min(1, base * ratio), height: base)
     }
 
     func deleteOverlay(_ id: UUID) {

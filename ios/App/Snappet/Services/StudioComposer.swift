@@ -313,9 +313,10 @@ final class StudioComposer: Sendable {
     }
 
     /// Insert a **picture-in-picture** clip on its own video track and return its layer instruction
-    /// (aspect-filled into the PiP frame, oriented, time-gated to `[startSec, endSec]`). Returns nil if
-    /// the source has no video track. The PiP frame's vertical centre is flipped to the video
-    /// composition's bottom-left origin (matching the overlay `layerPoint` convention).
+    /// (aspect-FIT into the PiP frame, oriented, time-gated to `[startSec, endSec]`). Returns nil if the
+    /// source has no video track. The frame is placed in the layer-instruction render space, which is
+    /// **top-left origin** (NOT the Core-Animation overlay's bottom-left), so the PiP lands exactly where
+    /// the editor outline shows it.
     private func insertPiPTrack(_ ov: OverlayItem, asset: AVAsset, into composition: AVMutableComposition,
                                 canvas: CGSize) async -> AVMutableVideoCompositionLayerInstruction? {
         guard let pv = try? await asset.loadTracks(withMediaType: .video).first,
@@ -337,9 +338,11 @@ final class StudioComposer: Sendable {
         } catch { return nil }
 
         let li = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
-        let center = CGPoint(x: ov.normalizedX, y: 1 - ov.normalizedY)   // flip Y to bottom-left origin
-        let rect = ClipEditGeometry.pipRect(normalizedCenter: center, size: ov.pipSize, canvas: canvas)
-        li.setTransform(pref.concatenating(ClipEditGeometry.fillTransform(sourceSize: oriented, into: rect)), at: .zero)
+        // Top-left origin — the layer-instruction render space (same as cropTransform), matching the
+        // editor's SwiftUI outline; NO Y flip. Aspect-FIT so the PiP stays inside its frame (a layer
+        // instruction can't clip its track, so a fill would spill past the frame onto the rest of the canvas).
+        let rect = ClipEditGeometry.pipRect(normalizedCenter: ov.position, size: ov.pipSize, canvas: canvas)
+        li.setTransform(pref.concatenating(ClipEditGeometry.fitTransform(sourceSize: oriented, into: rect)), at: .zero)
         // Visible only within the window (opacity 0 outside). Honor the overlay's opacity (it
         // defaults to 1 in the initializer, so no special-casing 0).
         let op = Float(min(1, max(0, ov.opacity)))
@@ -515,6 +518,19 @@ final class StudioComposer: Sendable {
         return d
     }
 
+    /// The source clip's **oriented** aspect ratio (width / height, after `preferredTransform`), or
+    /// `nil` if unresolved. The studio uses it to size a new PiP's frame to its footage so the editor
+    /// outline matches the aspect-fit video (no letterbox), and to set the base-video cell.
+    func sourceAspect(localIdentifier id: String) async -> CGFloat? {
+        guard let asset = await avAsset(forLocalIdentifier: id),
+              let v = try? await asset.loadTracks(withMediaType: .video).first else { return nil }
+        let nat = (try? await v.load(.naturalSize)) ?? .zero
+        let pref = (try? await v.load(.preferredTransform)) ?? .identity
+        let o = orientedSize(nat, transform: pref)
+        guard o.width > 0, o.height > 0 else { return nil }
+        return o.width / o.height
+    }
+
     /// The off-canvas pose for a slide/zoom transition, relative to a clip's in-place `base` transform.
     /// slide = a full-width translation (enter-from / exit-to a side); zoom = a small scale about the
     /// canvas centre. `incoming` flips the side so the clip enters from the opposite edge it exits to.
@@ -536,17 +552,17 @@ final class StudioComposer: Sendable {
     }
 
     /// The transform that places a main-track clip onto the canvas: orientation THEN either the normal
-    /// crop→full-canvas (no base frame) OR an aspect-fill into the base **collage frame** (a sub-rect
-    /// of the canvas — the rest shows the canvas background). The frame uses the same bottom-left,
-    /// flipped-Y convention as a PiP (`insertPiPTrack`), so base + PiP cells line up. A per-clip crop
-    /// is ignored while framed (crop-WITH-frame is a follow-up — decisions.md).
+    /// crop→full-canvas (no base frame) OR an aspect-FIT into the base **collage frame** (a sub-rect of
+    /// the canvas — the rest shows the canvas background). The frame is in the layer-instruction
+    /// **top-left** render space (no Y flip), the same as a PiP (`insertPiPTrack`), so base + PiP cells
+    /// line up with each other and with the editor outline. A per-clip crop is ignored while framed
+    /// (crop-WITH-frame is a follow-up — decisions.md).
     private func mainClipTransform(preferred: CGAffineTransform, orientedSize: CGSize,
                                    cropRect: CGRect, canvas: CGSize,
                                    baseFrame: StudioFrameRect?) -> CGAffineTransform {
         if let bf = baseFrame, !bf.isFull {
-            let center = CGPoint(x: bf.centerX, y: 1 - bf.centerY)   // flip Y to bottom-left origin
-            let rect = ClipEditGeometry.pipRect(normalizedCenter: center, size: bf.size, canvas: canvas)
-            return preferred.concatenating(ClipEditGeometry.fillTransform(sourceSize: orientedSize, into: rect))
+            let rect = ClipEditGeometry.pipRect(normalizedCenter: bf.center, size: bf.size, canvas: canvas)
+            return preferred.concatenating(ClipEditGeometry.fitTransform(sourceSize: orientedSize, into: rect))
         }
         let crop = ClipEditGeometry.cropTransform(cropRect: cropRect, sourceSize: orientedSize, renderSize: canvas)
         return preferred.concatenating(crop)

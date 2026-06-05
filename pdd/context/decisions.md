@@ -2050,3 +2050,30 @@ follow-up); base video as a grid-preset cell (presets stay PiP-only). **Verified
 green on the simulator (298 unit tests) — `setBaseFrame`/`clearBaseFrame` clamp+toggle, `StudioFrameRect.isFull`,
 the widened `setOverlayScale` clamp. **Device-unverified** (device-only rule): the actual flicker-free feel,
 base-frame **export** on real footage, and pinch/Size sizing of the climb-name in the rendered file.
+
+## 2026-06-05 — PiP/base placement: top-left render space + aspect-FIT + source-aspect default (P21)
+
+A device screenshot showed the composited PiP **offset down** from its editor outline AND **wider than
+the frame**. Root-caused to two composer bugs in `insertPiPTrack` / `mainClipTransform`. **(1) Wrong Y
+origin** — the PiP frame flipped Y (`1 - normalizedY`) assuming the `AVMutableVideoCompositionLayer
+Instruction` render space is bottom-left (the convention the Core-Animation OVERLAY tool genuinely uses,
+`layerPoint`). But the layer-INSTRUCTION space is **top-left** — proven by the device-verified
+`cropTransform` (clip-editor zoom-crop), which targets the same space and does NOT flip. The flip pushed
+the PiP down by `(1−2y)·H`, matching the screenshot. Fix: drop the flip, place against `ov.position`
+directly (top-left), so the composited PiP lands exactly where the SwiftUI outline shows it. **(2)
+Overflow** — `fillTransform` aspect-FILLS (cover), but a layer instruction can't clip its track to a
+sub-rect, so the excess spills past the frame onto the rest of the canvas. Fix: a new
+`ClipEditGeometry.fitTransform` (aspect-FIT / contain) keeps the whole source inside its frame; PiP and
+base both use it. **(3) Square default** — a new PiP defaulted to a `0.4×0.4` (canvas-aspect) frame, so a
+non-9:16 source letterboxed inside it (looks misaligned). Fix: `addPiP` sizes the frame to the source's
+oriented aspect (`StudioComposer.sourceAspect`, resolved on appear into `sourceAspects`), so
+`pipSize.w/pipSize.h = sourceAspect / canvasAspect` and the aspect-fit PiP fills its frame. **Why top-left,
+not bottom-left**: the two render spaces (layer-instruction vs the Core-Animation overlay tree) genuinely
+differ; the original code conflated them. Matching `cropTransform` (verified) is the reliable tiebreak.
+**Why fit, not fill+crop**: precise per-PiP cropping needs a mask layer (custom `AVVideoCompositing`),
+deferred; fit is the no-overflow, no-mask choice. **Rules out**: a bottom-left flip for PiP/base; aspect-
+fill without a clip; a fixed square PiP default. **Follow-up**: when a user resizes a PiP frame to an
+aspect ≠ its source, the video fits within (a small letterbox) — drawing the outline at the exact fitted
+rect (needs the source aspect in the canvas) is a further polish. **Verified**: builds clean, full suite
+green incl. a new `fitTransform` containment test. **Device-unverified**: that the PiP/base now sit exactly
+under the outline in preview AND export.
