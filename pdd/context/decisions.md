@@ -1929,3 +1929,48 @@ as "via Apple Watch / Heart-rate band" in the summary) instead of a misleading d
 of a duplicate duration formatter. Deferred (noted, not blocking): the `KilterLiveActivityController` /
 `KilterActivityAttributes` / `KilterLiveActivity` trio duplicates the workout Live-Activity stack — a generic
 parameterized over the attributes type would collapse it, but the split keeps the flagship path untouched.
+
+## 2026-06-05 — Kilter clip editing: per-clip / per-climb scope (shared project), Climb panel
+
+**Decision**: Give Kilter per-clip and per-climb editing scopes **without** a second project or a separate
+single-clip editor — one session `StudioProject` + a **visibility filter** is the whole mechanism.
+`StudioEditorViewModel` gained `visibleClipMediaIDs: Set<UUID>?` (default `nil` = workout's whole-project
+behavior, so the studio is untouched); a pure `StudioGeometry.filterByMedia(_:to:)` restricts the *display,
+timeline, preview, and export* to the clips backed by those `SessionMedia.id`s, while the **edit path is
+left alone** — `StudioProjectEditor` still mutates the full `snapshot.clips` by clip id. That asymmetry is
+the point: a per-clip trim writes to the shared project, so it reappears in "Edit all" and the session-wide
+studio automatically (one source of truth). Preview/export read a `scopedSnapshot` (a filtered value copy of
+the snapshot), so **`StudioComposer` and `StudioTimelineView` need no changes** — they render whatever the
+VM hands them; transitions whose `afterClipID` points at a hidden clip are simply never matched among the
+filtered neighbors (graceful; the 1-clip scope has none). Entry points unify in `KilterSessionDetailView`
+through one `ClipStudioPresentation` → a single `fullScreenCover`: tap a clip → `{clip.id}` + its climb;
+"Edit all · N" (only when a climb has ≥2 video clips) → that climb's clip ids + climb; bottom "Open studio"
+→ `nil` scope, no climb. The new `KilterClipStudio` wraps the scoped `StudioEditorView` with a floating
+"Climb ✎" button (shown only when a single climb is known) presenting `KilterClimbPanel`, which resolves the
+in-session `KilterLogEntry` (the same `(sessionId, climbUUID)` fetch `existingSessionEntry` uses) + the
+catalog climb, shows read-only name/grade/board, and write-through-edits angle / result+tries / a new
+`note`, plus per-clip "Move clip to another climb" (`assignedClimbUUID`). **`KilterLogEntry.note: String? =
+nil`** is additive/defaulted → lightweight migration (the `attemptTimestamps`/`startedAt` precedent),
+`SnappetSchema.models` unchanged. **Why**: scoping as a filtered *view* over a shared model keeps edits in
+one place and reuses the entire studio + the foundation's `openStudio` reconcile, instead of forking a
+per-clip `ClipEdit` editor or copying clips between projects. **Rules out**: a separate single-clip project;
+threading a filter through the composer/timeline (the scoped-snapshot copy makes that unnecessary); a Climb
+panel coupled to studio-internal selection (the climb is known from the entry point). **Verified**:
+`xcodebuild test` — new `StudioGeometryTests.filterByMedia*` (nil passes through, set keeps only matching
+`sessionMediaID`, orphan clips excluded, single-clip scope) + `KilterLogEntryTests` (`note` default/round-
+trip/mutate); "Edit all" grouping already covered by `KilterWorkoutBuilderTests`. `HighlightEngine` `swift
+test` unchanged. **Device-unverified** per the device-only rule: the scoped preview/export render on real
+footage and the Climb-panel edits' on-screen feel — deferred to a device with clips.
+
+**Self-review hardening (same day).** Two follow-ups from reviewing the scope filter: **(a)** the studio's
+clip **reorder** is made scope-correct — `moveSelected` was indexing the *scoped* visible list while
+`StudioProjectEditor.moveClip` reindexes the *full* project, so a reorder in a scoped editor (with hidden
+clips before the window) would have mis-ordered the shared session order. A pure
+`StudioGeometry.reorderDestination(id:by:visible:full:)` maps a visible-subset move to the full-list index
+(swap with the adjacent *visible* neighbor, hidden clips undisturbed; unscoped it's the plain `index+delta`),
+unit-tested. The reorder UI is currently dormant, so this is a latent-bug fix, not a behavior change. **(b)**
+An **unassigned** single clip can now be tagged to a climb from inside the scoped editor: `KilterClimbPanel`'s
+`climbUUID` became optional (nil ⇒ an "Assign clip to a climb" action only), and `KilterClipStudio` shows the
+floating button for any per-clip scope and resolves the climb **live** from the clip's `assignedClimbUUID`
+(reading the `@Model` clip) — so assigning upgrades the button/panel to the full Climb panel in place,
+without reopening. Previously an unassigned clip's only reassignment path was the gallery long-press menu.

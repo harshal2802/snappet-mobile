@@ -23,12 +23,24 @@ struct KilterSessionDetailView: View {
 
     @State private var importing = false
     /// Multi-clip Studio project for this session — all clip editing (trim/speed/crop/text/HR overlay)
-    /// happens here, with a full-screen preview; tapping a clip opens it focused on that clip.
-    @State private var studioProject: StudioProject?
-    /// `SessionMedia.id` of the clip to pre-select when the Studio opens (nil = no focus).
-    @State private var studioFocusMediaID: UUID?
+    /// happens here, with a full-screen preview; tapping a clip opens it scoped to that clip (with a
+    /// Climb panel), a per-climb "Edit all" opens its clips together, and the bottom button opens the
+    /// whole session.
+    @State private var clipStudio: ClipStudioPresentation?
     /// Present the shared reel editor (preview / pin / remove / reorder / export).
     @State private var showingReel = false
+
+    /// A scoped presentation of the session's shared Studio. `visibleClipMediaIDs` filters the studio
+    /// to one clip (per-clip) or a climb's clips (per-climb); `nil` is the whole session. A non-nil
+    /// `climbUUID` shows the floating Climb panel; `singleClip` enables "Move clip to another climb".
+    private struct ClipStudioPresentation: Identifiable {
+        let id = UUID()
+        let project: StudioProject
+        let visibleClipMediaIDs: Set<UUID>?
+        let focusClipMediaID: UUID?
+        let climbUUID: String?
+        let singleClip: SessionMedia?
+    }
 
     private var session: KilterSession? { allSessions.first { $0.id == sessionID } }
     private var entries: [KilterLogEntry] { allEntries.filter { $0.sessionId == sessionID } }
@@ -73,9 +85,14 @@ struct KilterSessionDetailView: View {
             }
         }
         // All clip editing happens in the full-screen Studio (big preview + trim/speed/crop/text/HR
-        // overlay + multi-clip timeline). Tapping a clip opens it focused on that clip.
-        .fullScreenCover(item: $studioProject) { project in
-            StudioEditorView(project: project, context: modelContext, focusClipMediaID: studioFocusMediaID)
+        // overlay + multi-clip timeline), scoped to the tapped clip / climb / whole session, with a
+        // floating Climb panel for the per-clip & per-climb scopes.
+        .fullScreenCover(item: $clipStudio) { p in
+            KilterClipStudio(project: p.project, context: modelContext,
+                             visibleClipMediaIDs: p.visibleClipMediaIDs,
+                             focusClipMediaID: p.focusClipMediaID,
+                             sessionId: sessionID, climbUUID: p.climbUUID,
+                             singleClip: p.singleClip, climbTargets: climbReassignTargets)
         }
     }
 
@@ -283,16 +300,31 @@ struct KilterSessionDetailView: View {
         .padding(.horizontal)
     }
 
-    /// A horizontal strip of the clips tagged to one climb. Tap a video to edit it; long-press to
-    /// move it to another climb or remove it.
+    /// A horizontal strip of the clips tagged to one climb. Tap a video to edit just that clip;
+    /// long-press to move it to another climb or remove it. When the climb has ≥2 video clips, an
+    /// "Edit all · N" button opens them together in one scoped studio.
     @ViewBuilder private func climbMediaStrip(climbUUID: String) -> some View {
         let clips = KilterMediaGrouping.clips(for: climbUUID, in: media,
                                               climbUUIDOf: { $0.assignedClimbUUID }, offsetOf: { $0.offsetSec })
         if !clips.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) { ForEach(clips) { mediaThumb($0) } }
+            let videoCount = clips.filter { $0.kind == .video }.count
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) { ForEach(clips) { mediaThumb($0) } }
+                    }
+                    .accessibilityIdentifier("kilter.climbMedia")
+                    if videoCount >= 2 {
+                        Button { editAllClips(forClimb: climbUUID) } label: {
+                            Label("Edit all · \(videoCount)", systemImage: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .labelStyle(.titleOnly)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("kilter.climbMedia.editAll")
+                    }
+                }
             }
-            .accessibilityIdentifier("kilter.climbMedia")
         }
     }
 
@@ -346,7 +378,7 @@ struct KilterSessionDetailView: View {
                 .buttonStyle(.borderedProminent).tint(SnappetColor.moduleAccent("kilter"))
                 .disabled(videoCount == 0)
                 .accessibilityIdentifier("kilter.summary.generateReel")
-                Button { openStudio(session) } label: {
+                Button { presentStudio(session, visible: nil, focusing: nil, climbUUID: nil, single: nil) } label: {
                     Label("Open studio (multi-clip)", systemImage: "film.stack").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).disabled(videoCount == 0)
@@ -388,6 +420,11 @@ struct KilterSessionDetailView: View {
         }
     }
 
+    /// The same targets in the shape the Climb panel's "Move clip" menu expects.
+    private var climbReassignTargets: [KilterClimbTarget] {
+        climbTargets.map { KilterClimbTarget(uuid: $0.uuid, name: $0.name) }
+    }
+
     private func reassign(_ clip: SessionMedia, to climbUUID: String?) {
         clip.assignedClimbUUID = climbUUID
         clip.assignmentSource = climbUUID == nil ? .general : .manual
@@ -399,21 +436,47 @@ struct KilterSessionDetailView: View {
         try? modelContext.save()
     }
 
-    /// Open the Studio focused on a tapped clip (videos only — photos aren't clip-editable).
+    /// Tap a clip → open the studio **scoped to just that clip** (big preview), with the Climb panel
+    /// for the clip's climb. Videos only — photos aren't clip-editable.
     private func editClip(_ clip: SessionMedia) {
         guard clip.kind == .video, let session else { return }
-        openStudio(session, focusing: clip.id)
+        presentStudio(session, visible: [clip.id], focusing: clip.id,
+                      climbUUID: clip.assignedClimbUUID, single: clip)
     }
 
-    /// Find or create this session's `StudioProject` (seeded from its video clips in capture order) and
-    /// present the multi-clip studio — the same one the workout side uses. `focusing` pre-selects a clip.
-    private func openStudio(_ session: KilterSession, focusing focusMediaID: UUID? = nil) {
-        studioFocusMediaID = focusMediaID
+    /// "Edit all · N" on a climb's strip → open the studio scoped to that climb's video clips together,
+    /// with the Climb panel for the climb.
+    private func editAllClips(forClimb climbUUID: String) {
+        guard let session else { return }
+        let ids = Set(climbVideoClips(climbUUID).map(\.id))
+        presentStudio(session, visible: ids, focusing: nil, climbUUID: climbUUID, single: nil)
+    }
+
+    /// The video clips tagged to one climb, in capture order (the "Edit all" set / its count).
+    private func climbVideoClips(_ climbUUID: String) -> [SessionMedia] {
+        KilterMediaGrouping.clips(for: climbUUID, in: media,
+                                  climbUUIDOf: { $0.assignedClimbUUID }, offsetOf: { $0.offsetSec })
+            .filter { $0.kind == .video }
+    }
+
+    /// Build the scoped presentation over this session's shared `StudioProject`. `visible` filters the
+    /// studio (nil = whole session); a non-nil `climbUUID` shows the Climb panel; `single` enables
+    /// "Move clip to another climb".
+    private func presentStudio(_ session: KilterSession, visible: Set<UUID>?, focusing: UUID?,
+                               climbUUID: String?, single: SessionMedia?) {
+        let project = resolveStudioProject(session)
+        clipStudio = ClipStudioPresentation(project: project, visibleClipMediaIDs: visible,
+                                            focusClipMediaID: focusing, climbUUID: climbUUID,
+                                            singleClip: single)
+    }
+
+    /// Find or create this session's `StudioProject` (seeded from its video clips in capture order),
+    /// reconciling any videos discovered after it was created so every clip is editable. Returns the
+    /// one project all scopes share — the same one the workout side uses.
+    private func resolveStudioProject(_ session: KilterSession) -> StudioProject {
         let sid = session.id
         if let existing = try? modelContext.fetch(
             FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
-            // Add any videos discovered after the project was created, so every clip is editable
-            // (and a freshly-tapped clip can be focused).
             let present = Set(existing.clips.compactMap(\.sessionMediaID))
             let missing = media.filter { $0.kind == .video && !present.contains($0.id) }
                 .sorted { $0.offsetSec < $1.offsetSec }
@@ -427,20 +490,19 @@ struct KilterSessionDetailView: View {
                 }
                 try? modelContext.save()
             }
-            studioProject = existing
-        } else {
-            let clips = media.filter { $0.kind == .video }
-                .sorted { $0.offsetSec < $1.offsetSec }
-                .enumerated()
-                .map { i, m in
-                    TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
-                                 isPhoto: false, order: i, trimEnd: m.durationSec)
-                }
-            let project = StudioProject(sessionID: sid, title: "Kilter session", clips: clips)
-            modelContext.insert(project)
-            try? modelContext.save()
-            studioProject = project
+            return existing
         }
+        let clips = media.filter { $0.kind == .video }
+            .sorted { $0.offsetSec < $1.offsetSec }
+            .enumerated()
+            .map { i, m in
+                TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
+                             isPhoto: false, order: i, trimEnd: m.durationSec)
+            }
+        let project = StudioProject(sessionID: sid, title: "Kilter session", clips: clips)
+        modelContext.insert(project)
+        try? modelContext.save()
+        return project
     }
 
     // MARK: - Helpers

@@ -186,10 +186,14 @@ final class KilterLogEntry {
     /// One timestamp per Attempt tap, so attempt cadence is reconstructable. `attempts` stays the
     /// count (populated from this when present).
     var attemptTimestamps: [Date] = []
+    /// A free-form personal note for this ascent (beta, conditions, how it felt), editable from the
+    /// session's Climb panel. Additive + optional → lightweight migration; `nil` for existing rows.
+    var note: String?
 
     init(climbUUID: String, climbName: String, angle: Int, difficulty: Double, gradeLabel: String,
          status: KilterAscentStatus, attempts: Int = 1, date: Date = .now, sessionId: UUID? = nil,
-         startedAt: Date? = nil, endedAt: Date? = nil, attemptTimestamps: [Date] = []) {
+         startedAt: Date? = nil, endedAt: Date? = nil, attemptTimestamps: [Date] = [],
+         note: String? = nil) {
         self.climbUUID = climbUUID
         self.climbName = climbName
         self.angle = angle
@@ -202,6 +206,7 @@ final class KilterLogEntry {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.attemptTimestamps = attemptTimestamps
+        self.note = note
     }
 
     var status: KilterAscentStatus { KilterAscentStatus(rawValue: statusRaw) ?? .attempt }

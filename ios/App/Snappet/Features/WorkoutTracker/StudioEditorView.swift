@@ -25,8 +25,10 @@ struct StudioEditorView: View {
     /// gallery jumps straight to editing it). `nil` keeps the default (no/first selection).
     private let focusClipMediaID: UUID?
 
-    init(project: StudioProject, context: ModelContext, focusClipMediaID: UUID? = nil) {
-        _vm = State(initialValue: StudioEditorViewModel(project: project, context: context))
+    init(project: StudioProject, context: ModelContext, focusClipMediaID: UUID? = nil,
+         visibleClipMediaIDs: Set<UUID>? = nil) {
+        _vm = State(initialValue: StudioEditorViewModel(project: project, context: context,
+                                                        visibleClipMediaIDs: visibleClipMediaIDs))
         self.focusClipMediaID = focusClipMediaID
     }
 

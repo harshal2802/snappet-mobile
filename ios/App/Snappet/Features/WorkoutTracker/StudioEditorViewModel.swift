@@ -17,6 +17,12 @@ final class StudioEditorViewModel {
     private let composer = StudioComposer()
     private var undo: UndoStack<StudioProjectSnapshot>
 
+    /// When set, the studio is **scoped** to the clips backed by these `SessionMedia.id`s (per-clip or
+    /// per-climb editing from Kilter). `nil` (the workout default) shows the whole project. Edits still
+    /// target the full project by clip id — only the display, preview, timeline, and export are scoped,
+    /// so a scoped edit carries into every other scope of the same shared project.
+    let visibleClipMediaIDs: Set<UUID>?
+
     var selectedClipID: UUID?
     var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
@@ -42,9 +48,10 @@ final class StudioEditorViewModel {
 
     private static let log = Logger(subsystem: "com.snappet.app", category: "studio")
 
-    init(project: StudioProject, context: ModelContext) {
+    init(project: StudioProject, context: ModelContext, visibleClipMediaIDs: Set<UUID>? = nil) {
         self.project = project
         self.context = context
+        self.visibleClipMediaIDs = visibleClipMediaIDs
         undo = UndoStack(StudioProjectSnapshot(project))
     }
 
@@ -102,7 +109,21 @@ final class StudioEditorViewModel {
     // MARK: Derived
 
     var snapshot: StudioProjectSnapshot { undo.current }
-    var clips: [TimelineClip] { StudioGeometry.ordered(snapshot.clips) }
+    /// The snapshot's clips restricted to the current scope (all of them when `visibleClipMediaIDs` is
+    /// `nil`). Display/timeline/preview/export read this; the **edit** path still mutates the full
+    /// `snapshot.clips` by id, so a scoped edit persists to the shared project.
+    private var visibleSnapshotClips: [TimelineClip] {
+        StudioGeometry.filterByMedia(snapshot.clips, to: visibleClipMediaIDs)
+    }
+    /// The snapshot handed to the composer for preview/export — scoped to the visible clips. Unscoped
+    /// (`visibleClipMediaIDs == nil`) returns the snapshot untouched, so the workout studio is identical.
+    private var scopedSnapshot: StudioProjectSnapshot {
+        guard visibleClipMediaIDs != nil else { return snapshot }
+        var s = snapshot
+        s.clips = visibleSnapshotClips
+        return s
+    }
+    var clips: [TimelineClip] { StudioGeometry.ordered(visibleSnapshotClips) }
     var canUndo: Bool { undo.canUndo }
     var canRedo: Bool { undo.canRedo }
     var selectedClip: TimelineClip? { clips.first { $0.id == selectedClipID } }
@@ -113,7 +134,7 @@ final class StudioEditorViewModel {
     /// ratio (it follows the source) — fall back to the studio's 9:16 default for the editing rect.
     var previewRatio: CGFloat { aspect.ratio ?? (9.0 / 16.0) }
     var totalDuration: Double {
-        StudioGeometry.totalDuration(clips: snapshot.clips, sourceDurations: sourceDurations,
+        StudioGeometry.totalDuration(clips: visibleSnapshotClips, sourceDurations: sourceDurations,
                                      transitions: snapshot.transitions)
     }
     func transitionKind(afterClipID: UUID) -> StudioTransitionKind {
@@ -125,7 +146,7 @@ final class StudioEditorViewModel {
     /// Clips placed on the output timeline (start/duration in seconds) — the layout the scrubbable
     /// timeline strip and the playhead share with the composition.
     var placedClips: [StudioGeometry.PlacedClip] {
-        StudioGeometry.timeline(clips: snapshot.clips, sourceDurations: sourceDurations,
+        StudioGeometry.timeline(clips: visibleSnapshotClips, sourceDurations: sourceDurations,
                                 transitions: snapshot.transitions)
     }
     /// The resolved source length for a clip (asset duration), or its trimmed end as a fallback.
@@ -169,7 +190,7 @@ final class StudioEditorViewModel {
             // `forPlayback` drops the Core Animation overlay tool, which AVPlayerItem rejects
             // (export-only). Overlays therefore don't show in the live preview — they DO in export.
             let (comp, vc, audioMix) = try await composer.makeComposition(
-                for: snapshot, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
+                for: scopedSnapshot, sourceDurations: sourceDurations, hrSamples: hrSeries, forPlayback: true)
             let item = AVPlayerItem(asset: comp)
             item.audioMix = audioMix
             // `AVPlayerItem.setVideoComposition` validates more strictly than the export path and
@@ -219,8 +240,14 @@ final class StudioEditorViewModel {
         selectedClipID = nil
     }
     func moveSelected(by delta: Int) {
-        guard let id = selectedClipID, let idx = clips.firstIndex(where: { $0.id == id }) else { return }
-        edit { StudioProjectEditor.moveClip($0, id: id, toIndex: idx + delta) }
+        // `clips` is the (possibly scoped) visible list; map the move to an index in the FULL project
+        // so a reorder inside a scoped studio swaps with the adjacent visible neighbor without
+        // disturbing hidden clips. Unscoped, this is the plain `index + delta`.
+        guard let id = selectedClipID,
+              let dest = StudioGeometry.reorderDestination(
+                id: id, by: delta, visible: clips, full: StudioGeometry.ordered(snapshot.clips))
+        else { return }
+        edit { StudioProjectEditor.moveClip($0, id: id, toIndex: dest) }
     }
     /// Split the selected video clip at its midpoint (a playhead-driven split lands in S1's timeline polish).
     func splitSelected() {
@@ -233,7 +260,7 @@ final class StudioEditorViewModel {
     /// split). Falls back to splitting the selected clip at its midpoint if the playhead isn't over a
     /// video clip (e.g. before playback has moved it).
     func splitAtPlayhead() {
-        let placed = StudioGeometry.timeline(clips: snapshot.clips, sourceDurations: sourceDurations,
+        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips, sourceDurations: sourceDurations,
                                              transitions: snapshot.transitions)
         guard let p = placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }),
               !p.clip.isPhoto else { splitSelected(); return }
@@ -384,7 +411,7 @@ final class StudioEditorViewModel {
     func export() async {
         exportState = .exporting
         do {
-            let url = try await composer.export(snapshot, sourceDurations: sourceDurations,
+            let url = try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
                                                 hrSamples: hrSeries, quality: exportQuality)
             exportState = .exported(url)
         } catch {
