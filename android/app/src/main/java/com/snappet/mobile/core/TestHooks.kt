@@ -7,4 +7,11 @@ package com.snappet.mobile.core
  */
 object TestHooks {
     @Volatile var freshInMemoryStore: Boolean = false
+
+    /**
+     * When set, [com.snappet.mobile.MainActivity] installs the synthetic Kilter catalog fixture (zero
+     * Aurora data) before the UI comes up, so the Kilter browse instrumented tests have data. The app
+     * ships no catalog (issue #42); leaving this false brings the module up in its opt-in import state.
+     */
+    @Volatile var installKilterCatalogFixture: Boolean = false
 }

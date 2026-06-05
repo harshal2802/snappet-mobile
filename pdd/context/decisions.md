@@ -4,6 +4,64 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-05] Kilter — stop redistributing Aurora's catalog; opt-in on-device fetch (#42)
+
+**Decision**: The Kilter mini-app no longer **ships** Aurora Climbing's climb catalog. The bundled
+`kilter.sqlite3` is **deleted** from both platforms (`ios/App/Snappet/Resources/`,
+`android/app/src/main/assets/`) and the app contains **zero** Aurora climb data. Instead, the catalog
+is **imported onto the user's own device**, under their own relationship with Aurora — the redistribution
+exposure flagged in #32 OQ#11.2 is removed **architecturally**, not by waiting on a licensing
+negotiation. Traces to [#42](https://github.com/harshal2802/snappet-mobile/issues/42); the
+written-permission path (option 2) stays recorded as complementary future scope.
+
+**Concrete choices made:**
+- **A catalog-provider seam, read path unchanged.** A new `KilterCatalogStore` owns the on-device
+  catalog file (`Application Support/Kilter/kilter.sqlite3` on iOS, `filesDir/kilter/…` on Android) +
+  a `catalog.meta.json` sidecar (version / climb count / size). The existing `KilterCatalog` reader is
+  **reused verbatim** — it just opens the store path instead of the bundle, degrades to
+  `isAvailable == false` when nothing is installed, and gains a `reload()` (iOS, via a
+  `didChangeNotification`) / `reset()` (Android) to re-open after an import/remove. `KilterCatalogProvider`
+  is the **only** IO edge: `FileImportProvider` (iOS **Files** / Android **SAF**) is the shipped Phase-1
+  path; `AuroraSyncProvider` is an **inert, documented Phase-2 stub** (conforms to the protocol, performs
+  no network calls, the sync button is disabled). `KilterCatalogValidator` opens a candidate read-only,
+  asserts the required tables exist, requires ≥1 listed climb, caps size, and derives a deterministic
+  version — so a malformed/foreign file is rejected with a clear message instead of installing junk.
+- **First-open shows an opt-in screen, not an empty list.** `KilterCatalogSyncView` (iOS) /
+  `KilterCatalogSyncScreen` (Android) explain the import, **surface Aurora's Terms of Use + a link**
+  before any fetch, and make clear the data stays on-device. `KilterSettingsView`/`Screen` gain catalog
+  status (version • climbs • size) + **Refresh** + **Remove downloaded catalog** (removal keeps logged
+  ascents + saved climbs).
+- **The on-device-only rule gets one narrow, named carve-out** (`project.md:64` footnote): the Kilter
+  catalog fetch is a **user-initiated** network request, because the data is third-party-owned and can't
+  be redistributed by us. No background sync, no analytics, no Snappet backend; health + media still
+  never leave the device. Kept narrow so it can't be cited to justify general networking elsewhere.
+- **Tests use a synthetic fixture — zero Aurora data.** `tools/kilter/build_test_fixture.py` (run +
+  verified locally against every reader query) and an in-code `KilterCatalogFixture` (Swift + Kotlin,
+  same rows) author a tiny invented catalog (two layouts, a small hole grid, four made-up climbs). iOS
+  installs it under a `-uiTestInstallKilterCatalog` launch arg; Android via a `TestHooks` flag in
+  `MainActivity`. New `KilterCatalogStoreTests` / `KilterCatalogStoreTest` cover validate/install/clear +
+  reader integration; the existing Kilter UI/walkthrough tests now install the fixture first (they used
+  to rely on the bundled asset).
+
+**Why**: Aurora's [Terms of Use](https://kilterboardapp.com/terms-of-use) claim their data + derivatives
+as sole/exclusive property usable only with written consent; a trimmed rebundled copy is a derivative,
+and this is actively-policed IP. Shipping code that *the user* points at their own catalog distributes
+**code, not Aurora's database** — the only shippable-and-legal option short of a permission deal.
+
+**Rules out**: bundling any Aurora data in the app (the asset is gone, not just unreferenced); a live /
+background / always-on sync (fetch is user-initiated only); analytics or a Snappet backend; using the
+carve-out to justify networking in other modules; changing the **user-data** model (`KilterLogEntry` /
+`KilterSession` / `KilterFavorite` stay in SnappetCore/Room exactly as before); APK-extraction on device
+(rejected — store-hostile/fragile). Phase 2 (`AuroraSyncProvider` real endpoints) stays blocked on the
+endpoint/account/ToU open questions in #42 and is **not** implemented.
+
+**Verified**: the Python fixture builds and **all 15 `KilterCatalog` reader queries pass** against it
+locally (the one thing runnable on this Linux box). The Swift/Kotlin app code + tests were **authored on
+Linux with no Xcode/Android SDK**, so they are **not** compiled or run — `xcodebuild test` on the iOS 18
+sim and Android `testDebugUnitTest` + `connectedDebugAndroidTest` are owed at the merge gate (per the
+repo's macOS/Xcode + Android-SDK build rule). Bundle-inspection acceptance ("no `kilter.sqlite3` in the
+build") is guaranteed at source: the asset is removed from both platforms and no code/config references it.
+
 ## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
 
 **Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),

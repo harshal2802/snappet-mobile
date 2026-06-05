@@ -2,10 +2,9 @@ package com.snappet.mobile.feature.kilter
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import java.io.File
 import kotlin.math.roundToInt
 
-// MARK: catalog value types (read-only, from the bundled kilter.sqlite3)
+// MARK: catalog value types (read-only, from the user-installed kilter.sqlite3 catalog)
 
 data class KilterListItem(
     val uuid: String,
@@ -103,11 +102,13 @@ data class KilterFilter(
 }
 
 /**
- * Read-only access layer over the bundled `kilter.sqlite3` catalog (built by
- * `tools/kilter/build_bundled_db.py`). This is static reference data — copied out of `assets/` once,
- * opened read-only, never written, and kept out of Room (which owns user data). On-device only: no
- * network. A missing/corrupt asset degrades to an empty catalog ([isAvailable] = false) rather than
- * crashing the suite. Mirrors the iOS `KilterCatalog`.
+ * Read-only access layer over the **user-installed** `kilter.sqlite3` catalog, opened from
+ * [KilterCatalogStore] (the app ships no catalog — issue #42; the user imports one themselves). Static
+ * reference data — opened read-only, never written, and kept out of Room (which owns user data).
+ * On-device only: the reader never touches a network. When nothing is installed (or the file is
+ * corrupt) it degrades to an empty catalog ([isAvailable] = false) and the module shows the opt-in
+ * [KilterCatalogSyncScreen] rather than crashing. Re-open after an install/remove via [reset].
+ * Mirrors the iOS `KilterCatalog`.
  */
 class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
 
@@ -378,20 +379,24 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
     }
 
     companion object {
-        private const val ASSET = "kilter.sqlite3"
         @Volatile private var instance: KilterCatalog? = null
 
-        /** Shared catalog, copying the asset out on first use. Safe to call from any thread. */
+        /** Shared catalog, opened from the user-installed file in [KilterCatalogStore] (issue #42). */
         fun get(context: Context): KilterCatalog =
             instance ?: synchronized(this) { instance ?: open(context).also { instance = it } }
 
+        /** Drop the cached reader so the next [get] re-opens — after an install or remove. */
+        fun reset() = synchronized(this) {
+            instance?.db?.close()
+            instance = null
+        }
+
         private fun open(context: Context): KilterCatalog {
+            val store = KilterCatalogStore.get(context)
+            if (!store.isInstalled) return KilterCatalog(null)
             return try {
-                val dest = File(context.filesDir, ASSET)
-                if (!dest.exists() || dest.length() == 0L) {
-                    context.assets.open(ASSET).use { input -> dest.outputStream().use { input.copyTo(it) } }
-                }
-                KilterCatalog(SQLiteDatabase.openDatabase(dest.path, null, SQLiteDatabase.OPEN_READONLY))
+                KilterCatalog(SQLiteDatabase.openDatabase(
+                    store.catalogFile.path, null, SQLiteDatabase.OPEN_READONLY))
             } catch (_: Exception) {
                 KilterCatalog(null)
             }

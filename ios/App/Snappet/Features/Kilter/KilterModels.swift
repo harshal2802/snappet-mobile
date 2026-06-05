@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-// MARK: - Catalog value types (read-only, from the bundled kilter.sqlite3)
+// MARK: - Catalog value types (read-only, from the user-installed kilter.sqlite3 catalog)
 
 /// A climb as shown in the catalog list, already resolved for one angle.
 struct KilterListItem: Identifiable, Hashable, Sendable {

@@ -14,7 +14,9 @@ final class KilterWalkthroughTests: XCTestCase {
 
     func testWalkthrough() {
         let app = XCUIApplication()
-        app.launchArguments += ["apps", "-uiTestFreshStore"]
+        // The app ships no catalog (issue #42) — install the synthetic fixture so the walkthrough has
+        // climbs to render, standing in for a user import.
+        app.launchArguments += ["apps", "-uiTestFreshStore", "-uiTestInstallKilterCatalog"]
         app.launch()
 
         // App Library → Kilter Board card.
