@@ -43,6 +43,13 @@ final class AppModel {
     /// ActivityKit/Live Activities are unavailable or unauthorized (live-workout-studio A2).
     let liveActivity = LiveActivityController()
 
+    /// Drives the **Kilter climbing-session Live Activity** (Lock Screen + Dynamic Island):
+    /// overall timer + live HR + current climb. Started/ended alongside `liveWorkout` from the
+    /// Kilter session lifecycle (`KilterSessionManager`). A dedicated controller (not the workout
+    /// one) so the two activity types stay separate (decisions.md 2026-06-06). No-ops where
+    /// ActivityKit/Live Activities are unavailable or unauthorized.
+    let kilterLiveActivity = KilterLiveActivityController()
+
     /// Local notifications for a backgrounded / minimized workout (e.g. "rest complete"), so the
     /// session can still reach the notification bar alongside the Live Activity. No-ops when
     /// unauthorized (live-workout-studio next pass).
@@ -63,7 +70,10 @@ final class AppModel {
     var engine: HighlightEngine {
         HighlightEngine(
             selector: HRHighlightSelector(),
-            planner: ReelPlanner(targetDuration: 30),
+            // Uncapped: reels keep every featured clip. Paired with the `.fullLength()` config the
+            // reel paths pass to `generate`, clips also play in full (no per-clip trim) — the user
+            // didn't want a length limit on session videos (decisions.md 2026-06-05).
+            planner: ReelPlanner(targetDuration: nil),
             feedback: feedback
         )
     }

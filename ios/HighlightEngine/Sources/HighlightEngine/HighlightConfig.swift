@@ -23,6 +23,12 @@ public struct HighlightConfig: Sendable, Equatable {
     public var minGapSec: Double
     /// Max number of highlights to return (the reel's raw candidate set).
     public var maxHighlights: Int
+    /// When `true`, the selector still picks *which* media to feature via HR (NMS + `maxHighlights`),
+    /// but emits each as a **full-length** clip (the whole media item) rather than a trimmed window,
+    /// and collapses repeated moments in one media to a single segment. Paired with an uncapped
+    /// `ReelPlanner` (`targetDuration: nil`) this produces full-length, uncapped reels. Default `false`
+    /// preserves the original trimmed-highlight behavior.
+    public var fullClips: Bool
 
     public init(
         smoothingWindowSec: Double = 9,
@@ -33,7 +39,8 @@ public struct HighlightConfig: Sendable, Equatable {
         clipLeadSec: Double = 6,
         clipTrailSec: Double = 4,
         minGapSec: Double = 20,
-        maxHighlights: Int = 8
+        maxHighlights: Int = 8,
+        fullClips: Bool = false
     ) {
         self.smoothingWindowSec = smoothingWindowSec
         self.hrLagSec = hrLagSec
@@ -44,9 +51,19 @@ public struct HighlightConfig: Sendable, Equatable {
         self.clipTrailSec = clipTrailSec
         self.minGapSec = minGapSec
         self.maxHighlights = maxHighlights
+        self.fullClips = fullClips
     }
 
     public static let `default` = HighlightConfig()
+
+    /// A copy of this config with `fullClips` enabled — used by the app's reel paths so each featured
+    /// clip plays in full (no per-clip trim). Combine with `ReelPlanner(targetDuration: nil)` to also
+    /// drop the total-length cap.
+    public func fullLength() -> HighlightConfig {
+        var c = self
+        c.fullClips = true
+        return c
+    }
 
     /// Per-activity presets (best guess — to be tuned from real data, #60 §4).
     /// Climbing = bursty (short clips, less smoothing); running = sustained

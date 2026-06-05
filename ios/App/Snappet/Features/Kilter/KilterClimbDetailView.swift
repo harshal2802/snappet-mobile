@@ -27,6 +27,7 @@ struct KilterClimbDetailView: View {
     }
 
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
     @Query private var favorites: [KilterFavorite]
@@ -102,6 +103,7 @@ struct KilterClimbDetailView: View {
             anglePicker
             statRow
             metaRow
+            sessionStatusRow
             logButtons
             gradeChart
             illuminateSection
@@ -280,6 +282,24 @@ struct KilterClimbDetailView: View {
         }.frame(maxWidth: .infinity)
     }
 
+    /// While a session is live, a compact "session active" + live-HR row above the log buttons, so
+    /// the climber sees their heart rate without leaving the climb.
+    @ViewBuilder private var sessionStatusRow: some View {
+        if sessions.isActive {
+            HStack(spacing: 10) {
+                Image(systemName: "record.circle").foregroundStyle(.green)
+                    .symbolEffect(.pulse, options: .repeating).font(.caption)
+                Text("Session active").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                Spacer()
+                if app.liveWorkout.state != .unavailable {
+                    KilterHRPill(bpm: app.liveWorkout.latestHR)
+                }
+            }
+            .padding(.horizontal)
+            .accessibilityIdentifier("kilter.session.activeRow")
+        }
+    }
+
     private var logButtons: some View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
@@ -404,22 +424,58 @@ struct KilterClimbDetailView: View {
         }
         // Keep a connected board in sync with the climb on screen (initial open + each swipe).
         if board.isConnected { board.illuminate(holds) }
+        // Mark this climb as the one being worked, for per-climb timing + the HUD / Live Activity.
+        if sessions.isActive, let c = climb {
+            let g = stats.first { $0.angle == selectedAngle }.map { catalog.gradeLabel($0.difficulty) } ?? ""
+            sessions.beginClimb(uuid: c.uuid, name: c.name, grade: kilterDisplayGrade(g, gradeFormat))
+        }
     }
 
     private func log(_ status: KilterAscentStatus) {
         guard let climb, let stat = currentStat else { return }
         let grade = catalog.gradeLabel(stat.difficulty)
-        modelContext.insert(KilterLogEntry(
-            climbUUID: climb.uuid, climbName: climb.name, angle: selectedAngle,
-            difficulty: stat.difficulty, gradeLabel: grade, status: status,
-            sessionId: sessions.currentId))
+        let now = Date()
+        // Re-arm the active climb (a prior send may have closed it) so timing + the HUD are correct.
+        if sessions.isActive {
+            sessions.beginClimb(uuid: climb.uuid, name: climb.name,
+                                grade: kilterDisplayGrade(grade, gradeFormat))
+        }
+        // One entry per climb within a session: repeated logs (attempts, then a send) accumulate onto
+        // a single row — total tries, attempt timestamps, and the latest status (a send is sticky) —
+        // instead of inserting duplicate rows that would double-count the climb.
+        if let id = sessions.currentId,
+           let existing = existingSessionEntry(climbUUID: climb.uuid, sessionId: id) {
+            existing.attempts += 1
+            if status == .attempt { existing.attemptTimestamps.append(now) }
+            if !existing.status.isSend { existing.statusRaw = status.rawValue }   // a send stays a send
+            existing.endedAt = now
+            existing.date = now
+        } else {
+            modelContext.insert(KilterLogEntry(
+                climbUUID: climb.uuid, climbName: climb.name, angle: selectedAngle,
+                difficulty: stat.difficulty, gradeLabel: grade, status: status,
+                attempts: 1, date: now, sessionId: sessions.currentId,
+                startedAt: sessions.activeClimbStartedAt, endedAt: now,
+                attemptTimestamps: status == .attempt ? [now] : []))
+        }
         try? modelContext.save()
         core.log(module: "kilter", action: "log-\(status.rawValue)",
                  summary: "\(status.label) \(climb.name) (\(grade) @\(selectedAngle)°)",
                  metric: stat.difficulty)
+        // A send closes the climb so the next one's timing + rest start fresh.
+        if status.isSend { sessions.closeActiveClimb() }
         withAnimation(.snappy) {
             logConfirmation = "Logged \(status.label.lowercased()) · \(grade)"
         }
+    }
+
+    /// The in-session entry for this climb (any status), if one exists — so repeated logs on the same
+    /// climb accumulate onto a single row rather than creating duplicates.
+    private func existingSessionEntry(climbUUID: String, sessionId: UUID) -> KilterLogEntry? {
+        let descriptor = FetchDescriptor<KilterLogEntry>(predicate: #Predicate {
+            $0.sessionId == sessionId && $0.climbUUID == climbUUID
+        })
+        return try? modelContext.fetch(descriptor).first
     }
 
     private func toggleFavorite() {

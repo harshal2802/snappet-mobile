@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Foundation
+import HealthKit
 import SwiftData
 
 /// Drives the physical Kilter board over Bluetooth LE: scan → connect → write the illumination
@@ -315,7 +316,10 @@ extension KilterBoardController: CBPeripheralDelegate {
     }
 }
 
-/// Tracks the active board session so logged ascents can be grouped in History. Created at the module
+/// Tracks the active board session so logged ascents can be grouped in History, and — when bound to
+/// the app's live-metrics + Live-Activity + media services — drives **live heart rate**, a **Lock
+/// Screen / Dynamic Island Live Activity**, **per-climb timing**, and **post-session media
+/// discovery** for the session (workout-grade parity, decisions.md 2026-06-06). Created at the module
 /// root and shared via the environment. A session opens when a board connects (source `"ble"`) or
 /// when the user starts one manually, and closes on disconnect / when the user ends it.
 @MainActor
@@ -325,18 +329,169 @@ final class KilterSessionManager {
     var isActive: Bool { current != nil }
     var currentId: UUID? { current?.id }
 
+    /// The climb currently being worked while a session is live — for the HUD, the Live Activity, and
+    /// per-climb timing. `activeClimbStartedAt` stamps when the climber moved onto it.
+    private(set) var activeClimbUUID: String?
+    private(set) var activeClimbName: String = "Resting"
+    private(set) var activeClimbGrade: String = ""
+    private(set) var activeClimbStartedAt: Date?
+
+    /// Live Activity board label (no per-board name today).
+    private let boardName = "Kilter Board"
+
+    // Services wired once by `KilterRootView` via `bind(...)`. Strong refs to AppModel-owned
+    // singletons, which outlive this manager — no retain cycle (AppModel doesn't hold the manager).
+    private var liveWorkout: LiveMetricsCoordinator?
+    private var liveActivity: KilterLiveActivityController?
+    private var media: SessionMediaService?
+
+    /// Whether *this* session started the live-metrics source — so `end()` only flushes/stops HR it
+    /// owns. Guards against a Kilter session that opened while a WorkoutTracker workout was already
+    /// running: it must not steal that workout's HR buffer or stop its source.
+    private var didStartMetrics = false
+
+    /// Inject the live-metrics + Live-Activity + media services so the manager can drive HR / the
+    /// Live Activity / media discovery. Idempotent; called from the root view on appear.
+    func bind(liveWorkout: LiveMetricsCoordinator,
+              liveActivity: KilterLiveActivityController,
+              media: SessionMediaService) {
+        self.liveWorkout = liveWorkout
+        self.liveActivity = liveActivity
+        self.media = media
+    }
+
     func start(angle: Int, source: String, in context: ModelContext) {
         guard current == nil else { return }
         let session = KilterSession(angle: angle, source: source)
         context.insert(session)
-        try? context.save()
         current = session
+        resetActiveClimb()
+        // Begin live HR capture (Apple Watch or BLE band, whichever the coordinator resolves) — but
+        // only if no workout is already driving a source (we must not commandeer a running workout).
+        if let liveWorkout, !liveWorkout.isSessionActive {
+            liveWorkout.start(LiveMetricsContext(startedAt: session.startedAt, activityType: .climbing))
+            didStartMetrics = true
+        }
+        try? context.save()
+        // Lock Screen / Dynamic Island live session widget (no-op if unavailable/unauthorized).
+        liveActivity?.start(boardName: boardName, startedAt: session.startedAt, angle: angle)
     }
 
     func end(in context: ModelContext) {
         guard let session = current else { return }
         session.endedAt = .now
+        // Flush the live HR buffer onto the session BEFORE stopping the source (mirrors
+        // WorkoutTracker.finishWorkout) — only when this session owns the source. Stamp the source
+        // label from the actually-captured data, so it's never a misleading default.
+        if didStartMetrics, let liveWorkout {
+            session.hrSeries = WorkoutHRStats.points(from: liveWorkout.samples)
+            if !session.hrSeries.isEmpty { session.metricsSourceRaw = liveWorkout.activeKind.rawValue }
+            liveWorkout.stop()
+            didStartMetrics = false
+        }
         try? context.save()
+        liveActivity?.end()
+        let ended = session
         current = nil
+        resetActiveClimb()
+        // Auto-discover photos/videos shot during the session window and tag them to the session + the
+        // climb they fall within. Best-effort; only runs with full Photos access.
+        discoverMedia(for: ended, in: context)
+    }
+
+    /// Mark the climb now on screen as the active one (called from the detail view's `load()` on the
+    /// initial open + each swipe, and on each log). Stamps the start when the climb changes, or when
+    /// it's been disarmed by a prior send (`activeClimbStartedAt == nil`) — but not on a plain swipe
+    /// back to the same in-progress climb, so its timer isn't reset.
+    func beginClimb(uuid: String, name: String, grade: String) {
+        guard isActive, uuid != activeClimbUUID || activeClimbStartedAt == nil else { return }
+        activeClimbUUID = uuid
+        activeClimbName = name
+        activeClimbGrade = grade
+        activeClimbStartedAt = .now
+    }
+
+    /// Called after a successful send (Flash/Sent) — the climb is done, so go back to "Resting" and
+    /// let the next climb's timing/rest start fresh.
+    func closeActiveClimb() { resetActiveClimb() }
+
+    /// The current live snapshot for the HUD + Live Activity, or `nil` when no session is active.
+    func liveSnapshot(hrBpm: Int?, climbCount: Int) -> KilterLiveSnapshot? {
+        guard let session = current else { return nil }
+        return KilterLiveSnapshot(
+            startedAt: session.startedAt, hrBpm: hrBpm,
+            currentClimbName: activeClimbName, currentGrade: activeClimbGrade,
+            climbCount: climbCount, paused: liveWorkout?.isPaused ?? false)
+    }
+
+    /// Push a throttled update to the Live Activity (called by the detail view as HR / the active
+    /// climb / the climb count change while the session is visible).
+    func pushLiveActivity(hrBpm: Int?, climbCount: Int) {
+        guard let snap = liveSnapshot(hrBpm: hrBpm, climbCount: climbCount) else { return }
+        liveActivity?.update(snap)
+    }
+
+    private func resetActiveClimb() {
+        activeClimbUUID = nil
+        activeClimbName = "Resting"
+        activeClimbGrade = ""
+        activeClimbStartedAt = nil
+    }
+
+    /// Re-run media discovery for a past session by id (the summary's "Find my clips" action, after
+    /// the user has granted full Photos access). No-op if the session can't be found.
+    func importMedia(forSessionID id: UUID, in context: ModelContext) {
+        guard let session = try? context.fetch(
+            FetchDescriptor<KilterSession>(predicate: #Predicate { $0.id == id })).first else { return }
+        discoverMedia(for: session, in: context)
+    }
+
+    // MARK: - Media discovery (best-effort; full Photos access only)
+
+    private func discoverMedia(for session: KilterSession, in context: ModelContext) {
+        guard let media, media.canAutoDiscover else { return }
+        let sessionID = session.id
+        let startedAt = session.startedAt
+        let completedAt = session.endedAt
+        let windows = climbWindows(for: session, in: context)
+        let existing = existingMediaIdentifiers(sessionID: sessionID, in: context)
+        Task { @MainActor in
+            guard let candidates = try? await media.discover(
+                startedAt: startedAt, completedAt: completedAt, existingIdentifiers: existing)
+            else { return }
+            for c in candidates {
+                let climbUUID = KilterMediaAssignment.climbUUID(forOffset: c.offsetSec, windows: windows)
+                context.insert(SessionMedia(
+                    sessionID: sessionID, localIdentifier: c.localIdentifier, kind: c.kind,
+                    offsetSec: c.offsetSec, durationSec: c.durationSec,
+                    assignedClimbUUID: climbUUID,
+                    source: climbUUID != nil ? .auto : .general))
+            }
+            try? context.save()
+        }
+    }
+
+    /// Each in-session climb's `[start, end]` window in seconds from the session start, for clip
+    /// auto-assignment. Climbs without a recorded start are skipped (no window to match against).
+    private func climbWindows(for session: KilterSession,
+                              in context: ModelContext) -> [KilterMediaAssignment.ClimbWindow] {
+        let sid = session.id
+        let start = session.startedAt
+        let entries = (try? context.fetch(
+            FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.sessionId == sid }))) ?? []
+        return entries.compactMap { e in
+            guard let s = e.startedAt else { return nil }
+            let end = e.endedAt ?? e.date
+            return KilterMediaAssignment.ClimbWindow(
+                climbUUID: e.climbUUID,
+                startOffset: max(0, s.timeIntervalSince(start)),
+                endOffset: max(0, end.timeIntervalSince(start)))
+        }
+    }
+
+    private func existingMediaIdentifiers(sessionID: UUID, in context: ModelContext) -> Set<String> {
+        let rows = (try? context.fetch(
+            FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.sessionID == sessionID }))) ?? []
+        return Set(rows.map(\.localIdentifier))
     }
 }

@@ -52,10 +52,17 @@ final class SessionMedia {
     /// clip — a non-optional new attribute needs a default for SwiftData's lightweight migration.
     var assignmentSourceRaw: String = MediaAssignmentSource.auto.rawValue
 
+    /// `KilterClimb.uuid` this clip is tied to when the session is a **Kilter climbing session**
+    /// (the climb analogue of `assignedExerciseID`/`assignedSetIndex`, which stay `nil` for climbing
+    /// rows). Auto-assigned by matching the clip's `offsetSec` to a climb's in-session time window.
+    /// Additive + optional → lightweight migration; `nil` for every existing workout clip.
+    var assignedClimbUUID: String?
+
     init(id: UUID = UUID(), sessionID: UUID, localIdentifier: String,
          kind: Kind, offsetSec: Double, durationSec: Double? = nil,
          addedManually: Bool = false,
          assignedExerciseID: UUID? = nil, assignedSetIndex: Int? = nil,
+         assignedClimbUUID: String? = nil,
          source: MediaAssignmentSource = .auto, createdAt: Date = .now) {
         self.id = id
         self.sessionID = sessionID
@@ -66,6 +73,7 @@ final class SessionMedia {
         self.addedManually = addedManually
         self.assignedExerciseID = assignedExerciseID
         self.assignedSetIndex = assignedSetIndex
+        self.assignedClimbUUID = assignedClimbUUID
         self.assignmentSourceRaw = source.rawValue
         self.createdAt = createdAt
     }

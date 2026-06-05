@@ -309,4 +309,27 @@ final class MetricsSourceSelectionTests: XCTestCase {
         coordinator.stop()
         XCTAssertFalse(coordinator.isSessionActive)
     }
+
+    /// The `LiveMetricsContext` decoupling: starting via a context (the Kilter path) rebases ingested
+    /// samples onto `context.startedAt`, exactly like the routine-driven `start(for:)`.
+    @MainActor
+    func testLiveMetricsContextRebasesSamples() {
+        let start = Date(timeIntervalSince1970: 5_000)
+        let source = AppleWatchMetricsSource()
+        source.start(LiveMetricsContext(startedAt: start, activityType: .climbing))
+        // A watch sample 30s into the session, arriving ~30s after start → engine offset ≈ 30.
+        source.ingest(hrBpm: 140, energyKcal: 0, watchOffset: 30, receivedAt: start.addingTimeInterval(30))
+        XCTAssertEqual(source.latestHR, 140)
+        XCTAssertEqual(source.samples.last?.t ?? -1, 30, accuracy: 0.001)
+    }
+
+    /// The coordinator's `start(_:)` (used directly by Kilter sessions) also flips `isSessionActive`.
+    @MainActor
+    func testContextStartTracksSessionActive() {
+        let coordinator = LiveMetricsCoordinator()
+        coordinator.start(LiveMetricsContext(startedAt: .now, activityType: .climbing))
+        XCTAssertTrue(coordinator.isSessionActive)
+        coordinator.stop()
+        XCTAssertFalse(coordinator.isSessionActive)
+    }
 }

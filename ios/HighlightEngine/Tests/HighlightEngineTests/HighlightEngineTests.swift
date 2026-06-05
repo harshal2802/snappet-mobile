@@ -132,6 +132,36 @@ final class HighlightEngineTests: XCTestCase {
         XCTAssertEqual(res.reel.segments.first?.kind, .photo)
     }
 
+    // MARK: full-length clips + uncapped reels (user-requested: no length limit)
+
+    func testFullClipsUsesFullMediaWindowAndDedupes() {
+        let wk = surgeWorkout()   // one video clip 250…350 with several high moments
+        let cfg = HighlightConfig(minGapSec: 5, maxHighlights: 10).fullLength()
+        let hl = HRHighlightSelector().select(workout: wk, config: cfg)
+        // Repeated moments within one media collapse to a single full-length segment.
+        XCTAssertEqual(hl.count, 1)
+        XCTAssertEqual(hl[0].clipStart, 250, accuracy: 1e-6)   // full media start
+        XCTAssertEqual(hl[0].clipEnd, 350, accuracy: 1e-6)     // full media end
+    }
+
+    func testFullLengthHelperSetsFlagOnly() {
+        let base = HighlightConfig.preset(for: .climbing)
+        let full = base.fullLength()
+        XCTAssertTrue(full.fullClips)
+        XCTAssertFalse(base.fullClips)
+        // Only the flag changes; every other knob is preserved.
+        XCTAssertEqual(full.clipLeadSec, base.clipLeadSec)
+        XCTAssertEqual(full.maxHighlights, base.maxHighlights)
+    }
+
+    func testUncappedPlannerKeepsEverySegment() {
+        let (highlights, media) = spreadHighlights()   // 5 highlights, 5s each (25s total)
+        let capped = ReelPlanner(targetDuration: 5).plan(highlights: highlights, media: media)
+        let uncapped = ReelPlanner(targetDuration: nil).plan(highlights: highlights, media: media)
+        XCTAssertLessThan(capped.segments.count, 5)            // the 5s cap drops most
+        XCTAssertEqual(uncapped.segments.count, 5)             // nil cap keeps all
+    }
+
     // MARK: pinning & manual order (auto-generate-then-edit, #60 §B)
 
     /// Build a set of highlights spread across one long clip, for planner tests.

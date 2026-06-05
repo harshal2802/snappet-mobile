@@ -214,10 +214,10 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
 
     // MARK: - MetricsSource
 
-    func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
+    func start(_ context: LiveMetricsContext) {
         // The BLE band has no notion of a workout "type" — it just streams HR. We reset the
         // buffer onto this session's timeline and (re)connect if a band was chosen.
-        sessionStart = session.startedAt
+        sessionStart = context.startedAt
         samples.removeAll()
         latestHR = nil
         #if canImport(CoreBluetooth)

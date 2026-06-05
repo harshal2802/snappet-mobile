@@ -21,8 +21,15 @@ struct StudioEditorView: View {
     @State private var importingMusic = false
     @State private var choosingPiP = false
 
-    init(project: StudioProject, context: ModelContext) {
-        _vm = State(initialValue: StudioEditorViewModel(project: project, context: context))
+    /// `SessionMedia.id` of a clip to pre-select when the studio opens (e.g. tapping one clip in a
+    /// gallery jumps straight to editing it). `nil` keeps the default (no/first selection).
+    private let focusClipMediaID: UUID?
+
+    init(project: StudioProject, context: ModelContext, focusClipMediaID: UUID? = nil,
+         visibleClipMediaIDs: Set<UUID>? = nil) {
+        _vm = State(initialValue: StudioEditorViewModel(project: project, context: context,
+                                                        visibleClipMediaIDs: visibleClipMediaIDs))
+        self.focusClipMediaID = focusClipMediaID
     }
 
     var body: some View {
@@ -37,7 +44,13 @@ struct StudioEditorView: View {
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(SnappetColor.workout)
-        .task { await vm.onAppear() }
+        .task {
+            await vm.onAppear()
+            // Jump straight to the tapped clip (gallery → edit-this-clip), if one was requested.
+            if let mid = focusClipMediaID, let clip = vm.clips.first(where: { $0.sessionMediaID == mid }) {
+                vm.select(clip.id)
+            }
+        }
         .onChange(of: vm.exportState) { _, state in
             if case .exported = state { showingShare = true }
         }
