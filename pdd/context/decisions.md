@@ -1961,3 +1961,16 @@ panel coupled to studio-internal selection (the climb is known from the entry po
 trip/mutate); "Edit all" grouping already covered by `KilterWorkoutBuilderTests`. `HighlightEngine` `swift
 test` unchanged. **Device-unverified** per the device-only rule: the scoped preview/export render on real
 footage and the Climb-panel edits' on-screen feel — deferred to a device with clips.
+
+**Self-review hardening (same day).** Two follow-ups from reviewing the scope filter: **(a)** the studio's
+clip **reorder** is made scope-correct — `moveSelected` was indexing the *scoped* visible list while
+`StudioProjectEditor.moveClip` reindexes the *full* project, so a reorder in a scoped editor (with hidden
+clips before the window) would have mis-ordered the shared session order. A pure
+`StudioGeometry.reorderDestination(id:by:visible:full:)` maps a visible-subset move to the full-list index
+(swap with the adjacent *visible* neighbor, hidden clips undisturbed; unscoped it's the plain `index+delta`),
+unit-tested. The reorder UI is currently dormant, so this is a latent-bug fix, not a behavior change. **(b)**
+An **unassigned** single clip can now be tagged to a climb from inside the scoped editor: `KilterClimbPanel`'s
+`climbUUID` became optional (nil ⇒ an "Assign clip to a climb" action only), and `KilterClipStudio` shows the
+floating button for any per-clip scope and resolves the climb **live** from the clip's `assignedClimbUUID`
+(reading the `@Model` clip) — so assigning upgrades the button/panel to the full Climb panel in place,
+without reopening. Previously an unassigned clip's only reassignment path was the gallery long-press menu.

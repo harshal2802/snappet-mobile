@@ -24,6 +24,19 @@ enum StudioGeometry {
         return clips.filter { $0.sessionMediaID.map(mediaIDs.contains) ?? false }
     }
 
+    /// Destination index in the **full** ordered list for moving `id` by `delta` positions among the
+    /// *visible* subset — so a reorder inside a scoped studio swaps with the adjacent **visible**
+    /// neighbor without disturbing the hidden clips' order. `visible` and `full` must already be
+    /// `ordered(_:)`. Returns `nil` when the move runs off either end of the visible subset. With no
+    /// scoping (`visible == full`) this is just the neighbor index — i.e. the plain `index + delta`.
+    static func reorderDestination(id: UUID, by delta: Int,
+                                   visible: [TimelineClip], full: [TimelineClip]) -> Int? {
+        guard let vIdx = visible.firstIndex(where: { $0.id == id }) else { return nil }
+        let target = vIdx + delta
+        guard visible.indices.contains(target) else { return nil }
+        return full.firstIndex(where: { $0.id == visible[target].id })
+    }
+
     /// A clip's **output** (edited) duration. Photo → its on-screen duration. Video → the trimmed
     /// source span (`trimEnd ?? sourceDuration` minus `trimStart`, clamped to the source) divided by
     /// speed. `sourceDuration` is the asset's real length (nil until the asset loads).

@@ -18,9 +18,11 @@ struct KilterClimbTarget: Identifiable, Hashable, Sendable {
 /// read-only `KilterCatalog`; the panel does no SQL of its own beyond `climb`/`stats`/`layouts`.
 struct KilterClimbPanel: View {
     let sessionId: UUID
-    let climbUUID: String
-    /// The single clip this panel was opened for — enables "Move clip to another climb". `nil` for a
-    /// per-climb / session presentation (no single clip to move).
+    /// The climb this panel is for. `nil` only for an **unassigned** single clip — then the panel is
+    /// just "assign this clip to a climb" (no catalog/log to show until it's tagged).
+    let climbUUID: String?
+    /// The single clip this panel was opened for — enables "Move clip to another climb" (or, when the
+    /// clip is unassigned, "Assign clip to a climb"). `nil` for a per-climb presentation.
     let singleClip: SessionMedia?
     /// The session's climbs, as "Move to climb…" targets.
     let climbTargets: [KilterClimbTarget]
@@ -38,10 +40,12 @@ struct KilterClimbPanel: View {
     @State private var climb: KilterClimb?
     @State private var stats: [KilterClimbStat] = []
 
-    /// The in-session log entry for this climb — the edit target. `nil` if the climb was never logged
-    /// in this session (e.g. a clip auto-tagged to a climb with no log); editing is disabled then.
+    /// The in-session log entry for this climb — the edit target. `nil` if there's no climb yet, or
+    /// the climb was never logged in this session (e.g. a clip auto-tagged to a climb with no log);
+    /// editing is disabled then.
     private var entry: KilterLogEntry? {
-        allEntries.first { $0.sessionId == sessionId && $0.climbUUID == climbUUID }
+        guard let climbUUID else { return nil }
+        return allEntries.first { $0.sessionId == sessionId && $0.climbUUID == climbUUID }
     }
 
     /// Angles the catalog has stats for (the picker's options); falls back to the entry's own angle.
@@ -59,19 +63,26 @@ struct KilterClimbPanel: View {
     var body: some View {
         NavigationStack {
             Form {
-                catalogSection
-                if let entry {
-                    logSection(entry)
-                    noteSection(entry)
+                if climbUUID != nil {
+                    catalogSection
+                    if let entry {
+                        logSection(entry)
+                        noteSection(entry)
+                    } else {
+                        Section {
+                            Text("This climb wasn't logged in the session, so there's nothing to edit. Log it from the board to set angle, result, and a note.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                 } else {
                     Section {
-                        Text("This climb wasn't logged in the session, so there's nothing to edit. Log it from the board to set angle, result, and a note.")
+                        Text("This clip isn't tied to a climb yet. Assign it to one of the session's climbs to edit that climb here.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 if let singleClip { moveSection(singleClip) }
             }
-            .navigationTitle("Climb")
+            .navigationTitle(climbUUID == nil ? "Assign clip" : "Climb")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -80,6 +91,7 @@ struct KilterClimbPanel: View {
             }
         }
         .task {
+            guard let climbUUID else { return }
             climb = catalog.climb(climbUUID)
             stats = catalog.stats(climbUUID)
         }
@@ -138,13 +150,18 @@ struct KilterClimbPanel: View {
                 ForEach(climbTargets.filter { $0.uuid != climbUUID }) { target in
                     Button(target.name) { reassign(clip, to: target.uuid) }
                 }
-                Divider()
-                Button("Unassigned") { reassign(clip, to: nil) }
+                if climbUUID != nil {                       // only offer "clear" when it has a climb
+                    Divider()
+                    Button("Unassigned") { reassign(clip, to: nil) }
+                }
             } label: {
-                Label("Move clip to another climb", systemImage: "arrow.left.arrow.right")
+                Label(climbUUID == nil ? "Assign clip to a climb" : "Move clip to another climb",
+                      systemImage: "arrow.left.arrow.right")
             }
         } footer: {
-            Text("Moves this clip's tag to another climb in the session. The clip itself stays in the studio.")
+            Text(climbUUID == nil
+                 ? "Tag this clip to one of the session's climbs so it shows in that climb's gallery."
+                 : "Moves this clip's tag to another climb in the session. The clip itself stays in the studio.")
         }
     }
 

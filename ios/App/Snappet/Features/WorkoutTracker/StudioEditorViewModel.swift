@@ -240,8 +240,14 @@ final class StudioEditorViewModel {
         selectedClipID = nil
     }
     func moveSelected(by delta: Int) {
-        guard let id = selectedClipID, let idx = clips.firstIndex(where: { $0.id == id }) else { return }
-        edit { StudioProjectEditor.moveClip($0, id: id, toIndex: idx + delta) }
+        // `clips` is the (possibly scoped) visible list; map the move to an index in the FULL project
+        // so a reorder inside a scoped studio swaps with the adjacent visible neighbor without
+        // disturbing hidden clips. Unscoped, this is the plain `index + delta`.
+        guard let id = selectedClipID,
+              let dest = StudioGeometry.reorderDestination(
+                id: id, by: delta, visible: clips, full: StudioGeometry.ordered(snapshot.clips))
+        else { return }
+        edit { StudioProjectEditor.moveClip($0, id: id, toIndex: dest) }
     }
     /// Split the selected video clip at its midpoint (a playhead-driven split lands in S1's timeline polish).
     func splitSelected() {

@@ -158,4 +158,33 @@ final class StudioGeometryTests: XCTestCase {
         let clips = [mediaClip(0, mediaID: one), mediaClip(1, mediaID: two), mediaClip(2, mediaID: three)]
         XCTAssertEqual(StudioGeometry.filterByMedia(clips, to: [two]).map(\.sessionMediaID), [two])
     }
+
+    // MARK: - reorderDestination (scope-correct clip reorder)
+
+    func testReorderDestinationUnscopedIsIndexPlusDelta() {
+        let a = video(0), b = video(1), c = video(2)
+        let full = StudioGeometry.ordered([a, b, c])
+        XCTAssertEqual(StudioGeometry.reorderDestination(id: b.id, by: 1, visible: full, full: full), 2)
+        XCTAssertEqual(StudioGeometry.reorderDestination(id: b.id, by: -1, visible: full, full: full), 0)
+    }
+
+    func testReorderDestinationOffTheEndIsNil() {
+        let a = video(0), b = video(1)
+        let full = StudioGeometry.ordered([a, b])
+        XCTAssertNil(StudioGeometry.reorderDestination(id: a.id, by: -1, visible: full, full: full))
+        XCTAssertNil(StudioGeometry.reorderDestination(id: b.id, by: 1, visible: full, full: full))
+    }
+
+    func testReorderDestinationScopedMapsToFullIndex() {
+        // Full order h0,v1,h2,v3 (h = hidden); visible subset v1,v3 (full indices 1 and 3).
+        let h0 = video(0), v1 = video(1), h2 = video(2), v3 = video(3)
+        let full = StudioGeometry.ordered([h0, v1, h2, v3])
+        let visible = StudioGeometry.ordered([v1, v3])
+        // Move v1 right one *visible* slot → v3's full index (3), not the scoped 1+1=2.
+        XCTAssertEqual(StudioGeometry.reorderDestination(id: v1.id, by: 1, visible: visible, full: full), 3)
+        // Move v3 left one *visible* slot → v1's full index (1).
+        XCTAssertEqual(StudioGeometry.reorderDestination(id: v3.id, by: -1, visible: visible, full: full), 1)
+        // Off the end of the visible subset → nil even though a full neighbor (h2) exists.
+        XCTAssertNil(StudioGeometry.reorderDestination(id: v3.id, by: 1, visible: visible, full: full))
+    }
 }
