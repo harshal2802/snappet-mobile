@@ -6,6 +6,12 @@ Native iOS (+ watchOS) and Android app. iOS is the lead platform. Start from
 
 ## Standing instructions
 
+- **Drive every change through the PDD layer (`pdd/`).** This repo uses Prompt-Driven Development:
+  before/with any feature, fix, or spike, author and commit a feature prompt from
+  `pdd/prompts/templates/feature-prompt.md` (one prompt = one job = one PR), keep `pdd/context/`
+  (project / conventions / decisions / schema) true in the same change, and record non-obvious
+  choices in `pdd/context/decisions.md` the same day. The committed prompt ships alongside the code
+  it produced. See `pdd/README.md`.
 - **Keep the knowledge graph current.** For **any** change that affects the user
   experience — a new screen/sheet/cover, a service, a watch surface, a widget, a
   navigation/data-flow edge, or a meaningful behavior change to an existing one —

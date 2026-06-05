@@ -73,12 +73,38 @@ final class KilterBoardController: NSObject {
         }
         guard let central else { return }
         switch central.state {
-        case .poweredOn: beginScan()
+        case .poweredOn: beginConnect()
         case .poweredOff: state = .bluetoothOff
         case .unauthorized: state = .unauthorized
         case .unsupported: state = .unsupported
         default: state = .scanning   // .unknown / .resetting — wait for didUpdateState
         }
+    }
+
+    /// Adopt a board that's **already connected at the system level** (paired in Settings, or held by
+    /// the official Aurora/Kilter app) before falling back to a scan. Such a board has stopped
+    /// advertising, so a scan would never re-discover it — this was the reported "won't connect, but
+    /// the Kilter app connects fine" case. `retrieveConnectedPeripherals` returns it because iOS has
+    /// cached that it exposes our service.
+    private func beginConnect() {
+        guard let central, central.state == .poweredOn else { return }
+        if let existing = central.retrieveConnectedPeripherals(withServices: [Self.serviceUUID]).first {
+            connect(to: existing)
+        } else {
+            beginScan()
+        }
+    }
+
+    /// Connect to a chosen peripheral (from a system-connected lookup or a scan match) and start the
+    /// watchdog over connect + discovery.
+    private func connect(to peripheral: CBPeripheral) {
+        central?.stopScan()
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        state = .connecting
+        central?.connect(peripheral)
+        startTimeout(Self.connectTimeout,
+                     message: "Couldn't reach the board. Move closer and try again.")
     }
 
     private func beginScan() {
@@ -168,8 +194,9 @@ extension KilterBoardController: CBCentralManagerDelegate {
             switch central.state {
             case .poweredOn:
                 // Radio came up after the user tapped Connect (state was the placeholder `.scanning`
-                // or `.idle`) → kick off the real scan. Don't disturb an in-flight connect/connected.
-                if wantsToConnect && state != .connecting && state != .connected { beginScan() }
+                // or `.idle`) → adopt a system-connected board or start the scan. Don't disturb an
+                // in-flight connect/connected.
+                if wantsToConnect && state != .connecting && state != .connected { beginConnect() }
             case .poweredOff:
                 state = .bluetoothOff
             case .unauthorized:
@@ -193,13 +220,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
             guard state == .scanning,
                   Self.isLikelyBoard(name: localName ?? peripheral.name,
                                      advertisedServiceUUIDs: advertisedServices) else { return }
-            central.stopScan()
-            self.peripheral = peripheral
-            peripheral.delegate = self
-            state = .connecting
-            central.connect(peripheral)
-            startTimeout(Self.connectTimeout,
-                         message: "Couldn't reach the board. Move closer and try again.")
+            connect(to: peripheral)
         }
     }
 
