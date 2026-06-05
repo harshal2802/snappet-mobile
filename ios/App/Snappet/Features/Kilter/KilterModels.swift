@@ -176,8 +176,20 @@ final class KilterLogEntry {
     /// `KilterSession.id` when captured during a connected board session; nil for ad-hoc logs.
     var sessionId: UUID?
 
+    // MARK: - Per-climb timing (additive → lightweight migration; existing rows decode with nil
+    // timestamps and an empty attempt list, so they render as an instantaneous log like before).
+    /// When the climber first started working this climb in the session (stamped on the active
+    /// climb). Time-on-climb is `endedAt − startedAt`; rest-between-climbs is derived across entries.
+    var startedAt: Date?
+    /// When this entry was logged (a send closes the climb). Mirrors `date` for in-session entries.
+    var endedAt: Date?
+    /// One timestamp per Attempt tap, so attempt cadence is reconstructable. `attempts` stays the
+    /// count (populated from this when present).
+    var attemptTimestamps: [Date] = []
+
     init(climbUUID: String, climbName: String, angle: Int, difficulty: Double, gradeLabel: String,
-         status: KilterAscentStatus, attempts: Int = 1, date: Date = .now, sessionId: UUID? = nil) {
+         status: KilterAscentStatus, attempts: Int = 1, date: Date = .now, sessionId: UUID? = nil,
+         startedAt: Date? = nil, endedAt: Date? = nil, attemptTimestamps: [Date] = []) {
         self.climbUUID = climbUUID
         self.climbName = climbName
         self.angle = angle
@@ -187,9 +199,18 @@ final class KilterLogEntry {
         self.attempts = attempts
         self.date = date
         self.sessionId = sessionId
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.attemptTimestamps = attemptTimestamps
     }
 
     var status: KilterAscentStatus { KilterAscentStatus(rawValue: statusRaw) ?? .attempt }
+
+    /// Time spent working this climb, when both ends are known.
+    var timeOnClimb: TimeInterval? {
+        guard let startedAt, let endedAt else { return nil }
+        return max(0, endedAt.timeIntervalSince(startedAt))
+    }
 }
 
 /// A board session — opened when a board connects over BLE (or started manually), it groups the
@@ -205,13 +226,38 @@ final class KilterSession {
     /// `"ble"` when auto-captured from a connected board, `"manual"` otherwise.
     var source: String
 
-    init(id: UUID = UUID(), startedAt: Date = .now, endedAt: Date? = nil, angle: Int, source: String) {
+    // MARK: - Live metrics (additive → SwiftData lightweight migration; existing sessions
+    // decode with an empty series + nil HR bounds, and the summary's HR section hides cleanly).
+    /// The live heart-rate series captured during the session (flushed from the active
+    /// `MetricsSource` buffer when the session ends), `t` seconds from `startedAt` — the same
+    /// engine timeline + `HRPoint` composite the WorkoutTracker uses (reused, not redefined).
+    /// Empty when there was no live HR source (no watch / band, or the simulator).
+    var hrSeries: [HRPoint] = []
+    /// User max HR for %-of-max zone math; `nil` → `HeartRateZone.defaultMaxHR` fallback.
+    var maxHR: Double?
+    /// Resting HR baseline, when known; reserved for %HRR refinement.
+    var restHR: Double?
+    /// `MetricsSourceKind.rawValue` of the transport that drove HR ("appleWatch"/"ble"), for the
+    /// summary's source label; `nil` when no HR was captured.
+    var metricsSourceRaw: String?
+
+    init(id: UUID = UUID(), startedAt: Date = .now, endedAt: Date? = nil, angle: Int, source: String,
+         hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil,
+         metricsSourceRaw: String? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.angle = angle
         self.source = source
+        self.hrSeries = hrSeries
+        self.maxHR = maxHR
+        self.restHR = restHR
+        self.metricsSourceRaw = metricsSourceRaw
     }
+
+    /// Session length: `endedAt − startedAt`, or elapsed-so-far while still active.
+    var duration: TimeInterval { (endedAt ?? .now).timeIntervalSince(startedAt) }
+    var isActive: Bool { endedAt == nil }
 }
 
 /// A climb the user starred. Kept as its own tiny model (rather than a flag on the catalog, which is

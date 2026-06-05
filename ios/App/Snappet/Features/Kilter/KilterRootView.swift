@@ -5,6 +5,9 @@ import SwiftData
 struct KilterClimbRoute: Hashable { let uuid: String }
 struct KilterHistoryRoute: Hashable {}
 struct KilterSettingsRoute: Hashable {}
+/// A finished (or active) board session's rich summary — HR zones, grade pyramid, per-climb
+/// timeline, media + highlight reel.
+struct KilterSessionRoute: Hashable { let id: UUID }
 
 /// Kilter Board catalog: browse climbs from the bundled, read-only catalog, filtered by layout,
 /// angle, and grade (plus a Saved filter), and open a climb for the board render + logging.
@@ -13,6 +16,7 @@ struct KilterSettingsRoute: Hashable {}
 /// deeper screens (detail, history) push onto the shared `SuiteRouter` path.
 struct KilterRootView: View {
     @Environment(SuiteRouter.self) private var router
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Query private var favorites: [KilterFavorite]
     @Query private var allEntries: [KilterLogEntry]
@@ -142,7 +146,34 @@ struct KilterRootView: View {
         .navigationDestination(for: KilterSettingsRoute.self) { _ in
             KilterSettingsView(catalog: catalog)
         }
+        .navigationDestination(for: KilterSessionRoute.self) { route in
+            KilterSessionDetailView(sessionID: route.id, board: board, sessions: sessions)
+        }
         .task(id: filterKey) { refresh() }
+        // Wire the session manager to the app's live-metrics / Live-Activity / media services so a
+        // session (started here or auto-opened on board connect) drives HR + the Live Activity.
+        .onAppear {
+            sessions.bind(liveWorkout: app.liveWorkout,
+                          liveActivity: app.kilterLiveActivity,
+                          media: app.sessionMedia)
+        }
+        // Keep the Live Activity's HR / climb count current while any Kilter screen is up (the root
+        // view stays in the nav stack), throttled inside the controller.
+        .onChange(of: app.liveWorkout.latestHR) { pushLiveActivity() }
+        .onChange(of: sessions.activeClimbName) { pushLiveActivity() }
+        .onChange(of: currentClimbCount) { pushLiveActivity() }
+    }
+
+    /// Climbs logged so far in the active session (the count shown in the banner + Live Activity).
+    private var currentClimbCount: Int {
+        guard let id = sessions.currentId else { return 0 }
+        return allEntries.filter { $0.sessionId == id }.count
+    }
+
+    private func pushLiveActivity() {
+        guard sessions.isActive else { return }
+        sessions.pushLiveActivity(hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
+                                  climbCount: currentClimbCount)
     }
 
     /// Push a random climb from the current filters (Discovery "Surprise me").
@@ -191,22 +222,42 @@ struct KilterRootView: View {
         }
     }
 
-    /// Active-session banner: a live timer + climb count, with End. Logs made while it's up are
+    /// Active-session banner: a live timer, climb count, live HR (when a source is connected), and
+    /// the current climb, with End. Tapping it opens the live summary. Logs made while it's up are
     /// grouped under the session in History.
     @ViewBuilder private var sessionBar: some View {
         if let s = sessions.current {
             let count = allEntries.filter { $0.sessionId == s.id }.count
-            HStack(spacing: 8) {
-                Image(systemName: "record.circle").foregroundStyle(.green)
-                    .symbolEffect(.pulse, options: .repeating)
-                    .font(.subheadline)
-                Text("Session").font(.subheadline.weight(.semibold))
-                Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("kilter.session.end")
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "record.circle").foregroundStyle(.green)
+                        .symbolEffect(.pulse, options: .repeating)
+                        .font(.subheadline)
+                    Text("Session").font(.subheadline.weight(.semibold))
+                    Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    if app.liveWorkout.state != .unavailable {
+                        KilterHRPill(bpm: app.liveWorkout.latestHR, compact: true)
+                    }
+                    Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityIdentifier("kilter.session.end")
+                }
+                Button { router.push(KilterSessionRoute(id: s.id)) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "figure.climbing").font(.caption)
+                        Text(sessions.activeClimbName).font(.caption.weight(.medium)).lineLimit(1)
+                        if !sessions.activeClimbGrade.isEmpty {
+                            Text(sessions.activeClimbGrade).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("kilter.session.open")
             }
             .padding(.horizontal).padding(.vertical, 8)
             .background(Color.green.opacity(0.12))

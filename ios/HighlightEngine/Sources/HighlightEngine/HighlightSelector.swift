@@ -58,19 +58,41 @@ public extension HighlightSelector {
             if chosen.count >= config.maxHighlights { break }
         }
 
+        // Full-length mode: HR still chooses *which* media to feature, but each appears once at full
+        // length — collapse repeated moments within one media to its single highest-scoring moment so a
+        // video with several peaks yields one full-length segment, not duplicates.
+        let selected: [Candidate]
+        if config.fullClips {
+            var bestPerMedia: [String: Candidate] = [:]
+            for c in chosen where (bestPerMedia[c.media.id].map { c.s > $0.s } ?? true) {
+                bestPerMedia[c.media.id] = c
+            }
+            selected = bestPerMedia.values.sorted { $0.s > $1.s }
+        } else {
+            selected = chosen
+        }
+
         // Split high vs low by median score; label the bottom `lowMomentFraction`.
-        let scores = chosen.map(\.s).sorted()
-        let lowCount = Int((Double(chosen.count) * config.lowMomentFraction).rounded(.down))
+        let scores = selected.map(\.s).sorted()
+        let lowCount = Int((Double(selected.count) * config.lowMomentFraction).rounded(.down))
         let lowThreshold = lowCount > 0 ? scores[max(0, lowCount - 1)] : -Double.infinity
 
-        return chosen.enumerated().map { (i, c) in
+        return selected.enumerated().map { (i, c) in
             let kind: Highlight.Kind = c.s <= lowThreshold ? .low : .high
-            // Pad, biased earlier (HR lags the moment). Clamp inside the media item.
-            let center = c.t - config.hrLagSec
-            let start = max(c.media.startOffset, center - config.clipLeadSec)
-            let end = c.media.kind == .photo
-                ? c.media.startOffset
-                : min(c.media.endOffset, center + config.clipTrailSec)
+            let start: Double
+            let end: Double
+            if config.fullClips {
+                // The whole media item (a photo collapses to its instant).
+                start = c.media.startOffset
+                end = c.media.kind == .photo ? c.media.startOffset : c.media.endOffset
+            } else {
+                // Pad, biased earlier (HR lags the moment). Clamp inside the media item.
+                let center = c.t - config.hrLagSec
+                start = max(c.media.startOffset, center - config.clipLeadSec)
+                end = c.media.kind == .photo
+                    ? c.media.startOffset
+                    : min(c.media.endOffset, center + config.clipTrailSec)
+            }
             return Highlight(
                 id: "hl-\(i)-\(c.media.id)", mediaItemId: c.media.id, kind: kind,
                 atOffset: c.t, clipStart: start, clipEnd: max(start, end), score: c.s

@@ -1848,3 +1848,84 @@ inside the route value; a networked share. **Verified**: `KilterDeepLinkTests` c
 round-trip + foreign-code rejection (no device). The BLE adopt path and the camera path stay
 **device-unverified** per the device-only rule — `xcodebuild` + a real board/camera run is deferred to
 macOS (authored on Linux/cloud). Android mirror is a follow-up.
+
+## 2026-06-05 — Kilter rich session: HR + per-climb timing + media reel + Live Activity (workout parity)
+
+**Decision**: Bring the WorkoutTracker's live-session toolkit to a Kilter board session, in one PR
+(prompt `pdd/prompts/features/18-ios-kilter-rich-session.md`), by **reusing** rather than rebuilding.
+**(1) Decouple the metrics layer.** The sources only read `startedAt` + an `HKWorkoutActivityType` from a
+`WorkoutSession`, so I lifted those into a tiny `LiveMetricsContext` and changed the `MetricsSource`
+protocol's `start(for:)` → `start(_:)`. `LiveMetricsCoordinator` keeps a `start(for:sport:category:)`
+**convenience overload** (building the context via `WorkoutActivityMapping`), so the two workout call
+sites — and the existing test — don't churn; the only internal change is the coordinator forwarding
+`active.start(context)`. `MetricsSource.swift`/`LiveMetricsCoordinator.swift` gain `import HealthKit`
+(`HKWorkoutActivityType` is a plain enum) — the engine stays platform-free. **(2) Separate Live Activity
+contract.** A new `KilterActivityAttributes` (board + current-climb/grade/count/angle/HR) rather than
+overloading the exercise/set-shaped `WorkoutActivityAttributes`, with a dedicated
+`KilterLiveActivityController` + `KilterLiveActivity` widget, so the workout activity path is untouched.
+**(3) Reuse `SessionMedia`.** It's already keyed on a bare `UUID`; Kilter rows set `sessionID =
+KilterSession.id` and one new optional `assignedClimbUUID` (clip→climb), with the workout-only
+exercise/set fields left nil. **(4) Additive models, no new tables.** `KilterSession.hrSeries` is the same
+inlined `[HRPoint]` composite the workout uses (reused, not redefined); `KilterLogEntry` gains
+`startedAt`/`endedAt`/`attemptTimestamps`; all defaulted → SwiftData lightweight migration,
+`SnappetSchema.models` unchanged. **(5) Pure cores.** `KilterSessionStats` (timing/rest/pyramid/sends-per-
+hour over plain-value `KilterClimbLog`s), `KilterWorkoutBuilder` + `KilterMediaAssignment`
+(`KilterSession`+media → `HighlightEngine.Workout(.climbing)`, clip-offset→climb window), and
+`KilterLiveSnapshot.shouldPush` are all device-free and unit-tested. The reel reuses
+`engine.generate(for:)` (which auto-selects the `.climbing` preset by `workout.activity`) + `ReelExporter`.
+**Why**: the coupling was shallow and the toolkit already on-device; the cheapest correct path was a
+seam (`LiveMetricsContext`) + reuse, not a parallel stack. **Rules out**: a Kilter-specific HR transport;
+a `KilterSessionMedia` model; overloading `WorkoutActivityAttributes`; widening `WorkoutSession` into a
+polymorphic session. **Verified**: `xcodebuild test` green (266 tests incl. the new
+`KilterSessionStatsTests` / `KilterWorkoutBuilderTests` / `KilterLiveSnapshotTests` + a `LiveMetricsContext`
+rebase test); `HighlightEngine` `swift test` unchanged (18). **Device-unverified** per the device-only
+rule: the live HR stream (watch + BLE band), the Live Activity rendering, board connect auto-session-open,
+and Photos auto-discovery + reel export — deferred to a real board + watch/HR band on macOS.
+
+## 2026-06-05 — Kilter session media: per-climb galleries, full-length uncapped reels, studio parity
+
+**Decision**: Three user-requested follow-ups on the Kilter rich session, again by **reuse, not rebuild**.
+**(1) Full-length, uncapped reels — for *both* workout and Kilter (user's call).** Added
+`HighlightConfig.fullClips` (default `false`, so the 18 existing engine tests are untouched) + a
+`.fullLength()` copy-helper; when set, `HighlightSelector.select` still uses HR to pick *which* media to
+feature (NMS + `maxHighlights`) but emits each as a **full-length** clip (`clipStart = media.startOffset`,
+`clipEnd = media.endOffset`) and **collapses repeated moments within one media** to a single segment (so a
+video with several peaks yields one full clip, not duplicates). `ReelPlanner.targetDuration` became
+`Double?` — `nil` = no length cap. `AppModel.engine` now uses `ReelPlanner(targetDuration: nil)`, and the
+single reel call site (`ReelViewModel.generate`) passes `.preset(for: activity).fullLength()`. So the user's
+"no length limit" applies everywhere through two app-layer knobs; the engine defaults (and their tests) are
+unchanged. **(2) Per-climb media galleries.** `KilterSessionDetailView`'s timeline now renders a horizontal
+strip of each climb's clips (filtered by `SessionMedia.assignedClimbUUID`, deduped to the climb's first
+timeline row) + an "Unassigned" strip, reusing the already-public `SessionMediaThumb`. A "Move to climb…"
+menu reassigns a clip (`assignedClimbUUID` + `assignmentSource`), mirroring the workout reassign. Grouping is
+a pure generic helper `KilterMediaGrouping` (unit-tested). **(3) Full editing parity.** The workout
+components are domain-agnostic, so Kilter reuses them as-is: tapping a clip opens `ClipEditorView(media:)`
+(trim/speed/crop/text/HR-overlay/mute); "Open studio" find-or-creates a `StudioProject(sessionID:
+kilterSession.id, …)` and presents `StudioEditorView`; and the reel now goes through the **shared**
+`ReelView` (pin/remove/reorder/preview/export) instead of a one-shot export. To make `ReelView` source-
+agnostic, `ReelViewModel`'s hard `WorkoutSummary` dependency became a small `ReelSource { id, activity,
+title, start, makeWorkout(model, manualMedia) }` — `makeWorkout` takes the `AppModel` as a *parameter* so a
+source can be built in a `View.init` (no environment yet); `ReelView(summary:)`/`ReelViewModel(summary:)`
+stay as back-compat shims (workout call sites unchanged), and Kilter passes `.kilterSession(session, media:)`.
+**Why**: every editor/reel surface is keyed by `SessionMedia`/`StudioProject`/`Highlight[]` with no workout
+coupling, so a source seam + reuse beats a parallel Kilter studio. **Rules out**: a Kilter-only reel config
+(user chose "both"); duplicating the reel/clip/studio UI; trimming clips by default. **Verified**:
+`HighlightEngine` `swift test` 21/21 (3 new: full-clip dedupe + full-length window + nil-budget keeps-all);
+`xcodebuild test` 267/267 (new `KilterMediaGrouping` + `ReelSource` coverage); clean build of app + widget +
+watch. **Device-unverified**: the clip-editor/studio/reel *render + export* on real footage (needs a device
+with clips); the per-climb gallery wiring is type-checked + the grouping is unit-tested.
+
+**Self-review hardening (same day, high-effort multi-agent review of the diff).** Fixed: **(a)** logging
+now keeps **one `KilterLogEntry` per climb per session** — repeated logs (attempts, then a send) accumulate
+onto a single row (total tries + timestamps; a send is sticky) instead of inserting duplicate rows that
+double-counted the climb in the stats/timeline. **(b)** `beginClimb` re-arms when a prior send disarmed the
+active climb (and `log` re-arms too), so time-on-climb isn't lost on a re-log. **(c)** `KilterSessionManager`
+gained a `didStartMetrics` guard so `end()` only flushes/stops the HR source **it** started — a Kilter
+session that opened while a WorkoutTracker workout was running can no longer steal that workout's HR buffer or
+stop its source; and `metricsSourceRaw` is now stamped at end **from actually-captured samples** (and shown
+as "via Apple Watch / Heart-rate band" in the summary) instead of a misleading default. **(d)** the Kilter
+`ReelSource` honors the limited-Photos "Select clips" picks (was a dead no-op) and snapshots Sendable values
+(not the `@Model`) to satisfy Swift-6 isolation. **(e)** reused `WorkoutLiveSnapshot.elapsedString` instead
+of a duplicate duration formatter. Deferred (noted, not blocking): the `KilterLiveActivityController` /
+`KilterActivityAttributes` / `KilterLiveActivity` trio duplicates the workout Live-Activity stack — a generic
+parameterized over the attributes type would collapse it, but the split keeps the flagship path untouched.

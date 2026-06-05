@@ -149,11 +149,8 @@ final class StudioEditorViewModel {
     /// whole series maps across the whole video; the playhead dot tracks the video's progress.
     private func loadHRSeries() {
         guard hrSeries.isEmpty else { return }
-        let sid = project.sessionID
-        if let session = try? context.fetch(
-            FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.id == sid })).first {
-            hrSeries = session.hrSeries
-        }
+        // The project's session may be a workout OR a Kilter board session (shared studio).
+        hrSeries = SessionHRSeries.forSession(project.sessionID, in: context)
     }
     /// True when the session has enough HR data to draw a chart.
     var hasHRData: Bool { hrSeries.count >= 2 }

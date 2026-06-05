@@ -95,12 +95,11 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
 
     // MARK: - Start / stop
 
-    func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
-        let type = WorkoutActivityMapping.activityType(sport: sport, category: category)
-        start(activityType: type, sessionStart: session.startedAt)
+    func start(_ context: LiveMetricsContext) {
+        start(activityType: context.activityType, sessionStart: context.startedAt)
     }
 
-    /// Lower-level start used by the routine-driven `start(for:)` and by tests/A3.
+    /// Lower-level start used by `start(_:)` and by tests/A3.
     func start(activityType: HKWorkoutActivityType, sessionStart: Date) {
         self.sessionStart = sessionStart
         samples.removeAll()

@@ -138,6 +138,22 @@ session media tagging, an enriched summary, a CapCut-style clip editor, engine-d
 and share/save — bridging WorkoutTracker to `HighlightEngine`. Tracking: GitHub issue
 [#15](https://github.com/harshal2802/snappet-mobile/issues/15).
 
+🟢 **Kilter Board mini-app (#35)** — browse the bundled read-only climb catalog, render a climb on the
+board, log Flash/Sent/Project/Attempt, review history, QR-share climbs, and (gated, device-unverified)
+light the physical board over BLE.
+
+🟢 **Kilter rich session (2026-06-05, `pdd/prompts/features/18-ios-kilter-rich-session.md`).** Brought
+the Live Workout toolkit to a climbing session by **reuse, not rebuild**: live HR (Apple Watch *or* a BLE
+chest strap, via a `LiveMetricsContext` that decouples `LiveMetricsCoordinator` from `WorkoutSession`),
+per-climb timing + attempts, photo/video auto-discovery (`SessionMediaService`) with clip→climb tagging, a
+one-tap highlight reel (`HighlightEngine.Workout(.climbing)` + `ReelExporter`), a Lock Screen / Dynamic
+Island Live Activity (`KilterActivityAttributes` + a dedicated controller/widget), and a rich
+`KilterSessionDetailView` summary (HR zones, grade pyramid, per-climb timeline). All data-model changes are
+additive (SwiftData lightweight migration); pure cores (`KilterSessionStats`, `KilterWorkoutBuilder`,
+`KilterLiveSnapshot`) are unit-tested. **Verified on the iPhone 17 Pro sim: 266 unit tests green**;
+`HighlightEngine` 18/18. Device-only paths (live HR, Live Activity render, board auto-session-open, Photos
+discovery + reel export) are deferred to a real board + watch/HR band.
+
 ## License
 
 TBD.

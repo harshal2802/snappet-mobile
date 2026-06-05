@@ -5,11 +5,15 @@ import HighlightEngine
 /// The flagship screen: a finished reel by default, with one-tap Regenerate / Share
 /// and a light edit list. Casual users never touch the list; power users curate it.
 struct ReelView: View {
-    let summary: WorkoutSummary
+    let source: ReelSource
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vm: ReelViewModel?
     @State private var showPicker = false
+
+    init(source: ReelSource) { self.source = source }
+    /// Back-compat for the workout path (`WorkoutListView`).
+    init(summary: WorkoutSummary) { self.source = .workout(summary) }
 
     var body: some View {
         Group {
@@ -40,7 +44,7 @@ struct ReelView: View {
         }
         // Cross-fade between the major reel phases (build / ready / export / done), gated.
         .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: vm?.state)
-        .navigationTitle("\(summary.activity.rawValue.capitalized) reel")
+        .navigationTitle(source.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if vm?.state == .ready {
@@ -59,7 +63,7 @@ struct ReelView: View {
         }
         .task {
             if vm == nil {
-                let v = ReelViewModel(summary: summary, model: model)
+                let v = ReelViewModel(source: source, model: model)
                 vm = v
                 await v.generate()
             }
