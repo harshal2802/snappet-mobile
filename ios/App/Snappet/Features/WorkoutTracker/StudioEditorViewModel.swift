@@ -475,6 +475,8 @@ final class StudioEditorViewModel {
 
     /// The main video's collage frame, or `nil` when it fills the whole canvas (legacy).
     var baseFrame: StudioFrameRect? { snapshot.baseFrame }
+    /// The base (main) video's oriented source aspect — locks the base frame's resize to its footage.
+    var baseSourceAspect: CGFloat? { clips.first.flatMap { sourceAspects[$0.localIdentifier] } }
     /// Whether the main video is currently framed into a sub-rect (drives the canvas handle + toggle).
     var baseFramed: Bool { snapshot.baseFrame != nil }
 

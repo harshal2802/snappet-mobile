@@ -147,6 +147,8 @@ struct StudioEditorView: View {
                                 selectedID: vm.selectedOverlayID,
                                 snapEnabled: vm.snapEnabled,
                                 baseFrame: vm.baseFrame,
+                                sourceAspects: vm.sourceAspects,
+                                baseAspect: vm.baseSourceAspect,
                                 onSelect: { vm.selectOverlay($0) },
                                 onMove: { vm.setOverlayPosition($0, normalized: $1) },
                                 onScale: { vm.setOverlayScale($0, $1) },
