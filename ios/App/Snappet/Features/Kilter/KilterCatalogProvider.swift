@@ -39,28 +39,22 @@ struct FileImportProvider: KilterCatalogProvider {
     }
 }
 
-/// **Phase 2 — NOT shipped.** An inert stub kept so the in-app Aurora sync drops into this exact seam
-/// once the endpoint / account / Terms-of-Use open questions in issue #42 are answered. It performs
-/// **no** network requests today and must never be presented as functional (the sync button is
-/// disabled). When implemented it will own the module's only `URLSession`, restricted to an
-/// allow-listed set of Aurora hosts, user-initiated, with no analytics. See `pdd/context/decisions.md`.
-struct AuroraSyncProvider: KilterCatalogProvider {
-    var displayName: String { "Sync from Kilter" }
+/// **Phase 2 — hosted-dataset download.** Fetches a board's catalog (gzipped SQLite) from a static host
+/// the user controls (the Snappet Board Explorer Pages site by default), trims it on-device with the
+/// chosen filters, and hands back a small importable file — so the user gets the catalog without the
+/// `boardlib` + Files dance. It owns the module's **only** network egress (one GET to the configured
+/// host), user-initiated, no analytics, nothing uploaded — see `KilterAuroraSync.swift` and
+/// `pdd/context/decisions.md` for the (narrow, personal-use) legal posture.
+struct HostedCatalogProvider: KilterCatalogProvider {
+    let board: CatalogBoardEntry
+    var filter: CatalogFilter
+    var baseURL: String = kilterDefaultCatalogHost
+
+    var displayName: String { "\(board.label) download" }
 
     func fetch(progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
-        throw KilterCatalogError.syncNotAvailable
-    }
-}
-
-enum KilterCatalogError: LocalizedError {
-    case syncNotAvailable
-
-    var errorDescription: String? {
-        switch self {
-        case .syncNotAvailable:
-            return "In-app catalog sync isn't available yet. For now, import a catalog file you built "
-                + "with the boardlib tool (see the Kilter tooling README)."
-        }
+        try await HostedCatalogClient(baseURL: baseURL).buildCatalog(board: board, filter: filter,
+                                                                     progress: progress)
     }
 }
 
