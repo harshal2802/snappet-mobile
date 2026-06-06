@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## 2026-06-05 — PiP/base resize: aspect-locked corner-drag + flicker-free live resize (P21)
+
+Device verification of the placement fix surfaced two more resize issues, both fixed in
+`StudioOverlayCanvas`. **(1) Letterbox on free resize** — after the fill→fit change, dragging a PiP
+corner to an aspect ≠ its footage left the dashed box bigger than the aspect-fit video (the box stopped
+hugging the video). Fix: **lock corner-resize to the source aspect** — the canvas now receives
+`sourceAspects` (resolved oriented w/h per `localIdentifier`, already computed in the VM) and the base
+video's aspect; `ResizableFrame.resizedFrame` derives the off-axis from `contentAspect` and
+`clampedAspectSize` clamps into [0.1,1] **while preserving the ratio**, so the box always keeps the
+footage aspect → the fit video fills it edge-to-edge. Pinch + grid presets still allow free aspect (for
+collages). **(2) Resize flicker** — the live-resize had been driven by a `@State liveResize` SET FROM
+the corner handle's own gesture callback, and the handle's on-screen position was recomputed from that
+same state. So the handle moved out from under the finger → re-fired its gesture → oscillated (the
+new aspect-lock branch `newW >= newH·r` toggling each frame amplified it into a visible flicker,
+confirmed by frame-diffing a screen recording: the changing pixels were the box/handles, not the video).
+Fix: the **canonical SwiftUI draggable pattern** — replace `@State` with a `@GestureState cornerDrag`,
+anchor the gesture-hosting handles at the **committed** size (they never move during the drag, so the
+gesture's translation stays stable), offset ONLY the dragged dot, and render the live-resizing outline
+as a **non-interactive** overlay (hosts no gesture → can't feed back). **Why @GestureState over @State**:
+@GestureState is bound to the gesture lifecycle and auto-resets, and — critically — moving it out of the
+handle's layout-position path is what breaks the feedback loop. **Rules out**: driving live-resize layout
+from a `@State` the gesture writes; repositioning a gesture host from its own gesture value; per-axis free
+resize for a PiP (now aspect-locked on corner-drag). **Verified on device (MrRobot)**: placement sits
+under the outline (preview), corner-resize hugs the video with no letterbox, and the drag is smooth (no
+flicker) — confirmed by screen recording. Builds clean; full suite green.
+
 ## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
 
 **Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),
