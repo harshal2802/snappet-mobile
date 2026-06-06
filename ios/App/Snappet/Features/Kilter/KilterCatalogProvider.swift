@@ -10,8 +10,14 @@ import Foundation
 protocol KilterCatalogProvider: Sendable {
     /// Shown on the button that triggers this provider.
     var displayName: String { get }
+    /// Library name for the installed catalog (Settings list). Defaults to `displayName`.
+    var catalogName: String { get }
     /// Produce a catalog file on local disk. `progress` is 0…1 (best-effort).
     func fetch(progress: @escaping @Sendable (Double) -> Void) async throws -> URL
+}
+
+extension KilterCatalogProvider {
+    var catalogName: String { displayName }
 }
 
 /// **Phase 1 — the shipped path.** The user supplies a `.sqlite3` they built/exported themselves
@@ -39,28 +45,25 @@ struct FileImportProvider: KilterCatalogProvider {
     }
 }
 
-/// **Phase 2 — NOT shipped.** An inert stub kept so the in-app Aurora sync drops into this exact seam
-/// once the endpoint / account / Terms-of-Use open questions in issue #42 are answered. It performs
-/// **no** network requests today and must never be presented as functional (the sync button is
-/// disabled). When implemented it will own the module's only `URLSession`, restricted to an
-/// allow-listed set of Aurora hosts, user-initiated, with no analytics. See `pdd/context/decisions.md`.
-struct AuroraSyncProvider: KilterCatalogProvider {
-    var displayName: String { "Sync from Kilter" }
+/// **Phase 2 — hosted-dataset download.** Fetches a board's catalog (gzipped SQLite) from a static host
+/// the user controls (the Snappet Board Explorer Pages site by default), trims it on-device with the
+/// chosen filters, and hands back a small importable file — so the user gets the catalog without the
+/// `boardlib` + Files dance. It owns the module's **only** network egress (one GET to the configured
+/// host), user-initiated, no analytics, nothing uploaded — see `KilterAuroraSync.swift` and
+/// `pdd/context/decisions.md` for the (narrow, personal-use) legal posture.
+struct HostedCatalogProvider: KilterCatalogProvider {
+    let board: CatalogBoardEntry
+    var filter: CatalogFilter
+    var baseURL: String = kilterDefaultCatalogHost
+    /// A human label for the library list (composed by the sheet from the chosen filters).
+    var name: String = ""
+
+    var displayName: String { "\(board.label) download" }
+    var catalogName: String { name.isEmpty ? displayName : name }
 
     func fetch(progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
-        throw KilterCatalogError.syncNotAvailable
-    }
-}
-
-enum KilterCatalogError: LocalizedError {
-    case syncNotAvailable
-
-    var errorDescription: String? {
-        switch self {
-        case .syncNotAvailable:
-            return "In-app catalog sync isn't available yet. For now, import a catalog file you built "
-                + "with the boardlib tool (see the Kilter tooling README)."
-        }
+        try await HostedCatalogClient(baseURL: baseURL).buildCatalog(board: board, filter: filter,
+                                                                     progress: progress)
     }
 }
 
@@ -83,6 +86,10 @@ final class KilterCatalogInstaller {
     var isInstalled: Bool { store.isInstalled }
     var metadata: KilterCatalogMeta? { store.metadata() }
 
+    /// The whole on-device library (most-recent first) + which one is active — for the Settings list.
+    var catalogs: [InstalledCatalog] { store.installed() }
+    var activeCatalogId: String? { store.activeCatalogId }
+
     /// Run a provider end-to-end. On success, posts the store's change notification so open screens
     /// reload. A failure anywhere (fetch / validate / install) surfaces a user-facing message and
     /// leaves any previously-installed catalog untouched.
@@ -101,8 +108,9 @@ final class KilterCatalogInstaller {
                                          climbCount: validated.climbCount,
                                          sizeBytes: validated.sizeBytes,
                                          source: provider.displayName,
-                                         installedAt: .now)
-            try store.install(from: url, meta: meta)   // consumes `url` on success
+                                         installedAt: .now,
+                                         name: provider.catalogName)
+            try store.install(from: url, meta: meta)   // consumes `url`; adds + activates a new entry
             phase = .installed
             store.postDidChange()
         } catch {
@@ -124,8 +132,30 @@ final class KilterCatalogInstaller {
         }
     }
 
-    /// "Remove downloaded catalog" — delete the installed catalog and return to the opt-in state.
-    func remove() {
+    /// Remove one catalog from the library (Settings list). If it was the active one, the store promotes
+    /// the most-recent remaining catalog (or none).
+    func remove(id: String) {
+        do {
+            try store.remove(id: id)
+            phase = .idle
+            store.postDidChange()
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Make a different installed catalog the active one the reader opens.
+    func activate(id: String) {
+        do {
+            try store.setActive(id: id)
+            store.postDidChange()
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Remove the entire library and return to the opt-in state.
+    func removeAll() {
         do {
             try store.clear()
             phase = .idle

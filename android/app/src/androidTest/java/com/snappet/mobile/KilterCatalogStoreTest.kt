@@ -2,6 +2,8 @@ package com.snappet.mobile
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.snappet.mobile.feature.kilter.CatalogFilter
+import com.snappet.mobile.feature.kilter.HostedCatalogClient
 import com.snappet.mobile.feature.kilter.KilterCatalog
 import com.snappet.mobile.feature.kilter.KilterCatalogException
 import com.snappet.mobile.feature.kilter.KilterCatalogFixture
@@ -107,6 +109,79 @@ class KilterCatalogStoreTest {
         } finally {
             store.clear()
             KilterCatalog.reset()
+        }
+    }
+
+    private fun installFixture(store: KilterCatalogStore, name: String, atMillis: Long): String {
+        val f = KilterCatalogFixture.build(tempFile())
+        val v = KilterCatalogValidator.validate(f)
+        val id = store.install(f, KilterCatalogMeta(v.version, v.climbCount, v.sizeBytes, "Test", atMillis, name))
+        f.delete()
+        return id
+    }
+
+    @Test
+    fun libraryHoldsMultipleNewestActive() {
+        val dir = File(ctx.cacheDir, "kilter-lib-${UUID.randomUUID()}")
+        val store = KilterCatalogStore(dir)
+        val a = installFixture(store, "A", 1000L)
+        val b = installFixture(store, "B", 2000L)
+        assertEquals(2, store.installed().size)
+        assertEquals("B", store.installed().first().meta.name)   // most-recent first
+        assertEquals(b, store.activeCatalogId)                    // a fresh install becomes active
+        store.setActive(a)
+        assertEquals("A", store.metadata()?.name)
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun removingActiveFallsBackToAnother() {
+        val dir = File(ctx.cacheDir, "kilter-lib-${UUID.randomUUID()}")
+        val store = KilterCatalogStore(dir)
+        val a = installFixture(store, "A", 1000L)
+        val b = installFixture(store, "B", 2000L)
+        assertEquals(b, store.activeCatalogId)
+        store.remove(b)
+        assertEquals(1, store.installed().size)
+        assertEquals(a, store.activeCatalogId)
+        store.remove(a)
+        assertTrue(store.installed().isEmpty())
+        assertFalse(store.isInstalled)
+        assertNull(store.activeCatalogId)
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun filteredBuildFromFixtureReads() {
+        val source = KilterCatalogFixture.build(tempFile())
+        val out = tempFile()
+        HostedCatalogClient().buildFilteredCatalog(
+            source.path, CatalogFilter(layoutIds = listOf(1), maxClimbs = 100), out.path)
+        assertEquals(4, KilterCatalogValidator.validate(out).climbCount)
+        source.delete(); out.delete()
+    }
+
+    @Test
+    fun filteredBuildCapKeepsTopMostClimbed() {
+        val source = KilterCatalogFixture.build(tempFile())
+        val out = tempFile()
+        HostedCatalogClient().buildFilteredCatalog(
+            source.path, CatalogFilter(layoutIds = listOf(1), maxClimbs = 2), out.path)
+        assertEquals(2, KilterCatalogValidator.validate(out).climbCount)
+        source.delete(); out.delete()
+    }
+
+    @Test
+    fun filteredBuildEmptyMatchThrows() {
+        val source = KilterCatalogFixture.build(tempFile())
+        val out = tempFile()
+        try {
+            assertThrows(KilterCatalogException::class.java) {
+                HostedCatalogClient().buildFilteredCatalog(
+                    source.path, CatalogFilter(layoutIds = listOf(8)), out.path)
+            }
+        } finally {
+            source.delete(); out.delete()
         }
     }
 }

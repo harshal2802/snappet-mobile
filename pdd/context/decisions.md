@@ -4,6 +4,80 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-06] Kilter — in-app catalog download from a hosted dataset (Phase 2) (#42)
+
+**Decision**: `KilterCatalogSyncView` gains a **Download from Kilter** button that fetches a board's
+catalog as a **gzipped SQLite from a static host the user controls** (the Snappet *Board Explorer*
+GitHub Pages site, `board-data/<board>.sqlite.gz`, by default), then **trims it on-device** with the
+same filters the explorer's `exportDb.ts` uses, and installs it through the unchanged
+`KilterCatalogInstaller` path. The user **explicitly accepted the legal trade-off** (2026-06-06) that
+prompt 22 deferred. This reverses *only* the "sync stays inert" part of the [2026-06-05] entry;
+everything else there (no re-bundling, user-data model untouched, file-import primary) **still holds**.
+
+**Why a hosted dataset and NOT Aurora's API**: the first cut called Aurora's `/sync` directly (mirroring
+`boardlib`'s `login` + paginated sync). That host (`kilterboardapp.com`) turns out to **reject every TLS
+handshake** (verified from macOS curl/openssl/Python *and* the iPhone — an IONOS box that returns
+`internal_error`); `boardlib`'s real catalog path doesn't use `/sync` at all, it extracts `db.sqlite3`
+from the official APK. Scraping a 108 MB APK from apkpure on-device was the only other "live" path —
+heavy, fragile, and the worst legal posture. The user already hosts the datasets on their own Pages
+(under their own ToU acceptance) via the Board Explorer, so the app just downloads a file from a URL the
+user controls — much closer to "bring your own file" than any Aurora-direct fetch.
+
+**Concrete choices made:**
+- **`KilterAuroraSync.swift` → `HostedCatalogClient`** owns the module's only `URLSession` (ephemeral):
+  one GET for `manifest.json` (to list importable boards) and one for `<board>.sqlite.gz`. It streams
+  the gzip through **zlib** (`inflateInit2_(…, 47)` — added `libz.tbd` + `#import <zlib.h>` to the
+  bridging header) to a temp file, never holding the ~165 MB raw DB in memory.
+- **Trim mirrors the Board Explorer `exportDb.ts`**: `ATTACH` the downloaded DB, recreate each table from
+  its source DDL, copy reference/geometry tables (`FULL_TABLES`) whole, subset the climb tables to a
+  `_keep` set of filtered uuids, recreate indexes, `VACUUM`. The filter (`CatalogFilter`) mirrors
+  `query.ts buildConditions` (layout/grade/ascents/quality/setter/name/benchmark/listed/single-frame)
+  **plus a `maxClimbs` top-N-most-climbed cap** — the explorer expects manual narrowing; a phone always
+  caps (like `build_bundled_db.py --limit`). Real-data check: top-2000 → a **6.1 MB** importable catalog.
+- **No accounts.** The dataset is a static file, so there are no credentials — the picker is board +
+  filters only. The host URL is editable (`@AppStorage`) so the user can point elsewhere.
+- **Pure half unit-tested; download is device-owed.** `KilterAuroraSyncTests` covers the real zlib
+  gunzip (round-trip) and the filtered build (top-N cap, empty-match → throw, benchmark-only) by feeding
+  the `KilterCatalogFixture` as a synthetic source through the real reader. The 81 MB download itself is
+  verified on the physical device.
+
+**Follow-up same day (filter parity · layout scope · multi-catalog library):**
+- **Full Board-Explorer filter parity** in the download sheet — `CatalogFilter` already mirrored
+  `query.ts buildConditions`; the sheet now surfaces all of it (layouts, **angle**, min/max grade, min
+  ascents, min quality, setter, name, benchmark/listed/single-frame) + the top-N cap. Grade/angle/layout
+  option lists are **static Kilter constants** (`KilterCatalogOptions`) since the dataset isn't loaded
+  until after download; the grade scale is the real `difficulty_grades` (difficulty 10–33 → V0–V16).
+- **Scope today = Kilter Original (1) + Homewall (8) only.** Other boards (from the manifest) and other
+  Kilter layouts render **struck-through / disabled** in the sheet as explicit future work — the reader
+  is Kilter-shaped and only these two layouts are validated.
+- **The store became a multi-catalog *library*.** `KilterCatalogStore` now keeps each install under
+  `catalogs/<uuid>/` with an `active-catalog` pointer file (was a single `kilter.sqlite3`); `install`
+  **adds + activates** (no longer replaces), and there's `installed()` / `remove(id:)` / `setActive(id:)`
+  + a one-time migration that folds any legacy single file into the library. A meta `name` (optional,
+  back-compat) labels each entry. **Settings** gained a **Download from Kilter** button and a
+  **Downloaded catalogs** list — tap to make active, swipe to remove — replacing the single
+  refresh/remove rows. The reader still opens the *active* catalog and reloads on the change
+  notification, so switching active in Settings re-points browse.
+
+**Android port (same day):** the whole feature is ported to Kotlin/Compose at parity — `HostedCatalogClient`
+(`HttpURLConnection` + `java.util.zip.GZIPInputStream`, so no zlib shim is needed unlike iOS;
+`SQLiteDatabase` ATTACH for the same exportDb-style trim), the multi-catalog `KilterCatalogStore`
+(`catalogs/<id>/` + `active-catalog` pointer, install adds + activates, `installed()`/`remove(id)`/
+`setActive(id)`, legacy migration), a `KilterCatalogDownloadSheet` (ModalBottomSheet) with the full
+filter set + Original/Homewall scope (others struck-through), and a Settings **Downloaded catalogs**
+list (RadioButton active + per-row Remove) + **Download from Kilter** button. Added the **INTERNET**
+permission (was BLE-only). One Android-specific gotcha: `SQLiteDatabase.execSQL` rejects
+`PRAGMA journal_mode` (it returns a row) — dropped the PRAGMA optimizations. Instrumented suite green
+(23, incl. multi-catalog + filtered-build). Device-owed: the live ~80 MB download → trim on a real
+Android device (the pure half is covered).
+
+**Rules out / guardrails (unchanged)**: **not** for public App Store distribution — Aurora's ToU +
+App Store Guideline 5.2.2 keep this **personal / sideload** only; the carve-out stays narrow + named.
+No Aurora API calls, no re-bundling a catalog into the app, no background/auto sync (user-initiated
+only), no analytics, no Snappet backend, nothing uploaded; egress is one GET to the configured host. The
+user-data model (`KilterLogEntry`/`KilterSession`/`KilterFavorite`) is untouched and file-import stays
+primary. Android port to follow (the seam is identical).
+
 ## 2026-06-06 — Rich text overlays: wrap-to-width fit + colour/highlight/font/style (P21)
 
 Device feedback: a large climb-name caption spilled past both edges of the video, and text had no
