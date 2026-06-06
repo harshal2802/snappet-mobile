@@ -66,6 +66,18 @@ enum KilterCatalogFixture {
         let install = args.contains("-uiTestInstallKilterCatalog")
         guard install || args.contains("-uiTestFreshStore") else { return }
 
+        // Deterministic browse state for UI tests. The Kilter filter prefs (angle/layout/grade) live in
+        // `@AppStorage` → UserDefaults, which persists across simulator launches and `-uiTestFreshStore`
+        // does NOT reset (it only swaps SwiftData to in-memory). The synthetic fixture only carries
+        // climbs on layout 1 at angles 25/30/40, so a leftover angle from a prior run (e.g. 0, which the
+        // old bundled Aurora catalog had but the fixture doesn't) would filter every climb out and the
+        // browse list would read "No climbs match". Clear the keys so the view opens on the declared
+        // defaults (angle 40 / layout 1 / grades 10–33) that the fixture covers.
+        let defaults = UserDefaults.standard
+        for key in ["kilter.angle", "kilter.layout", "kilter.minGrade", "kilter.maxGrade"] {
+            defaults.removeObject(forKey: key)
+        }
+
         try? KilterCatalogStore.shared.clear()
         guard install else { return }
         guard let url = try? temporaryBuild(),

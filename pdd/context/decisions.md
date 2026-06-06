@@ -108,12 +108,16 @@ carve-out to justify networking in other modules; changing the **user-data** mod
 (rejected — store-hostile/fragile). Phase 2 (`AuroraSyncProvider` real endpoints) stays blocked on the
 endpoint/account/ToU open questions in #42 and is **not** implemented.
 
-**Verified**: the Python fixture builds and **all 15 `KilterCatalog` reader queries pass** against it
-locally (the one thing runnable on this Linux box). The Swift/Kotlin app code + tests were **authored on
-Linux with no Xcode/Android SDK**, so they are **not** compiled or run — `xcodebuild test` on the iOS 18
-sim and Android `testDebugUnitTest` + `connectedDebugAndroidTest` are owed at the merge gate (per the
-repo's macOS/Xcode + Android-SDK build rule). Bundle-inspection acceptance ("no `kilter.sqlite3` in the
-build") is guaranteed at source: the asset is removed from both platforms and no code/config references it.
+**Verified** (2026-06-06, macOS + Xcode 26.5 / Android SDK): both platforms compiled and run **green**.
+iOS — full suite on the iPhone 17 Pro sim: **307 unit + 16 UI tests, 0 failures**, plus the
+`HighlightEngine` SPM suite (21). Android — **37 unit + 18 instrumented tests, 0 failures** (Pixel 7
+AVD). One first-pass fix was needed: the Kilter UI tests filtered out every synthetic climb because the
+`@AppStorage` browse filters (angle/layout/grade) persist in UserDefaults and `-uiTestFreshStore` only
+resets SwiftData — a leftover `kilter.angle` (the old bundled Aurora catalog had angle-0 climbs; the
+fixture only has 25/30/40) yielded "No climbs match". Fix: `KilterCatalogFixture.installForUITestingIfRequested()`
+now clears the Kilter filter keys so browse opens on the fixture-covered defaults. Bundle-inspection
+acceptance confirmed on the built artifacts: **no `kilter.sqlite3` in the iOS `.app` or the Android
+`.apk`** (the APK carries only `androidx.sqlite` library version-stamps, not data).
 
 ## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
 
