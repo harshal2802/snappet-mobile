@@ -15,6 +15,8 @@ import java.util.UUID
  */
 interface KilterCatalogProvider {
     val displayName: String
+    /** Library name for the installed catalog (Settings list). Defaults to [displayName]. */
+    val catalogName: String get() = displayName
     suspend fun fetch(onProgress: (Float) -> Unit = {}): File
 }
 
@@ -37,15 +39,24 @@ class FileImportProvider(private val context: Context, private val uri: Uri) : K
 }
 
 /**
- * **Phase 2 — NOT shipped.** An inert stub kept so the in-app Aurora sync drops into this exact seam
- * once the endpoint / account / Terms-of-Use open questions in issue #42 are answered. It performs
- * **no** network requests today and the sync button stays disabled. See `pdd/context/decisions.md`.
+ * **Phase 2 — hosted-dataset download.** Fetches a board's catalog (gzipped SQLite) from a static host
+ * the user controls (the Snappet Board Explorer Pages site by default), trims it on-device with the
+ * chosen filters, and hands back a small importable file. Owns the module's only network egress (one GET
+ * to the configured host), user-initiated, no analytics, nothing uploaded — see `KilterAuroraSync.kt`
+ * for the (narrow, personal-use) legal posture. Mirrors the iOS `HostedCatalogProvider`.
  */
-class AuroraSyncProvider : KilterCatalogProvider {
-    override val displayName = "Sync from Kilter"
+class HostedCatalogProvider(
+    private val context: Context,
+    private val board: CatalogBoardEntry,
+    private val filter: CatalogFilter,
+    private val baseURL: String = KILTER_DEFAULT_CATALOG_HOST,
+    private val name: String = "",
+) : KilterCatalogProvider {
+    override val displayName = "${board.label} download"
+    override val catalogName = name.ifEmpty { displayName }
 
     override suspend fun fetch(onProgress: (Float) -> Unit): File =
-        throw KilterCatalogException(KilterCatalogException.Reason.SYNC_UNAVAILABLE)
+        HostedCatalogClient(baseURL).buildCatalog(context.cacheDir, board, filter, onProgress)
 }
 
 /**
@@ -64,11 +75,30 @@ suspend fun installKilterCatalog(
         val validated = KilterCatalogValidator.validate(temp)
         val meta = KilterCatalogMeta(
             validated.version, validated.climbCount, validated.sizeBytes,
-            provider.displayName, System.currentTimeMillis())
-        store.install(temp, meta)
-        KilterCatalog.reset()   // next get() re-opens the new catalog
+            provider.displayName, System.currentTimeMillis(), provider.catalogName)
+        store.install(temp, meta)   // adds + activates a new library entry
+        KilterCatalog.reset()       // next get() re-opens the new active catalog
         meta
     } finally {
         if (temp.exists()) temp.delete()
     }
+}
+
+/** The whole on-device library (most-recent first). */
+fun installedKilterCatalogs(context: Context): List<InstalledCatalog> =
+    KilterCatalogStore.get(context).installed()
+
+fun activeKilterCatalogId(context: Context): String? =
+    KilterCatalogStore.get(context).activeCatalogId
+
+/** Make a different installed catalog active, then drop the cached reader. */
+fun activateKilterCatalog(context: Context, id: String) {
+    KilterCatalogStore.get(context).setActive(id)
+    KilterCatalog.reset()
+}
+
+/** Remove one catalog from the library (promotes another active if needed), then drop the reader. */
+fun removeKilterCatalog(context: Context, id: String) {
+    KilterCatalogStore.get(context).remove(id)
+    KilterCatalog.reset()
 }

@@ -63,6 +63,47 @@ final class KilterCatalogStoreTests: XCTestCase {
         XCTAssertNil(store.metadata())
     }
 
+    /// Install a fixture into `store` with a given name/date so library entries are distinguishable.
+    @discardableResult
+    private func installFixture(into store: KilterCatalogStore, name: String, at date: Date) throws -> String {
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let v = try KilterCatalogValidator.validate(url)
+        return try store.install(from: url, meta: KilterCatalogMeta(
+            version: v.version, climbCount: v.climbCount, sizeBytes: v.sizeBytes,
+            source: "Test", installedAt: date, name: name))
+    }
+
+    func testLibraryHoldsMultipleCatalogsNewestActive() throws {
+        let store = tempStore()
+        let idA = try installFixture(into: store, name: "A", at: Date(timeIntervalSince1970: 1000))
+        let idB = try installFixture(into: store, name: "B", at: Date(timeIntervalSince1970: 2000))
+
+        XCTAssertEqual(store.installed().count, 2)
+        XCTAssertEqual(store.installed().first?.meta.name, "B", "most-recent first")
+        XCTAssertEqual(store.activeCatalogId, idB, "a fresh install becomes active")
+
+        try store.setActive(id: idA)
+        XCTAssertEqual(store.metadata()?.name, "A")
+        XCTAssertEqual(store.activeCatalogId, idA)
+    }
+
+    func testRemovingActiveFallsBackToAnother() throws {
+        let store = tempStore()
+        let idA = try installFixture(into: store, name: "A", at: Date(timeIntervalSince1970: 1000))
+        let idB = try installFixture(into: store, name: "B", at: Date(timeIntervalSince1970: 2000))
+        XCTAssertEqual(store.activeCatalogId, idB)
+
+        try store.remove(id: idB)
+        XCTAssertEqual(store.installed().count, 1)
+        XCTAssertEqual(store.activeCatalogId, idA, "removing the active catalog promotes the remaining one")
+        XCTAssertTrue(store.isInstalled)
+
+        try store.remove(id: idA)
+        XCTAssertTrue(store.installed().isEmpty)
+        XCTAssertFalse(store.isInstalled)
+        XCTAssertNil(store.activeCatalogId)
+    }
+
     /// Integration: install the fixture into the shared store, reload the reader, and confirm it
     /// browses + decodes holds — the closest off-device proof that the import path feeds `KilterCatalog`
     /// exactly as the old bundled asset did. Cleans up the shared store afterward.

@@ -3,11 +3,13 @@ package com.snappet.mobile.feature.kilter
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -18,6 +20,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -58,15 +62,17 @@ fun KilterSettingsScreen(
     var angleMenu by remember { mutableStateOf(false) }
     var confirmingClear by remember { mutableStateOf(false) }
 
-    // Catalog management (issue #42): show what's installed, re-import, or remove.
-    val store = remember { KilterCatalogStore.get(context) }
-    val catalogMeta = remember { store.metadata() }
-    var confirmingRemove by remember { mutableStateOf(false) }
+    // Catalog library (issue #42): list downloads, switch active, remove individually, download/import.
+    var libraryVersion by remember { mutableStateOf(0) }
+    val catalogs = remember(libraryVersion) { installedKilterCatalogs(context) }
+    val activeId = remember(libraryVersion) { activeKilterCatalogId(context) }
+    var showDownload by remember { mutableStateOf(false) }
     var catalogError by remember { mutableStateOf<String?>(null) }
     val catalogPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             try {
                 installKilterCatalog(context, FileImportProvider(context, uri))
+                libraryVersion++
                 onCatalogChanged()
             } catch (e: Exception) {
                 catalogError = e.message
@@ -136,32 +142,49 @@ fun KilterSettingsScreen(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             HorizontalDivider()
-            Text("Climb catalog", style = MaterialTheme.typography.titleSmall,
+            Text("Downloaded catalogs", style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary)
-            catalogMeta?.let { m ->
-                Text("${m.climbCount} climbs · ${Formatter.formatShortFileSize(context, m.sizeBytes)}",
-                    style = MaterialTheme.typography.bodyMedium)
-                Text("Version ${m.version}", style = MaterialTheme.typography.bodySmall,
+            if (catalogs.isEmpty()) {
+                Text("No catalog installed", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                catalogs.forEach { c ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            if (c.id != activeId) { activateKilterCatalog(context, c.id); libraryVersion++; onCatalogChanged() }
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RadioButton(selected = c.id == activeId, onClick = {
+                            if (c.id != activeId) { activateKilterCatalog(context, c.id); libraryVersion++; onCatalogChanged() }
+                        })
+                        Column(Modifier.weight(1f)) {
+                            Text(c.displayName, style = MaterialTheme.typography.bodyMedium)
+                            Text("${c.meta.climbCount} climbs · ${Formatter.formatShortFileSize(context, c.meta.sizeBytes)}",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = { removeKilterCatalog(context, c.id); libraryVersion++; onCatalogChanged() }) {
+                            Text("Remove", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
             }
             catalogError?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { catalogError = null; showDownload = true },
+                    modifier = Modifier.testTag("kilter.settings.download"),
+                ) { Text("Download from Kilter…") }
                 OutlinedButton(
                     onClick = { catalogError = null; catalogPicker.launch(arrayOf("*/*")) },
-                    modifier = Modifier.testTag("kilter.settings.refreshCatalog"),
-                ) { Text("Refresh…") }
-                Button(
-                    onClick = { confirmingRemove = true },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer),
-                    modifier = Modifier.testTag("kilter.settings.removeCatalog"),
-                ) { Text("Remove catalog") }
+                    modifier = Modifier.testTag("kilter.settings.import"),
+                ) { Text("Import file…") }
             }
-            Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Removing it "
-                + "keeps your logged ascents and saved climbs.",
+            Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Tap one to make it "
+                + "active, Remove to delete. Removing keeps your logged ascents and saved climbs.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
 
@@ -193,20 +216,10 @@ fun KilterSettingsScreen(
             )
         }
 
-        if (confirmingRemove) {
-            AlertDialog(
-                onDismissRequest = { confirmingRemove = false },
-                title = { Text("Remove downloaded catalog?") },
-                text = { Text("The climb catalog will be deleted from this device. Your logged ascents "
-                    + "and saved climbs are kept — you can import it again anytime.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        confirmingRemove = false
-                        store.clear()
-                        onCatalogChanged()
-                    }) { Text("Remove") }
-                },
-                dismissButton = { TextButton(onClick = { confirmingRemove = false }) { Text("Cancel") } },
+        if (showDownload) {
+            KilterCatalogDownloadSheet(
+                onInstalled = { libraryVersion++; onCatalogChanged() },
+                onDismiss = { showDownload = false },
             )
         }
     }

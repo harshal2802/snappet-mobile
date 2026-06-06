@@ -18,10 +18,12 @@ struct KilterSettingsView: View {
     @Query private var sessions: [KilterSession]
     @State private var confirmingClear = false
 
-    // Catalog management (install / refresh / remove the on-device catalog).
+    // Catalog library management (download / import / switch active / remove).
     @State private var installer = KilterCatalogInstaller()
     @State private var showingImporter = false
-    @State private var confirmingRemove = false
+    @State private var showingDownload = false
+    /// Bumped on activate/remove so the library list re-renders (the store reads off the filesystem).
+    @State private var libraryVersion = 0
 
     var body: some View {
         Form {
@@ -62,32 +64,50 @@ struct KilterSettingsView: View {
             }
 
             Section {
-                if let meta = installer.metadata {
-                    LabeledContent("Climbs", value: "\(meta.climbCount)")
-                    LabeledContent("Size",
-                        value: ByteCountFormatter.string(fromByteCount: meta.sizeBytes, countStyle: .file))
-                    LabeledContent("Version") {
-                        Text(meta.version).font(.caption.monospaced()).foregroundStyle(.secondary)
-                    }
-                    Button("Refresh catalog…") { showingImporter = true }
-                        .accessibilityIdentifier("kilter.settings.refreshCatalog")
-                    Button("Remove downloaded catalog", role: .destructive) { confirmingRemove = true }
-                        .accessibilityIdentifier("kilter.settings.removeCatalog")
-                } else {
+                let catalogs = installer.catalogs
+                let activeId = installer.activeCatalogId
+                if catalogs.isEmpty {
                     Text("No catalog installed").foregroundStyle(.secondary)
-                    Button("Get the catalog…") { showingImporter = true }
-                        .accessibilityIdentifier("kilter.settings.getCatalog")
+                } else {
+                    ForEach(catalogs) { c in
+                        Button {
+                            if c.id != activeId { installer.activate(id: c.id); libraryVersion += 1 }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: c.id == activeId ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(c.id == activeId ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.displayName).font(.subheadline.weight(.medium))
+                                    Text("\(c.meta.climbCount) climbs · "
+                                        + ByteCountFormatter.string(fromByteCount: c.meta.sizeBytes, countStyle: .file)
+                                        + " · " + c.meta.installedAt.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button("Remove", role: .destructive) { installer.remove(id: c.id); libraryVersion += 1 }
+                        }
+                    }
                 }
+                Button("Download from Kilter…") { showingDownload = true }
+                    .accessibilityIdentifier("kilter.settings.download")
+                Button("Import file…") { showingImporter = true }
+                    .accessibilityIdentifier("kilter.settings.import")
                 if case .failed(let message) = installer.phase {
                     Label(message, systemImage: "exclamationmark.triangle")
                         .font(.footnote).foregroundStyle(.red)
                 }
             } header: {
-                Text("Climb catalog")
+                Text("Downloaded catalogs")
             } footer: {
-                Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Removing it "
-                     + "keeps your logged ascents and saved climbs.")
+                Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Tap one to make "
+                     + "it active, swipe to remove. Removing keeps your logged ascents and saved climbs.")
             }
+            .id(libraryVersion)
 
             Section {
                 Button("Clear logged history", role: .destructive) { confirmingClear = true }
@@ -109,14 +129,17 @@ struct KilterSettingsView: View {
         .fileImporter(isPresented: $showingImporter,
                       allowedContentTypes: [UTType(filenameExtension: "sqlite3") ?? .data, .data],
                       allowsMultipleSelection: false) { result in
-            Task { await installer.importPicked(result) }
+            Task { await installer.importPicked(result); libraryVersion += 1 }
         }
-        .alert("Remove downloaded catalog?", isPresented: $confirmingRemove) {
-            Button("Remove", role: .destructive) { installer.remove() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The climb catalog will be deleted from this device. Your logged ascents and saved "
-                 + "climbs are kept — you can import it again anytime.")
+        .sheet(isPresented: $showingDownload) {
+            KilterCatalogDownloadSheet(installer: installer) { board, filter, host in
+                Task {
+                    let provider = HostedCatalogProvider(board: board, filter: filter, baseURL: host,
+                                                         name: KilterCatalogDownloadSheet.name(for: filter))
+                    await installer.install(using: provider)
+                    if case .installed = installer.phase { showingDownload = false; libraryVersion += 1 }
+                }
+            }
         }
     }
 

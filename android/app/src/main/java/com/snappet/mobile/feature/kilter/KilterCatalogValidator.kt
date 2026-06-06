@@ -10,7 +10,8 @@ class KilterCatalogException(
 ) : Exception(reason.message(tables)) {
 
     enum class Reason {
-        UNREADABLE, MISSING_TABLES, NO_CLIMBS, TOO_LARGE, SYNC_UNAVAILABLE;
+        UNREADABLE, MISSING_TABLES, NO_CLIMBS, TOO_LARGE, SYNC_UNAVAILABLE,
+        DOWNLOAD_FAILED, BAD_GZIP, NO_MATCH, NOT_IMPORTABLE;
 
         fun message(tables: List<String>): String = when (this) {
             UNREADABLE -> "That file isn't a readable SQLite database."
@@ -22,6 +23,10 @@ class KilterCatalogException(
             SYNC_UNAVAILABLE ->
                 "In-app catalog sync isn't available yet. For now, import a catalog file you built " +
                     "with the boardlib tool (see the Kilter tooling README)."
+            DOWNLOAD_FAILED -> "Couldn't download the catalog. Check your connection and the host URL."
+            BAD_GZIP -> "The downloaded file wasn't valid gzip — check the host URL."
+            NO_MATCH -> "No climbs matched those filters. Widen the grade range or raise the climb cap."
+            NOT_IMPORTABLE -> "That board isn't importable into this app yet — pick Kilter."
         }
     }
 }
