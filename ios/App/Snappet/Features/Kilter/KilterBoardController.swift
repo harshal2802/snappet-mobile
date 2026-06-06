@@ -27,11 +27,16 @@ final class KilterBoardController: NSObject {
         var isBusy: Bool { self == .scanning || self == .connecting }
     }
 
-    // Aurora/Kilter board GATT (community-sourced — verify against hardware).
+    // Aurora/Kilter board BLE addressing. Two distinct UUIDs — conflating them was the connect bug:
+    //  * `advertisedServiceUUID` is what the board *advertises* (used only to recognise it while
+    //    scanning / to retrieve a system-connected board); it is not where illumination data is written.
+    //  * the writable endpoint is the **Nordic UART** GATT service + characteristic, shared by the whole
+    //    Aurora family (Kilter / Tension / Grasshopper / …) — there is no per-board variation here.
     // `nonisolated(unsafe)`: CBUUID isn't Sendable, but these are immutable constants, so the
-    // pure (nonisolated) `isLikelyBoard` matcher can read `serviceUUID` safely.
-    nonisolated(unsafe) private static let serviceUUID = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
-    nonisolated(unsafe) private static let writeUUID = CBUUID(string: "4488B572-7806-4DF6-BCFF-A2897E4953FF")
+    // pure (nonisolated) `isLikelyBoard` matcher can read `advertisedServiceUUID` safely.
+    nonisolated(unsafe) private static let advertisedServiceUUID = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
+    nonisolated(unsafe) private static let gattServiceUUID = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) private static let writeUUID = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 
     /// How long to look for a board before giving up, and how long a single GATT
     /// connect + discovery may take. CoreBluetooth's own `connect(_:)` never times out, so without
@@ -68,7 +73,7 @@ final class KilterBoardController: NSObject {
     /// primary service UUID, only a local name — so name matching is the primary signal and scanning
     /// filtered by service UUID (the old behavior) would never discover them.
     nonisolated static func isLikelyBoard(name: String?, advertisedServiceUUIDs: [CBUUID]) -> Bool {
-        if advertisedServiceUUIDs.contains(serviceUUID) { return true }
+        if advertisedServiceUUIDs.contains(advertisedServiceUUID) { return true }
         guard let name = name?.lowercased() else { return false }
         return ["kilter", "aurora", "tension", "grasshopper", "decoy", "soill"].contains { name.contains($0) }
     }
@@ -102,7 +107,8 @@ final class KilterBoardController: NSObject {
     ///    reaches it if it's available (the watchdog fails the attempt otherwise).
     private func beginConnect() {
         guard let central, central.state == .poweredOn else { return }
-        if let existing = central.retrieveConnectedPeripherals(withServices: [Self.serviceUUID]).first {
+        let knownServices = [Self.gattServiceUUID, Self.advertisedServiceUUID]
+        if let existing = central.retrieveConnectedPeripherals(withServices: knownServices).first {
             connect(to: existing)
         } else if let known = lastBoardIdentifier,
                   let remembered = central.retrievePeripherals(withIdentifiers: [known]).first {
@@ -247,7 +253,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
             // with an unexpected GATT layout would otherwise hang silently.
             startTimeout(Self.connectTimeout,
                          message: "Connected, but the board didn't respond. Try again.")
-            peripheral.discoverServices([Self.serviceUUID])
+            peripheral.discoverServices([Self.gattServiceUUID])
         }
     }
 
@@ -287,7 +293,7 @@ extension KilterBoardController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
-            for service in peripheral.services ?? [] where service.uuid == Self.serviceUUID {
+            for service in peripheral.services ?? [] where service.uuid == Self.gattServiceUUID {
                 peripheral.discoverCharacteristics([Self.writeUUID], for: service)
             }
         }

@@ -8,16 +8,18 @@ import Foundation
 /// board before it's reported as working. The encoding is kept here as a pure, unit-testable
 /// function so the byte layout can be checked independently of CoreBluetooth.
 ///
-/// Wire format:
+/// Wire format (Aurora "API level 3"):
 ///  * Each lit hold → 3 bytes: `position` (uint16 little-endian) + `color` (R3 G3 B2 packed byte).
 ///  * The concatenated body is split into ≤ `bodyChunk` chunks; each chunk is prefixed with a
 ///    packet-type marker (FIRST / MIDDLE / LAST, or ONLY when it all fits in one) and wrapped as
-///    `[0x01, length, checksum, <marker + chunk…>, 0x02]`, where `checksum = ~(Σ bytes) & 0xFF`.
+///    `[0x01, length, checksum, 0x02, <marker + chunk…>, 0x03]`, where `length`/`checksum` cover the
+///    `<marker + chunk…>` packet data and `checksum = ~(Σ bytes) & 0xFF`.
 ///  * Each wrapped message is sent as one BLE write (≤ 20 bytes after framing).
 enum KilterProtocol {
-    // 15 body bytes = 5 holds (3 bytes each) per packet. Framed: 1 marker + 15 + 4 wrapper = 20 bytes,
-    // i.e. the default BLE ATT payload — and holds never straddle a packet boundary.
-    static let bodyChunk = 15
+    // 12 body bytes = 4 holds (3 bytes each) per packet. Framed: 6 wrapper bytes
+    // (0x01 len cksum 0x02 … 0x03) + 1 marker + 12 body = 19 bytes ≤ the 20-byte BLE ATT payload,
+    // and holds never straddle a packet boundary.
+    static let bodyChunk = 12
     static let packetMiddle: UInt8 = 81
     static let packetFirst: UInt8 = 82
     static let packetLast: UInt8 = 83
@@ -57,7 +59,7 @@ enum KilterProtocol {
     // MARK: - private
 
     private static func wrap(_ payload: [UInt8]) -> [UInt8] {
-        [0x01, UInt8(payload.count), checksum(payload)] + payload + [0x02]
+        [0x01, UInt8(payload.count), checksum(payload), 0x02] + payload + [0x03]
     }
 
     private static func checksum(_ bytes: [UInt8]) -> UInt8 {

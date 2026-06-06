@@ -8,14 +8,16 @@ package com.snappet.mobile.feature.kilter
  * the repo's device-only rule, illumination must be confirmed on a real board before it's reported
  * as working. Kept as a pure object so the byte layout can be checked independently of the BLE stack.
  *
- * Wire format: each hold → 3 bytes (position uint16 LE + R3G3B2 color byte); the body is split into
- * <= [BODY_CHUNK] chunks, each prefixed with a packet-type marker and wrapped as
- * `[0x01, length, checksum, <marker + chunk...>, 0x02]` with `checksum = ~(sum) & 0xFF`.
+ * Wire format (Aurora "API level 3"): each hold → 3 bytes (position uint16 LE + R3G3B2 color byte);
+ * the body is split into <= [BODY_CHUNK] chunks, each prefixed with a packet-type marker and wrapped
+ * as `[0x01, length, checksum, 0x02, <marker + chunk...>, 0x03]`, where `length`/`checksum` cover the
+ * `<marker + chunk...>` packet data and `checksum = ~(sum) & 0xFF`.
  */
 object KilterProtocol {
-    // 15 body bytes = 5 holds (3 bytes each) per packet. Framed: 1 marker + 15 + 4 wrapper = 20 bytes,
-    // i.e. the default BLE ATT payload — and holds never straddle a packet boundary.
-    const val BODY_CHUNK = 15
+    // 12 body bytes = 4 holds (3 bytes each) per packet. Framed: 6 wrapper bytes
+    // (0x01 len cksum 0x02 ... 0x03) + 1 marker + 12 body = 19 bytes <= the 20-byte BLE ATT payload,
+    // and holds never straddle a packet boundary.
+    const val BODY_CHUNK = 12
     private const val PACKET_MIDDLE = 81
     private const val PACKET_FIRST = 82
     private const val PACKET_LAST = 83
@@ -53,9 +55,9 @@ object KilterProtocol {
     }
 
     private fun wrap(payload: List<Int>): ByteArray {
-        val bytes = ArrayList<Int>(payload.size + 4)
-        bytes.add(0x01); bytes.add(payload.size); bytes.add(checksum(payload))
-        bytes.addAll(payload); bytes.add(0x02)
+        val bytes = ArrayList<Int>(payload.size + 5)
+        bytes.add(0x01); bytes.add(payload.size); bytes.add(checksum(payload)); bytes.add(0x02)
+        bytes.addAll(payload); bytes.add(0x03)
         return ByteArray(bytes.size) { (bytes[it] and 0xFF).toByte() }
     }
 

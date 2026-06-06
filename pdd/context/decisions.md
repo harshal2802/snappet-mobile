@@ -4,6 +4,38 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-06] Kilter Board — fix BLE connect addressing + packet framing
+
+**Decision**: Correct the Aurora/Kilter BLE protocol on both platforms to match the canonical
+community reverse-engineering (`1-max-1/fake_kilter_board`). Two bugs, both of which the prior code
+flagged as "device-unverified — verify against hardware":
+
+- **Wrong GATT addressing (the connect bug).** The controllers discovered services/characteristics on
+  the board's *advertised* service `4488B571-…` and looked for a `4488B572-…` write characteristic
+  that doesn't exist. `4488B571` is only **advertised**; the writable endpoint is the **Nordic UART**
+  GATT service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` + characteristic `6E400002-…`. With the wrong
+  UUIDs the write characteristic was never found, the connection never reached `.connected`, and the
+  discovery watchdog fired with *"Connected, but the board didn't respond. Try again."* — the reported
+  symptom. Fix splits the constant into `advertisedServiceUUID` (scan/recognise + `retrieve­Connected­Peripherals`)
+  vs `gattServiceUUID`/`writeUUID` (discover + write). `isLikelyBoard` keeps matching the advertised
+  UUID/name, so that test is unchanged.
+- **Malformed packet framing.** `wrap()` emitted `[0x01, len, cksum, <payload>, 0x02]`; the spec is
+  `[0x01, len, cksum, 0x02, <payload>, 0x03]` (missing the `0x02` data marker; terminator must be
+  `0x03`). Corrected, and `bodyChunk` drops `15 → 12` (4 holds × 3 bytes) so the framed packet is
+  `6 wrapper + 1 marker + 12 = 19 ≤ 20` bytes. The hold encoding (uint16-LE position + R3G3B2 color)
+  and markers 82/81/83/84 were already correct.
+
+**Why**: these are the only things wrong on the connect path; the rest (scan-by-name, system-connected
+adopt paths, timeout watchdog) is sound. **One axis deliberately left out of scope**: Aurora "API
+level 2" (older boards — 2-byte holds / R2G2B2 / markers 77–80). The write **UUIDs do not vary by
+board** across the Aurora family (Kilter/Tension/Grasshopper/Decoy/So iLL all share the Nordic UART
+endpoint), so no multi-UUID handling is needed; only the *payload* API level differs, and level 3 is
+now the common case. **Rules out**: per-board UUID tables; API-level-2 fallback (a follow-up if an
+older board surfaces); negotiating the API level (it isn't negotiated — the app picks).
+**Verified**: new pure encoder tests (`KilterProtocolTests` / `KilterProtocolTest`) pin the exact
+framed bytes off-device on both platforms. The live BLE write path stays **device-pending** per the
+repo's hardware rule — not reported as working until lit on a real board.
+
 ## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
 
 **Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),

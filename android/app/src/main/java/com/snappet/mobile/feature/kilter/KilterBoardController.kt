@@ -193,7 +193,7 @@ class KilterBoardController(context: Context) {
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-            val characteristic = g.getService(SERVICE_UUID)?.getCharacteristic(WRITE_UUID)
+            val characteristic = g.getService(GATT_SERVICE_UUID)?.getCharacteristic(WRITE_UUID)
             if (characteristic == null) {
                 gatt?.disconnect()
                 fail("This board didn't expose the expected controls.")
@@ -213,9 +213,14 @@ class KilterBoardController(context: Context) {
     }
 
     companion object {
-        // Aurora/Kilter board GATT (community-sourced — verify against hardware).
-        private val SERVICE_UUID: UUID = UUID.fromString("4488b571-7806-4df6-bcff-a2897e4953ff")
-        private val WRITE_UUID: UUID = UUID.fromString("4488b572-7806-4df6-bcff-a2897e4953ff")
+        // Aurora/Kilter board BLE addressing. Two distinct UUIDs — conflating them was the connect bug:
+        //  * ADVERTISED_SERVICE_UUID is what the board *advertises* (used only to recognise it while
+        //    scanning); it is not where illumination data is written.
+        //  * the writable endpoint is the Nordic UART GATT service + characteristic, shared by the whole
+        //    Aurora family (Kilter / Tension / Grasshopper / …) — there is no per-board variation here.
+        private val ADVERTISED_SERVICE_UUID: UUID = UUID.fromString("4488b571-7806-4df6-bcff-a2897e4953ff")
+        private val GATT_SERVICE_UUID: UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
+        private val WRITE_UUID: UUID = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e")
         private const val SCAN_TIMEOUT_MS = 12_000L
         private const val CONNECT_TIMEOUT_MS = 12_000L
 
@@ -225,7 +230,7 @@ class KilterBoardController(context: Context) {
          * primary service UUID, only a local name — so name matching is the primary signal.
          */
         fun isLikelyBoard(name: String?, serviceUuids: List<UUID>?): Boolean {
-            if (serviceUuids?.contains(SERVICE_UUID) == true) return true
+            if (serviceUuids?.contains(ADVERTISED_SERVICE_UUID) == true) return true
             val lower = name?.lowercase() ?: return false
             return listOf("kilter", "aurora", "tension", "grasshopper", "decoy", "soill").any { lower.contains(it) }
         }
