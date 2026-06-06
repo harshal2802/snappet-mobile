@@ -26,4 +26,10 @@ object KilterSettings {
         KilterGradeFormat.from(prefs(context).getString("gradeFormat", null))
     fun setGradeFormat(context: Context, value: KilterGradeFormat) =
         prefs(context).edit().putString("gradeFormat", value.name).apply()
+
+    /** Board payload dialect (Standard/Legacy). Defaults to V3 — what current boards use. */
+    fun apiLevel(context: Context): KilterProtocol.ApiLevel =
+        KilterProtocol.ApiLevel.from(prefs(context).getString("apiLevel", null))
+    fun setApiLevel(context: Context, value: KilterProtocol.ApiLevel) =
+        prefs(context).edit().putString("apiLevel", value.name).apply()
 }

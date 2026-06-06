@@ -46,6 +46,10 @@ struct KilterRootView: View {
     @State private var cotd: KilterListItem?
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
+    /// Board-protocol dialect (Standard/Legacy), persisted; pushed into the shared controller so any
+    /// screen that changes it (Settings, or the detail view's "wrong holds?" fix) takes effect at once.
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
+    private var apiLevel: KilterProtocol.APILevel { .init(rawValue: apiLevelRaw) ?? .v3 }
     /// Discovery (climb-of-the-day) shows only on the plain browse view, not while searching/saved.
     private var showDiscovery: Bool { search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly }
 
@@ -156,7 +160,10 @@ struct KilterRootView: View {
             sessions.bind(liveWorkout: app.liveWorkout,
                           liveActivity: app.kilterLiveActivity,
                           media: app.sessionMedia)
+            board.setAPILevel(apiLevel)
         }
+        // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
+        .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
         // Keep the Live Activity's HR / climb count current while any Kilter screen is up (the root
         // view stays in the nav stack), throttled inside the controller.
         .onChange(of: app.liveWorkout.latestHR) { pushLiveActivity() }

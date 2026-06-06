@@ -36,6 +36,11 @@ struct KilterClimbDetailView: View {
     @AppStorage("kilter.angle") private var sharedAngle: Int = 40
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
+    private var apiLevel: KilterProtocol.APILevel { .init(rawValue: apiLevelRaw) ?? .v3 }
+    /// Reveals the board-protocol switch under the connected controls (hidden until the user hits the
+    /// "wrong holds?" escape hatch, so the common path stays uncluttered).
+    @State private var showingProtocolFix = false
 
     /// The climb currently shown — changes as the user swipes through `siblings`.
     @State private var currentUUID: String
@@ -341,6 +346,7 @@ struct KilterClimbDetailView: View {
                     primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
                         board.illuminate(holds)
                     }
+                    wrongHoldsControl
                     Button("Disconnect board") { board.disconnect() }
                         .font(.caption)
                         .accessibilityIdentifier("kilter.board.disconnect")
@@ -376,6 +382,32 @@ struct KilterClimbDetailView: View {
             .padding(.horizontal)
             .animation(.snappy, value: board.state)
             .onAppear { wireSessionCapture() }
+            // Mirror a protocol switch made here to the controller immediately (the root view also
+            // observes this, but the detail screen shouldn't depend on it being mounted); re-lights live.
+            .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
+        }
+    }
+
+    /// Escape hatch for the rare older board: when connected, a quiet "wrong holds?" link that opens a
+    /// Standard/Legacy switch. Switching re-lights the current climb instantly (via the controller), so
+    /// the user can see which dialect is right and the choice persists.
+    @ViewBuilder private var wrongHoldsControl: some View {
+        if showingProtocolFix {
+            VStack(spacing: 6) {
+                Picker("Board lights", selection: $apiLevelRaw) {
+                    ForEach(KilterProtocol.APILevel.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("kilter.board.protocol")
+                Text("Switch if the wrong holds light up — it re-lights instantly.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else {
+            Button("Wrong holds lighting up?") { withAnimation(.snappy) { showingProtocolFix = true } }
+                .font(.caption)
+                .accessibilityIdentifier("kilter.board.wrongHolds")
         }
     }
 

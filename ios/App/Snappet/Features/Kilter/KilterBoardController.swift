@@ -46,6 +46,12 @@ final class KilterBoardController: NSObject {
 
     private(set) var state: State = .idle
     var isConnected: Bool { state == .connected }
+    /// Which Aurora payload dialect to send. Default `.v3` (current boards); switched to `.v2` when a
+    /// user with an older board reports the wrong holds lighting up. Persisted by the UI layer, which
+    /// pushes it down via `setAPILevel(_:)`.
+    private(set) var apiLevel: KilterProtocol.APILevel = .v3
+    /// The most recently requested holds, so a protocol switch can re-light the current climb at once.
+    private var lastHolds: [KilterHold] = []
     /// Notified when the connection comes up / goes down, so the module can open/close a session.
     var onConnectionChange: ((Bool) -> Void)?
 
@@ -188,11 +194,20 @@ final class KilterBoardController: NSObject {
     /// Light the given holds on the board (no-op unless connected). Stores them if the characteristic
     /// isn't discovered yet so they flush once ready.
     func illuminate(_ holds: [KilterHold]) {
+        lastHolds = holds
         guard isConnected, let peripheral, let writeChar else {
             pendingHolds = holds
             return
         }
         send(holds, to: peripheral, characteristic: writeChar)
+    }
+
+    /// Switch the payload dialect and, if a climb is currently lit, re-send it so the change shows on
+    /// the wall immediately. No-op when unchanged — safe to call on every settings sync.
+    func setAPILevel(_ level: KilterProtocol.APILevel) {
+        guard level != apiLevel else { return }
+        apiLevel = level
+        if isConnected, !lastHolds.isEmpty { illuminate(lastHolds) }
     }
 
     private func send(_ holds: [KilterHold], to peripheral: CBPeripheral, characteristic: CBCharacteristic) {
@@ -202,7 +217,7 @@ final class KilterBoardController: NSObject {
         }
         let mode: CBCharacteristicWriteType =
             characteristic.properties.contains(.write) ? .withResponse : .withoutResponse
-        for message in KilterProtocol.messages(for: payload) {
+        for message in KilterProtocol.messages(for: payload, level: apiLevel) {
             peripheral.writeValue(Data(message), for: characteristic, type: mode)
         }
     }

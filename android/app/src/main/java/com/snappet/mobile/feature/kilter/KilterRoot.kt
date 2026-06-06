@@ -82,6 +82,8 @@ fun KilterRoot(onExit: () -> Unit) {
     val dao = container.database.kilterDao()
     val board = remember { KilterBoardController(context) }
     val sessions = remember { KilterSessionManager(dao) }
+    // Seed the board's payload dialect from the persisted preference (Standard/Legacy).
+    androidx.compose.runtime.LaunchedEffect(Unit) { board.setApiLevel(KilterSettings.apiLevel(context)) }
 
     // Opening the catalog copies a ~5 MB asset out of the APK on first launch — do it off the main
     // thread, showing a brief loading state, so the suite never janks/ANRs entering the module.

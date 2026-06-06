@@ -11,6 +11,7 @@ struct KilterSettingsView: View {
     @AppStorage("kilter.layout") private var layoutId: Int = 1
     @AppStorage("kilter.angle") private var angle: Int = 40
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
 
     @Query private var entries: [KilterLogEntry]
     @Query private var sessions: [KilterSession]
@@ -37,6 +38,21 @@ struct KilterSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("kilter.settings.gradeFormat")
+            }
+
+            Section {
+                Picker("Board lights", selection: $apiLevelRaw) {
+                    ForEach(KilterProtocol.APILevel.allCases, id: \.rawValue) { level in
+                        Text(level.label).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("kilter.settings.apiLevel")
+            } header: {
+                Text("Board protocol")
+            } footer: {
+                Text("Almost all boards use Standard. If you connect but the wrong holds light up, "
+                     + "switch to Legacy — it's for older controllers.")
             }
 
             Section {

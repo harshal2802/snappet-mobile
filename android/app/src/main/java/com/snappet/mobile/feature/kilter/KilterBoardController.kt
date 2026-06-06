@@ -41,6 +41,14 @@ class KilterBoardController(context: Context) {
     /** Notified when the connection comes up / goes down, so the module can open/close a session. */
     var onConnectionChange: ((Boolean) -> Unit)? = null
 
+    /** Which Aurora payload dialect to send. Default V3 (current boards); switched to V2 when a user
+     *  with an older board reports the wrong holds lighting up. Persisted by the UI, pushed via
+     *  [setApiLevel]. */
+    var apiLevel: KilterProtocol.ApiLevel = KilterProtocol.ApiLevel.V3
+        private set
+    /** The most recently requested holds, so a protocol switch can re-light the current climb at once. */
+    private var lastHolds: List<KilterHold> = emptyList()
+
     private val appContext = context.applicationContext
     private val adapter = (appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     private var gatt: BluetoothGatt? = null
@@ -97,6 +105,7 @@ class KilterBoardController(context: Context) {
 
     /** Light the given holds (no-op unless connected). Stores them if not yet ready to flush. */
     fun illuminate(holds: List<KilterHold>) {
+        lastHolds = holds
         val characteristic = writeChar
         if (!isConnected || gatt == null || characteristic == null) {
             pending = holds
@@ -105,11 +114,20 @@ class KilterBoardController(context: Context) {
         send(holds, characteristic)
     }
 
+    /** Switch the payload dialect and, if a climb is currently lit, re-send it so the change shows on
+     *  the wall immediately. No-op when unchanged — safe to call on every settings sync. */
+    fun setApiLevel(level: KilterProtocol.ApiLevel) {
+        if (level == apiLevel) return
+        apiLevel = level
+        val characteristic = writeChar
+        if (isConnected && characteristic != null && lastHolds.isNotEmpty()) send(lastHolds, characteristic)
+    }
+
     @SuppressLint("MissingPermission")
     private fun send(holds: List<KilterHold>, characteristic: BluetoothGattCharacteristic) {
         val payload = holds.mapNotNull { h -> h.ledPosition?.let { it to h.colorHex } }
         writeQueue.clear()
-        writeQueue.addAll(KilterProtocol.messages(payload))
+        writeQueue.addAll(KilterProtocol.messages(payload, apiLevel))
         dequeueWrite(characteristic)
     }
 

@@ -32,6 +32,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +93,13 @@ fun KilterDetailScreen(
     var logConfirmation by remember { mutableStateOf<String?>(null) }
     var angleMenu by remember { mutableStateOf(false) }
     val gradeFormat = remember { KilterSettings.gradeFormat(context) }
+    // Board payload dialect + the "wrong holds?" escape hatch (hidden until tapped).
+    var apiLevel by remember { mutableStateOf(KilterSettings.apiLevel(context)) }
+    var showProtocolFix by remember { mutableStateOf(false) }
+
+    // Push the persisted/selected dialect to the controller (initial sync + on every switch); a switch
+    // re-lights the current climb instantly inside the controller.
+    androidx.compose.runtime.LaunchedEffect(apiLevel) { board.setApiLevel(apiLevel) }
 
     androidx.compose.runtime.LaunchedEffect(uuid) {
         val loaded = withContext(Dispatchers.IO) {
@@ -241,6 +249,28 @@ fun KilterDetailScreen(
                         ) {
                             Icon(Icons.Filled.Lightbulb, contentDescription = null)
                             Text("  Light up this climb")
+                        }
+                        // Escape hatch for the rare older board: a quiet link that opens a
+                        // Standard/Legacy switch; switching re-lights the current climb at once.
+                        if (showProtocolFix) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                KilterProtocol.ApiLevel.entries.forEach { level ->
+                                    FilterChip(
+                                        selected = apiLevel == level,
+                                        onClick = { apiLevel = level; KilterSettings.setApiLevel(context, level) },
+                                        label = { Text(level.label) },
+                                        modifier = Modifier.testTag("kilter.board.protocol.${level.name}"),
+                                    )
+                                }
+                            }
+                            Text("Switch if the wrong holds light up — it re-lights instantly.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            TextButton(
+                                onClick = { showProtocolFix = true },
+                                modifier = Modifier.testTag("kilter.board.wrongHolds"),
+                            ) { Text("Wrong holds lighting up?") }
                         }
                         TextButton(onClick = { board.disconnect() }) { Text("Disconnect board") }
                     }

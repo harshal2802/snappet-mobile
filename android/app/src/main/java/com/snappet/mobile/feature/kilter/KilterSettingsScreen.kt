@@ -45,6 +45,7 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
     var layoutId by remember { mutableStateOf(KilterSettings.layout(context)) }
     var angle by remember { mutableStateOf(KilterSettings.angle(context)) }
     var gradeFormat by remember { mutableStateOf(KilterSettings.gradeFormat(context)) }
+    var apiLevel by remember { mutableStateOf(KilterSettings.apiLevel(context)) }
     var layoutMenu by remember { mutableStateOf(false) }
     var angleMenu by remember { mutableStateOf(false) }
     var confirmingClear by remember { mutableStateOf(false) }
@@ -93,6 +94,22 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
                     )
                 }
             }
+
+            HorizontalDivider()
+            Text("Board protocol", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KilterProtocol.ApiLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = apiLevel == level,
+                        onClick = { apiLevel = level; KilterSettings.setApiLevel(context, level) },
+                        label = { Text(level.label) },
+                        modifier = Modifier.testTag("kilter.settings.apiLevel.${level.name}"),
+                    )
+                }
+            }
+            Text("Almost all boards use Standard. If you connect but the wrong holds light up, switch "
+                + "to Legacy — it's for older controllers.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             HorizontalDivider()
             Button(

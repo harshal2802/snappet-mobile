@@ -4,6 +4,37 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-06] Kilter Board — ship both Aurora payload dialects (Standard/Legacy) with a user toggle
+
+**Decision**: Support **both** Aurora illumination "API levels" and let the user choose, rather than
+hardcoding level 3. The level is the *payload* dialect, set by the board's firmware generation; it is
+**not advertised or negotiated**, so the app can't auto-detect it. A mismatch still **connects** fine
+(same BLE link/UUIDs) but lights the **wrong holds/colors** — so the right UX is a cheap manual switch
+exactly where the problem shows up.
+
+- **Encoder** (`KilterProtocol`, both platforms): added `APILevel { v3, v2 }`. `messages(for:level:)`
+  defaults to `.v3` (so the connect-fix tests and all existing callers are unchanged). `v3` = 3-byte
+  holds, R3G3B2, markers 82/81/83/84; `v2` = 2-byte holds (byte0 = position low 8 bits; byte1 =
+  R2G2B2 in bits 7–2 OR the high 2 position bits in bits 1–0), markers 78/77/79/80. `bodyChunk = 12`
+  serves both (multiple of 2 and 3; framed ≤ 20 bytes either way). Color packers (`colorByte` v3 /
+  `colorBitsV2`) are pure + unit-tested with exact byte vectors.
+- **Controller**: holds `apiLevel` + remembers `lastHolds`; `setAPILevel(_:)` switches dialect and, if
+  a climb is currently lit, **re-sends it immediately** so the wall updates live. No-op when unchanged,
+  so it's safe to call on every settings sync.
+- **UX (smooth path)**: default **Standard** — zero friction for the ~all boards that use it. Two ways
+  to switch, both persisted (`kilter.apiLevel` AppStorage / SharedPreferences): a **Settings** picker,
+  and — the key affordance — a quiet **"Wrong holds lighting up?"** link in the *connected* controls on
+  the climb screen that reveals a Standard/Legacy switch and re-lights instantly. The shared controller
+  is the single sink; the root view (iOS) / root + detail `LaunchedEffect` (Android) push the persisted
+  value down, so a change anywhere takes effect everywhere without re-navigating.
+
+**Why**: shipping both encoders + a one-tap switch is far better UX than guessing wrong and showing a
+broken wall, and there's no reliable on-wire signal to auto-pick. **Rules out**: auto-detecting the
+level (not possible over BLE); a level-negotiation handshake (Aurora doesn't expose one); per-board
+persistence (one preference fits a user's single wall). **Verified**: pure encoder vectors for both
+levels pass off-device on iOS + Android (`KilterProtocolTests` / `KilterProtocolTest`). The live
+re-light + the switch UI stay **device-pending** per the repo's hardware rule.
+
 ## [2026-06-06] Kilter Board — fix BLE connect addressing + packet framing
 
 **Decision**: Correct the Aurora/Kilter BLE protocol on both platforms to match the canonical

@@ -44,4 +44,40 @@ final class KilterProtocolTests: XCTestCase {
             XCTAssertEqual(Int(message[1]), message.count - 5)
         }
     }
+
+    // MARK: - API level 2 (older boards: 2-byte holds, R2G2B2, markers 78/77/79/80)
+
+    func testColorBitsV2PacksR2G2B2InHighSixBits() {
+        XCTAssertEqual(KilterProtocol.colorBitsV2("00FF00"), 0x30)   // green: g=3<<4
+        XCTAssertEqual(KilterProtocol.colorBitsV2("FF0000"), 0xC0)   // red:   r=3<<6
+        XCTAssertEqual(KilterProtocol.colorBitsV2("0000FF"), 0x0C)   // blue:  b=3<<2
+        XCTAssertEqual(KilterProtocol.colorBitsV2("FFFFFF"), 0xFC)   // low 2 bits stay clear for position
+    }
+
+    func testV2SingleHoldFramesAsOnlyPacket() {
+        // position 1096 → byte0 0x48, high bits 0; color 00FF00 → 0x30; marker ONLY = 0x50.
+        let messages = KilterProtocol.messages(for: [(1096, "00FF00")], level: .v2)
+        XCTAssertEqual(messages, [[0x01, 0x03, 0x37, 0x02, 0x50, 0x48, 0x30, 0x03]])
+    }
+
+    func testV2PacksHighPositionBitsIntoColorByte() {
+        // position 0x0300 → byte0 0x00, high 2 bits = 0b11 OR'd under red (FF0000 → 0xC0) = 0xC3.
+        let messages = KilterProtocol.messages(for: [(0x0300, "FF0000")], level: .v2)
+        XCTAssertEqual(messages, [[0x01, 0x03, 0xEC, 0x02, 0x50, 0x00, 0xC3, 0x03]])
+    }
+
+    func testV2ChunksOnTwoByteHoldsAndStaysWithinPayload() {
+        // 7 holds = 14 body bytes > the 12-byte (6-hold) chunk → FIRST(78) + LAST(79).
+        let holds = (0..<7).map { (position: $0, colorHex: "00FF00") }
+        let messages = KilterProtocol.messages(for: holds, level: .v2)
+
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(messages[0][4], 0x4E, "v2 first marker (78)")
+        XCTAssertEqual(messages.last?[4], 0x4F, "v2 last marker (79)")
+        for message in messages {
+            XCTAssertEqual(message.first, 0x01)
+            XCTAssertEqual(message.last, 0x03)
+            XCTAssertLessThanOrEqual(message.count, 20)
+        }
+    }
 }
