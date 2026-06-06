@@ -41,6 +41,25 @@ user controls — much closer to "bring your own file" than any Aurora-direct fe
   the `KilterCatalogFixture` as a synthetic source through the real reader. The 81 MB download itself is
   verified on the physical device.
 
+**Follow-up same day (filter parity · layout scope · multi-catalog library):**
+- **Full Board-Explorer filter parity** in the download sheet — `CatalogFilter` already mirrored
+  `query.ts buildConditions`; the sheet now surfaces all of it (layouts, **angle**, min/max grade, min
+  ascents, min quality, setter, name, benchmark/listed/single-frame) + the top-N cap. Grade/angle/layout
+  option lists are **static Kilter constants** (`KilterCatalogOptions`) since the dataset isn't loaded
+  until after download; the grade scale is the real `difficulty_grades` (difficulty 10–33 → V0–V16).
+- **Scope today = Kilter Original (1) + Homewall (8) only.** Other boards (from the manifest) and other
+  Kilter layouts render **struck-through / disabled** in the sheet as explicit future work — the reader
+  is Kilter-shaped and only these two layouts are validated.
+- **The store became a multi-catalog *library*.** `KilterCatalogStore` now keeps each install under
+  `catalogs/<uuid>/` with an `active-catalog` pointer file (was a single `kilter.sqlite3`); `install`
+  **adds + activates** (no longer replaces), and there's `installed()` / `remove(id:)` / `setActive(id:)`
+  + a one-time migration that folds any legacy single file into the library. A meta `name` (optional,
+  back-compat) labels each entry. **Settings** gained a **Download from Kilter** button and a
+  **Downloaded catalogs** list — tap to make active, swipe to remove — replacing the single
+  refresh/remove rows. The reader still opens the *active* catalog and reloads on the change
+  notification, so switching active in Settings re-points browse. Android store stays single-catalog
+  until its port.
+
 **Rules out / guardrails (unchanged)**: **not** for public App Store distribution — Aurora's ToU +
 App Store Guideline 5.2.2 keep this **personal / sideload** only; the carve-out stays narrow + named.
 No Aurora API calls, no re-bundling a catalog into the app, no background/auto sync (user-initiated

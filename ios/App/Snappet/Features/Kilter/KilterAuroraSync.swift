@@ -41,6 +41,7 @@ struct CatalogManifest: Codable, Sendable {
 /// "mobile-compatible" mode: listed + single-frame + Kilter layouts.
 struct CatalogFilter: Sendable, Equatable {
     var layoutIds: [Int] = [1, 8]      // empty = all layouts
+    var angle: Int?                    // specific board angle, nil = any
     var gradeMin: Int?
     var gradeMax: Int?
     var minAscents: Int?
@@ -50,7 +51,7 @@ struct CatalogFilter: Sendable, Equatable {
     var benchmarkOnly = false
     var listedOnly = true
     var singleFrameOnly = true
-    /// Top-N most-climbed matching problems to keep (bounds the installed file size).
+    /// Top-N most-climbed matching problems to keep (bounds the installed file size). 0 = no cap.
     var maxClimbs = 2000
 }
 
@@ -288,6 +289,7 @@ final class HostedCatalogClient {
         if !f.layoutIds.isEmpty {
             conds.append("c.layout_id IN (\(f.layoutIds.map { String($0) }.joined(separator: ",")))")
         }
+        if let angle = f.angle { conds.append("cs.angle = ?"); params.append(angle) }
         if let lo = f.gradeMin { conds.append("ROUND(cs.display_difficulty) >= ?"); params.append(lo) }
         if let hi = f.gradeMax { conds.append("ROUND(cs.display_difficulty) <= ?"); params.append(hi) }
         if let a = f.minAscents { conds.append("cs.ascensionist_count >= ?"); params.append(a) }
