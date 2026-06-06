@@ -57,8 +57,19 @@ user controls — much closer to "bring your own file" than any Aurora-direct fe
   back-compat) labels each entry. **Settings** gained a **Download from Kilter** button and a
   **Downloaded catalogs** list — tap to make active, swipe to remove — replacing the single
   refresh/remove rows. The reader still opens the *active* catalog and reloads on the change
-  notification, so switching active in Settings re-points browse. Android store stays single-catalog
-  until its port.
+  notification, so switching active in Settings re-points browse.
+
+**Android port (same day):** the whole feature is ported to Kotlin/Compose at parity — `HostedCatalogClient`
+(`HttpURLConnection` + `java.util.zip.GZIPInputStream`, so no zlib shim is needed unlike iOS;
+`SQLiteDatabase` ATTACH for the same exportDb-style trim), the multi-catalog `KilterCatalogStore`
+(`catalogs/<id>/` + `active-catalog` pointer, install adds + activates, `installed()`/`remove(id)`/
+`setActive(id)`, legacy migration), a `KilterCatalogDownloadSheet` (ModalBottomSheet) with the full
+filter set + Original/Homewall scope (others struck-through), and a Settings **Downloaded catalogs**
+list (RadioButton active + per-row Remove) + **Download from Kilter** button. Added the **INTERNET**
+permission (was BLE-only). One Android-specific gotcha: `SQLiteDatabase.execSQL` rejects
+`PRAGMA journal_mode` (it returns a row) — dropped the PRAGMA optimizations. Instrumented suite green
+(23, incl. multi-catalog + filtered-build). Device-owed: the live ~80 MB download → trim on a real
+Android device (the pure half is covered).
 
 **Rules out / guardrails (unchanged)**: **not** for public App Store distribution — Aurora's ToU +
 App Store Guideline 5.2.2 keep this **personal / sideload** only; the carve-out stays narrow + named.

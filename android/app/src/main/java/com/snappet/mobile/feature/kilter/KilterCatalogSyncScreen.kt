@@ -51,6 +51,7 @@ fun KilterCatalogSyncScreen(onInstalled: () -> Unit, onExit: () -> Unit) {
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     var phase by remember { mutableStateOf<InstallPhase>(InstallPhase.Idle) }
+    var showDownload by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -127,20 +128,26 @@ fun KilterCatalogSyncScreen(onInstalled: () -> Unit, onExit: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.import"),
             ) { Text("Import catalog file…") }
 
-            // Phase 2 (AuroraSyncProvider) — present but inert until the endpoint/account/ToU questions
-            // in issue #42 are answered.
+            // Phase 2 (HostedCatalogProvider): download + trim a hosted dataset on-device.
             OutlinedButton(
-                onClick = {},
-                enabled = false,
+                onClick = { showDownload = true },
+                enabled = phase != InstallPhase.Working,
                 modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.sync"),
-            ) { Text("Sync from Kilter (coming soon)") }
+            ) { Text("Download from Kilter…") }
 
             Text(
-                "No catalog file yet? Build one with the boardlib tool — see the Kilter tooling " +
-                    "README (tools/kilter).",
+                "Download fetches the catalog from a hosted dataset (filters trim it on-device). Or build " +
+                    "a file yourself with the boardlib tool — see tools/kilter.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
+            )
+        }
+
+        if (showDownload) {
+            KilterCatalogDownloadSheet(
+                onInstalled = onInstalled,
+                onDismiss = { showDownload = false },
             )
         }
     }

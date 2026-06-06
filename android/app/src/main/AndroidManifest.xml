@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- User-initiated catalog download from a user-controlled static host (Kilter opt-in catalog,
+         issue #42 Phase 2). The only network egress; no Snappet backend, nothing uploaded. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Bluetooth LE for connecting to a Kilter Board to light up climbs (Kilter mini-app, Phase 2)
          and to heart-rate bands. BLE is optional, so the app runs fine without it. -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
