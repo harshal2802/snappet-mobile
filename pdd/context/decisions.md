@@ -66,6 +66,7 @@ older board surfaces); negotiating the API level (it isn't negotiated — the ap
 **Verified**: new pure encoder tests (`KilterProtocolTests` / `KilterProtocolTest`) pin the exact
 framed bytes off-device on both platforms. The live BLE write path stays **device-pending** per the
 repo's hardware rule — not reported as working until lit on a real board.
+
 ## [2026-06-06] Kilter — in-app catalog download from a hosted dataset (Phase 2) (#42)
 
 **Decision**: `KilterCatalogSyncView` gains a **Download from Kilter** button that fetches a board's
