@@ -221,6 +221,40 @@ enum StudioProjectEditor {
         return s
     }
 
+    /// Set a text/climb-name overlay's text colour (hex).
+    static func setOverlayColor(_ s: StudioProjectSnapshot, id: UUID, hex: String) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].colorHex = hex
+        return s
+    }
+
+    /// Set (hex) or clear (`nil`) a text/climb-name overlay's highlight/background colour.
+    static func setOverlayHighlight(_ s: StudioProjectSnapshot, id: UUID, hex: String?) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].highlightHex = hex
+        return s
+    }
+
+    /// Set a text/climb-name overlay's font preset.
+    static func setOverlayFont(_ s: StudioProjectSnapshot, id: UUID, font: StudioFont) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        s.overlays[i].font = font
+        return s
+    }
+
+    /// Set a text/climb-name overlay's bold / italic style (each optional → leave unchanged when nil).
+    static func setOverlayStyle(_ s: StudioProjectSnapshot, id: UUID,
+                                bold: Bool? = nil, italic: Bool? = nil) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        if let bold { s.overlays[i].bold = bold }
+        if let italic { s.overlays[i].italic = italic }
+        return s
+    }
+
     /// Replace an overlay's text/content (the studio's "Edit text", or re-deriving a climb caption).
     static func setOverlayContent(_ s: StudioProjectSnapshot, id: UUID, content: String) -> StudioProjectSnapshot {
         var s = s

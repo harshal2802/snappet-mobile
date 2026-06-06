@@ -29,8 +29,10 @@ enum StudioOverlays {
             let layer: CALayer
             switch overlay.kind {
             case .sticker:   layer = stickerLayer(for: overlay, canvas: canvas)
-            case .climbName: layer = climbNameLayer(for: overlay, canvas: canvas)
-            default:         layer = textLayer(for: overlay, canvas: canvas)
+            case .climbName: layer = styledTextLayer(for: overlay, canvas: canvas,
+                                                     fontFraction: 0.04, defaultHighlight: "#000000")
+            default:         layer = styledTextLayer(for: overlay, canvas: canvas,
+                                                     fontFraction: 0.05, defaultHighlight: nil)
             }
             applyVisibility(layer, overlay: overlay, totalDuration: totalDuration)
             overlayLayer.addSublayer(layer)
@@ -144,29 +146,46 @@ enum StudioOverlays {
         return layer
     }
 
-    /// The **climb-name** overlay: the text on a translucent rounded "lower-third" chip (so it reads
-    /// over any footage). Same normalized placement as text; a background container sized to the text
-    /// box hosts the `CATextLayer`. Returns the container so `applyVisibility` time-gates the whole chip.
-    private static func climbNameLayer(for overlay: OverlayItem, canvas: CGSize) -> CALayer {
-        let fontSize = max(8, canvas.height * 0.04 * overlay.scale)
-        let lines = overlay.content.components(separatedBy: "\n").count
-        let boxW = min(canvas.width * 0.9, fontSize * 0.62 * CGFloat(longestLineCount(overlay.content)) + 28)
-        let boxH = fontSize * 1.35 * CGFloat(max(1, lines)) + 12
+    /// A **styled text / climb-name** overlay: an `NSAttributedString` `CATextLayer` (font preset +
+    /// weight/italic + colour) WRAPPED to ~0.9 of the canvas width, with the box height measured from the
+    /// wrapped text (`boundingRect`) so multi-line captions never clip — the same wrap the SwiftUI
+    /// preview does, so preview == file. An optional highlight container backs the text (climb-name
+    /// seeds a dark default); without a highlight the text gets a drop shadow to stay legible. Returns
+    /// the container so `applyVisibility` time-gates the whole chip.
+    private static func styledTextLayer(for overlay: OverlayItem, canvas: CGSize,
+                                        fontFraction: CGFloat, defaultHighlight: String?) -> CALayer {
+        let fontSize = max(8, canvas.height * fontFraction * overlay.scale)
+        let font = uiFont(overlay, size: fontSize)
+        let hPad: CGFloat = 12, vPad: CGFloat = 6
+        let maxTextW = canvas.width * 0.9 - 2 * hPad
+
+        let para = NSMutableParagraphStyle(); para.alignment = .center
+        let attributed = NSAttributedString(string: overlay.content, attributes: [
+            .font: font, .foregroundColor: uiColor(overlay.colorHex), .paragraphStyle: para])
+        let bounding = attributed.boundingRect(
+            with: CGSize(width: maxTextW, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+        let textW = min(maxTextW, ceil(bounding.width)), textH = ceil(bounding.height)
+        let boxW = textW + 2 * hPad, boxH = textH + 2 * vPad
         let center = ClipEditGeometry.layerPoint(normalized: overlay.position, in: canvas)
 
         let container = CALayer()
         container.frame = CGRect(x: center.x - boxW / 2, y: center.y - boxH / 2, width: boxW, height: boxH)
-        container.backgroundColor = UIColor.black.withAlphaComponent(0.45).cgColor
-        container.cornerRadius = 8
+        let highlight = overlay.highlightHex ?? defaultHighlight
+        if let highlight {
+            container.backgroundColor = uiColor(highlight).withAlphaComponent(0.55).cgColor
+            container.cornerRadius = 8
+        }
 
         let text = CATextLayer()
-        text.string = overlay.content
-        text.fontSize = fontSize
-        text.foregroundColor = uiColor(overlay.colorHex).cgColor
-        text.alignmentMode = .center
+        text.string = attributed
         text.isWrapped = true
         text.contentsScale = 2
-        text.frame = container.bounds.insetBy(dx: 8, dy: 6)
+        text.frame = CGRect(x: hPad, y: vPad, width: textW, height: textH)
+        if highlight == nil {   // legible over footage without a background
+            text.shadowColor = UIColor.black.cgColor; text.shadowOpacity = 0.6
+            text.shadowRadius = 3; text.shadowOffset = .zero
+        }
         container.addSublayer(text)
 
         if abs(overlay.rotationDegrees) > 0.01 {
@@ -175,32 +194,23 @@ enum StudioOverlays {
         return container
     }
 
-    private static func longestLineCount(_ s: String) -> Int {
-        s.components(separatedBy: "\n").map(\.count).max() ?? s.count
-    }
-
-    private static func textLayer(for overlay: OverlayItem, canvas: CGSize) -> CATextLayer {
-        let text = CATextLayer()
-        text.string = overlay.content
-        let fontSize = max(8, canvas.height * 0.05 * overlay.scale)
-        text.fontSize = fontSize
-        text.foregroundColor = uiColor(overlay.colorHex).cgColor
-        text.alignmentMode = .center
-        text.isWrapped = true
-        text.contentsScale = 2
-        text.shadowColor = UIColor.black.cgColor
-        text.shadowOpacity = 0.6
-        text.shadowRadius = 3
-        text.shadowOffset = .zero
-
-        let boxW = canvas.width * 0.9
-        let boxH = max(fontSize * 1.6, 40)
-        let center = ClipEditGeometry.layerPoint(normalized: overlay.position, in: canvas)
-        text.frame = CGRect(x: center.x - boxW / 2, y: center.y - boxH / 2, width: boxW, height: boxH)
-        if abs(overlay.rotationDegrees) > 0.01 {
-            text.transform = CATransform3DMakeRotation(CGFloat(overlay.rotationDegrees) * .pi / 180, 0, 0, 1)
+    /// Resolve an overlay's font preset + bold/italic into a `UIFont` (design family + symbolic traits)
+    /// — the export twin of `StudioFont.swiftUIDesign`.
+    private static func uiFont(_ overlay: OverlayItem, size: CGFloat) -> UIFont {
+        let design: UIFontDescriptor.SystemDesign
+        switch overlay.font {
+        case .system: design = .default
+        case .rounded: design = .rounded
+        case .serif: design = .serif
+        case .mono: design = .monospaced
         }
-        return text
+        let base = UIFont.systemFont(ofSize: size, weight: overlay.bold ? .bold : .regular)
+        var desc = base.fontDescriptor.withDesign(design) ?? base.fontDescriptor
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if overlay.bold { traits.insert(.traitBold) }
+        if overlay.italic { traits.insert(.traitItalic) }
+        if !traits.isEmpty, let t = desc.withSymbolicTraits(traits) { desc = t }
+        return UIFont(descriptor: desc, size: size)
     }
 
     /// Time-gate a layer to `[startSec, endSec]` via an opacity keyframe over the whole timeline (so it

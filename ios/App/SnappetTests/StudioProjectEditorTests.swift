@@ -113,6 +113,37 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(s.overlays.first?.opacityKeyframes.first?.value, 0.5)
     }
 
+    func testRichTextStyleSettersUpdateTheOverlay() {
+        let ov = OverlayItem(kind: .climbName, content: "Pez")
+        var s = empty(); s.overlays = [ov]
+        // Colour + highlight (set, then clear).
+        s = StudioProjectEditor.setOverlayColor(s, id: ov.id, hex: "#FF3B30")
+        XCTAssertEqual(s.overlays.first?.colorHex, "#FF3B30")
+        s = StudioProjectEditor.setOverlayHighlight(s, id: ov.id, hex: "#0A84FF")
+        XCTAssertEqual(s.overlays.first?.highlightHex, "#0A84FF")
+        s = StudioProjectEditor.setOverlayHighlight(s, id: ov.id, hex: nil)
+        XCTAssertNil(s.overlays.first?.highlightHex)
+        // Font preset.
+        s = StudioProjectEditor.setOverlayFont(s, id: ov.id, font: .serif)
+        XCTAssertEqual(s.overlays.first?.font, .serif)
+        // Bold / italic are set independently (nil leaves the other unchanged).
+        s = StudioProjectEditor.setOverlayStyle(s, id: ov.id, bold: false)
+        XCTAssertEqual(s.overlays.first?.bold, false)
+        XCTAssertEqual(s.overlays.first?.italic, false)   // untouched
+        s = StudioProjectEditor.setOverlayStyle(s, id: ov.id, italic: true)
+        XCTAssertEqual(s.overlays.first?.italic, true)
+        XCTAssertEqual(s.overlays.first?.bold, false)      // untouched
+    }
+
+    func testOverlayDefaultsAreMigrationSafe() {
+        // A freshly-decoded/old overlay defaults: system font, bold, not italic, no highlight.
+        let ov = OverlayItem(kind: .text, content: "Hi")
+        XCTAssertEqual(ov.font, .system)
+        XCTAssertTrue(ov.bold)
+        XCTAssertFalse(ov.italic)
+        XCTAssertNil(ov.highlightHex)
+    }
+
     func testSetOverlayContentReplacesText() {
         let ov = OverlayItem(kind: .climbName, content: "Old")
         var s = empty(); s.overlays = [ov]

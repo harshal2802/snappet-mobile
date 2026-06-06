@@ -23,6 +23,7 @@ struct StudioEditorView: View {
     @State private var editingOverlay = false
     @State private var overlayTextDraft = ""
     @State private var overlayTextTarget: UUID?
+    @State private var stylingOverlay = false
 
     /// `SessionMedia.id` of a clip to pre-select when the studio opens (e.g. tapping one clip in a
     /// gallery jumps straight to editing it). `nil` keeps the default (no/first selection).
@@ -63,6 +64,11 @@ struct StudioEditorView: View {
         .sheet(item: $activeTool) { tool in
             StudioToolSheet(tool: tool, vm: vm)
                 .presentationDetents([(tool == .adjust || tool == .hr || tool == .grid) ? .height(380) : .height(260)])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $stylingOverlay) {
+            StudioTextStyleControls(vm: vm)
+                .presentationDetents([.height(420)])
                 .presentationDragIndicator(.visible)
         }
         .alert("Add text", isPresented: $addingText) {
@@ -282,6 +288,8 @@ struct StudioEditorView: View {
                             overlayTextTarget = ov.id; overlayTextDraft = ov.content; editingOverlay = true
                         } label: { Image(systemName: "pencil") }
                             .accessibilityIdentifier("studioEditOverlayText")
+                        Button { stylingOverlay = true } label: { Image(systemName: "paintbrush") }
+                            .accessibilityIdentifier("studioStyleOverlay")
                     }
                     Button(role: .destructive) { vm.deleteOverlay(ov.id) } label: { Image(systemName: "trash") }
                         .accessibilityIdentifier("studioDeleteOverlay")
@@ -510,6 +518,81 @@ private struct StudioGridControls: View {
             Text("Drag a clip's corners on the preview to resize it; drag the body to move it.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// The text-styling sheet for the selected text / climb-name overlay: text colour, highlight (None +
+/// colours), font preset, and bold / italic. Every control commits immediately — overlays render via
+/// the export-only Core Animation tool, so there's no preview rebuild (just the WYSIWYG chip updating).
+private struct StudioTextStyleControls: View {
+    @Bindable var vm: StudioEditorViewModel
+    private let swatches = ["#FFFFFF", "#000000", "#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#BF5AF2"]
+
+    var body: some View {
+        if let ov = vm.selectedOverlay {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Text style").font(.headline)
+
+                    caption("Colour")
+                    swatchRow(selected: ov.colorHex) { vm.setOverlayColor(ov.id, $0) }
+
+                    caption("Highlight")
+                    HStack(spacing: 10) {
+                        noneSwatch(selected: ov.highlightHex == nil) { vm.setOverlayHighlight(ov.id, nil) }
+                        ForEach(swatches, id: \.self) { hex in
+                            swatch(hex, selected: ov.highlightHex == hex) { vm.setOverlayHighlight(ov.id, hex) }
+                        }
+                    }
+
+                    caption("Font")
+                    Picker("Font", selection: Binding(get: { ov.font }, set: { vm.setOverlayFont(ov.id, $0) })) {
+                        ForEach(StudioFont.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("overlayFont")
+
+                    HStack(spacing: 12) {
+                        Toggle(isOn: Binding(get: { ov.bold }, set: { vm.setOverlayBold(ov.id, $0) })) {
+                            Image(systemName: "bold")
+                        }
+                        .toggleStyle(.button).accessibilityIdentifier("overlayBold")
+                        Toggle(isOn: Binding(get: { ov.italic }, set: { vm.setOverlayItalic(ov.id, $0) })) {
+                            Image(systemName: "italic")
+                        }
+                        .toggleStyle(.button).accessibilityIdentifier("overlayItalic")
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+                }
+                .padding()
+            }
+            .tint(SnappetColor.workout)
+        } else {
+            Text("Select a text overlay").foregroundStyle(.secondary).padding()
+        }
+    }
+
+    private func caption(_ s: String) -> some View {
+        Text(s).font(.caption).foregroundStyle(.secondary)
+    }
+    private func swatchRow(selected: String, _ set: @escaping (String) -> Void) -> some View {
+        HStack(spacing: 10) {
+            ForEach(swatches, id: \.self) { hex in swatch(hex, selected: selected == hex) { set(hex) } }
+        }
+    }
+    private func swatch(_ hex: String, selected: Bool, _ tap: @escaping () -> Void) -> some View {
+        Circle().fill(Color(studioHex: hex)).frame(width: 28, height: 28)
+            .overlay(Circle().stroke(.gray.opacity(0.4), lineWidth: 1))
+            .overlay(Circle().stroke(.white, lineWidth: selected ? 2.5 : 0))
+            .onTapGesture { tap() }
+    }
+    private func noneSwatch(selected: Bool, _ tap: @escaping () -> Void) -> some View {
+        Image(systemName: "slash.circle")
+            .font(.system(size: 22)).foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .overlay(Circle().stroke(.white, lineWidth: selected ? 2.5 : 0))
+            .onTapGesture { tap() }
     }
 }
 

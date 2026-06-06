@@ -343,24 +343,47 @@ private struct TextOverlayChip: View {
                 .rotationEffect(.degrees(overlay.rotationDegrees))
                 .opacity(max(0.15, overlay.opacity)).padding(6)
         case .climbName:
-            Text(overlay.content)
-                .font(.system(size: max(8, rect.height * 0.04 * liveScale), weight: .semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(Color(studioHex: overlay.colorHex))
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
-                .rotationEffect(.degrees(overlay.rotationDegrees))
-                .opacity(max(0.15, overlay.opacity))
+            styledText(fontFraction: 0.04, defaultHighlight: "#000000")
         default:   // .text (and any future Core-Animation kind)
-            Text(overlay.content)
-                .font(.system(size: max(8, rect.height * 0.05 * liveScale), weight: .semibold))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: rect.width * 0.9)
-                .fixedSize(horizontal: false, vertical: true)
-                .shadow(color: .black.opacity(0.6), radius: 2)
-                .foregroundStyle(Color(studioHex: overlay.colorHex))
-                .rotationEffect(.degrees(overlay.rotationDegrees))
-                .opacity(max(0.15, overlay.opacity)).padding(6)
+            styledText(fontFraction: 0.05, defaultHighlight: nil)
+        }
+    }
+
+    /// A text / climb-name overlay rendered with its font preset, weight + italic, colour, and optional
+    /// highlight background — WRAPPED to ~0.9 of the video width so it never spills past the frame; the
+    /// background sizes to that capped width. Mirrors `StudioOverlays` (export) so preview == file.
+    private func styledText(fontFraction: CGFloat, defaultHighlight: String?) -> some View {
+        let size = max(8, rect.height * fontFraction * liveScale)
+        let highlight = overlay.highlightHex ?? defaultHighlight
+        return Text(overlay.content)
+            .font(.system(size: size, weight: overlay.bold ? .bold : .regular,
+                          design: overlay.font.swiftUIDesign))
+            .italic(overlay.italic)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(Color(studioHex: overlay.colorHex))
+            .shadow(color: .black.opacity(highlight == nil ? 0.6 : 0), radius: 2)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(maxWidth: rect.width * 0.9)
+            .background {
+                if let highlight {
+                    RoundedRectangle(cornerRadius: 8).fill(Color(studioHex: highlight).opacity(0.55))
+                }
+            }
+            .rotationEffect(.degrees(overlay.rotationDegrees))
+            .opacity(max(0.15, overlay.opacity))
+    }
+}
+
+/// SwiftUI font-design mapping for a `StudioFont` preset (the export side maps the same enum to a
+/// `UIFontDescriptor` design, so preview and the rendered file match).
+extension StudioFont {
+    var swiftUIDesign: Font.Design {
+        switch self {
+        case .system: return .default
+        case .rounded: return .rounded
+        case .serif: return .serif
+        case .mono: return .monospaced
         }
     }
 }

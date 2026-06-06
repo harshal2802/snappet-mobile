@@ -4,6 +4,33 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## 2026-06-06 — Rich text overlays: wrap-to-width fit + colour/highlight/font/style (P21)
+
+Device feedback: a large climb-name caption spilled past both edges of the video, and text had no
+styling. Two changes. **(1) Wrap-to-width fit** — the `.climbName` preview chip had NO width cap (only
+`.text` did), so it grew as wide as the text and overflowed into the letterbox; the export box was also
+sized from EXPLICIT newlines, not wrapped lines. Now both **wrap to ~0.9 of the video width**: the
+preview uses `.frame(maxWidth: rect.width*0.9)` + `fixedSize(vertical)`, and the export measures the
+wrapped height via `NSAttributedString.boundingRect` and sizes the `CATextLayer` container to it — so a
+multi-line caption never clips and preview == file. **(2) Rich style** — `OverlayItem` gained
+`highlightHex` (background), `fontRaw` (a new pure `StudioFont` enum: system/rounded/serif/mono), `bold`,
+`italic` — all **additive + defaulted** (migration-safe Codable, like the prior optional fields).
+Rendered in BOTH the SwiftUI preview (TextOverlayChip.styledText) and the Core-Animation export
+(StudioOverlays.styledTextLayer) via a shared mapping: `StudioFont.swiftUIDesign` ↔ `uiFont`
+(UIFontDescriptor design + symbolic traits). Text + climb-name now share ONE styled path (climb-name is
+text with a dark-highlight default). A paintbrush "Style" sheet (StudioTextStyleControls) edits colour /
+highlight (None + swatches) / font / bold / italic; all commit `editOverlaysOnly` (overlays aren't in the
+playback composition → no rebuild). **Why a font ENUM, not a font-name string**: the four presets map
+cleanly to a `Font.Design` (SwiftUI) and a `UIFontDescriptor.SystemDesign` (UIKit) so preview and export
+match without bundling fonts; arbitrary font names wouldn't render identically in CATextLayer. **Why the
+export measures wrapped height**: a fixed line-count box clips wrapped captions; `boundingRect` is the
+only way to size the chip to the actual wrapped text. **Rules out**: a climb-name chip with no width cap;
+sizing the export box from `\n` count; a font-name string field; a separate ClimbName config (text +
+climb-name share the styled layer). **Limitation**: climb-name's highlight has a dark fallback so it
+always shows some background (the picker recolours it); fully removing it isn't exposed. **Verified**:
+builds clean, full unit suite green (301) incl. the new style setters + migration-safe defaults. **Device
+pending**: the styled caption rendering in **export** on real footage.
+
 ## 2026-06-05 — PiP/base resize: aspect-locked corner-drag + flicker-free live resize (P21)
 
 Device verification of the placement fix surfaced two more resize issues, both fixed in
