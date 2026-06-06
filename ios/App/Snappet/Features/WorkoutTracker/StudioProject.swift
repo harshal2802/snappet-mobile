@@ -200,11 +200,13 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     /// background. Additive + optional → migration-safe (old projects decode `nil`). Climb-name seeds a
     /// dark default so its lower-third chip is unchanged.
     var highlightHex: String? = nil
-    /// Font preset (defaults to `system` for old projects). Additive Codable change.
-    var fontRaw: String = StudioFont.system.rawValue
-    /// Bold / italic style. Default `bold = true` matches the prior semibold look; both additive.
-    var bold: Bool = true
-    var italic: Bool = false
+    /// Rich-text style, stored as **optionals** so old persisted overlays (missing these keys) still
+    /// decode — Swift's synthesized `Decodable` throws `keyNotFound` for a missing NON-optional key, it
+    /// does NOT fall back to a property default. The non-optional `font`/`bold`/`italic` accessors below
+    /// apply the defaults. `fontRaw` nil → `.system`; `boldRaw` nil → bold; `italicRaw` nil → not italic.
+    var fontRaw: String? = nil
+    var boldRaw: Bool? = nil
+    var italicRaw: Bool? = nil
     /// Optional animated position/opacity over output time (value = the relevant scalar).
     var opacityKeyframes: [StudioKeyframe]
 
@@ -228,14 +230,23 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
         self.colorHex = colorHex
         self.highlightHex = highlightHex
         self.fontRaw = font.rawValue
-        self.bold = bold
-        self.italic = italic
+        self.boldRaw = bold
+        self.italicRaw = italic
         self.opacityKeyframes = opacityKeyframes
     }
     var kind: Kind { Kind(rawValue: kindRaw) ?? .text }
     var font: StudioFont {
-        get { StudioFont(rawValue: fontRaw) ?? .system }
+        get { StudioFont(rawValue: fontRaw ?? "") ?? .system }
         set { fontRaw = newValue.rawValue }
+    }
+    /// Bold defaults ON (matches the prior semibold look) for overlays saved before the style fields.
+    var bold: Bool {
+        get { boldRaw ?? true }
+        set { boldRaw = newValue }
+    }
+    var italic: Bool {
+        get { italicRaw ?? false }
+        set { italicRaw = newValue }
     }
     var position: CGPoint {
         get { CGPoint(x: normalizedX, y: normalizedY) }

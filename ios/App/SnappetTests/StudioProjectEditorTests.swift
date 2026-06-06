@@ -144,6 +144,23 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertNil(ov.highlightHex)
     }
 
+    func testOverlayDecodesFromPreStyleJSON() throws {
+        // An overlay persisted BEFORE the rich-text fields (no highlightHex / fontRaw / boldRaw /
+        // italicRaw). Swift's synthesized Decodable throws `keyNotFound` for a missing NON-optional key,
+        // so these MUST stay optional — this guards the migration crash (StudioProject.overlays decode).
+        let json = """
+        {"id":"\(UUID().uuidString)","kindRaw":"climbName","content":"Pez","startSec":0,"endSec":3,\
+        "normalizedX":0.5,"normalizedY":0.85,"scale":1,"rotationDegrees":0,"opacity":1,\
+        "colorHex":"#FFFFFF","opacityKeyframes":[]}
+        """.data(using: .utf8)!
+        let ov = try JSONDecoder().decode(OverlayItem.self, from: json)
+        XCTAssertEqual(ov.content, "Pez")
+        XCTAssertEqual(ov.font, .system)   // defaults applied via the non-optional accessors
+        XCTAssertTrue(ov.bold)
+        XCTAssertFalse(ov.italic)
+        XCTAssertNil(ov.highlightHex)
+    }
+
     func testSetOverlayContentReplacesText() {
         let ov = OverlayItem(kind: .climbName, content: "Old")
         var s = empty(); s.overlays = [ov]
