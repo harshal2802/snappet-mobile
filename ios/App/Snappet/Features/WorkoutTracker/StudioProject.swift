@@ -154,6 +154,21 @@ struct StudioTransition: Codable, Hashable, Sendable, Identifiable {
 
 // MARK: - Overlays
 
+/// Font preset for a text / climb-name overlay. Maps to a SwiftUI `Font.Design` (preview) and a
+/// `UIFontDescriptor` design (export) so the same choice renders identically in both. Pure enum.
+enum StudioFont: String, Codable, Sendable, CaseIterable, Identifiable {
+    case system, rounded, serif, mono
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .system: return "System"
+        case .rounded: return "Rounded"
+        case .serif: return "Serif"
+        case .mono: return "Mono"
+        }
+    }
+}
+
 /// An overlay laid over the canvas: text or a sticker/emoji (image overlays + PiP video extend the
 /// same shape later). Visible while `startSec ≤ playhead ≤ endSec` (output time); position/opacity
 /// can be keyframed. Normalized position is the centre in 0…1 (top-left origin, SwiftUI-style).
@@ -179,14 +194,28 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var normalizedHeight: Double? = nil
     var rotationDegrees: Double
     var opacity: Double
+    /// Text colour (hex). For text/sticker/climb-name overlays.
     var colorHex: String
+    /// Optional **highlight / background** colour (hex) behind a text/climb-name overlay. `nil` = no
+    /// background. Additive + optional → migration-safe (old projects decode `nil`). Climb-name seeds a
+    /// dark default so its lower-third chip is unchanged.
+    var highlightHex: String? = nil
+    /// Rich-text style, stored as **optionals** so old persisted overlays (missing these keys) still
+    /// decode — Swift's synthesized `Decodable` throws `keyNotFound` for a missing NON-optional key, it
+    /// does NOT fall back to a property default. The non-optional `font`/`bold`/`italic` accessors below
+    /// apply the defaults. `fontRaw` nil → `.system`; `boldRaw` nil → bold; `italicRaw` nil → not italic.
+    var fontRaw: String? = nil
+    var boldRaw: Bool? = nil
+    var italicRaw: Bool? = nil
     /// Optional animated position/opacity over output time (value = the relevant scalar).
     var opacityKeyframes: [StudioKeyframe]
 
     init(id: UUID = UUID(), kind: Kind, content: String, startSec: Double = 0, endSec: Double = 3,
          position: CGPoint = CGPoint(x: 0.5, y: 0.5), scale: Double = 1,
          normalizedWidth: Double? = nil, normalizedHeight: Double? = nil, rotationDegrees: Double = 0,
-         opacity: Double = 1, colorHex: String = "#FFFFFF", opacityKeyframes: [StudioKeyframe] = []) {
+         opacity: Double = 1, colorHex: String = "#FFFFFF", highlightHex: String? = nil,
+         font: StudioFont = .system, bold: Bool = true, italic: Bool = false,
+         opacityKeyframes: [StudioKeyframe] = []) {
         self.id = id
         self.kindRaw = kind.rawValue
         self.content = content
@@ -199,9 +228,26 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
         self.rotationDegrees = rotationDegrees
         self.opacity = min(1, max(0, opacity))
         self.colorHex = colorHex
+        self.highlightHex = highlightHex
+        self.fontRaw = font.rawValue
+        self.boldRaw = bold
+        self.italicRaw = italic
         self.opacityKeyframes = opacityKeyframes
     }
     var kind: Kind { Kind(rawValue: kindRaw) ?? .text }
+    var font: StudioFont {
+        get { StudioFont(rawValue: fontRaw ?? "") ?? .system }
+        set { fontRaw = newValue.rawValue }
+    }
+    /// Bold defaults ON (matches the prior semibold look) for overlays saved before the style fields.
+    var bold: Bool {
+        get { boldRaw ?? true }
+        set { boldRaw = newValue }
+    }
+    var italic: Bool {
+        get { italicRaw ?? false }
+        set { italicRaw = newValue }
+    }
     var position: CGPoint {
         get { CGPoint(x: normalizedX, y: normalizedY) }
         set { normalizedX = newValue.x; normalizedY = newValue.y }

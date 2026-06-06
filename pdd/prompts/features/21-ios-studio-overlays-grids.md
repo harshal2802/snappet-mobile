@@ -134,3 +134,15 @@ Device screenshot showed the composited PiP offset down + wider than its outline
 
 Verified: full suite green (299) incl. a `fitTransform` containment test. Device-unverified: PiP/base sit
 exactly under the outline in preview + export.
+
+### Follow-up 3 — rich text + wrap-to-width fit (2026-06-06)
+
+Device feedback: a large climb-name caption overflowed the video edges, and text had no styling.
+- **Wrap-to-width**: text/climb-name now wrap to ~0.9 video width (preview `frame(maxWidth:)`, export
+  sizes the CATextLayer box from `NSAttributedString.boundingRect`), so multi-line captions never clip.
+- **Rich style**: `OverlayItem` gains `highlightHex`, `StudioFont` preset (system/rounded/serif/mono),
+  `bold`, `italic` (additive, migration-safe). Rendered in preview (TextOverlayChip.styledText) + export
+  (StudioOverlays.styledTextLayer) via a shared font mapping. A paintbrush **Style** sheet edits
+  colour / highlight / font / bold / italic.
+
+Verified: builds clean, full suite green (301). Device pending: styled caption in export on real footage.
