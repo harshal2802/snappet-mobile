@@ -7,6 +7,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import com.snappet.mobile.core.AppContainer
 import com.snappet.mobile.core.TestHooks
+import com.snappet.mobile.feature.kilter.KilterCatalog
+import com.snappet.mobile.feature.kilter.KilterCatalogFixture
+import com.snappet.mobile.feature.kilter.KilterCatalogStore
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.RootShell
 import com.snappet.mobile.ui.theme.SnappetTheme
@@ -19,6 +22,16 @@ class MainActivity : ComponentActivity() {
         // Fresh in-memory store when a UI test asks for it (via TestHooks or an intent extra).
         val fresh = TestHooks.freshInMemoryStore || intent?.getBooleanExtra("uiTestFreshStore", false) == true
         val container = AppContainer.get(applicationContext, freshInMemory = fresh)
+
+        // Kilter catalog (issue #42): the app ships none. Under the catalog test hook, install the
+        // synthetic fixture so the Kilter instrumented tests have data to browse; otherwise (fresh
+        // store) clear any leftover catalog so runs are deterministic. No-ops in a normal run.
+        if (TestHooks.installKilterCatalogFixture) {
+            KilterCatalogFixture.installForTesting(applicationContext)
+        } else if (fresh) {
+            KilterCatalogStore.get(applicationContext).clear()
+            KilterCatalog.reset()
+        }
 
         setContent {
             CompositionLocalProvider(LocalAppContainer provides container) {

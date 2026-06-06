@@ -9,7 +9,7 @@ struct KilterSettingsRoute: Hashable {}
 /// timeline, media + highlight reel.
 struct KilterSessionRoute: Hashable { let id: UUID }
 
-/// Kilter Board catalog: browse climbs from the bundled, read-only catalog, filtered by layout,
+/// Kilter Board catalog: browse climbs from the user-installed, read-only catalog, filtered by layout,
 /// angle, and grade (plus a Saved filter), and open a climb for the board render + logging.
 ///
 /// Pushed into the suite's NavigationStack by the App Library — owns no NavigationStack of its own;
@@ -22,6 +22,9 @@ struct KilterRootView: View {
     @Query private var allEntries: [KilterLogEntry]
 
     private let catalog = KilterCatalog.shared
+    /// Whether a catalog is installed — flips the view between the browse list and the opt-in
+    /// `KilterCatalogSyncView`. Kept current via `KilterCatalogStore.didChangeNotification`.
+    @State private var catalogInstalled = KilterCatalogStore.shared.isInstalled
     /// Shared across the module's screens (detail illuminates / sessions group history).
     @State private var board = KilterBoardController()
     @State private var sessions = KilterSessionManager()
@@ -79,11 +82,12 @@ struct KilterRootView: View {
 
     var body: some View {
         Group {
-            if catalog.isAvailable {
+            if catalogInstalled && catalog.isAvailable {
                 content
             } else {
-                ContentUnavailableView("Catalog unavailable", systemImage: "exclamationmark.triangle",
-                    description: Text("The bundled Kilter catalog couldn't be opened."))
+                // No catalog on this device yet — Snappet ships none (issue #42). Offer the opt-in
+                // import flow instead of an empty list.
+                KilterCatalogSyncView(onInstalled: reloadCatalog)
             }
         }
         .navigationTitle("Kilter Board")
@@ -154,6 +158,11 @@ struct KilterRootView: View {
             KilterSessionDetailView(sessionID: route.id, board: board, sessions: sessions)
         }
         .task(id: filterKey) { refresh() }
+        // Re-open the reader + refresh when the installed catalog changes (import here, or "Remove"
+        // in Settings), wherever the change originated.
+        .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
+            reloadCatalog()
+        }
         // Wire the session manager to the app's live-metrics / Live-Activity / media services so a
         // session (started here or auto-opened on board connect) drives HR + the Live Activity.
         .onAppear {
@@ -186,6 +195,13 @@ struct KilterRootView: View {
     /// Push a random climb from the current filters (Discovery "Surprise me").
     private func surpriseMe() {
         if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
+    }
+
+    /// Re-open the reader after the installed catalog changes, then refresh the list.
+    private func reloadCatalog() {
+        catalog.reload()
+        catalogInstalled = KilterCatalogStore.shared.isInstalled
+        refresh()
     }
 
     private var content: some View {

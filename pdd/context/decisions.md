@@ -66,6 +66,120 @@ older board surfaces); negotiating the API level (it isn't negotiated — the ap
 **Verified**: new pure encoder tests (`KilterProtocolTests` / `KilterProtocolTest`) pin the exact
 framed bytes off-device on both platforms. The live BLE write path stays **device-pending** per the
 repo's hardware rule — not reported as working until lit on a real board.
+## 2026-06-06 — Rich text overlays: wrap-to-width fit + colour/highlight/font/style (P21)
+
+Device feedback: a large climb-name caption spilled past both edges of the video, and text had no
+styling. Two changes. **(1) Wrap-to-width fit** — the `.climbName` preview chip had NO width cap (only
+`.text` did), so it grew as wide as the text and overflowed into the letterbox; the export box was also
+sized from EXPLICIT newlines, not wrapped lines. Now both **wrap to ~0.9 of the video width**: the
+preview uses `.frame(maxWidth: rect.width*0.9)` + `fixedSize(vertical)`, and the export measures the
+wrapped height via `NSAttributedString.boundingRect` and sizes the `CATextLayer` container to it — so a
+multi-line caption never clips and preview == file. **(2) Rich style** — `OverlayItem` gained
+`highlightHex` (background), `fontRaw` (a new pure `StudioFont` enum: system/rounded/serif/mono), `bold`,
+`italic` — all **additive + defaulted** (migration-safe Codable, like the prior optional fields).
+Rendered in BOTH the SwiftUI preview (TextOverlayChip.styledText) and the Core-Animation export
+(StudioOverlays.styledTextLayer) via a shared mapping: `StudioFont.swiftUIDesign` ↔ `uiFont`
+(UIFontDescriptor design + symbolic traits). Text + climb-name now share ONE styled path (climb-name is
+text with a dark-highlight default). A paintbrush "Style" sheet (StudioTextStyleControls) edits colour /
+highlight (None + swatches) / font / bold / italic; all commit `editOverlaysOnly` (overlays aren't in the
+playback composition → no rebuild). **Why a font ENUM, not a font-name string**: the four presets map
+cleanly to a `Font.Design` (SwiftUI) and a `UIFontDescriptor.SystemDesign` (UIKit) so preview and export
+match without bundling fonts; arbitrary font names wouldn't render identically in CATextLayer. **Why the
+export measures wrapped height**: a fixed line-count box clips wrapped captions; `boundingRect` is the
+only way to size the chip to the actual wrapped text. **Rules out**: a climb-name chip with no width cap;
+sizing the export box from `\n` count; a font-name string field; a separate ClimbName config (text +
+climb-name share the styled layer). **Limitation**: climb-name's highlight has a dark fallback so it
+always shows some background (the picker recolours it); fully removing it isn't exposed. **Verified**:
+builds clean, full unit suite green (301) incl. the new style setters + migration-safe defaults. **Device
+pending**: the styled caption rendering in **export** on real footage.
+
+## 2026-06-05 — PiP/base resize: aspect-locked corner-drag + flicker-free live resize (P21)
+
+Device verification of the placement fix surfaced two more resize issues, both fixed in
+`StudioOverlayCanvas`. **(1) Letterbox on free resize** — after the fill→fit change, dragging a PiP
+corner to an aspect ≠ its footage left the dashed box bigger than the aspect-fit video (the box stopped
+hugging the video). Fix: **lock corner-resize to the source aspect** — the canvas now receives
+`sourceAspects` (resolved oriented w/h per `localIdentifier`, already computed in the VM) and the base
+video's aspect; `ResizableFrame.resizedFrame` derives the off-axis from `contentAspect` and
+`clampedAspectSize` clamps into [0.1,1] **while preserving the ratio**, so the box always keeps the
+footage aspect → the fit video fills it edge-to-edge. Pinch + grid presets still allow free aspect (for
+collages). **(2) Resize flicker** — the live-resize had been driven by a `@State liveResize` SET FROM
+the corner handle's own gesture callback, and the handle's on-screen position was recomputed from that
+same state. So the handle moved out from under the finger → re-fired its gesture → oscillated (the
+new aspect-lock branch `newW >= newH·r` toggling each frame amplified it into a visible flicker,
+confirmed by frame-diffing a screen recording: the changing pixels were the box/handles, not the video).
+Fix: the **canonical SwiftUI draggable pattern** — replace `@State` with a `@GestureState cornerDrag`,
+anchor the gesture-hosting handles at the **committed** size (they never move during the drag, so the
+gesture's translation stays stable), offset ONLY the dragged dot, and render the live-resizing outline
+as a **non-interactive** overlay (hosts no gesture → can't feed back). **Why @GestureState over @State**:
+@GestureState is bound to the gesture lifecycle and auto-resets, and — critically — moving it out of the
+handle's layout-position path is what breaks the feedback loop. **Rules out**: driving live-resize layout
+from a `@State` the gesture writes; repositioning a gesture host from its own gesture value; per-axis free
+resize for a PiP (now aspect-locked on corner-drag). **Verified on device (MrRobot)**: placement sits
+under the outline (preview), corner-resize hugs the video with no letterbox, and the drag is smooth (no
+flicker) — confirmed by screen recording. Builds clean; full suite green.
+
+## [2026-06-05] Kilter — stop redistributing Aurora's catalog; opt-in on-device fetch (#42)
+
+**Decision**: The Kilter mini-app no longer **ships** Aurora Climbing's climb catalog. The bundled
+`kilter.sqlite3` is **deleted** from both platforms (`ios/App/Snappet/Resources/`,
+`android/app/src/main/assets/`) and the app contains **zero** Aurora climb data. Instead, the catalog
+is **imported onto the user's own device**, under their own relationship with Aurora — the redistribution
+exposure flagged in #32 OQ#11.2 is removed **architecturally**, not by waiting on a licensing
+negotiation. Traces to [#42](https://github.com/harshal2802/snappet-mobile/issues/42); the
+written-permission path (option 2) stays recorded as complementary future scope.
+
+**Concrete choices made:**
+- **A catalog-provider seam, read path unchanged.** A new `KilterCatalogStore` owns the on-device
+  catalog file (`Application Support/Kilter/kilter.sqlite3` on iOS, `filesDir/kilter/…` on Android) +
+  a `catalog.meta.json` sidecar (version / climb count / size). The existing `KilterCatalog` reader is
+  **reused verbatim** — it just opens the store path instead of the bundle, degrades to
+  `isAvailable == false` when nothing is installed, and gains a `reload()` (iOS, via a
+  `didChangeNotification`) / `reset()` (Android) to re-open after an import/remove. `KilterCatalogProvider`
+  is the **only** IO edge: `FileImportProvider` (iOS **Files** / Android **SAF**) is the shipped Phase-1
+  path; `AuroraSyncProvider` is an **inert, documented Phase-2 stub** (conforms to the protocol, performs
+  no network calls, the sync button is disabled). `KilterCatalogValidator` opens a candidate read-only,
+  asserts the required tables exist, requires ≥1 listed climb, caps size, and derives a deterministic
+  version — so a malformed/foreign file is rejected with a clear message instead of installing junk.
+- **First-open shows an opt-in screen, not an empty list.** `KilterCatalogSyncView` (iOS) /
+  `KilterCatalogSyncScreen` (Android) explain the import, **surface Aurora's Terms of Use + a link**
+  before any fetch, and make clear the data stays on-device. `KilterSettingsView`/`Screen` gain catalog
+  status (version • climbs • size) + **Refresh** + **Remove downloaded catalog** (removal keeps logged
+  ascents + saved climbs).
+- **The on-device-only rule gets one narrow, named carve-out** (`project.md:64` footnote): the Kilter
+  catalog fetch is a **user-initiated** network request, because the data is third-party-owned and can't
+  be redistributed by us. No background sync, no analytics, no Snappet backend; health + media still
+  never leave the device. Kept narrow so it can't be cited to justify general networking elsewhere.
+- **Tests use a synthetic fixture — zero Aurora data.** `tools/kilter/build_test_fixture.py` (run +
+  verified locally against every reader query) and an in-code `KilterCatalogFixture` (Swift + Kotlin,
+  same rows) author a tiny invented catalog (two layouts, a small hole grid, four made-up climbs). iOS
+  installs it under a `-uiTestInstallKilterCatalog` launch arg; Android via a `TestHooks` flag in
+  `MainActivity`. New `KilterCatalogStoreTests` / `KilterCatalogStoreTest` cover validate/install/clear +
+  reader integration; the existing Kilter UI/walkthrough tests now install the fixture first (they used
+  to rely on the bundled asset).
+
+**Why**: Aurora's [Terms of Use](https://kilterboardapp.com/terms-of-use) claim their data + derivatives
+as sole/exclusive property usable only with written consent; a trimmed rebundled copy is a derivative,
+and this is actively-policed IP. Shipping code that *the user* points at their own catalog distributes
+**code, not Aurora's database** — the only shippable-and-legal option short of a permission deal.
+
+**Rules out**: bundling any Aurora data in the app (the asset is gone, not just unreferenced); a live /
+background / always-on sync (fetch is user-initiated only); analytics or a Snappet backend; using the
+carve-out to justify networking in other modules; changing the **user-data** model (`KilterLogEntry` /
+`KilterSession` / `KilterFavorite` stay in SnappetCore/Room exactly as before); APK-extraction on device
+(rejected — store-hostile/fragile). Phase 2 (`AuroraSyncProvider` real endpoints) stays blocked on the
+endpoint/account/ToU open questions in #42 and is **not** implemented.
+
+**Verified** (2026-06-06, macOS + Xcode 26.5 / Android SDK): both platforms compiled and run **green**.
+iOS — full suite on the iPhone 17 Pro sim: **307 unit + 16 UI tests, 0 failures**, plus the
+`HighlightEngine` SPM suite (21). Android — **37 unit + 18 instrumented tests, 0 failures** (Pixel 7
+AVD). One first-pass fix was needed: the Kilter UI tests filtered out every synthetic climb because the
+`@AppStorage` browse filters (angle/layout/grade) persist in UserDefaults and `-uiTestFreshStore` only
+resets SwiftData — a leftover `kilter.angle` (the old bundled Aurora catalog had angle-0 climbs; the
+fixture only has 25/30/40) yielded "No climbs match". Fix: `KilterCatalogFixture.installForUITestingIfRequested()`
+now clears the Kilter filter keys so browse opens on the fixture-covered defaults. Bundle-inspection
+acceptance confirmed on the built artifacts: **no `kilter.sqlite3` in the iOS `.app` or the Android
+`.apk`** (the APK carries only `androidx.sqlite` library version-stamps, not data).
 
 ## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
 

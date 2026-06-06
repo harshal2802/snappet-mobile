@@ -1,13 +1,16 @@
 import Foundation
 import SQLite3
 
-/// Read-only access layer over the bundled `kilter.sqlite3` catalog (built by
-/// `tools/kilter/build_bundled_db.py`). This is **static reference data** — opened read-only, never
-/// written, and kept out of SwiftData (which owns user data). All queries are synchronous over a
-/// small bundled DB (≈800 climbs); cheap enough to call from the main actor like reading a plist.
+/// Read-only access layer over the **user-installed** `kilter.sqlite3` catalog, opened from
+/// `KilterCatalogStore` (the app ships no catalog — issue #42; the user imports one themselves). This
+/// is static reference data — opened read-only, never written, and kept out of SwiftData (which owns
+/// user data). All queries are synchronous over a small DB; cheap enough to call from the main actor
+/// like reading a plist.
 ///
-/// On-device only: no network, ever. A missing/corrupt asset degrades to an empty catalog rather
-/// than crashing the suite.
+/// On-device only: the reader never touches a network. When nothing is installed (or the file is
+/// corrupt) it degrades to an empty catalog (`isAvailable == false`) and the module shows the opt-in
+/// `KilterCatalogSyncView` rather than crashing the suite. Re-open after an install/remove via
+/// `reload()` (the Kilter screens call it on `KilterCatalogStore.didChangeNotification`).
 ///
 /// Used exclusively from the main thread (the Kilter views), so it isn't `@MainActor`-isolated —
 /// that would make `KilterCatalog.shared` unusable in the views' stored-property initializers. The
@@ -31,14 +34,30 @@ final class KilterCatalog {
 
     private init() { open() }
 
+    /// Open the user-installed catalog from `KilterCatalogStore`. When nothing is installed, `db`
+    /// stays nil and `isAvailable` is false (the module shows the opt-in sync screen).
     private func open() {
-        guard let url = Bundle.main.url(forResource: "kilter", withExtension: "sqlite3"),
-              sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        let store = KilterCatalogStore.shared
+        guard store.isInstalled,
+              sqlite3_open_v2(store.resolvedCatalogURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK
+        else {
             db = nil
             return
         }
         loadReference()
         isAvailable = !grades.isEmpty
+    }
+
+    /// Re-open after the installed catalog changes (import or remove). Main-thread only, per this
+    /// type's convention — the Kilter screens call it when `KilterCatalogStore.didChangeNotification`
+    /// fires. Clears every cache so geometry/grades from a previous catalog can't leak through.
+    func reload() {
+        if db != nil { sqlite3_close(db); db = nil }
+        isAvailable = false
+        grades.removeAll(); roleScreenColor.removeAll()
+        placementXY.removeAll(); placementHole.removeAll()
+        extentCache.removeAll(); geometryCache.removeAll(); ledCache.removeAll()
+        open()
     }
 
     // MARK: - Reference data (loaded once)
@@ -59,7 +78,7 @@ final class KilterCatalog {
 
     // MARK: - Public reads
 
-    /// Listed layouts that actually have climbs in the bundled catalog, in catalog order.
+    /// Listed layouts that actually have climbs in the installed catalog, in catalog order.
     func layouts() -> [KilterLayout] {
         var out: [KilterLayout] = []
         query("""

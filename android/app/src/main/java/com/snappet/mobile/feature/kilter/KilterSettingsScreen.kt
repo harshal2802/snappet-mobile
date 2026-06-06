@@ -1,5 +1,8 @@
 package com.snappet.mobile.feature.kilter
 
+import android.text.format.Formatter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,7 +40,12 @@ import kotlinx.coroutines.launch
  * catalog.
  */
 @Composable
-fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> Unit) {
+fun KilterSettingsScreen(
+    catalog: KilterCatalog,
+    dao: KilterDao,
+    onCatalogChanged: () -> Unit,
+    onExit: () -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val logs by dao.logsFlow().collectAsState(initial = emptyList())
@@ -49,6 +57,22 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
     var layoutMenu by remember { mutableStateOf(false) }
     var angleMenu by remember { mutableStateOf(false) }
     var confirmingClear by remember { mutableStateOf(false) }
+
+    // Catalog management (issue #42): show what's installed, re-import, or remove.
+    val store = remember { KilterCatalogStore.get(context) }
+    val catalogMeta = remember { store.metadata() }
+    var confirmingRemove by remember { mutableStateOf(false) }
+    var catalogError by remember { mutableStateOf<String?>(null) }
+    val catalogPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                installKilterCatalog(context, FileImportProvider(context, uri))
+                onCatalogChanged()
+            } catch (e: Exception) {
+                catalogError = e.message
+            }
+        }
+    }
 
     val layouts = remember { catalog.layouts() }
     val angles = remember { catalog.angles() }
@@ -112,6 +136,36 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             HorizontalDivider()
+            Text("Climb catalog", style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            catalogMeta?.let { m ->
+                Text("${m.climbCount} climbs · ${Formatter.formatShortFileSize(context, m.sizeBytes)}",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Version ${m.version}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            catalogError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { catalogError = null; catalogPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.testTag("kilter.settings.refreshCatalog"),
+                ) { Text("Refresh…") }
+                Button(
+                    onClick = { confirmingRemove = true },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer),
+                    modifier = Modifier.testTag("kilter.settings.removeCatalog"),
+                ) { Text("Remove catalog") }
+            }
+            Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Removing it "
+                + "keeps your logged ascents and saved climbs.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            HorizontalDivider()
             Button(
                 onClick = { confirmingClear = true },
                 enabled = logs.isNotEmpty(),
@@ -136,6 +190,23 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
                     }) { Text("Clear") }
                 },
                 dismissButton = { TextButton(onClick = { confirmingClear = false }) { Text("Cancel") } },
+            )
+        }
+
+        if (confirmingRemove) {
+            AlertDialog(
+                onDismissRequest = { confirmingRemove = false },
+                title = { Text("Remove downloaded catalog?") },
+                text = { Text("The climb catalog will be deleted from this device. Your logged ascents "
+                    + "and saved climbs are kept — you can import it again anytime.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmingRemove = false
+                        store.clear()
+                        onCatalogChanged()
+                    }) { Text("Remove") }
+                },
+                dismissButton = { TextButton(onClick = { confirmingRemove = false }) { Text("Cancel") } },
             )
         }
     }
