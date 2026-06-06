@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Build the bundled, read-only Kilter catalog shipped inside Snappet.
+Build a small, read-only Kilter catalog `.sqlite3` a user can IMPORT into Snappet.
 
-The full Kilter database (≈69 MB, ~100k climbs) is downloaded with `boardlib`
-(see RESEARCH.md). Shipping all of it would bloat the app, so this tool trims a
-full `db.sqlite3` into a small, self-contained `kilter.sqlite3` the app reads
-read-only:
+Snappet ships no catalog (issue #42) — it never redistributes Aurora's data. This
+tool trims the full Kilter database (≈69 MB, ~100k climbs, downloaded with `boardlib`;
+see RESEARCH.md) into a small, self-contained `kilter.sqlite3` the user imports via the
+app's "Import catalog file…" flow (iOS Files / Android SAF). The app then reads it
+read-only from on-device storage:
 
   * ALL board-geometry / reference tables are copied whole (they're tiny and the
     renderer + grade mapping need every row): difficulty_grades, products,
@@ -13,19 +14,18 @@ read-only:
     placement_roles, holes, holds, placements, leds.
   * climbs / climb_stats / climb_cache_fields / beta_links are restricted to the
     most-climbed *listed* problems on the chosen layouts (default: Kilter
-    Original + Homewall), capped to --limit so the asset stays a few MB.
+    Original + Homewall), capped to --limit so the file stays a few MB.
 
-This keeps the bundled catalog static reference data (no runtime sync / accounts /
-network — Snappet ground rule #1). Refresh = re-run `boardlib`, re-run this, ship
-the new asset in an app update.
+The output is a USER-IMPORTABLE file, NOT an app asset — do not commit it into
+ios/.../Resources or android/.../assets. Run it on your own machine under your own
+acceptance of Aurora's Terms of Use.
 
 Usage:
     pip install boardlib pillow
     boardlib database kilter full.sqlite3
-    python tools/kilter/build_bundled_db.py full.sqlite3 \
-        --out android/app/src/main/assets/kilter.sqlite3 \
+    python tools/kilter/build_bundled_db.py full.sqlite3 --out kilter.sqlite3 \
         --layouts 1 8 --limit 800
-    # (then copy the same file to ios/App/Snappet/Resources/kilter.sqlite3)
+    # then import kilter.sqlite3 in-app: Kilter Board -> Import catalog file...
 """
 import argparse
 import sqlite3

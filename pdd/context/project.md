@@ -62,6 +62,11 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 ## Constraints (what the AI should never do or suggest)
 
 - **On-device only. No backend, no network sync, no accounts.** Health + media never leave the device.
+  *(One explicit, **narrow** exception, added 2026-06-05 — keep it named so it can't be cited to justify
+  general networking: the Kilter mini-app may make a **user-initiated** request to fetch the climb
+  catalog onto the device, because that data is third-party-owned (Aurora) and can't legally be
+  redistributed inside the app. No background sync, no analytics, no Snappet backend; health + media
+  still never leave the device. See `decisions.md` (2026-06-05) and issue #42.)*
 - **HealthKit/Photos are device-only** — they don't run in the simulator; don't claim a feature is
   "verified" off a type-check alone (see `decisions.md`).
 - Keep `HighlightEngine` **platform-free** — no HealthKit/AVFoundation/UIKit imports in that target.
@@ -138,9 +143,21 @@ session media tagging, an enriched summary, a CapCut-style clip editor, engine-d
 and share/save — bridging WorkoutTracker to `HighlightEngine`. Tracking: GitHub issue
 [#15](https://github.com/harshal2802/snappet-mobile/issues/15).
 
-🟢 **Kilter Board mini-app (#35)** — browse the bundled read-only climb catalog, render a climb on the
+🟢 **Kilter Board mini-app (#35)** — browse the read-only climb catalog, render a climb on the
 board, log Flash/Sent/Project/Attempt, review history, QR-share climbs, and (gated, device-unverified)
 light the physical board over BLE.
+
+🟢 **Kilter opt-in on-device catalog (2026-06-05, #42, `22-kilter-opt-in-catalog.md`).** The app ships
+**no** Aurora climb data — the bundled `kilter.sqlite3` is gone from both platforms. On first open the
+Kilter module shows an opt-in **"Get the climb catalog"** screen (surfacing Aurora's Terms of Use) that
+imports a user-supplied `.sqlite3` (iOS **Files** / Android **SAF**) into `KilterCatalogStore`; the
+existing `KilterCatalog` reader opens it from there and every browse/detail/log/illuminate feature works
+unchanged. A `KilterCatalogProvider` seam (FileImportProvider shipped; AuroraSyncProvider an inert
+Phase-2 stub) keeps the read path source-agnostic; a `KilterCatalogValidator` rejects malformed files.
+Removes the redistribution exposure (#32 OQ#11.2) **architecturally**. A synthetic, zero-Aurora-data
+fixture (Python generator verified locally + in-code `KilterCatalogFixture` on both platforms) drives the
+tests. Authored on Linux — `xcodebuild test` (Mac) + Android `connectedDebugAndroidTest` owed at the
+merge gate.
 
 🟢 **Kilter rich session (2026-06-05, `pdd/prompts/features/18-ios-kilter-rich-session.md`).** Brought
 the Live Workout toolkit to a climbing session by **reuse, not rebuild**: live HR (Apple Watch *or* a BLE

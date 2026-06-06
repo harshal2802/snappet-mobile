@@ -1,15 +1,21 @@
 import XCTest
 
 /// UI coverage for the Kilter mini-app's Phase-1 flow: open the catalog from the App Library, open a
-/// climb, log a send, and confirm it lands in History. Mirrors `TipUITests`' entry pattern (open the
-/// App Library and tap the module card). The bundled catalog ships in the app, so it's available even
-/// with the fresh in-memory store (which only resets user data).
+/// climb, log a send, and confirm it lands in History. Mirrors `TipUITests`' entry pattern.
+///
+/// Issue #42: the app no longer ships a catalog, so the browse tests launch with
+/// `-uiTestInstallKilterCatalog`, which installs the **synthetic** test fixture
+/// (`KilterCatalogFixture`, zero Aurora data) onto the device before the module opens — standing in for
+/// a real user import. A separate test launches *without* that arg and asserts the opt-in sync screen.
 final class KilterUITests: XCTestCase {
 
-    /// Launch into the App Library and open the Kilter mini-app.
-    private func openKilter() -> XCUIApplication {
+    /// Launch into the App Library and open the Kilter mini-app. With `installCatalog` the synthetic
+    /// fixture is installed first (so there are climbs to browse); without it, the module comes up in
+    /// its empty / opt-in state.
+    private func openKilter(installCatalog: Bool = true) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += ["apps", "-uiTestFreshStore"]
+        if installCatalog { app.launchArguments += ["-uiTestInstallKilterCatalog"] }
         app.launch()
         app.tabBars.buttons["Apps"].tap()
 
@@ -23,12 +29,22 @@ final class KilterUITests: XCTestCase {
         return app
     }
 
-    /// Browse → open a climb → log a send → confirm it appears in History.
+    /// With no catalog installed, the module shows the opt-in sync screen (not a crash, not an empty
+    /// list) — the `KilterCatalog.isAvailable == false` path.
+    func testEmptyStateShowsCatalogSyncScreen() {
+        let app = openKilter(installCatalog: false)
+        XCTAssertTrue(app.buttons["kilter.catalog.import"].waitForExistence(timeout: 8),
+                      "Without a catalog, the opt-in import screen should appear")
+        // No climbs are listed in the empty state.
+        XCTAssertFalse(app.buttons["kilter.climbRow"].firstMatch.exists)
+    }
+
+    /// Browse (against the imported fixture) → open a climb → log a send → confirm it appears in History.
     func testLoggingASendAppearsInHistory() {
         let app = openKilter()
 
         let firstRow = app.buttons["kilter.climbRow"].firstMatch
-        XCTAssertTrue(firstRow.waitForExistence(timeout: 8), "Catalog should list climbs from the bundle")
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 8), "Catalog should list climbs from the fixture")
         firstRow.tap()
 
         let send = app.buttons["kilter.log.sent"]
