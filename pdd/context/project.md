@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-05-30
+**Last updated**: 2026-06-06
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -183,7 +183,27 @@ a **timeline lane** to move/trim any overlay's on-screen window; and **PiP grids
 per-axis size (`normalizedWidth/Height`, default = `scale`, back-compatible) for true split-screen, with
 one-tap collage presets (`StudioGridLayout`), corner-resize handles, and rule-of-thirds snap guides. Pure
 cores (`KilterClimbCaption`, `StudioGridLayout`, the new `StudioProjectEditor`/`ClipEditGeometry` ops) are
-unit-tested; export/preview render paths are device-deferred.
+unit-tested. The render paths were since **device-verified** (see the next entry).
+
+🟢 **Studio overlay/PiP polish — DEVICE-VERIFIED (2026-06-06, PRs #46/#48/#49).** A run of editor fixes +
+features, all **verified on a physical iPhone (MrRobot)** via a screenshot/recording capture loop — incl.
+the export path. **Placement**: PiP/base cells were offset + overflowing; root-caused to the wrong render
+origin (the `AVMutableVideoCompositionLayerInstruction` space is **top-left**, like the device-verified
+`cropTransform` — NOT the Core-Animation overlay's bottom-left) and aspect-**fill** (a layer instruction
+can't clip a sub-rect, so it spilled). Fixed: drop the Y-flip, aspect-**fit** (`fitTransform`), and a
+source-aspect default frame. **Resize**: corner-drag now **aspect-locks** to the footage (box hugs the
+video) and is **flicker-free** — the live-resize had been a SwiftUI drag-feedback loop (a `@State` driven
+from the handle's own gesture re-positioned the handle); rewritten to the canonical `@GestureState`
+pattern with the gesture-hosting handles anchored at the committed size. **Resizable base video**: an
+optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
+a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
+export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a
+**Style** sheet for text colour / highlight background / font preset (`StudioFont`) / bold / italic —
+rendered identically in preview and the exported file. One migration crash was caught + fixed on device:
+new `OverlayItem` style fields shipped non-optional → Swift's synthesized `Decodable` threw on old saved
+overlays; made optional-backed with computed defaults (the codebase's migration-safe pattern), guarded by
+a decode-from-old-JSON test. Full suite green (**301 unit + 15 UI**). All 5 surfaces (placement, resize,
+text+styling, base cell, **export**) confirmed working on-device.
 
 ## License
 

@@ -342,6 +342,25 @@ final class StudioEditorViewModel {
         editOverlaysOnly { StudioProjectEditor.setOverlayContent($0, id: id, content: text) }
     }
 
+    // MARK: - Rich text styling (colour / highlight / font / bold-italic — all overlay-only, no rebuild)
+
+    func setOverlayColor(_ id: UUID, _ hex: String) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayColor($0, id: id, hex: hex) }
+    }
+    /// Set (hex) or clear (`nil`) the highlight/background behind a text/climb-name overlay.
+    func setOverlayHighlight(_ id: UUID, _ hex: String?) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayHighlight($0, id: id, hex: hex) }
+    }
+    func setOverlayFont(_ id: UUID, _ font: StudioFont) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayFont($0, id: id, font: font) }
+    }
+    func setOverlayBold(_ id: UUID, _ on: Bool) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayStyle($0, id: id, bold: on) }
+    }
+    func setOverlayItalic(_ id: UUID, _ on: Bool) {
+        editOverlaysOnly { StudioProjectEditor.setOverlayStyle($0, id: id, italic: on) }
+    }
+
     // MARK: - Climb-name overlay (auto-filled from the clip's assigned climb; mirrors the HR overlay)
 
     /// Overlay ids whose caption currently includes the setter (transient — the caption string itself
@@ -475,6 +494,8 @@ final class StudioEditorViewModel {
 
     /// The main video's collage frame, or `nil` when it fills the whole canvas (legacy).
     var baseFrame: StudioFrameRect? { snapshot.baseFrame }
+    /// The base (main) video's oriented source aspect — locks the base frame's resize to its footage.
+    var baseSourceAspect: CGFloat? { clips.first.flatMap { sourceAspects[$0.localIdentifier] } }
     /// Whether the main video is currently framed into a sub-rect (drives the canvas handle + toggle).
     var baseFramed: Bool { snapshot.baseFrame != nil }
 

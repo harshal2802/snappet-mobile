@@ -4,6 +4,59 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## 2026-06-06 — Rich text overlays: wrap-to-width fit + colour/highlight/font/style (P21)
+
+Device feedback: a large climb-name caption spilled past both edges of the video, and text had no
+styling. Two changes. **(1) Wrap-to-width fit** — the `.climbName` preview chip had NO width cap (only
+`.text` did), so it grew as wide as the text and overflowed into the letterbox; the export box was also
+sized from EXPLICIT newlines, not wrapped lines. Now both **wrap to ~0.9 of the video width**: the
+preview uses `.frame(maxWidth: rect.width*0.9)` + `fixedSize(vertical)`, and the export measures the
+wrapped height via `NSAttributedString.boundingRect` and sizes the `CATextLayer` container to it — so a
+multi-line caption never clips and preview == file. **(2) Rich style** — `OverlayItem` gained
+`highlightHex` (background), `fontRaw` (a new pure `StudioFont` enum: system/rounded/serif/mono), `bold`,
+`italic` — all **additive + defaulted** (migration-safe Codable, like the prior optional fields).
+Rendered in BOTH the SwiftUI preview (TextOverlayChip.styledText) and the Core-Animation export
+(StudioOverlays.styledTextLayer) via a shared mapping: `StudioFont.swiftUIDesign` ↔ `uiFont`
+(UIFontDescriptor design + symbolic traits). Text + climb-name now share ONE styled path (climb-name is
+text with a dark-highlight default). A paintbrush "Style" sheet (StudioTextStyleControls) edits colour /
+highlight (None + swatches) / font / bold / italic; all commit `editOverlaysOnly` (overlays aren't in the
+playback composition → no rebuild). **Why a font ENUM, not a font-name string**: the four presets map
+cleanly to a `Font.Design` (SwiftUI) and a `UIFontDescriptor.SystemDesign` (UIKit) so preview and export
+match without bundling fonts; arbitrary font names wouldn't render identically in CATextLayer. **Why the
+export measures wrapped height**: a fixed line-count box clips wrapped captions; `boundingRect` is the
+only way to size the chip to the actual wrapped text. **Rules out**: a climb-name chip with no width cap;
+sizing the export box from `\n` count; a font-name string field; a separate ClimbName config (text +
+climb-name share the styled layer). **Limitation**: climb-name's highlight has a dark fallback so it
+always shows some background (the picker recolours it); fully removing it isn't exposed. **Verified**:
+builds clean, full unit suite green (301) incl. the new style setters + migration-safe defaults. **Device
+pending**: the styled caption rendering in **export** on real footage.
+
+## 2026-06-05 — PiP/base resize: aspect-locked corner-drag + flicker-free live resize (P21)
+
+Device verification of the placement fix surfaced two more resize issues, both fixed in
+`StudioOverlayCanvas`. **(1) Letterbox on free resize** — after the fill→fit change, dragging a PiP
+corner to an aspect ≠ its footage left the dashed box bigger than the aspect-fit video (the box stopped
+hugging the video). Fix: **lock corner-resize to the source aspect** — the canvas now receives
+`sourceAspects` (resolved oriented w/h per `localIdentifier`, already computed in the VM) and the base
+video's aspect; `ResizableFrame.resizedFrame` derives the off-axis from `contentAspect` and
+`clampedAspectSize` clamps into [0.1,1] **while preserving the ratio**, so the box always keeps the
+footage aspect → the fit video fills it edge-to-edge. Pinch + grid presets still allow free aspect (for
+collages). **(2) Resize flicker** — the live-resize had been driven by a `@State liveResize` SET FROM
+the corner handle's own gesture callback, and the handle's on-screen position was recomputed from that
+same state. So the handle moved out from under the finger → re-fired its gesture → oscillated (the
+new aspect-lock branch `newW >= newH·r` toggling each frame amplified it into a visible flicker,
+confirmed by frame-diffing a screen recording: the changing pixels were the box/handles, not the video).
+Fix: the **canonical SwiftUI draggable pattern** — replace `@State` with a `@GestureState cornerDrag`,
+anchor the gesture-hosting handles at the **committed** size (they never move during the drag, so the
+gesture's translation stays stable), offset ONLY the dragged dot, and render the live-resizing outline
+as a **non-interactive** overlay (hosts no gesture → can't feed back). **Why @GestureState over @State**:
+@GestureState is bound to the gesture lifecycle and auto-resets, and — critically — moving it out of the
+handle's layout-position path is what breaks the feedback loop. **Rules out**: driving live-resize layout
+from a `@State` the gesture writes; repositioning a gesture host from its own gesture value; per-axis free
+resize for a PiP (now aspect-locked on corner-drag). **Verified on device (MrRobot)**: placement sits
+under the outline (preview), corner-resize hugs the video with no letterbox, and the drag is smooth (no
+flicker) — confirmed by screen recording. Builds clean; full suite green.
+
 ## [2026-06-05] Kilter — stop redistributing Aurora's catalog; opt-in on-device fetch (#42)
 
 **Decision**: The Kilter mini-app no longer **ships** Aurora Climbing's climb catalog. The bundled
