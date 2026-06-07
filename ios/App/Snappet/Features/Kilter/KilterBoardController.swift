@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Foundation
+import HealthKit
 import SwiftData
 
 /// Drives the physical Kilter board over Bluetooth LE: scan → connect → write the illumination
@@ -26,11 +27,16 @@ final class KilterBoardController: NSObject {
         var isBusy: Bool { self == .scanning || self == .connecting }
     }
 
-    // Aurora/Kilter board GATT (community-sourced — verify against hardware).
+    // Aurora/Kilter board BLE addressing. Two distinct UUIDs — conflating them was the connect bug:
+    //  * `advertisedServiceUUID` is what the board *advertises* (used only to recognise it while
+    //    scanning / to retrieve a system-connected board); it is not where illumination data is written.
+    //  * the writable endpoint is the **Nordic UART** GATT service + characteristic, shared by the whole
+    //    Aurora family (Kilter / Tension / Grasshopper / …) — there is no per-board variation here.
     // `nonisolated(unsafe)`: CBUUID isn't Sendable, but these are immutable constants, so the
-    // pure (nonisolated) `isLikelyBoard` matcher can read `serviceUUID` safely.
-    nonisolated(unsafe) private static let serviceUUID = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
-    nonisolated(unsafe) private static let writeUUID = CBUUID(string: "4488B572-7806-4DF6-BCFF-A2897E4953FF")
+    // pure (nonisolated) `isLikelyBoard` matcher can read `advertisedServiceUUID` safely.
+    nonisolated(unsafe) private static let advertisedServiceUUID = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
+    nonisolated(unsafe) private static let gattServiceUUID = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) private static let writeUUID = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 
     /// How long to look for a board before giving up, and how long a single GATT
     /// connect + discovery may take. CoreBluetooth's own `connect(_:)` never times out, so without
@@ -40,6 +46,12 @@ final class KilterBoardController: NSObject {
 
     private(set) var state: State = .idle
     var isConnected: Bool { state == .connected }
+    /// Which Aurora payload dialect to send. Default `.v3` (current boards); switched to `.v2` when a
+    /// user with an older board reports the wrong holds lighting up. Persisted by the UI layer, which
+    /// pushes it down via `setAPILevel(_:)`.
+    private(set) var apiLevel: KilterProtocol.APILevel = .v3
+    /// The most recently requested holds, so a protocol switch can re-light the current climb at once.
+    private var lastHolds: [KilterHold] = []
     /// Notified when the connection comes up / goes down, so the module can open/close a session.
     var onConnectionChange: ((Bool) -> Void)?
 
@@ -51,6 +63,14 @@ final class KilterBoardController: NSObject {
     /// Set the moment the user taps Connect; lets us start scanning as soon as the radio reports
     /// `.poweredOn` (which can arrive after the tap on first launch / permission prompt).
     private var wantsToConnect = false
+    /// Identifier of the last board we successfully reached, persisted across launches. Used as the
+    /// second adopt path (`retrievePeripherals(withIdentifiers:)`) for a paired board that iOS hasn't
+    /// cached our service for — so `retrieveConnectedPeripherals(withServices:)` misses it.
+    private static let lastBoardKey = "kilter.lastBoardID"
+    private var lastBoardIdentifier: UUID? {
+        get { UserDefaults.standard.string(forKey: Self.lastBoardKey).flatMap(UUID.init(uuidString:)) }
+        set { UserDefaults.standard.set(newValue?.uuidString, forKey: Self.lastBoardKey) }
+    }
     /// Watchdog that fails the attempt if scan/connect/discovery stalls.
     private var timeout: Task<Void, Never>?
 
@@ -59,7 +79,7 @@ final class KilterBoardController: NSObject {
     /// primary service UUID, only a local name — so name matching is the primary signal and scanning
     /// filtered by service UUID (the old behavior) would never discover them.
     nonisolated static func isLikelyBoard(name: String?, advertisedServiceUUIDs: [CBUUID]) -> Bool {
-        if advertisedServiceUUIDs.contains(serviceUUID) { return true }
+        if advertisedServiceUUIDs.contains(advertisedServiceUUID) { return true }
         guard let name = name?.lowercased() else { return false }
         return ["kilter", "aurora", "tension", "grasshopper", "decoy", "soill"].contains { name.contains($0) }
     }
@@ -73,12 +93,47 @@ final class KilterBoardController: NSObject {
         }
         guard let central else { return }
         switch central.state {
-        case .poweredOn: beginScan()
+        case .poweredOn: beginConnect()
         case .poweredOff: state = .bluetoothOff
         case .unauthorized: state = .unauthorized
         case .unsupported: state = .unsupported
         default: state = .scanning   // .unknown / .resetting — wait for didUpdateState
         }
+    }
+
+    /// Adopt a board that's **already connected at the system level** (paired in Settings, or held by
+    /// the official Aurora/Kilter app) before falling back to a scan. Such a board has stopped
+    /// advertising, so a scan would never re-discover it — this was the reported "won't connect, but
+    /// the Kilter app connects fine" case. Two adopt paths, then scan:
+    ///
+    /// 1. `retrieveConnectedPeripherals(withServices:)` — returns the board when iOS has cached that it
+    ///    exposes our service (typically because the official app discovered it).
+    /// 2. `retrievePeripherals(withIdentifiers:)` with our last-connected board's id — covers a paired
+    ///    board iOS *hasn't* cached our service for, so path 1 comes back empty. `connect(_:)` then
+    ///    reaches it if it's available (the watchdog fails the attempt otherwise).
+    private func beginConnect() {
+        guard let central, central.state == .poweredOn else { return }
+        let knownServices = [Self.gattServiceUUID, Self.advertisedServiceUUID]
+        if let existing = central.retrieveConnectedPeripherals(withServices: knownServices).first {
+            connect(to: existing)
+        } else if let known = lastBoardIdentifier,
+                  let remembered = central.retrievePeripherals(withIdentifiers: [known]).first {
+            connect(to: remembered)
+        } else {
+            beginScan()
+        }
+    }
+
+    /// Connect to a chosen peripheral (from a system-connected lookup or a scan match) and start the
+    /// watchdog over connect + discovery.
+    private func connect(to peripheral: CBPeripheral) {
+        central?.stopScan()
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        state = .connecting
+        central?.connect(peripheral)
+        startTimeout(Self.connectTimeout,
+                     message: "Couldn't reach the board. Move closer and try again.")
     }
 
     private func beginScan() {
@@ -139,6 +194,7 @@ final class KilterBoardController: NSObject {
     /// Light the given holds on the board (no-op unless connected). Stores them if the characteristic
     /// isn't discovered yet so they flush once ready.
     func illuminate(_ holds: [KilterHold]) {
+        lastHolds = holds
         guard isConnected, let peripheral, let writeChar else {
             pendingHolds = holds
             return
@@ -146,14 +202,22 @@ final class KilterBoardController: NSObject {
         send(holds, to: peripheral, characteristic: writeChar)
     }
 
+    /// Switch the payload dialect and, if a climb is currently lit, re-send it so the change shows on
+    /// the wall immediately. No-op when unchanged — safe to call on every settings sync.
+    func setAPILevel(_ level: KilterProtocol.APILevel) {
+        guard level != apiLevel else { return }
+        apiLevel = level
+        if isConnected, !lastHolds.isEmpty { illuminate(lastHolds) }
+    }
+
     private func send(_ holds: [KilterHold], to peripheral: CBPeripheral, characteristic: CBCharacteristic) {
         let payload = holds.compactMap { hold -> (position: Int, colorHex: String)? in
             guard let pos = hold.ledPosition else { return nil }
-            return (pos, hold.colorHex)
+            return (pos, hold.ledColorHex)   // the board's LED color, not the on-screen color
         }
         let mode: CBCharacteristicWriteType =
             characteristic.properties.contains(.write) ? .withResponse : .withoutResponse
-        for message in KilterProtocol.messages(for: payload) {
+        for message in KilterProtocol.messages(for: payload, level: apiLevel) {
             peripheral.writeValue(Data(message), for: characteristic, type: mode)
         }
     }
@@ -168,8 +232,9 @@ extension KilterBoardController: CBCentralManagerDelegate {
             switch central.state {
             case .poweredOn:
                 // Radio came up after the user tapped Connect (state was the placeholder `.scanning`
-                // or `.idle`) → kick off the real scan. Don't disturb an in-flight connect/connected.
-                if wantsToConnect && state != .connecting && state != .connected { beginScan() }
+                // or `.idle`) → adopt a system-connected board or start the scan. Don't disturb an
+                // in-flight connect/connected.
+                if wantsToConnect && state != .connecting && state != .connected { beginConnect() }
             case .poweredOff:
                 state = .bluetoothOff
             case .unauthorized:
@@ -184,7 +249,6 @@ extension KilterBoardController: CBCentralManagerDelegate {
 
     nonisolated func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                                     advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        nonisolated(unsafe) let central = central
         nonisolated(unsafe) let peripheral = peripheral
         let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
         // CBUUID isn't Sendable; the assumeIsolated closure runs synchronously on this (main) thread.
@@ -193,13 +257,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
             guard state == .scanning,
                   Self.isLikelyBoard(name: localName ?? peripheral.name,
                                      advertisedServiceUUIDs: advertisedServices) else { return }
-            central.stopScan()
-            self.peripheral = peripheral
-            peripheral.delegate = self
-            state = .connecting
-            central.connect(peripheral)
-            startTimeout(Self.connectTimeout,
-                         message: "Couldn't reach the board. Move closer and try again.")
+            connect(to: peripheral)
         }
     }
 
@@ -210,7 +268,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
             // with an unexpected GATT layout would otherwise hang silently.
             startTimeout(Self.connectTimeout,
                          message: "Connected, but the board didn't respond. Try again.")
-            peripheral.discoverServices([Self.serviceUUID])
+            peripheral.discoverServices([Self.gattServiceUUID])
         }
     }
 
@@ -250,7 +308,7 @@ extension KilterBoardController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
-            for service in peripheral.services ?? [] where service.uuid == Self.serviceUUID {
+            for service in peripheral.services ?? [] where service.uuid == Self.gattServiceUUID {
                 peripheral.discoverCharacteristics([Self.writeUUID], for: service)
             }
         }
@@ -265,6 +323,9 @@ extension KilterBoardController: CBPeripheralDelegate {
                 timeout?.cancel(); timeout = nil
                 wantsToConnect = false
                 writeChar = characteristic
+                // Remember this board now that it's confirmed (right write characteristic) — only here,
+                // so the identifier-based adopt path never targets a device that wasn't really a board.
+                lastBoardIdentifier = peripheral.identifier
                 state = .connected
                 onConnectionChange?(true)
                 if let pending = pendingHolds {
@@ -276,7 +337,10 @@ extension KilterBoardController: CBPeripheralDelegate {
     }
 }
 
-/// Tracks the active board session so logged ascents can be grouped in History. Created at the module
+/// Tracks the active board session so logged ascents can be grouped in History, and — when bound to
+/// the app's live-metrics + Live-Activity + media services — drives **live heart rate**, a **Lock
+/// Screen / Dynamic Island Live Activity**, **per-climb timing**, and **post-session media
+/// discovery** for the session (workout-grade parity, decisions.md 2026-06-06). Created at the module
 /// root and shared via the environment. A session opens when a board connects (source `"ble"`) or
 /// when the user starts one manually, and closes on disconnect / when the user ends it.
 @MainActor
@@ -286,18 +350,169 @@ final class KilterSessionManager {
     var isActive: Bool { current != nil }
     var currentId: UUID? { current?.id }
 
+    /// The climb currently being worked while a session is live — for the HUD, the Live Activity, and
+    /// per-climb timing. `activeClimbStartedAt` stamps when the climber moved onto it.
+    private(set) var activeClimbUUID: String?
+    private(set) var activeClimbName: String = "Resting"
+    private(set) var activeClimbGrade: String = ""
+    private(set) var activeClimbStartedAt: Date?
+
+    /// Live Activity board label (no per-board name today).
+    private let boardName = "Kilter Board"
+
+    // Services wired once by `KilterRootView` via `bind(...)`. Strong refs to AppModel-owned
+    // singletons, which outlive this manager — no retain cycle (AppModel doesn't hold the manager).
+    private var liveWorkout: LiveMetricsCoordinator?
+    private var liveActivity: KilterLiveActivityController?
+    private var media: SessionMediaService?
+
+    /// Whether *this* session started the live-metrics source — so `end()` only flushes/stops HR it
+    /// owns. Guards against a Kilter session that opened while a WorkoutTracker workout was already
+    /// running: it must not steal that workout's HR buffer or stop its source.
+    private var didStartMetrics = false
+
+    /// Inject the live-metrics + Live-Activity + media services so the manager can drive HR / the
+    /// Live Activity / media discovery. Idempotent; called from the root view on appear.
+    func bind(liveWorkout: LiveMetricsCoordinator,
+              liveActivity: KilterLiveActivityController,
+              media: SessionMediaService) {
+        self.liveWorkout = liveWorkout
+        self.liveActivity = liveActivity
+        self.media = media
+    }
+
     func start(angle: Int, source: String, in context: ModelContext) {
         guard current == nil else { return }
         let session = KilterSession(angle: angle, source: source)
         context.insert(session)
-        try? context.save()
         current = session
+        resetActiveClimb()
+        // Begin live HR capture (Apple Watch or BLE band, whichever the coordinator resolves) — but
+        // only if no workout is already driving a source (we must not commandeer a running workout).
+        if let liveWorkout, !liveWorkout.isSessionActive {
+            liveWorkout.start(LiveMetricsContext(startedAt: session.startedAt, activityType: .climbing))
+            didStartMetrics = true
+        }
+        try? context.save()
+        // Lock Screen / Dynamic Island live session widget (no-op if unavailable/unauthorized).
+        liveActivity?.start(boardName: boardName, startedAt: session.startedAt, angle: angle)
     }
 
     func end(in context: ModelContext) {
         guard let session = current else { return }
         session.endedAt = .now
+        // Flush the live HR buffer onto the session BEFORE stopping the source (mirrors
+        // WorkoutTracker.finishWorkout) — only when this session owns the source. Stamp the source
+        // label from the actually-captured data, so it's never a misleading default.
+        if didStartMetrics, let liveWorkout {
+            session.hrSeries = WorkoutHRStats.points(from: liveWorkout.samples)
+            if !session.hrSeries.isEmpty { session.metricsSourceRaw = liveWorkout.activeKind.rawValue }
+            liveWorkout.stop()
+            didStartMetrics = false
+        }
         try? context.save()
+        liveActivity?.end()
+        let ended = session
         current = nil
+        resetActiveClimb()
+        // Auto-discover photos/videos shot during the session window and tag them to the session + the
+        // climb they fall within. Best-effort; only runs with full Photos access.
+        discoverMedia(for: ended, in: context)
+    }
+
+    /// Mark the climb now on screen as the active one (called from the detail view's `load()` on the
+    /// initial open + each swipe, and on each log). Stamps the start when the climb changes, or when
+    /// it's been disarmed by a prior send (`activeClimbStartedAt == nil`) — but not on a plain swipe
+    /// back to the same in-progress climb, so its timer isn't reset.
+    func beginClimb(uuid: String, name: String, grade: String) {
+        guard isActive, uuid != activeClimbUUID || activeClimbStartedAt == nil else { return }
+        activeClimbUUID = uuid
+        activeClimbName = name
+        activeClimbGrade = grade
+        activeClimbStartedAt = .now
+    }
+
+    /// Called after a successful send (Flash/Sent) — the climb is done, so go back to "Resting" and
+    /// let the next climb's timing/rest start fresh.
+    func closeActiveClimb() { resetActiveClimb() }
+
+    /// The current live snapshot for the HUD + Live Activity, or `nil` when no session is active.
+    func liveSnapshot(hrBpm: Int?, climbCount: Int) -> KilterLiveSnapshot? {
+        guard let session = current else { return nil }
+        return KilterLiveSnapshot(
+            startedAt: session.startedAt, hrBpm: hrBpm,
+            currentClimbName: activeClimbName, currentGrade: activeClimbGrade,
+            climbCount: climbCount, paused: liveWorkout?.isPaused ?? false)
+    }
+
+    /// Push a throttled update to the Live Activity (called by the detail view as HR / the active
+    /// climb / the climb count change while the session is visible).
+    func pushLiveActivity(hrBpm: Int?, climbCount: Int) {
+        guard let snap = liveSnapshot(hrBpm: hrBpm, climbCount: climbCount) else { return }
+        liveActivity?.update(snap)
+    }
+
+    private func resetActiveClimb() {
+        activeClimbUUID = nil
+        activeClimbName = "Resting"
+        activeClimbGrade = ""
+        activeClimbStartedAt = nil
+    }
+
+    /// Re-run media discovery for a past session by id (the summary's "Find my clips" action, after
+    /// the user has granted full Photos access). No-op if the session can't be found.
+    func importMedia(forSessionID id: UUID, in context: ModelContext) {
+        guard let session = try? context.fetch(
+            FetchDescriptor<KilterSession>(predicate: #Predicate { $0.id == id })).first else { return }
+        discoverMedia(for: session, in: context)
+    }
+
+    // MARK: - Media discovery (best-effort; full Photos access only)
+
+    private func discoverMedia(for session: KilterSession, in context: ModelContext) {
+        guard let media, media.canAutoDiscover else { return }
+        let sessionID = session.id
+        let startedAt = session.startedAt
+        let completedAt = session.endedAt
+        let windows = climbWindows(for: session, in: context)
+        let existing = existingMediaIdentifiers(sessionID: sessionID, in: context)
+        Task { @MainActor in
+            guard let candidates = try? await media.discover(
+                startedAt: startedAt, completedAt: completedAt, existingIdentifiers: existing)
+            else { return }
+            for c in candidates {
+                let climbUUID = KilterMediaAssignment.climbUUID(forOffset: c.offsetSec, windows: windows)
+                context.insert(SessionMedia(
+                    sessionID: sessionID, localIdentifier: c.localIdentifier, kind: c.kind,
+                    offsetSec: c.offsetSec, durationSec: c.durationSec,
+                    assignedClimbUUID: climbUUID,
+                    source: climbUUID != nil ? .auto : .general))
+            }
+            try? context.save()
+        }
+    }
+
+    /// Each in-session climb's `[start, end]` window in seconds from the session start, for clip
+    /// auto-assignment. Climbs without a recorded start are skipped (no window to match against).
+    private func climbWindows(for session: KilterSession,
+                              in context: ModelContext) -> [KilterMediaAssignment.ClimbWindow] {
+        let sid = session.id
+        let start = session.startedAt
+        let entries = (try? context.fetch(
+            FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.sessionId == sid }))) ?? []
+        return entries.compactMap { e in
+            guard let s = e.startedAt else { return nil }
+            let end = e.endedAt ?? e.date
+            return KilterMediaAssignment.ClimbWindow(
+                climbUUID: e.climbUUID,
+                startOffset: max(0, s.timeIntervalSince(start)),
+                endOffset: max(0, end.timeIntervalSince(start)))
+        }
+    }
+
+    private func existingMediaIdentifiers(sessionID: UUID, in context: ModelContext) -> Set<String> {
+        let rows = (try? context.fetch(
+            FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.sessionID == sessionID }))) ?? []
+        return Set(rows.map(\.localIdentifier))
     }
 }

@@ -57,6 +57,8 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
+    // On-device receipt OCR (Split Expenses). Bundled Latin text-recognition model.
+    implementation(libs.mlkit.text.recognition)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

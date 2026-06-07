@@ -1,20 +1,32 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
-/// Kilter preferences: the default board + angle that seed browsing, how grades render, and a
-/// destructive "clear logged history". Pushed onto the App Library's shared NavigationStack from the
-/// catalog's More menu.
+/// Kilter preferences: the default board + angle that seed browsing, how grades render, the installed
+/// climb catalog (status / refresh / remove — issue #42), and a destructive "clear logged history".
+/// Pushed onto the App Library's shared NavigationStack from the catalog's More menu.
 struct KilterSettingsView: View {
     let catalog: KilterCatalog
     @Environment(\.modelContext) private var modelContext
 
     @AppStorage("kilter.layout") private var layoutId: Int = 1
     @AppStorage("kilter.angle") private var angle: Int = 40
+    /// The user's physical board size (`product_size_id`) — drives which LED map is sent so the right
+    /// holds light. Seeded to the layout's default; reset when the layout changes.
+    @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
 
     @Query private var entries: [KilterLogEntry]
     @Query private var sessions: [KilterSession]
     @State private var confirmingClear = false
+
+    // Catalog library management (download / import / switch active / remove).
+    @State private var installer = KilterCatalogInstaller()
+    @State private var showingImporter = false
+    @State private var showingDownload = false
+    /// Bumped on activate/remove so the library list re-renders (the store reads off the filesystem).
+    @State private var libraryVersion = 0
 
     var body: some View {
         Form {
@@ -22,13 +34,20 @@ struct KilterSettingsView: View {
                 Picker("Board", selection: $layoutId) {
                     ForEach(catalog.layouts()) { Text($0.name).tag($0.id) }
                 }
+                let sizes = catalog.sizes(forLayout: layoutId)
+                if sizes.count > 1 {
+                    Picker("Board size", selection: $productSizeId) {
+                        ForEach(sizes) { Text($0.label).tag($0.id) }
+                    }
+                    .accessibilityIdentifier("kilter.settings.boardSize")
+                }
                 Picker("Angle", selection: $angle) {
                     ForEach(catalog.angles(), id: \.self) { Text("\($0)°").tag($0) }
                 }
             } header: {
                 Text("Defaults")
             } footer: {
-                Text("Used when you open the Kilter Board.")
+                Text("Used when you open the Kilter Board. Set your board size so the right holds light up.")
             }
 
             Section("Grades") {
@@ -38,6 +57,67 @@ struct KilterSettingsView: View {
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("kilter.settings.gradeFormat")
             }
+
+            Section {
+                Picker("Board lights", selection: $apiLevelRaw) {
+                    ForEach(KilterProtocol.APILevel.allCases, id: \.rawValue) { level in
+                        Text(level.label).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("kilter.settings.apiLevel")
+            } header: {
+                Text("Board protocol")
+            } footer: {
+                Text("Almost all boards use Standard. If you connect but the wrong holds light up, "
+                     + "switch to Legacy — it's for older controllers.")
+            }
+
+            Section {
+                let catalogs = installer.catalogs
+                let activeId = installer.activeCatalogId
+                if catalogs.isEmpty {
+                    Text("No catalog installed").foregroundStyle(.secondary)
+                } else {
+                    ForEach(catalogs) { c in
+                        Button {
+                            if c.id != activeId { installer.activate(id: c.id); libraryVersion += 1 }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: c.id == activeId ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(c.id == activeId ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.displayName).font(.subheadline.weight(.medium))
+                                    Text("\(c.meta.climbCount) climbs · "
+                                        + ByteCountFormatter.string(fromByteCount: c.meta.sizeBytes, countStyle: .file)
+                                        + " · " + c.meta.installedAt.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button("Remove", role: .destructive) { installer.remove(id: c.id); libraryVersion += 1 }
+                        }
+                    }
+                }
+                Button("Download from Kilter…") { showingDownload = true }
+                    .accessibilityIdentifier("kilter.settings.download")
+                Button("Import file…") { showingImporter = true }
+                    .accessibilityIdentifier("kilter.settings.import")
+                if case .failed(let message) = installer.phase {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.red)
+                }
+            } header: {
+                Text("Downloaded catalogs")
+            } footer: {
+                Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Tap one to make "
+                     + "it active, swipe to remove. Removing keeps your logged ascents and saved climbs.")
+            }
+            .id(libraryVersion)
 
             Section {
                 Button("Clear logged history", role: .destructive) { confirmingClear = true }
@@ -50,11 +130,37 @@ struct KilterSettingsView: View {
         }
         .navigationTitle("Kilter Settings")
         .navigationBarTitleDisplayMode(.inline)
+        // Keep the board-size selection valid for the chosen layout (seed on open, reset on layout change).
+        .onAppear(perform: syncBoardSize)
+        .onChange(of: layoutId) { syncBoardSize() }
         .confirmationDialog("Clear all logged history?", isPresented: $confirmingClear,
                             titleVisibility: .visible) {
             Button("Clear history", role: .destructive) { clearHistory() }
         } message: {
             Text("This permanently deletes your ascent log and sessions. It can't be undone.")
+        }
+        .fileImporter(isPresented: $showingImporter,
+                      allowedContentTypes: [UTType(filenameExtension: "sqlite3") ?? .data, .data],
+                      allowsMultipleSelection: false) { result in
+            Task { await installer.importPicked(result); libraryVersion += 1 }
+        }
+        .sheet(isPresented: $showingDownload) {
+            KilterCatalogDownloadSheet(installer: installer) { board, filter, host in
+                Task {
+                    let provider = HostedCatalogProvider(board: board, filter: filter, baseURL: host,
+                                                         name: KilterCatalogDownloadSheet.name(for: filter))
+                    await installer.install(using: provider)
+                    if case .installed = installer.phase { showingDownload = false; libraryVersion += 1 }
+                }
+            }
+        }
+    }
+
+    /// Snap `productSizeId` to a size that exists for the current layout — seeds it to the default when
+    /// unset, and resets it when the user switches to a layout that doesn't offer the old size.
+    private func syncBoardSize() {
+        if !catalog.sizes(forLayout: layoutId).contains(where: { $0.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(forLayout: layoutId)
         }
     }
 

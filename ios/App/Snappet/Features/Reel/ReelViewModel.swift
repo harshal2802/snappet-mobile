@@ -3,6 +3,30 @@ import Observation
 import AVFoundation
 import HighlightEngine
 
+/// What the reel flow needs from its source, generalized beyond a HealthKit `WorkoutSummary` so a
+/// **Kilter climbing session** can reuse the same auto-generate-then-edit UI (preview / pin / remove
+/// / reorder / export). `makeWorkout` receives the `AppModel` as a parameter so a source can be
+/// constructed without one in hand (a SwiftUI `View.init` has no environment yet).
+struct ReelSource {
+    /// Feedback / `logShown` id (e.g. the workout or Kilter-session UUID string).
+    let id: String
+    let activity: Activity
+    /// Navigation title, e.g. "Climbing reel".
+    let title: String
+    /// Session start — used to offset manually-picked media (limited Photos access).
+    let start: Date
+    /// Build the engine input. `manualMedia` (from the limited-access picker) overrides
+    /// auto-discovery when provided.
+    let makeWorkout: @MainActor (_ model: AppModel, _ manualMedia: [MediaItem]?) async throws -> Workout
+
+    /// The flagship workout source: builds via `AppModel.buildWorkout` (HealthKit HR + Photos).
+    static func workout(_ summary: WorkoutSummary) -> ReelSource {
+        ReelSource(id: summary.id.uuidString, activity: summary.activity,
+                   title: "\(summary.activity.rawValue.capitalized) reel", start: summary.start,
+                   makeWorkout: { model, manual in try await model.buildWorkout(summary, manualMedia: manual) })
+    }
+}
+
 /// Drives the auto-generate-then-edit flow (#60 §B): generate a good reel
 /// automatically, then let the user keep/remove/regenerate. Every edit is logged as
 /// training data via the engine's feedback sink.
@@ -11,7 +35,7 @@ import HighlightEngine
 final class ReelViewModel {
     enum State: Equatable { case loading, ready, empty, error(String), exporting, exported(URL) }
 
-    let summary: WorkoutSummary
+    let source: ReelSource
     private let model: AppModel
 
     var state: State = .loading
@@ -31,9 +55,14 @@ final class ReelViewModel {
     var previewPlayer: AVPlayer?
     var previewError: String?
 
-    init(summary: WorkoutSummary, model: AppModel) {
-        self.summary = summary
+    init(source: ReelSource, model: AppModel) {
+        self.source = source
         self.model = model
+    }
+
+    /// Back-compat convenience for the workout path (keeps `ReelView(summary:)` call sites).
+    convenience init(summary: WorkoutSummary, model: AppModel) {
+        self.init(source: .workout(summary), model: model)
     }
 
     /// Highlights in the reel, minus removed, in manual order when the user set one.
@@ -57,13 +86,15 @@ final class ReelViewModel {
         pinnedIds.removeAll()
         orderedIds = nil
         do {
-            let wk = try await model.buildWorkout(summary, manualMedia: manualMedia)
+            let wk = try await source.makeWorkout(model, manualMedia)
             workout = wk
-            let res = model.engine.generate(for: wk)
+            // Full-length clips (no per-clip trim); the planner is uncapped (AppModel) so nothing is
+            // dropped for length — the user didn't want a limit on session videos.
+            let res = model.engine.generate(for: wk, config: .preset(for: wk.activity).fullLength())
             result = res
             highlights = res.highlights
-            model.engine.logShown(res, workoutId: summary.id.uuidString,
-                                   activity: summary.activity, now: Date().timeIntervalSince1970)
+            model.engine.logShown(res, workoutId: source.id,
+                                   activity: source.activity, now: Date().timeIntervalSince1970)
             state = res.highlights.isEmpty ? .empty : .ready
         } catch {
             state = .error(error.localizedDescription)
@@ -72,7 +103,7 @@ final class ReelViewModel {
 
     /// Limited-access fallback: build the reel from hand-picked assets (#60 §C).
     func usePickedMedia(identifiers ids: [String]) async {
-        let media = model.media(forIdentifiers: ids, workoutStart: summary.start)
+        let media = model.media(forIdentifiers: ids, workoutStart: source.start)
         await generate(manualMedia: media)
     }
 
@@ -158,7 +189,7 @@ final class ReelViewModel {
     private func log(_ action: HighlightFeedbackEvent.Action, highlight h: Highlight?) {
         guard let res = result else { return }
         model.feedback.record(.init(
-            workoutId: summary.id.uuidString, activity: summary.activity, action: action,
+            workoutId: source.id, activity: source.activity, action: action,
             atOffset: h?.atOffset, score: h?.score, highlightKind: h?.kind,
             selectorName: res.selectorName, configFingerprint: res.config.fingerprint,
             timestamp: Date().timeIntervalSince1970

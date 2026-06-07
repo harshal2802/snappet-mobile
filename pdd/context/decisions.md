@@ -4,6 +4,422 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-06] Kilter Board — LED map by the user's BOARD SIZE + send led_color (real-board fix)
+
+**Decision**: Resolve each lit hold's LED address from the `leds` table **for the user's chosen
+`product_size`**, not an arbitrary one, and send the role's **`led_color`** (not `screen_color`) to the
+board. Found on real hardware: the board connected and lit up (the #52 GATT/framing fix worked) but lit
+the **wrong/shifted holds**.
+
+- **Root cause**: `ledPositions` used `MIN(product_size_id)` for the layout — i.e. it always assumed
+  one specific board size (for Kilter Original that's size 7, "12×14 Commercial", 527 LEDs). A layout
+  exists in **many** physical sizes (Original: 7×10/8×12/12×12/12×14/16×12; Homewall: per-dimension ×
+  LED-kit), and the **same hole has a different `leds.position` on each size**, so any other board lights
+  the wrong LEDs. A taller assumed board (12×14) shifts every address → the user's "shifted/offset"
+  symptom.
+- **Fix**: `KilterCatalog.sizes(forLayout:)` lists a layout's `product_sizes`; `holds(for:sizeId:)`
+  maps LEDs for the selected size (falling back to the layout's smallest when unset/invalid).
+  `KilterHold` gains `ledColorHex` (`placement_roles.led_color`) used by the controller, keeping
+  `colorHex` (`screen_color`) for the on-screen render — they differ for `start` (LED `00FF00` vs
+  screen `00DD00`).
+- **UX**: a persisted **Board size** preference (`kilter.productSizeId` AppStorage / SharedPreferences),
+  picked in Settings (next to Board/Angle) and in the inline **"Wrong holds?"** control on the climb
+  screen (size picker first — the likely cause — then the Standard/Legacy dialect). Changing it re-maps
+  every LED and re-lights the current climb instantly. Seeded to the layout's default; reset when the
+  layout changes.
+
+**Why**: the board can't report its size and the LED address space is size-specific, so the app must
+know the size — there's no auto-detect. **Rules out**: a single hardcoded size; a uniform position
+offset (sizes differ in hole sets, not by a constant shift); per-climb size. **Verified**: off-device
+unit/instrumented tests with a 2-size fixture prove `holds(sizeId:)` selects the right size's positions
+and the board uses `led_color` (`KilterCatalogStoreTests` / `KilterCatalogStoreTest`). Lighting the
+**correct** holds on the wall stays **device-pending** until re-tested on the real board with the size set.
+
+## [2026-06-06] Kilter Board — ship both Aurora payload dialects (Standard/Legacy) with a user toggle
+
+**Decision**: Support **both** Aurora illumination "API levels" and let the user choose, rather than
+hardcoding level 3. The level is the *payload* dialect, set by the board's firmware generation; it is
+**not advertised or negotiated**, so the app can't auto-detect it. A mismatch still **connects** fine
+(same BLE link/UUIDs) but lights the **wrong holds/colors** — so the right UX is a cheap manual switch
+exactly where the problem shows up.
+
+- **Encoder** (`KilterProtocol`, both platforms): added `APILevel { v3, v2 }`. `messages(for:level:)`
+  defaults to `.v3` (so the connect-fix tests and all existing callers are unchanged). `v3` = 3-byte
+  holds, R3G3B2, markers 82/81/83/84; `v2` = 2-byte holds (byte0 = position low 8 bits; byte1 =
+  R2G2B2 in bits 7–2 OR the high 2 position bits in bits 1–0), markers 78/77/79/80. `bodyChunk = 12`
+  serves both (multiple of 2 and 3; framed ≤ 20 bytes either way). Color packers (`colorByte` v3 /
+  `colorBitsV2`) are pure + unit-tested with exact byte vectors.
+- **Controller**: holds `apiLevel` + remembers `lastHolds`; `setAPILevel(_:)` switches dialect and, if
+  a climb is currently lit, **re-sends it immediately** so the wall updates live. No-op when unchanged,
+  so it's safe to call on every settings sync.
+- **UX (smooth path)**: default **Standard** — zero friction for the ~all boards that use it. Two ways
+  to switch, both persisted (`kilter.apiLevel` AppStorage / SharedPreferences): a **Settings** picker,
+  and — the key affordance — a quiet **"Wrong holds lighting up?"** link in the *connected* controls on
+  the climb screen that reveals a Standard/Legacy switch and re-lights instantly. The shared controller
+  is the single sink; the root view (iOS) / root + detail `LaunchedEffect` (Android) push the persisted
+  value down, so a change anywhere takes effect everywhere without re-navigating.
+
+**Why**: shipping both encoders + a one-tap switch is far better UX than guessing wrong and showing a
+broken wall, and there's no reliable on-wire signal to auto-pick. **Rules out**: auto-detecting the
+level (not possible over BLE); a level-negotiation handshake (Aurora doesn't expose one); per-board
+persistence (one preference fits a user's single wall). **Verified**: pure encoder vectors for both
+levels pass off-device on iOS + Android (`KilterProtocolTests` / `KilterProtocolTest`). The live
+re-light + the switch UI stay **device-pending** per the repo's hardware rule.
+
+## [2026-06-06] Kilter Board — fix BLE connect addressing + packet framing
+
+**Decision**: Correct the Aurora/Kilter BLE protocol on both platforms to match the canonical
+community reverse-engineering (`1-max-1/fake_kilter_board`). Two bugs, both of which the prior code
+flagged as "device-unverified — verify against hardware":
+
+- **Wrong GATT addressing (the connect bug).** The controllers discovered services/characteristics on
+  the board's *advertised* service `4488B571-…` and looked for a `4488B572-…` write characteristic
+  that doesn't exist. `4488B571` is only **advertised**; the writable endpoint is the **Nordic UART**
+  GATT service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` + characteristic `6E400002-…`. With the wrong
+  UUIDs the write characteristic was never found, the connection never reached `.connected`, and the
+  discovery watchdog fired with *"Connected, but the board didn't respond. Try again."* — the reported
+  symptom. Fix splits the constant into `advertisedServiceUUID` (scan/recognise + `retrieve­Connected­Peripherals`)
+  vs `gattServiceUUID`/`writeUUID` (discover + write). `isLikelyBoard` keeps matching the advertised
+  UUID/name, so that test is unchanged.
+- **Malformed packet framing.** `wrap()` emitted `[0x01, len, cksum, <payload>, 0x02]`; the spec is
+  `[0x01, len, cksum, 0x02, <payload>, 0x03]` (missing the `0x02` data marker; terminator must be
+  `0x03`). Corrected, and `bodyChunk` drops `15 → 12` (4 holds × 3 bytes) so the framed packet is
+  `6 wrapper + 1 marker + 12 = 19 ≤ 20` bytes. The hold encoding (uint16-LE position + R3G3B2 color)
+  and markers 82/81/83/84 were already correct.
+
+**Why**: these are the only things wrong on the connect path; the rest (scan-by-name, system-connected
+adopt paths, timeout watchdog) is sound. **One axis deliberately left out of scope**: Aurora "API
+level 2" (older boards — 2-byte holds / R2G2B2 / markers 77–80). The write **UUIDs do not vary by
+board** across the Aurora family (Kilter/Tension/Grasshopper/Decoy/So iLL all share the Nordic UART
+endpoint), so no multi-UUID handling is needed; only the *payload* API level differs, and level 3 is
+now the common case. **Rules out**: per-board UUID tables; API-level-2 fallback (a follow-up if an
+older board surfaces); negotiating the API level (it isn't negotiated — the app picks).
+**Verified**: new pure encoder tests (`KilterProtocolTests` / `KilterProtocolTest`) pin the exact
+framed bytes off-device on both platforms. The live BLE write path stays **device-pending** per the
+repo's hardware rule — not reported as working until lit on a real board.
+
+## [2026-06-06] Kilter — in-app catalog download from a hosted dataset (Phase 2) (#42)
+
+**Decision**: `KilterCatalogSyncView` gains a **Download from Kilter** button that fetches a board's
+catalog as a **gzipped SQLite from a static host the user controls** (the Snappet *Board Explorer*
+GitHub Pages site, `board-data/<board>.sqlite.gz`, by default), then **trims it on-device** with the
+same filters the explorer's `exportDb.ts` uses, and installs it through the unchanged
+`KilterCatalogInstaller` path. The user **explicitly accepted the legal trade-off** (2026-06-06) that
+prompt 22 deferred. This reverses *only* the "sync stays inert" part of the [2026-06-05] entry;
+everything else there (no re-bundling, user-data model untouched, file-import primary) **still holds**.
+
+**Why a hosted dataset and NOT Aurora's API**: the first cut called Aurora's `/sync` directly (mirroring
+`boardlib`'s `login` + paginated sync). That host (`kilterboardapp.com`) turns out to **reject every TLS
+handshake** (verified from macOS curl/openssl/Python *and* the iPhone — an IONOS box that returns
+`internal_error`); `boardlib`'s real catalog path doesn't use `/sync` at all, it extracts `db.sqlite3`
+from the official APK. Scraping a 108 MB APK from apkpure on-device was the only other "live" path —
+heavy, fragile, and the worst legal posture. The user already hosts the datasets on their own Pages
+(under their own ToU acceptance) via the Board Explorer, so the app just downloads a file from a URL the
+user controls — much closer to "bring your own file" than any Aurora-direct fetch.
+
+**Concrete choices made:**
+- **`KilterAuroraSync.swift` → `HostedCatalogClient`** owns the module's only `URLSession` (ephemeral):
+  one GET for `manifest.json` (to list importable boards) and one for `<board>.sqlite.gz`. It streams
+  the gzip through **zlib** (`inflateInit2_(…, 47)` — added `libz.tbd` + `#import <zlib.h>` to the
+  bridging header) to a temp file, never holding the ~165 MB raw DB in memory.
+- **Trim mirrors the Board Explorer `exportDb.ts`**: `ATTACH` the downloaded DB, recreate each table from
+  its source DDL, copy reference/geometry tables (`FULL_TABLES`) whole, subset the climb tables to a
+  `_keep` set of filtered uuids, recreate indexes, `VACUUM`. The filter (`CatalogFilter`) mirrors
+  `query.ts buildConditions` (layout/grade/ascents/quality/setter/name/benchmark/listed/single-frame)
+  **plus a `maxClimbs` top-N-most-climbed cap** — the explorer expects manual narrowing; a phone always
+  caps (like `build_bundled_db.py --limit`). Real-data check: top-2000 → a **6.1 MB** importable catalog.
+- **No accounts.** The dataset is a static file, so there are no credentials — the picker is board +
+  filters only. The host URL is editable (`@AppStorage`) so the user can point elsewhere.
+- **Pure half unit-tested; download is device-owed.** `KilterAuroraSyncTests` covers the real zlib
+  gunzip (round-trip) and the filtered build (top-N cap, empty-match → throw, benchmark-only) by feeding
+  the `KilterCatalogFixture` as a synthetic source through the real reader. The 81 MB download itself is
+  verified on the physical device.
+
+**Follow-up same day (filter parity · layout scope · multi-catalog library):**
+- **Full Board-Explorer filter parity** in the download sheet — `CatalogFilter` already mirrored
+  `query.ts buildConditions`; the sheet now surfaces all of it (layouts, **angle**, min/max grade, min
+  ascents, min quality, setter, name, benchmark/listed/single-frame) + the top-N cap. Grade/angle/layout
+  option lists are **static Kilter constants** (`KilterCatalogOptions`) since the dataset isn't loaded
+  until after download; the grade scale is the real `difficulty_grades` (difficulty 10–33 → V0–V16).
+- **Scope today = Kilter Original (1) + Homewall (8) only.** Other boards (from the manifest) and other
+  Kilter layouts render **struck-through / disabled** in the sheet as explicit future work — the reader
+  is Kilter-shaped and only these two layouts are validated.
+- **The store became a multi-catalog *library*.** `KilterCatalogStore` now keeps each install under
+  `catalogs/<uuid>/` with an `active-catalog` pointer file (was a single `kilter.sqlite3`); `install`
+  **adds + activates** (no longer replaces), and there's `installed()` / `remove(id:)` / `setActive(id:)`
+  + a one-time migration that folds any legacy single file into the library. A meta `name` (optional,
+  back-compat) labels each entry. **Settings** gained a **Download from Kilter** button and a
+  **Downloaded catalogs** list — tap to make active, swipe to remove — replacing the single
+  refresh/remove rows. The reader still opens the *active* catalog and reloads on the change
+  notification, so switching active in Settings re-points browse.
+
+**Android port (same day):** the whole feature is ported to Kotlin/Compose at parity — `HostedCatalogClient`
+(`HttpURLConnection` + `java.util.zip.GZIPInputStream`, so no zlib shim is needed unlike iOS;
+`SQLiteDatabase` ATTACH for the same exportDb-style trim), the multi-catalog `KilterCatalogStore`
+(`catalogs/<id>/` + `active-catalog` pointer, install adds + activates, `installed()`/`remove(id)`/
+`setActive(id)`, legacy migration), a `KilterCatalogDownloadSheet` (ModalBottomSheet) with the full
+filter set + Original/Homewall scope (others struck-through), and a Settings **Downloaded catalogs**
+list (RadioButton active + per-row Remove) + **Download from Kilter** button. Added the **INTERNET**
+permission (was BLE-only). One Android-specific gotcha: `SQLiteDatabase.execSQL` rejects
+`PRAGMA journal_mode` (it returns a row) — dropped the PRAGMA optimizations. Instrumented suite green
+(23, incl. multi-catalog + filtered-build). Device-owed: the live ~80 MB download → trim on a real
+Android device (the pure half is covered).
+
+**Rules out / guardrails (unchanged)**: **not** for public App Store distribution — Aurora's ToU +
+App Store Guideline 5.2.2 keep this **personal / sideload** only; the carve-out stays narrow + named.
+No Aurora API calls, no re-bundling a catalog into the app, no background/auto sync (user-initiated
+only), no analytics, no Snappet backend, nothing uploaded; egress is one GET to the configured host. The
+user-data model (`KilterLogEntry`/`KilterSession`/`KilterFavorite`) is untouched and file-import stays
+primary. Android port to follow (the seam is identical).
+
+## 2026-06-06 — Rich text overlays: wrap-to-width fit + colour/highlight/font/style (P21)
+
+Device feedback: a large climb-name caption spilled past both edges of the video, and text had no
+styling. Two changes. **(1) Wrap-to-width fit** — the `.climbName` preview chip had NO width cap (only
+`.text` did), so it grew as wide as the text and overflowed into the letterbox; the export box was also
+sized from EXPLICIT newlines, not wrapped lines. Now both **wrap to ~0.9 of the video width**: the
+preview uses `.frame(maxWidth: rect.width*0.9)` + `fixedSize(vertical)`, and the export measures the
+wrapped height via `NSAttributedString.boundingRect` and sizes the `CATextLayer` container to it — so a
+multi-line caption never clips and preview == file. **(2) Rich style** — `OverlayItem` gained
+`highlightHex` (background), `fontRaw` (a new pure `StudioFont` enum: system/rounded/serif/mono), `bold`,
+`italic` — all **additive + defaulted** (migration-safe Codable, like the prior optional fields).
+Rendered in BOTH the SwiftUI preview (TextOverlayChip.styledText) and the Core-Animation export
+(StudioOverlays.styledTextLayer) via a shared mapping: `StudioFont.swiftUIDesign` ↔ `uiFont`
+(UIFontDescriptor design + symbolic traits). Text + climb-name now share ONE styled path (climb-name is
+text with a dark-highlight default). A paintbrush "Style" sheet (StudioTextStyleControls) edits colour /
+highlight (None + swatches) / font / bold / italic; all commit `editOverlaysOnly` (overlays aren't in the
+playback composition → no rebuild). **Why a font ENUM, not a font-name string**: the four presets map
+cleanly to a `Font.Design` (SwiftUI) and a `UIFontDescriptor.SystemDesign` (UIKit) so preview and export
+match without bundling fonts; arbitrary font names wouldn't render identically in CATextLayer. **Why the
+export measures wrapped height**: a fixed line-count box clips wrapped captions; `boundingRect` is the
+only way to size the chip to the actual wrapped text. **Rules out**: a climb-name chip with no width cap;
+sizing the export box from `\n` count; a font-name string field; a separate ClimbName config (text +
+climb-name share the styled layer). **Limitation**: climb-name's highlight has a dark fallback so it
+always shows some background (the picker recolours it); fully removing it isn't exposed. **Verified**:
+builds clean, full unit suite green (301) incl. the new style setters + migration-safe defaults. **Device
+pending**: the styled caption rendering in **export** on real footage.
+
+## 2026-06-05 — PiP/base resize: aspect-locked corner-drag + flicker-free live resize (P21)
+
+Device verification of the placement fix surfaced two more resize issues, both fixed in
+`StudioOverlayCanvas`. **(1) Letterbox on free resize** — after the fill→fit change, dragging a PiP
+corner to an aspect ≠ its footage left the dashed box bigger than the aspect-fit video (the box stopped
+hugging the video). Fix: **lock corner-resize to the source aspect** — the canvas now receives
+`sourceAspects` (resolved oriented w/h per `localIdentifier`, already computed in the VM) and the base
+video's aspect; `ResizableFrame.resizedFrame` derives the off-axis from `contentAspect` and
+`clampedAspectSize` clamps into [0.1,1] **while preserving the ratio**, so the box always keeps the
+footage aspect → the fit video fills it edge-to-edge. Pinch + grid presets still allow free aspect (for
+collages). **(2) Resize flicker** — the live-resize had been driven by a `@State liveResize` SET FROM
+the corner handle's own gesture callback, and the handle's on-screen position was recomputed from that
+same state. So the handle moved out from under the finger → re-fired its gesture → oscillated (the
+new aspect-lock branch `newW >= newH·r` toggling each frame amplified it into a visible flicker,
+confirmed by frame-diffing a screen recording: the changing pixels were the box/handles, not the video).
+Fix: the **canonical SwiftUI draggable pattern** — replace `@State` with a `@GestureState cornerDrag`,
+anchor the gesture-hosting handles at the **committed** size (they never move during the drag, so the
+gesture's translation stays stable), offset ONLY the dragged dot, and render the live-resizing outline
+as a **non-interactive** overlay (hosts no gesture → can't feed back). **Why @GestureState over @State**:
+@GestureState is bound to the gesture lifecycle and auto-resets, and — critically — moving it out of the
+handle's layout-position path is what breaks the feedback loop. **Rules out**: driving live-resize layout
+from a `@State` the gesture writes; repositioning a gesture host from its own gesture value; per-axis free
+resize for a PiP (now aspect-locked on corner-drag). **Verified on device (MrRobot)**: placement sits
+under the outline (preview), corner-resize hugs the video with no letterbox, and the drag is smooth (no
+flicker) — confirmed by screen recording. Builds clean; full suite green.
+
+## [2026-06-05] Kilter — stop redistributing Aurora's catalog; opt-in on-device fetch (#42)
+
+**Decision**: The Kilter mini-app no longer **ships** Aurora Climbing's climb catalog. The bundled
+`kilter.sqlite3` is **deleted** from both platforms (`ios/App/Snappet/Resources/`,
+`android/app/src/main/assets/`) and the app contains **zero** Aurora climb data. Instead, the catalog
+is **imported onto the user's own device**, under their own relationship with Aurora — the redistribution
+exposure flagged in #32 OQ#11.2 is removed **architecturally**, not by waiting on a licensing
+negotiation. Traces to [#42](https://github.com/harshal2802/snappet-mobile/issues/42); the
+written-permission path (option 2) stays recorded as complementary future scope.
+
+**Concrete choices made:**
+- **A catalog-provider seam, read path unchanged.** A new `KilterCatalogStore` owns the on-device
+  catalog file (`Application Support/Kilter/kilter.sqlite3` on iOS, `filesDir/kilter/…` on Android) +
+  a `catalog.meta.json` sidecar (version / climb count / size). The existing `KilterCatalog` reader is
+  **reused verbatim** — it just opens the store path instead of the bundle, degrades to
+  `isAvailable == false` when nothing is installed, and gains a `reload()` (iOS, via a
+  `didChangeNotification`) / `reset()` (Android) to re-open after an import/remove. `KilterCatalogProvider`
+  is the **only** IO edge: `FileImportProvider` (iOS **Files** / Android **SAF**) is the shipped Phase-1
+  path; `AuroraSyncProvider` is an **inert, documented Phase-2 stub** (conforms to the protocol, performs
+  no network calls, the sync button is disabled). `KilterCatalogValidator` opens a candidate read-only,
+  asserts the required tables exist, requires ≥1 listed climb, caps size, and derives a deterministic
+  version — so a malformed/foreign file is rejected with a clear message instead of installing junk.
+- **First-open shows an opt-in screen, not an empty list.** `KilterCatalogSyncView` (iOS) /
+  `KilterCatalogSyncScreen` (Android) explain the import, **surface Aurora's Terms of Use + a link**
+  before any fetch, and make clear the data stays on-device. `KilterSettingsView`/`Screen` gain catalog
+  status (version • climbs • size) + **Refresh** + **Remove downloaded catalog** (removal keeps logged
+  ascents + saved climbs).
+- **The on-device-only rule gets one narrow, named carve-out** (`project.md:64` footnote): the Kilter
+  catalog fetch is a **user-initiated** network request, because the data is third-party-owned and can't
+  be redistributed by us. No background sync, no analytics, no Snappet backend; health + media still
+  never leave the device. Kept narrow so it can't be cited to justify general networking elsewhere.
+- **Tests use a synthetic fixture — zero Aurora data.** `tools/kilter/build_test_fixture.py` (run +
+  verified locally against every reader query) and an in-code `KilterCatalogFixture` (Swift + Kotlin,
+  same rows) author a tiny invented catalog (two layouts, a small hole grid, four made-up climbs). iOS
+  installs it under a `-uiTestInstallKilterCatalog` launch arg; Android via a `TestHooks` flag in
+  `MainActivity`. New `KilterCatalogStoreTests` / `KilterCatalogStoreTest` cover validate/install/clear +
+  reader integration; the existing Kilter UI/walkthrough tests now install the fixture first (they used
+  to rely on the bundled asset).
+
+**Why**: Aurora's [Terms of Use](https://kilterboardapp.com/terms-of-use) claim their data + derivatives
+as sole/exclusive property usable only with written consent; a trimmed rebundled copy is a derivative,
+and this is actively-policed IP. Shipping code that *the user* points at their own catalog distributes
+**code, not Aurora's database** — the only shippable-and-legal option short of a permission deal.
+
+**Rules out**: bundling any Aurora data in the app (the asset is gone, not just unreferenced); a live /
+background / always-on sync (fetch is user-initiated only); analytics or a Snappet backend; using the
+carve-out to justify networking in other modules; changing the **user-data** model (`KilterLogEntry` /
+`KilterSession` / `KilterFavorite` stay in SnappetCore/Room exactly as before); APK-extraction on device
+(rejected — store-hostile/fragile). Phase 2 (`AuroraSyncProvider` real endpoints) stays blocked on the
+endpoint/account/ToU open questions in #42 and is **not** implemented.
+
+**Verified** (2026-06-06, macOS + Xcode 26.5 / Android SDK): both platforms compiled and run **green**.
+iOS — full suite on the iPhone 17 Pro sim: **307 unit + 16 UI tests, 0 failures**, plus the
+`HighlightEngine` SPM suite (21). Android — **37 unit + 18 instrumented tests, 0 failures** (Pixel 7
+AVD). One first-pass fix was needed: the Kilter UI tests filtered out every synthetic climb because the
+`@AppStorage` browse filters (angle/layout/grade) persist in UserDefaults and `-uiTestFreshStore` only
+resets SwiftData — a leftover `kilter.angle` (the old bundled Aurora catalog had angle-0 climbs; the
+fixture only has 25/30/40) yielded "No climbs match". Fix: `KilterCatalogFixture.installForUITestingIfRequested()`
+now clears the Kilter filter keys so browse opens on the fixture-covered defaults. Bundle-inspection
+acceptance confirmed on the built artifacts: **no `kilter.sqlite3` in the iOS `.app` or the Android
+`.apk`** (the APK carries only `androidx.sqlite` library version-stamps, not data).
+
+## [2026-06-04] Split Expenses — typed receipts (profiles + auto-detect classifier)
+
+**Decision**: Let the user pick a **receipt type** before scanning/pasting (or leave it on **Auto**),
+and have that type tune extraction. Implemented as **parse-time only** — no persisted column, no
+`ReceiptSplit` change — so it stays additive and migration-free.
+
+- **`ReceiptType`** { auto, grocery, warehouse, restaurant, gas, pharmacy, retail, generic } maps to a
+  pure **`ReceiptProfile`** (extra skip-keywords, tip-line prefixes, a `fuelOnly` flag).
+  `ReceiptParser.parse(text, profile:)` gains an optional profile that defaults to `.generic`, so the
+  existing `parse(text)` behaviour and all current tests are unchanged.
+- **Profiles**: restaurant adds SERVER/TABLE/GUEST… to the skip set and turns a `TIP`/`GRATUITY` line
+  into a "Tip" line item (split among the diners); gas skips PUMP/GALLON/UNLEADED… and collapses to a
+  single "Fuel" item from the detected total; pharmacy/retail add their own metadata skips;
+  warehouse/grocery use the generic Costco-tuned base.
+- **`ReceiptClassifier.classify(text)`** (pure) scores signature keywords per type for **Auto**; the
+  picker then snaps to the detected type so the user sees the guess and can override.
+- **UI**: a "Receipt type" picker in `NewReceiptSheet` (iOS `Picker`, Android dropdown). Scan/paste now
+  hand raw text back to the sheet, which parses it with the resolved profile.
+
+**Why**: a single generic parser mis-reads restaurant tips and gas pumps; a tiny per-type profile fixes
+extraction without complicating the data model. Keeping type parse-time-only (vs. a persisted
+`receiptType` column) honours the "bug-fixes + validation first, types as a thin follow-up" scope and
+avoids a Room migration. **Rules out**: persisting the type this cut; a separate `tipAmount`/proportional
+tip (tip is an equally-split line item for now — proportional tip is a follow-up); per-type split rules.
+**Verified**: `ReceiptClassifierTests`/`Test` cover classification + the restaurant/gas/generic parse
+branches off-device on both platforms. UI pickers stay device-unverified per the repo's build rule.
+
+## [2026-06-04] Split Expenses — receipt parser fixes + total/discount validation
+
+**Decision**: From a deep review of the receipt PR, fix two parser bugs and add an advisory
+**validation** pass that reconciles the captured items against the receipt's printed totals.
+
+- **Bug 1 — tax mis-detection.** `ReceiptParser` set `tax = value` on *every* line containing "TAX",
+  so the **last** one won — on the real Costco receipt that's `FSA TAX = 1.64`, not `TOTAL TAX 14.01`.
+  Fix: tax now comes from the authoritative `TOTAL TAX` line (a bare `TAX` line is a fallback), and
+  per-rate `%` component lines and `FSA` lines are ignored; the grand-total scan also excludes `FSA`.
+- **Bug 2 — leading-minus discounts dropped.** `money()` only handled a trailing minus (`4.00-`); a
+  `-4.00` token failed the digit check and vanished. It now strips a leading **or** trailing `-`.
+- **Parser now also reads** `subtotal` and `itemCount` ("Items Sold: 51", handled before the money
+  guard since it's a bare integer) so validation has more to check against.
+- **`ReceiptValidation`** (pure, both platforms, unit-tested): builds a `Report` of independent checks
+  — items − discount + tax = total (the headline; `FAIL` on mismatch with the off-by amount),
+  subtotal match, tax-vs-detected, item-count, unassigned remainder, negative share. Surfaced as a
+  `ReceiptValidationBanner` (Balanced / Needs review / Doesn't add up) in `NewReceiptSheet` that
+  expands to the checklist; it **never blocks saving**. The detected totals are held in sheet state
+  from the last scan/paste — **not persisted** (no schema change this cut), so validation runs at
+  capture time where it matters; persisting a stored mismatch flag is a follow-up.
+
+**Why**: the split is only as trustworthy as the OCR, so the app should *show its work* and flag a
+bad read instead of silently producing a wrong per-person total. Keeping validation pure makes the
+reconciliation logic testable without a device. Scoped per the request to **bug-fixes + validation
+first** (Warehouse/Grocery profile only); typed receipts (restaurant/gas/pharmacy auto-detect) remain
+a planned follow-up — see `docs/wireframes/receipt-types-validation.svg`. **Rules out**: blocking save
+on a mismatch (advisory only); a new persisted column this cut; trusting the last TAX line.
+**Verified**: pure logic unit-tested off-device on both platforms (`ReceiptParserTests`/`Test`,
+`ReceiptValidationTests`/`Test`). UI banners stay device-unverified per the repo's build rule.
+
+## [2026-06-04] Split Expenses — Android receipt parity + on-device camera OCR (both platforms)
+
+**Decision**: Mirror the iOS itemized-receipt feature to Android and add **on-device camera OCR** to
+both platforms so a receipt can be captured by photo, not only pasted.
+
+- **Android mirror (Kotlin/Compose, Room).** `ExpenseRecord` gains additive, defaulted columns
+  `itemsRaw` / `taxAmount` / `discountAmount`; the DB version bumps 2→3 and rides the existing
+  `fallbackToDestructiveMigration` (on-device-only data, no hand-written migration). Items persist as
+  a control-character-delimited `itemsRaw` string (RS/US/GS) — the same "raw string, no TypeConverter"
+  approach already used for `participantsRaw`. `ReceiptSplit.kt` and `ReceiptParser.kt` are 1:1 ports
+  of the Swift logic (same largest-remainder reconciliation, same parser heuristics) and get JVM unit
+  tests under `src/test` (`ReceiptSplitTest`, `ReceiptParserTest`, `SettleUpReceiptTest`). UI:
+  `NewReceiptSheet.kt` (items + per-item assignee FilterChips + tax/discount + live `ReceiptSummary`),
+  `ReceiptDetail.kt` (read-only breakdown), wired into `ExpenseRoot.GroupDetail` with a "New receipt"
+  menu item and receipt rows that open the detail.
+- **Camera OCR.** iOS: `ReceiptDocumentScanner` (VisionKit `VNDocumentCameraViewController`) +
+  `ReceiptScanner` (Vision `VNRecognizeTextRequest`, **synchronous** so no `CGImage` Sendable-crossing,
+  mirroring `MediaPicker`'s direct-callback coordinator); gated on `isSupported` (hidden on the
+  simulator) and presented in a `fullScreenCover` whose binding drives dismissal. Android: `ReceiptScan.kt`
+  captures via `ActivityResultContracts.TakePicture()` through a `FileProvider` temp file (so **no
+  CAMERA permission** is needed) and recognizes with **ML Kit** `text-recognition` (one new dependency).
+  On both platforms the recognized text flows straight into the already-tested `ReceiptParser` — the OCR
+  layer stays a thin, untested platform edge; all the brittle "what's an item / tax / discount" logic is
+  pure and unit-tested.
+
+**Why**: keeping the algorithm identical and pure on both platforms means the hard part is tested once
+per language and the camera/Vision/ML-Kit code is a trivial pixels→text adapter. Using ACTION_IMAGE_CAPTURE
++ FileProvider on Android avoids a runtime camera-permission flow; using a synchronous Vision call on iOS
+sidesteps Swift 6 `Sendable` friction. **Rules out**: a Room TypeConverter / JSON dependency for items
+(control-char string matches the repo); a hand-written Room migration (destructive fallback is the repo's
+norm for on-device data); CameraX / a bundled cropping UI on Android; bridging ML Kit's `Task` with an
+extra coroutines-play-services dep (used `suspendCancellableCoroutine` instead). **Verified**: pure
+logic unit-tested off-device on both platforms (iOS XCTest, Android JVM `src/test`). All SwiftUI/Compose
+surfaces and the camera/Vision/ML-Kit paths stay **device-unverified** per the repo's macOS+Xcode /
+Android-SDK build rule (authored on Linux/cloud) — they need a `xcodebuild test` and a Gradle
+`testDebugUnitTest` + on-device run to confirm.
+
+## [2026-06-04] Split Expenses — itemized receipts with per-item assignment + proportional tax/discount
+
+**Decision**: Add an itemized **receipt** path to Split Expenses so a real shopping receipt (e.g. a
+51-line Costco run) can be entered once and split *per item* among different people — not just one
+even split per expense (user report: "put this kind of receipt and help me split stuff for multiple
+people … show total, tax, discounts and per-person split"). Implemented without a new `@Model`:
+`ExpenseRecord` gains three additive, defaulted fields — `items: [ReceiptItem]`, `taxAmount`,
+`discountAmount` — so the SwiftData migration stays lightweight and one record type still drives all
+of even-split / settlement / receipt. A record is a receipt iff `items` is non-empty.
+
+- **`ReceiptItem`** (a `Codable` value type persisted as a SwiftData composite attribute) carries a
+  name, price, and the `assignees` who share that line equally.
+- **`ReceiptSplit`** (pure, device-free, in the app target so it's `@testable`) computes the
+  breakdown: each item is split among its assignees, tax is allocated proportional to each person's
+  pre-tax subtotal, discount is credited the same way, and **every column is reconciled to whole cents
+  with a largest-remainder pass** so the per-person totals sum *exactly* to the grand total. That exact
+  closure is what lets `SettleUp.balances` treat a receipt as "payer credited the grand total, each
+  sharer debited their slice" and still net the group to zero — no penny drift in the balances.
+- **`ReceiptParser`** (also pure/tested) turns pasted or Live-Text receipt text into items + detected
+  tax/discount/total: it strips leading item-codes and trailing tax-flag letters (`28.99 E`,
+  `4.00-A`), routes trailing-minus rows to the discount, and skips SUBTOTAL/TAX/TOTAL/payment rows.
+  This is the "put this kind of receipt" affordance — paste once, then just tap each line to choose who
+  shares it (new items default to everyone).
+- **UX**: `NewReceiptSheet` (entry, with a live `ReceiptSummaryView` showing subtotal/discount/tax/
+  total + per-person split) and `ReceiptDetailView` (read-only breakdown + item list, Edit reopens the
+  sheet). `ExpenseGroupView` gets an "Add Receipt" action; receipt rows show a doc glyph + item/tax/
+  discount summary and tap through to the detail (even-split rows still tap-to-edit).
+
+**Why**: receipts are inherently uneven (one person's beer, shared groceries) and carry tax + savings
+that must follow the items, not be split flat. Keeping the math pure + penny-exact makes it unit-
+testable (`ReceiptSplitTests`, `ReceiptParserTests`, `SettleUpReceiptTests`) and keeps the existing
+balance/settle-up pipeline unchanged. Reusing `ExpenseRecord` (vs. a new `@Model`) keeps per-group
+`#Predicate` fetches and the balance loop single-source. **Rules out**: a separate `Receipt` @Model +
+relationship; storing precomputed per-person `shares` (derive from items so there's one source of
+truth); splitting tax/discount evenly regardless of who bought what; on-device Vision OCR for v1 (the
+paste/Live-Text text path is device-free and testable — camera OCR is a natural follow-up). **Verified**:
+pure logic unit-tested off-device (`swift`-level XCTest); the SwiftUI sheets/detail stay
+**device-unverified** per the repo's macOS/Xcode-only build rule (authored on Linux/cloud).
+
 ## [2026-06-04] Dynamic sessions + Kilter-driven climbing — direction set (design only, no code)
 
 **Decision**: Captured a design review (`pdd/prompts/features/dynamic-sessions/DESIGN.md`) for two
@@ -1711,3 +2127,274 @@ radio. **Rules out**: filtering the scan by service UUID; a single `unsupported`
 the user with no cancel. **Verified**: pure matcher unit-tested (iOS `KilterBoardMatchTests`). The
 live BLE path stays **device-unverified** per the repo's device-only rule — `xcodebuild`/Gradle build
 + on-board validation deferred to a macOS/Android run (this change was authored on Linux/cloud).
+
+## 2026-06-05 — All development goes through the PDD layer (standing process decision)
+
+**Decision**: Every change to Snappet Mobile — features, fixes, spikes — is driven through this
+repo's **Prompt-Driven Development** layer (`pdd/`), per the user's standing instruction. Concretely:
+author/commit a feature prompt from `pdd/prompts/templates/feature-prompt.md` (one prompt = one job =
+one PR) **before/with** the implementation; keep `pdd/context/` (project / conventions / decisions /
+schema) true to reality in the same change; and record any non-obvious choice in this file the same
+day. The committed prompt is part of the codebase and ships alongside the output it produced. **Why**:
+the prompt is the spec and the review surface; without it, intent and rationale drift out of the repo.
+**Rules out**: landing code with no committed prompt; deferring the decisions/context update to "later".
+Also mirrored as a standing instruction in `CLAUDE.md`.
+
+## 2026-06-05 — Kilter Board UX pass: adopt system-connected board, swipe-to-browse, QR climb share
+
+**Decision**: Three user-reported UX gaps in the Kilter mini-app, all authored under the PDD prompt
+`pdd/prompts/features/kilter-board/UX-connection-swipe-qr.md`.
+**(1) Connection — adopt a system-connected board.** `KilterBoardController.connect()` now runs
+`beginConnect()`, which first tries `retrieveConnectedPeripherals(withServices:[serviceUUID])` and, if a
+board is already connected at the **system** level (paired in Settings, or held by the official
+Aurora/Kilter app), connects to it directly via a shared `connect(to:)`; only if none is found does it
+fall back to the name-matched scan. Such a board has **stopped advertising**, so the scan-only path
+could never re-discover it — the reported "won't connect, but it connects in the Kilter app" case, after
+which our flow never reached `.connected` and so never offered illumination. **(2) Auto-light.** When a
+board is connected, the detail view illuminates the on-screen holds automatically — on connect
+(`.onChange(of:board.isConnected)`) and on each swipe (end of `load()`) — keeping the manual "Light up
+this climb" button for a re-send. **(3) Swipe-to-browse.** `KilterClimbDetailView` takes the browsed
+list's ordered uuids (`siblings`, passed from `KilterRootView` at push time — no `NavigationPath`
+bloat) and tracks a `currentUUID`; a horizontal `DragGesture` + chevrons + a "n / total" pill move
+through it, reloading via `.task(id:)` without growing the nav stack. **(4) QR share.** A pure
+`KilterClimbLink` codec (`snappet://kilter/climb/<uuid>?angle=<n>`) backs `KilterShareView` (CoreImage
+QR + `ShareLink`) and `KilterScannerView` (`AVCaptureMetadataOutput`, reached from the catalog's More
+menu); a scanned link pushes the climb. **Offline by design** — both phones ship the same read-only
+catalog, so a `climb_uuid` resolves locally with no account/network. **Scope (with user)**: in-app
+scanner **only** this pass — no `snappet://` URL scheme / `onOpenURL` cross-app deep link yet.
+**Why**: `retrieveConnectedPeripherals` is the canonical CoreBluetooth fix for "another app/Settings
+holds the peripheral"; keeping the share payload a pure value type keeps the camera/CoreImage edges
+thin and the codec unit-testable. **Rules out**: a scan-only connect path; carrying the sibling list
+inside the route value; a networked share. **Verified**: `KilterDeepLinkTests` covers the codec
+round-trip + foreign-code rejection (no device). The BLE adopt path and the camera path stay
+**device-unverified** per the device-only rule — `xcodebuild` + a real board/camera run is deferred to
+macOS (authored on Linux/cloud). Android mirror is a follow-up.
+
+## 2026-06-05 — Kilter rich session: HR + per-climb timing + media reel + Live Activity (workout parity)
+
+**Decision**: Bring the WorkoutTracker's live-session toolkit to a Kilter board session, in one PR
+(prompt `pdd/prompts/features/18-ios-kilter-rich-session.md`), by **reusing** rather than rebuilding.
+**(1) Decouple the metrics layer.** The sources only read `startedAt` + an `HKWorkoutActivityType` from a
+`WorkoutSession`, so I lifted those into a tiny `LiveMetricsContext` and changed the `MetricsSource`
+protocol's `start(for:)` → `start(_:)`. `LiveMetricsCoordinator` keeps a `start(for:sport:category:)`
+**convenience overload** (building the context via `WorkoutActivityMapping`), so the two workout call
+sites — and the existing test — don't churn; the only internal change is the coordinator forwarding
+`active.start(context)`. `MetricsSource.swift`/`LiveMetricsCoordinator.swift` gain `import HealthKit`
+(`HKWorkoutActivityType` is a plain enum) — the engine stays platform-free. **(2) Separate Live Activity
+contract.** A new `KilterActivityAttributes` (board + current-climb/grade/count/angle/HR) rather than
+overloading the exercise/set-shaped `WorkoutActivityAttributes`, with a dedicated
+`KilterLiveActivityController` + `KilterLiveActivity` widget, so the workout activity path is untouched.
+**(3) Reuse `SessionMedia`.** It's already keyed on a bare `UUID`; Kilter rows set `sessionID =
+KilterSession.id` and one new optional `assignedClimbUUID` (clip→climb), with the workout-only
+exercise/set fields left nil. **(4) Additive models, no new tables.** `KilterSession.hrSeries` is the same
+inlined `[HRPoint]` composite the workout uses (reused, not redefined); `KilterLogEntry` gains
+`startedAt`/`endedAt`/`attemptTimestamps`; all defaulted → SwiftData lightweight migration,
+`SnappetSchema.models` unchanged. **(5) Pure cores.** `KilterSessionStats` (timing/rest/pyramid/sends-per-
+hour over plain-value `KilterClimbLog`s), `KilterWorkoutBuilder` + `KilterMediaAssignment`
+(`KilterSession`+media → `HighlightEngine.Workout(.climbing)`, clip-offset→climb window), and
+`KilterLiveSnapshot.shouldPush` are all device-free and unit-tested. The reel reuses
+`engine.generate(for:)` (which auto-selects the `.climbing` preset by `workout.activity`) + `ReelExporter`.
+**Why**: the coupling was shallow and the toolkit already on-device; the cheapest correct path was a
+seam (`LiveMetricsContext`) + reuse, not a parallel stack. **Rules out**: a Kilter-specific HR transport;
+a `KilterSessionMedia` model; overloading `WorkoutActivityAttributes`; widening `WorkoutSession` into a
+polymorphic session. **Verified**: `xcodebuild test` green (266 tests incl. the new
+`KilterSessionStatsTests` / `KilterWorkoutBuilderTests` / `KilterLiveSnapshotTests` + a `LiveMetricsContext`
+rebase test); `HighlightEngine` `swift test` unchanged (18). **Device-unverified** per the device-only
+rule: the live HR stream (watch + BLE band), the Live Activity rendering, board connect auto-session-open,
+and Photos auto-discovery + reel export — deferred to a real board + watch/HR band on macOS.
+
+## 2026-06-05 — Kilter session media: per-climb galleries, full-length uncapped reels, studio parity
+
+**Decision**: Three user-requested follow-ups on the Kilter rich session, again by **reuse, not rebuild**.
+**(1) Full-length, uncapped reels — for *both* workout and Kilter (user's call).** Added
+`HighlightConfig.fullClips` (default `false`, so the 18 existing engine tests are untouched) + a
+`.fullLength()` copy-helper; when set, `HighlightSelector.select` still uses HR to pick *which* media to
+feature (NMS + `maxHighlights`) but emits each as a **full-length** clip (`clipStart = media.startOffset`,
+`clipEnd = media.endOffset`) and **collapses repeated moments within one media** to a single segment (so a
+video with several peaks yields one full clip, not duplicates). `ReelPlanner.targetDuration` became
+`Double?` — `nil` = no length cap. `AppModel.engine` now uses `ReelPlanner(targetDuration: nil)`, and the
+single reel call site (`ReelViewModel.generate`) passes `.preset(for: activity).fullLength()`. So the user's
+"no length limit" applies everywhere through two app-layer knobs; the engine defaults (and their tests) are
+unchanged. **(2) Per-climb media galleries.** `KilterSessionDetailView`'s timeline now renders a horizontal
+strip of each climb's clips (filtered by `SessionMedia.assignedClimbUUID`, deduped to the climb's first
+timeline row) + an "Unassigned" strip, reusing the already-public `SessionMediaThumb`. A "Move to climb…"
+menu reassigns a clip (`assignedClimbUUID` + `assignmentSource`), mirroring the workout reassign. Grouping is
+a pure generic helper `KilterMediaGrouping` (unit-tested). **(3) Full editing parity.** The workout
+components are domain-agnostic, so Kilter reuses them as-is: tapping a clip opens `ClipEditorView(media:)`
+(trim/speed/crop/text/HR-overlay/mute); "Open studio" find-or-creates a `StudioProject(sessionID:
+kilterSession.id, …)` and presents `StudioEditorView`; and the reel now goes through the **shared**
+`ReelView` (pin/remove/reorder/preview/export) instead of a one-shot export. To make `ReelView` source-
+agnostic, `ReelViewModel`'s hard `WorkoutSummary` dependency became a small `ReelSource { id, activity,
+title, start, makeWorkout(model, manualMedia) }` — `makeWorkout` takes the `AppModel` as a *parameter* so a
+source can be built in a `View.init` (no environment yet); `ReelView(summary:)`/`ReelViewModel(summary:)`
+stay as back-compat shims (workout call sites unchanged), and Kilter passes `.kilterSession(session, media:)`.
+**Why**: every editor/reel surface is keyed by `SessionMedia`/`StudioProject`/`Highlight[]` with no workout
+coupling, so a source seam + reuse beats a parallel Kilter studio. **Rules out**: a Kilter-only reel config
+(user chose "both"); duplicating the reel/clip/studio UI; trimming clips by default. **Verified**:
+`HighlightEngine` `swift test` 21/21 (3 new: full-clip dedupe + full-length window + nil-budget keeps-all);
+`xcodebuild test` 267/267 (new `KilterMediaGrouping` + `ReelSource` coverage); clean build of app + widget +
+watch. **Device-unverified**: the clip-editor/studio/reel *render + export* on real footage (needs a device
+with clips); the per-climb gallery wiring is type-checked + the grouping is unit-tested.
+
+**Self-review hardening (same day, high-effort multi-agent review of the diff).** Fixed: **(a)** logging
+now keeps **one `KilterLogEntry` per climb per session** — repeated logs (attempts, then a send) accumulate
+onto a single row (total tries + timestamps; a send is sticky) instead of inserting duplicate rows that
+double-counted the climb in the stats/timeline. **(b)** `beginClimb` re-arms when a prior send disarmed the
+active climb (and `log` re-arms too), so time-on-climb isn't lost on a re-log. **(c)** `KilterSessionManager`
+gained a `didStartMetrics` guard so `end()` only flushes/stops the HR source **it** started — a Kilter
+session that opened while a WorkoutTracker workout was running can no longer steal that workout's HR buffer or
+stop its source; and `metricsSourceRaw` is now stamped at end **from actually-captured samples** (and shown
+as "via Apple Watch / Heart-rate band" in the summary) instead of a misleading default. **(d)** the Kilter
+`ReelSource` honors the limited-Photos "Select clips" picks (was a dead no-op) and snapshots Sendable values
+(not the `@Model`) to satisfy Swift-6 isolation. **(e)** reused `WorkoutLiveSnapshot.elapsedString` instead
+of a duplicate duration formatter. Deferred (noted, not blocking): the `KilterLiveActivityController` /
+`KilterActivityAttributes` / `KilterLiveActivity` trio duplicates the workout Live-Activity stack — a generic
+parameterized over the attributes type would collapse it, but the split keeps the flagship path untouched.
+
+## 2026-06-05 — Kilter clip editing: per-clip / per-climb scope (shared project), Climb panel
+
+**Decision**: Give Kilter per-clip and per-climb editing scopes **without** a second project or a separate
+single-clip editor — one session `StudioProject` + a **visibility filter** is the whole mechanism.
+`StudioEditorViewModel` gained `visibleClipMediaIDs: Set<UUID>?` (default `nil` = workout's whole-project
+behavior, so the studio is untouched); a pure `StudioGeometry.filterByMedia(_:to:)` restricts the *display,
+timeline, preview, and export* to the clips backed by those `SessionMedia.id`s, while the **edit path is
+left alone** — `StudioProjectEditor` still mutates the full `snapshot.clips` by clip id. That asymmetry is
+the point: a per-clip trim writes to the shared project, so it reappears in "Edit all" and the session-wide
+studio automatically (one source of truth). Preview/export read a `scopedSnapshot` (a filtered value copy of
+the snapshot), so **`StudioComposer` and `StudioTimelineView` need no changes** — they render whatever the
+VM hands them; transitions whose `afterClipID` points at a hidden clip are simply never matched among the
+filtered neighbors (graceful; the 1-clip scope has none). Entry points unify in `KilterSessionDetailView`
+through one `ClipStudioPresentation` → a single `fullScreenCover`: tap a clip → `{clip.id}` + its climb;
+"Edit all · N" (only when a climb has ≥2 video clips) → that climb's clip ids + climb; bottom "Open studio"
+→ `nil` scope, no climb. The new `KilterClipStudio` wraps the scoped `StudioEditorView` with a floating
+"Climb ✎" button (shown only when a single climb is known) presenting `KilterClimbPanel`, which resolves the
+in-session `KilterLogEntry` (the same `(sessionId, climbUUID)` fetch `existingSessionEntry` uses) + the
+catalog climb, shows read-only name/grade/board, and write-through-edits angle / result+tries / a new
+`note`, plus per-clip "Move clip to another climb" (`assignedClimbUUID`). **`KilterLogEntry.note: String? =
+nil`** is additive/defaulted → lightweight migration (the `attemptTimestamps`/`startedAt` precedent),
+`SnappetSchema.models` unchanged. **Why**: scoping as a filtered *view* over a shared model keeps edits in
+one place and reuses the entire studio + the foundation's `openStudio` reconcile, instead of forking a
+per-clip `ClipEdit` editor or copying clips between projects. **Rules out**: a separate single-clip project;
+threading a filter through the composer/timeline (the scoped-snapshot copy makes that unnecessary); a Climb
+panel coupled to studio-internal selection (the climb is known from the entry point). **Verified**:
+`xcodebuild test` — new `StudioGeometryTests.filterByMedia*` (nil passes through, set keeps only matching
+`sessionMediaID`, orphan clips excluded, single-clip scope) + `KilterLogEntryTests` (`note` default/round-
+trip/mutate); "Edit all" grouping already covered by `KilterWorkoutBuilderTests`. `HighlightEngine` `swift
+test` unchanged. **Device-unverified** per the device-only rule: the scoped preview/export render on real
+footage and the Climb-panel edits' on-screen feel — deferred to a device with clips.
+
+**Self-review hardening (same day).** Two follow-ups from reviewing the scope filter: **(a)** the studio's
+clip **reorder** is made scope-correct — `moveSelected` was indexing the *scoped* visible list while
+`StudioProjectEditor.moveClip` reindexes the *full* project, so a reorder in a scoped editor (with hidden
+clips before the window) would have mis-ordered the shared session order. A pure
+`StudioGeometry.reorderDestination(id:by:visible:full:)` maps a visible-subset move to the full-list index
+(swap with the adjacent *visible* neighbor, hidden clips undisturbed; unscoped it's the plain `index+delta`),
+unit-tested. The reorder UI is currently dormant, so this is a latent-bug fix, not a behavior change. **(b)**
+An **unassigned** single clip can now be tagged to a climb from inside the scoped editor: `KilterClimbPanel`'s
+`climbUUID` became optional (nil ⇒ an "Assign clip to a climb" action only), and `KilterClipStudio` shows the
+floating button for any per-clip scope and resolves the climb **live** from the clip's `assignedClimbUUID`
+(reading the `@Model` clip) — so assigning upgrades the button/panel to the full Climb panel in place,
+without reopening. Previously an unassigned clip's only reassignment path was the gallery long-press menu.
+
+## 2026-06-05 — Studio overlays & grids: climb-name overlay, overlay timeline, per-axis PiP grids; split grade filter (P21)
+
+Four editor/browse improvements (prompt `21-ios-studio-overlays-grids.md`), built on the existing overlay
+seams rather than new infrastructure. **(1) Grade filter split** — the Kilter browse bar's one "Grade" chip
+(a From+To `Menu`) became **two independent chips** (`kilter.minGrade` / `kilter.maxGrade`) over the same
+`gradeScale`, with `.onChange` coupling (set Min above Max ⇒ Max follows, and vice-versa). No model/query
+change: state stayed `@AppStorage minGrade/maxGrade` and `KilterCatalog.list` already min/max-swaps. **(2)
+Climb-name overlay** reuses **one** `OverlayItem` with a new `Kind.climbName` (not a separate config like
+`HROverlayConfig`) — deliberately, so the new overlay timeline + the existing opacity keyframes/drag apply to
+it for free; it renders like text but as a lower-third chip (export: `StudioOverlays.climbNameLayer` = a
+`CATextLayer` on a rounded background container, time-gated by the same `applyVisibility`; preview: a
+`.climbName` chip case). The caption is built by a **pure** `KilterClimbCaption.caption(name·grade·angle[·
+by setter])` and the text stays freely editable ("Edit text"); a "Show setter" toggle re-derives it. Climb
+metadata is resolved **without the SQLite catalog** for name/grade/angle — from the persisted
+`KilterLogEntry` keyed by `(sessionId, climbUUID)` (the clip → `SessionMedia.assignedClimbUUID` lookup) — and
+only the **setter** touches `KilterCatalog.shared.climb(uuid)` (nil on the simulator ⇒ caption simply omits
+it). **(3) Overlay timeline** — every overlay already had `[startSec, endSec]`, so duration control is a
+second lane in `StudioTimelineView` (`OverlayBar`: high-priority body-drag to move the whole window keeping
+its length, edge handles to trim) sharing the clip lane's `pps`/offset, committing once on drag-end via the
+pure `StudioProjectEditor.setOverlayTimeRange` (clamped, min 0.2s); selection is shared with the bottom
+overlay controls. **(4) PiP grids** — PiP went from a single uniform `scale` to optional **per-axis**
+`OverlayItem.normalizedWidth/Height` (a `pipSize` accessor falling back to `scale` when nil, so old
+snapshots decode and render **unchanged**), enabling true split-screen cells and free corner resize. A new
+`ClipEditGeometry.pipRect(center:size:canvas:)` overload (the `scale` one delegates to it) feeds both the
+preview frame and `StudioComposer.insertPiPTrack`. A **pure** `StudioGridLayout` provides collage `Preset`
+cells (1×2 / 2×1 / 2×2 / 1×3 / 3×1) and `snap(center:size:)` → alignment guides (rule-of-thirds / centre /
+edges); `StudioOverlayCanvas` gains corner-resize handles (opposite corner fixed) + live guide drawing, and
+a "Grid" tool sheet exposes the presets + a snap toggle. **Why**: extending `OverlayItem` (one new kind, two
+optional fields) keeps the timeline/keyframe/undo machinery uniform across text/climb-name/PiP and avoids a
+parallel config type or a forked editor; per-axis size is the minimal model change that satisfies both
+"split-screen grids" and "corner resize". **Rules out**: a dedicated `ClimbNameOverlayConfig`; baking the
+caption into a fixed string (it stays editable); a normalized `CGRect` field on `OverlayItem` (two optional
+scalars decode more cleanly for SwiftData lightweight migration). **Verified**: new pure unit tests —
+`KilterClimbCaptionTests` (setter on/off/missing, empty name/grade/zero-angle), `StudioGridLayoutTests`
+(preset cells tile the canvas, `frames(count:)` caps at capacity, snap within/outside threshold + edge
+snap), `ClipEditGeometryTests` (per-axis `pipRect`), `StudioProjectEditorTests`
+(`setOverlayContent`/`setOverlayTimeRange`/`setOverlayFrame`/`applyPiPGrid`). **Device-unverified** per the
+device-only rule: the climb-name **export** layer, PiP collage/corner-resize on real footage, and the
+overlay-lane gesture feel — deferred to a device with clips + a logged Kilter session.
+
+## 2026-06-05 — Studio overlay/PiP follow-up: live-resize, text sizing, base-video collage cell, flicker fix (P21)
+
+Device pass on P21 surfaced four issues; fixes built on the same seams. **(1) Text/climb-name couldn't be
+resized** — the export AND preview already honoured `OverlayItem.scale` for font size, but no control ever
+set it for the Core-Animation kinds (handles were `.video`-only). Fix: a **Size slider** in the overlay
+controls bar + **pinch-to-scale** on the canvas (`TextOverlayChip`), both → `setOverlayScale`, which is now
+overlay-aware in the VM (text = `editOverlaysOnly`, no player rebuild) and whose clamp **widened `0.1…1` →
+`0.2…6`** so text can grow past 1× (the old clamp was sized for a PiP frame fraction; PiP sizing moved to the
+per-axis `setOverlayFrame` in P21, so widening is safe). **(2) PiP frame "didn't match the bounding box"** —
+corner-resize only wrote the model on drag-END (`commitResize(ended:false)` updated only the snap guides), so
+the white outline + the composited PiP stayed put while the handle moved, then jumped on release. Fix: a
+shared **`ResizableFrame`** view (used by BOTH the PiP cell and the new base-video cell) tracks the gesture
+**live** via `liveResize` state — the outline and all four handles recompute from the in-progress
+corner/pinch each frame; the model is still written once on end. Handles dropped their local `.offset` (the
+parent repositions them from the live frame, so the dragged dot sits under the finger). **(3) "Very
+flickery"** — every PiP edit ran `rebuildPreview`, which tore down the whole `AVPlayer` AND re-resolved every
+PHAsset→AVAsset through `PHImageManager` (slow/async) → a black flash + reload per nudge. Fix: an **actor
+`AssetCache`** in `StudioComposer` memoizes resolution for the session, and `rebuildPreview` now **reuses the
+player** (`replaceCurrentItem`) instead of constructing a new `AVPlayer` (no layer detach/reattach), keeps
+playing across a live edit, and a **generation token** drops a stale rebuild whose async composition returns
+after a newer one. **(4) Couldn't resize the original video** — the main track always aspect-filled the full
+canvas. Added an optional **`StudioProject.baseFrame: StudioFrameRect?`** (normalized centre+size, nil =
+legacy full-frame, migration-safe additive `@Model` property like `hrOverlay`); the composer's new
+`mainClipTransform` aspect-fills the main track into that sub-rect (same flipped-Y / `pipRect` convention as a
+PiP, so base + PiP cells align; the canvas `background` shows behind it) on **both** the single-track and
+transition paths. On the canvas it's a draggable "Main" `ResizableFrame`; the **Grid tool** gained a "Resize
+the main video" toggle (`toggleBaseFrame`, default = a centred half-cell) and the Grid button is no longer
+PiP-gated. **Why a frame on the project, not a per-clip field or a `.baseVideo` overlay kind**: framing is a
+canvas-level layout (all clips share it), and a new overlay kind would ripple through every overlay switch +
+the export tool; one optional struct is the minimal, migration-safe change and reuses the PiP geometry.
+**Rules out**: per-clip base frames; crop-WITH-base-frame (a framed main track ignores per-clip crop — a
+follow-up); base video as a grid-preset cell (presets stay PiP-only). **Verified**: builds clean + full suite
+green on the simulator (298 unit tests) — `setBaseFrame`/`clearBaseFrame` clamp+toggle, `StudioFrameRect.isFull`,
+the widened `setOverlayScale` clamp. **Device-unverified** (device-only rule): the actual flicker-free feel,
+base-frame **export** on real footage, and pinch/Size sizing of the climb-name in the rendered file.
+
+## 2026-06-05 — PiP/base placement: top-left render space + aspect-FIT + source-aspect default (P21)
+
+A device screenshot showed the composited PiP **offset down** from its editor outline AND **wider than
+the frame**. Root-caused to two composer bugs in `insertPiPTrack` / `mainClipTransform`. **(1) Wrong Y
+origin** — the PiP frame flipped Y (`1 - normalizedY`) assuming the `AVMutableVideoCompositionLayer
+Instruction` render space is bottom-left (the convention the Core-Animation OVERLAY tool genuinely uses,
+`layerPoint`). But the layer-INSTRUCTION space is **top-left** — proven by the device-verified
+`cropTransform` (clip-editor zoom-crop), which targets the same space and does NOT flip. The flip pushed
+the PiP down by `(1−2y)·H`, matching the screenshot. Fix: drop the flip, place against `ov.position`
+directly (top-left), so the composited PiP lands exactly where the SwiftUI outline shows it. **(2)
+Overflow** — `fillTransform` aspect-FILLS (cover), but a layer instruction can't clip its track to a
+sub-rect, so the excess spills past the frame onto the rest of the canvas. Fix: a new
+`ClipEditGeometry.fitTransform` (aspect-FIT / contain) keeps the whole source inside its frame; PiP and
+base both use it. **(3) Square default** — a new PiP defaulted to a `0.4×0.4` (canvas-aspect) frame, so a
+non-9:16 source letterboxed inside it (looks misaligned). Fix: `addPiP` sizes the frame to the source's
+oriented aspect (`StudioComposer.sourceAspect`, resolved on appear into `sourceAspects`), so
+`pipSize.w/pipSize.h = sourceAspect / canvasAspect` and the aspect-fit PiP fills its frame. **Why top-left,
+not bottom-left**: the two render spaces (layer-instruction vs the Core-Animation overlay tree) genuinely
+differ; the original code conflated them. Matching `cropTransform` (verified) is the reliable tiebreak.
+**Why fit, not fill+crop**: precise per-PiP cropping needs a mask layer (custom `AVVideoCompositing`),
+deferred; fit is the no-overflow, no-mask choice. **Rules out**: a bottom-left flip for PiP/base; aspect-
+fill without a clip; a fixed square PiP default. **Follow-up**: when a user resizes a PiP frame to an
+aspect ≠ its source, the video fits within (a small letterbox) — drawing the outline at the exact fitted
+rect (needs the source aspect in the canvas) is a further polish. **Verified**: builds clean, full suite
+green incl. a new `fitTransform` containment test. **Device-unverified**: that the PiP/base now sit exactly
+under the outline in preview AND export.

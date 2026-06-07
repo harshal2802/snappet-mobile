@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-05-30
+**Last updated**: 2026-06-06
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -62,6 +62,11 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 ## Constraints (what the AI should never do or suggest)
 
 - **On-device only. No backend, no network sync, no accounts.** Health + media never leave the device.
+  *(One explicit, **narrow** exception, added 2026-06-05 — keep it named so it can't be cited to justify
+  general networking: the Kilter mini-app may make a **user-initiated** request to fetch the climb
+  catalog onto the device, because that data is third-party-owned (Aurora) and can't legally be
+  redistributed inside the app. No background sync, no analytics, no Snappet backend; health + media
+  still never leave the device. See `decisions.md` (2026-06-05) and issue #42.)*
 - **HealthKit/Photos are device-only** — they don't run in the simulator; don't claim a feature is
   "verified" off a type-check alone (see `decisions.md`).
 - Keep `HighlightEngine` **platform-free** — no HealthKit/AVFoundation/UIKit imports in that target.
@@ -83,7 +88,9 @@ usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches,
 coherent increment, implemented on its own branch by parallel agents and merged one-by-one:
 **Pomodoro** session history + 7-day chart + persisted settings; **Habits** edit + 7-day backfill strip
 + 30-day rate; **Journal** tags + `.searchable`; **Tip** calculation history (its first `@Model`) +
-editable presets + round-up; **Split Expenses** edit expenses/groups + manual settlements; **Budget**
+editable presets + round-up; **Split Expenses** edit expenses/groups + manual settlements + **itemized
+receipts** (scan with the camera or paste receipt text → per-item assignment with proportional
+tax/discount + per-person split; iOS Vision / Android ML Kit OCR; mirrored on both platforms); **Budget**
 edit transactions + month switcher + 6-month trends. Prompts in `pdd/prompts/features/12–17`. Tests:
 each app has a `SnappetUITests/<App>UITests.swift` driving its flow; UI tests use a `-uiTestFreshStore`
 launch arg (isolated in-memory store) for determinism. **Verified on the iPhone 17 Pro sim: all 10 UI
@@ -135,6 +142,68 @@ lives in the web repo's `PLAN-snappet-mobile.md`.
 session media tagging, an enriched summary, a CapCut-style clip editor, engine-driven highlight generation,
 and share/save — bridging WorkoutTracker to `HighlightEngine`. Tracking: GitHub issue
 [#15](https://github.com/harshal2802/snappet-mobile/issues/15).
+
+🟢 **Kilter Board mini-app (#35)** — browse the read-only climb catalog, render a climb on the
+board, log Flash/Sent/Project/Attempt, review history, QR-share climbs, and (gated, device-unverified)
+light the physical board over BLE.
+
+🟢 **Kilter opt-in on-device catalog (2026-06-05, #42, `22-kilter-opt-in-catalog.md`).** The app ships
+**no** Aurora climb data — the bundled `kilter.sqlite3` is gone from both platforms. On first open the
+Kilter module shows an opt-in **"Get the climb catalog"** screen (surfacing Aurora's Terms of Use) that
+imports a user-supplied `.sqlite3` (iOS **Files** / Android **SAF**) into `KilterCatalogStore`; the
+existing `KilterCatalog` reader opens it from there and every browse/detail/log/illuminate feature works
+unchanged. A `KilterCatalogProvider` seam (FileImportProvider shipped; AuroraSyncProvider an inert
+Phase-2 stub) keeps the read path source-agnostic; a `KilterCatalogValidator` rejects malformed files.
+Removes the redistribution exposure (#32 OQ#11.2) **architecturally**. A synthetic, zero-Aurora-data
+fixture (Python generator verified locally + in-code `KilterCatalogFixture` on both platforms) drives the
+tests. Authored on Linux — `xcodebuild test` (Mac) + Android `connectedDebugAndroidTest` owed at the
+merge gate.
+
+🟢 **Kilter rich session (2026-06-05, `pdd/prompts/features/18-ios-kilter-rich-session.md`).** Brought
+the Live Workout toolkit to a climbing session by **reuse, not rebuild**: live HR (Apple Watch *or* a BLE
+chest strap, via a `LiveMetricsContext` that decouples `LiveMetricsCoordinator` from `WorkoutSession`),
+per-climb timing + attempts, photo/video auto-discovery (`SessionMediaService`) with clip→climb tagging, a
+one-tap highlight reel (`HighlightEngine.Workout(.climbing)` + `ReelExporter`), a Lock Screen / Dynamic
+Island Live Activity (`KilterActivityAttributes` + a dedicated controller/widget), and a rich
+`KilterSessionDetailView` summary (HR zones, grade pyramid, per-climb timeline). All data-model changes are
+additive (SwiftData lightweight migration); pure cores (`KilterSessionStats`, `KilterWorkoutBuilder`,
+`KilterLiveSnapshot`) are unit-tested. **Verified on the iPhone 17 Pro sim: 266 unit tests green**;
+`HighlightEngine` 18/18. Device-only paths (live HR, Live Activity render, board auto-session-open, Photos
+discovery + reel export) are deferred to a real board + watch/HR band.
+
+🟢 **Kilter clip-scoped editing (2026-06-05, `20-ios-kilter-clip-scoped-editing.md`).** Tapping a Kilter
+clip opens a scope-filtered Studio (one clip, or a climb's clips via "Edit all · N", or session-wide),
+with a floating Climb panel to edit the climb's log in place — all sharing one session `StudioProject`.
+
+🟢 **Studio overlays & grids (2026-06-05, `21-ios-studio-overlays-grids.md`).** Editor + browse polish:
+the Kilter browse bar's grade filter split into **two independent chips** (Min / Max); a **climb-name
+overlay** (a lower-third `OverlayItem.Kind.climbName` auto-filled with name · grade · angle from
+`KilterLogEntry`, a setter toggle from the catalog, freely editable, time-gated + keyframable like text);
+a **timeline lane** to move/trim any overlay's on-screen window; and **PiP grids** — PiP gained optional
+per-axis size (`normalizedWidth/Height`, default = `scale`, back-compatible) for true split-screen, with
+one-tap collage presets (`StudioGridLayout`), corner-resize handles, and rule-of-thirds snap guides. Pure
+cores (`KilterClimbCaption`, `StudioGridLayout`, the new `StudioProjectEditor`/`ClipEditGeometry` ops) are
+unit-tested. The render paths were since **device-verified** (see the next entry).
+
+🟢 **Studio overlay/PiP polish — DEVICE-VERIFIED (2026-06-06, PRs #46/#48/#49).** A run of editor fixes +
+features, all **verified on a physical iPhone (MrRobot)** via a screenshot/recording capture loop — incl.
+the export path. **Placement**: PiP/base cells were offset + overflowing; root-caused to the wrong render
+origin (the `AVMutableVideoCompositionLayerInstruction` space is **top-left**, like the device-verified
+`cropTransform` — NOT the Core-Animation overlay's bottom-left) and aspect-**fill** (a layer instruction
+can't clip a sub-rect, so it spilled). Fixed: drop the Y-flip, aspect-**fit** (`fitTransform`), and a
+source-aspect default frame. **Resize**: corner-drag now **aspect-locks** to the footage (box hugs the
+video) and is **flicker-free** — the live-resize had been a SwiftUI drag-feedback loop (a `@State` driven
+from the handle's own gesture re-positioned the handle); rewritten to the canonical `@GestureState`
+pattern with the gesture-hosting handles anchored at the committed size. **Resizable base video**: an
+optional `StudioProject.baseFrame` places the main track into a collage cell (a draggable "Main" frame +
+a Grid-tool toggle). **Rich text**: text/climb-name now **wrap to ~0.9 of the video width** (preview +
+export, the export box measured via `NSAttributedString.boundingRect`) so captions never spill, plus a
+**Style** sheet for text colour / highlight background / font preset (`StudioFont`) / bold / italic —
+rendered identically in preview and the exported file. One migration crash was caught + fixed on device:
+new `OverlayItem` style fields shipped non-optional → Swift's synthesized `Decodable` threw on old saved
+overlays; made optional-backed with computed defaults (the codebase's migration-safe pattern), guarded by
+a decode-from-old-JSON test. Full suite green (**301 unit + 15 UI**). All 5 surfaces (placement, resize,
+text+styling, base cell, **export**) confirmed working on-device.
 
 ## License
 

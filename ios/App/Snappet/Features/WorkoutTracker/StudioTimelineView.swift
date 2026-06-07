@@ -20,6 +20,8 @@ struct StudioTimelineView: View {
     private var pps: CGFloat { min(200, max(12, zoomPps * pinchScale)) }
     private let trackHeight: CGFloat = 56
     private let rulerHeight: CGFloat = 18
+    /// Lane below the clips showing each overlay's on-screen window (drag to move, handles to trim).
+    private let overlayLaneHeight: CGFloat = 30
 
     @State private var scrubStartTime: Double?
 
@@ -44,7 +46,7 @@ struct StudioTimelineView: View {
                     .onEnded { v in zoomPps = min(200, max(12, zoomPps * v.magnification)) }
             )
         }
-        .frame(height: rulerHeight + trackHeight + 24)
+        .frame(height: rulerHeight + trackHeight + overlayLaneHeight + 28)
         .clipped()
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 10) {
@@ -68,6 +70,13 @@ struct StudioTimelineView: View {
             ForEach(placed, id: \.clip.id) { p in
                 clipStrip(p)
                     .offset(x: CGFloat(p.startSec) * pps, y: rulerHeight + 4)
+            }
+            ForEach(vm.timelineOverlays) { ov in
+                OverlayBar(overlay: ov, pps: pps, height: overlayLaneHeight,
+                           selected: ov.id == vm.selectedOverlayID, total: vm.totalDuration,
+                           onSelect: { vm.selectOverlay(ov.id) },
+                           onCommit: { start, end in vm.setOverlayTimeRange(ov.id, start: start, end: end) })
+                    .offset(x: CGFloat(ov.startSec) * pps, y: rulerHeight + trackHeight + 12)
             }
         }
         .offset(x: offsetX)
@@ -139,6 +148,96 @@ struct StudioTimelineView: View {
                 vm.seek(to: t)
             }
             .onEnded { _ in scrubStartTime = nil }
+    }
+}
+
+/// One overlay's on-screen window as a draggable bar in the timeline lane: drag the body to move the
+/// whole window (keeping its length), or the leading/trailing edges to change start / end. Times are
+/// committed **once on drag-end** (live feedback is view-local) — one undo entry per gesture.
+private struct OverlayBar: View {
+    let overlay: OverlayItem
+    let pps: CGFloat
+    let height: CGFloat
+    let selected: Bool
+    let total: Double
+    let onSelect: () -> Void
+    let onCommit: (_ start: Double, _ end: Double) -> Void
+
+    @GestureState private var moveBy: CGFloat = 0
+
+    private var length: Double { max(0.2, overlay.endSec - overlay.startSec) }
+
+    var body: some View {
+        let width = max(10, CGFloat(length) * pps)
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 5)
+                .fill(barColor.opacity(selected ? 0.9 : 0.6))
+            HStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 9))
+                Text(label).font(.system(size: 9, weight: .medium)).lineLimit(1)
+            }
+            .foregroundStyle(.white).padding(.horizontal, 6)
+        }
+        .frame(width: width, height: height)
+        .overlay(RoundedRectangle(cornerRadius: 5).stroke(.white, lineWidth: selected ? 1.5 : 0))
+        .offset(x: moveBy)
+        .onTapGesture { onSelect() }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 3)
+                .updating($moveBy) { v, s, _ in s = v.translation.width }
+                .onChanged { _ in if !selected { onSelect() } }
+                .onEnded { v in
+                    let delta = Double(v.translation.width / pps)
+                    let start = max(0, overlay.startSec + delta)
+                    onCommit(start, start + length)
+                }
+        )
+        .overlay(alignment: .leading) { if selected { edge(.leading, width: width) } }
+        .overlay(alignment: .trailing) { if selected { edge(.trailing, width: width) } }
+        .accessibilityIdentifier("timelineOverlayBar")
+    }
+
+    private func edge(_ side: HorizontalEdge, width: CGFloat) -> some View {
+        OverlayEdgeHandle(height: height) { deltaPoints in
+            let deltaSec = Double(deltaPoints / pps)
+            switch side {
+            case .leading:  onCommit(overlay.startSec + deltaSec, overlay.endSec)
+            case .trailing: onCommit(overlay.startSec, overlay.endSec + deltaSec)
+            }
+        }
+    }
+
+    private var barColor: Color { overlay.kind == .video ? .blue : SnappetColor.workout }
+    private var icon: String {
+        switch overlay.kind {
+        case .video: return "rectangle.on.rectangle"
+        case .sticker: return "star.square"
+        case .climbName: return "signpost.right"
+        case .text: return "textformat"
+        }
+    }
+    private var label: String {
+        overlay.content.replacingOccurrences(of: "\n", with: " ")
+    }
+}
+
+/// A compact leading/trailing grab edge for an `OverlayBar`, sized to the lane. Reports its drag delta
+/// (points) on end so the window is trimmed once per gesture.
+private struct OverlayEdgeHandle: View {
+    let height: CGFloat
+    let onCommit: (CGFloat) -> Void
+    @GestureState private var drag: CGFloat = 0
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(.white.opacity(0.95))
+            .frame(width: 7, height: height)
+            .offset(x: drag)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 1)
+                    .updating($drag) { v, s, _ in s = v.translation.width }
+                    .onEnded { v in onCommit(v.translation.width) }
+            )
     }
 }
 

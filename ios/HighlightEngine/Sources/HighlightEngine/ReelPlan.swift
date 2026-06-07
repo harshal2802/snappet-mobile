@@ -30,9 +30,11 @@ public struct ReelPlan: Sendable, Equatable {
 /// This is the "auto-generate-then-edit" default (Snappet#60 §B): produce a good
 /// reel automatically; the app then lets the user reorder/remove/regenerate.
 public struct ReelPlanner: Sendable {
-    public var targetDuration: Double      // desired reel length (seconds)
+    /// Desired reel length (seconds), or `nil` for **no cap** — every planned segment is kept
+    /// (used with `HighlightConfig.fullClips` for full-length, uncapped reels).
+    public var targetDuration: Double?
     public var photoStill: Double          // how long each photo shows
-    public init(targetDuration: Double = 30, photoStill: Double = 2.0) {
+    public init(targetDuration: Double? = 30, photoStill: Double = 2.0) {
         self.targetDuration = targetDuration
         self.photoStill = photoStill
     }
@@ -62,28 +64,30 @@ public struct ReelPlanner: Sendable {
 
         var picked: [Highlight] = []
         var pickedIds = Set<String>()
-        var budget = targetDuration
+        // `cap == nil` → uncapped (keep every segment). `used` tracks total picked duration.
+        let cap = targetDuration
+        var used = 0.0
 
-        // 1. Pinned first — always included, budget-exempt (still drawn down so the
+        // 1. Pinned first — always included, budget-exempt (still counted so the
         //    score-filled remainder respects whatever space is left).
         for h in highlights where pinnedIds.contains(h.id) {
             guard let m = byId[h.mediaItemId], clipDuration(h, m) > 0 else { continue }
             picked.append(h)
             pickedIds.insert(h.id)
-            budget -= clipDuration(h, m)
+            used += clipDuration(h, m)
         }
 
-        // 2. Fill remaining budget with the rest by score (highest first).
+        // 2. Fill remaining budget with the rest by score (highest first). With no cap, take all.
         for h in highlights.sorted(by: { $0.score > $1.score }) {
             if pickedIds.contains(h.id) { continue }
             guard let m = byId[h.mediaItemId] else { continue }
             let dur = clipDuration(h, m)
             if dur <= 0 { continue }
-            if budget - dur < 0 && !picked.isEmpty { continue }
+            if let cap, used + dur > cap, !picked.isEmpty { continue }
             picked.append(h)
             pickedIds.insert(h.id)
-            budget -= dur
-            if budget <= 0 { break }
+            used += dur
+            if let cap, used >= cap { break }
         }
 
         // 3. Order: explicit id order when given, else chronological by atOffset.

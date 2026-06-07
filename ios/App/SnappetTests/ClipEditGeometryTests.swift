@@ -243,6 +243,25 @@ final class ClipEditGeometryTests: XCTestCase {
         XCTAssertEqual(r.midY, 1000, accuracy: 1e-6)
     }
 
+    func testPipRectPerAxisSizeForCollageCell() {
+        // A 1×2 left cell: half width, full height, centred at x=0.25.
+        let canvas = CGSize(width: 1000, height: 2000)
+        let r = G.pipRect(normalizedCenter: CGPoint(x: 0.25, y: 0.5),
+                          size: CGSize(width: 0.5, height: 1), canvas: canvas)
+        XCTAssertEqual(r.width, 500, accuracy: 1e-6)
+        XCTAssertEqual(r.height, 2000, accuracy: 1e-6)
+        XCTAssertEqual(r.midX, 250, accuracy: 1e-6)
+        XCTAssertEqual(r.midY, 1000, accuracy: 1e-6)
+    }
+
+    func testPipRectPerAxisClampsEachSide() {
+        let canvas = CGSize(width: 1000, height: 1000)
+        let r = G.pipRect(normalizedCenter: CGPoint(x: 0.5, y: 0.5),
+                          size: CGSize(width: 0, height: 9), canvas: canvas)   // → 0.1 … 1
+        XCTAssertEqual(r.width, 100, accuracy: 1e-6)
+        XCTAssertEqual(r.height, 1000, accuracy: 1e-6)
+    }
+
     func testFillTransformAspectFillsIntoRect() {
         // A 1000×1000 source filling a 400×800 rect → scale by max(400/1000, 800/1000)=0.8 (cover).
         let t = G.fillTransform(sourceSize: CGSize(width: 1000, height: 1000),
@@ -252,6 +271,22 @@ final class ClipEditGeometryTests: XCTestCase {
         // centred: scaledW=800 → tx = 100 + (400-800)/2 = -100; scaledH=800 → ty = 200 + (800-800)/2 = 200.
         XCTAssertEqual(t.tx, -100, accuracy: 1e-6)
         XCTAssertEqual(t.ty, 200, accuracy: 1e-6)
+    }
+
+    func testFitTransformContainsSourceInsideRectNoOverflow() {
+        // A 1000×1000 source FIT into a 400×800 rect → scale by min(400/1000, 800/1000)=0.4 (contain),
+        // so the scaled source (400×400) never exceeds the rect — it letterboxes vertically.
+        let t = G.fitTransform(sourceSize: CGSize(width: 1000, height: 1000),
+                               into: CGRect(x: 100, y: 200, width: 400, height: 800))
+        XCTAssertEqual(t.a, 0.4, accuracy: 1e-6)
+        XCTAssertEqual(t.d, 0.4, accuracy: 1e-6)
+        // centred: scaledW=400 → tx = 100 + (400-400)/2 = 100; scaledH=400 → ty = 200 + (800-400)/2 = 400.
+        XCTAssertEqual(t.tx, 100, accuracy: 1e-6)
+        XCTAssertEqual(t.ty, 400, accuracy: 1e-6)
+        // The fitted source stays within the rect on both axes (no spill past the frame).
+        let scaledW = 1000 * t.a, scaledH = 1000 * t.d
+        XCTAssertLessThanOrEqual(scaledW, 400 + 1e-6)
+        XCTAssertLessThanOrEqual(scaledH, 800 + 1e-6)
     }
 
     func testNormalizedPointClampsADragOffCanvas() {

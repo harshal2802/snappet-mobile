@@ -7,18 +7,34 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.snappet.mobile.core.TestHooks
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
  * Walkthrough of the Kilter mini-app's Phase-1 flow: open the catalog, open a climb, log a send, and
  * confirm it lands in History; and save a climb and confirm it shows under the Saved filter. Mirrors
- * the iOS `KilterUITests`. The bundled catalog ships in the APK, so it's present even with the fresh
- * in-memory store (which only resets user data).
+ * the iOS `KilterUITests`.
+ *
+ * Issue #42: the app no longer ships a catalog, so the browse tests set
+ * `TestHooks.installKilterCatalogFixture` to install the **synthetic** fixture (`KilterCatalogFixture`,
+ * zero Aurora data) before the module opens — standing in for a real user import. A separate test
+ * leaves the hook off and asserts the opt-in sync screen.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class KilterUITest : SuiteTest() {
+
+    @After
+    fun clearCatalogHook() {
+        TestHooks.installKilterCatalogFixture = false
+    }
+
+    private fun launchWithCatalog() {
+        TestHooks.installKilterCatalogFixture = true
+        launch()
+    }
 
     private fun openFirstClimb() {
         openModule("kilter")
@@ -30,8 +46,21 @@ class KilterUITest : SuiteTest() {
     }
 
     @Test
-    fun loggingASendAppearsInHistory() {
+    fun emptyStateShowsCatalogSyncScreen() {
+        TestHooks.installKilterCatalogFixture = false
         launch()
+        openModule("kilter")
+        composeRule.waitUntil(timeoutMillis = 6_000) {
+            composeRule.onAllNodesWithTag("kilter.catalog.import").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("kilter.catalog.import").assertIsDisplayed()
+        // No climbs are listed in the opt-in empty state.
+        assert(composeRule.onAllNodesWithTag("kilter.climbRow").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun loggingASendAppearsInHistory() {
+        launchWithCatalog()
         openFirstClimb()
 
         composeRule.onNodeWithTag("kilter.log.sent").performScrollTo().performClick()
@@ -48,7 +77,7 @@ class KilterUITest : SuiteTest() {
 
     @Test
     fun savingAClimbShowsUnderSavedFilter() {
-        launch()
+        launchWithCatalog()
         openFirstClimb()
 
         composeRule.onNodeWithTag("kilter.favorite").performClick()

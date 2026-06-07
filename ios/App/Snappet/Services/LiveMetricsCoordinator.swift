@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import HealthKit
 import HighlightEngine
 
 /// Which kind of live-metrics source is active. The picker (from `WorkoutSettingsView`)
@@ -104,10 +105,20 @@ final class LiveMetricsCoordinator: MetricsSource {
         activeKind == .ble ? bleDisplayPaused : watch.isPaused
     }
 
-    func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
+    func start(_ context: LiveMetricsContext) {
         isSessionActive = true
         bleDisplayPaused = false
-        active.start(for: session, sport: sport, category: category)
+        active.start(context)
+    }
+
+    /// Convenience for the WorkoutTracker live path: build the live-metrics context from a
+    /// routine-driven `WorkoutSession` (resolving the `HKWorkoutActivityType` via
+    /// `WorkoutActivityMapping`) so the existing call sites don't churn. Kilter sessions call
+    /// `start(_:)` directly with `.climbing`.
+    func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?) {
+        start(LiveMetricsContext(startedAt: session.startedAt,
+                                 activityType: WorkoutActivityMapping.activityType(sport: sport,
+                                                                                   category: category)))
     }
 
     func stop() {

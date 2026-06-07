@@ -70,7 +70,7 @@ import kotlinx.coroutines.withContext
 private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS }
 
 /**
- * Root entry for the Kilter Board mini-app. Browse the bundled read-only catalog (filtered by
+ * Root entry for the Kilter Board mini-app. Browse the user-installed read-only catalog (filtered by
  * layout, angle, grade, and a Saved filter), open a climb for the board render + logging, and review
  * History. The board controller + session manager are created here and shared with the detail
  * screen. Mirrors the iOS `KilterRootView`. `onExit` returns to the App Library.
@@ -82,15 +82,25 @@ fun KilterRoot(onExit: () -> Unit) {
     val dao = container.database.kilterDao()
     val board = remember { KilterBoardController(context) }
     val sessions = remember { KilterSessionManager(dao) }
+    // Seed the board's payload dialect from the persisted preference (Standard/Legacy).
+    androidx.compose.runtime.LaunchedEffect(Unit) { board.setApiLevel(KilterSettings.apiLevel(context)) }
 
-    // Opening the catalog copies a ~5 MB asset out of the APK on first launch — do it off the main
-    // thread, showing a brief loading state, so the suite never janks/ANRs entering the module.
+    // The app ships no catalog (issue #42); open the user-installed one off the main thread, showing a
+    // brief loading state. `reloadToken` re-opens the reader after an import (sync screen) or remove
+    // (Settings).
     var catalog by remember { mutableStateOf<KilterCatalog?>(null) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        catalog = withContext(Dispatchers.IO) { KilterCatalog.get(context) }
+    var loading by remember { mutableStateOf(true) }
+    var reloadToken by remember { mutableStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(reloadToken) {
+        loading = true
+        catalog = withContext(Dispatchers.IO) {
+            KilterCatalog.reset()
+            KilterCatalog.get(context)
+        }
+        loading = false
     }
     val cat = catalog
-    if (cat == null) {
+    if (loading || cat == null) {
         ModuleScaffold(title = "Kilter Board", onExit = onExit) { padding ->
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 androidx.compose.material3.CircularProgressIndicator()
@@ -99,12 +109,21 @@ fun KilterRoot(onExit: () -> Unit) {
         return
     }
 
+    // No catalog on this device yet → the opt-in import screen instead of an empty browse list.
+    if (!cat.isAvailable) {
+        KilterCatalogSyncScreen(onInstalled = { reloadToken++ }, onExit = onExit)
+        return
+    }
+
     var screen by remember { mutableStateOf(KilterScreen.ROOT) }
     var selectedUuid by remember { mutableStateOf<String?>(null) }
 
     when (screen) {
         KilterScreen.HISTORY -> KilterHistoryScreen(dao = dao, onExit = { screen = KilterScreen.ROOT })
-        KilterScreen.SETTINGS -> KilterSettingsScreen(catalog = cat, dao = dao, onExit = { screen = KilterScreen.ROOT })
+        KilterScreen.SETTINGS -> KilterSettingsScreen(
+            catalog = cat, dao = dao,
+            onCatalogChanged = { reloadToken++; screen = KilterScreen.ROOT },
+            onExit = { screen = KilterScreen.ROOT })
         KilterScreen.DETAIL -> selectedUuid?.let { uuid ->
             KilterDetailScreen(
                 uuid = uuid, catalog = cat, board = board, sessions = sessions,
@@ -224,7 +243,8 @@ private fun KilterCatalogScreen(
         },
     ) { padding ->
         if (!catalog.isAvailable) {
-            EmptyState(padding, "Catalog unavailable", "The bundled Kilter catalog couldn't be opened.")
+            // Defensive: KilterRoot already gates on availability and shows the opt-in import screen.
+            EmptyState(padding, "Catalog unavailable", "The Kilter catalog couldn't be opened.")
             return@ModuleScaffold
         }
         Column(Modifier.fillMaxSize().padding(padding)) {

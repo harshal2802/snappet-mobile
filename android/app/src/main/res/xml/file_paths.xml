@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths the FileProvider may share. The receipt-scan temp photo lives in the app cache. -->
+<paths>
+    <cache-path name="receipt_scans" path="." />
+</paths>

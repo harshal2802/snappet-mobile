@@ -1,0 +1,186 @@
+package com.snappet.mobile.feature.expense
+
+/**
+ * Pure, device-free parser that turns pasted / OCR'd receipt text into line items plus the
+ * detected tax, discount and total. Ported 1:1 from the iOS `ReceiptParser`. Heuristic but
+ * unit-tested against real Costco lines: a row ending in a money amount is an item (leading
+ * item-codes and a trailing tax-flag letter are stripped); a trailing-minus amount is an
+ * instant-savings/discount; SUBTOTAL / TAX / TOTAL / payment rows are not items.
+ */
+object ReceiptParser {
+
+    data class ParsedReceipt(
+        val items: List<ReceiptItem>,
+        val discount: Double,
+        val subtotal: Double? = null,
+        val tax: Double? = null,
+        val total: Double? = null,
+        /** Item count printed on the receipt (e.g. Costco "Items Sold: 51"), if found. */
+        val itemCount: Int? = null,
+    )
+
+    // Short, ambiguous words that label a summary row ("TOTAL 9.00") but also appear *inside*
+    // product names ("COLGATE TOTAL"). Only treated as a summary row when they're the line's
+    // leading label (see [leadingLabel]), never as an arbitrary substring.
+    private val summaryLabels = setOf("SUBTOTAL", "TOTAL", "TAX", "AMOUNT", "CHANGE", "BALANCE")
+
+    // Multi-word / distinctive metadata that never occurs inside a real product description, so
+    // it's safe to match as a case-insensitive substring anywhere on the line.
+    private val metadataKeywords = listOf(
+        "INSTANT SAVINGS", "CHIP READ", "APPROVED", "ITEMS SOLD", "BOTTOM OF BASKET",
+        "THANK YOU", "PLEASE COME", "WHOLESALE", "MASTERCARD", "VISA", "DEBIT", "CREDIT",
+        "MEMBER", "RESP", "TRAN", "AID", "SEQ", "APP#", "OP#", "WHSE", "TRM", "TRN",
+        "PURCHASE", "FSA",
+    )
+
+    fun parse(text: String, profile: ReceiptProfile = ReceiptProfile.GENERIC): ParsedReceipt {
+        val items = mutableListOf<ReceiptItem>()
+        var discount = 0.0
+        var subtotal: Double? = null
+        var tax: Double? = null
+        var total: Double? = null
+        var itemCount: Int? = null
+
+        // Distinctive metadata substrings plus any the receipt type adds (e.g. restaurant "SERVER").
+        val metadata = metadataKeywords + profile.extraSkipKeywords
+
+        for (rawLine in text.split('\n', '\r')) {
+            val line = rawLine.trim()
+            if (line.isEmpty()) continue
+            val upper = line.uppercase()
+
+            // Item-count line carries a bare integer, not money, so handle it before the money guard.
+            if (upper.contains("ITEMS SOLD")) {
+                itemCount = lastInteger(line)
+                continue
+            }
+
+            val money = lastMoney(line) ?: continue
+
+            // Discount / instant-savings rows (leading or trailing minus) — credit, don't itemize.
+            if (money.isNegative) {
+                discount += money.value
+                continue
+            }
+
+            // Restaurant tip / gratuity → a "Tip" line item (split among the diners).
+            if (profile.tipKeywordPrefixes.isNotEmpty() &&
+                profile.tipKeywordPrefixes.any { upper.startsWith(it) }
+            ) {
+                items.add(ReceiptItem("Tip", money.value))
+                continue
+            }
+
+            // Summary / metadata rows: capture subtotal / tax / total, never itemize. A row counts
+            // as summary/metadata when its leading label is a summary word ("TOTAL", "TAX", …) or it
+            // carries a distinctive metadata phrase — so a product whose *name* merely contains one
+            // of those words ("COLGATE TOTAL 5.99") is still treated as an item.
+            val leading = leadingLabel(upper)
+            if ((leading != null && leading in summaryLabels) || metadata.any { upper.contains(it) }) {
+                if (upper.contains("SUBTOTAL")) {
+                    subtotal = money.value
+                } else if (upper.contains("TAX") && !upper.contains("N/TAX")) {
+                    // Authoritative "TOTAL TAX" wins; a plain "TAX" line is a fallback. Per-rate
+                    // "%" component lines and FSA-eligibility lines are ignored (review Bug 1).
+                    if (!upper.contains("FSA") && !upper.contains("%")) {
+                        if (upper.contains("TOTAL TAX")) {
+                            tax = money.value
+                        } else if (tax == null) {
+                            tax = money.value
+                        }
+                    }
+                } else if (upper.contains("TOTAL") &&
+                    !upper.contains("SUBTOTAL") &&
+                    !upper.contains("NUMBER") &&
+                    !upper.contains("FSA") &&
+                    !upper.contains("BOB")
+                ) {
+                    total = maxOf(total ?: 0.0, money.value)
+                }
+                continue
+            }
+
+            val name = cleanName(line, money.token)
+            if (name.isEmpty()) continue
+            items.add(ReceiptItem(name, money.value))
+        }
+
+        // Gas: a pump receipt's only "purchase" is the fuel, often printed as the total. When the
+        // profile is fuel-only and nothing itemized, treat the detected total as a single line.
+        if (profile.fuelOnly && items.isEmpty() && total != null) {
+            items.add(ReceiptItem("Fuel", total))
+        }
+
+        return ParsedReceipt(items, discount, subtotal, tax, total, itemCount)
+    }
+
+    /**
+     * The line's leading *label* word: the first word-like token, skipping leading tax flags
+     * (single letters), item-codes / numbers, and `%`/`$`-prefixed tokens. Trailing `:` / leading
+     * `*` style punctuation is trimmed. Returns null if the line has no word token.
+     * "**** TOTAL 619.10" → "TOTAL", "AMOUNT: $5.00" → "AMOUNT", "A 10.25% Tax 6.81" → "TAX",
+     * "COLGATE TOTAL 5.99" → "COLGATE".
+     */
+    private fun leadingLabel(upper: String): String? {
+        for (token in upper.split(' ', '\t').filter { it.isNotEmpty() }) {
+            val t = token.trim(':', '#', '*', '$', '.', ',')
+            if (t.length <= 1) continue // skip flags/codes/empties
+            if (t[0].isLetter()) return t
+        }
+        return null
+    }
+
+    /** The last bare-integer token on a line (used for the "Items Sold" count). */
+    private fun lastInteger(line: String): Int? {
+        var found: Int? = null
+        for (token in line.split(' ', '\t').filter { it.isNotEmpty() }) {
+            if (token.all { it.isDigit() }) token.toIntOrNull()?.let { found = it }
+        }
+        return found
+    }
+
+    private data class Money(val value: Double, val isNegative: Boolean, val token: String)
+
+    private fun lastMoney(line: String): Money? {
+        var found: Money? = null
+        for (token in line.split(' ', '\t').filter { it.isNotEmpty() }) {
+            money(token)?.let { found = it }
+        }
+        return found
+    }
+
+    private fun money(token: String): Money? {
+        var t = token
+        // Drop a trailing single tax-flag letter (Costco: "28.99E", "4.00-A").
+        if (t.length > 1 && t.last().isLetter()) t = t.dropLast(1)
+        t = t.replace("$", "").replace(",", "")
+        // A minus may be trailing ("4.00-") or leading ("-4.00") depending on the printer.
+        var isNegative = false
+        if (t.endsWith("-")) { isNegative = true; t = t.dropLast(1) }
+        if (t.startsWith("-")) { isNegative = true; t = t.drop(1) }
+
+        val dot = t.indexOf('.')
+        if (dot < 0) return null
+        if (t.length - dot != 3) return null // require exactly two decimals
+        val intPart = t.substring(0, dot)
+        val decPart = t.substring(dot + 1)
+        if (intPart.isEmpty() || !intPart.all { it.isDigit() } || !decPart.all { it.isDigit() }) return null
+        val value = t.toDoubleOrNull() ?: return null
+        return Money(value, isNegative, token)
+    }
+
+    private fun cleanName(line: String, priceToken: String): String {
+        val idx = line.indexOf(priceToken)
+        val head = if (idx >= 0) line.substring(0, idx) else line
+        val tokens = head.split(' ', '\t').filter { it.isNotEmpty() }.toMutableList()
+        // Leading single-letter tax flag (Costco prefixes some rows with E/F).
+        if (tokens.isNotEmpty() && tokens[0].length == 1 && tokens[0].all { it.isLetter() }) {
+            tokens.removeAt(0)
+        }
+        // Leading bare item-codes (pure digits, possibly with a stray '/').
+        while (tokens.isNotEmpty() && tokens[0].all { it.isDigit() || it == '/' } && tokens[0].any { it.isDigit() }) {
+            tokens.removeAt(0)
+        }
+        return tokens.joinToString(" ").trim()
+    }
+}

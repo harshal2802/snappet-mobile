@@ -80,21 +80,26 @@ struct KilterHistoryView: View {
         Section("Sessions") {
             ForEach(sessions) { session in
                 let logs = entries.filter { $0.sessionId == session.id }
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(session.startedAt, format: .dateTime.weekday().day().month()).font(.headline)
-                        Text("· \(session.angle)°").font(.subheadline).foregroundStyle(.secondary)
-                        Spacer()
-                        Text(session.source == "ble" ? "BLE" : "Manual")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(session.source == "ble" ? Color.green.opacity(0.2) : Color(.tertiarySystemBackground),
-                                        in: Capsule())
+                NavigationLink(value: KilterSessionRoute(id: session.id)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(session.startedAt, format: .dateTime.weekday().day().month()).font(.headline)
+                            Text("· \(session.angle)°").font(.subheadline).foregroundStyle(.secondary)
+                            Spacer()
+                            if !session.hrSeries.isEmpty {
+                                Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.pink)
+                            }
+                            Text(session.source == "ble" ? "BLE" : "Manual")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8).padding(.vertical, 2)
+                                .background(session.source == "ble" ? Color.green.opacity(0.2) : Color(.tertiarySystemBackground),
+                                            in: Capsule())
+                        }
+                        Text("\(logs.filter { $0.status.isSend }.count) sent · "
+                             + "\(logs.filter { $0.status == .project }.count) proj"
+                             + durationText(session))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("\(logs.filter { $0.status.isSend }.count) sent · "
-                         + "\(logs.filter { $0.status == .project }.count) proj"
-                         + durationText(session))
-                        .font(.caption).foregroundStyle(.secondary)
                 }
                 .accessibilityIdentifier("kilter.sessionRow")
             }

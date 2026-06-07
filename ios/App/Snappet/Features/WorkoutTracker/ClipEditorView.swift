@@ -69,13 +69,12 @@ struct ClipEditorView: View {
     /// The session's HR samples sliced to THIS clip's capture window (`[offsetSec, offsetSec+dur]`),
     /// rebased to 0 — so the HR chart shows the heart rate during the moment this clip was filmed.
     private func hrSamplesForClipWindow() -> [HRPoint] {
-        let sid = media.sessionID
-        guard let session = try? context.fetch(
-            FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.id == sid })).first,
-            !session.hrSeries.isEmpty else { return [] }
+        // The clip's session may be a workout OR a Kilter board session (shared editor).
+        let series = SessionHRSeries.forSession(media.sessionID, in: context)
+        guard !series.isEmpty else { return [] }
         let start = media.offsetSec
         let span = (media.durationSec ?? 0) > 0 ? media.durationSec! : 15
-        return session.hrSeries
+        return series
             .filter { $0.t >= start && $0.t <= start + span }
             .map { HRPoint(t: $0.t - start, bpm: $0.bpm) }
     }

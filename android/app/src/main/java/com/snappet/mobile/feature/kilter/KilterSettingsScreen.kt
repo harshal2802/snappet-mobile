@@ -1,10 +1,15 @@
 package com.snappet.mobile.feature.kilter
 
+import android.text.format.Formatter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -15,6 +20,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -37,7 +44,12 @@ import kotlinx.coroutines.launch
  * catalog.
  */
 @Composable
-fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> Unit) {
+fun KilterSettingsScreen(
+    catalog: KilterCatalog,
+    dao: KilterDao,
+    onCatalogChanged: () -> Unit,
+    onExit: () -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val logs by dao.logsFlow().collectAsState(initial = emptyList())
@@ -45,12 +57,41 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
     var layoutId by remember { mutableStateOf(KilterSettings.layout(context)) }
     var angle by remember { mutableStateOf(KilterSettings.angle(context)) }
     var gradeFormat by remember { mutableStateOf(KilterSettings.gradeFormat(context)) }
+    var apiLevel by remember { mutableStateOf(KilterSettings.apiLevel(context)) }
+    var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
     var layoutMenu by remember { mutableStateOf(false) }
     var angleMenu by remember { mutableStateOf(false) }
+    var sizeMenu by remember { mutableStateOf(false) }
     var confirmingClear by remember { mutableStateOf(false) }
+
+    // Catalog library (issue #42): list downloads, switch active, remove individually, download/import.
+    var libraryVersion by remember { mutableStateOf(0) }
+    val catalogs = remember(libraryVersion) { installedKilterCatalogs(context) }
+    val activeId = remember(libraryVersion) { activeKilterCatalogId(context) }
+    var showDownload by remember { mutableStateOf(false) }
+    var catalogError by remember { mutableStateOf<String?>(null) }
+    val catalogPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                installKilterCatalog(context, FileImportProvider(context, uri))
+                libraryVersion++
+                onCatalogChanged()
+            } catch (e: Exception) {
+                catalogError = e.message
+            }
+        }
+    }
 
     val layouts = remember { catalog.layouts() }
     val angles = remember { catalog.angles() }
+    val sizes = remember(layoutId) { catalog.sizes(layoutId) }
+    // Keep the board-size selection valid for the chosen layout (seed on open, reset on layout change).
+    androidx.compose.runtime.LaunchedEffect(layoutId) {
+        if (sizes.none { it.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(layoutId)
+            KilterSettings.setProductSizeId(context, productSizeId)
+        }
+    }
 
     ModuleScaffold(title = "Kilter Settings", onExit = onExit) { padding ->
         Column(
@@ -67,6 +108,21 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
                         DropdownMenuItem(text = { Text(l.name) }, onClick = {
                             layoutId = l.id; KilterSettings.setLayout(context, l.id); layoutMenu = false
                         })
+                    }
+                }
+            }
+            if (sizes.size > 1) {
+                Box {
+                    OutlinedButton(
+                        onClick = { sizeMenu = true },
+                        modifier = Modifier.testTag("kilter.settings.boardSize"),
+                    ) { Text("Board size: ${sizes.firstOrNull { it.id == productSizeId }?.label ?: "—"}") }
+                    DropdownMenu(expanded = sizeMenu, onDismissRequest = { sizeMenu = false }) {
+                        sizes.forEach { s ->
+                            DropdownMenuItem(text = { Text(s.label) }, onClick = {
+                                productSizeId = s.id; KilterSettings.setProductSizeId(context, s.id); sizeMenu = false
+                            })
+                        }
                     }
                 }
             }
@@ -95,6 +151,69 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
             }
 
             HorizontalDivider()
+            Text("Board protocol", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KilterProtocol.ApiLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = apiLevel == level,
+                        onClick = { apiLevel = level; KilterSettings.setApiLevel(context, level) },
+                        label = { Text(level.label) },
+                        modifier = Modifier.testTag("kilter.settings.apiLevel.${level.name}"),
+                    )
+                }
+            }
+            Text("Almost all boards use Standard. If you connect but the wrong holds light up, switch "
+                + "to Legacy — it's for older controllers.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            HorizontalDivider()
+            Text("Downloaded catalogs", style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            if (catalogs.isEmpty()) {
+                Text("No catalog installed", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                catalogs.forEach { c ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            if (c.id != activeId) { activateKilterCatalog(context, c.id); libraryVersion++; onCatalogChanged() }
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RadioButton(selected = c.id == activeId, onClick = {
+                            if (c.id != activeId) { activateKilterCatalog(context, c.id); libraryVersion++; onCatalogChanged() }
+                        })
+                        Column(Modifier.weight(1f)) {
+                            Text(c.displayName, style = MaterialTheme.typography.bodyMedium)
+                            Text("${c.meta.climbCount} climbs · ${Formatter.formatShortFileSize(context, c.meta.sizeBytes)}",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = { removeKilterCatalog(context, c.id); libraryVersion++; onCatalogChanged() }) {
+                            Text("Remove", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+            catalogError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { catalogError = null; showDownload = true },
+                    modifier = Modifier.testTag("kilter.settings.download"),
+                ) { Text("Download from Kilter…") }
+                OutlinedButton(
+                    onClick = { catalogError = null; catalogPicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.testTag("kilter.settings.import"),
+                ) { Text("Import file…") }
+            }
+            Text("Snappet doesn't ship Kilter's catalog — it lives only on this device. Tap one to make it "
+                + "active, Remove to delete. Removing keeps your logged ascents and saved climbs.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            HorizontalDivider()
             Button(
                 onClick = { confirmingClear = true },
                 enabled = logs.isNotEmpty(),
@@ -119,6 +238,13 @@ fun KilterSettingsScreen(catalog: KilterCatalog, dao: KilterDao, onExit: () -> U
                     }) { Text("Clear") }
                 },
                 dismissButton = { TextButton(onClick = { confirmingClear = false }) { Text("Cancel") } },
+            )
+        }
+
+        if (showDownload) {
+            KilterCatalogDownloadSheet(
+                onInstalled = { libraryVersion++; onCatalogChanged() },
+                onDismiss = { showDownload = false },
             )
         }
     }

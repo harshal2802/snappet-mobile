@@ -1,5 +1,20 @@
 import Foundation
+import HealthKit
 import HighlightEngine
+
+/// What a `MetricsSource` needs to begin a live session, decoupled from any one feature's
+/// session model. Originally `start(for:)` took a `WorkoutSession`, but the sources only ever
+/// read two things from it: the wall-clock `startedAt` (to re-base samples onto the engine's
+/// `HRSample.t` timeline) and the `HKWorkoutActivityType` the watch should record. Lifting those
+/// into a tiny value type lets a **Kilter climbing session** (or any future surface) drive live
+/// HR without pretending to be a `WorkoutSession` (decisions.md 2026-06-06).
+struct LiveMetricsContext: Sendable {
+    /// The session's authoritative zero for `HRSample.t` (seconds since the session began).
+    var startedAt: Date
+    /// The workout type the Apple Watch should start (`HKWorkoutSession`). The BLE band ignores
+    /// it — it just streams HR — so only the watch path reads this.
+    var activityType: HKWorkoutActivityType
+}
 
 /// Source-agnostic lifecycle of a live-metrics source, exposed so the UI (A4 overlay,
 /// the source picker) can show a graceful state without knowing whether HR is coming
@@ -54,9 +69,9 @@ protocol MetricsSource: AnyObject {
     /// A user-facing name for this source (e.g. "Apple Watch", "Polar H10").
     var displayName: String { get }
 
-    /// Start a live session: map the routine to whatever the source needs and reset the
-    /// HR buffer onto this session's `startedAt` timeline.
-    func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?)
+    /// Start a live session: map the context to whatever the source needs and reset the
+    /// HR buffer onto its `startedAt` timeline.
+    func start(_ context: LiveMetricsContext)
     /// End the live session. Buffered `samples` are retained for B2.
     func stop()
 

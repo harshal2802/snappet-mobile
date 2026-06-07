@@ -5,19 +5,26 @@ import SwiftData
 struct KilterClimbRoute: Hashable { let uuid: String }
 struct KilterHistoryRoute: Hashable {}
 struct KilterSettingsRoute: Hashable {}
+/// A finished (or active) board session's rich summary — HR zones, grade pyramid, per-climb
+/// timeline, media + highlight reel.
+struct KilterSessionRoute: Hashable { let id: UUID }
 
-/// Kilter Board catalog: browse climbs from the bundled, read-only catalog, filtered by layout,
+/// Kilter Board catalog: browse climbs from the user-installed, read-only catalog, filtered by layout,
 /// angle, and grade (plus a Saved filter), and open a climb for the board render + logging.
 ///
 /// Pushed into the suite's NavigationStack by the App Library — owns no NavigationStack of its own;
 /// deeper screens (detail, history) push onto the shared `SuiteRouter` path.
 struct KilterRootView: View {
     @Environment(SuiteRouter.self) private var router
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Query private var favorites: [KilterFavorite]
     @Query private var allEntries: [KilterLogEntry]
 
     private let catalog = KilterCatalog.shared
+    /// Whether a catalog is installed — flips the view between the browse list and the opt-in
+    /// `KilterCatalogSyncView`. Kept current via `KilterCatalogStore.didChangeNotification`.
+    @State private var catalogInstalled = KilterCatalogStore.shared.isInstalled
     /// Shared across the module's screens (detail illuminates / sessions group history).
     @State private var board = KilterBoardController()
     @State private var sessions = KilterSessionManager()
@@ -28,6 +35,7 @@ struct KilterRootView: View {
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
     @State private var savedOnly = false
     @State private var items: [KilterListItem] = []
+    @State private var showingScanner = false
 
     // Search + advanced filters.
     @State private var search = ""
@@ -41,6 +49,10 @@ struct KilterRootView: View {
     @State private var cotd: KilterListItem?
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
+    /// Board-protocol dialect (Standard/Legacy), persisted; pushed into the shared controller so any
+    /// screen that changes it (Settings, or the detail view's "wrong holds?" fix) takes effect at once.
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
+    private var apiLevel: KilterProtocol.APILevel { .init(rawValue: apiLevelRaw) ?? .v3 }
     /// Discovery (climb-of-the-day) shows only on the plain browse view, not while searching/saved.
     private var showDiscovery: Bool { search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly }
 
@@ -52,6 +64,17 @@ struct KilterRootView: View {
                      minAscents: minAscents, minQuality: minQuality)
     }
 
+    /// The climbs currently on screen, in display order — handed to the detail view so the user can
+    /// swipe left/right between them. Climb-of-the-day leads when shown; deduped (it often recurs in
+    /// the list).
+    private var browseUUIDs: [String] {
+        var ids: [String] = []
+        if showDiscovery, let cotd { ids.append(cotd.uuid) }
+        ids.append(contentsOf: items.map(\.uuid))
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
     private var layouts: [KilterLayout] { catalog.layouts() }
     private var availableAngles: [Int] { catalog.angles() }
     private var gradeScale: [(difficulty: Int, label: String)] { catalog.gradeScale() }
@@ -59,11 +82,12 @@ struct KilterRootView: View {
 
     var body: some View {
         Group {
-            if catalog.isAvailable {
+            if catalogInstalled && catalog.isAvailable {
                 content
             } else {
-                ContentUnavailableView("Catalog unavailable", systemImage: "exclamationmark.triangle",
-                    description: Text("The bundled Kilter catalog couldn't be opened."))
+                // No catalog on this device yet — Snappet ships none (issue #42). Offer the opt-in
+                // import flow instead of an empty list.
+                KilterCatalogSyncView(onInstalled: reloadCatalog)
             }
         }
         .navigationTitle("Kilter Board")
@@ -96,6 +120,10 @@ struct KilterRootView: View {
                     }
                     Button { surpriseMe() } label: { Label("Surprise me", systemImage: "dice") }
                         .accessibilityIdentifier("kilter.surprise")
+                    Button { showingScanner = true } label: {
+                        Label("Scan QR code", systemImage: "qrcode.viewfinder")
+                    }
+                    .accessibilityIdentifier("kilter.scan")
                     Divider()
                     Button { router.push(KilterSettingsRoute()) } label: {
                         Label("Settings", systemImage: "gearshape")
@@ -110,8 +138,15 @@ struct KilterRootView: View {
             KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
                                minAscents: $minAscents, minQuality: $minQuality)
         }
+        .sheet(isPresented: $showingScanner) {
+            KilterScannerView { link in
+                // Open at the shared angle the sharer used, when it's one this board offers.
+                if let a = link.angle, availableAngles.contains(a) { angle = a }
+                router.push(KilterClimbRoute(uuid: link.uuid))
+            }
+        }
         .navigationDestination(for: KilterClimbRoute.self) { route in
-            KilterClimbDetailView(uuid: route.uuid, board: board, sessions: sessions)
+            KilterClimbDetailView(uuid: route.uuid, siblings: browseUUIDs, board: board, sessions: sessions)
         }
         .navigationDestination(for: KilterHistoryRoute.self) { _ in
             KilterHistoryView()
@@ -119,12 +154,54 @@ struct KilterRootView: View {
         .navigationDestination(for: KilterSettingsRoute.self) { _ in
             KilterSettingsView(catalog: catalog)
         }
+        .navigationDestination(for: KilterSessionRoute.self) { route in
+            KilterSessionDetailView(sessionID: route.id, board: board, sessions: sessions)
+        }
         .task(id: filterKey) { refresh() }
+        // Re-open the reader + refresh when the installed catalog changes (import here, or "Remove"
+        // in Settings), wherever the change originated.
+        .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
+            reloadCatalog()
+        }
+        // Wire the session manager to the app's live-metrics / Live-Activity / media services so a
+        // session (started here or auto-opened on board connect) drives HR + the Live Activity.
+        .onAppear {
+            sessions.bind(liveWorkout: app.liveWorkout,
+                          liveActivity: app.kilterLiveActivity,
+                          media: app.sessionMedia)
+            board.setAPILevel(apiLevel)
+        }
+        // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
+        .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
+        // Keep the Live Activity's HR / climb count current while any Kilter screen is up (the root
+        // view stays in the nav stack), throttled inside the controller.
+        .onChange(of: app.liveWorkout.latestHR) { pushLiveActivity() }
+        .onChange(of: sessions.activeClimbName) { pushLiveActivity() }
+        .onChange(of: currentClimbCount) { pushLiveActivity() }
+    }
+
+    /// Climbs logged so far in the active session (the count shown in the banner + Live Activity).
+    private var currentClimbCount: Int {
+        guard let id = sessions.currentId else { return 0 }
+        return allEntries.filter { $0.sessionId == id }.count
+    }
+
+    private func pushLiveActivity() {
+        guard sessions.isActive else { return }
+        sessions.pushLiveActivity(hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
+                                  climbCount: currentClimbCount)
     }
 
     /// Push a random climb from the current filters (Discovery "Surprise me").
     private func surpriseMe() {
         if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
+    }
+
+    /// Re-open the reader after the installed catalog changes, then refresh the list.
+    private func reloadCatalog() {
+        catalog.reload()
+        catalogInstalled = KilterCatalogStore.shared.isInstalled
+        refresh()
     }
 
     private var content: some View {
@@ -168,22 +245,42 @@ struct KilterRootView: View {
         }
     }
 
-    /// Active-session banner: a live timer + climb count, with End. Logs made while it's up are
+    /// Active-session banner: a live timer, climb count, live HR (when a source is connected), and
+    /// the current climb, with End. Tapping it opens the live summary. Logs made while it's up are
     /// grouped under the session in History.
     @ViewBuilder private var sessionBar: some View {
         if let s = sessions.current {
             let count = allEntries.filter { $0.sessionId == s.id }.count
-            HStack(spacing: 8) {
-                Image(systemName: "record.circle").foregroundStyle(.green)
-                    .symbolEffect(.pulse, options: .repeating)
-                    .font(.subheadline)
-                Text("Session").font(.subheadline.weight(.semibold))
-                Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-                Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("kilter.session.end")
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "record.circle").foregroundStyle(.green)
+                        .symbolEffect(.pulse, options: .repeating)
+                        .font(.subheadline)
+                    Text("Session").font(.subheadline.weight(.semibold))
+                    Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    if app.liveWorkout.state != .unavailable {
+                        KilterHRPill(bpm: app.liveWorkout.latestHR, compact: true)
+                    }
+                    Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
+                        .font(.subheadline.weight(.semibold))
+                        .accessibilityIdentifier("kilter.session.end")
+                }
+                Button { router.push(KilterSessionRoute(id: s.id)) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "figure.climbing").font(.caption)
+                        Text(sessions.activeClimbName).font(.caption.weight(.medium)).lineLimit(1)
+                        if !sessions.activeClimbGrade.isEmpty {
+                            Text(sessions.activeClimbGrade).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("kilter.session.open")
             }
             .padding(.horizontal).padding(.vertical, 8)
             .background(Color.green.opacity(0.12))
@@ -211,15 +308,23 @@ struct KilterRootView: View {
                     } label: { chip("Angle", "\(angle)°") }
                     .accessibilityIdentifier("kilter.angle")
 
+                    // Lower/upper grade are two independent chips. Selecting a min above the current
+                    // max (or a max below the min) drags the other end along so the range stays valid.
                     Menu {
-                        Picker("From", selection: $minGrade) {
+                        Picker("Min grade", selection: $minGrade) {
                             ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
                         }
-                        Picker("To", selection: $maxGrade) {
+                    } label: { chip("Min", catalog.gradeLabel(Double(minGrade))) }
+                    .accessibilityIdentifier("kilter.minGrade")
+                    .onChange(of: minGrade) { _, newMin in if newMin > maxGrade { maxGrade = newMin } }
+
+                    Menu {
+                        Picker("Max grade", selection: $maxGrade) {
                             ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
                         }
-                    } label: { chip("Grade", "\(catalog.gradeLabel(Double(minGrade)))–\(catalog.gradeLabel(Double(maxGrade)))") }
-                    .accessibilityIdentifier("kilter.grade")
+                    } label: { chip("Max", catalog.gradeLabel(Double(maxGrade))) }
+                    .accessibilityIdentifier("kilter.maxGrade")
+                    .onChange(of: maxGrade) { _, newMax in if newMax < minGrade { minGrade = newMax } }
                 }
                 .padding(.leading)
                 .padding(.vertical, 8)

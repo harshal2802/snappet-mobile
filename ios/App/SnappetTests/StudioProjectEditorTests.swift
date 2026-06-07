@@ -66,14 +66,39 @@ final class StudioProjectEditorTests: XCTestCase {
     }
 
     func testSetOverlayScaleClamps() {
-        let ov = OverlayItem(kind: .video, content: "pip-id")
+        // Text/sticker/climb-name font scale: ranges past 1 (bigger text), clamped to 0.2…6.
+        let ov = OverlayItem(kind: .climbName, content: "5c · 40°")
         var s = empty(); s.overlays = [ov]
-        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0.5)
-        XCTAssertEqual(s.overlays.first?.scale, 0.5)
-        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 5)   // clamps to 1
-        XCTAssertEqual(s.overlays.first?.scale, 1)
-        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0)   // clamps to 0.1
-        XCTAssertEqual(s.overlays.first?.scale, 0.1)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 2.5)
+        XCTAssertEqual(s.overlays.first?.scale, 2.5)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 99)  // clamps to 6
+        XCTAssertEqual(s.overlays.first?.scale, 6)
+        s = StudioProjectEditor.setOverlayScale(s, id: ov.id, scale: 0)   // clamps to 0.2
+        XCTAssertEqual(s.overlays.first?.scale, 0.2)
+    }
+
+    // MARK: - base-video collage frame
+
+    func testSetAndClearBaseFrameClampsAndToggles() {
+        var s = empty()
+        XCTAssertNil(s.baseFrame)
+        s = StudioProjectEditor.setBaseFrame(s, center: CGPoint(x: 0.5, y: 0.3),
+                                             size: CGSize(width: 0.8, height: 0.45))
+        XCTAssertEqual(s.baseFrame?.center, CGPoint(x: 0.5, y: 0.3))
+        XCTAssertEqual(s.baseFrame?.size, CGSize(width: 0.8, height: 0.45))
+        // Out-of-range centre clamps to the unit square; size clamps each axis to 0.1…1.
+        s = StudioProjectEditor.setBaseFrame(s, center: CGPoint(x: 1.4, y: -0.2),
+                                             size: CGSize(width: 0.02, height: 9))
+        XCTAssertEqual(s.baseFrame?.center, CGPoint(x: 1, y: 0))
+        XCTAssertEqual(s.baseFrame?.size, CGSize(width: 0.1, height: 1))
+        // Clearing restores the full-canvas (legacy) behaviour.
+        s = StudioProjectEditor.clearBaseFrame(s)
+        XCTAssertNil(s.baseFrame)
+    }
+
+    func testStudioFrameRectIsFull() {
+        XCTAssertTrue(StudioFrameRect(centerX: 0.5, centerY: 0.5, width: 1, height: 1).isFull)
+        XCTAssertFalse(StudioFrameRect.half.isFull)   // half-height cell is not "full"
     }
 
     func testOverlayOpacityKeyframesAddSortedAndReplaceSameTime() {
@@ -86,6 +111,101 @@ final class StudioProjectEditorTests: XCTestCase {
         s = StudioProjectEditor.addOverlayOpacityKeyframe(s, id: ov.id, timeSec: 1.01, value: 0.5)
         XCTAssertEqual(s.overlays.first?.opacityKeyframes.count, 2)
         XCTAssertEqual(s.overlays.first?.opacityKeyframes.first?.value, 0.5)
+    }
+
+    func testRichTextStyleSettersUpdateTheOverlay() {
+        let ov = OverlayItem(kind: .climbName, content: "Pez")
+        var s = empty(); s.overlays = [ov]
+        // Colour + highlight (set, then clear).
+        s = StudioProjectEditor.setOverlayColor(s, id: ov.id, hex: "#FF3B30")
+        XCTAssertEqual(s.overlays.first?.colorHex, "#FF3B30")
+        s = StudioProjectEditor.setOverlayHighlight(s, id: ov.id, hex: "#0A84FF")
+        XCTAssertEqual(s.overlays.first?.highlightHex, "#0A84FF")
+        s = StudioProjectEditor.setOverlayHighlight(s, id: ov.id, hex: nil)
+        XCTAssertNil(s.overlays.first?.highlightHex)
+        // Font preset.
+        s = StudioProjectEditor.setOverlayFont(s, id: ov.id, font: .serif)
+        XCTAssertEqual(s.overlays.first?.font, .serif)
+        // Bold / italic are set independently (nil leaves the other unchanged).
+        s = StudioProjectEditor.setOverlayStyle(s, id: ov.id, bold: false)
+        XCTAssertEqual(s.overlays.first?.bold, false)
+        XCTAssertEqual(s.overlays.first?.italic, false)   // untouched
+        s = StudioProjectEditor.setOverlayStyle(s, id: ov.id, italic: true)
+        XCTAssertEqual(s.overlays.first?.italic, true)
+        XCTAssertEqual(s.overlays.first?.bold, false)      // untouched
+    }
+
+    func testOverlayDefaultsAreMigrationSafe() {
+        // A freshly-decoded/old overlay defaults: system font, bold, not italic, no highlight.
+        let ov = OverlayItem(kind: .text, content: "Hi")
+        XCTAssertEqual(ov.font, .system)
+        XCTAssertTrue(ov.bold)
+        XCTAssertFalse(ov.italic)
+        XCTAssertNil(ov.highlightHex)
+    }
+
+    func testOverlayDecodesFromPreStyleJSON() throws {
+        // An overlay persisted BEFORE the rich-text fields (no highlightHex / fontRaw / boldRaw /
+        // italicRaw). Swift's synthesized Decodable throws `keyNotFound` for a missing NON-optional key,
+        // so these MUST stay optional — this guards the migration crash (StudioProject.overlays decode).
+        let json = """
+        {"id":"\(UUID().uuidString)","kindRaw":"climbName","content":"Pez","startSec":0,"endSec":3,\
+        "normalizedX":0.5,"normalizedY":0.85,"scale":1,"rotationDegrees":0,"opacity":1,\
+        "colorHex":"#FFFFFF","opacityKeyframes":[]}
+        """.data(using: .utf8)!
+        let ov = try JSONDecoder().decode(OverlayItem.self, from: json)
+        XCTAssertEqual(ov.content, "Pez")
+        XCTAssertEqual(ov.font, .system)   // defaults applied via the non-optional accessors
+        XCTAssertTrue(ov.bold)
+        XCTAssertFalse(ov.italic)
+        XCTAssertNil(ov.highlightHex)
+    }
+
+    func testSetOverlayContentReplacesText() {
+        let ov = OverlayItem(kind: .climbName, content: "Old")
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayContent(s, id: ov.id, content: "New\nLine")
+        XCTAssertEqual(s.overlays.first?.content, "New\nLine")
+        // Unknown id is a no-op.
+        s = StudioProjectEditor.setOverlayContent(s, id: UUID(), content: "X")
+        XCTAssertEqual(s.overlays.first?.content, "New\nLine")
+    }
+
+    func testSetOverlayTimeRangeClampsAndKeepsMinLength() {
+        let ov = OverlayItem(kind: .text, content: "A", startSec: 0, endSec: 3)
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayTimeRange(s, id: ov.id, start: 2, end: 6)
+        XCTAssertEqual(s.overlays.first?.startSec, 2); XCTAssertEqual(s.overlays.first?.endSec, 6)
+        // Negative start clamps to 0; an inverted/collapsed range keeps a 0.2s minimum length.
+        s = StudioProjectEditor.setOverlayTimeRange(s, id: ov.id, start: -1, end: -1)
+        XCTAssertEqual(s.overlays.first?.startSec, 0)
+        XCTAssertEqual(s.overlays.first?.endSec ?? 0, 0.2, accuracy: 1e-9)
+    }
+
+    func testSetOverlayFrameWritesPerAxisSizeAndClamps() {
+        let ov = OverlayItem(kind: .video, content: "pip")
+        var s = empty(); s.overlays = [ov]
+        s = StudioProjectEditor.setOverlayFrame(s, id: ov.id, center: CGPoint(x: 0.25, y: 0.5),
+                                                size: CGSize(width: 0.5, height: 1))
+        XCTAssertEqual(s.overlays.first?.position, CGPoint(x: 0.25, y: 0.5))
+        XCTAssertEqual(s.overlays.first?.pipSize, CGSize(width: 0.5, height: 1))
+        // Out-of-range size clamps each axis to 0.1…1; centre clamps to the unit square.
+        s = StudioProjectEditor.setOverlayFrame(s, id: ov.id, center: CGPoint(x: 1.5, y: -0.2),
+                                                size: CGSize(width: 0, height: 9))
+        XCTAssertEqual(s.overlays.first?.position, CGPoint(x: 1, y: 0))
+        XCTAssertEqual(s.overlays.first?.pipSize, CGSize(width: 0.1, height: 1))
+    }
+
+    func testApplyPiPGridTilesVideoOverlaysInOrder() {
+        let a = OverlayItem(kind: .video, content: "a")
+        let txt = OverlayItem(kind: .text, content: "skip")   // non-video is left alone
+        let b = OverlayItem(kind: .video, content: "b")
+        var s = empty(); s.overlays = [a, txt, b]
+        s = StudioProjectEditor.applyPiPGrid(s, preset: .sideBySide)
+        XCTAssertEqual(s.overlays.first { $0.id == a.id }?.position, CGPoint(x: 0.25, y: 0.5))
+        XCTAssertEqual(s.overlays.first { $0.id == b.id }?.position, CGPoint(x: 0.75, y: 0.5))
+        XCTAssertEqual(s.overlays.first { $0.id == a.id }?.pipSize, CGSize(width: 0.5, height: 1))
+        XCTAssertEqual(s.overlays.first { $0.id == txt.id }?.position, CGPoint(x: 0.5, y: 0.5))  // untouched
     }
 
     // MARK: - add / remove / move

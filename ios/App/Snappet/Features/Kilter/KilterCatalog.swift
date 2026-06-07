@@ -1,13 +1,16 @@
 import Foundation
 import SQLite3
 
-/// Read-only access layer over the bundled `kilter.sqlite3` catalog (built by
-/// `tools/kilter/build_bundled_db.py`). This is **static reference data** — opened read-only, never
-/// written, and kept out of SwiftData (which owns user data). All queries are synchronous over a
-/// small bundled DB (≈800 climbs); cheap enough to call from the main actor like reading a plist.
+/// Read-only access layer over the **user-installed** `kilter.sqlite3` catalog, opened from
+/// `KilterCatalogStore` (the app ships no catalog — issue #42; the user imports one themselves). This
+/// is static reference data — opened read-only, never written, and kept out of SwiftData (which owns
+/// user data). All queries are synchronous over a small DB; cheap enough to call from the main actor
+/// like reading a plist.
 ///
-/// On-device only: no network, ever. A missing/corrupt asset degrades to an empty catalog rather
-/// than crashing the suite.
+/// On-device only: the reader never touches a network. When nothing is installed (or the file is
+/// corrupt) it degrades to an empty catalog (`isAvailable == false`) and the module shows the opt-in
+/// `KilterCatalogSyncView` rather than crashing the suite. Re-open after an install/remove via
+/// `reload()` (the Kilter screens call it on `KilterCatalogStore.didChangeNotification`).
 ///
 /// Used exclusively from the main thread (the Kilter views), so it isn't `@MainActor`-isolated —
 /// that would make `KilterCatalog.shared` unusable in the views' stored-property initializers. The
@@ -19,8 +22,11 @@ final class KilterCatalog {
     /// `placement_id -> (boardX, boardY)` for every placement (loaded once; ~3.7k rows).
     private var placementXY: [Int: (x: Int, y: Int)] = [:]
     private var placementHole: [Int: Int] = [:]
-    /// `role_id -> screen color hex`.
+    /// `role_id -> screen color hex` (for the on-screen render).
     private var roleScreenColor: [Int: String] = [:]
+    /// `role_id -> LED color hex` (`placement_roles.led_color` — what the physical board should show;
+    /// differs from `screen_color` for some roles, e.g. start is `00FF00` LED vs `00DD00` on screen).
+    private var roleLedColor: [Int: String] = [:]
     /// `difficulty (rounded) -> grade label` (e.g. 16 -> "6a/V3").
     private var grades: [Int: String] = [:]
 
@@ -31,14 +37,30 @@ final class KilterCatalog {
 
     private init() { open() }
 
+    /// Open the user-installed catalog from `KilterCatalogStore`. When nothing is installed, `db`
+    /// stays nil and `isAvailable` is false (the module shows the opt-in sync screen).
     private func open() {
-        guard let url = Bundle.main.url(forResource: "kilter", withExtension: "sqlite3"),
-              sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+        let store = KilterCatalogStore.shared
+        guard store.isInstalled,
+              sqlite3_open_v2(store.resolvedCatalogURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK
+        else {
             db = nil
             return
         }
         loadReference()
         isAvailable = !grades.isEmpty
+    }
+
+    /// Re-open after the installed catalog changes (import or remove). Main-thread only, per this
+    /// type's convention — the Kilter screens call it when `KilterCatalogStore.didChangeNotification`
+    /// fires. Clears every cache so geometry/grades from a previous catalog can't leak through.
+    func reload() {
+        if db != nil { sqlite3_close(db); db = nil }
+        isAvailable = false
+        grades.removeAll(); roleScreenColor.removeAll(); roleLedColor.removeAll()
+        placementXY.removeAll(); placementHole.removeAll()
+        extentCache.removeAll(); geometryCache.removeAll(); ledCache.removeAll(); sizesCache.removeAll()
+        open()
     }
 
     // MARK: - Reference data (loaded once)
@@ -47,8 +69,9 @@ final class KilterCatalog {
         query("SELECT difficulty, boulder_name FROM difficulty_grades") { s in
             self.grades[Self.int(s, 0)] = Self.text(s, 1)
         }
-        query("SELECT id, screen_color FROM placement_roles") { s in
+        query("SELECT id, screen_color, led_color FROM placement_roles") { s in
             self.roleScreenColor[Self.int(s, 0)] = Self.text(s, 1)
+            self.roleLedColor[Self.int(s, 0)] = Self.text(s, 2)
         }
         query("SELECT p.id, h.x, h.y, p.hole_id FROM placements p JOIN holes h ON h.id = p.hole_id") { s in
             let pid = Self.int(s, 0)
@@ -59,7 +82,7 @@ final class KilterCatalog {
 
     // MARK: - Public reads
 
-    /// Listed layouts that actually have climbs in the bundled catalog, in catalog order.
+    /// Listed layouts that actually have climbs in the installed catalog, in catalog order.
     func layouts() -> [KilterLayout] {
         var out: [KilterLayout] = []
         query("""
@@ -229,21 +252,27 @@ final class KilterCatalog {
     /// Holds are normalized against the **whole board's** hole extent for the climb's layout (not the
     /// climb's own `edge_*` bounds), so every climb renders at the same scale and the lit holds line
     /// up exactly with the faint grid from `boardGeometry(forLayout:)`.
-    func holds(for climb: KilterClimb) -> [KilterHold] {
+    /// `sizeId` is the user's physical board's `product_size_id` (from the Board-size preference). It
+    /// selects which `leds` mapping to use — **critical**, since the same hole has a *different* LED
+    /// address on each board size, so an arbitrary/wrong size lights the wrong holds. When `sizeId` is
+    /// `0` or not valid for this layout, it falls back to the layout's smallest size.
+    func holds(for climb: KilterClimb, sizeId: Int = 0) -> [KilterHold] {
         let e = extent(forLayout: climb.layoutId)
         let w = Double(e.maxX - e.minX), h = Double(e.maxY - e.minY)
         guard w > 0, h > 0 else { return [] }
-        let leds = ledPositions(forLayout: climb.layoutId)
+        let leds = ledPositions(forSize: effectiveSizeId(forLayout: climb.layoutId, requested: sizeId))
         var out: [KilterHold] = []
         for (placementId, roleId) in Self.parseFrames(climb.frames) {
             guard let (bx, by) = placementXY[placementId] else { continue }
             let nx = (Double(bx) - Double(e.minX)) / w
             let ny = (Double(by) - Double(e.minY)) / h
+            let screen = roleScreenColor[roleId] ?? "FFFFFF"
             out.append(KilterHold(
                 placementId: placementId,
                 x: min(max(nx, 0), 1),
                 y: 1 - min(max(ny, 0), 1),   // board y is bottom-up; view y is top-down
-                colorHex: roleScreenColor[roleId] ?? "FFFFFF",
+                colorHex: screen,
+                ledColorHex: roleLedColor[roleId] ?? screen,
                 role: Self.roleName(roleId),
                 ledPosition: placementHole[placementId].flatMap { leds[$0] }))
         }
@@ -305,22 +334,55 @@ final class KilterCatalog {
         grades.keys.sorted().map { ($0, grades[$0]!) }
     }
 
-    // MARK: - LED mapping (per layout, for BLE)
+    // MARK: - Board sizes & LED mapping (per product size, for BLE)
 
-    private var ledCache: [Int: [Int: Int]] = [:]   // layoutId -> (holeId -> led position)
-    private func ledPositions(forLayout layoutId: Int) -> [Int: Int] {
-        if let cached = ledCache[layoutId] { return cached }
-        var sizeId = 0
-        query("SELECT MIN(product_size_id) FROM product_sizes_layouts_sets WHERE layout_id = ?",
-              bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
-            sizeId = Self.int(s, 0)
+    private var ledCache: [Int: [Int: Int]] = [:]    // product_size_id -> (holeId -> led position)
+    private var sizesCache: [Int: [KilterBoardSize]] = [:]   // layoutId -> available sizes
+
+    /// The physical board sizes available for a layout (e.g. Original → 7×10, 8×12, 12×14, …). The user
+    /// picks theirs in Settings; the choice drives `holds(for:sizeId:)` so the right LEDs light. Ordered
+    /// by `product_size_id` (the catalog's own order). Falls back to bare ids if `product_sizes` is
+    /// absent (older catalog), so the picker still works.
+    func sizes(forLayout layoutId: Int) -> [KilterBoardSize] {
+        if let cached = sizesCache[layoutId] { return cached }
+        var out: [KilterBoardSize] = []
+        query("""
+            SELECT ps.id, ps.name, COALESCE(ps.description, '')
+            FROM product_sizes ps
+            WHERE ps.id IN (SELECT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ?)
+            ORDER BY ps.id
+        """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+            out.append(KilterBoardSize(id: Self.int(s, 0), name: Self.text(s, 1), detail: Self.text(s, 2)))
         }
+        if out.isEmpty {
+            query("SELECT DISTINCT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ? "
+                  + "ORDER BY product_size_id", bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+                out.append(KilterBoardSize(id: Self.int(s, 0), name: "Size \(Self.int(s, 0))", detail: ""))
+            }
+        }
+        sizesCache[layoutId] = out
+        return out
+    }
+
+    /// The default size for a layout when the user hasn't chosen one — the smallest `product_size_id`,
+    /// matching the catalog's natural order. (Selection still beats this; it only seeds the picker.)
+    func defaultSizeId(forLayout layoutId: Int) -> Int { sizes(forLayout: layoutId).map(\.id).min() ?? 0 }
+
+    /// Resolve the size to actually use: the requested one if it's valid for this layout, else the
+    /// layout's default. Guards against a stale preference (e.g. a size from another layout).
+    private func effectiveSizeId(forLayout layoutId: Int, requested: Int) -> Int {
+        let ids = sizes(forLayout: layoutId).map(\.id)
+        return ids.contains(requested) ? requested : (ids.min() ?? 0)
+    }
+
+    private func ledPositions(forSize sizeId: Int) -> [Int: Int] {
+        if let cached = ledCache[sizeId] { return cached }
         var map: [Int: Int] = [:]
         query("SELECT hole_id, position FROM leds WHERE product_size_id = ?",
               bind: { s in sqlite3_bind_int64(s, 1, Int64(sizeId)) }) { s in
             map[Self.int(s, 0)] = Self.int(s, 1)
         }
-        ledCache[layoutId] = map
+        ledCache[sizeId] = map
         return map
     }
 

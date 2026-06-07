@@ -41,6 +41,14 @@ class KilterBoardController(context: Context) {
     /** Notified when the connection comes up / goes down, so the module can open/close a session. */
     var onConnectionChange: ((Boolean) -> Unit)? = null
 
+    /** Which Aurora payload dialect to send. Default V3 (current boards); switched to V2 when a user
+     *  with an older board reports the wrong holds lighting up. Persisted by the UI, pushed via
+     *  [setApiLevel]. */
+    var apiLevel: KilterProtocol.ApiLevel = KilterProtocol.ApiLevel.V3
+        private set
+    /** The most recently requested holds, so a protocol switch can re-light the current climb at once. */
+    private var lastHolds: List<KilterHold> = emptyList()
+
     private val appContext = context.applicationContext
     private val adapter = (appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
     private var gatt: BluetoothGatt? = null
@@ -97,6 +105,7 @@ class KilterBoardController(context: Context) {
 
     /** Light the given holds (no-op unless connected). Stores them if not yet ready to flush. */
     fun illuminate(holds: List<KilterHold>) {
+        lastHolds = holds
         val characteristic = writeChar
         if (!isConnected || gatt == null || characteristic == null) {
             pending = holds
@@ -105,11 +114,20 @@ class KilterBoardController(context: Context) {
         send(holds, characteristic)
     }
 
+    /** Switch the payload dialect and, if a climb is currently lit, re-send it so the change shows on
+     *  the wall immediately. No-op when unchanged — safe to call on every settings sync. */
+    fun setApiLevel(level: KilterProtocol.ApiLevel) {
+        if (level == apiLevel) return
+        apiLevel = level
+        val characteristic = writeChar
+        if (isConnected && characteristic != null && lastHolds.isNotEmpty()) send(lastHolds, characteristic)
+    }
+
     @SuppressLint("MissingPermission")
     private fun send(holds: List<KilterHold>, characteristic: BluetoothGattCharacteristic) {
-        val payload = holds.mapNotNull { h -> h.ledPosition?.let { it to h.colorHex } }
+        val payload = holds.mapNotNull { h -> h.ledPosition?.let { it to h.ledColorHex } }  // LED color, not on-screen
         writeQueue.clear()
-        writeQueue.addAll(KilterProtocol.messages(payload))
+        writeQueue.addAll(KilterProtocol.messages(payload, apiLevel))
         dequeueWrite(characteristic)
     }
 
@@ -193,7 +211,7 @@ class KilterBoardController(context: Context) {
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-            val characteristic = g.getService(SERVICE_UUID)?.getCharacteristic(WRITE_UUID)
+            val characteristic = g.getService(GATT_SERVICE_UUID)?.getCharacteristic(WRITE_UUID)
             if (characteristic == null) {
                 gatt?.disconnect()
                 fail("This board didn't expose the expected controls.")
@@ -213,9 +231,14 @@ class KilterBoardController(context: Context) {
     }
 
     companion object {
-        // Aurora/Kilter board GATT (community-sourced — verify against hardware).
-        private val SERVICE_UUID: UUID = UUID.fromString("4488b571-7806-4df6-bcff-a2897e4953ff")
-        private val WRITE_UUID: UUID = UUID.fromString("4488b572-7806-4df6-bcff-a2897e4953ff")
+        // Aurora/Kilter board BLE addressing. Two distinct UUIDs — conflating them was the connect bug:
+        //  * ADVERTISED_SERVICE_UUID is what the board *advertises* (used only to recognise it while
+        //    scanning); it is not where illumination data is written.
+        //  * the writable endpoint is the Nordic UART GATT service + characteristic, shared by the whole
+        //    Aurora family (Kilter / Tension / Grasshopper / …) — there is no per-board variation here.
+        private val ADVERTISED_SERVICE_UUID: UUID = UUID.fromString("4488b571-7806-4df6-bcff-a2897e4953ff")
+        private val GATT_SERVICE_UUID: UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
+        private val WRITE_UUID: UUID = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e")
         private const val SCAN_TIMEOUT_MS = 12_000L
         private const val CONNECT_TIMEOUT_MS = 12_000L
 
@@ -225,7 +248,7 @@ class KilterBoardController(context: Context) {
          * primary service UUID, only a local name — so name matching is the primary signal.
          */
         fun isLikelyBoard(name: String?, serviceUuids: List<UUID>?): Boolean {
-            if (serviceUuids?.contains(SERVICE_UUID) == true) return true
+            if (serviceUuids?.contains(ADVERTISED_SERVICE_UUID) == true) return true
             val lower = name?.lowercase() ?: return false
             return listOf("kilter", "aurora", "tension", "grasshopper", "decoy", "soill").any { lower.contains(it) }
         }

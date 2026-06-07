@@ -20,9 +20,20 @@ struct StudioEditorView: View {
     @State private var activeTool: StudioTool?
     @State private var importingMusic = false
     @State private var choosingPiP = false
+    @State private var editingOverlay = false
+    @State private var overlayTextDraft = ""
+    @State private var overlayTextTarget: UUID?
+    @State private var stylingOverlay = false
 
-    init(project: StudioProject, context: ModelContext) {
-        _vm = State(initialValue: StudioEditorViewModel(project: project, context: context))
+    /// `SessionMedia.id` of a clip to pre-select when the studio opens (e.g. tapping one clip in a
+    /// gallery jumps straight to editing it). `nil` keeps the default (no/first selection).
+    private let focusClipMediaID: UUID?
+
+    init(project: StudioProject, context: ModelContext, focusClipMediaID: UUID? = nil,
+         visibleClipMediaIDs: Set<UUID>? = nil) {
+        _vm = State(initialValue: StudioEditorViewModel(project: project, context: context,
+                                                        visibleClipMediaIDs: visibleClipMediaIDs))
+        self.focusClipMediaID = focusClipMediaID
     }
 
     var body: some View {
@@ -37,7 +48,13 @@ struct StudioEditorView: View {
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(SnappetColor.workout)
-        .task { await vm.onAppear() }
+        .task {
+            await vm.onAppear()
+            // Jump straight to the tapped clip (gallery → edit-this-clip), if one was requested.
+            if let mid = focusClipMediaID, let clip = vm.clips.first(where: { $0.sessionMediaID == mid }) {
+                vm.select(clip.id)
+            }
+        }
         .onChange(of: vm.exportState) { _, state in
             if case .exported = state { showingShare = true }
         }
@@ -46,7 +63,12 @@ struct StudioEditorView: View {
         }
         .sheet(item: $activeTool) { tool in
             StudioToolSheet(tool: tool, vm: vm)
-                .presentationDetents([(tool == .adjust || tool == .hr) ? .height(380) : .height(260)])
+                .presentationDetents([(tool == .adjust || tool == .hr || tool == .grid) ? .height(380) : .height(260)])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $stylingOverlay) {
+            StudioTextStyleControls(vm: vm)
+                .presentationDetents([.height(420)])
                 .presentationDragIndicator(.visible)
         }
         .alert("Add text", isPresented: $addingText) {
@@ -57,6 +79,11 @@ struct StudioEditorView: View {
         .alert("Rename", isPresented: $renaming) {
             TextField("Title", text: $titleDraft)
             Button("Save") { vm.rename(titleDraft) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Edit text", isPresented: $editingOverlay) {
+            TextField("Text", text: $overlayTextDraft)
+            Button("Save") { if let id = overlayTextTarget { vm.editOverlayText(id, overlayTextDraft) } }
             Button("Cancel", role: .cancel) {}
         }
         .fileImporter(isPresented: $importingMusic, allowedContentTypes: [.audio]) { result in
@@ -124,9 +151,15 @@ struct StudioEditorView: View {
             // normalized position export reads, so what you place is what renders.
             StudioOverlayCanvas(overlays: vm.overlays, ratio: vm.previewRatio,
                                 selectedID: vm.selectedOverlayID,
+                                snapEnabled: vm.snapEnabled,
+                                baseFrame: vm.baseFrame,
+                                sourceAspects: vm.sourceAspects,
+                                baseAspect: vm.baseSourceAspect,
                                 onSelect: { vm.selectOverlay($0) },
                                 onMove: { vm.setOverlayPosition($0, normalized: $1) },
-                                onScale: { vm.setOverlayScale($0, $1) })
+                                onScale: { vm.setOverlayScale($0, $1) },
+                                onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
+                                onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
             // Live heart-rate chart overlay (moving-playhead line), draggable to reposition.
             if let hr = vm.hrOverlay {
                 StudioHRChartView(samples: vm.hrSeries, config: hr, ratio: vm.previewRatio,
@@ -212,6 +245,10 @@ struct StudioEditorView: View {
                     .accessibilityIdentifier("studioAddMusic")
                 barButton("PiP", "rectangle.on.rectangle", enabled: !vm.pipSources.isEmpty) { choosingPiP = true }
                     .accessibilityIdentifier("studioAddPiP")
+                barButton("Grid", "square.grid.2x2") { activeTool = .grid }
+                    .accessibilityIdentifier("studioGridTool")
+                barButton("Climb", "signpost.right", enabled: vm.hasClimbInfo) { vm.addClimbNameOverlay() }
+                    .accessibilityIdentifier("studioAddClimbName")
                 barButton(vm.hrOverlay == nil ? "HR" : "HR ✓", "waveform.path.ecg",
                           enabled: vm.hasHRData) { activeTool = .hr }
                     .accessibilityIdentifier("studioHRTool")
@@ -239,16 +276,40 @@ struct StudioEditorView: View {
         if let ov = vm.selectedOverlay {
             VStack(spacing: 8) {
                 HStack {
-                    Image(systemName: ov.kind == .sticker ? "star.square" : "textformat")
+                    Image(systemName: overlayIcon(ov))
                         .foregroundStyle(SnappetColor.workout)
                     Text(ov.content).lineLimit(1).font(.subheadline)
                     Spacer()
                     if !ov.opacityKeyframes.isEmpty {
                         Text("\(ov.opacityKeyframes.count) kf").font(.caption2).foregroundStyle(.secondary)
                     }
+                    if ov.kind == .text || ov.kind == .climbName {
+                        Button {
+                            overlayTextTarget = ov.id; overlayTextDraft = ov.content; editingOverlay = true
+                        } label: { Image(systemName: "pencil") }
+                            .accessibilityIdentifier("studioEditOverlayText")
+                        Button { stylingOverlay = true } label: { Image(systemName: "paintbrush") }
+                            .accessibilityIdentifier("studioStyleOverlay")
+                    }
                     Button(role: .destructive) { vm.deleteOverlay(ov.id) } label: { Image(systemName: "trash") }
                         .accessibilityIdentifier("studioDeleteOverlay")
                     Button { vm.selectOverlay(nil) } label: { Text("Done").font(.caption.weight(.semibold)) }
+                }
+                if ov.kind == .climbName {
+                    Toggle("Show setter", isOn: Binding(get: { vm.selectedClimbShowsSetter },
+                                                        set: { vm.setSelectedClimbShowsSetter($0) }))
+                        .font(.caption)
+                        .accessibilityIdentifier("studioClimbSetter")
+                }
+                if ov.kind != .video {
+                    HStack {
+                        Image(systemName: "textformat.size").font(.caption)
+                        Slider(value: Binding(get: { ov.scale },
+                                              set: { vm.setOverlayScale(ov.id, $0) }), in: 0.5...3)
+                            .accessibilityIdentifier("overlaySize")
+                        Text("\(Int(ov.scale * 100))%").font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary).frame(width: 40)
+                    }
                 }
                 HStack {
                     Image(systemName: "circle.lefthalf.filled").font(.caption)
@@ -259,13 +320,22 @@ struct StudioEditorView: View {
                         Label("Keyframe", systemImage: "diamond").font(.caption2)
                     }
                 }
-                Text("Drag the overlay on the preview to position it. Set opacity at two playhead times (Keyframe) to fade it.")
+                Text("Drag the overlay on the preview to position it; pinch or use Size to scale it. Set opacity at two playhead times (Keyframe) to fade it.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .foregroundStyle(.white)
             .background(Color(white: 0.05))
+        }
+    }
+
+    private func overlayIcon(_ ov: OverlayItem) -> String {
+        switch ov.kind {
+        case .sticker: return "star.square"
+        case .climbName: return "signpost.right"
+        case .video: return "rectangle.on.rectangle"
+        case .text: return "textformat"
         }
     }
 
@@ -285,7 +355,7 @@ struct StudioEditorView: View {
 
 /// The bottom-sheet tool invoked from the action bar (Speed · Filter · Transition · Canvas) — keeps
 /// the bar to one tap and the value-picking in a focused sheet (the edits pattern).
-enum StudioTool: String, Identifiable { case speed, volume, filter, adjust, transition, aspect, hr; var id: String { rawValue } }
+enum StudioTool: String, Identifiable { case speed, volume, filter, adjust, transition, aspect, hr, grid; var id: String { rawValue } }
 
 private struct StudioToolSheet: View {
     let tool: StudioTool
@@ -311,6 +381,7 @@ private struct StudioToolSheet: View {
         case .transition: return "Transition"
         case .aspect: return "Canvas aspect"
         case .hr: return "Heart-rate chart"
+        case .grid: return "PiP grid"
         }
     }
 
@@ -342,6 +413,8 @@ private struct StudioToolSheet: View {
             StudioAdjustControls(vm: vm)
         case .hr:
             StudioHRControls(vm: vm)
+        case .grid:
+            StudioGridControls(vm: vm)
         case .transition:
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -406,6 +479,120 @@ private struct StudioHRControls: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// The PiP grid tool: one-tap collage layouts that tile the picture-in-picture clips into cells, plus
+/// a snap-to-grid toggle for free placement. Presets map straight onto the PiP overlays in order.
+private struct StudioGridControls: View {
+    @Bindable var vm: StudioEditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Toggle("Resize the main video", isOn: Binding(get: { vm.baseFramed },
+                                                          set: { _ in vm.toggleBaseFrame() }))
+                .font(.subheadline)
+                .accessibilityIdentifier("baseFrameToggle")
+            Text(vm.baseFramed
+                 ? "Drag the \"Main\" frame's corners on the preview to resize the main video; drag its body to move it."
+                 : "Turn on to make the main video a resizable cell instead of filling the whole frame.")
+                .font(.caption2).foregroundStyle(.secondary)
+            Divider().overlay(Color.white.opacity(0.1))
+            Text("Arrange picture-in-picture clips into a grid.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(StudioGridLayout.Preset.allCases) { preset in
+                    Button { vm.applyPiPGrid(preset) } label: {
+                        Text(preset.label).font(.caption.weight(.semibold))
+                            .frame(minWidth: 44).padding(.vertical, 10).padding(.horizontal, 6)
+                            .background(Color(white: 0.15), in: RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(vm.hasPiP ? .white : Color.white.opacity(0.35))
+                    }
+                    .disabled(!vm.hasPiP)
+                    .accessibilityIdentifier("grid-\(preset.rawValue)")
+                }
+            }
+            Toggle("Snap to grid", isOn: Binding(get: { vm.snapEnabled }, set: { vm.snapEnabled = $0 }))
+                .font(.subheadline)
+                .accessibilityIdentifier("gridSnap")
+            Text("Drag a clip's corners on the preview to resize it; drag the body to move it.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The text-styling sheet for the selected text / climb-name overlay: text colour, highlight (None +
+/// colours), font preset, and bold / italic. Every control commits immediately — overlays render via
+/// the export-only Core Animation tool, so there's no preview rebuild (just the WYSIWYG chip updating).
+private struct StudioTextStyleControls: View {
+    @Bindable var vm: StudioEditorViewModel
+    private let swatches = ["#FFFFFF", "#000000", "#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#BF5AF2"]
+
+    var body: some View {
+        if let ov = vm.selectedOverlay {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Text style").font(.headline)
+
+                    caption("Colour")
+                    swatchRow(selected: ov.colorHex) { vm.setOverlayColor(ov.id, $0) }
+
+                    caption("Highlight")
+                    HStack(spacing: 10) {
+                        noneSwatch(selected: ov.highlightHex == nil) { vm.setOverlayHighlight(ov.id, nil) }
+                        ForEach(swatches, id: \.self) { hex in
+                            swatch(hex, selected: ov.highlightHex == hex) { vm.setOverlayHighlight(ov.id, hex) }
+                        }
+                    }
+
+                    caption("Font")
+                    Picker("Font", selection: Binding(get: { ov.font }, set: { vm.setOverlayFont(ov.id, $0) })) {
+                        ForEach(StudioFont.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("overlayFont")
+
+                    HStack(spacing: 12) {
+                        Toggle(isOn: Binding(get: { ov.bold }, set: { vm.setOverlayBold(ov.id, $0) })) {
+                            Image(systemName: "bold")
+                        }
+                        .toggleStyle(.button).accessibilityIdentifier("overlayBold")
+                        Toggle(isOn: Binding(get: { ov.italic }, set: { vm.setOverlayItalic(ov.id, $0) })) {
+                            Image(systemName: "italic")
+                        }
+                        .toggleStyle(.button).accessibilityIdentifier("overlayItalic")
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+                }
+                .padding()
+            }
+            .tint(SnappetColor.workout)
+        } else {
+            Text("Select a text overlay").foregroundStyle(.secondary).padding()
+        }
+    }
+
+    private func caption(_ s: String) -> some View {
+        Text(s).font(.caption).foregroundStyle(.secondary)
+    }
+    private func swatchRow(selected: String, _ set: @escaping (String) -> Void) -> some View {
+        HStack(spacing: 10) {
+            ForEach(swatches, id: \.self) { hex in swatch(hex, selected: selected == hex) { set(hex) } }
+        }
+    }
+    private func swatch(_ hex: String, selected: Bool, _ tap: @escaping () -> Void) -> some View {
+        Circle().fill(Color(studioHex: hex)).frame(width: 28, height: 28)
+            .overlay(Circle().stroke(.gray.opacity(0.4), lineWidth: 1))
+            .overlay(Circle().stroke(.white, lineWidth: selected ? 2.5 : 0))
+            .onTapGesture { tap() }
+    }
+    private func noneSwatch(selected: Bool, _ tap: @escaping () -> Void) -> some View {
+        Image(systemName: "slash.circle")
+            .font(.system(size: 22)).foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .overlay(Circle().stroke(.white, lineWidth: selected ? 2.5 : 0))
+            .onTapGesture { tap() }
     }
 }
 

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- User-initiated catalog download from a user-controlled static host (Kilter opt-in catalog,
+         issue #42 Phase 2). The only network egress; no Snappet backend, nothing uploaded. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Bluetooth LE for connecting to a Kilter Board to light up climbs (Kilter mini-app, Phase 2)
          and to heart-rate bands. BLE is optional, so the app runs fine without it. -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
@@ -10,6 +14,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
+    <!-- Camera is used to scan a receipt for the Split Expenses mini-app. Optional, and captured
+         via the system camera app (ACTION_IMAGE_CAPTURE), so no CAMERA permission is required. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
         android:name=".SnappetApplication"
@@ -27,6 +35,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Shares the temporary receipt photo with the system camera app for OCR capture. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

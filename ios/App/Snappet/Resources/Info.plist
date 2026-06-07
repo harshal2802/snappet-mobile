@@ -24,8 +24,12 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Snappet uses the camera to scan a receipt so it can pull out the line items and split them between people. The photo is processed on your device and not stored.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Snappet connects over Bluetooth to your heart-rate band (chest straps, Polar, Garmin, and similar) for live heart rate during a workout, and to a Kilter Board to light up climbs. Everything stays on your device.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Snappet uses the camera to scan a Kilter climb's QR code so you can open a climb a friend shared. Nothing leaves your device.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Snappet reads your workout heart rate to find your most intense moments and build a highlight reel.</string>
 	<key>NSHealthUpdateUsageDescription</key>
