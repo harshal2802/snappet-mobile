@@ -120,7 +120,9 @@ struct KilterSessionDetailView: View {
                 }
             }
             if session.isActive {
-                Button(role: .destructive) { sessions.end(in: modelContext) } label: {
+                // Close by id, not the in-memory `current`, so this works even for a session recovered
+                // after navigation/relaunch (where `current` may be a different/!nil reference).
+                Button(role: .destructive) { sessions.end(sessionID: sessionID, in: modelContext) } label: {
                     Label("End session", systemImage: "stop.circle").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

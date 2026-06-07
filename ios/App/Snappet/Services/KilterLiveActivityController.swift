@@ -49,6 +49,28 @@ final class KilterLiveActivityController {
         #endif
     }
 
+    /// Re-attach to a Live Activity that's still on the Lock Screen but whose in-memory handle we lost
+    /// (e.g. after a relaunch, or the session manager being recreated). Rehydrates the throttle baseline
+    /// from the running state so the first post-recovery `update(_:)` isn't dropped. Returns whether an
+    /// activity is now held — so recovery can decide between re-attaching and (re)starting one.
+    @discardableResult
+    func adoptRunningActivity() -> Bool {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return false }
+        if typedActivity != nil { return true }
+        guard let running = Activity<KilterActivityAttributes>.activities.first else { return false }
+        typedActivity = running
+        let s = running.content.state
+        lastSnapshot = KilterLiveSnapshot(startedAt: s.startedAt, hrBpm: s.hrBpm,
+                                          currentClimbName: s.currentClimbName,
+                                          currentGrade: s.currentGrade, climbCount: s.climbCount)
+        lastPushedAt = .now
+        return true
+        #else
+        return false
+        #endif
+    }
+
     /// Begin a Live Activity for a climbing session. No-op if unavailable/unauthorized. If one is
     /// already running it is ended first so a re-start doesn't leave an orphan.
     func start(boardName: String, startedAt: Date, angle: Int,

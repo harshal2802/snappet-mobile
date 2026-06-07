@@ -6,6 +6,7 @@ import SwiftData
 /// Pushed onto the App Library's shared NavigationStack by `KilterRootView`.
 struct KilterHistoryView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppModel.self) private var app
     @Query(sort: \KilterLogEntry.date, order: .reverse) private var entries: [KilterLogEntry]
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var allSessions: [KilterSession]
 
@@ -86,6 +87,12 @@ struct KilterHistoryView: View {
                             Text(session.startedAt, format: .dateTime.weekday().day().month()).font(.headline)
                             Text("· \(session.angle)°").font(.subheadline).foregroundStyle(.secondary)
                             Spacer()
+                            if session.isActive {
+                                Label("Live", systemImage: "record.circle")
+                                    .font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                                    .labelStyle(.titleAndIcon)
+                                    .symbolEffect(.pulse, options: .repeating)
+                            }
                             if !session.hrSeries.isEmpty {
                                 Image(systemName: "heart.fill").font(.caption2).foregroundStyle(.pink)
                             }
@@ -95,13 +102,28 @@ struct KilterHistoryView: View {
                                 .background(session.source == "ble" ? Color.green.opacity(0.2) : Color(.tertiarySystemBackground),
                                             in: Capsule())
                         }
-                        Text("\(logs.filter { $0.status.isSend }.count) sent · "
-                             + "\(logs.filter { $0.status == .project }.count) proj"
-                             + durationText(session))
+                        if session.isActive {
+                            HStack(spacing: 4) {
+                                Text("\(logs.count) climb\(logs.count == 1 ? "" : "s") ·")
+                                Text(session.startedAt, style: .timer).monospacedDigit()
+                            }
                             .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("\(logs.filter { $0.status.isSend }.count) sent · "
+                                 + "\(logs.filter { $0.status == .project }.count) proj"
+                                 + durationText(session))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .accessibilityIdentifier("kilter.sessionRow")
+                .swipeActions(edge: .trailing) {
+                    if session.isActive {
+                        Button("End") { app.kilterSessions.end(sessionID: session.id, in: modelContext) }
+                            .tint(.red)
+                            .accessibilityIdentifier("kilter.session.endFromHistory")
+                    }
+                }
             }
         }
     }
@@ -139,10 +161,11 @@ struct KilterHistoryView: View {
             .sorted { $0.difficulty < $1.difficulty }
     }
 
-    /// Only sessions that actually have logged entries (a connect with no logs isn't worth a row).
+    /// Sessions with logged entries, plus any **open** session — so a live/recovered session is always
+    /// visible and endable here (the recovery surface of last resort), even before its first log.
     private var sessions: [KilterSession] {
         let used = Set(entries.compactMap(\.sessionId))
-        return allSessions.filter { used.contains($0.id) }
+        return allSessions.filter { used.contains($0.id) || $0.isActive }
     }
 
     private func durationText(_ session: KilterSession) -> String {
@@ -159,8 +182,10 @@ struct KilterHistoryView: View {
     }
 
     private func clearAll() {
-        for entry in entries { modelContext.delete(entry) }
-        for session in allSessions { modelContext.delete(session) }
+        // Never delete the in-flight session out from under the live bar — clear everything else.
+        let activeID = allSessions.first { $0.isActive }?.id
+        for entry in entries where entry.sessionId != activeID { modelContext.delete(entry) }
+        for session in allSessions where !session.isActive { modelContext.delete(session) }
         try? modelContext.save()
     }
 }

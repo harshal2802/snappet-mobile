@@ -383,6 +383,9 @@ final class KilterSessionManager {
 
     func start(angle: Int, source: String, in context: ModelContext) {
         guard current == nil else { return }
+        // Single-open invariant: if a session is already open in the store — survived a manager reset,
+        // a relaunch, or was opened via the other start path — adopt it instead of forking a duplicate.
+        if let open = newestOpenSession(in: context) { adopt(open, in: context); return }
         let session = KilterSession(angle: angle, source: source)
         context.insert(session)
         current = session
@@ -398,13 +401,51 @@ final class KilterSessionManager {
         liveActivity?.start(boardName: boardName, startedAt: session.startedAt, angle: angle)
     }
 
+    /// Re-sync the manager with the persisted store — the single source of truth for "what session is
+    /// open". Called on `KilterRootView` appear / after a relaunch: with no in-memory session, it adopts
+    /// the newest open `KilterSession`, **closes** any duplicate or long-abandoned opens (the pure
+    /// `KilterSessionRecovery`), and re-attaches HR ownership + the Live Activity. Idempotent and a
+    /// near-no-op once a session is already live, so it's safe to call on every appear.
+    func recover(in context: ModelContext) {
+        guard current == nil else { return }
+        let openSessions = (try? context.fetch(FetchDescriptor<KilterSession>(
+            predicate: #Predicate { $0.endedAt == nil }))) ?? []
+        guard !openSessions.isEmpty else { return }
+        let plan = KilterSessionRecovery.plan(
+            open: openSessions.map {
+                KilterSessionRecovery.Candidate(id: $0.id, startedAt: $0.startedAt,
+                                                lastActivity: lastActivity(of: $0, in: context))
+            },
+            now: .now)
+        let byID = Dictionary(openSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for closure in plan.close { byID[closure.id]?.endedAt = closure.endedAt }   // auto-close dups/abandoned
+        if let adoptID = plan.adopt, let session = byID[adoptID] { adopt(session, in: context) }
+        try? context.save()
+    }
+
     func end(in context: ModelContext) {
-        guard let session = current else { return }
+        guard let id = current?.id else { return }
+        end(sessionID: id, in: context)
+    }
+
+    /// End a session **by id** — works whether or not it's the in-memory `current` one, so the live
+    /// bar, the summary, and History can all close a session (including a recovered/orphaned one). HR is
+    /// flushed + the source stopped only when this manager owns the live metrics for that session.
+    func end(sessionID: UUID, in context: ModelContext) {
+        let isCurrent = current?.id == sessionID
+        let session: KilterSession? = isCurrent
+            ? current
+            : (try? context.fetch(FetchDescriptor<KilterSession>(
+                predicate: #Predicate { $0.id == sessionID })))?.first
+        guard let session, session.endedAt == nil else {
+            if isCurrent { current = nil; resetActiveClimb() }
+            return
+        }
         session.endedAt = .now
         // Flush the live HR buffer onto the session BEFORE stopping the source (mirrors
         // WorkoutTracker.finishWorkout) — only when this session owns the source. Stamp the source
         // label from the actually-captured data, so it's never a misleading default.
-        if didStartMetrics, let liveWorkout {
+        if isCurrent, didStartMetrics, let liveWorkout {
             session.hrSeries = WorkoutHRStats.points(from: liveWorkout.samples)
             if !session.hrSeries.isEmpty { session.metricsSourceRaw = liveWorkout.activeKind.rawValue }
             liveWorkout.stop()
@@ -412,12 +453,44 @@ final class KilterSessionManager {
         }
         try? context.save()
         liveActivity?.end()
-        let ended = session
-        current = nil
-        resetActiveClimb()
+        if isCurrent { current = nil; resetActiveClimb() }
         // Auto-discover photos/videos shot during the session window and tag them to the session + the
         // climb they fall within. Best-effort; only runs with full Photos access.
-        discoverMedia(for: ended, in: context)
+        discoverMedia(for: session, in: context)
+    }
+
+    /// Make an already-persisted open session the live one, re-deriving live state from the store + the
+    /// shared coordinator. Used by `recover` and by `start` when a session is already open.
+    private func adopt(_ session: KilterSession, in context: ModelContext) {
+        current = session
+        resetActiveClimb()
+        // The shared metrics coordinator outlives the manager. If it's still streaming, this recovered
+        // session owns it (so `end` flushes + stops HR); otherwise we don't resurrect HR for a session
+        // recovered after a relaunch (the early buffer is gone — same stance as WorkoutTracker).
+        didStartMetrics = liveWorkout?.isSessionActive ?? false
+        // Re-attach the Live Activity: adopt one still on the Lock Screen, else (re)start it so the
+        // recovered session is visible again. No-op where Live Activities are unavailable.
+        if let liveActivity, !liveActivity.adoptRunningActivity() {
+            liveActivity.start(boardName: boardName, startedAt: session.startedAt, angle: session.angle)
+        }
+    }
+
+    /// The newest still-open (`endedAt == nil`) session in the store, if any.
+    private func newestOpenSession(in context: ModelContext) -> KilterSession? {
+        var d = FetchDescriptor<KilterSession>(predicate: #Predicate { $0.endedAt == nil },
+                                               sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    /// The last real activity in a session — newest log time, else the start — used to stamp an
+    /// auto-close at when climbing actually stopped (not "now").
+    private func lastActivity(of session: KilterSession, in context: ModelContext) -> Date {
+        let sid = session.id
+        let entries = (try? context.fetch(FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.sessionId == sid }))) ?? []
+        let lastLog = entries.map { $0.endedAt ?? $0.date }.max()
+        return max(session.startedAt, lastLog ?? session.startedAt)
     }
 
     /// Mark the climb now on screen as the active one (called from the detail view's `load()` on the
