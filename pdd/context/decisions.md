@@ -4,6 +4,43 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-07] Kilter-driven session recommender — pick a session from your logs
+
+**Decision**: Shipped the high-value remainder of the dynamic-sessions design (`pdd/prompts/features/
+dynamic-sessions/DESIGN.md`, refreshed) as a **pure recommender + a Plan screen in the Kilter app**.
+Re-baselined first: `main`'s `18-ios-kilter-rich-session` already gave climbing sessions live HR, per-climb
+timing/attempts (so a board session is *already* the "dynamic climbing" the user asked for), media + a
+highlight reel, and a rich summary — so the original Part B (project Kilter into WorkoutTracker history)
+was **dropped** (redundant; would fight the 2026-06-02 "keep Kilter separate" call). What remained novel
+was *using* the logs to suggest a session.
+
+- **`KilterRecommender` (pure, Foundation-only)** — `[KilterClimbLog]` history + `[KilterListItem]`
+  candidates → a goal-tagged `Plan` (Warm up / Send / Project). Detects the **working grade** = hardest
+  rounded-difficulty bucket with ≥ `sendThreshold` (default 2) sends (else hardest single send, else nil
+  cold-start); allocates `targetCount` ~⅓ warm-up / bulk sends / one project; bands warm-ups below, sends
+  at, project above the working bucket; ranks by quality→ascents→easiest→uuid (**deterministic**);
+  `preferUnsent` keeps already-sent climbs out of send/project goals. **Reuses** the existing
+  `KilterClimbLog` value type (from `KilterSessionStats`) and catalog `KilterListItem` — no new `@Model`,
+  no schema change, no migration.
+- **`KilterPlanView` + `KilterPlanRoute`** — More-menu "Plan a session": reads `KilterLogEntry`s, queries
+  the catalog for a window around the working grade, runs the recommender, shows grouped picks; **Start
+  session** begins a manual `KilterSession` (reusing `KilterSessionManager` → live HR / Live Activity /
+  media) and taps through each pick, with a live "logged this session" check.
+- **Tests**: `KilterRecommenderTests` (11 cases — working-grade detection, allocation sum, banding by
+  goal, prefer-unsent, higher-quality-wins, determinism, no-dup-across-goals, cold start, empty
+  candidates). **Graph**: added `kilter-recommender` (pure) + `kilter-plan` (screen) nodes + edges
+  (integrity re-checked: 160 nodes / 279 edges, no orphans/dups).
+
+**Why**: it's the most on-brand piece — a deterministic pure function over data the app already keeps,
+turning history into action — and the catalog/session machinery to act on it already exists.
+
+**Rules out / honest caveat**: recommender lives in **Kilter**, not WorkoutTracker (follows main's
+"Kilter is the climbing home"; the pure core is UI-agnostic so it's reversible). Remaining/ deferred:
+freeform **lifting** Quick-Start sessions (A.1) and a polymorphic `SetKind` for **ad-hoc** non-catalog
+climbing in WorkoutTracker (A.2, gated on a product call now that Kilter covers board climbing). **No
+build/sim/test run**: the authoring box has no Swift toolchain, so `xcodebuild test` on a Mac is owed to
+green the recommender tests + sim-verify `KilterPlanView` (only the graph integrity was checked here).
+
 ## [2026-06-06] Kilter Board — LED map by the user's BOARD SIZE + send led_color (real-board fix)
 
 **Decision**: Resolve each lit hold's LED address from the `leds` table **for the user's chosen

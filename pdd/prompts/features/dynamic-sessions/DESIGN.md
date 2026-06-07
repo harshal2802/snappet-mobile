@@ -1,205 +1,132 @@
-# Design Review: Dynamic Sessions + Kilter-Driven Climbing
+# Design + Plan: Dynamic Sessions + Kilter-Driven Climbing
 
-**Created**: 2026-06-04
-**Type**: PDD design review (direction → decomposed prompt chain). **Design only — no code yet.**
-**Extends**: `09-ios-workout-tracker.md` (the routine-locked tracker) and the Kilter mini-app
-(`decisions.md` 2026-06-02, which deliberately kept Kilter *separate* from WorkoutTracker).
-**User direction (2026-06-04)**: two asks — (1) *dynamic* sessions where you add work on the fly
-(e.g. gym climbing — "I don't know what climb is next"); (2) WorkoutTracker should be able to
-**pick climbs/attempts from my Kilter logs** ("based on my Kilter session it picks the climbing").
-
-> This note is the high-value, boundary-crossing piece, so it is written up **before** any code per
-> the repo's PDD convention. iOS code can only be compiled/tested on a Mac+Xcode (the
-> on-device/verification rules in `decisions.md`), so this captures the model, the decisions, and the
-> decomposition that a Mac session then implements + verifies.
+**Created**: 2026-06-04 · **Refreshed**: 2026-06-07 (re-baselined against `main`; recommender shipped)
+**Type**: PDD design review → decomposed plan, with one slice implemented.
+**Extends**: `09-ios-workout-tracker.md` (routine-locked tracker) + `18-ios-kilter-rich-session.md`
+(the rich Kilter session that `main` shipped 2026-06-05).
+**User direction**: (1) *dynamic* sessions you grow on the fly (gym climbing — "I don't know the next
+climb"); (2) pick climbs/attempts **from my Kilter logs**.
 
 ---
 
-## 0. Where we already are (don't rebuild this)
+## 0. Re-baseline — what `main` already shipped (read this first)
 
-| Built | File | Shape it models |
+Between the first draft of this doc and now, `main` landed **`18-ios-kilter-rich-session`**, which builds
+most of the original "Part B" — and builds it *better* than this doc first proposed:
+
+| Capability | Where `main` put it | Effect on this plan |
 |---|---|---|
-| `Routine` → `RoutineExercise` (sets × reps × rest × weight) | `WorkoutModels.swift:180,235` | **① rep/load sets** only |
-| `WorkoutSession` → `[SessionExercise]` → `[SetLog]` | `WorkoutModels.swift:202,288` | the live log of ① |
-| `WorkoutPlayerView` (walks a **fixed** `exerciseIndex`/`setIndex`) | `WorkoutPlayerView.swift:28,53` | a frozen snapshot |
-| `KilterLogEntry` (climb + angle + `KilterAscentStatus` + `attempts`) | `KilterModels.swift:165` | **③ graded attempts**, catalog-backed |
-| `KilterSession` (`startedAt`/`endedAt`/`angle`) groups entries | `KilterModels.swift:199` | a board session |
-| Grade pyramid (filters `status.isSend`) | `KilterHistoryView.swift:94,115` | raw material for a recommender |
+| Live HR on a climbing session (Watch/BLE) | `LiveMetricsContext` (generalized `MetricsSource`) + `KilterSessionManager` | **done** — climbing rides HR without being a `WorkoutSession` |
+| Per-climb timing & attempts (dynamic logging) | `KilterLogEntry.{startedAt,endedAt,attemptTimestamps}` | **done** — a board session is *already dynamic* |
+| Media + auto highlight reel | `KilterWorkoutBuilder` → `HighlightEngine.Workout(.climbing)` | **done** — same reel pipeline as workouts |
+| Live Activity + rich summary | `KilterActivityAttributes`, `KilterSessionDetailView`, `KilterSessionStats` | **done** |
 
-**The single most important fact for both asks:** `Routine`, `WorkoutSession`, `KilterLogEntry`,
-`KilterSession` are **all registered in the same store** (`SnappetCore.swift:36`,
-`SnappetSchema.models`). So WorkoutTracker reading Kilter data is an in-process `@Query` — **not** a
-sync, network call, or new data source. That keeps the on-device-only rule (#1) intact for free.
+**Consequences for the original plan:**
+- ❌ *Stale premise* — "board climbs have no HR/reel pipeline" is **no longer true**.
+- ❌ **Drop B.1a/B.1b** (projecting Kilter into WorkoutTracker history) — `main` chose to make Kilter
+  *self-sufficient* (honoring the 2026-06-02 "keep Kilter separate" decision) rather than unify. Re-unifying
+  would now be redundant and fight that call. **Decision: Kilter stays the rich climbing home.**
+- ✅ Your first example ("dynamic gym climbing") is **served for board climbing** — a Kilter session is
+  inherently grow-as-you-go.
 
-**Two gaps the user is asking us to close:**
-1. **Every session is routine-locked.** The only entry point is `startWorkout(from: Routine)` →
-   `makeSession(from:)` (`WorkoutTrackerModule.swift:217,292`). The player then marches through a
-   `session.exercises` array frozen at start — it mutates set slots in place
-   (`session.exercises[exerciseIndex].sets[setIndex] = …`, `WorkoutPlayerView.swift:530`) but **never
-   appends**. There is no "quick start empty," no "add exercise mid-session," no open-ended end state.
-2. **Kilter and WorkoutTracker don't talk.** Board climbs carry no HR series, no live metrics, and no
-   highlight reel (that pipeline lives only on `WorkoutSession`); and nothing uses your Kilter history
-   to drive a session.
+**What's genuinely left** (the re-scoped, sharper feature):
 
----
-
-## 1. The framing: three tracking shapes (recap)
-
-A *session* is a container; the *unit of work* inside it has one of three shapes. The sport is
-cosmetic — the **shape** decides the model, the live UI, and the summary.
-
-| Shape | Atomic unit | Logged per unit | Status today |
+| # | Piece | Shape | Status |
 |---|---|---|---|
-| ① rep/load sets | a *set* | reps × load + `completedAt` | `SetLog` — fully built |
-| ② continuous distance/duration | a *split/lap* on a stream | distance, duration, pace | not modeled (only `hrSeries`) |
-| ③ graded attempts | an *attempt* | grade + outcome + attempt count | `KilterLogEntry` — built, Kilter-only |
-
-Dynamic gym climbing is **Shape ③ without a catalog**. So "add climbing attempts in WorkoutTracker"
-needs the *unit* of a session to be able to be a climb attempt — not reps×weight. That is the crux.
+| **B.2** | `KilterRecommender` — suggest a session from the user's logs | ③ graded attempts | **SHIPPED in this change** |
+| A.1 | Freeform/Quick-Start **lifting** session in WorkoutTracker | ① rep/load | planned (§3) |
+| A.2 | Polymorphic `SetKind` → **ad-hoc** (non-catalog) climbing log in WorkoutTracker | ③ | planned + product fork (§3/§4) |
 
 ---
 
-## Part A — Dynamic / freeform sessions
+## 1. SHIPPED — Kilter-driven session recommender (B.2)
 
-### A.1 The model is ~80 % ready — this is mostly a player + entry-point job
+The standout remaining idea, and the most on-brand: a **pure function over data the app already keeps**.
 
-The persistence already permits a growing, routineless session:
-- `WorkoutSession.routineID` is **`UUID?`** — a routineless session is already legal
-  (`WorkoutModels.swift:289`).
-- `session.exercises` is a plain `[SessionExercise]` Codable composite on the `@Model`; **appending is
-  an additive write** — no migration. Same for `SessionExercise.sets: [SetLog]`.
+### 1.1 Pieces
 
-So "freeform" needs **no schema change** for the lifting case. The work is UI:
-1. **Quick Start** entry → `WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])`,
-   inserted + live-metrics started, exactly like `startWorkout` but from an empty session.
-2. **"+ Add exercise"** in the player → reuse the existing `ExercisePickerView`; append a
-   `SessionExercise` (with a sensible `targetSets`/`targetReps` or an open-ended one) to
-   `session.exercises` live.
-3. **"+ Add set"** on the current exercise → append a `SetLog` (today the set count is fixed at start).
-4. **Open-ended end state.** The player assumes a known total to reach the "Done" screen
-   (`WorkoutPlayerView.swift:479,545`). A freeform session ends only when the user taps **Finish** —
-   so the index logic must tolerate "no next exercise yet" without auto-finishing.
+| File | Role | Verifiable |
+|---|---|---|
+| `Features/Kilter/KilterRecommender.swift` | **pure** core — history + candidates → a goal-tagged `Plan` | XCTest (Mac) |
+| `SnappetTests/KilterRecommenderTests.swift` | 11 cases — working-grade detection, banding, prefer-unsent, determinism, cold start, allocation | XCTest (Mac) |
+| `Features/Kilter/KilterPlanView.swift` | the I/O screen — reads logs, queries catalog, renders + starts a session | sim/device |
+| `KilterRootView.swift` | More-menu entry (`kilter.plan`) + `KilterPlanRoute` destination | sim/device |
+| `docs/knowledge-graph/data.js` | nodes `kilter-recommender` + `kilter-plan`, wired | integrity-checked here |
 
-**Decision A.1:** ship freeform **lifting** first because it's self-contained and needs **zero**
-schema change — it's the lowest-risk slice and de-risks the player changes (#4 above) that climbing
-also needs.
+### 1.2 Algorithm (all pure, deterministic)
 
-### A.2 Making a "set" polymorphic (the climbing unlock) — `SetKind` + optional `SetLog` fields
+- **Working grade** = the hardest *rounded-difficulty bucket* with ≥ `sendThreshold` (default 2) sends;
+  else the hardest single send; else `nil` (cold start). Buckets match `KilterCatalog.gradeLabel` rounding.
+- **Allocation** of `targetCount` (default 6) → ~⅓ warm-up, the bulk sends, one project. Sums to target.
+- **Banding** relative to the working bucket `w`: warm-ups `{w−2,w−1}` (fallbacks `{w−3},{w−4}`), sends
+  `{w}` (fallback `{w−1}`), project `{w+1}` (fallback `{w+2}`). `preferUnsent` keeps already-sent climbs
+  out of send/project goals (warm-ups may revisit classics).
+- **Ranking** within a band: quality → ascents → easiest → uuid (stable ⇒ reproducible). No climb appears
+  in two goals.
+- **Reuse, not reinvent:** history input is the existing `KilterClimbLog` value type (from
+  `KilterSessionStats`); candidates are catalog `KilterListItem`s. No new persistence, no new `@Model`.
 
-For dynamic climbing the logged unit must be a graded attempt, not reps×weight. **Decision:** tag the
-*exercise* with a kind, and let `SetLog` carry optional per-kind fields. (An exercise is one shape;
-attempts within it are all the same shape — so kind belongs on `SessionExercise`, not per set.)
+### 1.3 Flow
 
-```swift
-enum SetKind: String, Codable, Sendable { case repsWeight, duration, distance, climbAttempt }
-// nil rawValue ⇒ legacy reps/weight, so old data needs no rewrite.
+More menu → **Plan a session** → `KilterPlanView` reads `KilterLogEntry`s, computes the working grade,
+queries `catalog.list(layout/angle, [anchor−3 … anchor+2])`, runs `KilterRecommender.recommend`, and
+shows picks grouped **Warm up / Send / Project**. **Start session** begins a manual `KilterSession` (the
+same `KilterSessionManager` → live HR / Live Activity / media) and jumps to the first pick; each pick
+taps through to its climb detail (existing log flow), with a live "logged this session" check.
 
-// SessionExercise gains:
-var kindRaw: String?            // SetKind; nil = .repsWeight (legacy)
+### 1.4 Verification honesty
 
-// SetLog gains (ALL optional → see the migration note):
-var durationSec: Double?        // ② / time-based ① (plank, hang)
-var distanceM:   Double?        // ② distance unit
-var climbGradeLabel: String?    // ③ ad-hoc grade ("V4", "6c+")
-var climbStatusRaw: String?     // ③ reuse KilterAscentStatus ("flash"/"sent"/"project"/"attempt")
-var climbAttempts: Int?         // ③ tries
-```
-
-> **Migration nuance (don't get this wrong):** `SetLog`/`SessionExercise` are **nested `Codable`
-> composites** inside `WorkoutSession`, *not* `@Model`s. SwiftData's lightweight migration only covers
-> `@Model` stored properties (the `hrSeries` / Journal-`tags` precedent). For a field **inside** an
-> encoded Codable blob, a new **non-optional** key makes `Codable` decoding of old blobs *throw*.
-> Therefore every added field here is **`Optional`** (decodes to `nil` when absent) — or uses
-> `decodeIfPresent` if a custom decoder is added. This is why `SetKind` is stored as `kindRaw: String?`
-> with "nil ⇒ legacy reps/weight", not a non-optional enum.
-
-**Rejected alternative:** a single `measure: SetMeasure` enum *with associated values*
-(`.repsWeight(Int, Double)` / `.climb(String, KilterAscentStatus)` …). Conceptually cleanest, but a
-Codable enum-with-payloads needs a hand-written `Codable` and is a larger blob-migration surface for no
-user-visible gain over optional fields. Revisit only if a fourth+ shape lands.
-
-**Pure + testable:** the per-kind **formatter** ("how does a set/attempt render & summarize") and the
-**validator** ("what input does this kind accept") are pure functions over `SetKind` + `SetLog` — no
-SwiftData, no UI — so they unit-test on the cloud box (the repo's "pure logic at a thin edge" rule).
-The player just switches its input row + complete-action on `exercise.kind`.
+No Swift toolchain exists on the authoring (Linux) box — **nothing here was compiled or run**. The pure
+core + tests are written to the repo's tested-pure-edge convention; **`xcodebuild test` on a Mac is owed**
+to turn the 11 `KilterRecommenderTests` green and to sim-verify `KilterPlanView`. Graph integrity (160
+nodes / 279 edges, no orphans/dups) *was* checked here.
 
 ---
 
-## Part B — Kilter-driven climbing (the high-value, boundary-crossing ask)
+## 2. Open forks (product calls)
 
-There are two separable features in the user's sentence; B2 is the gold.
-
-### B.1 Mirror — board sessions enter the unified workout world
-
-**Why:** a `KilterSession` today has **no HR, no live metrics, no highlight reel** — that machinery
-only exists on `WorkoutSession`. Surfacing Kilter sessions in WorkoutTracker's history/dashboard (and,
-later, letting them ride live-HR + the reel pipeline) is the payoff.
-
-Two implementation stances:
-- **B.1a Read-only adapter (recommended first):** a pure `ClimbSessionView` value built by querying
-  `KilterSession` + its `KilterLogEntry`s (join on `sessionId`) and presenting them through the same
-  history/summary surfaces. **No new `@Model`, no duplication, no write path** → no double-source-of-
-  truth risk. Kilter stays the owner of board data.
-- **B.1b Unified `WorkoutSession` projection:** generate a `WorkoutSession` whose `SessionExercise`s
-  are `.climbAttempt` (from A.2), so board climbs literally appear as workouts and can carry
-  `hrSeries`. More power (reels/HR) but introduces a sync/ownership question. **Defer** until A.2 ships
-  and B.1a proves the surfaces.
-
-**Decision B.1:** start with **B.1a** (adapter), keep Kilter the data owner, no migration.
-
-### B.2 Recommend — build a climbing session from the Kilter grade pyramid
-
-The fun one, and fully on-device. The Kilter history already computes sends/projects per grade
-(`KilterHistoryView`). A **pure recommender** turns that into a suggested session:
-
-```
-input:  [KilterLogEntry]  (the user's history)  + target angle + session length
-output: [SuggestedClimb]  (climbUUID/grade + suggested goal: flash | send | project)
-```
-
-Heuristics (all pure, all unit-testable, no device):
-- **Working grade** = highest grade with ≥ N sends; **project grade** = one/two above it.
-- Mix: mostly working-grade *send* targets + a few project-grade *attempt* targets + a warm-up tier
-  below working grade (the classic pyramid).
-- Bias toward **unsent** catalog climbs at those grades (cross-ref `KilterCatalog` by difficulty),
-  optionally `KilterFavorite`-weighted.
-
-This `KilterRecommender` is the ideal Snappet shape: a deterministic pure function over logged data,
-seedable, testable on the cloud box; the UI just renders its output and lets you start a session
-pre-populated with the picks (feeding A.2's `.climbAttempt` exercises).
+1. **Recommender home** — shipped inside **Kilter** (the rich climbing surface). The user originally
+   imagined it in WorkoutTracker; placing it in Kilter follows `main`'s "Kilter is the climbing home"
+   direction and reuses all the session infra. (Reversible — the pure core is UI-agnostic.)
+2. **Is ad-hoc climbing logging (A.2) still wanted?** `main` covers *board* climbing richly; A.2 only adds
+   value for **non-catalog** gym/outdoor bouldering. Worth confirming before building.
+3. **Tunables** — `targetCount`/`sendThreshold` are defaulted; a Kilter Settings control is a later add.
 
 ---
 
-## 2. Decomposition (suggested prompt chain)
+## 3. Remaining roadmap (planned, not built)
 
-| Step | Scope | Schema? | Verifiable where |
+### A.1 — Freeform / Quick-Start **lifting** session (WorkoutTracker)
+Still routine-locked (`startWorkout(from:)` → frozen `session.exercises`). The model is ready
+(`WorkoutSession.routineID` is `UUID?`; `exercises`/`sets` are Codable arrays → **no schema change**).
+Steps: a **Quick Start** entry creating `WorkoutSession(routineID: nil, exercises: [])`; an **+ Add
+exercise** (reuse `ExercisePickerView`) and **+ Add set** that append live; an **open-ended end state**
+(finish only on explicit Finish — today the player assumes a known total). Self-contained, sim-testable.
+
+### A.2 — Polymorphic `SetKind` → ad-hoc climbing in WorkoutTracker *(gated on fork #2)*
+Tag the exercise `kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** `SetLog` fields
+(`durationSec`, `distanceM`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Migration nuance:**
+`SetLog`/`SessionExercise` are nested **Codable** composites, not `@Model`s — SwiftData lightweight
+migration doesn't reach inside the blob, so every new field MUST be `Optional` (a non-optional key throws
+on decode of old data). Pure per-kind formatter/validator → unit-testable; the player switches its input
+row on `exercise.kind`. **Rejected** a `SetMeasure` enum-with-payloads (bigger hand-written-Codable
+migration surface, no user-visible gain).
+
+### Decomposition
+
+| Step | Scope | Schema | Verify |
 |---|---|---|---|
-| **D1** | Freeform **lifting**: Quick Start + add-exercise/add-set live + open-ended end | none | sim UI test |
-| **D2** | `SetKind` + optional `SetLog` fields + pure per-kind formatter/validator (+ tests) | additive (optional) | **cloud** (pure tests) + sim |
-| **D3** | Dynamic **climbing** in the player (`.climbAttempt` input row, grade/outcome) | uses D2 | sim UI test |
-| **D4** | **B.1a** Kilter→WorkoutTracker read-only history adapter | none | cloud (pure adapter) + sim |
-| **D5** | **B.2** `KilterRecommender` pure engine (+ tests) → "Suggested session" → start it | none | **cloud** (pure tests) |
-| **D6** | Knowledge-graph + `decisions.md` per shipped step (the standing instruction) | — | review |
-
-D2 + D5 are the pure cores that can be **built and tested on this Linux box**; everything else is
-device/sim-gated and lands in a Mac session.
+| ✅ D1 | `KilterRecommender` core + tests | none | Mac XCTest |
+| ✅ D2 | `KilterPlanView` + root entry + graph | none | sim |
+| D3 | Freeform lifting (Quick Start + add live + open-ended end) | none | sim UI test |
+| D4 | `SetKind` + optional `SetLog` fields + pure formatter/validator | additive (optional) | Mac + sim |
+| D5 | Ad-hoc climbing input in the player (uses D4) | uses D4 | sim UI test |
 
 ---
 
-## 3. Open forks (product calls — not decided here)
+## 4. What this rules out
 
-1. **Boundary reversal.** B.1/B.2 partly walk back `decisions.md` 2026-06-02 ("keep Kilter separate").
-   Is the intent a one-way read (Workout reads Kilter — low coupling, recommended) or a two-way merge?
-2. **Where does the recommender live** — a new tab inside WorkoutTracker, or a "Start a session" button
-   inside the Kilter app that hands off? (Leaning: a climbing entry in WorkoutTracker's Quick Start.)
-3. **Ad-hoc gym climbing grade scale** — free text, or a fixed V-scale/Font picker? (Leaning: a picker
-   per the existing `KilterGradeFormat` precedent so stats are computable.)
-4. **Do board climbs need HR/reels** (B.1b) or is read-only history (B.1a) enough for v1?
-
-## 4. What this rules out (for now)
-
-- Continuous **GPS** cardio (running routes/elevation) — Shape ② distance is sketched in A.2 but full
-  GPS/splits is its own initiative, not this one.
-- A two-way Kilter↔Workout write/sync (B.1b) until A.2 + B.1a prove out.
-- The enum-with-payloads `SetMeasure` (chose optional fields — §A.2).
-- Any cloud/account path — everything above is an in-process `@Query` over the existing on-device store.
+- Re-unifying Kilter into WorkoutTracker history (superseded by `main`'s self-sufficient Kilter).
+- Continuous **GPS** cardio (Shape ②) — its own initiative.
+- The `SetMeasure` enum-with-payloads (chose optional fields).
+- Any cloud/account path — the recommender is an in-process query over the on-device store.

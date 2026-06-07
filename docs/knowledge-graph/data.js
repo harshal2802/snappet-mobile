@@ -419,6 +419,10 @@ const nodes = [
     file: "ios/App/Snappet/Features/Kilter/KilterSessionStats.swift", desc: "Pure, device-free session statistics over plain-value KilterClimbLogs: time-on-climb, rest-between-climbs, sends/hour, grade pyramid, hardest send, per-climb timeline. Unit-tested (KilterSessionStatsTests) with no SwiftData.", tags: ["pure","stats","tested"] },
   { id: "kilter-workout-builder", label: "KilterWorkoutBuilder", type: "model", group: "kilter", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Kilter/KilterWorkoutBuilder.swift", desc: "Pure mapping from a KilterSession + tagged media to a HighlightEngine.Workout (activity .climbing), plus KilterMediaAssignment (clip offset → climb window). Lets the same highlight pipeline that powers workout reels score a climbing session. Unit-tested (KilterWorkoutBuilderTests).", tags: ["pure","engine-input","reel","tested"] },
+  { id: "kilter-recommender", label: "KilterRecommender", type: "model", group: "kilter", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Kilter/KilterRecommender.swift", desc: "Pure, device-free recommender: turns logged history (KilterClimbLog) + a catalog candidate pool (KilterListItem) into a suggested session — warm-ups below the working grade, sends at it, a project above. Detects the working grade from the send pyramid; deterministic + unit-tested (KilterRecommenderTests).", tags: ["pure","recommender","tested"] },
+  { id: "kilter-plan", label: "KilterPlanView", type: "screen", group: "kilter", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Kilter/KilterPlanView.swift", desc: "\"Plan a session\": reads the ascent log, queries the catalog for a difficulty window around the working grade, runs KilterRecommender, and shows the picks grouped Warm up / Send / Project. Start session begins a manual KilterSession and taps through to each climb.", tags: ["plan","recommend","session"] },
 ];
 
 const links = [
@@ -720,6 +724,13 @@ const links = [
   { source: "kilter-catalog", target: "kilter-session-detail", type: "navigate", label: "KilterSessionRoute" },
   { source: "kilter-history", target: "kilter-session-detail", type: "navigate", label: "KilterSessionRoute" },
   { source: "kilter-catalog", target: "kilter-session-mgr", type: "uses", label: "start/end + HR push" },
+  { source: "kilter-catalog", target: "kilter-plan", type: "navigate", label: "KilterPlanRoute" },
+  { source: "kilter-plan", target: "kilter-recommender", type: "uses", label: "build plan" },
+  { source: "kilter-plan", target: "kilter-catalog-db", type: "uses", label: "candidate query" },
+  { source: "kilter-plan", target: "kilter-models", type: "uses", label: "history" },
+  { source: "kilter-plan", target: "kilter-detail", type: "navigate", label: "KilterClimbRoute" },
+  { source: "kilter-plan", target: "kilter-session-mgr", type: "uses", label: "start session" },
+  { source: "kilter-recommender", target: "kilter-stats", type: "uses", label: "KilterClimbLog" },
   { source: "kilter-detail", target: "kilter-session-mgr", type: "uses", label: "beginClimb + log timing" },
   { source: "kilter-session-mgr", target: "livemetricscoordinator", type: "uses", label: "live HR" },
   { source: "kilter-session-mgr", target: "kilter-live-activity-ctrl", type: "uses" },
