@@ -4,6 +4,38 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
+
+**Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned
+by `AppModel`** (not `@State` on `KilterRootView`) so it survives navigating out of the module, and it
+**recovers** the open session (`endedAt == nil`) from SwiftData on appear/relaunch via the pure
+`KilterSessionRecovery` planner. Recovery enforces a **single-open-session invariant** (adopt the
+newest open, auto-close duplicates) and **auto-closes sessions abandoned > 6 h** (stamped at last
+activity, never "now"). `end(sessionID:in:)` closes a session by id from any surface.
+(`pdd/prompts/features/11-kilter-session-lifecycle.md`.)
+
+**Why**: `KilterRootView` is a `navigationDestination`; SwiftUI destroyed/recreated it on pop, resetting
+the `@State` manager to `current == nil` while the `KilterSession` row stayed open. That stranded the
+session: the bar vanished, "End" became a no-op, post-reset logs got `sessionId: nil` (orphaned /
+double-counted), and board-connect / re-start forked duplicate open sessions. An audit found 23 such
+failure modes, nearly all downstream of this one defect.
+
+**Also**: the session is **decoupled from the BLE link** — a board *disconnect* no longer ends the
+session (a brief drop shouldn't kill an in-progress session); the board→session bridge moved from the
+transient detail view to the root (stable). History surfaces live sessions (badge + running timer) with
+swipe-to-End; History/Settings "Clear" skip the active session.
+
+**HR-on-clips during the session**: `hrSeries` used to be flushed onto the session only at `end()`, so
+clip HR overlays were empty until the session ended (the clip editor reads the *persisted* series via
+`SessionHRSeries.forSession`, once, on open). Added `KilterSessionManager.syncLiveHR(in:)` — flushes the
+cumulative live HR buffer onto the active session **without ending it** — called on opening the session
+summary, after each log, before opening a clip, and before "Find my clips". Clips recorded mid-session
+now overlay heart rate without ending the session first.
+
+**Rules out**: tracking "active" purely in memory; ending via the in-memory `current` pointer; coupling
+session lifetime to the board connection. **Deferred (low/device-only)**: Live-Activity `staleDate`,
+live-summary stats throttle, tagging the cross-module activity log with the session id.
+
 ## [2026-06-07] Freeform/dynamic WorkoutTracker sessions + ad-hoc climbing (polymorphic SetKind)
 
 **Decision**: Made WorkoutTracker sessions **grow-as-you-go** and able to log **ad-hoc (non-Kilter)

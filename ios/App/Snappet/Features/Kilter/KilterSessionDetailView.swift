@@ -78,6 +78,9 @@ struct KilterSessionDetailView: View {
         }
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
+        // Opening the summary of a live session flushes HR so far onto it, so the HR chart + any clip
+        // opened from here show heart rate during the session (not only after it ends). No-op once ended.
+        .task(id: sessionID) { sessions.syncLiveHR(in: modelContext) }
         // Reel: the shared auto-generate-then-edit flow (now full-length, uncapped).
         .sheet(isPresented: $showingReel) {
             if let session {
@@ -120,7 +123,9 @@ struct KilterSessionDetailView: View {
                 }
             }
             if session.isActive {
-                Button(role: .destructive) { sessions.end(in: modelContext) } label: {
+                // Close by id, not the in-memory `current`, so this works even for a session recovered
+                // after navigation/relaunch (where `current` may be a different/!nil reference).
+                Button(role: .destructive) { sessions.end(sessionID: sessionID, in: modelContext) } label: {
                     Label("End session", systemImage: "stop.circle").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -464,6 +469,9 @@ struct KilterSessionDetailView: View {
     /// "Move clip to another climb".
     private func presentStudio(_ session: KilterSession, visible: Set<UUID>?, focusing: UUID?,
                                climbUUID: String?, single: SessionMedia?) {
+        // Flush live HR onto the session before the clip editor reads it, so a clip opened DURING the
+        // session shows heart rate (the editor loads the series once, on open). No-op once ended.
+        sessions.syncLiveHR(in: modelContext)
         let project = resolveStudioProject(session)
         clipStudio = ClipStudioPresentation(project: project, visibleClipMediaIDs: visible,
                                             focusClipMediaID: focusing, climbUUID: climbUUID,

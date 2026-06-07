@@ -27,7 +27,10 @@ struct KilterRootView: View {
     @State private var catalogInstalled = KilterCatalogStore.shared.isInstalled
     /// Shared across the module's screens (detail illuminates / sessions group history).
     @State private var board = KilterBoardController()
-    @State private var sessions = KilterSessionManager()
+    /// The session manager is owned by `AppModel` (not `@State` here) so it survives navigating out of
+    /// and back into the module — this view is a `navigationDestination` SwiftUI destroys on pop, which
+    /// is exactly what used to strand the active session. Recovered from the store on appear.
+    private var sessions: KilterSessionManager { app.kilterSessions }
 
     @AppStorage("kilter.angle") private var angle: Int = 40
     @AppStorage("kilter.layout") private var layoutId: Int = 1
@@ -176,6 +179,17 @@ struct KilterRootView: View {
             sessions.bind(liveWorkout: app.liveWorkout,
                           liveActivity: app.kilterLiveActivity,
                           media: app.sessionMedia)
+            // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
+            // (and auto-close any duplicate or long-abandoned ones) so the bar, HR, Live Activity, and
+            // log-grouping never go stale after navigating away and back.
+            sessions.recover(in: modelContext)
+            // Own the board→session bridge here (stable for the module's lifetime) rather than in the
+            // transient climb-detail view: a board connect opens/adopts the single session; a
+            // disconnect does NOT end it — a brief BLE drop shouldn't kill an in-progress session (the
+            // user ends it explicitly via the bar / summary / History).
+            board.onConnectionChange = { connected in
+                if connected { sessions.start(angle: angle, source: "ble", in: modelContext) }
+            }
             board.setAPILevel(apiLevel)
         }
         // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.

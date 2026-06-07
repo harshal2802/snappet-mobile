@@ -50,6 +50,13 @@ final class AppModel {
     /// ActivityKit/Live Activities are unavailable or unauthorized.
     let kilterLiveActivity = KilterLiveActivityController()
 
+    /// Tracks the **active Kilter board session** (grouping, per-climb timing, live HR + Live Activity).
+    /// Owned here — not as `@State` on `KilterRootView` — so it survives navigating out of and back into
+    /// the Kilter module (the root is a `navigationDestination` that SwiftUI destroys on pop); combined
+    /// with `recover(in:)` on appear/relaunch, the persisted open session never goes stale. Bound to the
+    /// live services once, in `KilterRootView.onAppear`.
+    let kilterSessions = KilterSessionManager()
+
     /// Local notifications for a backgrounded / minimized workout (e.g. "rest complete"), so the
     /// session can still reach the notification bar alongside the Live Activity. No-ops when
     /// unauthorized (live-workout-studio next pass).

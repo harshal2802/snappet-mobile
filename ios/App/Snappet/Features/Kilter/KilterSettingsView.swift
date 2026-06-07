@@ -165,8 +165,11 @@ struct KilterSettingsView: View {
     }
 
     private func clearHistory() {
-        for e in entries { modelContext.delete(e) }
-        for s in sessions { modelContext.delete(s) }
+        // Preserve the in-flight session (and its entries) so a live/recovered session isn't deleted
+        // out from under the catalog's session bar — clear everything else.
+        let activeID = sessions.first { $0.isActive }?.id
+        for e in entries where e.sessionId != activeID { modelContext.delete(e) }
+        for s in sessions where !s.isActive { modelContext.delete(s) }
         try? modelContext.save()
     }
 }

@@ -384,7 +384,6 @@ struct KilterClimbDetailView: View {
             }
             .padding(.horizontal)
             .animation(.snappy, value: board.state)
-            .onAppear { wireSessionCapture() }
             // Mirror a protocol switch made here to the controller immediately (the root view also
             // observes this, but the detail screen shouldn't depend on it being mounted); re-lights live.
             .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
@@ -524,6 +523,9 @@ struct KilterClimbDetailView: View {
                 attemptTimestamps: status == .attempt ? [now] : []))
         }
         try? modelContext.save()
+        // Flush live HR onto the session as climbs are logged, so a clip recorded on this climb already
+        // has heart rate to overlay when reviewed mid-session (no need to end the session first).
+        sessions.syncLiveHR(in: modelContext)
         core.log(module: "kilter", action: "log-\(status.rawValue)",
                  summary: "\(status.label) \(climb.name) (\(grade) @\(selectedAngle)°)",
                  metric: stat.difficulty)
@@ -552,15 +554,4 @@ struct KilterClimbDetailView: View {
         try? modelContext.save()
     }
 
-    /// Open a board session on connect and close it on disconnect, so logs made while connected are
-    /// grouped under one session in History (Phase 2).
-    private func wireSessionCapture() {
-        board.onConnectionChange = { connected in
-            if connected {
-                sessions.start(angle: selectedAngle, source: "ble", in: modelContext)
-            } else {
-                sessions.end(in: modelContext)
-            }
-        }
-    }
 }

@@ -141,3 +141,51 @@ extension KilterClimbLog {
             startedAt: entry.startedAt, endedAt: entry.endedAt, loggedAt: entry.date)
     }
 }
+
+/// Pure decision logic for **recovering** the active Kilter session from the persisted store after the
+/// in-memory `KilterSessionManager` was reset (navigation, relaunch) or when duplicate open sessions
+/// have accrued. Enforces a single-open-session invariant and auto-closes abandoned sessions, so the
+/// manager and the store can't drift. Device-free + deterministic → unit-tested without SwiftData.
+/// (kilter session lifecycle)
+enum KilterSessionRecovery {
+    /// One persisted open (`endedAt == nil`) session, reduced to what the decision needs.
+    struct Candidate: Equatable, Sendable {
+        var id: UUID
+        var startedAt: Date
+        /// The last real activity in the session (newest log time / HR sample), else `startedAt`.
+        var lastActivity: Date
+    }
+
+    /// A session to auto-close, stamped at its last real activity (not "now"), so its duration and the
+    /// media-discovery window reflect when climbing actually stopped — not when we happened to notice.
+    struct Closure: Equatable, Hashable, Sendable {
+        var id: UUID
+        var endedAt: Date
+    }
+
+    /// The recovery decision: at most one session to `adopt` as the live one, plus any to `close`.
+    struct Plan: Equatable, Sendable {
+        var adopt: UUID?
+        var close: [Closure]
+        static let empty = Plan(adopt: nil, close: [])
+    }
+
+    /// Decide which open session (if any) to adopt and which to close.
+    /// - The **newest** open session is adopted, unless it's been idle longer than `abandonedAfter`
+    ///   (no logs/HR for hours → the user forgot to end it), in which case it too is auto-closed.
+    /// - Every **other** open session is closed (single-open invariant — duplicates can't survive).
+    /// - Closed sessions are stamped at their own `lastActivity`, never "now".
+    static func plan(open: [Candidate], now: Date, abandonedAfter: TimeInterval = 6 * 3600) -> Plan {
+        guard !open.isEmpty else { return .empty }
+        let sorted = open.sorted {
+            $0.startedAt != $1.startedAt ? $0.startedAt > $1.startedAt : $0.id.uuidString > $1.id.uuidString
+        }
+        let newest = sorted[0]
+        let newestIsLive = now.timeIntervalSince(newest.lastActivity) <= abandonedAfter
+        let adopt = newestIsLive ? newest.id : nil
+        let close = sorted
+            .filter { $0.id != adopt }
+            .map { Closure(id: $0.id, endedAt: max($0.startedAt, $0.lastActivity)) }
+        return Plan(adopt: adopt, close: close)
+    }
+}
