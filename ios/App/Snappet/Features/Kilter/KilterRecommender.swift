@@ -81,22 +81,29 @@ enum KilterRecommender {
     /// reproducible and testable.
     static func recommend(history: [KilterClimbLog],
                           candidates: [KilterListItem],
+                          anchor: Double? = nil,
                           options: Options = Options()) -> Plan {
         let working = workingDifficulty(history: history, sendThreshold: options.sendThreshold)
 
-        // Anchor: the detected working grade, or — on a cold start — the median candidate difficulty,
-        // so a brand-new climber still gets a sensible spread.
-        let anchor: Double
-        if let working {
-            anchor = working
+        // Band centre. Prefer an explicit `anchor` from the caller — so the catalog-query window it
+        // fetched `candidates` over and these bands derive from the **same** value; otherwise the
+        // window and the bands can disagree and a goal gets silently dropped (the view sizes its
+        // query from the grade-scale median, which need not match a candidate-density median). Falls
+        // back to the detected working grade, then — on a cold start with no anchor — the median
+        // candidate difficulty, so a brand-new climber still gets a sensible spread.
+        let resolvedAnchor: Double
+        if let anchor {
+            resolvedAnchor = anchor
+        } else if let working {
+            resolvedAnchor = working
         } else if !candidates.isEmpty {
             let sorted = candidates.map(\.difficulty).sorted()
-            anchor = sorted[sorted.count / 2]
+            resolvedAnchor = sorted[sorted.count / 2]
         } else {
             return Plan(picks: [], workingDifficulty: working, workingGradeLabel: nil)
         }
 
-        let w = bucket(anchor)
+        let w = bucket(resolvedAnchor)
         let alloc = allocation(target: options.targetCount)
         let sentUUIDs = Set(history.filter(\.isSend).map(\.climbUUID))
 
@@ -151,6 +158,17 @@ enum KilterRecommender {
         let warmup = max(1, Int((Double(t) / 3.0).rounded()))
         let send = max(1, t - warmup - project)
         return (warmup, send, project)
+    }
+
+    /// The catalog difficulty window a caller should fetch candidates over so **every** band
+    /// `recommend(anchor:)` may draw on is actually populated. The bands span buckets `[w-4 … w+2]`
+    /// (warm-up fallbacks down to `w-4`, project up to `w+2`) where `w = round(anchor)`; a bucket `b`
+    /// covers difficulties `[b-0.5, b+0.5)`, so the window must reach `w-4.5 … w+2.5`. Pass the *same*
+    /// `anchor` to `recommend` so the window and the bands share one centre — otherwise the deepest
+    /// warm-up bands point at climbs the query never fetched (KilterPlanView relies on this).
+    static func candidateWindow(anchor: Double) -> (min: Double, max: Double) {
+        let w = Double(bucket(anchor))
+        return (w - 4.5, w + 2.5)
     }
 
     // MARK: - Private helpers

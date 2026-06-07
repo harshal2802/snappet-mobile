@@ -135,4 +135,52 @@ final class KilterRecommenderTests: XCTestCase {
         XCTAssertEqual(plan.workingDifficulty, 16)
         XCTAssertEqual(plan.workingGradeLabel, "6a/V3")
     }
+
+    // MARK: - Anchor ↔ candidate-window coherence (review fix)
+
+    /// The window a caller fetches candidates over must include every band `recommend` can draw on
+    /// (buckets w-4 … w+2) — otherwise the deep warm-up fallbacks point at climbs that were never
+    /// fetched (the `w-4` band was previously dead because the view fetched only down to anchor-3).
+    func testCandidateWindowCoversAllBands() {
+        let window = KilterRecommender.candidateWindow(anchor: 16)
+        XCTAssertEqual(window.min, 11.5, accuracy: 0.0001)
+        XCTAssertEqual(window.max, 18.5, accuracy: 0.0001)
+        for bucket in 12...18 {   // w-4 … w+2 for w = 16
+            XCTAssertTrue(window.min <= Double(bucket) && Double(bucket) <= window.max,
+                          "bucket \(bucket) must lie inside the fetch window \(window)")
+        }
+    }
+
+    /// With the closer warm-up bands empty, the recommender must still reach the deep [w-4] fallback.
+    func testWarmupReachesDeepFallbackBand() {
+        let history = [log("h1", diff: 16, .sent), log("h2", diff: 16, .sent)]   // working = 16
+        let candidates = [
+            item("warm12", diff: 12),       // the only warm-up option, at w-4
+            item("s16", diff: 16),          // a send
+            item("p17", diff: 17),          // a project
+        ]
+        let plan = KilterRecommender.recommend(history: history, candidates: candidates)
+        XCTAssertEqual(uuids(plan.picks(for: .warmup)), ["warm12"],
+                       "a w-4 climb must be pickable when the closer warm-up bands are empty")
+    }
+
+    /// An explicit `anchor` (the path the view uses) centres the bands on that value — not on the
+    /// candidate median — so a hard-skewed catalog can't pull the plan off the working grade, and
+    /// every goal band fills from the fetched pool.
+    func testExplicitAnchorDrivesBandCentre() {
+        let candidates = [
+            item("w14", diff: 14), item("w15", diff: 15),
+            item("s16a", diff: 16), item("s16b", diff: 16), item("s16c", diff: 16),
+            item("p17", diff: 17),
+            item("x21", diff: 21), item("x22", diff: 22),   // hard outliers the median path would chase
+        ]
+        let plan = KilterRecommender.recommend(history: [], candidates: candidates, anchor: 16)  // (2,3,1)
+        XCTAssertNil(plan.workingDifficulty)
+        XCTAssertEqual(plan.picks(for: .warmup).count, 2)
+        XCTAssertEqual(plan.picks(for: .send).count, 3)
+        XCTAssertEqual(plan.picks(for: .project).count, 1)
+        XCTAssertTrue(plan.picks(for: .send).allSatisfy { $0.item.difficulty == 16 })
+        XCTAssertFalse(uuids(plan.picks).contains("x21"))
+        XCTAssertFalse(uuids(plan.picks).contains("x22"))
+    }
 }

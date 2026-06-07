@@ -18,7 +18,7 @@ climbing** — gym bouldering / outdoor — which the user confirmed they do. (d
   `Codable` decodes a missing optional key as nil; a non-optional key would throw on old data). The climb
   outcome **reuses `KilterAscentStatus`** (one climbing vocabulary across Kilter + WorkoutTracker +
   the recommender). Pure `SetMeasure` (summary/format/validate, e.g. "8 × 60 kg" / "0:45" /
-  "V4 · Flash · 3 tries") + `SetMeasureTests` (14 cases). **Rejected** a `SetMeasure`
+  "V4 · Flash · 3 tries") + `SetMeasureTests` (12 cases). **Rejected** a `SetMeasure`
   enum-with-associated-values (bigger hand-written-`Codable` surface, no user-visible gain).
 - **Freeform player (D3/D5) is a NEW, self-contained view, not a rewrite.** `FreeformPlayerView` (a
   list-based logbook) handles routineless sessions (`routineID == nil`): add exercises (Lifting via the
@@ -34,9 +34,16 @@ ad-hoc lifting, reusing the existing model (no new `@Model`, additive-only) and 
 
 **Rules out / caveats**: **No build/sim/test run** — the authoring box has no Swift toolchain, so
 `xcodebuild test` + a sim pass on a Mac are owed (only the graph integrity was checked: 162 nodes / 284
-edges, no orphans/dups). Followups: the freeform player doesn't push per-set **Live Activity** updates
-(timer + HR still work); distance/GPS (Shape ②) isn't a `SetKind` yet; ad-hoc Climbing/Timed exercises
-use a fixed default name (inline rename later). Graph: added `wt-freeform-player` + `wt-set-measure` nodes.
+edges, no orphans/dups). Followups: distance/GPS (Shape ②) isn't a `SetKind` yet; ad-hoc Climbing/Timed
+exercises use a fixed default name (inline rename later). Graph: added `wt-freeform-player` +
+`wt-set-measure` nodes.
+- **Freeform Live Activity (fixed in review).** `FreeformPlayerView` now pushes to the **Live Activity**
+  (mirroring `WorkoutPlayerView`): live HR + the current exercise + the paused state, via `onChange` on
+  `liveWorkout.latestHR`/`isPaused` and after each log/add. Previously it only seeded the activity once,
+  so the Lock Screen showed a stale "Workout" label, blank HR, and a timer that kept running while
+  paused. Only the per-set "Set N of M" line is intentionally omitted (a freeform logbook has no fixed
+  target); the `startLiveActivity` seed also no longer emits a nonsensical "Set 1 of 0" for an empty
+  freeform exercise.
 
 ## [2026-06-07] Kilter-driven session recommender — pick a session from your logs
 
@@ -60,10 +67,17 @@ was *using* the logs to suggest a session.
   the catalog for a window around the working grade, runs the recommender, shows grouped picks; **Start
   session** begins a manual `KilterSession` (reusing `KilterSessionManager` → live HR / Live Activity /
   media) and taps through each pick, with a live "logged this session" check.
-- **Tests**: `KilterRecommenderTests` (11 cases — working-grade detection, allocation sum, banding by
+- **Tests**: `KilterRecommenderTests` (14 cases — working-grade detection, allocation sum, banding by
   goal, prefer-unsent, higher-quality-wins, determinism, no-dup-across-goals, cold start, empty
-  candidates). **Graph**: added `kilter-recommender` (pure) + `kilter-plan` (screen) nodes + edges
-  (integrity re-checked: 160 nodes / 279 edges, no orphans/dups).
+  candidates, **candidate-window coverage, explicit-anchor band centre, deep warm-up fallback**).
+  **Graph**: added `kilter-recommender` (pure) + `kilter-plan` (screen) nodes + edges
+  (integrity re-checked: 162 nodes / 284 edges, no orphans/dups).
+- **Recommender ↔ view coherence (fixed in review).** The band centre and the catalog-query window
+  must share one `anchor`: `recommend` takes an explicit `anchor:` and the view fetches over
+  `KilterRecommender.candidateWindow(anchor:)` (`w-4.5 … w+2.5`, fully bracketing the warm-up→project
+  bands). Earlier the view fetched `anchor-3 … anchor+2`, leaving the `w-4` warm-up fallback unfetchable
+  and letting two independent cold-start anchors (grade-scale median vs candidate median) disagree and
+  silently drop a goal.
 
 **Why**: it's the most on-brand piece — a deterministic pure function over data the app already keeps,
 turning history into action — and the catalog/session machinery to act on it already exists.

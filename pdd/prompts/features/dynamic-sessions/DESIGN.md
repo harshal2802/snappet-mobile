@@ -48,7 +48,7 @@ The standout remaining idea, and the most on-brand: a **pure function over data 
 | File | Role | Verifiable |
 |---|---|---|
 | `Features/Kilter/KilterRecommender.swift` | **pure** core — history + candidates → a goal-tagged `Plan` | XCTest (Mac) |
-| `SnappetTests/KilterRecommenderTests.swift` | 11 cases — working-grade detection, banding, prefer-unsent, determinism, cold start, allocation | XCTest (Mac) |
+| `SnappetTests/KilterRecommenderTests.swift` | 14 cases — working-grade detection, banding, prefer-unsent, determinism, cold start, allocation, candidate-window coverage, explicit-anchor centre, deep warm-up fallback | XCTest (Mac) |
 | `Features/Kilter/KilterPlanView.swift` | the I/O screen — reads logs, queries catalog, renders + starts a session | sim/device |
 | `KilterRootView.swift` | More-menu entry (`kilter.plan`) + `KilterPlanRoute` destination | sim/device |
 | `docs/knowledge-graph/data.js` | nodes `kilter-recommender` + `kilter-plan`, wired | integrity-checked here |
@@ -78,8 +78,8 @@ taps through to its climb detail (existing log flow), with a live "logged this s
 
 No Swift toolchain exists on the authoring (Linux) box — **nothing here was compiled or run**. The pure
 core + tests are written to the repo's tested-pure-edge convention; **`xcodebuild test` on a Mac is owed**
-to turn the 11 `KilterRecommenderTests` green and to sim-verify `KilterPlanView`. Graph integrity (160
-nodes / 279 edges, no orphans/dups) *was* checked here.
+to turn the `KilterRecommenderTests` green and to sim-verify `KilterPlanView`. Graph integrity (162
+nodes / 284 edges, no orphans/dups) *was* checked here.
 
 ---
 
@@ -105,7 +105,7 @@ How it was built (chosen to **not** destabilize the device-verified guided playe
   inside the blob — every added field is `Optional` (synthesized `Codable` decodes a *missing* optional
   key as nil; a non-optional key would throw). The climb outcome **reuses `KilterAscentStatus`** (shared
   vocabulary with the recommender). Pure `SetMeasure` (summary/format/validate) + `SetMeasureTests`
-  (14 cases). **Rejected** a `SetMeasure` enum-with-payloads (bigger hand-written-Codable surface).
+  (12 cases). **Rejected** a `SetMeasure` enum-with-payloads (bigger hand-written-Codable surface).
 - **D3/D5 — `FreeformPlayerView`** (a **new, self-contained** logbook, not a rewrite of the guided
   player): routineless sessions (`routineID == nil`) grow on the fly — **Add exercise** (Lifting via
   `ExercisePickerView` · Climbing · Timed), per-exercise **Add set/attempt** via a kind-adaptive
@@ -124,8 +124,9 @@ How it was built (chosen to **not** destabilize the device-verified guided playe
 | ✅ D5 | Ad-hoc climb/timed input (`LogSetSheet`) + detail rendering | uses D4 | sim |
 
 ### Known v1 limitations / follow-ups
-- The freeform player doesn't push per-set updates to the **Live Activity** (the timer + coordinator HR
-  still work; the exercise line stays generic). Minor; a later add.
+- The freeform player pushes **Live Activity** updates (live HR, the current exercise, and the paused
+  state — mirroring `WorkoutPlayerView`; added in review). Only the per-set "Set N of M" line is omitted,
+  since a freeform logbook has no fixed set target.
 - Distance/GPS (Shape ②) is **not** a `SetKind` yet (its own initiative).
 - Rename for ad-hoc Climbing/Timed exercises defaults to a fixed name; inline rename is a follow-up.
 

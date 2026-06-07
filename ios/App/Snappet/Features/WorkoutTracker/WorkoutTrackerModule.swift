@@ -312,8 +312,10 @@ struct WorkoutHomeView: View {
         let first = session.exercises.first { !$0.skipped }
         let name = first.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
         // Seed a real first-set label so the Lock Screen isn't blank if the app is backgrounded
-        // before the player view appears (e.g. started via a shortcut).
-        let progress = first.map { "Set 1 of \($0.sets.count)" } ?? ""
+        // before the player view appears (e.g. started via a shortcut). Guard on a non-empty set
+        // list so a freeform exercise (which starts with no sets) never seeds a nonsensical
+        // "Set 1 of 0" — leave it blank until a set is actually logged.
+        let progress = first.flatMap { $0.sets.isEmpty ? nil : "Set 1 of \($0.sets.count)" } ?? ""
         app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
                                exerciseName: name, setProgress: progress)
     }

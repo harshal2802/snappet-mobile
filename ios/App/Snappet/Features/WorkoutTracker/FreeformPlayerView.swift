@@ -67,7 +67,15 @@ struct FreeformPlayerView: View {
             Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
             Button("Keep going", role: .cancel) {}
         }
-        .onAppear { app.workoutNotifications.requestAuthorization() }
+        .onAppear {
+            app.workoutNotifications.requestAuthorization()
+            pushLiveActivity()
+        }
+        // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
+        // live HR and the paused state push as they change. The overall timer self-ticks off
+        // `startedAt`; these refresh HR + the exercise line + the paused flag. Mirrors `WorkoutPlayerView`.
+        .onChange(of: app.liveWorkout.latestHR) { _, _ in pushLiveActivity() }
+        .onChange(of: app.liveWorkout.isPaused) { _, _ in pushLiveActivity() }
     }
 
     // MARK: - Sections
@@ -167,6 +175,7 @@ struct FreeformPlayerView: View {
                 sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue))
         }
         persist()
+        pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
     }
 
     private func addExercise(kind: SetKind, name: String) {
@@ -174,12 +183,14 @@ struct FreeformPlayerView: View {
             exerciseId: "adhoc-\(kind.rawValue)", targetSets: 0, targetReps: "", targetRestSeconds: 0,
             sets: [], displayName: name, kindRaw: kind.rawValue))
         persist()
+        pushLiveActivity()
     }
 
     private func removeExercise(_ ex: SessionExercise) {
         guard let idx = indexOf(ex) else { return }
         session.exercises.remove(at: idx)
         persist()
+        pushLiveActivity()   // the current (last) exercise may have changed
     }
 
     private func appendLog(_ log: SetLog, toExerciseID id: UUID) {
@@ -188,6 +199,7 @@ struct FreeformPlayerView: View {
         entry.completedAt = .now
         session.exercises[idx].sets.append(entry)
         persist()
+        pushLiveActivity()
         Haptics.success()
     }
 
@@ -202,6 +214,24 @@ struct FreeformPlayerView: View {
     }
 
     private func persist() { try? context.save() }
+
+    // MARK: - Live Activity
+
+    /// Push the current freeform state to the Live Activity so the Lock Screen / Dynamic Island show
+    /// live HR, the exercise being worked (the most recently added), and the paused state — instead of
+    /// the stale seed. The exercise label is the latest non-skipped exercise (a freeform logbook has no
+    /// fixed cursor); `setProgress` stays empty since there's no "Set N of M" target. No-op where Live
+    /// Activities are unavailable; the controller diffs/throttles so a ~1 Hz HR stream is rate-limited.
+    private func pushLiveActivity() {
+        let current = session.exercises.last { !$0.skipped }
+        let name = current.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
+        app.liveActivity.update(WorkoutLiveSnapshot(
+            startedAt: session.startedAt,
+            hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
+            exerciseName: name,
+            setProgress: "",
+            paused: app.liveWorkout.isPaused))
+    }
 
     // MARK: - Pause
 

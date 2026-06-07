@@ -134,10 +134,14 @@ struct KilterPlanView: View {
         let scale = catalog.gradeScale()
         let median = scale.isEmpty ? 18.0 : Double(scale[scale.count / 2].difficulty)
         let anchor = working ?? median
+        // Fetch over the window the recommender's bands actually reach, and hand it the **same**
+        // anchor — so the query window and the band centre agree (no silently-dropped goal, and the
+        // deep warm-up fallbacks have candidates to draw on).
+        let window = KilterRecommender.candidateWindow(anchor: anchor)
         let candidates = catalog.list(layoutId: layoutId, angle: angle,
-                                      minDifficulty: anchor - 3, maxDifficulty: anchor + 2, limit: 200)
+                                      minDifficulty: window.min, maxDifficulty: window.max, limit: 200)
 
-        plan = KilterRecommender.recommend(history: history, candidates: candidates)
+        plan = KilterRecommender.recommend(history: history, candidates: candidates, anchor: anchor)
         built = true
     }
 }
