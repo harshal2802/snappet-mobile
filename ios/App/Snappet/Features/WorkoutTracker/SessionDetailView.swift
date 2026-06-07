@@ -306,7 +306,7 @@ private struct SessionMediaSection: View {
                         Text("Skipped").foregroundStyle(.secondary).italic()
                     } else {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                            SetTileRow(index: i + 1, set: set, unit: unit,
+                            SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
                                        bpm: bpm(forSetCompletedAt: set.completedAt))
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
@@ -633,6 +633,9 @@ private struct SessionMediaSection: View {
 private struct SetTileRow: View {
     let index: Int
     let set: SetLog
+    /// The owning exercise's authoritative measure kind (from `SessionExercise.kind`), so a climb/
+    /// timed/reps-weight set renders the way the freeform player wrote it — no field-sniffing.
+    let kind: SetKind
     let unit: WeightUnit
     let bpm: Double?
 
@@ -660,19 +663,20 @@ private struct SetTileRow: View {
     }
 
     private var detailText: String {
-        // Freeform climb / timed sets carry their own fields — render them via the shared formatter so a
-        // bouldering or timed-hold session reads correctly here too (dynamic-sessions D5).
-        if set.climbGradeLabel != nil || set.climbStatusRaw != nil {
-            return SetMeasure.summary(set, kind: .climbAttempt, unit: unit)
+        // Render by the exercise's authoritative `kind` (not by sniffing which fields are populated),
+        // so this matches the freeform player's `SetMeasure.summary(_:kind:)`. The repsWeight branch
+        // keeps its kg conversion (which `SetMeasure.summary` doesn't do), so lifting sets — including
+        // all legacy/routine data, where `kind` defaults to `.repsWeight` — render exactly as before.
+        switch kind {
+        case .climbAttempt, .duration:
+            return SetMeasure.summary(set, kind: kind, unit: unit)
+        case .repsWeight:
+            if let w = set.actualWeight, w > 0 {
+                let kg = WorkoutMath.toKg(w, set.weightUnit)
+                return "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
+            }
+            return set.actualReps.map { "\($0) reps" } ?? "done"
         }
-        if let d = set.durationSec, d > 0 {
-            return SetMeasure.summary(set, kind: .duration, unit: unit)
-        }
-        if let w = set.actualWeight, w > 0 {
-            let kg = WorkoutMath.toKg(w, set.weightUnit)
-            return "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
-        }
-        return set.actualReps.map { "\($0) reps" } ?? "done"
     }
 }
 
