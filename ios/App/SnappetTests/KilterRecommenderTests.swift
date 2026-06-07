@@ -168,11 +168,14 @@ final class KilterRecommenderTests: XCTestCase {
     /// candidate median — so a hard-skewed catalog can't pull the plan off the working grade, and
     /// every goal band fills from the fetched pool.
     func testExplicitAnchorDrivesBandCentre() {
+        // A hard-skewed pool: its median is ~19, far from 16. So WITHOUT an explicit anchor the plan
+        // would centre up there — which is exactly what lets this test discriminate the override.
         let candidates = [
             item("w14", diff: 14), item("w15", diff: 15),
             item("s16a", diff: 16), item("s16b", diff: 16), item("s16c", diff: 16),
             item("p17", diff: 17),
-            item("x21", diff: 21), item("x22", diff: 22),   // hard outliers the median path would chase
+            item("x19", diff: 19), item("x20", diff: 20), item("x21", diff: 21),
+            item("x22", diff: 22), item("x23", diff: 23), item("x24", diff: 24), item("x25", diff: 25),
         ]
         let plan = KilterRecommender.recommend(history: [], candidates: candidates, anchor: 16)  // (2,3,1)
         XCTAssertNil(plan.workingDifficulty)
@@ -180,7 +183,12 @@ final class KilterRecommenderTests: XCTestCase {
         XCTAssertEqual(plan.picks(for: .send).count, 3)
         XCTAssertEqual(plan.picks(for: .project).count, 1)
         XCTAssertTrue(plan.picks(for: .send).allSatisfy { $0.item.difficulty == 16 })
-        XCTAssertFalse(uuids(plan.picks).contains("x21"))
-        XCTAssertFalse(uuids(plan.picks).contains("x22"))
+        XCTAssertFalse(uuids(plan.picks).contains("x19"))   // outliers stay out of the bands around 16
+
+        // Control: the SAME pool with NO explicit anchor centres on its median (~19), not 16 —
+        // proving the assertions above depend on the anchor override, not the median fallback.
+        let viaMedian = KilterRecommender.recommend(history: [], candidates: candidates)
+        XCTAssertFalse(viaMedian.picks(for: .send).allSatisfy { $0.item.difficulty == 16 },
+                       "without an explicit anchor a hard-skewed pool must not centre its sends on 16")
     }
 }
