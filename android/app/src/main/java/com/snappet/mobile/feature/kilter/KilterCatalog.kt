@@ -42,12 +42,24 @@ data class KilterHold(
     val placementId: Int,
     val x: Double,
     val y: Double,
+    /** On-screen color (`screen_color`). */
     val colorHex: String,
+    /** Physical-LED color (`led_color`) — can differ from [colorHex]; used for BLE illumination. */
+    val ledColorHex: String,
     val role: String,
     val ledPosition: Int?,
 )
 
 data class KilterLayout(val id: Int, val name: String)
+
+/**
+ * A physical board size for a layout (a `product_size`), e.g. "8 x 12 — Home". The user picks theirs
+ * so the LED mapping matches their board — each size addresses its LEDs differently.
+ */
+data class KilterBoardSize(val id: Int, val name: String, val detail: String) {
+    /** Picker label: "8 x 12 — Home" (or just the name when there's no detail). */
+    val label: String get() = if (detail.isEmpty()) name else "$name — $detail"
+}
 
 /** One hole position normalized to view space (x,y in 0..1, y from the top) — the faint board grid. */
 data class KilterGridHole(val x: Double, val y: Double)
@@ -115,10 +127,12 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
     val isAvailable: Boolean get() = db != null && grades.isNotEmpty()
 
     private val grades = HashMap<Int, String>()
-    private val roleScreenColor = HashMap<Int, String>()
+    private val roleScreenColor = HashMap<Int, String>()   // role_id -> on-screen color hex
+    private val roleLedColor = HashMap<Int, String>()       // role_id -> physical-LED color hex (led_color)
     private val placementXY = HashMap<Int, Pair<Int, Int>>()
     private val placementHole = HashMap<Int, Int>()
-    private val ledCache = HashMap<Int, Map<Int, Int>>()
+    private val ledCache = HashMap<Int, Map<Int, Int>>()    // product_size_id -> (holeId -> led position)
+    private val sizesCache = HashMap<Int, List<KilterBoardSize>>()   // layoutId -> available sizes
     private val extentCache = HashMap<Int, IntArray>()   // layoutId -> [minX,maxX,minY,maxY]
     private val geometryCache = HashMap<Int, KilterBoardGeometry>()
 
@@ -131,8 +145,11 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
         db.rawQuery("SELECT difficulty, boulder_name FROM difficulty_grades", null).use { c ->
             while (c.moveToNext()) grades[c.getInt(0)] = c.getString(1)
         }
-        db.rawQuery("SELECT id, screen_color FROM placement_roles", null).use { c ->
-            while (c.moveToNext()) roleScreenColor[c.getInt(0)] = c.getString(1)
+        db.rawQuery("SELECT id, screen_color, led_color FROM placement_roles", null).use { c ->
+            while (c.moveToNext()) {
+                roleScreenColor[c.getInt(0)] = c.getString(1)
+                roleLedColor[c.getInt(0)] = c.getString(2)
+            }
         }
         db.rawQuery("SELECT p.id, h.x, h.y, p.hole_id FROM placements p JOIN holes h ON h.id = p.hole_id", null).use { c ->
             while (c.moveToNext()) {
@@ -251,22 +268,30 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
      * hole extent for the layout (not the climb's own edges), so every climb renders at the same scale
      * and lines up with the faint grid from [boardGeometry]. Mirrors iOS.
      */
-    fun holds(climb: KilterClimb): List<KilterHold> {
+    /**
+     * [sizeId] is the user's physical board's `product_size_id` (from the Board-size preference). It
+     * selects which `leds` mapping to use — **critical**, since the same hole has a *different* LED
+     * address on each board size, so an arbitrary/wrong size lights the wrong holds. When [sizeId] is
+     * `0` or not valid for this layout, it falls back to the layout's smallest size.
+     */
+    fun holds(climb: KilterClimb, sizeId: Int = 0): List<KilterHold> {
         val e = extent(climb.layoutId)
         val w = (e[1] - e[0]).toDouble()
         val h = (e[3] - e[2]).toDouble()
         if (w <= 0 || h <= 0) return emptyList()
-        val leds = ledPositions(climb.layoutId)
+        val leds = ledPositions(effectiveSizeId(climb.layoutId, sizeId))
         val out = ArrayList<KilterHold>()
         for ((placementId, roleId) in parseFrames(climb.frames)) {
             val xy = placementXY[placementId] ?: continue
             val nx = (xy.first - e[0]) / w
             val ny = (xy.second - e[2]) / h
+            val screen = roleScreenColor[roleId] ?: "FFFFFF"
             out.add(KilterHold(
                 placementId = placementId,
                 x = nx.coerceIn(0.0, 1.0),
                 y = 1 - ny.coerceIn(0.0, 1.0),   // board y is bottom-up; view y is top-down
-                colorHex = roleScreenColor[roleId] ?: "FFFFFF",
+                colorHex = screen,
+                ledColorHex = roleLedColor[roleId] ?: screen,
                 role = roleName(roleId),
                 ledPosition = placementHole[placementId]?.let { leds[it] }))
         }
@@ -365,16 +390,54 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
         return pool[(day % pool.size + pool.size) % pool.size]
     }
 
-    private fun ledPositions(layoutId: Int): Map<Int, Int> {
-        ledCache[layoutId]?.let { return it }
+    /**
+     * The physical board sizes available for a layout (e.g. Original → 7×10, 8×12, 12×14, …). The user
+     * picks theirs in Settings; the choice drives [holds] so the right LEDs light. Ordered by
+     * `product_size_id`. Falls back to bare ids if `product_sizes` is absent (older catalog).
+     */
+    fun sizes(layoutId: Int): List<KilterBoardSize> {
+        sizesCache[layoutId]?.let { return it }
+        val db = db ?: return emptyList()
+        val out = ArrayList<KilterBoardSize>()
+        // Each query is guarded: Android's rawQuery throws on a missing table (unlike iOS's query()
+        // helper, which silently yields no rows on a failed prepare). An older/hand-rolled catalog may
+        // lack product_sizes (it isn't in the validator's required set), so swallow that and fall
+        // through to the bare-id fallback rather than crash — keeping platform parity.
+        try {
+            db.rawQuery(
+                "SELECT ps.id, ps.name, COALESCE(ps.description, '') FROM product_sizes ps WHERE ps.id IN " +
+                    "(SELECT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ?) ORDER BY ps.id",
+                arrayOf(layoutId.toString())
+            ).use { c -> while (c.moveToNext()) out.add(KilterBoardSize(c.getInt(0), c.getString(1), c.getString(2))) }
+        } catch (_: Exception) { /* product_sizes absent → fall through to bare ids */ }
+        if (out.isEmpty()) {
+            try {
+                db.rawQuery("SELECT DISTINCT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ? " +
+                    "ORDER BY product_size_id", arrayOf(layoutId.toString())).use { c ->
+                    while (c.moveToNext()) out.add(KilterBoardSize(c.getInt(0), "Size ${c.getInt(0)}", ""))
+                }
+            } catch (_: Exception) { /* no size tables at all → return empty, matching iOS */ }
+        }
+        sizesCache[layoutId] = out
+        return out
+    }
+
+    /** The default size for a layout when the user hasn't chosen one — the smallest `product_size_id`. */
+    fun defaultSizeId(layoutId: Int): Int = sizes(layoutId).minOfOrNull { it.id } ?: 0
+
+    /** The requested size if valid for this layout, else the layout's default (guards a stale pref). */
+    private fun effectiveSizeId(layoutId: Int, requested: Int): Int {
+        val ids = sizes(layoutId).map { it.id }
+        return if (ids.contains(requested)) requested else (ids.minOrNull() ?: 0)
+    }
+
+    private fun ledPositions(sizeId: Int): Map<Int, Int> {
+        ledCache[sizeId]?.let { return it }
         val db = db ?: return emptyMap()
-        var sizeId = 0
-        db.rawQuery("SELECT MIN(product_size_id) FROM product_sizes_layouts_sets WHERE layout_id = ?",
-            arrayOf(layoutId.toString())).use { c -> if (c.moveToNext()) sizeId = c.getInt(0) }
         val map = HashMap<Int, Int>()
         db.rawQuery("SELECT hole_id, position FROM leds WHERE product_size_id = ?",
             arrayOf(sizeId.toString())).use { c -> while (c.moveToNext()) map[c.getInt(0)] = c.getInt(1) }
-        ledCache[layoutId] = map
+        ledCache[sizeId] = map
         return map
     }
 

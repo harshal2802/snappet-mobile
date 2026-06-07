@@ -11,11 +11,17 @@ import SQLite3
 enum KilterCatalogFixture {
     private static let coords = [4, 8, 12, 16, 20]
     private static let createdAt = "2024-01-01 00:00:00"
-    /// role id → (name, screen colour). The reader maps 12/13/14/15 to start/middle/finish/foot.
-    private static let roles: [(id: Int, name: String, color: String)] = [
-        (12, "start", "00FF00"), (13, "middle", "00FFFF"),
-        (14, "finish", "FF00FF"), (15, "foot", "FFA500"),
+    /// role id → (name, screen colour, LED colour). The reader maps 12/13/14/15 to
+    /// start/middle/finish/foot. `start` deliberately has a different `led_color` vs `screen_color`
+    /// (mirrors real Kilter data) so tests cover the board using `led_color`, not the on-screen colour.
+    private static let roles: [(id: Int, name: String, screen: String, led: String)] = [
+        (12, "start", "00DD00", "00FF00"), (13, "middle", "00FFFF", "00FFFF"),
+        (14, "finish", "FF00FF", "FF00FF"), (15, "foot", "FFA500", "FFA500"),
     ]
+    /// Two synthetic board sizes for layout 1, so tests cover board-size LED selection. Size 1 maps
+    /// hole H → LED position H; size 2 maps hole H → H + sizeTwoOffset (a different physical address),
+    /// proving the wrong size lights the wrong holds.
+    private static let sizeTwoOffset = 1000
 
     private struct Climb {
         let uuid, name, setter, frames: String
@@ -101,9 +107,13 @@ enum KilterCatalogFixture {
         stmts.append("INSERT INTO layouts VALUES (2,1,'Test Wall B','',0,1,NULL,'\(createdAt)')")
 
         for role in roles {
+            // placement_roles columns: id, product_id, position, name, full_name, led_color, screen_color
             stmts.append("INSERT INTO placement_roles VALUES "
-                + "(\(role.id),1,\(role.id),'\(role.name)','\(role.name)','\(role.color)','\(role.color)')")
+                + "(\(role.id),1,\(role.id),'\(role.name)','\(role.name)','\(role.led)','\(role.screen)')")
         }
+
+        stmts.append("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
+        stmts.append("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
 
         var holeID = 0
         for (row, y) in coords.enumerated() {
@@ -112,10 +122,14 @@ enum KilterCatalogFixture {
                 let name = "\(Character(UnicodeScalar(65 + row)!))\(col + 1)"
                 stmts.append("INSERT INTO holes VALUES (\(holeID),1,'\(name)',\(x),\(y),NULL,0)")
                 stmts.append("INSERT INTO placements VALUES (\(holeID),1,\(holeID),\(holeID),0,NULL)")
+                // Two sizes: size 1 maps hole H → position H; size 2 → H + offset (a different address).
                 stmts.append("INSERT INTO leds VALUES (\(holeID),1,\(holeID),\(holeID))")
+                stmts.append("INSERT INTO leds VALUES "
+                    + "(\(holeID + 10000),2,\(holeID),\(holeID + sizeTwoOffset))")
             }
         }
         stmts.append("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
+        stmts.append("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
 
         for climb in climbs {
             stmts.append("INSERT INTO climbs VALUES ('\(climb.uuid)',1,1,'\(climb.setter)',"
@@ -159,6 +173,10 @@ enum KilterCatalogFixture {
         CREATE TABLE placements (id INT UNSIGNED NOT NULL PRIMARY KEY, layout_id INT UNSIGNED NOT NULL,
             hole_id INT UNSIGNED NOT NULL, hold_id INT UNSIGNED NOT NULL, rotation INT NOT NULL,
             default_placement_role_id INT UNSIGNED NULL DEFAULT NULL)
+        """,
+        """
+        CREATE TABLE product_sizes (id INT UNSIGNED NOT NULL PRIMARY KEY, name TEXT NOT NULL,
+            description TEXT)
         """,
         """
         CREATE TABLE leds (id INT UNSIGNED NOT NULL PRIMARY KEY, product_size_id INT UNSIGNED NOT NULL,

@@ -125,7 +125,7 @@ class KilterBoardController(context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun send(holds: List<KilterHold>, characteristic: BluetoothGattCharacteristic) {
-        val payload = holds.mapNotNull { h -> h.ledPosition?.let { it to h.colorHex } }
+        val payload = holds.mapNotNull { h -> h.ledPosition?.let { it to h.ledColorHex } }  // LED color, not on-screen
         writeQueue.clear()
         writeQueue.addAll(KilterProtocol.messages(payload, apiLevel))
         dequeueWrite(characteristic)

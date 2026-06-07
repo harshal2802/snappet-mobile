@@ -16,6 +16,12 @@ object KilterSettings {
     fun angle(context: Context): Int = prefs(context).getInt("angle", 40)
     fun setAngle(context: Context, value: Int) = prefs(context).edit().putInt("angle", value).apply()
 
+    /** The user's physical board size (`product_size_id`). 0 = unset → falls back to the layout default;
+     *  drives which LED map is sent so the right holds light. */
+    fun productSizeId(context: Context): Int = prefs(context).getInt("productSizeId", 0)
+    fun setProductSizeId(context: Context, value: Int) =
+        prefs(context).edit().putInt("productSizeId", value).apply()
+
     fun minGrade(context: Context): Int = prefs(context).getInt("minGrade", 10)
     fun setMinGrade(context: Context, value: Int) = prefs(context).edit().putInt("minGrade", value).apply()
 

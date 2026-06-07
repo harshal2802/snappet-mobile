@@ -213,7 +213,7 @@ final class KilterBoardController: NSObject {
     private func send(_ holds: [KilterHold], to peripheral: CBPeripheral, characteristic: CBCharacteristic) {
         let payload = holds.compactMap { hold -> (position: Int, colorHex: String)? in
             guard let pos = hold.ledPosition else { return nil }
-            return (pos, hold.colorHex)
+            return (pos, hold.ledColorHex)   // the board's LED color, not the on-screen color
         }
         let mode: CBCharacteristicWriteType =
             characteristic.properties.contains(.write) ? .withResponse : .withoutResponse

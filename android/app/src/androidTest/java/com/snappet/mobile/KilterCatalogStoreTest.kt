@@ -1,5 +1,6 @@
 package com.snappet.mobile
 
+import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.snappet.mobile.feature.kilter.CatalogFilter
@@ -106,6 +107,72 @@ class KilterCatalogStoreTest {
             assertEquals(4, items.size)
             val climb = cat.climb(items.first().uuid)!!
             assertTrue(cat.holds(climb).isNotEmpty())
+        } finally {
+            store.clear()
+            KilterCatalog.reset()
+        }
+    }
+
+    /**
+     * Board-size LED selection: each `product_size` addresses its LEDs differently, so holds(sizeId)
+     * must use the *selected* size — another size's positions light wrong/shifted holds (the real-board
+     * bug). Also proves the board uses `led_color`, not the on-screen `screen_color`. Mirrors iOS.
+     */
+    @Test
+    fun boardSizeSelectsLedMapAndUsesLedColor() {
+        val store = KilterCatalogStore.get(ctx)
+        val file = KilterCatalogFixture.build(tempFile())
+        val v = KilterCatalogValidator.validate(file)
+        store.install(file, KilterCatalogMeta(v.version, v.climbCount, v.sizeBytes, "Test", 0L))
+        file.delete()
+        try {
+            KilterCatalog.reset()
+            val cat = KilterCatalog.get(ctx)
+            assertEquals(listOf(1, 2), cat.sizes(1).map { it.id }.sorted())
+            assertEquals(1, cat.defaultSizeId(1))
+
+            val climb = cat.climb("11111111-1111-4111-8111-111111111111")!!
+            val s1 = cat.holds(climb, 1).mapNotNull { it.ledPosition }.sorted()
+            val s2 = cat.holds(climb, 2).mapNotNull { it.ledPosition }.sorted()
+            assertEquals(listOf(1, 13, 25), s1)
+            assertEquals(listOf(1001, 1013, 1025), s2)
+            // An unset (0) or stale (foreign) size falls back to the layout's smallest — deterministic.
+            assertEquals(s1, cat.holds(climb, 0).mapNotNull { it.ledPosition }.sorted())
+            assertEquals(s1, cat.holds(climb, 999).mapNotNull { it.ledPosition }.sorted())
+
+            val start = cat.holds(climb, 1).first { it.role == "start" }
+            assertEquals("00DD00", start.colorHex)   // on-screen render keeps screen_color
+            assertEquals("00FF00", start.ledColorHex) // board payload uses led_color
+        } finally {
+            store.clear()
+            KilterCatalog.reset()
+        }
+    }
+
+    /**
+     * Regression / parity: a catalog lacking the (non-required) product_sizes table must DEGRADE to
+     * bare ids in sizes(), not crash — Android's rawQuery throws on a missing table where iOS's query()
+     * silently yields none. Guards the size-lookup try/catch. Mirrors iOS
+     * testSizesDegradeWhenProductSizesTableAbsent.
+     */
+    @Test
+    fun sizesDegradeWhenProductSizesTableAbsent() {
+        val store = KilterCatalogStore.get(ctx)
+        val file = KilterCatalogFixture.build(tempFile())
+        // Drop product_sizes to simulate the older-catalog case (still valid — it isn't required).
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("DROP TABLE product_sizes")
+        }
+        val v = KilterCatalogValidator.validate(file)
+        store.install(file, KilterCatalogMeta(v.version, v.climbCount, v.sizeBytes, "Test", 0L))
+        file.delete()
+        try {
+            KilterCatalog.reset()
+            val cat = KilterCatalog.get(ctx)
+            // Degrades to bare ids from product_sizes_layouts_sets instead of crashing.
+            assertEquals(listOf(1, 2), cat.sizes(1).map { it.id }.sorted())
+            val climb = cat.climb("11111111-1111-4111-8111-111111111111")!!
+            assertEquals(listOf(1001, 1013, 1025), cat.holds(climb, 2).mapNotNull { it.ledPosition }.sorted())
         } finally {
             store.clear()
             KilterCatalog.reset()

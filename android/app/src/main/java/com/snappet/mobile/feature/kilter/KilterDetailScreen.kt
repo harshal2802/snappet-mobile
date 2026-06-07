@@ -95,6 +95,9 @@ fun KilterDetailScreen(
     val gradeFormat = remember { KilterSettings.gradeFormat(context) }
     // Board payload dialect + the "wrong holds?" escape hatch (hidden until tapped).
     var apiLevel by remember { mutableStateOf(KilterSettings.apiLevel(context)) }
+    // The user's physical board size (product_size_id) — wrong size lights shifted/incorrect holds.
+    var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
+    var sizeMenu by remember { mutableStateOf(false) }
     var showProtocolFix by remember { mutableStateOf(false) }
 
     // Push the persisted/selected dialect to the controller (initial sync + on every switch); a switch
@@ -104,10 +107,17 @@ fun KilterDetailScreen(
     androidx.compose.runtime.LaunchedEffect(uuid) {
         val loaded = withContext(Dispatchers.IO) {
             val c = catalog.climb(uuid) ?: return@withContext null
-            Loaded(c, catalog.stats(uuid), catalog.holds(c), catalog.boardGeometry(c.layoutId), catalog.betaLinks(uuid))
+            // Seed the board size to this layout's default if unset/invalid, then map LEDs for it.
+            val eff = if (catalog.sizes(c.layoutId).any { it.id == productSizeId }) productSizeId
+            else catalog.defaultSizeId(c.layoutId)
+            Loaded(c, catalog.stats(uuid), catalog.holds(c, eff), catalog.boardGeometry(c.layoutId),
+                catalog.betaLinks(uuid), eff)
         } ?: return@LaunchedEffect
         climb = loaded.climb; stats = loaded.stats; holds = loaded.holds
         geometry = loaded.geometry; betaLinks = loaded.beta
+        if (productSizeId != loaded.effectiveSize) {
+            productSizeId = loaded.effectiveSize; KilterSettings.setProductSizeId(context, loaded.effectiveSize)
+        }
         selectedAngle = if (stats.any { it.angle == selectedAngle }) selectedAngle
         else stats.maxByOrNull { it.ascents }?.angle ?: selectedAngle
     }
@@ -250,9 +260,37 @@ fun KilterDetailScreen(
                             Icon(Icons.Filled.Lightbulb, contentDescription = null)
                             Text("  Light up this climb")
                         }
-                        // Escape hatch for the rare older board: a quiet link that opens a
-                        // Standard/Legacy switch; switching re-lights the current climb at once.
+                        // Escape hatch when the board lights the wrong holds — reveals the two fixes in
+                        // likelihood order: (1) board size (the usual cause of shifted/incorrect holds —
+                        // each size addresses its LEDs differently), then (2) the Standard/Legacy payload
+                        // dialect for older controllers. Both re-light the current climb at once.
                         if (showProtocolFix) {
+                            val sizes = climb?.let { catalog.sizes(it.layoutId) } ?: emptyList()
+                            if (sizes.size > 1) {
+                                Box {
+                                    OutlinedButton(
+                                        onClick = { sizeMenu = true },
+                                        modifier = Modifier.testTag("kilter.board.size"),
+                                    ) { Text("Board size: ${sizes.firstOrNull { it.id == productSizeId }?.label ?: "—"}") }
+                                    DropdownMenu(expanded = sizeMenu, onDismissRequest = { sizeMenu = false }) {
+                                        sizes.forEach { s ->
+                                            DropdownMenuItem(text = { Text(s.label) }, onClick = {
+                                                productSizeId = s.id
+                                                KilterSettings.setProductSizeId(context, s.id)
+                                                sizeMenu = false
+                                                climb?.let { c ->
+                                                    val nh = catalog.holds(c, s.id)
+                                                    holds = nh
+                                                    if (board.isConnected) board.illuminate(nh)
+                                                }
+                                            })
+                                        }
+                                    }
+                                }
+                                Text("Pick your board's size — the wrong size lights shifted/incorrect holds.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 KilterProtocol.ApiLevel.entries.forEach { level ->
                                     FilterChip(
@@ -263,7 +301,7 @@ fun KilterDetailScreen(
                                     )
                                 }
                             }
-                            Text("Switch if the wrong holds light up — it re-lights instantly.",
+                            Text("Still off? Older controllers use Legacy. Each change re-lights instantly.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
@@ -418,4 +456,5 @@ private data class Loaded(
     val holds: List<KilterHold>,
     val geometry: KilterBoardGeometry,
     val beta: List<String>,
+    val effectiveSize: Int,
 )

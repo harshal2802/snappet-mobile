@@ -4,6 +4,37 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-06] Kilter Board — LED map by the user's BOARD SIZE + send led_color (real-board fix)
+
+**Decision**: Resolve each lit hold's LED address from the `leds` table **for the user's chosen
+`product_size`**, not an arbitrary one, and send the role's **`led_color`** (not `screen_color`) to the
+board. Found on real hardware: the board connected and lit up (the #52 GATT/framing fix worked) but lit
+the **wrong/shifted holds**.
+
+- **Root cause**: `ledPositions` used `MIN(product_size_id)` for the layout — i.e. it always assumed
+  one specific board size (for Kilter Original that's size 7, "12×14 Commercial", 527 LEDs). A layout
+  exists in **many** physical sizes (Original: 7×10/8×12/12×12/12×14/16×12; Homewall: per-dimension ×
+  LED-kit), and the **same hole has a different `leds.position` on each size**, so any other board lights
+  the wrong LEDs. A taller assumed board (12×14) shifts every address → the user's "shifted/offset"
+  symptom.
+- **Fix**: `KilterCatalog.sizes(forLayout:)` lists a layout's `product_sizes`; `holds(for:sizeId:)`
+  maps LEDs for the selected size (falling back to the layout's smallest when unset/invalid).
+  `KilterHold` gains `ledColorHex` (`placement_roles.led_color`) used by the controller, keeping
+  `colorHex` (`screen_color`) for the on-screen render — they differ for `start` (LED `00FF00` vs
+  screen `00DD00`).
+- **UX**: a persisted **Board size** preference (`kilter.productSizeId` AppStorage / SharedPreferences),
+  picked in Settings (next to Board/Angle) and in the inline **"Wrong holds?"** control on the climb
+  screen (size picker first — the likely cause — then the Standard/Legacy dialect). Changing it re-maps
+  every LED and re-lights the current climb instantly. Seeded to the layout's default; reset when the
+  layout changes.
+
+**Why**: the board can't report its size and the LED address space is size-specific, so the app must
+know the size — there's no auto-detect. **Rules out**: a single hardcoded size; a uniform position
+offset (sizes differ in hole sets, not by a constant shift); per-climb size. **Verified**: off-device
+unit/instrumented tests with a 2-size fixture prove `holds(sizeId:)` selects the right size's positions
+and the board uses `led_color` (`KilterCatalogStoreTests` / `KilterCatalogStoreTest`). Lighting the
+**correct** holds on the wall stays **device-pending** until re-tested on the real board with the size set.
+
 ## [2026-06-06] Kilter Board — ship both Aurora payload dialects (Standard/Legacy) with a user toggle
 
 **Decision**: Support **both** Aurora illumination "API levels" and let the user choose, rather than
