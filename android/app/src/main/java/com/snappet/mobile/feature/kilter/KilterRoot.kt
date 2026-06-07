@@ -168,6 +168,17 @@ private fun KilterCatalogScreen(
     var angle by remember { mutableStateOf(KilterSettings.angle(context)) }
     var minGrade by remember { mutableStateOf(KilterSettings.minGrade(context)) }
     var maxGrade by remember { mutableStateOf(KilterSettings.maxGrade(context)) }
+    // The user's physical board size (product_size_id) — drives the on-screen render size + the LED map.
+    // Picked inline beside Layout (when the layout has >1 size), cached, seeded/reset per layout.
+    var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
+    val sizes = remember(layoutId) { catalog.sizes(layoutId) }
+    // Keep the size valid for the layout — seed the default when unset, reset on a layout switch.
+    androidx.compose.runtime.LaunchedEffect(layoutId) {
+        if (sizes.none { it.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(layoutId)
+            KilterSettings.setProductSizeId(context, productSizeId)
+        }
+    }
     var savedOnly by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(KilterSort.POPULAR) }
@@ -266,6 +277,13 @@ private fun KilterCatalogScreen(
             ) {
                 FilterDropdown("Layout", layouts.firstOrNull { it.id == layoutId }?.name ?: "—",
                     layouts.map { it.id to it.name }, "kilter.layout") { layoutId = it; KilterSettings.setLayout(context, it) }
+                // Board size, right beside Layout — only when the layout offers a choice.
+                if (sizes.size > 1) {
+                    FilterDropdown("Size", sizes.firstOrNull { it.id == productSizeId }?.name ?: "—",
+                        sizes.map { it.id to it.label }, "kilter.size") {
+                        productSizeId = it; KilterSettings.setProductSizeId(context, it)
+                    }
+                }
                 FilterDropdown("Angle", "$angle°", angles.map { it to "$it°" }, "kilter.angle") {
                     angle = it; KilterSettings.setAngle(context, it)
                 }

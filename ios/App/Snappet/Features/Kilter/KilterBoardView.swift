@@ -1,13 +1,15 @@
 import SwiftUI
 
 /// Renders a climb on the Kilter board: the **full hold grid** as faint markers with the climb's lit
-/// holds drawn as role-colored rings on top (matching the on-wall LED-ring look). The official
-/// wood/hold photo isn't bundled, so the backdrop is schematic — but every hole is shown, so a climb
-/// reads in real board context instead of as a few dots floating in space.
+/// holds drawn on top, **shape-coded by role** (start = triangle, hand = circle, finish = square,
+/// foot = diamond — see `KilterHoldShape`). Shape is a redundant channel alongside the role color, so a
+/// color-blind climber can read the route without separating the hues. The official wood/hold photo
+/// isn't bundled (#42 — copyrighted Aurora assets), so the backdrop is schematic — but it's drawn at the
+/// user's selected board size and shows every hole, so a climb reads in real board context.
 ///
 /// `geometry` (the grid + aspect ratio) and `holds` both arrive normalized to the *same* board extent
-/// from `KilterCatalog`, so the lit holds line up exactly with the grid. Drawn with a single `Canvas`
-/// (cheap for the ~700-hole grid).
+/// **at the selected size** from `KilterCatalog`, so the lit holds line up exactly with the grid. Drawn
+/// with a single `Canvas` (cheap for the ~700-hole grid).
 struct KilterBoardView: View {
     let geometry: KilterBoardGeometry
     let holds: [KilterHold]
@@ -33,20 +35,23 @@ struct KilterBoardView: View {
                          with: .color(gridColor))
             }
 
-            // 2) The climb's lit holds, role-colored, drawn on top.
+            // 2) The climb's lit holds, role-colored AND role-shaped (color-blind redundant channel).
             for hold in holds {
                 let color = Color(hex: hold.colorHex)
                 let d = holdD * scale(for: hold.role)
                 let c = pt(hold.x, hold.y)
                 let rect = CGRect(x: c.x - d / 2, y: c.y - d / 2, width: d, height: d)
+                let shape = KilterHoldShape.forRole(hold.role)
                 if lit {
-                    // soft glow + solid core
+                    // soft glow + solid core, in the role's shape
                     var glow = ctx
                     glow.addFilter(.blur(radius: d * 0.35))
-                    glow.fill(Path(ellipseIn: rect.insetBy(dx: -d * 0.15, dy: -d * 0.15)), with: .color(color.opacity(0.8)))
-                    ctx.fill(Path(ellipseIn: rect), with: .color(color))
+                    glow.fill(Self.holdPath(shape, in: rect.insetBy(dx: -d * 0.15, dy: -d * 0.15)),
+                              with: .color(color.opacity(0.8)))
+                    ctx.fill(Self.holdPath(shape, in: rect), with: .color(color))
                 } else {
-                    ctx.stroke(Path(ellipseIn: rect), with: .color(color), lineWidth: max(2.5, d * 0.17))
+                    ctx.stroke(Self.holdPath(shape, in: rect), with: .color(color),
+                               style: StrokeStyle(lineWidth: max(2.5, d * 0.17), lineJoin: .round))
                 }
             }
         }
@@ -70,6 +75,33 @@ struct KilterBoardView: View {
         }
     }
 
+    /// The role's marker path inscribed in `rect` (circle/triangle/square/diamond). Shared with the
+    /// detail screen's legend so the on-board shapes and the legend can't drift. `lineJoin: .round` is
+    /// applied by the caller when stroking so the polygon corners read cleanly at small sizes.
+    static func holdPath(_ shape: KilterHoldShape, in rect: CGRect) -> Path {
+        switch shape {
+        case .circle:
+            return Path(ellipseIn: rect)
+        case .square:
+            return Path(roundedRect: rect, cornerRadius: rect.width * 0.16, style: .continuous)
+        case .triangle:
+            var p = Path()
+            p.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            p.closeSubpath()
+            return p
+        case .diamond:
+            var p = Path()
+            p.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+            p.closeSubpath()
+            return p
+        }
+    }
+
     @ViewBuilder private var boardBackground: some View {
         if lit {
             LinearGradient(colors: [Color(red: 0.06, green: 0.06, blue: 0.08), .black],
@@ -79,6 +111,14 @@ struct KilterBoardView: View {
                            startPoint: .top, endPoint: .bottom)
         }
     }
+}
+
+/// A `Shape` wrapper around `KilterBoardView.holdPath` so SwiftUI views (the detail screen's role
+/// legend) can stroke/fill a role's marker with the exact geometry the board draws — one source of
+/// truth for the shape code.
+struct KilterHoldMark: Shape {
+    let shape: KilterHoldShape
+    func path(in rect: CGRect) -> Path { KilterBoardView.holdPath(shape, in: rect) }
 }
 
 extension Color {

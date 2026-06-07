@@ -34,6 +34,10 @@ struct KilterRootView: View {
 
     @AppStorage("kilter.angle") private var angle: Int = 40
     @AppStorage("kilter.layout") private var layoutId: Int = 1
+    /// The user's physical board size (`product_size_id`) — drives the on-screen render size *and* the
+    /// LED map. Picked inline on the filter bar (when the layout has >1 size), cached, seeded to the
+    /// layout default, reset when the layout changes. Shared with Settings + the detail screen.
+    @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.minGrade") private var minGrade: Int = 10
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
     @State private var savedOnly = false
@@ -79,6 +83,8 @@ struct KilterRootView: View {
     }
 
     private var layouts: [KilterLayout] { catalog.layouts() }
+    /// Board sizes for the current layout (for the inline Size chip — shown only when there's a choice).
+    private var sizes: [KilterBoardSize] { catalog.sizes(forLayout: layoutId) }
     private var availableAngles: [Int] { catalog.angles() }
     private var gradeScale: [(difficulty: Int, label: String)] { catalog.gradeScale() }
     private var favoriteUUIDs: Set<String> { Set(favorites.map(\.climbUUID)) }
@@ -176,6 +182,8 @@ struct KilterRootView: View {
         // Wire the session manager to the app's live-metrics / Live-Activity / media services so a
         // session (started here or auto-opened on board connect) drives HR + the Live Activity.
         .onAppear {
+            // Keep the board-size selection valid for the current layout (seed the default when unset).
+            syncBoardSize()
             sessions.bind(liveWorkout: app.liveWorkout,
                           liveActivity: app.kilterLiveActivity,
                           media: app.sessionMedia)
@@ -194,6 +202,8 @@ struct KilterRootView: View {
         }
         // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
         .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
+        // Switching layout can invalidate the chosen size (each layout offers different ones) — reseed.
+        .onChange(of: layoutId) { syncBoardSize() }
         // Keep the Live Activity's HR / climb count current while any Kilter screen is up (the root
         // view stays in the nav stack), throttled inside the controller.
         .onChange(of: app.liveWorkout.latestHR) { pushLiveActivity() }
@@ -216,6 +226,15 @@ struct KilterRootView: View {
     /// Push a random climb from the current filters (Discovery "Surprise me").
     private func surpriseMe() {
         if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
+    }
+
+    /// Snap `productSizeId` to a size that exists for the current layout — seeds it to the layout default
+    /// when unset, and resets it when the layout no longer offers the old size. Same guard Settings uses,
+    /// so the inline Size chip and Settings can't disagree.
+    private func syncBoardSize() {
+        if !catalog.sizes(forLayout: layoutId).contains(where: { $0.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(forLayout: layoutId)
+        }
     }
 
     /// Re-open the reader after the installed catalog changes, then refresh the list.
@@ -321,6 +340,17 @@ struct KilterRootView: View {
                         }
                     } label: { chip("Layout", layouts.first { $0.id == layoutId }?.name ?? "—") }
                     .accessibilityIdentifier("kilter.layout")
+
+                    // Board size, right beside Layout — only when the layout offers a choice. Drives the
+                    // size the board renders at (and the LED map); persisted in `kilter.productSizeId`.
+                    if sizes.count > 1 {
+                        Menu {
+                            Picker("Board size", selection: $productSizeId) {
+                                ForEach(sizes) { Text($0.label).tag($0.id) }
+                            }
+                        } label: { chip("Size", sizes.first { $0.id == productSizeId }?.name ?? "—") }
+                        .accessibilityIdentifier("kilter.size")
+                    }
 
                     Menu {
                         Picker("Angle", selection: $angle) {

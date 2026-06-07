@@ -128,7 +128,7 @@ class KilterCatalogStoreTest {
         try {
             KilterCatalog.reset()
             val cat = KilterCatalog.get(ctx)
-            assertEquals(listOf(1, 2), cat.sizes(1).map { it.id }.sorted())
+            assertEquals(listOf(1, 2, 3), cat.sizes(1).map { it.id }.sorted())
             assertEquals(1, cat.defaultSizeId(1))
 
             val climb = cat.climb("11111111-1111-4111-8111-111111111111")!!
@@ -170,9 +170,56 @@ class KilterCatalogStoreTest {
             KilterCatalog.reset()
             val cat = KilterCatalog.get(ctx)
             // Degrades to bare ids from product_sizes_layouts_sets instead of crashing.
-            assertEquals(listOf(1, 2), cat.sizes(1).map { it.id }.sorted())
+            assertEquals(listOf(1, 2, 3), cat.sizes(1).map { it.id }.sorted())
             val climb = cat.climb("11111111-1111-4111-8111-111111111111")!!
             assertEquals(listOf(1001, 1013, 1025), cat.holds(climb, 2).mapNotNull { it.ledPosition }.sorted())
+        } finally {
+            store.clear()
+            KilterCatalog.reset()
+        }
+    }
+
+    /**
+     * The on-screen board tracks the **selected size**: boardGeometry(layoutId, sizeId) renders only the
+     * holes wired for that product_size, so a smaller board reads shorter (fewer holes, taller aspect),
+     * and the lit holds normalize to the same extent. Fixture size 3 (5×3) wires the bottom three rows;
+     * sizes 1/2 (5×5) wire all 25. Mirrors iOS testBoardGeometryAndHoldsTrackSelectedSize.
+     */
+    @Test
+    fun boardGeometryAndHoldsTrackSelectedSize() {
+        val store = KilterCatalogStore.get(ctx)
+        val file = KilterCatalogFixture.build(tempFile())
+        val v = KilterCatalogValidator.validate(file)
+        store.install(file, KilterCatalogMeta(v.version, v.climbCount, v.sizeBytes, "Test", 0L))
+        file.delete()
+        try {
+            KilterCatalog.reset()
+            val cat = KilterCatalog.get(ctx)
+            val full = cat.boardGeometry(1, 1)   // 5×5
+            val mini = cat.boardGeometry(1, 3)   // 5×3 (bottom three rows)
+            assertEquals(25, full.grid.size)
+            assertEquals(15, mini.grid.size)
+            assertEquals(1.0, full.aspect, 0.001)   // 16/16
+            assertEquals(2.0, mini.aspect, 0.001)   // 16/8
+            // sizeId 0 = whole layout; an invalid size falls back to the whole layout (no crash).
+            assertEquals(25, cat.boardGeometry(1, 0).grid.size)
+            assertEquals(25, cat.boardGeometry(1, 999).grid.size)
+            // Holds line up with the grid: Alpha's top hole (placement 25, above the 5×3 board) clamps
+            // to the mini board's top edge (view y 0); its bottom hole (placement 1) sits on the floor.
+            val climb = cat.climb("11111111-1111-4111-8111-111111111111")!!
+            val mh = cat.holds(climb, 3)
+            assertEquals(0.0, mh.first { it.placementId == 25 }.y, 0.001)
+            assertEquals(1.0, mh.first { it.placementId == 1 }.y, 0.001)
+            // Holds line up with the grid: at full size every lit hold coincides with a grid hole.
+            for (h in cat.holds(climb, 1)) {
+                assertTrue("lit hold ${h.placementId} must coincide with a grid hole",
+                    full.grid.any { kotlin.math.abs(it.x - h.x) < 0.001 && kotlin.math.abs(it.y - h.y) < 0.001 })
+            }
+            // Off-diagonal hold (Charlie's placement 3 = board (12,4) → x 0.5, y 1.0) pins x vs an x<->y swap.
+            val charlie = cat.climb("33333333-3333-4333-8333-333333333333")!!
+            val p3 = cat.holds(charlie, 1).first { it.placementId == 3 }
+            assertEquals(0.5, p3.x, 0.001)
+            assertEquals(1.0, p3.y, 0.001)
         } finally {
             store.clear()
             KilterCatalog.reset()

@@ -162,10 +162,16 @@ ROLES = [
     (15, "foot", "FFA500", "FFA500"),
 ]
 
-# Two synthetic board sizes for layout 1: size 1 maps hole H -> LED position H; size 2 maps
+# Two same-dimension board sizes for layout 1: size 1 maps hole H -> LED position H; size 2 maps
 # H -> H + SIZE_TWO_OFFSET (a different physical address), so tests prove the wrong size lights
 # the wrong holds.
 SIZE_TWO_OFFSET = 1000
+
+# A third, genuinely SMALLER board (5 wide x 3 tall) that wires only the bottom three rows (holes
+# 1..15). It proves the on-screen render tracks the selected size: boardGeometry(sizeId=3) is a
+# 16x8 extent (aspect 2.0, 15 holes) vs the 16x16 full board (aspect 1.0, 25 holes).
+SIZE_THREE_ROWS = 3
+SIZE_THREE_OFFSET = 2000
 
 # Four invented climbs on layout 1. frames are "p<placement>r<role>" tokens; placement
 # ids equal hole ids (1..25) for layout 1 (see build()). Pure fiction.
@@ -207,9 +213,11 @@ def build(out_path):
 
         db.execute("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
         db.execute("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
+        db.execute("INSERT INTO product_sizes VALUES (3,'5 x 3','Test Mini')")
 
         # 5x5 holes + a placement per hole on layout 1 (placement id == hole id), plus an LED per
-        # hole on each of two product sizes (size 2's positions are offset, to test size selection).
+        # hole on each product size (size 2's positions are offset, to test size selection). Size 3
+        # (the smaller board) wires only the bottom three rows, so it renders a shorter board.
         hid = 0
         for row, y in enumerate(COORDS):
             for col, x in enumerate(COORDS):
@@ -220,8 +228,12 @@ def build(out_path):
                 db.execute("INSERT INTO leds VALUES (?,?,?,?)", (hid, 1, hid, hid))
                 db.execute("INSERT INTO leds VALUES (?,?,?,?)",
                            (hid + 10000, 2, hid, hid + SIZE_TWO_OFFSET))
+                if row < SIZE_THREE_ROWS:  # smaller board: only the bottom three rows are wired
+                    db.execute("INSERT INTO leds VALUES (?,?,?,?)",
+                               (hid + 20000, 3, hid, hid + SIZE_THREE_OFFSET))
         db.execute("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
         db.execute("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
+        db.execute("INSERT INTO product_sizes_layouts_sets VALUES (3,3,1,1,'test.png',1)")
 
         for uuid, name, setter, frames, stats in CLIMBS:
             db.execute(

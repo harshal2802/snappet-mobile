@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-06-06
+**Last updated**: 2026-06-07
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -204,6 +204,20 @@ new `OverlayItem` style fields shipped non-optional → Swift's synthesized `Dec
 overlays; made optional-backed with computed defaults (the codebase's migration-safe pattern), guarded by
 a decode-from-old-JSON test. Full suite green (**301 unit + 15 UI**). All 5 surfaces (placement, resize,
 text+styling, base cell, **export**) confirmed working on-device.
+
+🟢 **Kilter board design: size on the climb page, size-accurate render, color-blind hold shapes
+(2026-06-07, `FEAT-board-size-render-and-colorblind-shapes`).** iOS + Android. The physical board-size
+preference moved onto the browse filter bar as an inline **Size chip beside Layout** (shown when a layout
+offers >1 size; cached, seeded/reset per layout). The on-screen board now **renders at the selected
+size** — `renderHoles(forLayout:sizeId:)` bases the grid + aspect + hold normalization on the holes
+wired for that `product_size` (the `leds` hole set), so a smaller board reads shorter and the lit holds
+reshape with it (sizeId 0 / no-LED sizes fall back to the whole layout). And lit holds are now
+**shape-coded by role** (start triangle / hand circle / finish square / foot diamond — a color-blind
+redundant channel via the pure `KilterHoldShape`, colors kept, legend teaches it). No real board photos —
+they're copyrighted Aurora assets the repo can't ship (#42), so the schematic was made size-accurate
+instead. Off-device verified (new size-geometry + shape-mapping tests on both platforms, prior LED test
+green, 3rd fixture size mirrored across all four sources). **Device-unverified**: that the size-coded
+schematic + shapes read better on a real screen for a color-blind climber.
 
 ## License
 

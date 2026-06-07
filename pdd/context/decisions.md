@@ -2515,3 +2515,54 @@ aspect ≠ its source, the video fits within (a small letterbox) — drawing the
 rect (needs the source aspect in the canvas) is a further polish. **Verified**: builds clean, full suite
 green incl. a new `fitTransform` containment test. **Device-unverified**: that the PiP/base now sit exactly
 under the outline in preview AND export.
+
+## 2026-06-07 — Kilter board: size on the climb page, size-accurate render, color-blind hold shapes
+
+Three board-design improvements on the climb screen, one PR (iOS + Android mirrored;
+`FEAT-board-size-render-and-colorblind-shapes`). **(1) Board size beside Layout** — the physical
+board-size preference (`kilter.productSizeId`, added by `FIX-board-size-led-mapping`) was only reachable
+in Settings and the inline "wrong holds?" escape hatch. It's now an inline **Size chip** on the browse
+filter bar (iOS `KilterRootView`, Android `KilterRoot`), shown only when the layout offers >1 size,
+bound to the same cached key, **seeded to the layout default on appear and reset when the layout
+changes** (the guard Settings already used, lifted into a `syncBoardSize()` / `LaunchedEffect(layoutId)`
+so the chip and Settings can't disagree). **(2) The render now tracks the size.** Previously
+`boardGeometry(forLayout:)` took the extent + grid from the **whole layout's** hole set and `holds()`
+normalized to that same extent, so *every* size of a layout drew an identical schematic — size only
+changed which LEDs lit. New `renderHoles(forLayout:sizeId:)` computes the render basis from the holes
+**wired for the selected `product_size`** (the `leds` table's hole keys ∩ the layout's placements — that
+set *is* the physical board's holes, so a 7×10 ≈ 225 holes reads shorter than a 12×14 ≈ 527). Both
+`boardGeometry(forLayout:sizeId:)` and `holds(for:sizeId:)` normalize to that one basis, so the grid +
+aspect + lit holds reshape **together**; a hold above a smaller board clamps onto its top edge. `sizeId
+0` (the default, for any legacy caller) and a size with no `leds` rows fall back to the whole layout, so
+older/hand-rolled catalogs degrade rather than crash. The detail screen recomputes geometry+holds when
+the size changes (moved to a top-level `onChange` so it still fires with no board / on the simulator,
+where the BLE-gated section is unmounted). **(3) Color-blind hold shapes.** Every lit hold was a circle,
+so the route was unreadable without separating the role *hues*. A pure `KilterHoldShape.forRole` now
+maps the four roles to the canonical grayscale-distinguishable set — **start = triangle, hand = circle,
+finish = square, foot = diamond** — drawn (stroked unlit / filled+glow lit) by `KilterBoardView` /
+`KilterBoard` via a shared `holdPath`; colors are kept (shape is a *redundant* channel), the grid dots
+stay faint circles, and the detail legend draws the shapes (one `holdPath`, so board + legend can't
+drift). **Why the LED hole-set, not `product_sizes.edge_*`:** the real Aurora `product_sizes` carries
+explicit visible-rectangle edges that would crop pixel-perfectly, but they aren't in the synthetic
+fixture (only `id/name/description`) and adding them would churn all four fixture mirrors' positional
+inserts; the `leds` hole-set is authoritative, already loaded for LED mapping, present in fixture + real
+catalog, and ≈ the visible rectangle. A future catalog that exposes the edges can swap the basis behind
+`renderHoles`. **Why no real board photos:** the user asked to "find Kilter layout photos per
+size/layout," but the board backgrounds (`product_sizes_layouts_sets.image_filename`) are copyrighted
+Aurora CDN assets and the repo ships **no** Aurora data (#42) — committing them is a licensing + policy
+violation — so the schematic was made size-accurate instead (decided with the user). **Why always-on
+shapes (not a toggle):** shape is strictly more information with no downside for sighted users (decided
+with the user). **Fixture:** the two existing sizes are both "5 x 5" and wire all 25 holes, so they
+can't *prove* size-accurate geometry — added a third **5×3 "Test Mini"** size wiring only the bottom
+three rows (holes 1–15) to all four mirrors (`build_test_fixture.py` + the regenerated
+`kilter-fixture.sqlite3` + Swift/Kotlin `KilterCatalogFixture`); the `[1,2] → [1,2,3]` size assertions
+moved with it. **Rules out:** bundling/scraping copyrighted board photos; an on-device photo-fetch path
+(network — out of scope, contradicts on-device-only); a size toggle for shapes; `product_sizes.edge_*`
+cropping (not in the fixture); per-platform shape mismatch (one `forRole` + one `holdPath` each side,
+unit-pinned). **Verified (off-device):** new `KilterHoldShape` mapping test (start→triangle … four
+distinct shapes) on both platforms; new `boardGeometry`/`holds` size test (full = 25 holes / aspect 1.0,
+mini = 15 / aspect 2.0, sizeId 0 + foreign size → whole layout, a top hold clamps to y 0); the prior
+LED-address + `led_color` test stays green; the regenerated binary fixture validates (4 climbs).
+**Device-unverified** (visual judgments): that the size-coded schematic + role shapes actually read
+better for a color-blind climber on a real screen, and that the absence of a real board photo is
+acceptable.

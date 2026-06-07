@@ -147,7 +147,7 @@ final class KilterCatalogStoreTests: XCTestCase {
         KilterCatalog.shared.reload()
         let cat = KilterCatalog.shared
 
-        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2], "layout 1 offers two sizes")
+        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2, 3], "layout 1 offers three sizes")
         XCTAssertEqual(cat.defaultSizeId(forLayout: 1), 1, "smallest product_size_id is the default")
 
         guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
@@ -191,11 +191,77 @@ final class KilterCatalogStoreTests: XCTestCase {
         let cat = KilterCatalog.shared
 
         // Degrades to bare ids from product_sizes_layouts_sets instead of crashing.
-        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2])
+        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2, 3])
         // The LED map still resolves for a chosen size (the holds path queries leds, not product_sizes).
         guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
             return XCTFail("fixture climb Alpha missing")
         }
         XCTAssertEqual(cat.holds(for: climb, sizeId: 2).compactMap(\.ledPosition).sorted(), [1001, 1013, 1025])
+    }
+
+    /// The on-screen board must track the **selected size**: `boardGeometry(forLayout:sizeId:)` renders
+    /// only the holes wired for that `product_size`, so a smaller board reads shorter (fewer holes,
+    /// taller aspect) — and the lit holds normalize to the same extent, so a hold above the smaller
+    /// board clamps onto its top edge. The fixture's size 3 (5×3) wires the bottom three rows; sizes
+    /// 1/2 (5×5) wire all 25.
+    func testBoardGeometryAndHoldsTrackSelectedSize() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        let full = cat.boardGeometry(forLayout: 1, sizeId: 1)   // 5×5
+        let mini = cat.boardGeometry(forLayout: 1, sizeId: 3)   // 5×3 (bottom three rows)
+        XCTAssertEqual(full.grid.count, 25, "the full board shows every hole")
+        XCTAssertEqual(mini.grid.count, 15, "the smaller board renders only its wired holes")
+        XCTAssertEqual(full.aspect, 1.0, accuracy: 0.001, "5×5 → 16/16")
+        XCTAssertEqual(mini.aspect, 2.0, accuracy: 0.001, "5 wide × 3 tall → 16/8")
+        // sizeId 0 = whole layout; an invalid/foreign size falls back to the whole layout (no crash).
+        XCTAssertEqual(cat.boardGeometry(forLayout: 1, sizeId: 0).grid.count, 25)
+        XCTAssertEqual(cat.boardGeometry(forLayout: 1, sizeId: 999).grid.count, 25)
+
+        // Holds line up with the grid: Alpha's top hole (placement 25, board y 20 — above the 5×3 board)
+        // clamps to the mini board's top edge (view y 0); its bottom hole (placement 1) sits at the floor.
+        guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
+            return XCTFail("fixture climb Alpha missing")
+        }
+        let mh = cat.holds(for: climb, sizeId: 3)
+        XCTAssertEqual(mh.first { $0.placementId == 25 }?.y ?? -1, 0.0, accuracy: 0.001,
+                       "a hold above the smaller board clamps to its top edge")
+        XCTAssertEqual(mh.first { $0.placementId == 1 }?.y ?? -1, 1.0, accuracy: 0.001,
+                       "the bottom hole sits on the floor")
+
+        // Holds line up with the grid: at full size every lit hold sits exactly on a grid hole (so an
+        // x-normalization slip would leave a hold off the grid).
+        for h in cat.holds(for: climb, sizeId: 1) {
+            XCTAssertTrue(full.grid.contains { abs($0.x - h.x) < 0.001 && abs($0.y - h.y) < 0.001 },
+                          "lit hold \(h.placementId) at (\(h.x), \(h.y)) must coincide with a grid hole")
+        }
+        // Alpha's holds are all on the board diagonal (which can't catch an x↔y swap) — use an OFF-
+        // diagonal hold (Charlie's placement 3 = board (12, 4) → x 0.5, y 1.0) to pin x independently.
+        guard let charlie = cat.climb("33333333-3333-4333-8333-333333333333") else {
+            return XCTFail("fixture climb Charlie missing")
+        }
+        let p3 = cat.holds(for: charlie, sizeId: 1).first { $0.placementId == 3 }
+        XCTAssertEqual(p3?.x ?? -1, 0.5, accuracy: 0.001, "x normalizes independently of y")
+        XCTAssertEqual(p3?.y ?? -1, 1.0, accuracy: 0.001)
+    }
+
+    /// Color-blind support: each role maps to a distinct marker shape (a redundant channel alongside
+    /// color), so the four roles get four shapes that stay separable in grayscale. Pure mapping — no
+    /// store, no device. Mirrored by Android `KilterHoldShapeTest`.
+    func testHoldShapeMapsEachRoleToADistinctShape() {
+        XCTAssertEqual(KilterHoldShape.forRole("start"), .triangle)
+        XCTAssertEqual(KilterHoldShape.forRole("middle"), .circle)
+        XCTAssertEqual(KilterHoldShape.forRole("finish"), .square)
+        XCTAssertEqual(KilterHoldShape.forRole("foot"), .diamond)
+        XCTAssertEqual(KilterHoldShape.forRole("hold"), .circle, "an unknown role falls back to a circle")
+        let roleShapes = ["start", "middle", "finish", "foot"].map(KilterHoldShape.forRole)
+        XCTAssertEqual(Set(roleShapes).count, 4, "the four roles must be four distinct shapes")
     }
 }

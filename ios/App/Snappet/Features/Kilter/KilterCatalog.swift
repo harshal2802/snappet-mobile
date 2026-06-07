@@ -59,7 +59,7 @@ final class KilterCatalog {
         isAvailable = false
         grades.removeAll(); roleScreenColor.removeAll(); roleLedColor.removeAll()
         placementXY.removeAll(); placementHole.removeAll()
-        extentCache.removeAll(); geometryCache.removeAll(); ledCache.removeAll(); sizesCache.removeAll()
+        renderCache.removeAll(); ledCache.removeAll(); sizesCache.removeAll()
         open()
     }
 
@@ -249,23 +249,28 @@ final class KilterCatalog {
 
     /// Decode a climb's `frames` into positioned, colored holds for rendering / illumination.
     ///
-    /// Holds are normalized against the **whole board's** hole extent for the climb's layout (not the
-    /// climb's own `edge_*` bounds), so every climb renders at the same scale and the lit holds line
-    /// up exactly with the faint grid from `boardGeometry(forLayout:)`.
-    /// `sizeId` is the user's physical board's `product_size_id` (from the Board-size preference). It
-    /// selects which `leds` mapping to use — **critical**, since the same hole has a *different* LED
-    /// address on each board size, so an arbitrary/wrong size lights the wrong holds. When `sizeId` is
-    /// `0` or not valid for this layout, it falls back to the layout's smallest size.
+    /// Holds are normalized against the **render extent** for the climb's layout *at `sizeId`* (the
+    /// holes physically wired on that board size — see `renderHoles`), not the climb's own `edge_*`
+    /// bounds, so the lit holds line up exactly with the faint grid from `boardGeometry(forLayout:sizeId:)`
+    /// at the same size. Picking a smaller board reshapes both, together. (`sizeId 0` → the whole layout.)
+    /// `sizeId` also selects which `leds` mapping to use for the LED *address* — **critical**, since the
+    /// same hole has a *different* LED address on each board size, so an arbitrary/wrong size lights the
+    /// wrong holds. When `sizeId` is `0` or not valid for this layout, the address falls back to the
+    /// layout's smallest size.
     func holds(for climb: KilterClimb, sizeId: Int = 0) -> [KilterHold] {
-        let e = extent(forLayout: climb.layoutId)
-        let w = Double(e.maxX - e.minX), h = Double(e.maxY - e.minY)
+        // Resolve a stale/foreign size to the layout's default once, so the render basis and the LED
+        // address always agree (a foreign size would otherwise render whole-layout while lighting the
+        // default board). `sizeId 0` stays the explicit "whole layout" basis for legacy callers.
+        let eff = effectiveSizeId(forLayout: climb.layoutId, requested: sizeId)
+        let r = renderHoles(forLayout: climb.layoutId, sizeId: sizeId == 0 ? 0 : eff)
+        let w = Double(r.maxX - r.minX), h = Double(r.maxY - r.minY)
         guard w > 0, h > 0 else { return [] }
-        let leds = ledPositions(forSize: effectiveSizeId(forLayout: climb.layoutId, requested: sizeId))
+        let leds = ledPositions(forSize: eff)
         var out: [KilterHold] = []
         for (placementId, roleId) in Self.parseFrames(climb.frames) {
             guard let (bx, by) = placementXY[placementId] else { continue }
-            let nx = (Double(bx) - Double(e.minX)) / w
-            let ny = (Double(by) - Double(e.minY)) / h
+            let nx = (Double(bx) - Double(r.minX)) / w
+            let ny = (Double(by) - Double(r.minY)) / h
             let screen = roleScreenColor[roleId] ?? "FFFFFF"
             out.append(KilterHold(
                 placementId: placementId,
@@ -279,49 +284,69 @@ final class KilterCatalog {
         return out
     }
 
-    // MARK: - Board geometry (the faint full-grid backdrop)
+    // MARK: - Board geometry (the size-accurate full-grid backdrop)
 
-    /// `layout_id -> (minX,maxX,minY,maxY)` board-coordinate extent of every placement on the layout.
-    private var extentCache: [Int: (minX: Int, maxX: Int, minY: Int, maxY: Int)] = [:]
-    private var geometryCache: [Int: KilterBoardGeometry] = [:]
+    /// The render basis for one `(layout, size)`: the board-coordinate extent + the normalized hole grid
+    /// of the holes that physically exist on that board size. The schematic and the lit holds both
+    /// normalize to this, so picking a smaller board reshapes both together.
+    private struct RenderHoles { let minX, maxX, minY, maxY: Int; let grid: [KilterGridHole] }
+    /// `"<layout>#<size>" -> RenderHoles` (size 0 = whole layout).
+    private var renderCache: [String: RenderHoles] = [:]
 
-    private func extent(forLayout layoutId: Int) -> (minX: Int, maxX: Int, minY: Int, maxY: Int) {
-        if let c = extentCache[layoutId] { return c }
-        var e = (minX: 0, maxX: 1, minY: 0, maxY: 1)
-        query("""
-            SELECT MIN(h.x), MAX(h.x), MIN(h.y), MAX(h.y)
-            FROM placements p JOIN holes h ON h.id = p.hole_id WHERE p.layout_id = ?
-        """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
-            if sqlite3_column_type(s, 0) != SQLITE_NULL {
-                e = (Self.int(s, 0), Self.int(s, 1), Self.int(s, 2), Self.int(s, 3))
-            }
-        }
-        extentCache[layoutId] = e
-        return e
-    }
+    private static func renderKey(_ layoutId: Int, _ sizeId: Int) -> String { "\(layoutId)#\(sizeId)" }
 
-    /// The board's drawable geometry: aspect ratio + the full normalized hole grid (deduped by hole),
-    /// so the render shows the whole wall with the climb's holds highlighted on top.
-    func boardGeometry(forLayout layoutId: Int) -> KilterBoardGeometry {
-        if let c = geometryCache[layoutId] { return c }
-        let e = extent(forLayout: layoutId)
-        let w = Double(e.maxX - e.minX), h = Double(e.maxY - e.minY)
-        guard w > 0, h > 0 else { return .empty }
-        var grid: [KilterGridHole] = []
-        var seen = Set<Int>()   // hole_id, to dedupe placements sharing a hole
+    /// Compute (and cache) the render basis for a `(layout, size)`. The visible board for a `product_size`
+    /// is exactly the holes wired for it in the `leds` table — that's the physical board's hole set, so a
+    /// 7×10 reads shorter than a 12×14. `sizeId <= 0`, or a size with no `leds` rows for this layout
+    /// (older/hand-rolled catalog), falls back to the **whole layout** so behavior degrades, never crashes.
+    private func renderHoles(forLayout layoutId: Int, sizeId: Int) -> RenderHoles {
+        let key = Self.renderKey(layoutId, sizeId)
+        if let c = renderCache[key] { return c }
+        // Holes wired for this size (the LED map's keys); empty → no size filter (whole layout).
+        let sizeHoles: Set<Int> = sizeId > 0 ? Set(ledPositions(forSize: sizeId).keys) : []
+        // The layout's holes (deduped by hole_id).
+        var pts: [(hole: Int, x: Int, y: Int)] = []
+        var seen = Set<Int>()
         query("""
             SELECT DISTINCT p.hole_id, h.x, h.y
             FROM placements p JOIN holes h ON h.id = p.hole_id WHERE p.layout_id = ?
         """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
             let hole = Self.int(s, 0)
             guard seen.insert(hole).inserted else { return }
-            let nx = (Double(Self.int(s, 1)) - Double(e.minX)) / w
-            let ny = (Double(Self.int(s, 2)) - Double(e.minY)) / h
-            grid.append(KilterGridHole(x: nx, y: 1 - ny))
+            pts.append((hole, Self.int(s, 1), Self.int(s, 2)))
         }
-        let geo = KilterBoardGeometry(aspect: w / h, grid: grid)
-        geometryCache[layoutId] = geo
-        return geo
+        // Keep only the size's holes — but only if that filter actually selects some of this layout's
+        // holes; otherwise (size has no leds for the layout) fall back to the whole layout.
+        var kept = pts
+        if !sizeHoles.isEmpty {
+            let f = pts.filter { sizeHoles.contains($0.hole) }
+            if !f.isEmpty { kept = f }
+        }
+        guard let minX = kept.map(\.x).min(), let maxX = kept.map(\.x).max(),
+              let minY = kept.map(\.y).min(), let maxY = kept.map(\.y).max(),
+              maxX > minX, maxY > minY else {
+            let empty = RenderHoles(minX: 0, maxX: 1, minY: 0, maxY: 1, grid: [])
+            renderCache[key] = empty
+            return empty
+        }
+        let w = Double(maxX - minX), h = Double(maxY - minY)
+        let grid = kept.map {
+            KilterGridHole(x: (Double($0.x) - Double(minX)) / w,
+                           y: 1 - (Double($0.y) - Double(minY)) / h)   // board y is bottom-up; view y top-down
+        }
+        let out = RenderHoles(minX: minX, maxX: maxX, minY: minY, maxY: maxY, grid: grid)
+        renderCache[key] = out
+        return out
+    }
+
+    /// The board's drawable geometry **at the chosen size**: aspect ratio + the normalized hole grid
+    /// (deduped by hole), so the render shows the right physical board with the climb's holds on top.
+    /// `sizeId 0` (default) renders the whole layout — older callers keep their behavior.
+    func boardGeometry(forLayout layoutId: Int, sizeId: Int = 0) -> KilterBoardGeometry {
+        let r = renderHoles(forLayout: layoutId, sizeId: sizeId)
+        let w = Double(r.maxX - r.minX), h = Double(r.maxY - r.minY)
+        guard w > 0, h > 0 else { return .empty }
+        return KilterBoardGeometry(aspect: w / h, grid: r.grid)
     }
 
     /// `difficulty (float) -> grade label`, rounding to the nearest catalog grade.

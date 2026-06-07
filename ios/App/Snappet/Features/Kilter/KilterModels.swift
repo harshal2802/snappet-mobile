@@ -58,6 +58,26 @@ struct KilterHold: Identifiable, Hashable, Sendable {
     var id: Int { placementId }
 }
 
+/// The geometric marker a lit hold is drawn with, keyed by its role. A redundant (shape-as-well-as-color)
+/// channel so the route reads for color-blind climbers, who can't separate the start/finish/foot hues —
+/// the four roles map to four shapes that stay distinct in grayscale (the canonical
+/// circle/triangle/square/diamond plotting set). Pure (no SwiftUI), so the mapping is unit-tested; the
+/// board views (`KilterBoardView` / Android `KilterBoard`) build the actual path from this.
+enum KilterHoldShape: String, CaseIterable, Sendable {
+    case circle, triangle, square, diamond
+
+    /// start → triangle, finish → square, foot → diamond; hand/"middle" and any unknown role → circle
+    /// (the most common, neutral marker). Matches `KilterCatalog.roleName` and the Android mirror.
+    static func forRole(_ role: String) -> KilterHoldShape {
+        switch role {
+        case "start": return .triangle
+        case "finish": return .square
+        case "foot": return .diamond
+        default: return .circle   // "middle"/hand + unknown
+        }
+    }
+}
+
 /// A selectable board layout (e.g. Kilter Original, Homewall).
 struct KilterLayout: Identifiable, Hashable, Sendable {
     let id: Int

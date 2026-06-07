@@ -69,6 +69,26 @@ data class KilterBoardGeometry(val aspect: Double, val grid: List<KilterGridHole
     companion object { val EMPTY = KilterBoardGeometry(1.0, emptyList()) }
 }
 
+/**
+ * The geometric marker a lit hold is drawn with, keyed by its role — a redundant (shape-as-well-as-color)
+ * channel so the route reads for color-blind climbers. The four roles map to four shapes that stay
+ * distinct in grayscale (the canonical circle/triangle/square/diamond plotting set). Pure (no Compose),
+ * so the mapping is unit-tested; [KilterBoard] builds the actual path from this. Mirrors iOS `KilterHoldShape`.
+ */
+enum class KilterHoldShape {
+    CIRCLE, TRIANGLE, SQUARE, DIAMOND;
+
+    companion object {
+        /** start → triangle, finish → square, foot → diamond; hand/"middle" + any unknown role → circle. */
+        fun forRole(role: String): KilterHoldShape = when (role) {
+            "start" -> TRIANGLE
+            "finish" -> SQUARE
+            "foot" -> DIAMOND
+            else -> CIRCLE
+        }
+    }
+}
+
 /** How grades render (the catalog ships combined "6a/V3" labels). Mirrors iOS `KilterGradeFormat`. */
 enum class KilterGradeFormat(val label: String) {
     BOTH("Font / V"), V("V-scale"), FONT("Font");
@@ -133,8 +153,7 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
     private val placementHole = HashMap<Int, Int>()
     private val ledCache = HashMap<Int, Map<Int, Int>>()    // product_size_id -> (holeId -> led position)
     private val sizesCache = HashMap<Int, List<KilterBoardSize>>()   // layoutId -> available sizes
-    private val extentCache = HashMap<Int, IntArray>()   // layoutId -> [minX,maxX,minY,maxY]
-    private val geometryCache = HashMap<Int, KilterBoardGeometry>()
+    private val renderCache = HashMap<String, RenderHoles>()   // "layout#size" -> render basis (size 0 = whole layout)
 
     init {
         if (db != null) loadReference()
@@ -264,27 +283,31 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
     }
 
     /**
-     * Decode a climb's `frames` into positioned, colored holds. Normalized against the **whole board's**
-     * hole extent for the layout (not the climb's own edges), so every climb renders at the same scale
-     * and lines up with the faint grid from [boardGeometry]. Mirrors iOS.
-     */
-    /**
-     * [sizeId] is the user's physical board's `product_size_id` (from the Board-size preference). It
-     * selects which `leds` mapping to use — **critical**, since the same hole has a *different* LED
-     * address on each board size, so an arbitrary/wrong size lights the wrong holds. When [sizeId] is
-     * `0` or not valid for this layout, it falls back to the layout's smallest size.
+     * Decode a climb's `frames` into positioned, colored holds. Normalized against the **render extent
+     * for the layout at [sizeId]** (the holes physically wired on that board size — see [renderHoles]),
+     * not the climb's own edges, so the lit holds line up with the faint grid from [boardGeometry] at the
+     * same size; picking a smaller board reshapes both together (`sizeId 0` → whole layout). Mirrors iOS.
+     *
+     * [sizeId] is the user's physical board's `product_size_id` (from the Board-size preference). It also
+     * selects which `leds` mapping to use for the LED *address* — **critical**, since the same hole has a
+     * *different* LED address on each board size, so an arbitrary/wrong size lights the wrong holds. When
+     * [sizeId] is `0` or not valid for this layout, the address falls back to the layout's smallest size.
      */
     fun holds(climb: KilterClimb, sizeId: Int = 0): List<KilterHold> {
-        val e = extent(climb.layoutId)
-        val w = (e[1] - e[0]).toDouble()
-        val h = (e[3] - e[2]).toDouble()
+        // Resolve a stale/foreign size to the layout's default once, so the render basis and the LED
+        // address always agree (a foreign size would otherwise render whole-layout while lighting the
+        // default board). sizeId 0 stays the explicit "whole layout" basis for legacy callers.
+        val eff = effectiveSizeId(climb.layoutId, sizeId)
+        val r = renderHoles(climb.layoutId, if (sizeId == 0) 0 else eff)
+        val w = (r.maxX - r.minX).toDouble()
+        val h = (r.maxY - r.minY).toDouble()
         if (w <= 0 || h <= 0) return emptyList()
-        val leds = ledPositions(effectiveSizeId(climb.layoutId, sizeId))
+        val leds = ledPositions(eff)
         val out = ArrayList<KilterHold>()
         for ((placementId, roleId) in parseFrames(climb.frames)) {
             val xy = placementXY[placementId] ?: continue
-            val nx = (xy.first - e[0]) / w
-            val ny = (xy.second - e[2]) / h
+            val nx = (xy.first - r.minX) / w
+            val ny = (xy.second - r.minY) / h
             val screen = roleScreenColor[roleId] ?: "FFFFFF"
             out.add(KilterHold(
                 placementId = placementId,
@@ -302,27 +325,27 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
 
     fun gradeScale(): List<Pair<Int, String>> = grades.keys.sorted().map { it to grades.getValue(it) }
 
-    /** `[minX,maxX,minY,maxY]` board-coordinate extent of every placement on a layout. */
-    private fun extent(layoutId: Int): IntArray {
-        extentCache[layoutId]?.let { return it }
-        val db = db ?: return intArrayOf(0, 1, 0, 1)
-        var e = intArrayOf(0, 1, 0, 1)
-        db.rawQuery(
-            "SELECT MIN(h.x), MAX(h.x), MIN(h.y), MAX(h.y) FROM placements p " +
-                "JOIN holes h ON h.id = p.hole_id WHERE p.layout_id = ?", arrayOf(layoutId.toString())
-        ).use { c -> if (c.moveToNext() && !c.isNull(0)) e = intArrayOf(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3)) }
-        extentCache[layoutId] = e
-        return e
-    }
+    /** The render basis for one `(layout, size)`: the board-coordinate extent + the normalized hole grid
+     *  of the holes that physically exist on that board size. The schematic and the lit holds both
+     *  normalize to this, so picking a smaller board reshapes both together. Mirrors iOS `RenderHoles`. */
+    private data class RenderHoles(
+        val minX: Int, val maxX: Int, val minY: Int, val maxY: Int, val grid: List<KilterGridHole>)
 
-    /** The board's drawable geometry: aspect ratio + the full normalized hole grid (deduped by hole). */
-    fun boardGeometry(layoutId: Int): KilterBoardGeometry {
-        geometryCache[layoutId]?.let { return it }
-        val db = db ?: return KilterBoardGeometry.EMPTY
-        val e = extent(layoutId)
-        val w = (e[1] - e[0]).toDouble(); val h = (e[3] - e[2]).toDouble()
-        if (w <= 0 || h <= 0) return KilterBoardGeometry.EMPTY
-        val grid = ArrayList<KilterGridHole>()
+    /**
+     * Compute (and cache) the render basis for a `(layout, size)`. The visible board for a `product_size`
+     * is exactly the holes wired for it in the `leds` table — the physical board's hole set, so a 7×10
+     * reads shorter than a 12×14. [sizeId] `<= 0`, or a size with no `leds` rows for this layout (older/
+     * hand-rolled catalog), falls back to the **whole layout** so behavior degrades, never crashes.
+     */
+    private fun renderHoles(layoutId: Int, sizeId: Int): RenderHoles {
+        val key = "$layoutId#$sizeId"
+        renderCache[key]?.let { return it }
+        val empty = RenderHoles(0, 1, 0, 1, emptyList())
+        val db = db ?: return empty.also { renderCache[key] = it }
+        // Holes wired for this size (the LED map's keys); empty → no size filter (whole layout).
+        val sizeHoles: Set<Int> = if (sizeId > 0) ledPositions(sizeId).keys else emptySet()
+        // The layout's holes (deduped by hole_id) as [hole, x, y].
+        val pts = ArrayList<IntArray>()
         val seen = HashSet<Int>()
         db.rawQuery(
             "SELECT DISTINCT p.hole_id, h.x, h.y FROM placements p " +
@@ -330,12 +353,35 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
         ).use { c ->
             while (c.moveToNext()) {
                 if (!seen.add(c.getInt(0))) continue
-                val nx = (c.getInt(1) - e[0]) / w
-                val ny = (c.getInt(2) - e[2]) / h
-                grid.add(KilterGridHole(nx, 1 - ny))
+                pts.add(intArrayOf(c.getInt(0), c.getInt(1), c.getInt(2)))
             }
         }
-        return KilterBoardGeometry(w / h, grid).also { geometryCache[layoutId] = it }
+        // Keep only the size's holes — but only if that filter selects some of this layout's holes;
+        // otherwise (size has no leds for the layout) fall back to the whole layout.
+        var kept: List<IntArray> = pts
+        if (sizeHoles.isNotEmpty()) {
+            val f = pts.filter { sizeHoles.contains(it[0]) }
+            if (f.isNotEmpty()) kept = f
+        }
+        if (kept.isEmpty()) return empty.also { renderCache[key] = it }
+        val minX = kept.minOf { it[1] }; val maxX = kept.maxOf { it[1] }
+        val minY = kept.minOf { it[2] }; val maxY = kept.maxOf { it[2] }
+        if (maxX <= minX || maxY <= minY) return empty.also { renderCache[key] = it }
+        val w = (maxX - minX).toDouble(); val h = (maxY - minY).toDouble()
+        // board y is bottom-up; view y is top-down
+        val grid = kept.map { KilterGridHole((it[1] - minX) / w, 1 - (it[2] - minY) / h) }
+        return RenderHoles(minX, maxX, minY, maxY, grid).also { renderCache[key] = it }
+    }
+
+    /**
+     * The board's drawable geometry **at the chosen size**: aspect ratio + the normalized hole grid
+     * (deduped by hole). [sizeId] `0` (default) renders the whole layout — older callers keep behavior.
+     */
+    fun boardGeometry(layoutId: Int, sizeId: Int = 0): KilterBoardGeometry {
+        val r = renderHoles(layoutId, sizeId)
+        val w = (r.maxX - r.minX).toDouble(); val h = (r.maxY - r.minY).toDouble()
+        if (w <= 0 || h <= 0) return KilterBoardGeometry.EMPTY
+        return KilterBoardGeometry(w / h, r.grid)
     }
 
     /** Catalog list driven by the full [KilterFilter] (search/sort/benchmark/min ascents+quality). */

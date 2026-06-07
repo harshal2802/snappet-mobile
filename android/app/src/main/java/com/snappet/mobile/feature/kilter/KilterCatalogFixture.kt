@@ -24,8 +24,12 @@ object KilterCatalogFixture {
     private val roles = listOf(
         FRole(12, "start", "00DD00", "00FF00"), FRole(13, "middle", "00FFFF", "00FFFF"),
         FRole(14, "finish", "FF00FF", "FF00FF"), FRole(15, "foot", "FFA500", "FFA500"))
-    /** Two synthetic board sizes for layout 1: size 1 maps hole H → LED H; size 2 → H + offset. */
+    /** Two same-dimension board sizes for layout 1: size 1 maps hole H → LED H; size 2 → H + offset. */
     private const val sizeTwoOffset = 1000
+    /** A third, genuinely SMALLER board (5×3) wiring only the bottom [sizeThreeRows] rows (holes 1–15),
+     *  so tests can prove the render tracks the size (16×8 / aspect 2.0 vs the full 16×16 / aspect 1.0). */
+    private const val sizeThreeRows = 3
+    private const val sizeThreeOffset = 2000
 
     private data class Stat(val angle: Int, val diff: Double, val ascents: Int, val quality: Double)
     private data class FClimb(
@@ -60,6 +64,7 @@ object KilterCatalogFixture {
 
                 db.execSQL("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
                 db.execSQL("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
+                db.execSQL("INSERT INTO product_sizes VALUES (3,'5 x 3','Test Mini')")
 
                 var holeId = 0
                 for ((row, y) in coords.withIndex()) {
@@ -68,13 +73,18 @@ object KilterCatalogFixture {
                         val name = "${'A' + row}${col + 1}"
                         db.execSQL("INSERT INTO holes VALUES ($holeId,1,'$name',$x,$y,NULL,0)")
                         db.execSQL("INSERT INTO placements VALUES ($holeId,1,$holeId,$holeId,0,NULL)")
-                        // Two sizes: size 1 maps hole H → position H; size 2 → H + offset (different address).
+                        // Sizes 1/2 (same dimensions): hole H → position H, resp. H + offset (different address).
                         db.execSQL("INSERT INTO leds VALUES ($holeId,1,$holeId,$holeId)")
                         db.execSQL("INSERT INTO leds VALUES (${holeId + 10000},2,$holeId,${holeId + sizeTwoOffset})")
+                        // Size 3 (the smaller board) wires only the bottom rows → it renders a shorter board.
+                        if (row < sizeThreeRows) {
+                            db.execSQL("INSERT INTO leds VALUES (${holeId + 20000},3,$holeId,${holeId + sizeThreeOffset})")
+                        }
                     }
                 }
                 db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
                 db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
+                db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (3,3,1,1,'test.png',1)")
 
                 for (c in climbs) {
                     db.execSQL(

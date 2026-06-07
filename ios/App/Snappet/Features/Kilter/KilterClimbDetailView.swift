@@ -101,6 +101,16 @@ struct KilterClimbDetailView: View {
         .onChange(of: board.isConnected) { _, connected in
             if connected { board.illuminate(holds) }
         }
+        // A board-size change (from the browse chip, Settings, or the inline "wrong holds?" fix) remaps
+        // every LED *and* reshapes the on-screen board — each size shows a different physical hole set —
+        // so rebuild holds + geometry and re-light. Top-level (not inside the BLE-gated illuminate
+        // section) so the on-screen render still updates with no board / on the simulator.
+        .onChange(of: productSizeId) {
+            guard let c = climb else { return }
+            holds = catalog.holds(for: c, sizeId: productSizeId)
+            geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
+            if board.isConnected { board.illuminate(holds) }
+        }
     }
 
     @ViewBuilder private func content(_ climb: KilterClimb) -> some View {
@@ -182,17 +192,21 @@ struct KilterClimbDetailView: View {
 
     private var roleLegend: some View {
         HStack(spacing: 16) {
-            legendDot("00DD00", "Start")
-            legendDot("00FFFF", "Middle")
-            legendDot("FF00FF", "Finish")
-            legendDot("FFA500", "Foot")
+            legendDot("00DD00", "start", "Start")
+            legendDot("00FFFF", "middle", "Middle")
+            legendDot("FF00FF", "finish", "Finish")
+            legendDot("FFA500", "foot", "Foot")
         }
         .font(.caption2).foregroundStyle(.secondary)
     }
 
-    private func legendDot(_ hex: String, _ label: String) -> some View {
+    /// One legend entry: the role's *shape* (not a plain dot) in the role color, so the legend teaches
+    /// the color-blind-friendly shape code the board uses.
+    private func legendDot(_ hex: String, _ role: String, _ label: String) -> some View {
         HStack(spacing: 4) {
-            Circle().stroke(Color(hex: hex), lineWidth: 2).frame(width: 10, height: 10)
+            KilterHoldMark(shape: .forRole(role))
+                .stroke(Color(hex: hex), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                .frame(width: 11, height: 11)
             Text(label)
         }
     }
@@ -387,13 +401,6 @@ struct KilterClimbDetailView: View {
             // Mirror a protocol switch made here to the controller immediately (the root view also
             // observes this, but the detail screen shouldn't depend on it being mounted); re-lights live.
             .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
-            // A board-size change remaps every LED, so rebuild the holds and re-light the current climb.
-            .onChange(of: productSizeId) {
-                if let c = climb {
-                    holds = catalog.holds(for: c, sizeId: productSizeId)
-                    if board.isConnected { board.illuminate(holds) }
-                }
-            }
         }
     }
 
@@ -478,7 +485,7 @@ struct KilterClimbDetailView: View {
             productSizeId = catalog.defaultSizeId(forLayout: c.layoutId)
         }
         holds = catalog.holds(for: c, sizeId: productSizeId)
-        geometry = catalog.boardGeometry(forLayout: c.layoutId)
+        geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
         betaLinks = catalog.betaLinks(currentUUID)
         // Prefer the shared angle if it has stats; otherwise the most-climbed angle.
         if stats.contains(where: { $0.angle == sharedAngle }) {

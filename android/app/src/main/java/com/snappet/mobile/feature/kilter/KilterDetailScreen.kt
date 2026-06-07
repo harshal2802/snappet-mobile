@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,7 +49,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -110,7 +114,7 @@ fun KilterDetailScreen(
             // Seed the board size to this layout's default if unset/invalid, then map LEDs for it.
             val eff = if (catalog.sizes(c.layoutId).any { it.id == productSizeId }) productSizeId
             else catalog.defaultSizeId(c.layoutId)
-            Loaded(c, catalog.stats(uuid), catalog.holds(c, eff), catalog.boardGeometry(c.layoutId),
+            Loaded(c, catalog.stats(uuid), catalog.holds(c, eff), catalog.boardGeometry(c.layoutId, eff),
                 catalog.betaLinks(uuid), eff)
         } ?: return@LaunchedEffect
         climb = loaded.climb; stats = loaded.stats; holds = loaded.holds
@@ -185,8 +189,8 @@ fun KilterDetailScreen(
             KilterBoard(geometry, holds, Modifier.fillMaxWidth())
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                LegendDot("00DD00", "Start"); LegendDot("00FFFF", "Middle")
-                LegendDot("FF00FF", "Finish"); LegendDot("FFA500", "Foot")
+                LegendDot("00DD00", "start", "Start"); LegendDot("00FFFF", "middle", "Middle")
+                LegendDot("FF00FF", "finish", "Finish"); LegendDot("FFA500", "foot", "Foot")
             }
 
             // Angle selector
@@ -279,9 +283,10 @@ fun KilterDetailScreen(
                                                 KilterSettings.setProductSizeId(context, s.id)
                                                 sizeMenu = false
                                                 climb?.let { c ->
-                                                    val nh = catalog.holds(c, s.id)
-                                                    holds = nh
-                                                    if (board.isConnected) board.illuminate(nh)
+                                                    // Size remaps LEDs AND reshapes the board — rebuild both.
+                                                    holds = catalog.holds(c, s.id)
+                                                    geometry = catalog.boardGeometry(c.layoutId, s.id)
+                                                    if (board.isConnected) board.illuminate(holds)
                                                 }
                                             })
                                         }
@@ -441,10 +446,18 @@ private fun GradeChart(stats: List<KilterClimbStat>, selectedAngle: Int, catalog
     }
 }
 
+/** One legend entry: the role's *shape* (not a plain dot) in the role color, teaching the color-blind-
+ *  friendly shape code the board draws. Uses the same `holdPath` the board uses. */
 @Composable
-private fun LegendDot(hex: String, label: String) {
+private fun LegendDot(hex: String, role: String, label: String) {
+    val color = hexColor(hex)
+    val shape = KilterHoldShape.forRole(role)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(10.dp).background(hexColor(hex), CircleShape))
+        Canvas(Modifier.size(11.dp)) {
+            drawPath(
+                holdPath(shape, Offset(size.width / 2f, size.height / 2f), size.minDimension * 0.92f),
+                color, style = Stroke(width = 2f, join = StrokeJoin.Round))
+        }
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
