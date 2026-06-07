@@ -4,6 +4,100 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-06] Kilter Board — LED map by the user's BOARD SIZE + send led_color (real-board fix)
+
+**Decision**: Resolve each lit hold's LED address from the `leds` table **for the user's chosen
+`product_size`**, not an arbitrary one, and send the role's **`led_color`** (not `screen_color`) to the
+board. Found on real hardware: the board connected and lit up (the #52 GATT/framing fix worked) but lit
+the **wrong/shifted holds**.
+
+- **Root cause**: `ledPositions` used `MIN(product_size_id)` for the layout — i.e. it always assumed
+  one specific board size (for Kilter Original that's size 7, "12×14 Commercial", 527 LEDs). A layout
+  exists in **many** physical sizes (Original: 7×10/8×12/12×12/12×14/16×12; Homewall: per-dimension ×
+  LED-kit), and the **same hole has a different `leds.position` on each size**, so any other board lights
+  the wrong LEDs. A taller assumed board (12×14) shifts every address → the user's "shifted/offset"
+  symptom.
+- **Fix**: `KilterCatalog.sizes(forLayout:)` lists a layout's `product_sizes`; `holds(for:sizeId:)`
+  maps LEDs for the selected size (falling back to the layout's smallest when unset/invalid).
+  `KilterHold` gains `ledColorHex` (`placement_roles.led_color`) used by the controller, keeping
+  `colorHex` (`screen_color`) for the on-screen render — they differ for `start` (LED `00FF00` vs
+  screen `00DD00`).
+- **UX**: a persisted **Board size** preference (`kilter.productSizeId` AppStorage / SharedPreferences),
+  picked in Settings (next to Board/Angle) and in the inline **"Wrong holds?"** control on the climb
+  screen (size picker first — the likely cause — then the Standard/Legacy dialect). Changing it re-maps
+  every LED and re-lights the current climb instantly. Seeded to the layout's default; reset when the
+  layout changes.
+
+**Why**: the board can't report its size and the LED address space is size-specific, so the app must
+know the size — there's no auto-detect. **Rules out**: a single hardcoded size; a uniform position
+offset (sizes differ in hole sets, not by a constant shift); per-climb size. **Verified**: off-device
+unit/instrumented tests with a 2-size fixture prove `holds(sizeId:)` selects the right size's positions
+and the board uses `led_color` (`KilterCatalogStoreTests` / `KilterCatalogStoreTest`). Lighting the
+**correct** holds on the wall stays **device-pending** until re-tested on the real board with the size set.
+
+## [2026-06-06] Kilter Board — ship both Aurora payload dialects (Standard/Legacy) with a user toggle
+
+**Decision**: Support **both** Aurora illumination "API levels" and let the user choose, rather than
+hardcoding level 3. The level is the *payload* dialect, set by the board's firmware generation; it is
+**not advertised or negotiated**, so the app can't auto-detect it. A mismatch still **connects** fine
+(same BLE link/UUIDs) but lights the **wrong holds/colors** — so the right UX is a cheap manual switch
+exactly where the problem shows up.
+
+- **Encoder** (`KilterProtocol`, both platforms): added `APILevel { v3, v2 }`. `messages(for:level:)`
+  defaults to `.v3` (so the connect-fix tests and all existing callers are unchanged). `v3` = 3-byte
+  holds, R3G3B2, markers 82/81/83/84; `v2` = 2-byte holds (byte0 = position low 8 bits; byte1 =
+  R2G2B2 in bits 7–2 OR the high 2 position bits in bits 1–0), markers 78/77/79/80. `bodyChunk = 12`
+  serves both (multiple of 2 and 3; framed ≤ 20 bytes either way). Color packers (`colorByte` v3 /
+  `colorBitsV2`) are pure + unit-tested with exact byte vectors.
+- **Controller**: holds `apiLevel` + remembers `lastHolds`; `setAPILevel(_:)` switches dialect and, if
+  a climb is currently lit, **re-sends it immediately** so the wall updates live. No-op when unchanged,
+  so it's safe to call on every settings sync.
+- **UX (smooth path)**: default **Standard** — zero friction for the ~all boards that use it. Two ways
+  to switch, both persisted (`kilter.apiLevel` AppStorage / SharedPreferences): a **Settings** picker,
+  and — the key affordance — a quiet **"Wrong holds lighting up?"** link in the *connected* controls on
+  the climb screen that reveals a Standard/Legacy switch and re-lights instantly. The shared controller
+  is the single sink; the root view (iOS) / root + detail `LaunchedEffect` (Android) push the persisted
+  value down, so a change anywhere takes effect everywhere without re-navigating.
+
+**Why**: shipping both encoders + a one-tap switch is far better UX than guessing wrong and showing a
+broken wall, and there's no reliable on-wire signal to auto-pick. **Rules out**: auto-detecting the
+level (not possible over BLE); a level-negotiation handshake (Aurora doesn't expose one); per-board
+persistence (one preference fits a user's single wall). **Verified**: pure encoder vectors for both
+levels pass off-device on iOS + Android (`KilterProtocolTests` / `KilterProtocolTest`). The live
+re-light + the switch UI stay **device-pending** per the repo's hardware rule.
+
+## [2026-06-06] Kilter Board — fix BLE connect addressing + packet framing
+
+**Decision**: Correct the Aurora/Kilter BLE protocol on both platforms to match the canonical
+community reverse-engineering (`1-max-1/fake_kilter_board`). Two bugs, both of which the prior code
+flagged as "device-unverified — verify against hardware":
+
+- **Wrong GATT addressing (the connect bug).** The controllers discovered services/characteristics on
+  the board's *advertised* service `4488B571-…` and looked for a `4488B572-…` write characteristic
+  that doesn't exist. `4488B571` is only **advertised**; the writable endpoint is the **Nordic UART**
+  GATT service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` + characteristic `6E400002-…`. With the wrong
+  UUIDs the write characteristic was never found, the connection never reached `.connected`, and the
+  discovery watchdog fired with *"Connected, but the board didn't respond. Try again."* — the reported
+  symptom. Fix splits the constant into `advertisedServiceUUID` (scan/recognise + `retrieve­Connected­Peripherals`)
+  vs `gattServiceUUID`/`writeUUID` (discover + write). `isLikelyBoard` keeps matching the advertised
+  UUID/name, so that test is unchanged.
+- **Malformed packet framing.** `wrap()` emitted `[0x01, len, cksum, <payload>, 0x02]`; the spec is
+  `[0x01, len, cksum, 0x02, <payload>, 0x03]` (missing the `0x02` data marker; terminator must be
+  `0x03`). Corrected, and `bodyChunk` drops `15 → 12` (4 holds × 3 bytes) so the framed packet is
+  `6 wrapper + 1 marker + 12 = 19 ≤ 20` bytes. The hold encoding (uint16-LE position + R3G3B2 color)
+  and markers 82/81/83/84 were already correct.
+
+**Why**: these are the only things wrong on the connect path; the rest (scan-by-name, system-connected
+adopt paths, timeout watchdog) is sound. **One axis deliberately left out of scope**: Aurora "API
+level 2" (older boards — 2-byte holds / R2G2B2 / markers 77–80). The write **UUIDs do not vary by
+board** across the Aurora family (Kilter/Tension/Grasshopper/Decoy/So iLL all share the Nordic UART
+endpoint), so no multi-UUID handling is needed; only the *payload* API level differs, and level 3 is
+now the common case. **Rules out**: per-board UUID tables; API-level-2 fallback (a follow-up if an
+older board surfaces); negotiating the API level (it isn't negotiated — the app picks).
+**Verified**: new pure encoder tests (`KilterProtocolTests` / `KilterProtocolTest`) pin the exact
+framed bytes off-device on both platforms. The live BLE write path stays **device-pending** per the
+repo's hardware rule — not reported as working until lit on a real board.
+
 ## [2026-06-06] Kilter — in-app catalog download from a hosted dataset (Phase 2) (#42)
 
 **Decision**: `KilterCatalogSyncView` gains a **Download from Kilter** button that fetches a board's

@@ -16,6 +16,12 @@ object KilterSettings {
     fun angle(context: Context): Int = prefs(context).getInt("angle", 40)
     fun setAngle(context: Context, value: Int) = prefs(context).edit().putInt("angle", value).apply()
 
+    /** The user's physical board size (`product_size_id`). 0 = unset → falls back to the layout default;
+     *  drives which LED map is sent so the right holds light. */
+    fun productSizeId(context: Context): Int = prefs(context).getInt("productSizeId", 0)
+    fun setProductSizeId(context: Context, value: Int) =
+        prefs(context).edit().putInt("productSizeId", value).apply()
+
     fun minGrade(context: Context): Int = prefs(context).getInt("minGrade", 10)
     fun setMinGrade(context: Context, value: Int) = prefs(context).edit().putInt("minGrade", value).apply()
 
@@ -26,4 +32,10 @@ object KilterSettings {
         KilterGradeFormat.from(prefs(context).getString("gradeFormat", null))
     fun setGradeFormat(context: Context, value: KilterGradeFormat) =
         prefs(context).edit().putString("gradeFormat", value.name).apply()
+
+    /** Board payload dialect (Standard/Legacy). Defaults to V3 — what current boards use. */
+    fun apiLevel(context: Context): KilterProtocol.ApiLevel =
+        KilterProtocol.ApiLevel.from(prefs(context).getString("apiLevel", null))
+    fun setApiLevel(context: Context, value: KilterProtocol.ApiLevel) =
+        prefs(context).edit().putString("apiLevel", value.name).apply()
 }

@@ -46,8 +46,12 @@ struct KilterHold: Identifiable, Hashable, Sendable {
     let placementId: Int
     let x: Double
     let y: Double
-    /// Hex RGB (no `#`), e.g. `00DD00` (start), from `placement_roles.screen_color`.
+    /// Hex RGB (no `#`), e.g. `00DD00` (start), from `placement_roles.screen_color` — for the on-screen
+    /// render.
     let colorHex: String
+    /// Hex RGB the **physical board** should light, from `placement_roles.led_color` (can differ from
+    /// `colorHex`, e.g. start is `00FF00` on the LED vs `00DD00` on screen). Used for BLE illumination.
+    let ledColorHex: String
     let role: String
     /// LED index on the physical board (for BLE illumination); nil if no LED maps to this hole.
     let ledPosition: Int?
@@ -58,6 +62,17 @@ struct KilterHold: Identifiable, Hashable, Sendable {
 struct KilterLayout: Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
+}
+
+/// A physical board size for a layout (a `product_size`), e.g. "8 x 12 — Home". The user picks theirs
+/// so the LED mapping matches their board — each size addresses its LEDs differently, so the wrong
+/// size lights the wrong holds.
+struct KilterBoardSize: Identifiable, Hashable, Sendable {
+    let id: Int        // product_size_id
+    let name: String   // e.g. "8 x 12"
+    let detail: String // e.g. "Home" / "Mainline LED Kit" (may be empty)
+    /// Picker label: "8 x 12 — Home" (or just the name when there's no detail).
+    var label: String { detail.isEmpty ? name : "\(name) — \(detail)" }
 }
 
 /// One hole position on the board, normalized to view space (x,y in 0…1, y from the top). The full

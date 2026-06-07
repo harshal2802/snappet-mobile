@@ -18,9 +18,14 @@ import kotlin.math.max
 object KilterCatalogFixture {
     private val coords = intArrayOf(4, 8, 12, 16, 20)
     private const val createdAt = "2024-01-01 00:00:00"
+    /** role id, name, screen colour, LED colour. `start` has a different `led_color` vs `screen_color`
+     *  (mirrors real Kilter data) so tests cover the board using `led_color`, not the on-screen colour. */
+    private data class FRole(val id: Int, val name: String, val screen: String, val led: String)
     private val roles = listOf(
-        Triple(12, "start", "00FF00"), Triple(13, "middle", "00FFFF"),
-        Triple(14, "finish", "FF00FF"), Triple(15, "foot", "FFA500"))
+        FRole(12, "start", "00DD00", "00FF00"), FRole(13, "middle", "00FFFF", "00FFFF"),
+        FRole(14, "finish", "FF00FF", "FF00FF"), FRole(15, "foot", "FFA500", "FFA500"))
+    /** Two synthetic board sizes for layout 1: size 1 maps hole H → LED H; size 2 → H + offset. */
+    private const val sizeTwoOffset = 1000
 
     private data class Stat(val angle: Int, val diff: Double, val ascents: Int, val quality: Double)
     private data class FClimb(
@@ -49,8 +54,12 @@ object KilterCatalogFixture {
                     "INSERT INTO difficulty_grades VALUES ($d,'${d}a/V${max(0, d / 3)}','route$d',1)")
                 db.execSQL("INSERT INTO layouts VALUES (1,1,'Test Wall A','',0,1,NULL,'$createdAt')")
                 db.execSQL("INSERT INTO layouts VALUES (2,1,'Test Wall B','',0,1,NULL,'$createdAt')")
-                for ((id, name, color) in roles) db.execSQL(
-                    "INSERT INTO placement_roles VALUES ($id,1,$id,'$name','$name','$color','$color')")
+                // placement_roles columns: id, product_id, position, name, full_name, led_color, screen_color
+                for (r in roles) db.execSQL(
+                    "INSERT INTO placement_roles VALUES (${r.id},1,${r.id},'${r.name}','${r.name}','${r.led}','${r.screen}')")
+
+                db.execSQL("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
+                db.execSQL("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
 
                 var holeId = 0
                 for ((row, y) in coords.withIndex()) {
@@ -59,10 +68,13 @@ object KilterCatalogFixture {
                         val name = "${'A' + row}${col + 1}"
                         db.execSQL("INSERT INTO holes VALUES ($holeId,1,'$name',$x,$y,NULL,0)")
                         db.execSQL("INSERT INTO placements VALUES ($holeId,1,$holeId,$holeId,0,NULL)")
+                        // Two sizes: size 1 maps hole H → position H; size 2 → H + offset (different address).
                         db.execSQL("INSERT INTO leds VALUES ($holeId,1,$holeId,$holeId)")
+                        db.execSQL("INSERT INTO leds VALUES (${holeId + 10000},2,$holeId,${holeId + sizeTwoOffset})")
                     }
                 }
                 db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
+                db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
 
                 for (c in climbs) {
                     db.execSQL(
@@ -118,6 +130,8 @@ object KilterCatalogFixture {
         "CREATE TABLE placements (id INT UNSIGNED NOT NULL PRIMARY KEY, layout_id INT UNSIGNED NOT NULL, " +
             "hole_id INT UNSIGNED NOT NULL, hold_id INT UNSIGNED NOT NULL, rotation INT NOT NULL, " +
             "default_placement_role_id INT UNSIGNED NULL DEFAULT NULL)",
+        "CREATE TABLE product_sizes (id INT UNSIGNED NOT NULL PRIMARY KEY, name TEXT NOT NULL, " +
+            "description TEXT)",
         "CREATE TABLE leds (id INT UNSIGNED NOT NULL PRIMARY KEY, product_size_id INT UNSIGNED NOT NULL, " +
             "hole_id INT UNSIGNED NOT NULL, position INT UNSIGNED NOT NULL)",
         "CREATE TABLE product_sizes_layouts_sets (id INT UNSIGNED NOT NULL PRIMARY KEY, " +

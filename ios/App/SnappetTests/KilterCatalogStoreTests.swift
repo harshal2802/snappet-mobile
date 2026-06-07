@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 @testable import Snappet
 
 /// Unit coverage for the opt-in catalog plumbing (issue #42): the synthetic fixture builds, the
@@ -128,5 +129,73 @@ final class KilterCatalogStoreTests: XCTestCase {
             return XCTFail("expected to open a climb from the fixture")
         }
         XCTAssertFalse(KilterCatalog.shared.holds(for: climb).isEmpty, "frames should decode to holds")
+    }
+
+    /// Board-size LED selection: each `product_size` addresses its LEDs differently, so `holds(sizeId:)`
+    /// must use the *selected* size — sending another size's positions lights wrong/shifted holds (the
+    /// real-hardware bug). Also proves the board payload uses `led_color`, not the on-screen
+    /// `screen_color`. The fixture gives layout 1 two sizes (size 2 offset by 1000) and a `start` role
+    /// whose `led_color` (00FF00) differs from its `screen_color` (00DD00).
+    func testBoardSizeSelectsLEDMapAndUsesLedColor() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2], "layout 1 offers two sizes")
+        XCTAssertEqual(cat.defaultSizeId(forLayout: 1), 1, "smallest product_size_id is the default")
+
+        guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
+            return XCTFail("fixture climb Alpha missing")
+        }
+        // Same climb, different boards → different LED addresses (size 2 is offset by 1000).
+        let s1 = cat.holds(for: climb, sizeId: 1).compactMap(\.ledPosition).sorted()
+        let s2 = cat.holds(for: climb, sizeId: 2).compactMap(\.ledPosition).sorted()
+        XCTAssertEqual(s1, [1, 13, 25])
+        XCTAssertEqual(s2, [1001, 1013, 1025])
+        // An unset (0) or stale (foreign) size falls back to the layout's smallest — deterministic, no crash.
+        XCTAssertEqual(cat.holds(for: climb, sizeId: 0).compactMap(\.ledPosition).sorted(), s1)
+        XCTAssertEqual(cat.holds(for: climb, sizeId: 999).compactMap(\.ledPosition).sorted(), s1)
+
+        guard let start = cat.holds(for: climb, sizeId: 1).first(where: { $0.role == "start" }) else {
+            return XCTFail("expected a start hold")
+        }
+        XCTAssertEqual(start.colorHex, "00DD00", "on-screen render keeps screen_color")
+        XCTAssertEqual(start.ledColorHex, "00FF00", "board payload uses led_color")
+    }
+
+    /// Regression / parity: an older or hand-rolled catalog can lack the (non-required) `product_sizes`
+    /// table yet still pass validation. `sizes(forLayout:)` must **degrade** to bare ids, not crash —
+    /// Android's rawQuery throws on a missing table where iOS's query() silently yields none, so this
+    /// pins the contract both platforms must honor (mirrored by `KilterCatalogStoreTest` on Android).
+    func testSizesDegradeWhenProductSizesTableAbsent() throws {
+        let url = try KilterCatalogFixture.temporaryBuild()
+        // Drop product_sizes to simulate the older-catalog case (still valid — it isn't required).
+        var raw: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(raw, "DROP TABLE product_sizes", nil, nil, nil), SQLITE_OK)
+        sqlite3_close(raw)
+
+        let store = KilterCatalogStore.shared
+        let validated = try KilterCatalogValidator.validate(url)   // passes — product_sizes not required
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        // Degrades to bare ids from product_sizes_layouts_sets instead of crashing.
+        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2])
+        // The LED map still resolves for a chosen size (the holds path queries leds, not product_sizes).
+        guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
+            return XCTFail("fixture climb Alpha missing")
+        }
+        XCTAssertEqual(cat.holds(for: climb, sizeId: 2).compactMap(\.ledPosition).sorted(), [1001, 1013, 1025])
     }
 }

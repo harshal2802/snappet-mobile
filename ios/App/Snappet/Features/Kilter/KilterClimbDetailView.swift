@@ -36,6 +36,14 @@ struct KilterClimbDetailView: View {
     @AppStorage("kilter.angle") private var sharedAngle: Int = 40
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
+    private var apiLevel: KilterProtocol.APILevel { .init(rawValue: apiLevelRaw) ?? .v3 }
+    /// The user's physical board size (`product_size_id`). Drives which LED map is sent — the wrong
+    /// size lights shifted/incorrect holds. Seeded to the layout's default on load, then user-chosen.
+    @AppStorage("kilter.productSizeId") private var productSizeId = 0
+    /// Reveals the "wrong holds?" fixups (board size + protocol) under the connected controls (hidden
+    /// until the user hits the escape hatch, so the common path stays uncluttered).
+    @State private var showingProtocolFix = false
 
     /// The climb currently shown — changes as the user swipes through `siblings`.
     @State private var currentUUID: String
@@ -341,6 +349,7 @@ struct KilterClimbDetailView: View {
                     primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
                         board.illuminate(holds)
                     }
+                    wrongHoldsControl
                     Button("Disconnect board") { board.disconnect() }
                         .font(.caption)
                         .accessibilityIdentifier("kilter.board.disconnect")
@@ -376,6 +385,57 @@ struct KilterClimbDetailView: View {
             .padding(.horizontal)
             .animation(.snappy, value: board.state)
             .onAppear { wireSessionCapture() }
+            // Mirror a protocol switch made here to the controller immediately (the root view also
+            // observes this, but the detail screen shouldn't depend on it being mounted); re-lights live.
+            .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
+            // A board-size change remaps every LED, so rebuild the holds and re-light the current climb.
+            .onChange(of: productSizeId) {
+                if let c = climb {
+                    holds = catalog.holds(for: c, sizeId: productSizeId)
+                    if board.isConnected { board.illuminate(holds) }
+                }
+            }
+        }
+    }
+
+    /// Escape hatch when the board lights the wrong holds: a quiet "wrong holds?" link that reveals the
+    /// two fixes, in likelihood order — (1) **board size**, the usual cause of shifted/incorrect holds
+    /// (each size addresses its LEDs differently), and (2) the **Standard/Legacy** payload dialect for
+    /// older controllers. Both re-light the current climb instantly and persist.
+    @ViewBuilder private var wrongHoldsControl: some View {
+        if showingProtocolFix {
+            VStack(spacing: 12) {
+                if let layoutId = climb?.layoutId {
+                    let sizes = catalog.sizes(forLayout: layoutId)
+                    if sizes.count > 1 {
+                        VStack(spacing: 4) {
+                            Picker("Board size", selection: $productSizeId) {
+                                ForEach(sizes) { Text($0.label).tag($0.id) }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityIdentifier("kilter.board.size")
+                            Text("Pick your board's size — the wrong size lights shifted/incorrect holds.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
+                    }
+                }
+                VStack(spacing: 4) {
+                    Picker("Board lights", selection: $apiLevelRaw) {
+                        ForEach(KilterProtocol.APILevel.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("kilter.board.protocol")
+                    Text("Still off? Older controllers use Legacy. Each change re-lights instantly.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else {
+            Button("Wrong holds lighting up?") { withAnimation(.snappy) { showingProtocolFix = true } }
+                .font(.caption)
+                .accessibilityIdentifier("kilter.board.wrongHolds")
         }
     }
 
@@ -413,7 +473,12 @@ struct KilterClimbDetailView: View {
         guard let c = catalog.climb(currentUUID) else { return }
         climb = c
         stats = catalog.stats(currentUUID)
-        holds = catalog.holds(for: c)
+        // Seed the board size to this layout's default if unset/invalid, so the picker shows a real
+        // selection and the LED map is concrete.
+        if !catalog.sizes(forLayout: c.layoutId).contains(where: { $0.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(forLayout: c.layoutId)
+        }
+        holds = catalog.holds(for: c, sizeId: productSizeId)
         geometry = catalog.boardGeometry(forLayout: c.layoutId)
         betaLinks = catalog.betaLinks(currentUUID)
         // Prefer the shared angle if it has stats; otherwise the most-climbed angle.

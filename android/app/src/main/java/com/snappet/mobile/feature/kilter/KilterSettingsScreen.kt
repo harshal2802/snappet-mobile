@@ -57,8 +57,11 @@ fun KilterSettingsScreen(
     var layoutId by remember { mutableStateOf(KilterSettings.layout(context)) }
     var angle by remember { mutableStateOf(KilterSettings.angle(context)) }
     var gradeFormat by remember { mutableStateOf(KilterSettings.gradeFormat(context)) }
+    var apiLevel by remember { mutableStateOf(KilterSettings.apiLevel(context)) }
+    var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
     var layoutMenu by remember { mutableStateOf(false) }
     var angleMenu by remember { mutableStateOf(false) }
+    var sizeMenu by remember { mutableStateOf(false) }
     var confirmingClear by remember { mutableStateOf(false) }
 
     // Catalog library (issue #42): list downloads, switch active, remove individually, download/import.
@@ -81,6 +84,14 @@ fun KilterSettingsScreen(
 
     val layouts = remember { catalog.layouts() }
     val angles = remember { catalog.angles() }
+    val sizes = remember(layoutId) { catalog.sizes(layoutId) }
+    // Keep the board-size selection valid for the chosen layout (seed on open, reset on layout change).
+    androidx.compose.runtime.LaunchedEffect(layoutId) {
+        if (sizes.none { it.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(layoutId)
+            KilterSettings.setProductSizeId(context, productSizeId)
+        }
+    }
 
     ModuleScaffold(title = "Kilter Settings", onExit = onExit) { padding ->
         Column(
@@ -97,6 +108,21 @@ fun KilterSettingsScreen(
                         DropdownMenuItem(text = { Text(l.name) }, onClick = {
                             layoutId = l.id; KilterSettings.setLayout(context, l.id); layoutMenu = false
                         })
+                    }
+                }
+            }
+            if (sizes.size > 1) {
+                Box {
+                    OutlinedButton(
+                        onClick = { sizeMenu = true },
+                        modifier = Modifier.testTag("kilter.settings.boardSize"),
+                    ) { Text("Board size: ${sizes.firstOrNull { it.id == productSizeId }?.label ?: "—"}") }
+                    DropdownMenu(expanded = sizeMenu, onDismissRequest = { sizeMenu = false }) {
+                        sizes.forEach { s ->
+                            DropdownMenuItem(text = { Text(s.label) }, onClick = {
+                                productSizeId = s.id; KilterSettings.setProductSizeId(context, s.id); sizeMenu = false
+                            })
+                        }
                     }
                 }
             }
@@ -123,6 +149,22 @@ fun KilterSettingsScreen(
                     )
                 }
             }
+
+            HorizontalDivider()
+            Text("Board protocol", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                KilterProtocol.ApiLevel.entries.forEach { level ->
+                    FilterChip(
+                        selected = apiLevel == level,
+                        onClick = { apiLevel = level; KilterSettings.setApiLevel(context, level) },
+                        label = { Text(level.label) },
+                        modifier = Modifier.testTag("kilter.settings.apiLevel.${level.name}"),
+                    )
+                }
+            }
+            Text("Almost all boards use Standard. If you connect but the wrong holds light up, switch "
+                + "to Legacy — it's for older controllers.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             HorizontalDivider()
             Text("Downloaded catalogs", style = MaterialTheme.typography.titleSmall,

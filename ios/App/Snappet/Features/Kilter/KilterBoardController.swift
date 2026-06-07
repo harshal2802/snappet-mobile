@@ -27,11 +27,16 @@ final class KilterBoardController: NSObject {
         var isBusy: Bool { self == .scanning || self == .connecting }
     }
 
-    // Aurora/Kilter board GATT (community-sourced — verify against hardware).
+    // Aurora/Kilter board BLE addressing. Two distinct UUIDs — conflating them was the connect bug:
+    //  * `advertisedServiceUUID` is what the board *advertises* (used only to recognise it while
+    //    scanning / to retrieve a system-connected board); it is not where illumination data is written.
+    //  * the writable endpoint is the **Nordic UART** GATT service + characteristic, shared by the whole
+    //    Aurora family (Kilter / Tension / Grasshopper / …) — there is no per-board variation here.
     // `nonisolated(unsafe)`: CBUUID isn't Sendable, but these are immutable constants, so the
-    // pure (nonisolated) `isLikelyBoard` matcher can read `serviceUUID` safely.
-    nonisolated(unsafe) private static let serviceUUID = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
-    nonisolated(unsafe) private static let writeUUID = CBUUID(string: "4488B572-7806-4DF6-BCFF-A2897E4953FF")
+    // pure (nonisolated) `isLikelyBoard` matcher can read `advertisedServiceUUID` safely.
+    nonisolated(unsafe) private static let advertisedServiceUUID = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
+    nonisolated(unsafe) private static let gattServiceUUID = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+    nonisolated(unsafe) private static let writeUUID = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 
     /// How long to look for a board before giving up, and how long a single GATT
     /// connect + discovery may take. CoreBluetooth's own `connect(_:)` never times out, so without
@@ -41,6 +46,12 @@ final class KilterBoardController: NSObject {
 
     private(set) var state: State = .idle
     var isConnected: Bool { state == .connected }
+    /// Which Aurora payload dialect to send. Default `.v3` (current boards); switched to `.v2` when a
+    /// user with an older board reports the wrong holds lighting up. Persisted by the UI layer, which
+    /// pushes it down via `setAPILevel(_:)`.
+    private(set) var apiLevel: KilterProtocol.APILevel = .v3
+    /// The most recently requested holds, so a protocol switch can re-light the current climb at once.
+    private var lastHolds: [KilterHold] = []
     /// Notified when the connection comes up / goes down, so the module can open/close a session.
     var onConnectionChange: ((Bool) -> Void)?
 
@@ -68,7 +79,7 @@ final class KilterBoardController: NSObject {
     /// primary service UUID, only a local name — so name matching is the primary signal and scanning
     /// filtered by service UUID (the old behavior) would never discover them.
     nonisolated static func isLikelyBoard(name: String?, advertisedServiceUUIDs: [CBUUID]) -> Bool {
-        if advertisedServiceUUIDs.contains(serviceUUID) { return true }
+        if advertisedServiceUUIDs.contains(advertisedServiceUUID) { return true }
         guard let name = name?.lowercased() else { return false }
         return ["kilter", "aurora", "tension", "grasshopper", "decoy", "soill"].contains { name.contains($0) }
     }
@@ -102,7 +113,8 @@ final class KilterBoardController: NSObject {
     ///    reaches it if it's available (the watchdog fails the attempt otherwise).
     private func beginConnect() {
         guard let central, central.state == .poweredOn else { return }
-        if let existing = central.retrieveConnectedPeripherals(withServices: [Self.serviceUUID]).first {
+        let knownServices = [Self.gattServiceUUID, Self.advertisedServiceUUID]
+        if let existing = central.retrieveConnectedPeripherals(withServices: knownServices).first {
             connect(to: existing)
         } else if let known = lastBoardIdentifier,
                   let remembered = central.retrievePeripherals(withIdentifiers: [known]).first {
@@ -182,6 +194,7 @@ final class KilterBoardController: NSObject {
     /// Light the given holds on the board (no-op unless connected). Stores them if the characteristic
     /// isn't discovered yet so they flush once ready.
     func illuminate(_ holds: [KilterHold]) {
+        lastHolds = holds
         guard isConnected, let peripheral, let writeChar else {
             pendingHolds = holds
             return
@@ -189,14 +202,22 @@ final class KilterBoardController: NSObject {
         send(holds, to: peripheral, characteristic: writeChar)
     }
 
+    /// Switch the payload dialect and, if a climb is currently lit, re-send it so the change shows on
+    /// the wall immediately. No-op when unchanged — safe to call on every settings sync.
+    func setAPILevel(_ level: KilterProtocol.APILevel) {
+        guard level != apiLevel else { return }
+        apiLevel = level
+        if isConnected, !lastHolds.isEmpty { illuminate(lastHolds) }
+    }
+
     private func send(_ holds: [KilterHold], to peripheral: CBPeripheral, characteristic: CBCharacteristic) {
         let payload = holds.compactMap { hold -> (position: Int, colorHex: String)? in
             guard let pos = hold.ledPosition else { return nil }
-            return (pos, hold.colorHex)
+            return (pos, hold.ledColorHex)   // the board's LED color, not the on-screen color
         }
         let mode: CBCharacteristicWriteType =
             characteristic.properties.contains(.write) ? .withResponse : .withoutResponse
-        for message in KilterProtocol.messages(for: payload) {
+        for message in KilterProtocol.messages(for: payload, level: apiLevel) {
             peripheral.writeValue(Data(message), for: characteristic, type: mode)
         }
     }
@@ -247,7 +268,7 @@ extension KilterBoardController: CBCentralManagerDelegate {
             // with an unexpected GATT layout would otherwise hang silently.
             startTimeout(Self.connectTimeout,
                          message: "Connected, but the board didn't respond. Try again.")
-            peripheral.discoverServices([Self.serviceUUID])
+            peripheral.discoverServices([Self.gattServiceUUID])
         }
     }
 
@@ -287,7 +308,7 @@ extension KilterBoardController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         nonisolated(unsafe) let peripheral = peripheral
         MainActor.assumeIsolated {
-            for service in peripheral.services ?? [] where service.uuid == Self.serviceUUID {
+            for service in peripheral.services ?? [] where service.uuid == Self.gattServiceUUID {
                 peripheral.discoverCharacteristics([Self.writeUUID], for: service)
             }
         }

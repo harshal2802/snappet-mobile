@@ -11,7 +11,11 @@ struct KilterSettingsView: View {
 
     @AppStorage("kilter.layout") private var layoutId: Int = 1
     @AppStorage("kilter.angle") private var angle: Int = 40
+    /// The user's physical board size (`product_size_id`) — drives which LED map is sent so the right
+    /// holds light. Seeded to the layout's default; reset when the layout changes.
+    @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
+    @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
 
     @Query private var entries: [KilterLogEntry]
     @Query private var sessions: [KilterSession]
@@ -30,13 +34,20 @@ struct KilterSettingsView: View {
                 Picker("Board", selection: $layoutId) {
                     ForEach(catalog.layouts()) { Text($0.name).tag($0.id) }
                 }
+                let sizes = catalog.sizes(forLayout: layoutId)
+                if sizes.count > 1 {
+                    Picker("Board size", selection: $productSizeId) {
+                        ForEach(sizes) { Text($0.label).tag($0.id) }
+                    }
+                    .accessibilityIdentifier("kilter.settings.boardSize")
+                }
                 Picker("Angle", selection: $angle) {
                     ForEach(catalog.angles(), id: \.self) { Text("\($0)°").tag($0) }
                 }
             } header: {
                 Text("Defaults")
             } footer: {
-                Text("Used when you open the Kilter Board.")
+                Text("Used when you open the Kilter Board. Set your board size so the right holds light up.")
             }
 
             Section("Grades") {
@@ -45,6 +56,21 @@ struct KilterSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("kilter.settings.gradeFormat")
+            }
+
+            Section {
+                Picker("Board lights", selection: $apiLevelRaw) {
+                    ForEach(KilterProtocol.APILevel.allCases, id: \.rawValue) { level in
+                        Text(level.label).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("kilter.settings.apiLevel")
+            } header: {
+                Text("Board protocol")
+            } footer: {
+                Text("Almost all boards use Standard. If you connect but the wrong holds light up, "
+                     + "switch to Legacy — it's for older controllers.")
             }
 
             Section {
@@ -104,6 +130,9 @@ struct KilterSettingsView: View {
         }
         .navigationTitle("Kilter Settings")
         .navigationBarTitleDisplayMode(.inline)
+        // Keep the board-size selection valid for the chosen layout (seed on open, reset on layout change).
+        .onAppear(perform: syncBoardSize)
+        .onChange(of: layoutId) { syncBoardSize() }
         .confirmationDialog("Clear all logged history?", isPresented: $confirmingClear,
                             titleVisibility: .visible) {
             Button("Clear history", role: .destructive) { clearHistory() }
@@ -124,6 +153,14 @@ struct KilterSettingsView: View {
                     if case .installed = installer.phase { showingDownload = false; libraryVersion += 1 }
                 }
             }
+        }
+    }
+
+    /// Snap `productSizeId` to a size that exists for the current layout — seeds it to the default when
+    /// unset, and resets it when the user switches to a layout that doesn't offer the old size.
+    private func syncBoardSize() {
+        if !catalog.sizes(forLayout: layoutId).contains(where: { $0.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(forLayout: layoutId)
         }
     }
 

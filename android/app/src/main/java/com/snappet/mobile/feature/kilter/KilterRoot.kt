@@ -82,6 +82,8 @@ fun KilterRoot(onExit: () -> Unit) {
     val dao = container.database.kilterDao()
     val board = remember { KilterBoardController(context) }
     val sessions = remember { KilterSessionManager(dao) }
+    // Seed the board's payload dialect from the persisted preference (Standard/Legacy).
+    androidx.compose.runtime.LaunchedEffect(Unit) { board.setApiLevel(KilterSettings.apiLevel(context)) }
 
     // The app ships no catalog (issue #42); open the user-installed one off the main thread, showing a
     // brief loading state. `reloadToken` re-opens the reader after an import (sync screen) or remove

@@ -72,6 +72,12 @@ DDL = {
             rotation INT NOT NULL,
             default_placement_role_id INT UNSIGNED NULL DEFAULT NULL
         )""",
+    "product_sizes": """
+        CREATE TABLE product_sizes (
+            id INT UNSIGNED NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT
+        )""",
     "leds": """
         CREATE TABLE leds (
             id INT UNSIGNED NOT NULL PRIMARY KEY,
@@ -146,14 +152,20 @@ DDL = {
 COORDS = [4, 8, 12, 16, 20]
 NOW = "2024-01-01 00:00:00"
 
-# Synthetic placement roles. The reader maps role ids 12/13/14/15 to start/middle/
-# finish/foot, so we author those four with made-up screen colours.
+# Synthetic placement roles: (id, name, screen_color, led_color). The reader maps role ids
+# 12/13/14/15 to start/middle/finish/foot. `start` deliberately has a different led_color vs
+# screen_color (mirrors real Kilter data) so the board uses led_color, not the on-screen colour.
 ROLES = [
-    (12, "start", "00FF00"),
-    (13, "middle", "00FFFF"),
-    (14, "finish", "FF00FF"),
-    (15, "foot", "FFA500"),
+    (12, "start", "00DD00", "00FF00"),
+    (13, "middle", "00FFFF", "00FFFF"),
+    (14, "finish", "FF00FF", "FF00FF"),
+    (15, "foot", "FFA500", "FFA500"),
 ]
+
+# Two synthetic board sizes for layout 1: size 1 maps hole H -> LED position H; size 2 maps
+# H -> H + SIZE_TWO_OFFSET (a different physical address), so tests prove the wrong size lights
+# the wrong holds.
+SIZE_TWO_OFFSET = 1000
 
 # Four invented climbs on layout 1. frames are "p<placement>r<role>" tokens; placement
 # ids equal hole ids (1..25) for layout 1 (see build()). Pure fiction.
@@ -188,12 +200,16 @@ def build(out_path):
         db.execute("INSERT INTO layouts VALUES (1,1,'Test Wall A','',0,1,NULL,?)", (NOW,))
         db.execute("INSERT INTO layouts VALUES (2,1,'Test Wall B','',0,1,NULL,?)", (NOW,))
 
-        for role_id, name, color in ROLES:
+        # placement_roles columns: id, product_id, position, name, full_name, led_color, screen_color
+        for role_id, name, screen, led in ROLES:
             db.execute("INSERT INTO placement_roles VALUES (?,?,?,?,?,?,?)",
-                       (role_id, 1, role_id, name, name, color, color))
+                       (role_id, 1, role_id, name, name, led, screen))
 
-        # 5x5 holes + a placement per hole on layout 1 (placement id == hole id), plus an
-        # LED per hole on product_size 1.
+        db.execute("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
+        db.execute("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
+
+        # 5x5 holes + a placement per hole on layout 1 (placement id == hole id), plus an LED per
+        # hole on each of two product sizes (size 2's positions are offset, to test size selection).
         hid = 0
         for row, y in enumerate(COORDS):
             for col, x in enumerate(COORDS):
@@ -202,7 +218,10 @@ def build(out_path):
                            (hid, 1, f"{chr(65 + row)}{col + 1}", x, y))
                 db.execute("INSERT INTO placements VALUES (?,?,?,?,?,NULL)", (hid, 1, hid, hid, 0))
                 db.execute("INSERT INTO leds VALUES (?,?,?,?)", (hid, 1, hid, hid))
+                db.execute("INSERT INTO leds VALUES (?,?,?,?)",
+                           (hid + 10000, 2, hid, hid + SIZE_TWO_OFFSET))
         db.execute("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
+        db.execute("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
 
         for uuid, name, setter, frames, stats in CLIMBS:
             db.execute(
