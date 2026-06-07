@@ -135,10 +135,20 @@ struct WorkoutHomeView: View {
             ExerciseEditorView(existing: nil)
         }
         .fullScreenCover(item: $playing) { session in
-            WorkoutPlayerView(session: session, resolver: resolver, defaultUnit: unit,
-                              onClose: { saved in finishWorkout(session, saved: saved) },
-                              onMinimize: { minimizeWorkout() })
-                .navigationTransition(.zoom(sourceID: "workoutPlayer", in: playerZoom))
+            Group {
+                // Routineless sessions use the grow-as-you-go freeform logbook; routine sessions keep
+                // the guided set-by-set player. (dynamic-sessions D3/D5)
+                if session.routineID == nil {
+                    FreeformPlayerView(session: session, resolver: resolver, defaultUnit: unit,
+                                       onClose: { saved in finishWorkout(session, saved: saved) },
+                                       onMinimize: { minimizeWorkout() })
+                } else {
+                    WorkoutPlayerView(session: session, resolver: resolver, defaultUnit: unit,
+                                      onClose: { saved in finishWorkout(session, saved: saved) },
+                                      onMinimize: { minimizeWorkout() })
+                }
+            }
+            .navigationTransition(.zoom(sourceID: "workoutPlayer", in: playerZoom))
         }
         .confirmationDialog("A workout is already in progress.",
                             isPresented: Binding(get: { startConflict != nil },
@@ -209,6 +219,12 @@ struct WorkoutHomeView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { showingNewExercise = true } label: { Label("New Exercise", systemImage: "plus") }
             }
+        } else if section == .dashboard {
+            // Quick Start: a freeform session you build on the fly (no routine needed).
+            ToolbarItem(placement: .primaryAction) {
+                Button { startFreeform() } label: { Label("Quick Start", systemImage: "bolt.fill") }
+                    .accessibilityIdentifier("workout.quickStart")
+            }
         }
     }
 
@@ -224,6 +240,19 @@ struct WorkoutHomeView: View {
         context.insert(session)
         try? context.save()
         startLiveMetrics(for: session, routine: routine)
+        playing = session
+    }
+
+    /// Start a freeform (routineless) session — an empty `WorkoutSession` you grow on the fly in
+    /// `FreeformPlayerView` (add exercises + sets / climb attempts). If a workout is already active,
+    /// resume it instead of stacking a second one. (dynamic-sessions D3)
+    private func startFreeform() {
+        if let active = activeSession { resume(active); return }
+        let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])
+        context.insert(session)
+        try? context.save()
+        app.liveWorkout.start(for: session, sport: nil, category: nil)
+        startLiveActivity(for: session)
         playing = session
     }
 
@@ -283,8 +312,10 @@ struct WorkoutHomeView: View {
         let first = session.exercises.first { !$0.skipped }
         let name = first.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
         // Seed a real first-set label so the Lock Screen isn't blank if the app is backgrounded
-        // before the player view appears (e.g. started via a shortcut).
-        let progress = first.map { "Set 1 of \($0.sets.count)" } ?? ""
+        // before the player view appears (e.g. started via a shortcut). Guard on a non-empty set
+        // list so a freeform exercise (which starts with no sets) never seeds a nonsensical
+        // "Set 1 of 0" — leave it blank until a set is actually logged.
+        let progress = first.flatMap { $0.sets.isEmpty ? nil : "Set 1 of \($0.sets.count)" } ?? ""
         app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
                                exerciseName: name, setProgress: progress)
     }

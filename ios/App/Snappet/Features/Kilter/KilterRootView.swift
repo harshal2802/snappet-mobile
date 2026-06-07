@@ -118,6 +118,10 @@ struct KilterRootView: View {
                             Label("Start session", systemImage: "play.circle")
                         }
                     }
+                    Button { router.push(KilterPlanRoute()) } label: {
+                        Label("Plan a session", systemImage: "wand.and.stars")
+                    }
+                    .accessibilityIdentifier("kilter.plan")
                     Button { surpriseMe() } label: { Label("Surprise me", systemImage: "dice") }
                         .accessibilityIdentifier("kilter.surprise")
                     Button { showingScanner = true } label: {
@@ -156,6 +160,9 @@ struct KilterRootView: View {
         }
         .navigationDestination(for: KilterSessionRoute.self) { route in
             KilterSessionDetailView(sessionID: route.id, board: board, sessions: sessions)
+        }
+        .navigationDestination(for: KilterPlanRoute.self) { _ in
+            KilterPlanView(sessions: sessions)
         }
         .task(id: filterKey) { refresh() }
         // Re-open the reader + refresh when the installed catalog changes (import here, or "Remove"

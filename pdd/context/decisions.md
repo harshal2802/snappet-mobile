@@ -4,6 +4,91 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-07] Freeform/dynamic WorkoutTracker sessions + ad-hoc climbing (polymorphic SetKind)
+
+**Decision**: Made WorkoutTracker sessions **grow-as-you-go** and able to log **ad-hoc (non-Kilter)
+climbing** — gym bouldering / outdoor — which the user confirmed they do. (dynamic-sessions D3/D4/D5;
+`pdd/prompts/features/dynamic-sessions/DESIGN.md`.)
+
+- **Polymorphic set unit (D4).** `SetKind` (`repsWeight`/`duration`/`climbAttempt`) on
+  `SessionExercise.kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** fields on `SetLog`
+  (`durationSec`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Migration nuance (load-bearing):**
+  `SetLog`/`SessionExercise` are nested **Codable composites**, not `@Model`s — SwiftData lightweight
+  migration doesn't reach inside the encoded blob, so every added field is **`Optional`** (synthesized
+  `Codable` decodes a missing optional key as nil; a non-optional key would throw on old data). The climb
+  outcome **reuses `KilterAscentStatus`** (one climbing vocabulary across Kilter + WorkoutTracker +
+  the recommender). Pure `SetMeasure` (summary/format/validate, e.g. "8 × 60 kg" / "0:45" /
+  "V4 · Flash · 3 tries") + `SetMeasureTests` (12 cases). **Rejected** a `SetMeasure`
+  enum-with-associated-values (bigger hand-written-`Codable` surface, no user-visible gain).
+- **Freeform player (D3/D5) is a NEW, self-contained view, not a rewrite.** `FreeformPlayerView` (a
+  list-based logbook) handles routineless sessions (`routineID == nil`): add exercises (Lifting via the
+  existing `ExercisePickerView` · Climbing · Timed), per-exercise add set/attempt via a kind-adaptive
+  `LogSetSheet`, swipe-delete, finish. **Why separate:** the guided `WorkoutPlayerView` is device-verified
+  and tightly coupled to reps×weight + a fixed index walk; a logbook is the right shape for "add as you
+  go" and avoids destabilizing it. **Quick Start** (`startFreeform()`) creates the empty session; the
+  player cover branches on `routineID == nil`. `SessionDetailView.detailText` now renders climb/timed
+  sets via `SetMeasure` (detected from the set's own fields → no call-site churn).
+
+**Why**: closes the "I don't know my next climb / I want to add as I go" gap for non-board climbing and
+ad-hoc lifting, reusing the existing model (no new `@Model`, additive-only) and finish/HR pipeline.
+
+**Rules out / caveats**: **No build/sim/test run** — the authoring box has no Swift toolchain, so
+`xcodebuild test` + a sim pass on a Mac are owed (only the graph integrity was checked: 162 nodes / 284
+edges, no orphans/dups). Followups: distance/GPS (Shape ②) isn't a `SetKind` yet; ad-hoc Climbing/Timed
+exercises use a fixed default name (inline rename later). Graph: added `wt-freeform-player` +
+`wt-set-measure` nodes.
+- **Freeform Live Activity (fixed in review).** `FreeformPlayerView` now pushes to the **Live Activity**
+  (mirroring `WorkoutPlayerView`): live HR + the current exercise + the paused state, via `onChange` on
+  `liveWorkout.latestHR`/`isPaused` and after each log/add. Previously it only seeded the activity once,
+  so the Lock Screen showed a stale "Workout" label, blank HR, and a timer that kept running while
+  paused. Only the per-set "Set N of M" line is intentionally omitted (a freeform logbook has no fixed
+  target); the `startLiveActivity` seed also no longer emits a nonsensical "Set 1 of 0" for an empty
+  freeform exercise.
+
+## [2026-06-07] Kilter-driven session recommender — pick a session from your logs
+
+**Decision**: Shipped the high-value remainder of the dynamic-sessions design (`pdd/prompts/features/
+dynamic-sessions/DESIGN.md`, refreshed) as a **pure recommender + a Plan screen in the Kilter app**.
+Re-baselined first: `main`'s `18-ios-kilter-rich-session` already gave climbing sessions live HR, per-climb
+timing/attempts (so a board session is *already* the "dynamic climbing" the user asked for), media + a
+highlight reel, and a rich summary — so the original Part B (project Kilter into WorkoutTracker history)
+was **dropped** (redundant; would fight the 2026-06-02 "keep Kilter separate" call). What remained novel
+was *using* the logs to suggest a session.
+
+- **`KilterRecommender` (pure, Foundation-only)** — `[KilterClimbLog]` history + `[KilterListItem]`
+  candidates → a goal-tagged `Plan` (Warm up / Send / Project). Detects the **working grade** = hardest
+  rounded-difficulty bucket with ≥ `sendThreshold` (default 2) sends (else hardest single send, else nil
+  cold-start); allocates `targetCount` ~⅓ warm-up / bulk sends / one project; bands warm-ups below, sends
+  at, project above the working bucket; ranks by quality→ascents→easiest→uuid (**deterministic**);
+  `preferUnsent` keeps already-sent climbs out of send/project goals. **Reuses** the existing
+  `KilterClimbLog` value type (from `KilterSessionStats`) and catalog `KilterListItem` — no new `@Model`,
+  no schema change, no migration.
+- **`KilterPlanView` + `KilterPlanRoute`** — More-menu "Plan a session": reads `KilterLogEntry`s, queries
+  the catalog for a window around the working grade, runs the recommender, shows grouped picks; **Start
+  session** begins a manual `KilterSession` (reusing `KilterSessionManager` → live HR / Live Activity /
+  media) and taps through each pick, with a live "logged this session" check.
+- **Tests**: `KilterRecommenderTests` (14 cases — working-grade detection, allocation sum, banding by
+  goal, prefer-unsent, higher-quality-wins, determinism, no-dup-across-goals, cold start, empty
+  candidates, **candidate-window coverage, explicit-anchor band centre, deep warm-up fallback**).
+  **Graph**: added `kilter-recommender` (pure) + `kilter-plan` (screen) nodes + edges
+  (integrity re-checked: 162 nodes / 284 edges, no orphans/dups).
+- **Recommender ↔ view coherence (fixed in review).** The band centre and the catalog-query window
+  must share one `anchor`: `recommend` takes an explicit `anchor:` and the view fetches over
+  `KilterRecommender.candidateWindow(anchor:)` (`w-4.5 … w+2.5`, fully bracketing the warm-up→project
+  bands). Earlier the view fetched `anchor-3 … anchor+2`, leaving the `w-4` warm-up fallback unfetchable
+  and letting two independent cold-start anchors (grade-scale median vs candidate median) disagree and
+  silently drop a goal.
+
+**Why**: it's the most on-brand piece — a deterministic pure function over data the app already keeps,
+turning history into action — and the catalog/session machinery to act on it already exists.
+
+**Rules out / honest caveat**: recommender lives in **Kilter**, not WorkoutTracker (follows main's
+"Kilter is the climbing home"; the pure core is UI-agnostic so it's reversible). Remaining/ deferred:
+freeform **lifting** Quick-Start sessions (A.1) and a polymorphic `SetKind` for **ad-hoc** non-catalog
+climbing in WorkoutTracker (A.2, gated on a product call now that Kilter covers board climbing). **No
+build/sim/test run**: the authoring box has no Swift toolchain, so `xcodebuild test` on a Mac is owed to
+green the recommender tests + sim-verify `KilterPlanView` (only the graph integrity was checked here).
+
 ## [2026-06-06] Kilter Board — LED map by the user's BOARD SIZE + send led_color (real-board fix)
 
 **Decision**: Resolve each lit hold's LED address from the `leds` table **for the user's chosen
@@ -419,6 +504,44 @@ truth); splitting tax/discount evenly regardless of who bought what; on-device V
 paste/Live-Text text path is device-free and testable — camera OCR is a natural follow-up). **Verified**:
 pure logic unit-tested off-device (`swift`-level XCTest); the SwiftUI sheets/detail stay
 **device-unverified** per the repo's macOS/Xcode-only build rule (authored on Linux/cloud).
+
+## [2026-06-04] Dynamic sessions + Kilter-driven climbing — direction set (design only, no code)
+
+**Decision**: Captured a design review (`pdd/prompts/features/dynamic-sessions/DESIGN.md`) for two
+user-requested capabilities, **design-only** for now (iOS code needs a Mac+Xcode to compile/verify per
+the on-device rules below; this records the model + decomposition a Mac session implements):
+
+- **Dynamic / freeform sessions.** Today every session is routine-locked — the only entry is
+  `startWorkout(from: Routine)` → `makeSession(from:)` and `WorkoutPlayerView` walks a **frozen**
+  `session.exercises` array (mutates set slots, never appends). But the *model is ~80 % ready*:
+  `WorkoutSession.routineID` is already `UUID?` and `exercises`/`sets` are plain Codable arrays, so a
+  routineless **Quick Start** + **add-exercise/add-set live** needs **zero schema change** — it's a
+  player + entry-point job. Ship freeform **lifting first** (self-contained, no migration).
+- **Polymorphic set unit (`SetKind`).** Dynamic gym climbing is **Shape ③ (graded attempts), not
+  reps×weight**, so a "set" must be able to be a climb attempt. Chose: tag the *exercise* with
+  `kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** `SetLog` fields (`durationSec`,
+  `distanceM`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Critical migration nuance:**
+  `SetLog`/`SessionExercise` are nested **Codable composites**, not `@Model`s — SwiftData lightweight
+  migration does NOT cover fields inside an encoded blob, so a new **non-optional** key would make old
+  blobs throw on decode. Hence every added field is `Optional`. **Rejected** a `SetMeasure`
+  enum-with-associated-values (cleaner, but a bigger hand-written-Codable blob-migration surface).
+- **Kilter → WorkoutTracker bridge.** The key enabling fact: `Routine`/`WorkoutSession` and
+  `KilterLogEntry`/`KilterSession` are **all in the same `SnappetSchema.models` store**, so this is an
+  in-process `@Query`, **not** a sync/network path (on-device rule #1 intact). Two features: **(B.1a)** a
+  read-only adapter surfacing board sessions in the unified workout history (no new `@Model`, Kilter
+  stays owner) — *why:* board climbs currently have no HR/reel pipeline; and **(B.2)** a pure
+  `KilterRecommender` that turns the existing grade pyramid into a suggested climbing session
+  (working-grade sends + project attempts + warm-ups), feeding the `.climbAttempt` exercises.
+
+**Why**: closes the two real gaps the user hit — sessions can't grow at runtime, and the Kilter mini-app
+is an island — while reusing the existing on-device store and the pure-logic-at-a-thin-edge pattern
+(`SetKind` formatter/validator + `KilterRecommender` are unit-testable on the cloud box).
+
+**Rules out / notes**: this **partly reverses** `decisions.md` 2026-06-02 ("keep Kilter separate") —
+recorded as an explicit open fork (one-way read recommended, not a two-way merge). Defers: a unified
+`WorkoutSession` projection of board climbs with HR/reels (B.1b, until B.1a proves out), full GPS/splits
+cardio (Shape ②), and the enum-with-payloads measure. **Status: design only** — nothing built; knowledge
+graph untouched until implementation (no node exists yet).
 
 ## [2026-06-04] Photos-level clip ops + HR overlay on set clips + a deep video-feature review
 

@@ -29,17 +29,20 @@ enum WorkoutMath {
         var bestScore = 0.0
         var result: TopSet?
         for session in history {
-            guard let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { continue }
-            for set in ex.sets {
-                guard set.completedAt != nil else { continue }
-                let reps = set.actualReps ?? 0
-                guard reps > 0 else { continue }
-                let weightKg = set.actualWeight.map { toKg($0, set.weightUnit) } ?? 1
-                let score = weightKg * Double(reps)
-                if score > bestScore {
-                    bestScore = score
-                    result = TopSet(bestKg: set.actualWeight != nil ? weightKg : 0,
-                                    bestReps: reps, date: session.startedAt)
+            // Iterate **every** matching exercise in the session, not just the first — a freeform
+            // session can carry the same exerciseId twice (the player allows adding a lift again).
+            for ex in session.exercises where ex.exerciseId == exerciseId {
+                for set in ex.sets {
+                    guard set.completedAt != nil else { continue }
+                    let reps = set.actualReps ?? 0
+                    guard reps > 0 else { continue }
+                    let weightKg = set.actualWeight.map { toKg($0, set.weightUnit) } ?? 1
+                    let score = weightKg * Double(reps)
+                    if score > bestScore {
+                        bestScore = score
+                        result = TopSet(bestKg: set.actualWeight != nil ? weightKg : 0,
+                                        bestReps: reps, date: session.startedAt)
+                    }
                 }
             }
         }
@@ -51,10 +54,13 @@ enum WorkoutMath {
     static func totalVolumeKg(history: [WorkoutSession], exerciseId: String) -> Double {
         var total = 0.0
         for session in history {
-            guard let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { continue }
-            for set in ex.sets where set.completedAt != nil {
-                if let reps = set.actualReps, let weight = set.actualWeight {
-                    total += toKg(weight, set.weightUnit) * Double(reps)
+            // Sum across every matching exercise in the session (a freeform session may log the
+            // same exerciseId more than once), not just the first occurrence.
+            for ex in session.exercises where ex.exerciseId == exerciseId {
+                for set in ex.sets where set.completedAt != nil {
+                    if let reps = set.actualReps, let weight = set.actualWeight {
+                        total += toKg(weight, set.weightUnit) * Double(reps)
+                    }
                 }
             }
         }

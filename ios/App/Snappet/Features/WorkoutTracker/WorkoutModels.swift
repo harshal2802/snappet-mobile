@@ -173,6 +173,34 @@ enum RoutineLevel: String, Codable, CaseIterable, Identifiable, Sendable {
     var display: String { rawValue.capitalized }
 }
 
+/// What a logged "set" measures. Absent (`nil`) on legacy/routine data ⇒ `.repsWeight`, so adding it is
+/// migration-safe. Lets a freeform session mix strength sets, timed holds, and graded climb attempts.
+/// (dynamic-sessions D4) — the climbing outcome reuses `KilterAscentStatus` so the vocabulary is shared.
+enum SetKind: String, Codable, CaseIterable, Sendable {
+    case repsWeight, duration, climbAttempt
+    var display: String {
+        switch self {
+        case .repsWeight: return "Reps & weight"
+        case .duration: return "Time"
+        case .climbAttempt: return "Climb"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .repsWeight: return "dumbbell.fill"
+        case .duration: return "timer"
+        case .climbAttempt: return "figure.climbing"
+        }
+    }
+    /// Label for the per-set "add" button.
+    var addLabel: String {
+        switch self {
+        case .repsWeight, .duration: return "Add set"
+        case .climbAttempt: return "Add attempt"
+        }
+    }
+}
+
 // MARK: - Nested value types (persisted inside `@Model`s as Codable composites)
 
 /// One exercise slot inside a routine: a target prescription (sets × reps, rest, optional
@@ -189,12 +217,24 @@ struct RoutineExercise: Codable, Hashable, Identifiable, Sendable {
     var displayName: String?
 }
 
-/// One logged set during a live/finished session.
+/// One logged set during a live/finished session. The `actual*` fields cover a `.repsWeight` set; the
+/// climb/duration fields below cover `.climbAttempt` / `.duration` sets in a freeform session. **All
+/// additive fields are `Optional`** — `SetLog` is a nested `Codable` composite (inside `WorkoutSession`),
+/// not an `@Model`, so SwiftData lightweight migration doesn't reach inside the blob; a non-optional new
+/// key would throw on decode of old data, whereas synthesized `Codable` decodes a *missing* optional key
+/// as `nil`. (dynamic-sessions D4)
 struct SetLog: Codable, Hashable, Sendable {
     var actualReps: Int?
     var actualWeight: Double?
     var weightUnit: WeightUnit?
     var completedAt: Date?
+
+    // .duration sets
+    var durationSec: Double?
+    // .climbAttempt sets — outcome stored as `KilterAscentStatus.rawValue` (shared climbing vocabulary).
+    var climbGradeLabel: String?
+    var climbStatusRaw: String?
+    var climbAttempts: Int?
 }
 
 /// An exercise as it appears in a session: a snapshot of the routine target plus the
@@ -210,8 +250,13 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var sets: [SetLog]
     var skipped: Bool = false
     var displayName: String?
+    /// `SetKind.rawValue`; `nil` ⇒ `.repsWeight` (legacy/routine exercises). Additive → migration-safe.
+    var kindRaw: String?
 
     var completedSetCount: Int { sets.filter { $0.completedAt != nil }.count }
+
+    /// What each set in this exercise measures (defaults to reps & weight for legacy/routine data).
+    var kind: SetKind { kindRaw.flatMap(SetKind.init) ?? .repsWeight }
 }
 
 /// One persisted heart-rate sample of a session's live HR series. `t` is seconds from

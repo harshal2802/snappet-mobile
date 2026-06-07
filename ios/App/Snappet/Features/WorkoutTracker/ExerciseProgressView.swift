@@ -17,14 +17,18 @@ struct ExerciseProgressView: View {
     /// Per-session best set (by weight×reps), oldest → newest.
     private var points: [SessionBest] {
         history.sorted { $0.startedAt < $1.startedAt }.compactMap { session -> SessionBest? in
-            guard let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { return nil }
             var bestScore = 0.0
             var best: SetLog?
-            for set in ex.sets where set.completedAt != nil {
-                let reps = set.actualReps ?? 0
-                guard reps > 0 else { continue }
-                let kg = set.actualWeight.map { WorkoutMath.toKg($0, set.weightUnit) } ?? 1
-                if kg * Double(reps) > bestScore { bestScore = kg * Double(reps); best = set }
+            // Scan EVERY matching exercise in the session (a freeform session may log the same
+            // exerciseId twice), mirroring `WorkoutMath.topSet` so this chart/log agrees with the
+            // summary card's PR/volume rather than reading only the first occurrence.
+            for ex in session.exercises where ex.exerciseId == exerciseId {
+                for set in ex.sets where set.completedAt != nil {
+                    let reps = set.actualReps ?? 0
+                    guard reps > 0 else { continue }
+                    let kg = set.actualWeight.map { WorkoutMath.toKg($0, set.weightUnit) } ?? 1
+                    if kg * Double(reps) > bestScore { bestScore = kg * Double(reps); best = set }
+                }
             }
             guard let best else { return nil }
             return SessionBest(date: session.startedAt,
