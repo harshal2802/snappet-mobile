@@ -660,6 +660,14 @@ private struct SetTileRow: View {
     }
 
     private var detailText: String {
+        // Freeform climb / timed sets carry their own fields — render them via the shared formatter so a
+        // bouldering or timed-hold session reads correctly here too (dynamic-sessions D5).
+        if set.climbGradeLabel != nil || set.climbStatusRaw != nil {
+            return SetMeasure.summary(set, kind: .climbAttempt, unit: unit)
+        }
+        if let d = set.durationSec, d > 0 {
+            return SetMeasure.summary(set, kind: .duration, unit: unit)
+        }
         if let w = set.actualWeight, w > 0 {
             let kg = WorkoutMath.toKg(w, set.weightUnit)
             return "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"

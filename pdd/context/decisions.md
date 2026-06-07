@@ -4,6 +4,40 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-07] Freeform/dynamic WorkoutTracker sessions + ad-hoc climbing (polymorphic SetKind)
+
+**Decision**: Made WorkoutTracker sessions **grow-as-you-go** and able to log **ad-hoc (non-Kilter)
+climbing** — gym bouldering / outdoor — which the user confirmed they do. (dynamic-sessions D3/D4/D5;
+`pdd/prompts/features/dynamic-sessions/DESIGN.md`.)
+
+- **Polymorphic set unit (D4).** `SetKind` (`repsWeight`/`duration`/`climbAttempt`) on
+  `SessionExercise.kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** fields on `SetLog`
+  (`durationSec`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Migration nuance (load-bearing):**
+  `SetLog`/`SessionExercise` are nested **Codable composites**, not `@Model`s — SwiftData lightweight
+  migration doesn't reach inside the encoded blob, so every added field is **`Optional`** (synthesized
+  `Codable` decodes a missing optional key as nil; a non-optional key would throw on old data). The climb
+  outcome **reuses `KilterAscentStatus`** (one climbing vocabulary across Kilter + WorkoutTracker +
+  the recommender). Pure `SetMeasure` (summary/format/validate, e.g. "8 × 60 kg" / "0:45" /
+  "V4 · Flash · 3 tries") + `SetMeasureTests` (14 cases). **Rejected** a `SetMeasure`
+  enum-with-associated-values (bigger hand-written-`Codable` surface, no user-visible gain).
+- **Freeform player (D3/D5) is a NEW, self-contained view, not a rewrite.** `FreeformPlayerView` (a
+  list-based logbook) handles routineless sessions (`routineID == nil`): add exercises (Lifting via the
+  existing `ExercisePickerView` · Climbing · Timed), per-exercise add set/attempt via a kind-adaptive
+  `LogSetSheet`, swipe-delete, finish. **Why separate:** the guided `WorkoutPlayerView` is device-verified
+  and tightly coupled to reps×weight + a fixed index walk; a logbook is the right shape for "add as you
+  go" and avoids destabilizing it. **Quick Start** (`startFreeform()`) creates the empty session; the
+  player cover branches on `routineID == nil`. `SessionDetailView.detailText` now renders climb/timed
+  sets via `SetMeasure` (detected from the set's own fields → no call-site churn).
+
+**Why**: closes the "I don't know my next climb / I want to add as I go" gap for non-board climbing and
+ad-hoc lifting, reusing the existing model (no new `@Model`, additive-only) and finish/HR pipeline.
+
+**Rules out / caveats**: **No build/sim/test run** — the authoring box has no Swift toolchain, so
+`xcodebuild test` + a sim pass on a Mac are owed (only the graph integrity was checked: 162 nodes / 284
+edges, no orphans/dups). Followups: the freeform player doesn't push per-set **Live Activity** updates
+(timer + HR still work); distance/GPS (Shape ②) isn't a `SetKind` yet; ad-hoc Climbing/Timed exercises
+use a fixed default name (inline rename later). Graph: added `wt-freeform-player` + `wt-set-measure` nodes.
+
 ## [2026-06-07] Kilter-driven session recommender — pick a session from your logs
 
 **Decision**: Shipped the high-value remainder of the dynamic-sessions design (`pdd/prompts/features/

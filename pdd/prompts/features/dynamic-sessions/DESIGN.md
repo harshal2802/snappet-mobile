@@ -1,6 +1,6 @@
 # Design + Plan: Dynamic Sessions + Kilter-Driven Climbing
 
-**Created**: 2026-06-04 · **Refreshed**: 2026-06-07 (re-baselined against `main`; recommender shipped)
+**Created**: 2026-06-04 · **Refreshed**: 2026-06-07 (re-baselined against `main`; recommender + freeform/ad-hoc climbing shipped)
 **Type**: PDD design review → decomposed plan, with one slice implemented.
 **Extends**: `09-ios-workout-tracker.md` (routine-locked tracker) + `18-ios-kilter-rich-session.md`
 (the rich Kilter session that `main` shipped 2026-06-05).
@@ -33,9 +33,9 @@ most of the original "Part B" — and builds it *better* than this doc first pro
 
 | # | Piece | Shape | Status |
 |---|---|---|---|
-| **B.2** | `KilterRecommender` — suggest a session from the user's logs | ③ graded attempts | **SHIPPED in this change** |
-| A.1 | Freeform/Quick-Start **lifting** session in WorkoutTracker | ① rep/load | planned (§3) |
-| A.2 | Polymorphic `SetKind` → **ad-hoc** (non-catalog) climbing log in WorkoutTracker | ③ | planned + product fork (§3/§4) |
+| **B.2** | `KilterRecommender` — suggest a session from the user's logs | ③ graded attempts | **SHIPPED** |
+| **A.1** | Freeform/Quick-Start session in WorkoutTracker | ① rep/load | **SHIPPED** (`FreeformPlayerView`) |
+| **A.2** | Polymorphic `SetKind` → **ad-hoc** (non-catalog) climbing log | ③ | **SHIPPED** (user confirmed: climbs outside Kilter) |
 
 ---
 
@@ -94,33 +94,40 @@ nodes / 279 edges, no orphans/dups) *was* checked here.
 
 ---
 
-## 3. Remaining roadmap (planned, not built)
+## 3. SHIPPED — freeform sessions + ad-hoc climbing (D3/D4/D5)
 
-### A.1 — Freeform / Quick-Start **lifting** session (WorkoutTracker)
-Still routine-locked (`startWorkout(from:)` → frozen `session.exercises`). The model is ready
-(`WorkoutSession.routineID` is `UUID?`; `exercises`/`sets` are Codable arrays → **no schema change**).
-Steps: a **Quick Start** entry creating `WorkoutSession(routineID: nil, exercises: [])`; an **+ Add
-exercise** (reuse `ExercisePickerView`) and **+ Add set** that append live; an **open-ended end state**
-(finish only on explicit Finish — today the player assumes a known total). Self-contained, sim-testable.
+How it was built (chosen to **not** destabilize the device-verified guided player):
 
-### A.2 — Polymorphic `SetKind` → ad-hoc climbing in WorkoutTracker *(gated on fork #2)*
-Tag the exercise `kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** `SetLog` fields
-(`durationSec`, `distanceM`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Migration nuance:**
-`SetLog`/`SessionExercise` are nested **Codable** composites, not `@Model`s — SwiftData lightweight
-migration doesn't reach inside the blob, so every new field MUST be `Optional` (a non-optional key throws
-on decode of old data). Pure per-kind formatter/validator → unit-testable; the player switches its input
-row on `exercise.kind`. **Rejected** a `SetMeasure` enum-with-payloads (bigger hand-written-Codable
-migration surface, no user-visible gain).
+- **D4 — model + pure logic.** `SetKind` (`repsWeight` / `duration` / `climbAttempt`) on
+  `SessionExercise.kindRaw: String?` (nil ⇒ legacy reps/weight) + **optional** `SetLog` fields
+  (`durationSec`, `climbGradeLabel`, `climbStatusRaw`, `climbAttempts`). **Migration nuance held:** these
+  are nested **Codable** composites, not `@Model`s, so SwiftData lightweight migration doesn't reach
+  inside the blob — every added field is `Optional` (synthesized `Codable` decodes a *missing* optional
+  key as nil; a non-optional key would throw). The climb outcome **reuses `KilterAscentStatus`** (shared
+  vocabulary with the recommender). Pure `SetMeasure` (summary/format/validate) + `SetMeasureTests`
+  (14 cases). **Rejected** a `SetMeasure` enum-with-payloads (bigger hand-written-Codable surface).
+- **D3/D5 — `FreeformPlayerView`** (a **new, self-contained** logbook, not a rewrite of the guided
+  player): routineless sessions (`routineID == nil`) grow on the fly — **Add exercise** (Lifting via
+  `ExercisePickerView` · Climbing · Timed), per-exercise **Add set/attempt** via a kind-adaptive
+  `LogSetSheet`, swipe-to-delete, finish. Reuses the existing finish/HR/Live-Activity path. **Quick
+  Start** (`startFreeform()`) creates the empty session; the player cover branches on `routineID == nil`.
+  `SessionDetailView` now renders climb/timed sets too (via `SetMeasure`).
 
-### Decomposition
+### Decomposition (all shipped)
 
 | Step | Scope | Schema | Verify |
 |---|---|---|---|
 | ✅ D1 | `KilterRecommender` core + tests | none | Mac XCTest |
 | ✅ D2 | `KilterPlanView` + root entry + graph | none | sim |
-| D3 | Freeform lifting (Quick Start + add live + open-ended end) | none | sim UI test |
-| D4 | `SetKind` + optional `SetLog` fields + pure formatter/validator | additive (optional) | Mac + sim |
-| D5 | Ad-hoc climbing input in the player (uses D4) | uses D4 | sim UI test |
+| ✅ D3 | Freeform sessions (Quick Start + `FreeformPlayerView`, add live, open-ended) | none | sim |
+| ✅ D4 | `SetKind` + optional `SetLog` fields + pure `SetMeasure` (+ tests) | additive (optional) | Mac XCTest |
+| ✅ D5 | Ad-hoc climb/timed input (`LogSetSheet`) + detail rendering | uses D4 | sim |
+
+### Known v1 limitations / follow-ups
+- The freeform player doesn't push per-set updates to the **Live Activity** (the timer + coordinator HR
+  still work; the exercise line stays generic). Minor; a later add.
+- Distance/GPS (Shape ②) is **not** a `SetKind` yet (its own initiative).
+- Rename for ad-hoc Climbing/Timed exercises defaults to a fixed name; inline rename is a follow-up.
 
 ---
 
