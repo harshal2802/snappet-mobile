@@ -493,6 +493,21 @@ final class KilterSessionManager {
         return max(session.startedAt, lastLog ?? session.startedAt)
     }
 
+    /// Flush the live HR buffer onto the **active** session WITHOUT ending it, so clip HR overlays and
+    /// the summary chart can show heart rate *during* the session — not only after it ends. The
+    /// coordinator's buffer is cumulative (samples from the session start), so this overwrites
+    /// `hrSeries` with everything captured so far (it always covers any earlier clip's window). No-op
+    /// when there's no active session this manager owns the metrics for, or the buffer is still empty.
+    /// Called on opening the session summary, after each log, and before opening a clip.
+    func syncLiveHR(in context: ModelContext) {
+        guard let session = current, didStartMetrics, let liveWorkout else { return }
+        let points = WorkoutHRStats.points(from: liveWorkout.samples)
+        guard !points.isEmpty else { return }
+        session.hrSeries = points
+        session.metricsSourceRaw = liveWorkout.activeKind.rawValue
+        try? context.save()
+    }
+
     /// Mark the climb now on screen as the active one (called from the detail view's `load()` on the
     /// initial open + each swipe, and on each log). Stamps the start when the climb changes, or when
     /// it's been disarmed by a prior send (`activeClimbStartedAt == nil`) — but not on a plain swipe
@@ -535,6 +550,9 @@ final class KilterSessionManager {
     /// Re-run media discovery for a past session by id (the summary's "Find my clips" action, after
     /// the user has granted full Photos access). No-op if the session can't be found.
     func importMedia(forSessionID id: UUID, in context: ModelContext) {
+        // If we're finding clips for the *live* session, flush HR first so the just-discovered clips
+        // can overlay heart rate immediately (not only after the session ends).
+        if current?.id == id { syncLiveHR(in: context) }
         guard let session = try? context.fetch(
             FetchDescriptor<KilterSession>(predicate: #Predicate { $0.id == id })).first else { return }
         discoverMedia(for: session, in: context)

@@ -523,6 +523,9 @@ struct KilterClimbDetailView: View {
                 attemptTimestamps: status == .attempt ? [now] : []))
         }
         try? modelContext.save()
+        // Flush live HR onto the session as climbs are logged, so a clip recorded on this climb already
+        // has heart rate to overlay when reviewed mid-session (no need to end the session first).
+        sessions.syncLiveHR(in: modelContext)
         core.log(module: "kilter", action: "log-\(status.rawValue)",
                  summary: "\(status.label) \(climb.name) (\(grade) @\(selectedAngle)°)",
                  metric: stat.difficulty)

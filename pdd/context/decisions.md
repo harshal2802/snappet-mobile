@@ -25,6 +25,13 @@ session (a brief drop shouldn't kill an in-progress session); the board→sessio
 transient detail view to the root (stable). History surfaces live sessions (badge + running timer) with
 swipe-to-End; History/Settings "Clear" skip the active session.
 
+**HR-on-clips during the session**: `hrSeries` used to be flushed onto the session only at `end()`, so
+clip HR overlays were empty until the session ended (the clip editor reads the *persisted* series via
+`SessionHRSeries.forSession`, once, on open). Added `KilterSessionManager.syncLiveHR(in:)` — flushes the
+cumulative live HR buffer onto the active session **without ending it** — called on opening the session
+summary, after each log, before opening a clip, and before "Find my clips". Clips recorded mid-session
+now overlay heart rate without ending the session first.
+
 **Rules out**: tracking "active" purely in memory; ending via the in-memory `current` pointer; coupling
 session lifetime to the board connection. **Deferred (low/device-only)**: Live-Activity `staleDate`,
 live-summary stats throttle, tagging the cross-module activity log with the session id.
