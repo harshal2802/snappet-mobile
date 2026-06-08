@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import AVKit
 import CoreGraphics
+import HighlightEngine
 
 /// View model for the CapCut-style clip editor (B3). Owns the non-destructive `ClipEdit`,
 /// rebuilds the live `AVPlayer` preview off the shared `VideoStudio` composition whenever an
@@ -25,6 +26,13 @@ final class ClipEditorViewModel {
     private var timeObserver: Any?
     /// The session's HR samples sliced to this clip's capture window (rebased to 0), set by the view.
     private(set) var hrSamples: [HRPoint] = []
+    /// Profile/session bounds for the configurable HR/fitness overlays (prompt 28), set by the view
+    /// from the session + `UserHRProfile`: max/rest HR (zones, %HRR, recovery), the clip's calorie
+    /// estimate, and its HRV. Drive the resolved overlay readings on export + preview.
+    private(set) var hrMaxHR: Double?
+    private(set) var hrRestHR: Double?
+    private(set) var hrKcal: Double?
+    private(set) var hrHRV: HRVMetrics = .empty
 
     /// B5: the export → share / save-to-Photos flow (the rendered `.mp4` is carried in `.exported`
     /// so share + save reuse the single render). Drives the editor's bottom action bar.
@@ -179,7 +187,10 @@ final class ClipEditorViewModel {
     /// to Photos. Re-exporting from any state is allowed (a later edit produces a fresh render).
     func export() async {
         exportState = exportState.beginningExport()
-        let plan = EditPlan(edit, hrSamples: hrSamples)   // snapshot on the MainActor; HR burns into export
+        // Resolve the configurable HR/fitness overlay elements to render-ready badges (prompt 28) —
+        // computed here where the bounds/profile live, so the AVFoundation render stays dumb.
+        let resolved = resolvedOverlayElements()
+        let plan = EditPlan(edit, hrSamples: hrSamples, resolvedHRElements: resolved)   // snapshot on the MainActor
         do {
             let url = try await studio.export(plan)
             exportState = exportState.exportSucceeded(url)
@@ -225,6 +236,66 @@ final class ClipEditorViewModel {
 
     /// Set the HR samples for this clip's capture window (the view slices them from the session).
     func setHRSamples(_ samples: [HRPoint]) { hrSamples = samples }
+
+    /// Set the profile/session bounds the configurable overlays need (prompt 28).
+    func setOverlayContext(maxHR: Double?, restHR: Double?, kcal: Double?, hrv: HRVMetrics) {
+        hrMaxHR = maxHR; hrRestHR = restHR; hrKcal = kcal; hrHRV = hrv
+    }
+
+    /// The pure value resolver over this clip's window — feeds both the export and the live preview.
+    var overlayValues: HROverlayValues {
+        HROverlayValues(samples: hrSamples, durationSec: outputDuration,
+                        maxHR: hrMaxHR, restHR: hrRestHR, kcal: hrKcal, hrv: hrHRV)
+    }
+    private func resolvedOverlayElements() -> [ResolvedHROverlay] {
+        guard let els = edit.hrOverlay?.elements, !els.isEmpty else { return [] }
+        return overlayValues.resolve(els)
+    }
+
+    // MARK: - Configurable HR/fitness overlay elements (prompt 28)
+
+    /// The metrics with usable data right now (so the builder only offers what will actually show).
+    var availableOverlayMetrics: [HROverlayMetric] {
+        let v = overlayValues
+        return HROverlayMetric.allCases.filter { m in
+            v.staticValue(m, fallbackHex: "#FFFFFF") != nil
+                || v.live(m, atFraction: 0.5, fallbackHex: "#FFFFFF") != nil
+        }
+    }
+    var overlayElements: [HROverlayElement] { edit.hrOverlay?.elements ?? [] }
+
+    /// Add an overlay element for a metric (creating the overlay container if needed; the chart stays
+    /// off unless the user turns it on, so "add a number" doesn't force the chart line on).
+    func addOverlayElement(_ metric: HROverlayMetric) {
+        var config = edit.hrOverlay ?? HROverlayConfig(normalizedX: 0.5, normalizedY: 0.80, scale: 0.86,
+                                                       colorHex: "#FF3B30", showBPM: false,
+                                                       zoneColored: false, showChart: false)
+        // Stagger new badges so they don't stack exactly on top of each other.
+        let y = 0.12 + Double(config.elements.count) * 0.08
+        config.elements.append(HROverlayElement(metric: metric, normalizedX: 0.5,
+                                                normalizedY: min(0.9, y)))
+        updateHROverlay(config)
+    }
+    func removeOverlayElement(_ id: UUID) {
+        guard var c = edit.hrOverlay else { return }
+        c.elements.removeAll { $0.id == id }
+        updateHROverlay(c)
+    }
+    func setElementLive(_ id: UUID, _ live: Bool) { mutateElement(id) { $0.live = live } }
+    func setElementAnimated(_ id: UUID, _ animated: Bool) { mutateElement(id) { $0.animated = animated } }
+    func setElementColor(_ id: UUID, hex: String) { mutateElement(id) { $0.colorHex = hex } }
+    func setElementPosition(_ id: UUID, _ p: CGPoint) {
+        mutateElement(id) { $0.position = CGPoint(x: min(max(p.x, 0), 1), y: min(max(p.y, 0), 1)) }
+    }
+    private func mutateElement(_ id: UUID, _ change: (inout HROverlayElement) -> Void) {
+        guard var c = edit.hrOverlay, let i = c.elements.firstIndex(where: { $0.id == id }) else { return }
+        change(&c.elements[i]); updateHROverlay(c)
+    }
+    /// Toggle the chart line independently of the number/badge elements.
+    func setShowChart(_ show: Bool) {
+        var c = edit.hrOverlay ?? .default
+        c.showChart = show; updateHROverlay(c)
+    }
 
     func toggleHROverlay() { edit.hrOverlay = edit.hrOverlay == nil ? .default : nil; persistHRChange() }
     func updateHROverlay(_ config: HROverlayConfig) { edit.hrOverlay = config; persistHRChange() }

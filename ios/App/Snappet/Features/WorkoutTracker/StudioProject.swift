@@ -312,6 +312,45 @@ struct HROverlayConfig: Codable, Hashable, Sendable {
     var showBPM: Bool
     /// Colour the line/dot by HR zone instead of `colorHex`.
     var zoneColored: Bool
+    /// Draw the moving-playhead chart line itself. `false` keeps the overlay active for the
+    /// `elements` (numbers/badges) while hiding the chart — so the user can pick numbers without it
+    /// (prompt 28). Defaults `true` (the pre-feature behaviour: an active overlay == a chart).
+    var showChart: Bool
+    /// Extra HR/fitness **overlay elements** the user picked beyond the chart (numbers + badges) —
+    /// the configurable overlay builder (prompt 28).
+    var elements: [HROverlayElement]
+
+    init(normalizedX: Double, normalizedY: Double, scale: Double, colorHex: String,
+         showBPM: Bool, zoneColored: Bool, showChart: Bool = true,
+         elements: [HROverlayElement] = []) {
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
+        self.scale = scale
+        self.colorHex = colorHex
+        self.showBPM = showBPM
+        self.zoneColored = zoneColored
+        self.showChart = showChart
+        self.elements = elements
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case normalizedX, normalizedY, scale, colorHex, showBPM, zoneColored, showChart, elements
+    }
+
+    /// Custom decode so blobs persisted **before** `showChart`/`elements` existed still load —
+    /// synthesized `Codable` would throw on the missing keys (they're non-optional). Missing →
+    /// `showChart = true` (the old "active overlay = chart" behaviour) and no extra `elements`.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        normalizedX = try c.decode(Double.self, forKey: .normalizedX)
+        normalizedY = try c.decode(Double.self, forKey: .normalizedY)
+        scale = try c.decode(Double.self, forKey: .scale)
+        colorHex = try c.decode(String.self, forKey: .colorHex)
+        showBPM = try c.decode(Bool.self, forKey: .showBPM)
+        zoneColored = try c.decode(Bool.self, forKey: .zoneColored)
+        showChart = try c.decodeIfPresent(Bool.self, forKey: .showChart) ?? true
+        elements = try c.decodeIfPresent([HROverlayElement].self, forKey: .elements) ?? []
+    }
 
     var position: CGPoint {
         get { CGPoint(x: normalizedX, y: normalizedY) }
@@ -319,6 +358,106 @@ struct HROverlayConfig: Codable, Hashable, Sendable {
     }
     static let `default` = HROverlayConfig(normalizedX: 0.5, normalizedY: 0.80, scale: 0.86,
                                            colorHex: "#FF3B30", showBPM: true, zoneColored: false)
+}
+
+/// A heart-rate / fitness metric the user can place on a clip as an overlay element (prompt 28).
+/// `supportsLive` = the value changes over the clip (so it can track the playhead); `supportsAnimation`
+/// = it can be animated in the **export** (the chart's dot, or a live number via opacity keyframes —
+/// a static aggregate has nothing to animate). Aggregates (avg/max/redline/strain/HRV/calories) are
+/// single clip-window values → static only.
+enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
+    case bpm            // live heart rate (♥ 168)
+    case zone           // training-zone pill (Z3 · Aerobic)
+    case hrr            // % heart-rate reserve
+    case avgHR          // clip average HR
+    case maxHR          // clip peak HR
+    case redline        // Z4+Z5 time as a % of the clip
+    case strain         // Edwards zone-weighted training load (TRIMP)
+    case hrv            // RMSSD (ms) over the clip window (chest-strap RR only)
+    case calories       // HR-based energy estimate (kcal) — needs a profile
+    case recovery       // recovery-ready state (rested for the next effort)
+
+    var id: String { rawValue }
+
+    /// Short human label for the builder list.
+    var label: String {
+        switch self {
+        case .bpm: return "Heart rate"
+        case .zone: return "Zone"
+        case .hrr: return "% effort (HRR)"
+        case .avgHR: return "Average HR"
+        case .maxHR: return "Peak HR"
+        case .redline: return "Redline"
+        case .strain: return "Strain"
+        case .hrv: return "HRV"
+        case .calories: return "Calories"
+        case .recovery: return "Recovery"
+        }
+    }
+
+    /// SF Symbol for the builder row.
+    var systemImage: String {
+        switch self {
+        case .bpm, .avgHR, .maxHR: return "heart.fill"
+        case .zone, .hrr: return "speedometer"
+        case .redline, .strain: return "flame.fill"
+        case .hrv: return "waveform.path.ecg"
+        case .calories: return "bolt.fill"
+        case .recovery: return "checkmark.circle.fill"
+        }
+    }
+
+    /// Whether the metric varies over the clip (can track the playhead / be "live").
+    var supportsLive: Bool {
+        switch self {
+        case .bpm, .zone, .hrr, .recovery: return true
+        case .avgHR, .maxHR, .redline, .strain, .hrv, .calories: return false
+        }
+    }
+
+    /// Whether the metric can be **animated in the export** — only live (time-varying) metrics can
+    /// (via per-value opacity keyframes); aggregates are fixed text.
+    var supportsAnimation: Bool { supportsLive }
+}
+
+/// One placed HR/fitness overlay element (prompt 28): which metric, whether it tracks the playhead
+/// (`live`) and whether it animates in the export (`animated`, only meaningful for live metrics),
+/// plus its position/scale/colour. `Codable` composite stored in `HROverlayConfig.elements`.
+struct HROverlayElement: Codable, Hashable, Sendable, Identifiable {
+    var id: UUID = UUID()
+    var metricRaw: String
+    /// Track the playhead (a live, changing reading) vs. a single clip-window value. Forced `false`
+    /// for metrics that don't support live.
+    var live: Bool = false
+    /// Animate the live reading in the exported file (opacity-keyframed per value). Ignored unless the
+    /// metric is live + supports animation; the preview always animates a live element.
+    var animated: Bool = false
+    var normalizedX: Double = 0.5
+    var normalizedY: Double = 0.5
+    /// Text size as a fraction of the canvas height.
+    var scale: Double = 1.0
+    var colorHex: String = "#FFFFFF"
+
+    var metric: HROverlayMetric { HROverlayMetric(rawValue: metricRaw) ?? .bpm }
+    /// `live` only where the metric supports it; `animated` only where live + animatable.
+    var isLive: Bool { metric.supportsLive && live }
+    var isAnimated: Bool { isLive && metric.supportsAnimation && animated }
+
+    var position: CGPoint {
+        get { CGPoint(x: normalizedX, y: normalizedY) }
+        set { normalizedX = newValue.x; normalizedY = newValue.y }
+    }
+
+    init(metric: HROverlayMetric, normalizedX: Double = 0.5, normalizedY: Double = 0.5,
+         scale: Double = 1.0, colorHex: String = "#FFFFFF") {
+        self.metricRaw = metric.rawValue
+        self.live = metric.supportsLive          // default a time-varying metric to live
+        self.animated = metric.supportsAnimation // …and animated, since that reads best
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
+        self.scale = scale
+        self.colorHex = colorHex
+    }
 }
 
 // MARK: - Audio

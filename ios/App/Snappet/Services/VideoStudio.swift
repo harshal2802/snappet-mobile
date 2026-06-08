@@ -134,11 +134,12 @@ final class VideoStudio: Sendable {
         // Text overlays + the heart-rate chart via a CALayer tree (AVVideoCompositionCoreAnimationTool).
         // Tool is offline-render-only → attach only for export (forPlayback skips it; the live preview
         // shows those overlays as SwiftUI layers instead).
-        let hasHR = plan.hrOverlay != nil && plan.hrSamples.count >= 2
-        if !forPlayback, !plan.textOverlays.isEmpty || hasHR {
+        let hasHR = plan.hrOverlay?.showChart == true && plan.hrSamples.count >= 2
+        if !forPlayback, !plan.textOverlays.isEmpty || hasHR || !plan.hrElements.isEmpty {
             attachOverlays(plan.textOverlays, to: videoComposition,
                            renderSize: renderSize, totalDuration: composition.duration.seconds,
-                           hrOverlay: plan.hrOverlay, hrSamples: plan.hrSamples)
+                           hrOverlay: plan.hrOverlay, hrSamples: plan.hrSamples,
+                           hrElements: plan.hrElements)
         }
 
         return (composition, videoComposition)
@@ -167,7 +168,8 @@ final class VideoStudio: Sendable {
     private func attachOverlays(_ overlays: [TextOverlay],
                                 to videoComposition: AVMutableVideoComposition,
                                 renderSize: CGSize, totalDuration: Double,
-                                hrOverlay: HROverlayConfig? = nil, hrSamples: [HRPoint] = []) {
+                                hrOverlay: HROverlayConfig? = nil, hrSamples: [HRPoint] = [],
+                                hrElements: [ResolvedHROverlay] = []) {
         let parent = CALayer()
         parent.frame = CGRect(origin: .zero, size: renderSize)
         let videoLayer = CALayer()
@@ -219,10 +221,15 @@ final class VideoStudio: Sendable {
         }
 
         // The heart-rate chart (reuses the studio's renderer), if enabled for this clip.
-        if let hrOverlay, hrSamples.count >= 2 {
+        if let hrOverlay, hrOverlay.showChart, hrSamples.count >= 2 {
             overlayLayer.addSublayer(StudioOverlays.hrChartLayer(
                 samples: hrSamples, config: hrOverlay, canvas: renderSize,
                 totalDuration: max(0.01, totalDuration)))
+        }
+        // The configurable HR/fitness overlay badges (prompt 28).
+        for layer in StudioOverlays.hrElementLayers(hrElements, canvas: renderSize,
+                                                    totalDuration: max(0.01, totalDuration)) {
+            overlayLayer.addSublayer(layer)
         }
 
         parent.addSublayer(videoLayer)
@@ -283,8 +290,12 @@ struct EditPlan: Sendable {
     /// (already sliced/rebased to 0 by the caller).
     let hrOverlay: HROverlayConfig?
     let hrSamples: [HRPoint]
+    /// The configurable HR/fitness overlay elements (prompt 28), already resolved to render-ready
+    /// badges by the caller (it has the session bounds + profile to compute them). `[]` = none.
+    let hrElements: [ResolvedHROverlay]
 
-    @MainActor init(_ e: ClipEdit, hrSamples: [HRPoint] = []) {
+    @MainActor init(_ e: ClipEdit, hrSamples: [HRPoint] = [],
+                    resolvedHRElements: [ResolvedHROverlay] = []) {
         localIdentifier = e.localIdentifier
         trimStart = e.trimStart
         trimEnd = e.trimEnd
@@ -295,6 +306,7 @@ struct EditPlan: Sendable {
         mutedOriginalAudio = e.mutedOriginalAudio
         hrOverlay = e.hrOverlay
         self.hrSamples = hrSamples
+        self.hrElements = resolvedHRElements
     }
 }
 
