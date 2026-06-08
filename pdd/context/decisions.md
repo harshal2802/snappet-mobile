@@ -2515,3 +2515,141 @@ aspect ≠ its source, the video fits within (a small letterbox) — drawing the
 rect (needs the source aspect in the canvas) is a further polish. **Verified**: builds clean, full suite
 green incl. a new `fitTransform` containment test. **Device-unverified**: that the PiP/base now sit exactly
 under the outline in preview AND export.
+
+## 2026-06-07 — Kilter board: size on the climb page, size-accurate render, color-blind hold shapes
+
+Three board-design improvements on the climb screen, one PR (iOS + Android mirrored;
+`FEAT-board-size-render-and-colorblind-shapes`). **(1) Board size beside Layout** — the physical
+board-size preference (`kilter.productSizeId`, added by `FIX-board-size-led-mapping`) was only reachable
+in Settings and the inline "wrong holds?" escape hatch. It's now an inline **Size chip** on the browse
+filter bar (iOS `KilterRootView`, Android `KilterRoot`), shown only when the layout offers >1 size,
+bound to the same cached key, **seeded to the layout default on appear and reset when the layout
+changes** (the guard Settings already used, lifted into a `syncBoardSize()` / `LaunchedEffect(layoutId)`
+so the chip and Settings can't disagree). **(2) The render now tracks the size.** Previously
+`boardGeometry(forLayout:)` took the extent + grid from the **whole layout's** hole set and `holds()`
+normalized to that same extent, so *every* size of a layout drew an identical schematic — size only
+changed which LEDs lit. New `renderHoles(forLayout:sizeId:)` computes the render basis from the holes
+**wired for the selected `product_size`** (the `leds` table's hole keys ∩ the layout's placements — that
+set *is* the physical board's holes, so a 7×10 ≈ 225 holes reads shorter than a 12×14 ≈ 527). Both
+`boardGeometry(forLayout:sizeId:)` and `holds(for:sizeId:)` normalize to that one basis, so the grid +
+aspect + lit holds reshape **together**; a hold above a smaller board clamps onto its top edge. `sizeId
+0` (the default, for any legacy caller) and a size with no `leds` rows fall back to the whole layout, so
+older/hand-rolled catalogs degrade rather than crash. The detail screen recomputes geometry+holds when
+the size changes (moved to a top-level `onChange` so it still fires with no board / on the simulator,
+where the BLE-gated section is unmounted). **(3) Color-blind hold shapes.** Every lit hold was a circle,
+so the route was unreadable without separating the role *hues*. A pure `KilterHoldShape.forRole` now
+maps the four roles to the canonical grayscale-distinguishable set — **start = triangle, hand = circle,
+finish = square, foot = diamond** — drawn (stroked unlit / filled+glow lit) by `KilterBoardView` /
+`KilterBoard` via a shared `holdPath`; colors are kept (shape is a *redundant* channel), the grid dots
+stay faint circles, and the detail legend draws the shapes (one `holdPath`, so board + legend can't
+drift). **Why the LED hole-set, not `product_sizes.edge_*`:** the real Aurora `product_sizes` carries
+explicit visible-rectangle edges that would crop pixel-perfectly, but they aren't in the synthetic
+fixture (only `id/name/description`) and adding them would churn all four fixture mirrors' positional
+inserts; the `leds` hole-set is authoritative, already loaded for LED mapping, present in fixture + real
+catalog, and ≈ the visible rectangle. A future catalog that exposes the edges can swap the basis behind
+`renderHoles`. **Why no real board photos:** the user asked to "find Kilter layout photos per
+size/layout," but the board backgrounds (`product_sizes_layouts_sets.image_filename`) are copyrighted
+Aurora CDN assets and the repo ships **no** Aurora data (#42) — committing them is a licensing + policy
+violation — so the schematic was made size-accurate instead (decided with the user). **Why always-on
+shapes (not a toggle):** shape is strictly more information with no downside for sighted users (decided
+with the user). **Fixture:** the two existing sizes are both "5 x 5" and wire all 25 holes, so they
+can't *prove* size-accurate geometry — added a third **5×3 "Test Mini"** size wiring only the bottom
+three rows (holes 1–15) to all four mirrors (`build_test_fixture.py` + the regenerated
+`kilter-fixture.sqlite3` + Swift/Kotlin `KilterCatalogFixture`); the `[1,2] → [1,2,3]` size assertions
+moved with it. **Rules out:** bundling/scraping copyrighted board photos; an on-device photo-fetch path
+(network — out of scope, contradicts on-device-only); a size toggle for shapes; `product_sizes.edge_*`
+cropping (not in the fixture); per-platform shape mismatch (one `forRole` + one `holdPath` each side,
+unit-pinned). **Verified (off-device):** new `KilterHoldShape` mapping test (start→triangle … four
+distinct shapes) on both platforms; new `boardGeometry`/`holds` size test (full = 25 holes / aspect 1.0,
+mini = 15 / aspect 2.0, sizeId 0 + foreign size → whole layout, a top hold clamps to y 0); the prior
+LED-address + `led_color` test stays green; the regenerated binary fixture validates (4 climbs).
+**Device-unverified** (visual judgments): that the size-coded schematic + role shapes actually read
+better for a color-blind climber on a real screen, and that the absence of a real board photo is
+acceptable.
+
+## 2026-06-07 — Kilter: "No matching" tag (climbs.is_nomatch) + a board-size download filter
+
+Two more Kilter additions, iOS + Android mirrored. **(1) Matching rule on the climb screen.** The climb
+screen never showed whether a climb forbids **matching hands** on a hold (the Kilter "No matching"
+setter rule). We **grounded this in the real downloaded data** (the user's instinct after an earlier
+wrong guess): inspecting the 165 MB `kilter.sqlite3` showed a dedicated `climbs.is_nomatch` boolean —
+73,864 of 344,504 climbs flagged, and **all** of them also carry "No matching"/"no match" in their
+free-text `description` (the column is the precomputed version of the setter note; the `hsm` column is
+unrelated — a bitmask). So `KilterClimb` now reads `is_nomatch` (added `description` too), and the detail
+screen shows an amber `hand.raised.slash` **"No matching"** chip (else a quiet "Matching") — always on,
+so the rule is never ambiguous, mirroring the official app's icon. A pure
+`kilterDescriptionForbidsMatching` is the **fallback** for catalogs that predate the column — it matches
+the setter note at a **word boundary** (`(^|[^a-z])no[ -]?match(ing)?([^a-z]|$)`) so it reproduces
+`is_nomatch` for the standard phrasings without firing inside ordinary words ("piano matched", "casino
+match", "no matches found"); the column is authoritative when present. Unit-tested (incl. those
+false-positive cases). A review caught the original bare-`contains("no match")` substring leak. **(2) Board-size
+download filter.** The user's Board Explorer gained a size filter; we mirror its `buildConditions`
+exactly: a size is a box `[edge_left, edge_right, edge_bottom, edge_top]` from `product_sizes` (the real
+table carries these edges, e.g. 7×10 = `[28,116,36,156]`, 12×14 = `[0,144,0,180]`), and a climb fits
+when `c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?`. `CatalogFilter`
+gained `sizeId`/`sizeBox`; `KilterBoardSize` now carries its `box`; the download sheet adds a **Board
+size** picker. **[SUPERSEDED the same day — see "Kilter download: board-first" below: the picker now reads
+from an EMBEDDED known-Kilter board table and works on a first download; the next paragraph describes the
+original, replaced approach.]** **Why the picker reads sizes from the INSTALLED catalog (and hides on a
+first-ever download):** pre-download the board's sizes aren't known — the ~80 MB file isn't fetched yet and
+the host manifest carries no sizes — and embedding Aurora size ids/boxes would duplicate Aurora data (#42).
+Once a catalog exists, its `product_sizes.edge_*` supply the picker + the chosen box; the box is bound
+straight into the trim's WHERE. **Why a dedicated column over description-parsing for `is_nomatch`:** the column is
+authoritative and cheap; parsing free text is a heuristic — so prefer the column, parse only as a
+fallback. **Why both newer columns are PRAGMA-guarded:** `climbs.is_nomatch` and `product_sizes.edge_*`
+are absent from older/hand-rolled catalogs (and the validator doesn't require them); detect once on open
+and degrade (matching-allowed default / nil box / no size filter) rather than throw. **Fixture:** added
+`is_nomatch` (Bravo = no-match, with a "No matching" description) and `product_sizes.edge_*` boxes (sizes
+1/2 a tall 0…24 box, size 3 a short top-12 box) across all four mirrors. **Rules out:** an in-app
+"fits-your-board" tag (that was a misread of "match" — it means hand-matching, not board fit);
+embedding static Kilter sizes for the download picker *(reversed the same day — see "board-first" below;
+the static table is now the chosen approach)*; using `hsm` for the match rule. **Verified (off-device):**
+new tests — `is_nomatch` read + size-box read (installed reader), the size-fit download filter (tall box
+keeps all 4 climbs, short box keeps none → `noCatalogData`), and the pure description detector — on both
+platforms; regenerated binary fixture validates. **Device-unverified** (visual judgment): the match chip
++ size-filter UX on a real screen.
+
+## 2026-06-07 — Kilter download: board-first, end-user-friendly (layout + size are the only filters)
+
+The in-app catalog download was a 12-field power-user form (board, layout toggles, angle, grade min/max,
+ascents, quality, setter, name, benchmark, listed, single-frame, board size, cap, host) — overwhelming
+for someone who just wants climbs for their board. Reshaped around the **one thing an end user knows:
+which board do you have.** The download sheet (`KilterCatalogDownloadSheet`, iOS + Android) is now: **Your
+board** = a single **layout** pick (Original / Homewall) + a **size** pick; **How many climbs** = a simple
+cap (Most popular N / Everything); Download; host URL tucked under **Advanced**. **Layout + size are the
+only download filters** — they define your physical board. Everything else (angle / grade / quality /
+ascents / setter / name / benchmark) moved to **browse-time** (those controls already exist in the
+catalog list + Filters sheet); `listedOnly`/`singleFrameOnly` stay on as silent mobile defaults. The
+`CatalogFilter` struct is unchanged (still carries the browse-style fields) — `buildFilter` just stops
+*setting* them, so they keep their no-op defaults and the explorer-parity `conditions()` is untouched.
+**Why size needs a static table:** the size picker must work on a **first** download, when no catalog is
+installed and the ~80 MB file isn't fetched — so the well-known Kilter board sizes (layout → sizes with
+their `product_sizes.edge_*` fit boxes) are embedded as `KilterCatalogOptions.boards`, pulled from the
+**real** Aurora data (re-inspected the 165 MB dataset: Original 7×10…16×12, Homewall 7×10/8×12/10×10/
+10×12; Homewall ships each size under several LED-kit ids → keep one per physical box). This is board
+**dimensions** — structural reference like the hardcoded layout ids — **not** climb data, so it's
+consistent with #42 (we still ship no climb catalog). The chosen size's box drives the trim
+(`c.edge_* ⊆ box`); picking a smaller board really does install fewer climbs. **Why a layout single-pick
+(not the old multi-toggle):** a physical board is one layout; "your board" is one choice. **Why keep a
+cap:** layout 1 alone has ~228k listed climbs — without a cap the installed file is huge; the cap is a
+data-size control, not a climbing filter, so it's framed as "how many climbs." **Rules out:** exposing
+the climbing filters at download (they're browse-time); reading sizes from the installed catalog for the
+picker (doesn't exist on a first download — the prior approach, now replaced by the static table);
+multi-layout downloads. **Verified:** iOS `BUILD SUCCEEDED`, Android `compileDebugKotlin` SUCCESSFUL; no
+UI test references the removed controls. **Device-unverified** (visual/UX judgment): that the board-first
+flow actually reads as simpler on a real screen.
+
+## 2026-06-07 — Kilter browse: live "N climbs" count + Clear (search feedback)
+
+The catalog browse gave no feedback on how a search/filter narrowed the catalog. Added a **live count
+bar** under the filter chips (iOS `KilterRootView`, Android `KilterRoot`): "N climbs" updating with the
+filter + search, plus a **Clear** action when a search / Saved / Filters-sheet extra is active (it
+resets those but keeps the board/angle/grade context the user set). **Why a dedicated `count(filter)`
+(not `list().count`):** the browse `list` is capped (LIMIT 500) for render cost, so its size understates
+the true match count; `count` runs the same WHERE as `list` (one `climb_stats` row per climb at the
+angle → `COUNT(*)`) with no limit/sort, giving the real number. Saved-mode count is just the filtered
+favorites' size (already the full set). **Rules out:** counting via `list().count` (capped); a separate
+count query path that could drift from `list`'s WHERE (kept them mirrored). **Verified:** new
+`testCountReflectsFilterAndSearch` (iOS) / `countReflectsFilterAndSearch` (Android) over the fixture —
+count = 4 at 40°, 2 at 25°, 1 for "Bravo"/grade≥22, and equals the uncapped list size; both platforms
+build. **Device-unverified**: the live-update feel on a real screen.

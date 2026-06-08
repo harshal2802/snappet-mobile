@@ -146,13 +146,58 @@ enum KilterCatalogOptions {
         (30, "8b / V13"), (31, "8b+ / V14"), (32, "8c / V15"), (33, "8c+ / V16"),
     ]
     static func gradeLabel(_ d: Int) -> String { grades.first { $0.difficulty == d }?.label ?? "—" }
+
+    /// The two supported Kilter boards + their listed sizes, with each size's fit box (hole units, from
+    /// the real Aurora `product_sizes.edge_*`). Embedded because the dataset isn't installed on a first
+    /// download — board *dimensions* are structural reference (like the layout ids), not climb data (#42).
+    /// Homewall ships each size under several LED-kit ids; we keep one per physical size (the box drives
+    /// the download fit filter, not the id).
+    static let boards: [KilterKnownBoard] = [
+        KilterKnownBoard(layoutId: 1, name: "Kilter Original", defaultSizeId: 10, sizes: [
+            KilterKnownSize(id: 14, name: "7 × 10", box: KilterSizeBox(left: 28, right: 116, bottom: 36, top: 156)),
+            KilterKnownSize(id: 8,  name: "8 × 12", box: KilterSizeBox(left: 24, right: 120, bottom: 0,  top: 156)),
+            KilterKnownSize(id: 10, name: "12 × 12 (with kickboard)", box: KilterSizeBox(left: 0, right: 144, bottom: 0,  top: 156)),
+            KilterKnownSize(id: 27, name: "12 × 12 (no kickboard)",   box: KilterSizeBox(left: 0, right: 144, bottom: 12, top: 156)),
+            KilterKnownSize(id: 7,  name: "12 × 14", box: KilterSizeBox(left: 0, right: 144, bottom: 0, top: 180)),
+            KilterKnownSize(id: 28, name: "16 × 12", box: KilterSizeBox(left: -24, right: 168, bottom: 0, top: 156)),
+        ]),
+        KilterKnownBoard(layoutId: 8, name: "Kilter Homewall", defaultSizeId: 25, sizes: [
+            KilterKnownSize(id: 17, name: "7 × 10",  box: KilterSizeBox(left: -44, right: 44, bottom: 24,  top: 144)),
+            KilterKnownSize(id: 23, name: "8 × 12",  box: KilterSizeBox(left: -44, right: 44, bottom: -12, top: 144)),
+            KilterKnownSize(id: 21, name: "10 × 10", box: KilterSizeBox(left: -56, right: 56, bottom: 24,  top: 144)),
+            KilterKnownSize(id: 25, name: "10 × 12", box: KilterSizeBox(left: -56, right: 56, bottom: -12, top: 144)),
+        ]),
+    ]
+    static func board(_ layoutId: Int) -> KilterKnownBoard { boards.first { $0.layoutId == layoutId } ?? boards[0] }
+    /// A human label for a chosen `(layout, size)` — for the installed-catalog name.
+    static func sizeName(layoutId: Int, sizeId: Int) -> String? {
+        board(layoutId).sizes.first { $0.id == sizeId }?.name
+    }
 }
 
-/// Sheet for the in-app catalog download: pick a board + the full Board-Explorer filter set, then fetch
-/// the gzipped dataset and trim it on-device to an importable catalog. No accounts — the dataset is a
-/// static file the user hosts. Only Kilter Original + Homewall are buildable today; other boards/layouts
-/// show struck-through. Progress + errors read from the shared `installer`. See `KilterAuroraSync.swift`
-/// for the legal posture (personal/sideload use).
+/// One physical Kilter board size: its `product_size_id`, a label, and its fit box (used to keep only
+/// the climbs that fit it at download time).
+struct KilterKnownSize: Identifiable, Hashable, Sendable {
+    let id: Int
+    let name: String
+    let box: KilterSizeBox
+}
+
+/// A Kilter board the user can own — a layout + its sizes. Drives the download sheet's board picker.
+struct KilterKnownBoard: Identifiable, Hashable, Sendable {
+    let layoutId: Int
+    let name: String
+    /// Seeded size when the user first picks this board (a common one); they change it to theirs.
+    let defaultSizeId: Int
+    let sizes: [KilterKnownSize]
+    var id: Int { layoutId }
+}
+
+/// Sheet for the in-app catalog download — reshaped around the one thing an end user actually knows:
+/// **which board do you have.** Pick your layout (Original / Homewall) + your size, choose how many
+/// climbs, download. Everything else (angle, grade, quality, …) is a *browse-time* filter in the
+/// installed catalog, not a download choice. The dataset is a static file the user hosts; no accounts.
+/// See `KilterAuroraSync.swift` for the legal posture (personal/sideload use).
 struct KilterCatalogDownloadSheet: View {
     let installer: KilterCatalogInstaller
     /// Called when the user taps Download — the host runs the install and dismisses on success.
@@ -160,46 +205,33 @@ struct KilterCatalogDownloadSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("kilter.dl.host") private var host = kilterDefaultCatalogHost
-    @AppStorage("kilter.dl.includeOriginal") private var includeOriginal = true
-    @AppStorage("kilter.dl.includeHomewall") private var includeHomewall = true
-    @AppStorage("kilter.dl.angle") private var angle = -1          // -1 = any
-    @AppStorage("kilter.dl.gradeMin") private var gradeMin = 0     // 0 = any
-    @AppStorage("kilter.dl.gradeMax") private var gradeMax = 0
-    @AppStorage("kilter.dl.minAscents") private var minAscents = 0
-    @AppStorage("kilter.dl.minQuality") private var minQuality = 0.0
-    @AppStorage("kilter.dl.setter") private var setter = ""
-    @AppStorage("kilter.dl.name") private var nameContains = ""
-    @AppStorage("kilter.dl.benchmarksOnly") private var benchmarksOnly = false
-    @AppStorage("kilter.dl.listedOnly") private var listedOnly = true
-    @AppStorage("kilter.dl.singleFrameOnly") private var singleFrameOnly = true
+    /// The user's board — a layout (Original 1 / Homewall 8) + a size (`product_size_id`). These two,
+    /// your physical board, are the **only** download filters; the rest are browse-time in the list.
+    @AppStorage("kilter.dl.layout") private var layoutId = 1
+    @AppStorage("kilter.dl.sizeId") private var sizeId = 10   // seeded to a common Original size
     @AppStorage("kilter.dl.maxClimbs") private var maxClimbs = 2000
+    @AppStorage("kilter.dl.showAdvanced") private var showAdvanced = false
 
     @State private var boards: [CatalogBoardEntry] = []
     @State private var loadingBoards = true
 
-    private static let caps = [1000, 2000, 5000, 10000, 0]   // 0 = all matching
-    private static let ascentChoices = [0, 10, 50, 100, 500, 1000]
+    /// "How many climbs to keep" presets — the source is one ~80 MB file, so this caps the *installed* size.
+    private static let caps = [1000, 2000, 5000, 10000, 0]   // 0 = everything that fits
 
-    /// The Kilter board entry (the only importable one today), if the host listed it.
+    private var currentBoard: KilterKnownBoard { KilterCatalogOptions.board(layoutId) }
+    private var selectedSize: KilterKnownSize? { currentBoard.sizes.first { $0.id == sizeId } }
     private var kilterBoard: CatalogBoardEntry? { boards.first { $0.board == "kilter" } ?? boards.first }
-    private var hasLayout: Bool { includeOriginal || includeHomewall }
     private var isWorking: Bool { if case .working = installer.phase { return true } else { return false } }
 
     var body: some View {
         NavigationStack {
             Form {
                 boardSection
-                layoutSection
-                filterSection
-                sizeSection
+                catalogSizeSection
                 actionSection
-                Section("Source") {
-                    TextField("Host URL", text: $host)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .font(.footnote).accessibilityIdentifier("kilter.dl.host")
-                }
+                advancedSection
             }
-            .navigationTitle("Download catalog")
+            .navigationTitle("Get climbs")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isWorking)
             .toolbar {
@@ -207,6 +239,9 @@ struct KilterCatalogDownloadSheet: View {
                     Button("Cancel") { dismiss() }.disabled(isWorking)
                 }
             }
+            .onAppear(perform: syncSize)
+            // Keep the size valid for the chosen board (seed the board's default on a layout switch).
+            .onChange(of: layoutId) { syncSize() }
             .task(id: host) {
                 loadingBoards = true
                 boards = await HostedCatalogClient(baseURL: host).importableBoards()
@@ -217,86 +252,39 @@ struct KilterCatalogDownloadSheet: View {
 
     // MARK: - Sections
 
+    /// "Your board": the layout + size — the only two download filters (your physical board).
     @ViewBuilder private var boardSection: some View {
         Section {
-            if loadingBoards {
-                HStack { ProgressView(); Text("Loading boards…").foregroundStyle(.secondary) }
-            } else {
-                // Kilter is the only importable board today; show it selected and any other manifest
-                // boards struck-through as future work.
-                Label("Kilter Board", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.primary)
-                if let b = kilterBoard, b.climbs > 0 {
-                    LabeledContent("Climbs available", value: b.climbs.formatted()).font(.footnote)
-                }
-                ForEach(boards.filter { $0.board != "kilter" }) { b in
-                    Text(b.label).strikethrough().foregroundStyle(.tertiary)
-                }
+            Picker("Board", selection: $layoutId) {
+                ForEach(KilterCatalogOptions.boards) { Text($0.name).tag($0.layoutId) }
             }
+            .accessibilityIdentifier("kilter.dl.layout")
+            Picker("Size", selection: $sizeId) {
+                ForEach(currentBoard.sizes) { Text($0.name).tag($0.id) }
+            }
+            .accessibilityIdentifier("kilter.dl.size")
         } header: {
-            Text("Board")
+            Text("Your board")
         } footer: {
-            Text("Only the Kilter Board is supported right now.")
+            Text("Pick the Kilter board you climb on — we'll get the climbs that fit it. The size is "
+                 + "printed on the board (and shown in the official Kilter app).")
         }
     }
 
-    @ViewBuilder private var layoutSection: some View {
+    /// "How many climbs" — a friendly cap on the *installed* catalog (the source download is one file).
+    @ViewBuilder private var catalogSizeSection: some View {
         Section {
-            Toggle("Original", isOn: $includeOriginal).accessibilityIdentifier("kilter.dl.layout.original")
-            Toggle("Homewall", isOn: $includeHomewall).accessibilityIdentifier("kilter.dl.layout.homewall")
-            ForEach(KilterCatalogOptions.layouts.filter { !$0.supported }, id: \.id) { l in
-                Text(l.name).strikethrough().foregroundStyle(.tertiary)
-            }
-        } header: {
-            Text("Layouts")
-        } footer: {
-            Text(hasLayout ? "Other layouts are coming later."
-                 : "Pick at least one layout to download.")
-        }
-    }
-
-    @ViewBuilder private var filterSection: some View {
-        Section("Filters") {
-            Picker("Angle", selection: $angle) {
-                Text("Any").tag(-1)
-                ForEach(KilterCatalogOptions.angles, id: \.self) { Text("\($0)°").tag($0) }
-            }
-            Picker("Min grade", selection: $gradeMin) {
-                Text("Any").tag(0)
-                ForEach(KilterCatalogOptions.grades, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
-            }
-            .onChange(of: gradeMin) { _, lo in if gradeMax != 0 && lo > gradeMax { gradeMax = lo } }
-            Picker("Max grade", selection: $gradeMax) {
-                Text("Any").tag(0)
-                ForEach(KilterCatalogOptions.grades, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
-            }
-            .onChange(of: gradeMax) { _, hi in if hi != 0 && hi < gradeMin { gradeMin = hi } }
-            Picker("Min ascents", selection: $minAscents) {
-                ForEach(Self.ascentChoices, id: \.self) { Text($0 == 0 ? "Any" : "\($0)+").tag($0) }
-            }
-            Picker("Min quality", selection: $minQuality) {
-                Text("Any").tag(0.0); Text("★ 1+").tag(1.0); Text("★ 2+").tag(2.0); Text("★ 3").tag(3.0)
-            }
-            TextField("Setter contains", text: $setter)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("Name contains", text: $nameContains)
-            Toggle("Benchmarks (classics) only", isOn: $benchmarksOnly)
-            Toggle("Listed only", isOn: $listedOnly)
-            Toggle("Single-frame only", isOn: $singleFrameOnly)
-        }
-    }
-
-    @ViewBuilder private var sizeSection: some View {
-        Section {
-            Picker("Keep most-climbed", selection: $maxClimbs) {
-                ForEach(Self.caps, id: \.self) { Text($0 == 0 ? "All matching" : "Top \($0.formatted())").tag($0) }
+            Picker("Climbs to keep", selection: $maxClimbs) {
+                ForEach(Self.caps, id: \.self) {
+                    Text($0 == 0 ? "Everything that fits" : "Most popular \($0.formatted())").tag($0)
+                }
             }
             .accessibilityIdentifier("kilter.dl.cap")
         } header: {
-            Text("Catalog size")
+            Text("How many climbs")
         } footer: {
-            Text("The full dataset is ~80 MB to download; it's trimmed on-device to the filters above so "
-                 + "the installed catalog stays small.")
+            Text("More climbs = a bigger download. Once installed, filter by grade, angle, quality and "
+                 + "more right in the list.")
         }
     }
 
@@ -307,7 +295,7 @@ struct KilterCatalogDownloadSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: fraction).progressViewStyle(.linear)
                     Text(fraction < 0.75 ? "Downloading… \(Int(fraction / 0.75 * 100))%"
-                         : fraction < 1 ? "Trimming to your filters…" : "Installing…")
+                         : fraction < 1 ? "Trimming to your board…" : "Installing…")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             case .failed(let message):
@@ -315,53 +303,62 @@ struct KilterCatalogDownloadSheet: View {
                     .font(.footnote).foregroundStyle(.red)
                     .accessibilityIdentifier("kilter.dl.error")
             default:
-                EmptyView()
+                if let b = kilterBoard, b.climbs > 0 {
+                    Text("\(b.climbs.formatted()) climbs available to choose from.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
-
             Button {
                 guard let board = kilterBoard else { return }
                 onSubmit(board, buildFilter(), host)
             } label: {
-                Label("Download catalog", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
+                Label("Download", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isWorking || kilterBoard == nil || !hasLayout)
+            .disabled(isWorking || kilterBoard == nil || selectedSize == nil)
             .accessibilityIdentifier("kilter.dl.download")
+        }
+    }
+
+    /// Advanced (collapsed): the host URL — most users never touch it.
+    @ViewBuilder private var advancedSection: some View {
+        Section {
+            DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                TextField("Host URL", text: $host)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .font(.footnote).accessibilityIdentifier("kilter.dl.host")
+            }
+        } footer: {
+            Text("Snappet downloads from a static file you host — no Kilter account, nothing uploaded.")
         }
     }
 
     // MARK: - Filter assembly
 
+    /// Snap the size to one this board offers (seed the board's default when the layout changes / is stale).
+    private func syncSize() {
+        if !currentBoard.sizes.contains(where: { $0.id == sizeId }) { sizeId = currentBoard.defaultSizeId }
+    }
+
+    /// The download keeps only this board's climbs (layout + size fit). Listed + single-frame stay on as
+    /// sensible mobile defaults; angle/grade/quality/etc. are browse-time, so they're left unset here.
     private func buildFilter() -> CatalogFilter {
         var f = CatalogFilter()
-        f.layoutIds = [includeOriginal ? 1 : nil, includeHomewall ? 8 : nil].compactMap { $0 }
-        f.angle = angle >= 0 ? angle : nil
-        f.gradeMin = gradeMin > 0 ? gradeMin : nil
-        f.gradeMax = gradeMax > 0 ? gradeMax : nil
-        f.minAscents = minAscents > 0 ? minAscents : nil
-        f.minQuality = minQuality > 0 ? minQuality : nil
-        f.setter = setter
-        f.name = nameContains
-        f.benchmarkOnly = benchmarksOnly
-        f.listedOnly = listedOnly
-        f.singleFrameOnly = singleFrameOnly
+        f.layoutIds = [layoutId]
+        if let size = selectedSize { f.sizeId = size.id; f.sizeBox = size.box }
         f.maxClimbs = maxClimbs
         return f
     }
 
-    /// A short library name from the active filters (shown in the Settings catalog list).
+    /// A short library name for the Settings catalog list, e.g. "Kilter · Original · 12 × 14 · top 2000".
     static func name(for f: CatalogFilter) -> String {
         var parts = ["Kilter"]
-        let layouts = [f.layoutIds.contains(1) ? "Original" : nil,
-                       f.layoutIds.contains(8) ? "Homewall" : nil].compactMap { $0 }
-        if !layouts.isEmpty { parts.append(layouts.joined(separator: "+")) }
-        if let a = f.angle { parts.append("\(a)°") }
-        if f.gradeMin != nil || f.gradeMax != nil {
-            let lo = f.gradeMin.map(KilterCatalogOptions.gradeLabel) ?? "any"
-            let hi = f.gradeMax.map(KilterCatalogOptions.gradeLabel) ?? "any"
-            parts.append("\(lo)–\(hi)")
+        if let layout = f.layoutIds.first {
+            parts.append(KilterCatalogOptions.board(layout).name.replacingOccurrences(of: "Kilter ", with: ""))
+            if let sizeId = f.sizeId, let size = KilterCatalogOptions.sizeName(layoutId: layout, sizeId: sizeId) {
+                parts.append(size)
+            }
         }
-        if f.benchmarkOnly { parts.append("classics") }
         parts.append(f.maxClimbs == 0 ? "all" : "top \(f.maxClimbs)")
         return parts.joined(separator: " · ")
     }

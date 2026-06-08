@@ -24,19 +24,25 @@ object KilterCatalogFixture {
     private val roles = listOf(
         FRole(12, "start", "00DD00", "00FF00"), FRole(13, "middle", "00FFFF", "00FFFF"),
         FRole(14, "finish", "FF00FF", "FF00FF"), FRole(15, "foot", "FFA500", "FFA500"))
-    /** Two synthetic board sizes for layout 1: size 1 maps hole H → LED H; size 2 → H + offset. */
+    /** Two same-dimension board sizes for layout 1: size 1 maps hole H → LED H; size 2 → H + offset. */
     private const val sizeTwoOffset = 1000
+    /** A third, genuinely SMALLER board (5×3) wiring only the bottom [sizeThreeRows] rows (holes 1–15),
+     *  so tests can prove the render tracks the size (16×8 / aspect 2.0 vs the full 16×16 / aspect 1.0). */
+    private const val sizeThreeRows = 3
+    private const val sizeThreeOffset = 2000
 
     private data class Stat(val angle: Int, val diff: Double, val ascents: Int, val quality: Double)
     private data class FClimb(
         val uuid: String, val name: String, val setter: String, val frames: String,
-        val stats: List<Stat>)
+        val stats: List<Stat>, val description: String = "", val isNoMatch: Boolean = false)
 
     private val climbs = listOf(
         FClimb("11111111-1111-4111-8111-111111111111", "Test Problem Alpha", "fixtureSetter",
             "p1r12p13r13p25r14", listOf(Stat(40, 15.0, 250, 2.6), Stat(25, 12.0, 90, 2.1))),
+        // Bravo carries the Kilter "No matching" rule (description + is_nomatch=1).
         FClimb("22222222-2222-4222-8222-222222222222", "Test Problem Bravo", "fixtureSetter",
-            "p5r12p13r13p21r14", listOf(Stat(40, 20.0, 120, 2.9), Stat(30, 18.0, 60, 2.4))),
+            "p5r12p13r13p21r14", listOf(Stat(40, 20.0, 120, 2.9), Stat(30, 18.0, 60, 2.4)),
+            description = "No matching", isNoMatch = true),
         FClimb("33333333-3333-4333-8333-333333333333", "Test Problem Charlie", "anotherSetter",
             "p3r12p7r13p19r13p23r14", listOf(Stat(40, 24.0, 45, 1.8))),
         FClimb("44444444-4444-4444-8444-444444444444", "Test Problem Delta", "anotherSetter",
@@ -58,8 +64,11 @@ object KilterCatalogFixture {
                 for (r in roles) db.execSQL(
                     "INSERT INTO placement_roles VALUES (${r.id},1,${r.id},'${r.name}','${r.name}','${r.led}','${r.screen}')")
 
-                db.execSQL("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
-                db.execSQL("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
+                // product_sizes carry a fit box (edge_*): sizes 1/2 are a tall 0..24 board (fits every
+                // climb); size 3 (Mini) is short (top 12) so tall climbs don't fit it.
+                db.execSQL("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small',0,24,0,24)")
+                db.execSQL("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large',0,24,0,24)")
+                db.execSQL("INSERT INTO product_sizes VALUES (3,'5 x 3','Test Mini',0,24,4,12)")
 
                 var holeId = 0
                 for ((row, y) in coords.withIndex()) {
@@ -68,18 +77,23 @@ object KilterCatalogFixture {
                         val name = "${'A' + row}${col + 1}"
                         db.execSQL("INSERT INTO holes VALUES ($holeId,1,'$name',$x,$y,NULL,0)")
                         db.execSQL("INSERT INTO placements VALUES ($holeId,1,$holeId,$holeId,0,NULL)")
-                        // Two sizes: size 1 maps hole H → position H; size 2 → H + offset (different address).
+                        // Sizes 1/2 (same dimensions): hole H → position H, resp. H + offset (different address).
                         db.execSQL("INSERT INTO leds VALUES ($holeId,1,$holeId,$holeId)")
                         db.execSQL("INSERT INTO leds VALUES (${holeId + 10000},2,$holeId,${holeId + sizeTwoOffset})")
+                        // Size 3 (the smaller board) wires only the bottom rows → it renders a shorter board.
+                        if (row < sizeThreeRows) {
+                            db.execSQL("INSERT INTO leds VALUES (${holeId + 20000},3,$holeId,${holeId + sizeThreeOffset})")
+                        }
                     }
                 }
                 db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
                 db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
+                db.execSQL("INSERT INTO product_sizes_layouts_sets VALUES (3,3,1,1,'test.png',1)")
 
                 for (c in climbs) {
                     db.execSQL(
-                        "INSERT INTO climbs VALUES ('${c.uuid}',1,1,'${c.setter}','${c.name}','',0," +
-                            "4,20,4,20,NULL,1,0,'${c.frames}',0,1,'$createdAt')")
+                        "INSERT INTO climbs VALUES ('${c.uuid}',1,1,'${c.setter}','${c.name}','${c.description}',0," +
+                            "4,20,4,20,NULL,1,0,'${c.frames}',0,1,'$createdAt',${if (c.isNoMatch) 1 else 0})")
                     val best = c.stats.maxByOrNull { it.ascents }!!
                     db.execSQL("INSERT INTO climb_cache_fields VALUES " +
                         "('${c.uuid}',${best.ascents},${best.diff},${best.quality})")
@@ -131,7 +145,8 @@ object KilterCatalogFixture {
             "hole_id INT UNSIGNED NOT NULL, hold_id INT UNSIGNED NOT NULL, rotation INT NOT NULL, " +
             "default_placement_role_id INT UNSIGNED NULL DEFAULT NULL)",
         "CREATE TABLE product_sizes (id INT UNSIGNED NOT NULL PRIMARY KEY, name TEXT NOT NULL, " +
-            "description TEXT)",
+            "description TEXT, edge_left INT NOT NULL DEFAULT 0, edge_right INT NOT NULL DEFAULT 0, " +
+            "edge_bottom INT NOT NULL DEFAULT 0, edge_top INT NOT NULL DEFAULT 0)",
         "CREATE TABLE leds (id INT UNSIGNED NOT NULL PRIMARY KEY, product_size_id INT UNSIGNED NOT NULL, " +
             "hole_id INT UNSIGNED NOT NULL, position INT UNSIGNED NOT NULL)",
         "CREATE TABLE product_sizes_layouts_sets (id INT UNSIGNED NOT NULL PRIMARY KEY, " +
@@ -144,7 +159,7 @@ object KilterCatalogFixture {
             "edge_bottom INT UNSIGNED NOT NULL, edge_top INT UNSIGNED NOT NULL, angle INT NULL DEFAULT NULL, " +
             "frames_count INT UNSIGNED NOT NULL DEFAULT 1, frames_pace INT UNSIGNED NOT NULL DEFAULT 0, " +
             "frames TEXT NOT NULL, is_draft BOOLEAN NOT NULL DEFAULT 0, is_listed BOOLEAN NOT NULL, " +
-            "created_at TEXT NOT NULL)",
+            "created_at TEXT NOT NULL, is_nomatch BOOLEAN NOT NULL DEFAULT 0)",
         "CREATE TABLE climb_stats (climb_uuid TEXT NOT NULL, angle INT UNSIGNED NOT NULL, " +
             "display_difficulty FLOAT UNSIGNED NOT NULL, benchmark_difficulty FLOAT UNSIGNED NULL DEFAULT NULL, " +
             "ascensionist_count INT UNSIGNED NOT NULL, difficulty_average FLOAT UNSIGNED NOT NULL, " +

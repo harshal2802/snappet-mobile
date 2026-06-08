@@ -41,6 +41,10 @@ data class CatalogBoardEntry(
  */
 data class CatalogFilter(
     val layoutIds: List<Int> = listOf(1, 8),   // empty = all layouts
+    /** A `product_size`: keep only climbs that physically fit that board size (climb `edge_*` box ⊆
+     *  [sizeBox]). [sizeId] is the picker selection; [sizeBox] its resolved `product_sizes.edge_*` box. */
+    val sizeId: Int? = null,
+    val sizeBox: KilterSizeBox? = null,
     val angle: Int? = null,
     val gradeMin: Int? = null,
     val gradeMax: Int? = null,
@@ -228,6 +232,12 @@ class HostedCatalogClient(baseURL: String = KILTER_DEFAULT_CATALOG_HOST) {
         if (f.listedOnly) conds.add("c.is_listed = 1")
         if (f.singleFrameOnly) conds.add("c.frames_count = 1")
         if (f.layoutIds.isNotEmpty()) conds.add("c.layout_id IN (${f.layoutIds.joinToString(",")})")
+        // Board size: keep only climbs whose bounding box fits inside the size's box (mirrors the Board
+        // Explorer's buildConditions). Bound in [left, right, bottom, top] order.
+        f.sizeBox?.let {
+            conds.add("c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?")
+            args.addAll(it.params)
+        }
         f.angle?.let { conds.add("cs.angle = ?"); args.add(it) }
         f.gradeMin?.let { conds.add("ROUND(cs.display_difficulty) >= ?"); args.add(it) }
         f.gradeMax?.let { conds.add("ROUND(cs.display_difficulty) <= ?"); args.add(it) }

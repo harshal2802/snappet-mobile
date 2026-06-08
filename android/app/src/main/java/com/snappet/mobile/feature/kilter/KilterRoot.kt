@@ -168,6 +168,17 @@ private fun KilterCatalogScreen(
     var angle by remember { mutableStateOf(KilterSettings.angle(context)) }
     var minGrade by remember { mutableStateOf(KilterSettings.minGrade(context)) }
     var maxGrade by remember { mutableStateOf(KilterSettings.maxGrade(context)) }
+    // The user's physical board size (product_size_id) — drives the on-screen render size + the LED map.
+    // Picked inline beside Layout (when the layout has >1 size), cached, seeded/reset per layout.
+    var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
+    val sizes = remember(layoutId) { catalog.sizes(layoutId) }
+    // Keep the size valid for the layout — seed the default when unset, reset on a layout switch.
+    androidx.compose.runtime.LaunchedEffect(layoutId) {
+        if (sizes.none { it.id == productSizeId }) {
+            productSizeId = catalog.defaultSizeId(layoutId)
+            KilterSettings.setProductSizeId(context, productSizeId)
+        }
+    }
     var savedOnly by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(KilterSort.POPULAR) }
@@ -178,25 +189,29 @@ private fun KilterCatalogScreen(
     var moreMenu by remember { mutableStateOf(false) }
     var climbs by remember { mutableStateOf<List<KilterListItem>>(emptyList()) }
     var cotd by remember { mutableStateOf<KilterListItem?>(null) }
+    // True number of climbs matching the current search + filters (not capped by the list) — shown live.
+    var resultCount by remember { mutableStateOf(0) }
 
     val showDiscovery = search.isBlank() && !savedOnly
     val filter = KilterFilter(layoutId, angle, minGrade.toDouble(), maxGrade.toDouble(),
         search, sort, benchmarksOnly, minAscents, minQuality)
 
     androidx.compose.runtime.LaunchedEffect(filter, savedOnly, favorites) {
-        val result = withContext(Dispatchers.IO) {
-            if (!catalog.isAvailable) emptyList<KilterListItem>() to null
+        val result: Triple<List<KilterListItem>, KilterListItem?, Int> = withContext(Dispatchers.IO) {
+            if (!catalog.isAvailable) Triple(emptyList(), null, 0)
             else if (savedOnly) {
                 val all = catalog.climbsByUuid(favorites.map { it.climbUuid })
                 val term = search.trim().lowercase()
                 val filtered = if (term.isEmpty()) all
                     else all.filter { it.name.lowercase().contains(term) || it.setter.lowercase().contains(term) }
-                filtered to null
+                Triple(filtered, null, filtered.size)
             } else {
-                catalog.list(filter) to (if (showDiscovery) catalog.climbOfTheDay(layoutId, angle) else null)
+                Triple(catalog.list(filter),
+                    if (showDiscovery) catalog.climbOfTheDay(layoutId, angle) else null,
+                    catalog.count(filter))
             }
         }
-        climbs = result.first; cotd = result.second
+        climbs = result.first; cotd = result.second; resultCount = result.third
     }
 
     ModuleScaffold(
@@ -266,6 +281,13 @@ private fun KilterCatalogScreen(
             ) {
                 FilterDropdown("Layout", layouts.firstOrNull { it.id == layoutId }?.name ?: "—",
                     layouts.map { it.id to it.name }, "kilter.layout") { layoutId = it; KilterSettings.setLayout(context, it) }
+                // Board size, right beside Layout — only when the layout offers a choice.
+                if (sizes.size > 1) {
+                    FilterDropdown("Size", sizes.firstOrNull { it.id == productSizeId }?.name ?: "—",
+                        sizes.map { it.id to it.label }, "kilter.size") {
+                        productSizeId = it; KilterSettings.setProductSizeId(context, it)
+                    }
+                }
                 FilterDropdown("Angle", "$angle°", angles.map { it to "$it°" }, "kilter.angle") {
                     angle = it; KilterSettings.setAngle(context, it)
                 }
@@ -303,6 +325,24 @@ private fun KilterCatalogScreen(
                     TextButton(onClick = { scope.launch { sessions.end() } }, modifier = Modifier.testTag("kilter.session.end")) {
                         Text("End")
                     }
+                }
+            }
+
+            // Live count of matching climbs + a quick Clear when search/Saved/extra filters are active.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (resultCount == 0) "No climbs" else "$resultCount climb${if (resultCount == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("kilter.count"))
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                if (search.isNotBlank() || savedOnly || filter.activeExtras > 0) {
+                    TextButton(onClick = {
+                        search = ""; savedOnly = false; sort = KilterSort.POPULAR
+                        benchmarksOnly = false; minAscents = 0; minQuality = 0.0
+                    }, modifier = Modifier.testTag("kilter.clearFilters")) { Text("Clear") }
                 }
             }
 

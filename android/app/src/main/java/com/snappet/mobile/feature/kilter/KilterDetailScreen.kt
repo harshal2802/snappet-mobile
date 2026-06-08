@@ -4,7 +4,9 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +26,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DoNotTouch
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
@@ -32,13 +36,18 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,7 +57,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -67,6 +80,7 @@ import kotlin.math.roundToInt
  * beta-video link, and — when a board is connected over BLE — illumination (Phase 2). Mirrors the
  * iOS `KilterClimbDetailView`. `onExit` returns to the catalog.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KilterDetailScreen(
     uuid: String,
@@ -110,7 +124,7 @@ fun KilterDetailScreen(
             // Seed the board size to this layout's default if unset/invalid, then map LEDs for it.
             val eff = if (catalog.sizes(c.layoutId).any { it.id == productSizeId }) productSizeId
             else catalog.defaultSizeId(c.layoutId)
-            Loaded(c, catalog.stats(uuid), catalog.holds(c, eff), catalog.boardGeometry(c.layoutId),
+            Loaded(c, catalog.stats(uuid), catalog.holds(c, eff), catalog.boardGeometry(c.layoutId, eff),
                 catalog.betaLinks(uuid), eff)
         } ?: return@LaunchedEffect
         climb = loaded.climb; stats = loaded.stats; holds = loaded.holds
@@ -185,8 +199,8 @@ fun KilterDetailScreen(
             KilterBoard(geometry, holds, Modifier.fillMaxWidth())
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                LegendDot("00DD00", "Start"); LegendDot("00FFFF", "Middle")
-                LegendDot("FF00FF", "Finish"); LegendDot("FFA500", "Foot")
+                LegendDot("00DD00", "start", "Start"); LegendDot("00FFFF", "middle", "Middle")
+                LegendDot("FF00FF", "finish", "Finish"); LegendDot("FFA500", "foot", "Foot")
             }
 
             // Angle selector
@@ -210,23 +224,53 @@ fun KilterDetailScreen(
                 Stat("Ascents", "${currentStat?.ascents ?: 0}", null)
             }
 
-            // Benchmark ("Classic") badge + first-ascensionist.
+            // Matching rule (always shown) + benchmark ("Classic") badge + first-ascensionist.
             val isClassic = currentStat?.benchmarkDifficulty != null
             val fa = currentStat?.faUsername ?: ""
-            if (isClassic || fa.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    if (isClassic) {
-                        Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)) {
-                            Text("★ Classic", style = MaterialTheme.typography.labelMedium,
-                                color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                // The Kilter "No matching" rule: amber chip when the setter forbids matching hands on a
+                // hold, else a quiet "Matching" chip (the default). TAP it for an explanation (the
+                // convention isn't obvious) via a rich tooltip. Mirrors iOS.
+                val noMatch = climb?.isNoMatch == true
+                val matchColor = if (noMatch) Color(0xFFF76808) else MaterialTheme.colorScheme.onSurfaceVariant
+                val matchTooltip = rememberTooltipState(isPersistent = true)
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+                    tooltip = {
+                        RichTooltip(title = { Text(if (noMatch) "No matching" else "Matching allowed") }) {
+                            Text(
+                                "“Matching” means putting both hands on the same hold. " +
+                                    if (noMatch) "This climb is set no-matching — the setter asks you not to match hands on any hold."
+                                    else "Matching is allowed on this climb (the default).")
                         }
+                    },
+                    state = matchTooltip,
+                ) {
+                    Row(Modifier.clip(CircleShape)
+                        .background(matchColor.copy(alpha = if (noMatch) 0.18f else 0.14f), CircleShape)
+                        .clickable { scope.launch { matchTooltip.show() } }
+                        .padding(horizontal = 10.dp, vertical = 4.dp).testTag("kilter.matchTag"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(if (noMatch) Icons.Filled.DoNotTouch else Icons.Filled.PanTool,
+                            contentDescription = if (noMatch) "No matching allowed" else "Matching allowed",
+                            tint = matchColor, modifier = Modifier.size(14.dp))
+                        Text(if (noMatch) "No matching" else "Matching",
+                            style = MaterialTheme.typography.labelMedium, color = matchColor,
+                            fontWeight = FontWeight.SemiBold)
                     }
-                    if (fa.isNotEmpty()) {
-                        Text("FA $fa", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                if (isClassic) {
+                    Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("★ Classic", style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold)
                     }
+                }
+                if (fa.isNotEmpty()) {
+                    Text("FA $fa", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
             }
 
@@ -279,9 +323,10 @@ fun KilterDetailScreen(
                                                 KilterSettings.setProductSizeId(context, s.id)
                                                 sizeMenu = false
                                                 climb?.let { c ->
-                                                    val nh = catalog.holds(c, s.id)
-                                                    holds = nh
-                                                    if (board.isConnected) board.illuminate(nh)
+                                                    // Size remaps LEDs AND reshapes the board — rebuild both.
+                                                    holds = catalog.holds(c, s.id)
+                                                    geometry = catalog.boardGeometry(c.layoutId, s.id)
+                                                    if (board.isConnected) board.illuminate(holds)
                                                 }
                                             })
                                         }
@@ -441,10 +486,18 @@ private fun GradeChart(stats: List<KilterClimbStat>, selectedAngle: Int, catalog
     }
 }
 
+/** One legend entry: the role's *shape* (not a plain dot) in the role color, teaching the color-blind-
+ *  friendly shape code the board draws. Uses the same `holdPath` the board uses. */
 @Composable
-private fun LegendDot(hex: String, label: String) {
+private fun LegendDot(hex: String, role: String, label: String) {
+    val color = hexColor(hex)
+    val shape = KilterHoldShape.forRole(role)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(10.dp).background(hexColor(hex), CircleShape))
+        Canvas(Modifier.size(11.dp)) {
+            drawPath(
+                holdPath(shape, Offset(size.width / 2f, size.height / 2f), size.minDimension * 0.92f),
+                color, style = Stroke(width = 2f, join = StrokeJoin.Round))
+        }
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

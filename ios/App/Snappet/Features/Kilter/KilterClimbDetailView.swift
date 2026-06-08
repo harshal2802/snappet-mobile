@@ -55,6 +55,7 @@ struct KilterClimbDetailView: View {
     @State private var selectedAngle: Int = 40
     @State private var logConfirmation: String?
     @State private var showingShare = false
+    @State private var showingMatchInfo = false
 
     private var currentStat: KilterClimbStat? { stats.first { $0.angle == selectedAngle } }
     private var isFavorite: Bool { favorites.contains { $0.climbUUID == currentUUID } }
@@ -100,6 +101,16 @@ struct KilterClimbDetailView: View {
         // `load()`); the manual "Light up this climb" button stays for a re-send.
         .onChange(of: board.isConnected) { _, connected in
             if connected { board.illuminate(holds) }
+        }
+        // A board-size change (from the browse chip, Settings, or the inline "wrong holds?" fix) remaps
+        // every LED *and* reshapes the on-screen board — each size shows a different physical hole set —
+        // so rebuild holds + geometry and re-light. Top-level (not inside the BLE-gated illuminate
+        // section) so the on-screen render still updates with no board / on the simulator.
+        .onChange(of: productSizeId) {
+            guard let c = climb else { return }
+            holds = catalog.holds(for: c, sizeId: productSizeId)
+            geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
+            if board.isConnected { board.illuminate(holds) }
         }
     }
 
@@ -182,17 +193,21 @@ struct KilterClimbDetailView: View {
 
     private var roleLegend: some View {
         HStack(spacing: 16) {
-            legendDot("00DD00", "Start")
-            legendDot("00FFFF", "Middle")
-            legendDot("FF00FF", "Finish")
-            legendDot("FFA500", "Foot")
+            legendDot("00DD00", "start", "Start")
+            legendDot("00FFFF", "middle", "Middle")
+            legendDot("FF00FF", "finish", "Finish")
+            legendDot("FFA500", "foot", "Foot")
         }
         .font(.caption2).foregroundStyle(.secondary)
     }
 
-    private func legendDot(_ hex: String, _ label: String) -> some View {
+    /// One legend entry: the role's *shape* (not a plain dot) in the role color, so the legend teaches
+    /// the color-blind-friendly shape code the board uses.
+    private func legendDot(_ hex: String, _ role: String, _ label: String) -> some View {
         HStack(spacing: 4) {
-            Circle().stroke(Color(hex: hex), lineWidth: 2).frame(width: 10, height: 10)
+            KilterHoldMark(shape: .forRole(role))
+                .stroke(Color(hex: hex), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                .frame(width: 11, height: 11)
             Text(label)
         }
     }
@@ -232,27 +247,68 @@ struct KilterClimbDetailView: View {
         .padding(.horizontal)
     }
 
-    /// Benchmark ("Classic") badge + first-ascensionist, when the catalog has them for this angle.
+    /// The matching rule (always shown), plus a benchmark ("Classic") badge + first-ascensionist when the
+    /// catalog has them for this angle.
     @ViewBuilder private var metaRow: some View {
         let isClassic = currentStat?.benchmarkDifficulty != nil
         let fa = currentStat?.faUsername ?? ""
-        if isClassic || !fa.isEmpty {
-            HStack(spacing: 10) {
-                if isClassic {
-                    Label("Classic", systemImage: "rosette")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 9).padding(.vertical, 3)
-                        .background(SnappetColor.moduleAccent("kilter").opacity(0.18), in: Capsule())
-                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
-                }
-                if !fa.isEmpty {
-                    Label("FA \(fa)", systemImage: "flag.checkered")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
+        HStack(spacing: 10) {
+            matchBadge(noMatch: climb?.isNoMatch ?? false)
+            if isClassic {
+                Label("Classic", systemImage: "rosette")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(SnappetColor.moduleAccent("kilter").opacity(0.18), in: Capsule())
+                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
             }
-            .padding(.horizontal)
+            if !fa.isEmpty {
+                Label("FA \(fa)", systemImage: "flag.checkered")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
         }
+        .padding(.horizontal)
+    }
+
+    /// The Kilter "No matching" rule as a **tappable** tag: an amber `hand.raised.slash` "No matching"
+    /// chip when the setter forbids matching hands on a hold, else a quiet "Matching" chip (the default).
+    /// Tapping it explains what matching means (a popover), since the convention isn't obvious. Mirrors
+    /// the official app's no-match icon while still showing the allowed case so the rule is never ambiguous.
+    private func matchBadge(noMatch: Bool) -> some View {
+        Button { showingMatchInfo = true } label: {
+            Label(noMatch ? "No matching" : "Matching",
+                  systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9).padding(.vertical, 3)
+                .background((noMatch ? Color.orange : Color.secondary).opacity(noMatch ? 0.18 : 0.14), in: Capsule())
+                .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("kilter.matchTag")
+        .accessibilityLabel(noMatch ? "No matching allowed on this climb" : "Matching allowed")
+        .accessibilityHint("Explains what matching means")
+        .popover(isPresented: $showingMatchInfo) {
+            matchInfoPopover(noMatch: noMatch).presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// Small explainer shown when the matching chip is tapped: what "matching" is, and this climb's rule.
+    private func matchInfoPopover(noMatch: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(noMatch ? "No matching" : "Matching allowed",
+                  systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
+            Text("“Matching” means putting both hands on the same hold. "
+                 + (noMatch
+                    ? "This climb is set no-matching — the setter asks you not to match hands on any hold."
+                    : "Matching is allowed on this climb (the default)."))
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(width: 240)
+        .accessibilityIdentifier("kilter.matchInfo")
     }
 
     /// How the grade changes across board angles — the climb's signature. The selected angle is
@@ -387,13 +443,6 @@ struct KilterClimbDetailView: View {
             // Mirror a protocol switch made here to the controller immediately (the root view also
             // observes this, but the detail screen shouldn't depend on it being mounted); re-lights live.
             .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
-            // A board-size change remaps every LED, so rebuild the holds and re-light the current climb.
-            .onChange(of: productSizeId) {
-                if let c = climb {
-                    holds = catalog.holds(for: c, sizeId: productSizeId)
-                    if board.isConnected { board.illuminate(holds) }
-                }
-            }
         }
     }
 
@@ -478,7 +527,7 @@ struct KilterClimbDetailView: View {
             productSizeId = catalog.defaultSizeId(forLayout: c.layoutId)
         }
         holds = catalog.holds(for: c, sizeId: productSizeId)
-        geometry = catalog.boardGeometry(forLayout: c.layoutId)
+        geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
         betaLinks = catalog.betaLinks(currentUUID)
         // Prefer the shared angle if it has stats; otherwise the most-climbed angle.
         if stats.contains(where: { $0.angle == sharedAngle }) {

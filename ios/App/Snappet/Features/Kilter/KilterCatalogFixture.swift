@@ -18,22 +18,31 @@ enum KilterCatalogFixture {
         (12, "start", "00DD00", "00FF00"), (13, "middle", "00FFFF", "00FFFF"),
         (14, "finish", "FF00FF", "FF00FF"), (15, "foot", "FFA500", "FFA500"),
     ]
-    /// Two synthetic board sizes for layout 1, so tests cover board-size LED selection. Size 1 maps
+    /// Two same-dimension board sizes for layout 1, so tests cover board-size LED selection. Size 1 maps
     /// hole H → LED position H; size 2 maps hole H → H + sizeTwoOffset (a different physical address),
     /// proving the wrong size lights the wrong holds.
     private static let sizeTwoOffset = 1000
+    /// A third, genuinely SMALLER board (5×3) that wires only the bottom `sizeThreeRows` rows (holes
+    /// 1–15), so tests can prove the render tracks the size: `boardGeometry(sizeId: 3)` is 16×8
+    /// (aspect 2.0, 15 holes) vs the full 16×16 board (aspect 1.0, 25 holes).
+    private static let sizeThreeRows = 3
+    private static let sizeThreeOffset = 2000
 
     private struct Climb {
         let uuid, name, setter, frames: String
         let stats: [(angle: Int, diff: Double, ascents: Int, quality: Double)]
+        var description = ""
+        var isNoMatch = false
     }
     private static let climbs: [Climb] = [
         Climb(uuid: "11111111-1111-4111-8111-111111111111", name: "Test Problem Alpha",
               setter: "fixtureSetter", frames: "p1r12p13r13p25r14",
               stats: [(40, 15, 250, 2.6), (25, 12, 90, 2.1)]),
+        // Bravo carries the Kilter "No matching" rule (description + is_nomatch=1).
         Climb(uuid: "22222222-2222-4222-8222-222222222222", name: "Test Problem Bravo",
               setter: "fixtureSetter", frames: "p5r12p13r13p21r14",
-              stats: [(40, 20, 120, 2.9), (30, 18, 60, 2.4)]),
+              stats: [(40, 20, 120, 2.9), (30, 18, 60, 2.4)],
+              description: "No matching", isNoMatch: true),
         Climb(uuid: "33333333-3333-4333-8333-333333333333", name: "Test Problem Charlie",
               setter: "anotherSetter", frames: "p3r12p7r13p19r13p23r14",
               stats: [(40, 24, 45, 1.8)]),
@@ -112,8 +121,11 @@ enum KilterCatalogFixture {
                 + "(\(role.id),1,\(role.id),'\(role.name)','\(role.name)','\(role.led)','\(role.screen)')")
         }
 
-        stmts.append("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
-        stmts.append("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
+        // product_sizes carry a fit box (edge_*): sizes 1/2 are a tall 0…24 board (fits every climb);
+        // size 3 (Mini) is short (top 12) so tall climbs don't fit it.
+        stmts.append("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small',0,24,0,24)")
+        stmts.append("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large',0,24,0,24)")
+        stmts.append("INSERT INTO product_sizes VALUES (3,'5 x 3','Test Mini',0,24,4,12)")
 
         var holeID = 0
         for (row, y) in coords.enumerated() {
@@ -122,18 +134,25 @@ enum KilterCatalogFixture {
                 let name = "\(Character(UnicodeScalar(65 + row)!))\(col + 1)"
                 stmts.append("INSERT INTO holes VALUES (\(holeID),1,'\(name)',\(x),\(y),NULL,0)")
                 stmts.append("INSERT INTO placements VALUES (\(holeID),1,\(holeID),\(holeID),0,NULL)")
-                // Two sizes: size 1 maps hole H → position H; size 2 → H + offset (a different address).
+                // Sizes 1/2 (same dimensions): hole H → position H, resp. H + offset (a different address).
                 stmts.append("INSERT INTO leds VALUES (\(holeID),1,\(holeID),\(holeID))")
                 stmts.append("INSERT INTO leds VALUES "
                     + "(\(holeID + 10000),2,\(holeID),\(holeID + sizeTwoOffset))")
+                // Size 3 (the smaller board) wires only the bottom rows → it renders a shorter board.
+                if row < sizeThreeRows {
+                    stmts.append("INSERT INTO leds VALUES "
+                        + "(\(holeID + 20000),3,\(holeID),\(holeID + sizeThreeOffset))")
+                }
             }
         }
         stmts.append("INSERT INTO product_sizes_layouts_sets VALUES (1,1,1,1,'test.png',1)")
         stmts.append("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
+        stmts.append("INSERT INTO product_sizes_layouts_sets VALUES (3,3,1,1,'test.png',1)")
 
         for climb in climbs {
             stmts.append("INSERT INTO climbs VALUES ('\(climb.uuid)',1,1,'\(climb.setter)',"
-                + "'\(climb.name)','',0,4,20,4,20,NULL,1,0,'\(climb.frames)',0,1,'\(createdAt)')")
+                + "'\(climb.name)','\(climb.description)',0,4,20,4,20,NULL,1,0,'\(climb.frames)',0,1,"
+                + "'\(createdAt)',\(climb.isNoMatch ? 1 : 0))")
             let best = climb.stats.max { $0.ascents < $1.ascents }!
             stmts.append("INSERT INTO climb_cache_fields VALUES "
                 + "('\(climb.uuid)',\(best.ascents),\(best.diff),\(best.quality))")
@@ -176,7 +195,8 @@ enum KilterCatalogFixture {
         """,
         """
         CREATE TABLE product_sizes (id INT UNSIGNED NOT NULL PRIMARY KEY, name TEXT NOT NULL,
-            description TEXT)
+            description TEXT, edge_left INT NOT NULL DEFAULT 0, edge_right INT NOT NULL DEFAULT 0,
+            edge_bottom INT NOT NULL DEFAULT 0, edge_top INT NOT NULL DEFAULT 0)
         """,
         """
         CREATE TABLE leds (id INT UNSIGNED NOT NULL PRIMARY KEY, product_size_id INT UNSIGNED NOT NULL,
@@ -195,7 +215,7 @@ enum KilterCatalogFixture {
             edge_bottom INT UNSIGNED NOT NULL, edge_top INT UNSIGNED NOT NULL, angle INT NULL DEFAULT NULL,
             frames_count INT UNSIGNED NOT NULL DEFAULT 1, frames_pace INT UNSIGNED NOT NULL DEFAULT 0,
             frames TEXT NOT NULL, is_draft BOOLEAN NOT NULL DEFAULT 0, is_listed BOOLEAN NOT NULL,
-            created_at TEXT NOT NULL)
+            created_at TEXT NOT NULL, is_nomatch BOOLEAN NOT NULL DEFAULT 0)
         """,
         """
         CREATE TABLE climb_stats (climb_uuid TEXT NOT NULL, angle INT UNSIGNED NOT NULL,

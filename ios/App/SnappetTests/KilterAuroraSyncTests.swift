@@ -87,4 +87,24 @@ final class KilterAuroraSyncTests: XCTestCase {
             }
         }
     }
+
+    /// Board-size filter (mirrors the Board Explorer): keep only climbs whose `edge_*` box fits inside
+    /// the size's box. The fixture's climbs all span [4,20,4,20]; a tall 0…24 box keeps every climb, the
+    /// short Mini box (top 12) excludes them all.
+    func testBoardSizeFilterKeepsOnlyFittingClimbs() throws {
+        var fitAll = CatalogFilter()
+        fitAll.layoutIds = [1]; fitAll.sizeBox = KilterSizeBox(left: 0, right: 24, bottom: 0, top: 24)
+        let out = try filteredFromFixture(fitAll)
+        defer { try? FileManager.default.removeItem(at: out) }
+        XCTAssertEqual(try KilterCatalogValidator.validate(out).climbCount, 4,
+                       "every fixture climb fits the tall board")
+
+        var fitNone = CatalogFilter()
+        fitNone.layoutIds = [1]; fitNone.sizeBox = KilterSizeBox(left: 0, right: 24, bottom: 4, top: 12)
+        XCTAssertThrowsError(try filteredFromFixture(fitNone)) { error in
+            guard case HostedCatalogError.noCatalogData = error else {
+                return XCTFail("expected noCatalogData (no climb fits the short board), got \(error)")
+            }
+        }
+    }
 }

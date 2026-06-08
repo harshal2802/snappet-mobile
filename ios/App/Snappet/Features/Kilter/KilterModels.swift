@@ -23,11 +23,29 @@ struct KilterClimb: Identifiable, Hashable, Sendable {
     let name: String
     let setter: String
     let layoutId: Int
-    /// Frame bounds (board units) used to normalize hold coordinates into the view.
+    /// Frame bounds (board units) — the climb's hold bounding box. Used to test whether the climb fits a
+    /// board size (`edge_*` ⊆ the size's box, see `KilterBoardSize.box`).
     let edgeLeft, edgeRight, edgeBottom, edgeTop: Int
     /// Raw `pNrM…` hold encoding (decoded into `KilterHold`s by the catalog).
     let frames: String
+    /// The setter's free-text note (carries the "No matching" convention; see `isNoMatch`).
+    let description: String
+    /// Whether the setter forbids **matching hands** on a hold for this climb — the Kilter "No matching"
+    /// rule (`climbs.is_nomatch`; matching is allowed by default). Surfaced as a tag on the climb screen.
+    let isNoMatch: Bool
     var id: String { uuid }
+}
+
+/// Detect the Kilter **"No matching"** setter note in a climb's free-text description — the fallback for
+/// catalogs that predate the dedicated `climbs.is_nomatch` column (the reader prefers the column when it
+/// exists). Setters write "no matching" / "no match" to forbid matching hands on a hold; the default
+/// (no such note) is matching-allowed. Pure → unit-tested; mirrored in the Android `KilterCatalog`.
+func kilterDescriptionForbidsMatching(_ description: String) -> Bool {
+    // Match the setter note at a WORD BOUNDARY so it can't fire inside ordinary words ("piano matched",
+    // "casino match", "no matches found"). Accepts "no matching" / "no match" / "no-match" / "nomatch";
+    // rejects a trailing-letter form like "no matches" and any in-word substring.
+    let d = description.lowercased()
+    return d.range(of: #"(^|[^a-z])no[ -]?match(ing)?([^a-z]|$)"#, options: .regularExpression) != nil
 }
 
 /// Per-angle stats for a climb.
@@ -58,10 +76,39 @@ struct KilterHold: Identifiable, Hashable, Sendable {
     var id: Int { placementId }
 }
 
+/// The geometric marker a lit hold is drawn with, keyed by its role. A redundant (shape-as-well-as-color)
+/// channel so the route reads for color-blind climbers, who can't separate the start/finish/foot hues —
+/// the four roles map to four shapes that stay distinct in grayscale (the canonical
+/// circle/triangle/square/diamond plotting set). Pure (no SwiftUI), so the mapping is unit-tested; the
+/// board views (`KilterBoardView` / Android `KilterBoard`) build the actual path from this.
+enum KilterHoldShape: String, CaseIterable, Sendable {
+    case circle, triangle, square, diamond
+
+    /// start → triangle, finish → square, foot → diamond; hand/"middle" and any unknown role → circle
+    /// (the most common, neutral marker). Matches `KilterCatalog.roleName` and the Android mirror.
+    static func forRole(_ role: String) -> KilterHoldShape {
+        switch role {
+        case "start": return .triangle
+        case "finish": return .square
+        case "foot": return .diamond
+        default: return .circle   // "middle"/hand + unknown
+        }
+    }
+}
+
 /// A selectable board layout (e.g. Kilter Original, Homewall).
 struct KilterLayout: Identifiable, Hashable, Sendable {
     let id: Int
     let name: String
+}
+
+/// A board size's bounding box in hole-coordinate units (`product_sizes.edge_*`). A climb fits the size
+/// when its own `edge_*` box is contained within this one — the rule the Board Explorer's size filter
+/// uses (`c.edge_left >= left AND c.edge_right <= right AND c.edge_bottom >= bottom AND c.edge_top <= top`).
+struct KilterSizeBox: Hashable, Sendable {
+    let left, right, bottom, top: Int
+    /// `[left, right, bottom, top]` — the bind order for the download filter's fit condition.
+    var params: [Int] { [left, right, bottom, top] }
 }
 
 /// A physical board size for a layout (a `product_size`), e.g. "8 x 12 — Home". The user picks theirs
@@ -71,6 +118,9 @@ struct KilterBoardSize: Identifiable, Hashable, Sendable {
     let id: Int        // product_size_id
     let name: String   // e.g. "8 x 12"
     let detail: String // e.g. "Home" / "Mainline LED Kit" (may be empty)
+    /// The size's fit box from `product_sizes.edge_*` (hole units); `nil` when the catalog predates the
+    /// edge columns. Drives the "only climbs that fit this size" download filter.
+    let box: KilterSizeBox?
     /// Picker label: "8 x 12 — Home" (or just the name when there's no detail).
     var label: String { detail.isEmpty ? name : "\(name) — \(detail)" }
 }

@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-06-06
+**Last updated**: 2026-06-07
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -204,6 +204,46 @@ new `OverlayItem` style fields shipped non-optional → Swift's synthesized `Dec
 overlays; made optional-backed with computed defaults (the codebase's migration-safe pattern), guarded by
 a decode-from-old-JSON test. Full suite green (**301 unit + 15 UI**). All 5 surfaces (placement, resize,
 text+styling, base cell, **export**) confirmed working on-device.
+
+🟢 **Kilter board design: size on the climb page, size-accurate render, color-blind hold shapes
+(2026-06-07, `FEAT-board-size-render-and-colorblind-shapes`).** iOS + Android. The physical board-size
+preference moved onto the browse filter bar as an inline **Size chip beside Layout** (shown when a layout
+offers >1 size; cached, seeded/reset per layout). The on-screen board now **renders at the selected
+size** — `renderHoles(forLayout:sizeId:)` bases the grid + aspect + hold normalization on the holes
+wired for that `product_size` (the `leds` hole set), so a smaller board reads shorter and the lit holds
+reshape with it (sizeId 0 / no-LED sizes fall back to the whole layout). And lit holds are now
+**shape-coded by role** (start triangle / hand circle / finish square / foot diamond — a color-blind
+redundant channel via the pure `KilterHoldShape`, colors kept, legend teaches it). No real board photos —
+they're copyrighted Aurora assets the repo can't ship (#42), so the schematic was made size-accurate
+instead. Off-device verified (new size-geometry + shape-mapping tests on both platforms, prior LED test
+green, 3rd fixture size mirrored across all four sources). **Device-unverified**: that the size-coded
+schematic + shapes read better on a real screen for a color-blind climber.
+
+🟢 **Kilter: "No matching" tag + board-size download filter (2026-06-07).** iOS + Android. The climb
+screen now shows the Kilter **"No matching"** rule (whether the setter forbids matching hands on a hold)
+as a tag, read from the real catalog's `climbs.is_nomatch` column (grounded by inspecting the actual
+165 MB Kilter dataset — 73,864/344,504 climbs flagged; `hsm` is unrelated), with a pure
+description-note fallback for older catalogs. The **download** flow gained a **board-size** filter that
+keeps only climbs physically fitting a chosen size — mirroring the Board Explorer's
+`c.edge_* ⊆ product_sizes.edge_*` rule; sizes come from the installed catalog (hidden on a first-ever
+download). Both newer columns (`is_nomatch`, `product_sizes.edge_*`) are PRAGMA-guarded and degrade on
+catalogs that lack them. Off-device verified (match read, size-box read, the size-fit filter, and the
+pure detector — both platforms; fixture extended across all four mirrors).
+
+🟢 **Kilter download: board-first, end-user-friendly (2026-06-07).** iOS + Android. The catalog
+download was a 12-field power-user form; reshaped around the one thing an end user knows — **which board
+do you have.** The sheet is now **Your board** (Layout + Size) + **How many climbs** (a cap) + Download,
+with the host URL under Advanced. **Layout + size are the only download filters** (they define your
+physical board); angle/grade/quality/ascents/setter/name/benchmark moved to **browse-time** (already in
+the list + Filters sheet). The size picker works on a first download via an embedded known-Kilter board
+table (`KilterCatalogOptions.boards`, real `product_sizes.edge_*` fit boxes — board *dimensions*, not
+climb data, #42-consistent); the chosen size's box trims the catalog to fitting climbs. Compiles clean
+on both platforms; no UI test touched the removed controls.
+
+🟢 **Kilter browse: live climb count + Clear (2026-06-07).** iOS + Android. The catalog list shows a
+**live "N climbs" count** for the current search + filters (a true `count(filter)`, not the capped list)
+with a **Clear** action when a search/Saved/extra filter is active — immediate feedback that makes
+searching friendlier. New `count` unit test on both platforms.
 
 ## License
 

@@ -147,7 +147,7 @@ final class KilterCatalogStoreTests: XCTestCase {
         KilterCatalog.shared.reload()
         let cat = KilterCatalog.shared
 
-        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2], "layout 1 offers two sizes")
+        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2, 3], "layout 1 offers three sizes")
         XCTAssertEqual(cat.defaultSizeId(forLayout: 1), 1, "smallest product_size_id is the default")
 
         guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
@@ -191,11 +191,143 @@ final class KilterCatalogStoreTests: XCTestCase {
         let cat = KilterCatalog.shared
 
         // Degrades to bare ids from product_sizes_layouts_sets instead of crashing.
-        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2])
+        XCTAssertEqual(cat.sizes(forLayout: 1).map(\.id).sorted(), [1, 2, 3])
         // The LED map still resolves for a chosen size (the holds path queries leds, not product_sizes).
         guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
             return XCTFail("fixture climb Alpha missing")
         }
         XCTAssertEqual(cat.holds(for: climb, sizeId: 2).compactMap(\.ledPosition).sorted(), [1001, 1013, 1025])
+    }
+
+    /// The on-screen board must track the **selected size**: `boardGeometry(forLayout:sizeId:)` renders
+    /// only the holes wired for that `product_size`, so a smaller board reads shorter (fewer holes,
+    /// taller aspect) — and the lit holds normalize to the same extent, so a hold above the smaller
+    /// board clamps onto its top edge. The fixture's size 3 (5×3) wires the bottom three rows; sizes
+    /// 1/2 (5×5) wire all 25.
+    func testBoardGeometryAndHoldsTrackSelectedSize() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        let full = cat.boardGeometry(forLayout: 1, sizeId: 1)   // 5×5
+        let mini = cat.boardGeometry(forLayout: 1, sizeId: 3)   // 5×3 (bottom three rows)
+        XCTAssertEqual(full.grid.count, 25, "the full board shows every hole")
+        XCTAssertEqual(mini.grid.count, 15, "the smaller board renders only its wired holes")
+        XCTAssertEqual(full.aspect, 1.0, accuracy: 0.001, "5×5 → 16/16")
+        XCTAssertEqual(mini.aspect, 2.0, accuracy: 0.001, "5 wide × 3 tall → 16/8")
+        // sizeId 0 = whole layout; an invalid/foreign size falls back to the whole layout (no crash).
+        XCTAssertEqual(cat.boardGeometry(forLayout: 1, sizeId: 0).grid.count, 25)
+        XCTAssertEqual(cat.boardGeometry(forLayout: 1, sizeId: 999).grid.count, 25)
+
+        // Holds line up with the grid: Alpha's top hole (placement 25, board y 20 — above the 5×3 board)
+        // clamps to the mini board's top edge (view y 0); its bottom hole (placement 1) sits at the floor.
+        guard let climb = cat.climb("11111111-1111-4111-8111-111111111111") else {
+            return XCTFail("fixture climb Alpha missing")
+        }
+        let mh = cat.holds(for: climb, sizeId: 3)
+        XCTAssertEqual(mh.first { $0.placementId == 25 }?.y ?? -1, 0.0, accuracy: 0.001,
+                       "a hold above the smaller board clamps to its top edge")
+        XCTAssertEqual(mh.first { $0.placementId == 1 }?.y ?? -1, 1.0, accuracy: 0.001,
+                       "the bottom hole sits on the floor")
+
+        // Holds line up with the grid: at full size every lit hold sits exactly on a grid hole (so an
+        // x-normalization slip would leave a hold off the grid).
+        for h in cat.holds(for: climb, sizeId: 1) {
+            XCTAssertTrue(full.grid.contains { abs($0.x - h.x) < 0.001 && abs($0.y - h.y) < 0.001 },
+                          "lit hold \(h.placementId) at (\(h.x), \(h.y)) must coincide with a grid hole")
+        }
+        // Alpha's holds are all on the board diagonal (which can't catch an x↔y swap) — use an OFF-
+        // diagonal hold (Charlie's placement 3 = board (12, 4) → x 0.5, y 1.0) to pin x independently.
+        guard let charlie = cat.climb("33333333-3333-4333-8333-333333333333") else {
+            return XCTFail("fixture climb Charlie missing")
+        }
+        let p3 = cat.holds(for: charlie, sizeId: 1).first { $0.placementId == 3 }
+        XCTAssertEqual(p3?.x ?? -1, 0.5, accuracy: 0.001, "x normalizes independently of y")
+        XCTAssertEqual(p3?.y ?? -1, 1.0, accuracy: 0.001)
+    }
+
+    /// Color-blind support: each role maps to a distinct marker shape (a redundant channel alongside
+    /// color), so the four roles get four shapes that stay separable in grayscale. Pure mapping — no
+    /// store, no device. Mirrored by Android `KilterHoldShapeTest`.
+    func testHoldShapeMapsEachRoleToADistinctShape() {
+        XCTAssertEqual(KilterHoldShape.forRole("start"), .triangle)
+        XCTAssertEqual(KilterHoldShape.forRole("middle"), .circle)
+        XCTAssertEqual(KilterHoldShape.forRole("finish"), .square)
+        XCTAssertEqual(KilterHoldShape.forRole("foot"), .diamond)
+        XCTAssertEqual(KilterHoldShape.forRole("hold"), .circle, "an unknown role falls back to a circle")
+        let roleShapes = ["start", "middle", "finish", "foot"].map(KilterHoldShape.forRole)
+        XCTAssertEqual(Set(roleShapes).count, 4, "the four roles must be four distinct shapes")
+    }
+
+    /// The climb reader surfaces the Kilter "No matching" rule from `climbs.is_nomatch`, and each board
+    /// size carries its fit box from `product_sizes.edge_*`. The fixture flags Bravo as no-match and
+    /// gives sizes 1/2 a tall 0…24 box, size 3 a short (top 12) box.
+    func testClimbNoMatchRuleAndSizeFitBox() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        // is_nomatch: Bravo forbids matching; Alpha allows it (the default).
+        XCTAssertEqual(cat.climb("22222222-2222-4222-8222-222222222222")?.isNoMatch, true)
+        XCTAssertEqual(cat.climb("22222222-2222-4222-8222-222222222222")?.description, "No matching")
+        XCTAssertEqual(cat.climb("11111111-1111-4111-8111-111111111111")?.isNoMatch, false)
+
+        // Size fit boxes from product_sizes.edge_*.
+        let sizes = cat.sizes(forLayout: 1)
+        XCTAssertEqual(sizes.first { $0.id == 1 }?.box, KilterSizeBox(left: 0, right: 24, bottom: 0, top: 24))
+        XCTAssertEqual(sizes.first { $0.id == 3 }?.box, KilterSizeBox(left: 0, right: 24, bottom: 4, top: 12),
+                       "the Mini board is shorter (top 12)")
+    }
+
+    /// The "No matching" detector (the fallback for catalogs without the `is_nomatch` column) reads the
+    /// setter note from the description; default (no note) is matching-allowed.
+    func testNoMatchDescriptionDetector() {
+        XCTAssertTrue(kilterDescriptionForbidsMatching("No matching"))
+        XCTAssertTrue(kilterDescriptionForbidsMatching("Fun jug haul. NO MATCH on the start."))
+        XCTAssertTrue(kilterDescriptionForbidsMatching("crimpy — no-match"))
+        XCTAssertTrue(kilterDescriptionForbidsMatching("nomatch"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("Great climb, match the finish."))
+        XCTAssertFalse(kilterDescriptionForbidsMatching(""))
+        // Must NOT fire inside ordinary words / a trailing-letter form (word-boundary matching).
+        XCTAssertFalse(kilterDescriptionForbidsMatching("piano matched perfectly"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("Casino match on the dyno"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("volcano matches the vibe"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("no matches found in the log"))
+    }
+
+    /// The live browse count: `count(_:)` reflects the full filter + search and agrees with the list
+    /// where it isn't capped. Fixture: 4 climbs on layout 1 (angle-40 diffs 15/20/24/16; angle-25 = Alpha+Delta).
+    func testCountReflectsFilterAndSearch() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        let base = KilterFilter(layoutId: 1, angle: 40, minDifficulty: 1, maxDifficulty: 39)
+        XCTAssertEqual(cat.count(base), 4, "all four fixture climbs have an angle-40 stat")
+        XCTAssertEqual(cat.count(base), cat.list(base).count, "count agrees with the uncapped list here")
+        var byName = base; byName.search = "Bravo"
+        XCTAssertEqual(cat.count(byName), 1)
+        XCTAssertEqual(cat.count(KilterFilter(layoutId: 1, angle: 25, minDifficulty: 1, maxDifficulty: 39)), 2,
+                       "only Alpha + Delta have an angle-25 stat")
+        var byGrade = base; byGrade.minDifficulty = 22
+        XCTAssertEqual(cat.count(byGrade), 1, "only Charlie (24) is >= grade 22 at 40°")
     }
 }
