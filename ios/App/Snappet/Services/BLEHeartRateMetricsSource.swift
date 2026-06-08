@@ -119,6 +119,11 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// (seconds since the session began) — same convention as the watch path.
     private var sessionStart: Date?
 
+    /// Whether the connected band's RR-intervals are trusted for HRV (fitness-band Phase 3). Set on
+    /// connect from the peripheral name and refined when the `0x2A24` model number is read; gates RR
+    /// capture in `ingest`. Default-deny → an unknown band carries no RR (HRV degrades to bpm-only).
+    private var rrTrusted = false
+
     // MARK: - Heart Rate GATT identifiers (RESEARCH.md §3.3)
 
     #if canImport(CoreBluetooth)
@@ -126,6 +131,10 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     // `CBUUID` is immutable; constructing one is safe off the main actor.
     nonisolated(unsafe) static let heartRateServiceUUID = CBUUID(string: "180D")
     nonisolated(unsafe) static let heartRateMeasurementUUID = CBUUID(string: "2A37")
+    // Device Information (0x180A) → Model Number String (0x2A24), read once on connect to refine RR
+    // trust (fitness-band Phase 3). Optional — name-based trust covers bands that don't expose it.
+    nonisolated(unsafe) static let deviceInfoServiceUUID = CBUUID(string: "180A")
+    nonisolated(unsafe) static let modelNumberUUID = CBUUID(string: "2A24")
 
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
@@ -261,7 +270,7 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// it — don't append, don't move `latestHR` (the pill keeps the last good value), don't flip to
     /// `.streaming` — and raise `isContactLost` so the UI shows "adjust strap". `contact == true`
     /// clears the flag and ingests normally; `nil` (the band can't report contact) ingests as before.
-    func ingest(bpm: Double, contact: Bool? = nil, receivedAt: Date = .now) {
+    func ingest(bpm: Double, contact: Bool? = nil, rrIntervalsMs: [Double]? = nil, receivedAt: Date = .now) {
         if contact == false {
             isContactLost = true
             return
@@ -269,9 +278,15 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         if contact == true { isContactLost = false }
         latestHR = bpm
         let offset = Self.sessionOffset(sessionStart: sessionStart, receivedAt: receivedAt)
-        samples.append(HRSample(t: offset, bpm: bpm))
+        // Keep RR only from a trusted chest strap (Phase 3); untrusted/unknown → drop it so HRV stays
+        // the honest bpm-only state. `rrTrusted` is overridable in tests via `setRRTrusted`.
+        samples.append(HRSample(t: offset, bpm: bpm, rrIntervalsMs: rrTrusted ? rrIntervalsMs : nil))
         state = .streaming
     }
+
+    /// Test seam: set the RR-trust flag directly (the real flag is derived from the band's name /
+    /// `0x2A24` model number on connect, which needs a device).
+    func setRRTrusted(_ trusted: Bool) { rrTrusted = trusted }
 
     /// Session-relative offset for a BLE sample. Unlike the watch (which relays its own
     /// monotonic `t`), a BLE measurement has no timestamp, so we use wall-clock elapsed
@@ -290,6 +305,18 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         let bpm: Double
         /// `true` = contact detected, `false` = contact lost, `nil` = the band doesn't support it.
         let contact: Bool?
+        /// RR-intervals (ms) present in this packet (flags bit 4), already converted from the spec's
+        /// 1/1024-second units; `nil` when the band doesn't send them (fitness-band Phase 3). Trust
+        /// gating (chest-strap vs optical) happens at `ingest`, not here — this is the raw decode.
+        let rrIntervalsMs: [Double]?
+
+        /// `rrIntervalsMs` defaults to `nil` so existing bpm+contact construction (and its tests) is
+        /// unchanged; the RR decode passes it explicitly.
+        init(bpm: Double, contact: Bool?, rrIntervalsMs: [Double]? = nil) {
+            self.bpm = bpm
+            self.contact = contact
+            self.rrIntervalsMs = rrIntervalsMs
+        }
     }
 
     /// Decode the sensor-contact state from the Heart Rate Measurement flags byte.
@@ -311,31 +338,69 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     /// Layout (Bluetooth SIG Heart Rate Measurement):
     /// - byte 0 = flags. **bit 0** = HR value format: `0` → next byte is `UInt8` bpm, `1` → next two
     ///   bytes are little-endian `UInt16` bpm. **bits 1–2** = sensor-contact support/status (decoded
-    ///   via `contactStatus`), bit 3 = energy-expended present, bit 4 = RR-intervals present. We read
-    ///   bpm + contact; the optional energy-expended / RR fields are not parsed in this PR — but the
-    ///   format bit must be honored to read the right width.
+    ///   via `contactStatus`), **bit 3** (`0x08`) = energy-expended present (a UInt16, in kJ, sitting
+    ///   *before* RR — skipped to reach RR), **bit 4** (`0x10`) = RR-intervals present (a variable
+    ///   number of little-endian UInt16, each in **1/1024 s** units → converted to ms).
     /// - Returns `nil` for an empty or too-short buffer (e.g. flags say UInt16 but only one value
-    ///   byte present), so a malformed packet can't poison the buffer.
+    ///   byte present), so a malformed packet can't poison the buffer. A truncated RR tail yields only
+    ///   the whole intervals that fit (never reads past the end).
     nonisolated static func parseMeasurement(_ data: Data) -> HRMeasurement? {
         let bytes = [UInt8](data)
         guard let flags = bytes.first else { return nil }
         let isUInt16 = (flags & 0x01) != 0
         let bpm: Double
+        var idx: Int
         if isUInt16 {
             // Need flags + 2 value bytes.
             guard bytes.count >= 3 else { return nil }
             bpm = Double(UInt16(bytes[1]) | (UInt16(bytes[2]) << 8))
+            idx = 3
         } else {
             guard bytes.count >= 2 else { return nil }
             bpm = Double(bytes[1])
+            idx = 2
         }
-        return HRMeasurement(bpm: bpm, contact: contactStatus(flags: flags))
+        // Energy-Expended (bit 3): a UInt16 that precedes RR. We don't use it (Keytel estimates BLE
+        // energy, Phase 2), but must step over it to reach RR.
+        if (flags & 0x08) != 0 { idx += 2 }
+        // RR-Intervals (bit 4): the rest of the buffer, UInt16 LE pairs in 1/1024 s → ms.
+        var rr: [Double]? = nil
+        if (flags & 0x10) != 0 {
+            var out: [Double] = []
+            while idx + 1 < bytes.count {
+                let raw = UInt16(bytes[idx]) | (UInt16(bytes[idx + 1]) << 8)
+                out.append(Double(raw) * 1000.0 / 1024.0)
+                idx += 2
+            }
+            rr = out.isEmpty ? nil : out
+        }
+        return HRMeasurement(bpm: bpm, contact: contactStatus(flags: flags), rrIntervalsMs: rr)
     }
 
     /// Bpm-only convenience over `parseMeasurement` (back-compat shim): same width logic, same
     /// nil-on-malformed contract, contact discarded.
     nonisolated static func parseHeartRate(_ data: Data) -> Double? {
         parseMeasurement(data)?.bpm
+    }
+
+    /// Decide whether a band's RR-intervals are trustworthy for HRV (fitness-band Phase 3).
+    ///
+    /// RR (beat-to-beat timing) is reliable only from **chest straps**; optical wrist/arm sensors emit
+    /// synthetic or no genuine RR, so HRV off them would be misleading. We classify off the band's
+    /// model number (`0x180A`/`0x2A24`) and/or its advertised name — **default-deny**: an unknown or
+    /// unnamed device is NOT trusted, so HRV cleanly degrades to the bpm-only effort/recovery already
+    /// shipped (decisions.md 2026-06-08). The optical blacklist is checked *before* the chest-strap
+    /// whitelist so e.g. "TICKR FIT" (Wahoo's optical armband) is rejected before the "tickr" match.
+    nonisolated static func rrTrusted(modelNumber: String?, deviceName: String?) -> Bool {
+        let hay = [modelNumber ?? "", deviceName ?? ""].joined(separator: " ")
+            .lowercased().trimmingCharacters(in: .whitespaces)
+        guard !hay.isEmpty else { return false }
+        let optical = ["fit", "oh1", "verity", "scosche", "rhythm", "fitbit", "whoop",
+                       "apple watch", "wrist", "armband", "ring"]
+        if optical.contains(where: hay.contains) { return false }
+        let straps = ["polar h", "hrm", "tickr", "movesense", "frontier", "wahoo",
+                      "garmin", "coospo h", "magene h", "decathlon dual", "chest"]
+        return straps.contains(where: hay.contains)
     }
 
     /// Forget the remembered band and disconnect it. The user is telling us "don't auto-use
@@ -474,6 +539,9 @@ extension BLEHeartRateMetricsSource: CBCentralManagerDelegate {
             self.isReachable = true
             self.state = .connected
             if let name { self.connectedName = name }
+            // RR trust from the name we have now (Phase 3) — refined by the 0x2A24 model number below.
+            // Named straps are trusted immediately; unknown names stay untrusted (HRV → bpm-only).
+            self.rrTrusted = Self.rrTrusted(modelNumber: nil, deviceName: self.connectedName)
             // Remember this band so the next workout / launch reconnects it automatically
             // (the one-time manual pick becomes a permanent convenience).
             self.memory.remember(id: id, name: self.connectedName ?? "Heart-rate band")
@@ -481,7 +549,8 @@ extension BLEHeartRateMetricsSource: CBCentralManagerDelegate {
             // appear if the user wants to switch bands.
             self.central?.stopScan()
         }
-        peripheral.discoverServices([Self.heartRateServiceUUID])
+        // HR measurement + Device Info (for the RR-trust model gate, Phase 3).
+        peripheral.discoverServices([Self.heartRateServiceUUID, Self.deviceInfoServiceUUID])
     }
 
     nonisolated func centralManager(_ central: CBCentralManager,
@@ -506,25 +575,53 @@ extension BLEHeartRateMetricsSource: CBCentralManagerDelegate {
 
 extension BLEHeartRateMetricsSource: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard let service = peripheral.services?.first(where: { $0.uuid == Self.heartRateServiceUUID }) else { return }
-        peripheral.discoverCharacteristics([Self.heartRateMeasurementUUID], for: service)
+        for service in peripheral.services ?? [] {
+            switch service.uuid {
+            case Self.heartRateServiceUUID:
+                peripheral.discoverCharacteristics([Self.heartRateMeasurementUUID], for: service)
+            case Self.deviceInfoServiceUUID:
+                peripheral.discoverCharacteristics([Self.modelNumberUUID], for: service)
+            default:
+                break
+            }
+        }
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral,
                                 didDiscoverCharacteristicsFor service: CBService,
                                 error: Error?) {
-        guard let char = service.characteristics?.first(where: { $0.uuid == Self.heartRateMeasurementUUID }) else { return }
-        // Subscribe to notifications — the band pushes a measurement ~1 Hz.
-        peripheral.setNotifyValue(true, for: char)
+        for char in service.characteristics ?? [] {
+            switch char.uuid {
+            case Self.heartRateMeasurementUUID:
+                // Subscribe to notifications — the band pushes a measurement ~1 Hz.
+                peripheral.setNotifyValue(true, for: char)
+            case Self.modelNumberUUID:
+                // One-shot read; refines RR trust (Phase 3).
+                peripheral.readValue(for: char)
+            default:
+                break
+            }
+        }
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral,
                                 didUpdateValueFor characteristic: CBCharacteristic,
                                 error: Error?) {
+        // Device-Info model number → refine the RR-trust gate (Phase 3).
+        if characteristic.uuid == Self.modelNumberUUID {
+            let model = characteristic.value.flatMap { String(data: $0, encoding: .utf8) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.rrTrusted = Self.rrTrusted(modelNumber: model, deviceName: self.connectedName)
+            }
+            return
+        }
         guard characteristic.uuid == Self.heartRateMeasurementUUID,
               let data = characteristic.value,
               let m = BLEHeartRateMetricsSource.parseMeasurement(data) else { return }
-        Task { @MainActor [weak self] in self?.ingest(bpm: m.bpm, contact: m.contact) }
+        Task { @MainActor [weak self] in
+            self?.ingest(bpm: m.bpm, contact: m.contact, rrIntervalsMs: m.rrIntervalsMs)
+        }
     }
 }
 #endif

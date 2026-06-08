@@ -267,6 +267,10 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
 struct HRPoint: Codable, Hashable, Sendable {
     var t: Double
     var bpm: Double
+    /// RR-intervals (ms) captured in the same packet, from a trusted chest strap (fitness-band
+    /// Phase 3); drives on-device HRV. **Optional** → old persisted `HRPoint` blobs decode with `nil`
+    /// (no migration), and watch / untrusted-band sessions simply carry none.
+    var rrIntervalsMs: [Double]? = nil
 }
 
 // MARK: - SwiftData models

@@ -83,7 +83,7 @@ extension WorkoutHRStats {
     /// session timeline) to the persisted `HRPoint` composite. A straight 1:1 field copy —
     /// isolated here so the flush in `finishWorkout` is a one-liner and the mapping is tested.
     static func points(from samples: [HRSample]) -> [HRPoint] {
-        samples.map { HRPoint(t: $0.t, bpm: $0.bpm) }
+        samples.map { HRPoint(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
     }
 }
 
@@ -152,6 +152,48 @@ extension WorkoutHRStats {
                                              restBpm: restHR, maxBpm: maxHR,
                                              smoothingWindowSec: config.smoothingWindowSec)
             previousCompletedAt = e.completedAt
+        }
+        return result
+    }
+
+    /// Per-set **rest** HRV across a session (fitness-band Phase 3) — the WorkoutTracker analogue of
+    /// the Kilter per-climb rest HRV, computed over the recovery gap *before* each set. The window is
+    /// `[previousSet.completedAt, thisSet's work start]`: a `.duration` hold excludes its known work
+    /// (`completedAt − durationSec`); for `.repsWeight` / `.climbAttempt` (no recorded work start) the
+    /// whole inter-set gap up to `completedAt` is taken as rest (most of it is). Reuses the engine's
+    /// `HRVMetrics`, gathering the RR in that window. `.empty` for the first set, a zero/overlapping
+    /// rest, HR-less sessions, or RR-less / untrusted sources — so the HRV badge hides exactly as the
+    /// per-climb one does. Pure + deterministic → unit-tested.
+    static func setRestHRV(for exercises: [SessionExercise],
+                           sessionStart: Date,
+                           hr: [HRSample]) -> [SetRef: HRVMetrics] {
+        guard !hr.isEmpty else { return [:] }
+
+        struct Entry { let ref: SetRef; let completedAt: Date; let kind: SetKind; let durationSec: Double? }
+        var entries: [Entry] = []
+        for ex in exercises {
+            for (i, set) in ex.sets.enumerated() {
+                guard let done = set.completedAt else { continue }
+                entries.append(Entry(ref: SetRef(exerciseID: ex.id, setIndex: i),
+                                     completedAt: done, kind: ex.kind, durationSec: set.durationSec))
+            }
+        }
+        entries.sort { $0.completedAt < $1.completedAt }
+
+        var result: [SetRef: HRVMetrics] = [:]
+        var previousCompletedAt: Date?
+        for e in entries {
+            defer { previousCompletedAt = e.completedAt }
+            guard let prev = previousCompletedAt else { continue }   // first set has no rest before it
+            let restStart = max(0, prev.timeIntervalSince(sessionStart))
+            let endOffset = max(0, e.completedAt.timeIntervalSince(sessionStart))
+            // The rest ends where this set's work begins: exclude the known work for a timed hold,
+            // else treat the whole inter-set gap as rest (work start unknown for reps/climb sets).
+            let restEnd = (e.kind == .duration && (e.durationSec ?? 0) > 0)
+                ? max(restStart, endOffset - (e.durationSec ?? 0))
+                : endOffset
+            guard restEnd > restStart else { continue }              // no genuine rest window
+            result[e.ref] = HRVMetrics.make(from: hr, start: restStart, end: restEnd)
         }
         return result
     }

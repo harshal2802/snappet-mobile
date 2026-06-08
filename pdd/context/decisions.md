@@ -2759,3 +2759,43 @@ max HR now.
 merge; `WorkoutHRStatsTests` already covers per-set %HRR lighting up with bounds; `LiveWorkoutTests`
 round-trips the `maxHR` start field). **Device-unverified** (no band/HR/watch in the simulator): the
 live personalized zone tints on the watch + widget, and a non-zero BLE calorie estimate end-to-end.
+
+---
+
+## 2026-06-08 — Fitness-band richness **Phase 3**: RR-intervals → on-device HRV (device-gated)
+
+**Context:** roadmap Phase 3 (prompt `26-ios-rr-intervals-hrv.md`), stacked on Phase 2. The band
+already sends RR-intervals (beat-to-beat timing) in the same `0x2A37` packet we parse for bpm — and
+we discarded them.
+
+**What shipped.** `parseMeasurement` now decodes RR (flags bit 4), correctly **skipping the
+Energy-Expended field** (bit 3) that precedes it, and converting the spec's 1/1024-second units to ms;
+a truncated tail yields only whole intervals. RR threads as an **optional** `rrIntervalsMs` on
+`HRSample` (engine) and `HRPoint` (persisted) — additive Optionals, no migration (old blobs decode
+`nil`). New pure engine `HRVMetrics` (sibling to `ClimbEffort`) computes RMSSD/SDNN/pNN50 over a
+window's RR. A shared `HRVBadge` (sibling to `HREffortBadge`) renders per-rest HRV between climbs
+(Kilter `TimelineItem.restHRV`) **and** between sets (`WorkoutHRStats.setRestHRV`).
+
+**Decisions worth recording:**
+- **Honest device gating via a pure name/model classifier (`rrTrusted`), default-deny.** RR is
+  trustworthy only from chest straps; optical wrist/arm sensors emit synthetic or no genuine RR. We
+  classify off the peripheral **name** (works immediately, no extra round-trip) and refine with the
+  Device-Info `0x180A` / Model-Number `0x2A24` read. **Unknown / unnamed → not trusted** → RR is
+  dropped at `ingest` → HRV cleanly degrades to the Phase-1 bpm-only effort/recovery. The optical
+  blacklist is checked **before** the chest-strap whitelist, so "TICKR FIT" (Wahoo's optical armband)
+  is rejected before the "tickr" substring would match. The Apple-Watch path carries no RR by
+  construction → symmetric degrade in both apps.
+- **RR outlier filter in the engine.** `HRVMetrics` drops RR outside ~[300, 2000] ms (≈30–200 bpm) and
+  needs ≥ a small minimum of survivors, so a dropped/merged/ectopic beat can't dominate RMSSD; under
+  the minimum → `.empty` (badge hidden).
+- **Rest-window definition for HRV.** Kilter: the `restBefore` gap `[prevClimbEnd, thisClimbStart]`.
+  WorkoutTracker: `[prevSet.completedAt, thisSet work start]` — a `.duration` hold excludes its known
+  work (`completedAt − durationSec`); `.repsWeight`/`.climbAttempt` (no recorded work start) take the
+  whole inter-set gap as rest (most of it is). First set / zero gap → `.empty`.
+
+**Verified off-device:** `swift test` (`HRVMetricsTests` — known-RR RMSSD/SDNN/pNN50, the min-interval
+gate, the outlier filter, the window gather) + XCTest (`RRDecodeTests` RR+energy-skip+truncation,
+`RRTrustTests` whitelist/blacklist/default-deny/TICKR-FIT + `ingest` drop-when-untrusted,
+`RestHRVStatsTests` per-rest HRV in both apps). **Device-unverified** (no BLE/RR/strap in the
+simulator): live RR capture off a real Polar H10, the `0x2A24` model read firing, and an optical band
+showing no HRV.
