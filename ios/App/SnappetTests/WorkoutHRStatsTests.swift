@@ -102,4 +102,58 @@ final class WorkoutHRStatsTests: XCTestCase {
         XCTAssertEqual(stats.maxBpm, 140)
         XCTAssertEqual(stats.minBpm, 100)
     }
+
+    // MARK: - Redline (Z4+Z5) + Edwards TRIMP
+
+    /// @190: 160 = threshold (Z4), 175 = max (Z5), 100 = recovery (Z1).
+    func testRedlineSumsThresholdAndMaxOnly() throws {
+        let series = [HRPoint(t: 0, bpm: 160), HRPoint(t: 10, bpm: 175),
+                      HRPoint(t: 40, bpm: 100), HRPoint(t: 50, bpm: 120)]
+        let stats = try XCTUnwrap(WorkoutHRStats.make(from: series))
+        XCTAssertEqual(stats.totalSeconds, 50)
+        XCTAssertEqual(stats.redlineSeconds, 40)               // 10 threshold + 30 max
+        XCTAssertEqual(stats.redlineFraction, 0.8, accuracy: 0.0001)
+        // (10/60)·4 + (30/60)·5 + (10/60)·1 = 0.6667 + 2.5 + 0.1667 = 3.3333
+        XCTAssertEqual(stats.edwardsTRIMP, 3.3333, accuracy: 0.001)
+    }
+
+    func testRedlineZeroWhenNeverHard() throws {
+        let series = [HRPoint(t: 0, bpm: 120), HRPoint(t: 10, bpm: 140), HRPoint(t: 20, bpm: 120)]
+        let stats = try XCTUnwrap(WorkoutHRStats.make(from: series))   // easy/aerobic only
+        XCTAssertEqual(stats.redlineSeconds, 0)
+        XCTAssertEqual(stats.redlineFraction, 0)
+    }
+
+    func testRedlineFractionZeroNotNaNOnSingleSample() throws {
+        let stats = try XCTUnwrap(WorkoutHRStats.make(from: [HRPoint(t: 0, bpm: 175)]))
+        XCTAssertEqual(stats.totalSeconds, 0)
+        XCTAssertEqual(stats.redlineSeconds, 0)
+        XCTAssertEqual(stats.redlineFraction, 0)               // guarded → no divide-by-zero
+        XCTAssertFalse(stats.redlineFraction.isNaN)
+        XCTAssertEqual(stats.edwardsTRIMP, 0)
+    }
+
+    func testEdwardsTRIMPWeightsByZoneNumber() throws {
+        // 10 s in Z1 (recovery, weight 1) vs 10 s in Z4 (threshold, weight 4) → ratio 1:4.
+        let z1 = try XCTUnwrap(WorkoutHRStats.make(from: [HRPoint(t: 0, bpm: 100), HRPoint(t: 10, bpm: 100)]))
+        let z4 = try XCTUnwrap(WorkoutHRStats.make(from: [HRPoint(t: 0, bpm: 160), HRPoint(t: 10, bpm: 160)]))
+        XCTAssertEqual(z1.edwardsTRIMP, (10.0 / 60) * 1, accuracy: 0.0001)
+        XCTAssertEqual(z4.edwardsTRIMP, (10.0 / 60) * 4, accuracy: 0.0001)
+    }
+
+    func testRedlineRespectsCustomMaxHR() throws {
+        // 140 bpm: @190 it's aerobic (not redline); @160 it's 87.5% → threshold (redline).
+        let series = [HRPoint(t: 0, bpm: 140), HRPoint(t: 10, bpm: 140)]
+        XCTAssertEqual(try XCTUnwrap(WorkoutHRStats.make(from: series)).redlineSeconds, 0)
+        XCTAssertEqual(try XCTUnwrap(WorkoutHRStats.make(from: series, maxHR: 160)).redlineSeconds, 10)
+    }
+
+    func testEdwardsTRIMPOrderIndependent() throws {
+        let ordered = [HRPoint(t: 0, bpm: 160), HRPoint(t: 10, bpm: 175),
+                       HRPoint(t: 40, bpm: 100), HRPoint(t: 50, bpm: 120)]
+        let shuffled = [HRPoint(t: 50, bpm: 120), HRPoint(t: 10, bpm: 175),
+                        HRPoint(t: 0, bpm: 160), HRPoint(t: 40, bpm: 100)]
+        XCTAssertEqual(try XCTUnwrap(WorkoutHRStats.make(from: ordered)).edwardsTRIMP,
+                       try XCTUnwrap(WorkoutHRStats.make(from: shuffled)).edwardsTRIMP, accuracy: 0.0001)
+    }
 }

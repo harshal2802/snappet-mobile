@@ -56,6 +56,26 @@ struct WorkoutHRStats: Equatable, Sendable {
             .sorted { $0.rawValue < $1.rawValue }
             .map { (zone: $0, seconds: secondsByZone[$0] ?? 0) }
     }
+
+    /// Seconds spent at "redline" — the two hard zones (Z4 threshold + Z5 max). For bursty climbing
+    /// this is the figure that characterizes a session: how long you were genuinely maxed out.
+    var redlineSeconds: Double {
+        (secondsByZone[.threshold] ?? 0) + (secondsByZone[.max] ?? 0)
+    }
+
+    /// Redline time as a fraction (0…1) of the total in-zone dwell; `0` when there's no dwell
+    /// (single-sample / empty) so the UI never divides by zero or shows NaN.
+    var redlineFraction: Double {
+        totalSeconds > 0 ? redlineSeconds / totalSeconds : 0
+    }
+
+    /// Edwards' zone-weighted training load (TRIMP): Σ minutes-in-zone × zone-weight, where the
+    /// weight is the zone number (recovery = 1 … max = 5) — a single session-strain figure.
+    /// Anchored to the current fixed `defaultMaxHR` until a user HR profile lands, so it reads as a
+    /// within-user *trend*, not a cross-user or clinical number (decisions.md 2026-06-08).
+    var edwardsTRIMP: Double {
+        secondsByZone.reduce(0) { $0 + ($1.value / 60) * Double($1.key.rawValue) }
+    }
 }
 
 extension WorkoutHRStats {

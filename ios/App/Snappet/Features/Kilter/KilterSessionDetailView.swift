@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import HighlightEngine
 
 /// The rich post-session (or live) summary for a Kilter board session: duration, send/attempt
 /// counts, hardest send, a grade pyramid, heart-rate stats + zones (when HR was captured), a
@@ -49,7 +50,9 @@ struct KilterSessionDetailView: View {
     private var stats: KilterSessionStats? {
         guard let session else { return nil }
         return KilterSessionStats.make(from: entries.map(KilterClimbLog.from),
-                                       start: session.startedAt, end: session.endedAt ?? .now)
+                                       start: session.startedAt, end: session.endedAt ?? .now,
+                                       hrSeries: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) },
+                                       maxHR: session.maxHR, restHR: session.restHR)
     }
 
     private var hrStats: WorkoutHRStats? {
@@ -192,10 +195,26 @@ struct KilterSessionDetailView: View {
                 .frame(height: 120)
             }
             zoneBar(hr)
+            if hr.totalSeconds > 0 {
+                HStack {
+                    hrStat(Self.redlineMinutesLabel(hr.redlineSeconds), "Redline")
+                    Divider().frame(height: 28)
+                    hrStat("\(Int((hr.redlineFraction * 100).rounded()))%", "At Z4+")
+                    Divider().frame(height: 28)
+                    hrStat("\(Int(hr.edwardsTRIMP.rounded()))", "Strain")
+                }
+                .accessibilityIdentifier("kilter.hr.load")
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal)
+    }
+
+    /// Compact minutes/seconds label for the redline tile (mirrors the WorkoutTracker ZoneBar).
+    private static func redlineMinutesLabel(_ seconds: Double) -> String {
+        let mins = seconds / 60
+        return mins >= 1 ? "\(Int(mins.rounded()))m" : "\(Int(seconds.rounded()))s"
     }
 
     private func hrStat(_ value: String, _ label: String) -> some View {
@@ -292,6 +311,7 @@ struct KilterSessionDetailView: View {
                         Text("rested \(durationString(rest))")
                             .font(.caption2).foregroundStyle(.tertiary)
                     }
+                    effortRow(item)
                     // The photos/videos shot while working this climb (auto-tagged by time window).
                     if firstIndexForClimb[item.climbUUID] == item.index {
                         climbMediaStrip(climbUUID: item.climbUUID)
@@ -303,6 +323,43 @@ struct KilterSessionDetailView: View {
         .padding()
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal)
+    }
+
+    /// Per-climb HR effort + recovery: an effort badge (peak %HRR when a max-HR bound exists, else
+    /// the raw peak bpm, tinted by its zone) and a recovery dot (bpm dropped in the 60 s / 30 s after
+    /// the peak). Hidden entirely when the climb wasn't scored (HR-less session / no recorded start).
+    @ViewBuilder private func effortRow(_ item: KilterSessionStats.TimelineItem) -> some View {
+        if let peak = item.peakBpm {
+            let zone = HeartRateZone.forBpm(peak, maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
+            HStack(spacing: 10) {
+                Label {
+                    Text(item.peakHRR.map { "\(Int(($0 * 100).rounded()))% effort" }
+                         ?? "\(Int(peak.rounded())) bpm peak")
+                } icon: {
+                    Image(systemName: "flame.fill")
+                }
+                .font(.caption2.weight(.semibold)).foregroundStyle(zone.color)
+                if let drop = item.hrRecovery60 ?? item.hrRecovery30 {
+                    HStack(spacing: 3) {
+                        Circle().fill(recoveryColor(drop)).frame(width: 7, height: 7)
+                        Text("−\(Int(drop.rounded())) bpm rec.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("recovered \(Int(drop.rounded())) beats per minute after the peak")
+                }
+            }
+            .accessibilityIdentifier("kilter.climb.effort")
+        }
+    }
+
+    /// Recovery dot color: a bigger HR drop after the burn = better recovery (green); small = red.
+    /// A relative within-session heuristic, not a clinical HR-recovery measure.
+    private func recoveryColor(_ drop: Double) -> Color {
+        switch drop {
+        case ..<10: return .red
+        case ..<25: return .orange
+        default:    return .green
+        }
     }
 
     /// A horizontal strip of the clips tagged to one climb. Tap a video to edit just that clip;

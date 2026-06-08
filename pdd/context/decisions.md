@@ -2653,3 +2653,49 @@ count query path that could drift from `list`'s WHERE (kept them mirrored). **Ve
 `testCountReflectsFilterAndSearch` (iOS) / `countReflectsFilterAndSearch` (Android) over the fixture —
 count = 4 at 40°, 2 at 25°, 1 for "Bravo"/grade≥22, and equals the uncapped list size; both platforms
 build. **Device-unverified**: the live-update feel on a real screen.
+
+## 2026-06-08 — Feature-rich band data, Phase 1: sensor-contact gating + redline/strain + per-climb effort
+
+Made the fitness-band data we **already capture** richer, without new BLE characteristics, a user HR
+profile, or cloud (the on-device-only stance from 2026-06-01 stands). Three bpm-only wins:
+
+**Sensor-contact gating.** The `0x2A37` packet already carries a sensor-contact flag we were
+discarding. Added `BLEHeartRateMetricsSource.parseMeasurement` (returns bpm + `contact: Bool?`) and
+`contactStatus(flags:)`, keeping `parseHeartRate` as a bpm-only **shim** so the existing parser tests
+and any callers stay green (additive, no churn). **The bit decode is the load-bearing subtlety:**
+Bluetooth SIG flags **bit 2 (`0x04`) = contact SUPPORTED**, **bit 1 (`0x02`) = contact STATUS** — two
+independent bits, *not* a 2-bit enum. We gate on support first (unsupported → `nil`/"unknown", never a
+false alarm), then read status. A naive 2-bit decode mis-fires on real straps that set status without
+support — and the pre-existing `0x0E` fixture (both bits set) would not have caught it (a planning
+adversarial-review catch). `ingest` now **drops** a no-contact reading (off-skin bpm is garbage):
+don't append, keep the last good `latestHR`, raise `isContactLost`; the live HR pills show an "adjust
+strap" hint. `isContactLost: Bool?` is on `MetricsSource` with a `nil` protocol-extension default, so
+only the BLE band implements it and the **watch path stays `nil`**. **Trade-off:** while contact is
+lost `latestHR` is frozen, so the Live-Activity `onChange(of: latestHR)` push won't fire — acceptable,
+and the orange affordance explains the staleness.
+
+**Redline + strain.** `WorkoutHRStats` gained pure `redlineSeconds` (Z4+Z5 dwell), `redlineFraction`
+(guarded to `0`, never NaN), and `edwardsTRIMP` (Σ minutes-in-zone × zone-number) — the figures that
+characterize a bursty climbing session. **Anchored to the fixed `defaultMaxHR` (190) until a user HR
+profile lands, so these are within-user *trend* numbers, not cross-user or clinical** (Edwards TRIMP
+was validated for steady aerobic work; intermittent max-effort climbing inflates it).
+
+**Per-climb effort + recovery.** New pure engine helper `ClimbEffort` (HighlightEngine, swift-test'd)
+scores one climb's HR window: peak bpm, peak %HRR (**only** with a real `maxBpm` bound → `nil` today,
+the honest bpm-only state), HR rise, time-to-peak, HRR60/30 recovery. **Verified fact:**
+`KilterBoardController.climbWindows` ends each window at `endedAt` with **no** `hrLagSec` extension and
+also feeds media auto-assignment — so it is left untouched; the HR window is computed separately in
+`KilterSessionStats` (from each log's own timestamps) and its **end extended by `HighlightConfig.hrLagSec`**
+so the post-effort spike that lands just after `endedAt` is captured. A **zero-lag negative-control
+test** guards this (with lag 0 the spike is missed). Effort lives as flat optional fields on
+`KilterSessionStats.TimelineItem` (keeps Equatable/Sendable auto-synthesis; not persisted, so no
+SwiftData migration). The UI (Redline/Strain tiles + per-climb effort badge / recovery dot) is
+additive and gated, so HR-less and watch-path sessions render exactly as before.
+
+**Rules out (this PR):** RR-intervals / HRV, energy parsing, battery/device-info reads, and a user HR
+profile — all later phases of the roadmap; vendor SDKs / cloud (Whoop/Body-Battery/Polar-PMD) remain
+out (brand lock-in + cloud, contra the on-device-generic-BLE stance). **Verified off-device:**
+`swift test` (ClimbEffort math incl. the lag-extension control) + the XCTest suite (contact decode &
+ingest-drop, redline/TRIMP, per-climb effort). **Device-unverified** (no band/HR in the simulator):
+the live "adjust strap" affordance + sample pause on a real strap toggling on/off-skin, and the live
+per-climb HR spike on a board.

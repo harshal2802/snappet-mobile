@@ -129,6 +129,11 @@ private struct HeartRateSummarySection: View {
 
             if stats.totalSeconds > 0 {
                 ZoneBar(stats: stats)
+                HStack(spacing: 24) {
+                    redlineStat(stats)
+                    strainStat(stats)
+                }
+                .frame(maxWidth: .infinity)
             }
         } header: {
             Text("Heart rate")
@@ -142,6 +147,29 @@ private struct HeartRateSummarySection: View {
                 .contentTransition(.numericText())
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    /// Redline tile: minutes in the two hard zones (Z4+Z5) + that as a % of the session.
+    private func redlineStat(_ stats: WorkoutHRStats) -> some View {
+        VStack(spacing: 2) {
+            Text(ZoneBar.minutesLabel(stats.redlineSeconds))
+                .font(.title3.monospacedDigit().weight(.semibold))
+            Text("Redline · \(Int((stats.redlineFraction * 100).rounded()))%")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("hrRedlineStat")
+    }
+
+    /// Strain tile: Edwards' zone-weighted training load (a within-user session-strain figure).
+    private func strainStat(_ stats: WorkoutHRStats) -> some View {
+        VStack(spacing: 2) {
+            Text("\(Int(stats.edwardsTRIMP.rounded()))")
+                .font(.title3.monospacedDigit().weight(.semibold))
+            Text("Strain").font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("hrStrainStat")
     }
 }
 

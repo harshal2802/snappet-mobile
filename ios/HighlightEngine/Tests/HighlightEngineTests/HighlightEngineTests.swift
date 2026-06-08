@@ -236,3 +236,80 @@ final class HighlightEngineTests: XCTestCase {
                           HighlightConfig(smoothingWindowSec: 99).fingerprint)
     }
 }
+
+/// Per-climb effort + recovery over a heart-rate series — pure, device-free (engine constraint).
+/// `smoothingWindowSec: 1` disables smoothing (`movingAverage` is a no-op for window ≤ 1) so the
+/// peak/recovery assertions are exact; the smoothing test uses the default window deliberately.
+final class ClimbEffortTests: XCTestCase {
+
+    /// A 1 Hz series from a `t -> bpm` list, samples at the given integer seconds.
+    private func series(_ pairs: [(Double, Double)]) -> [HRSample] {
+        pairs.map { HRSample(t: $0.0, bpm: $0.1) }
+    }
+
+    func testPeakRiseAndTimeToPeak() {
+        let s = series([(0, 60), (1, 70), (2, 80), (3, 100), (4, 140),
+                        (5, 170), (6, 160), (7, 150), (8, 140), (9, 130)])
+        let e = ClimbEffort.make(from: s, start: 0, end: 9, restBpm: nil, maxBpm: nil, smoothingWindowSec: 1)
+        XCTAssertEqual(e.peakBpm, 170)
+        XCTAssertEqual(e.timeToPeak, 5)
+        XCTAssertEqual(e.hrRise, 110)            // 170 − 60 (window start)
+        XCTAssertNil(e.peakHRR)                  // no maxBpm bound → bpm-only state
+    }
+
+    func testPeakHRRWhenBoundsSupplied() {
+        let s = series([(0, 60), (1, 90), (2, 120), (3, 150), (4, 170), (5, 160)])
+        let e = ClimbEffort.make(from: s, start: 0, end: 5, restBpm: 60, maxBpm: 180, smoothingWindowSec: 1)
+        XCTAssertEqual(e.peakBpm, 170)
+        // %HRR = (170 − 60) / (180 − 60) = 0.91667
+        XCTAssertEqual(try XCTUnwrap(e.peakHRR), 110.0 / 120.0, accuracy: 0.0001)
+    }
+
+    func testRecoveryReadsPastWindowEnd() {
+        // Peak 180 at t=10; data continues to t=71 so recovery can read peak+30 and peak+60.
+        let s = series([(0, 60), (10, 180), (40, 150), (70, 120), (71, 120)])
+        // Window ends at 12 (peak is inside) but recovery still reads the full series past the end.
+        let e = ClimbEffort.make(from: s, start: 0, end: 12, restBpm: nil, maxBpm: nil, smoothingWindowSec: 1)
+        XCTAssertEqual(e.peakBpm, 180)
+        XCTAssertEqual(e.timeToPeak, 10)
+        XCTAssertEqual(try XCTUnwrap(e.hrRecovery30), 30)   // 180 − bpm@t40 (150)
+        XCTAssertEqual(try XCTUnwrap(e.hrRecovery60), 60)   // 180 − bpm@t70 (120)
+    }
+
+    func testRecoveryNilWhenSeriesEndsBeforeOffset() {
+        // Peak at t=5, series ends at t=9 → neither peak+30 nor peak+60 is reachable.
+        let s = series([(0, 60), (5, 170), (9, 150)])
+        let e = ClimbEffort.make(from: s, start: 0, end: 6, restBpm: nil, maxBpm: nil, smoothingWindowSec: 1)
+        XCTAssertEqual(e.peakBpm, 170)
+        XCTAssertNil(e.hrRecovery30)
+        XCTAssertNil(e.hrRecovery60)
+    }
+
+    func testEmptyAndDegenerateWindowsAreEmpty() {
+        XCTAssertEqual(ClimbEffort.make(from: [], start: 0, end: 10, restBpm: nil, maxBpm: nil), .empty)
+        let s = series([(0, 120), (5, 150)])
+        XCTAssertEqual(ClimbEffort.make(from: s, start: 10, end: 5, restBpm: nil, maxBpm: nil), .empty)  // end < start
+    }
+
+    func testLagExtensionCapturesSpikeAfterLoggedEnd() {
+        // A spike at t=35; the logged climb "ends" at t=30. Without the caller's lag extension the
+        // window [0,30] misses it; the extended window [0,36] captures it. This encodes WHY
+        // KilterSessionStats extends the window end by HighlightConfig.hrLagSec.
+        let s = series([(0, 120), (30, 120), (33, 120), (35, 180), (37, 120), (50, 120)])
+        let logged = ClimbEffort.make(from: s, start: 0, end: 30, restBpm: nil, maxBpm: nil, smoothingWindowSec: 1)
+        let extended = ClimbEffort.make(from: s, start: 0, end: 36, restBpm: nil, maxBpm: nil, smoothingWindowSec: 1)
+        XCTAssertEqual(logged.peakBpm, 120)      // spike at t=35 is outside [0,30]
+        XCTAssertEqual(extended.peakBpm, 180)    // lag-extended window catches it
+    }
+
+    func testSmoothingAttenuatesSingleBeatSpike() {
+        // A single 200 bpm beat among a 120 baseline must not survive as the peak under the default
+        // 5 s smoothing (it would poison the chart/highlights). Assert it's pulled below the raw spike.
+        var pairs: [(Double, Double)] = (0...20).map { (Double($0), 120) }
+        pairs[10] = (10, 200)
+        let e = ClimbEffort.make(from: series(pairs), start: 0, end: 20, restBpm: nil, maxBpm: nil)  // default 5 s window
+        let peak = try! XCTUnwrap(e.peakBpm)
+        XCTAssertLessThan(peak, 200)             // the lone spike is smoothed away
+        XCTAssertGreaterThan(peak, 120)          // but it still raises the local average
+    }
+}

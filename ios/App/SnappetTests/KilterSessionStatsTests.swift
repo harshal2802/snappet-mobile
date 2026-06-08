@@ -1,4 +1,5 @@
 import XCTest
+import HighlightEngine
 @testable import Snappet
 
 /// Unit tests for the **pure** Kilter session statistics — no SwiftData, no device. Synthetic
@@ -102,5 +103,81 @@ final class KilterSessionStatsTests: XCTestCase {
         let s = KilterSessionStats.make(from: [log], start: t0, end: t0.addingTimeInterval(60))
         XCTAssertNil(s.timeline[0].timeOnClimb)
         XCTAssertNil(s.medianTimeOnClimb)
+    }
+
+    // MARK: - Per-climb HR effort (bpm-only; smoothing disabled for exact assertions)
+
+    /// `smoothingWindowSec: 1` is a no-op (exact peaks); `hrLagSec: 6` keeps the production lag.
+    private let fastCfg = HighlightConfig(smoothingWindowSec: 1, hrLagSec: 6)
+
+    /// One climb "Alpha" started at `t0+start` lasting `dur` seconds.
+    private func climbA(start: TimeInterval = 0, dur: TimeInterval = 60) -> KilterClimbLog {
+        KilterClimbLog(climbUUID: "A", climbName: "Alpha", gradeLabel: "6a/V3", difficulty: 15,
+                       status: .sent, attempts: 1,
+                       startedAt: t0.addingTimeInterval(start),
+                       endedAt: t0.addingTimeInterval(start + dur),
+                       loggedAt: t0.addingTimeInterval(start + dur))
+    }
+
+    func testPerClimbEffortPopulatedWithHRAndBounds() throws {
+        // Spike to 180 at t=30, inside climb A's [0,60] window; data continues so recovery is read.
+        let hr = [HRSample(t: 0, bpm: 120), HRSample(t: 30, bpm: 180),
+                  HRSample(t: 60, bpm: 120), HRSample(t: 120, bpm: 120)]
+        let s = KilterSessionStats.make(from: [climbA()], start: t0, end: t0.addingTimeInterval(180),
+                                        hrSeries: hr, maxHR: 200, restHR: 60, config: fastCfg)
+        let item = s.timeline[0]
+        XCTAssertEqual(item.peakBpm, 180)
+        XCTAssertEqual(item.timeToPeak, 30)             // peak at t=30, window start 0
+        XCTAssertEqual(item.hrRise, 60)                 // 180 − 120 (window start)
+        XCTAssertEqual(try XCTUnwrap(item.hrRecovery30), 60)   // 180 − bpm@t60 (120)
+        // %HRR = (180 − 60) / (200 − 60) = 0.857
+        XCTAssertEqual(try XCTUnwrap(item.peakHRR), 120.0 / 140.0, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(s.sessionPeakHRR), 120.0 / 140.0, accuracy: 0.001)
+    }
+
+    func testWindowExtendedByLagCapturesPostEndSpike() {
+        // The spike is at t=63 — AFTER the logged end (t=60) but within hrLagSec (6 s).
+        let hr = [HRSample(t: 0, bpm: 120), HRSample(t: 60, bpm: 120), HRSample(t: 63, bpm: 180),
+                  HRSample(t: 66, bpm: 120), HRSample(t: 120, bpm: 120)]
+        // Extended window [0,66] catches it…
+        let extended = KilterSessionStats.make(from: [climbA()], start: t0, end: t0.addingTimeInterval(180),
+                                               hrSeries: hr, config: fastCfg)
+        XCTAssertEqual(extended.timeline[0].peakBpm, 180)
+        // …negative control: with zero lag the window ends at 60 and misses the spike entirely.
+        let noLag = KilterSessionStats.make(from: [climbA()], start: t0, end: t0.addingTimeInterval(180),
+                                            hrSeries: hr,
+                                            config: HighlightConfig(smoothingWindowSec: 1, hrLagSec: 0))
+        XCTAssertEqual(noLag.timeline[0].peakBpm, 120)
+    }
+
+    func testNoHRSeriesLeavesEffortNil() {
+        let s = KilterSessionStats.make(from: sampleLogs(), start: t0, end: t0.addingTimeInterval(300))
+        for item in s.timeline {
+            XCTAssertNil(item.peakBpm)
+            XCTAssertNil(item.peakHRR)
+            XCTAssertNil(item.hrRise)
+            XCTAssertNil(item.timeToPeak)
+        }
+        XCTAssertNil(s.sessionPeakHRR)
+    }
+
+    func testEffortNilWithoutClimbStartEvenWithHR() {
+        let log = KilterClimbLog(climbUUID: "X", climbName: "X", gradeLabel: "6a/V3", difficulty: 15,
+                                 status: .sent, attempts: 1, startedAt: nil, endedAt: nil,
+                                 loggedAt: t0.addingTimeInterval(30))
+        let hr = [HRSample(t: 0, bpm: 120), HRSample(t: 30, bpm: 180), HRSample(t: 60, bpm: 120)]
+        let s = KilterSessionStats.make(from: [log], start: t0, end: t0.addingTimeInterval(60),
+                                        hrSeries: hr, config: fastCfg)
+        XCTAssertNil(s.timeline[0].peakBpm)             // no recorded start → not scored
+    }
+
+    func testBpmOnlyWhenNoMaxHR() {
+        let hr = [HRSample(t: 0, bpm: 120), HRSample(t: 30, bpm: 180),
+                  HRSample(t: 60, bpm: 120), HRSample(t: 120, bpm: 120)]
+        let s = KilterSessionStats.make(from: [climbA()], start: t0, end: t0.addingTimeInterval(180),
+                                        hrSeries: hr, maxHR: nil, restHR: nil, config: fastCfg)
+        XCTAssertEqual(s.timeline[0].peakBpm, 180)      // bpm always available…
+        XCTAssertNil(s.timeline[0].peakHRR)             // …but %HRR needs a max-HR bound
+        XCTAssertNil(s.sessionPeakHRR)
     }
 }

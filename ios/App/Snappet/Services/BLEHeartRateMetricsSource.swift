@@ -61,6 +61,12 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
     private(set) var state: MetricsSourceState = .unavailable
     private(set) var isReachable = false
 
+    /// Whether the band currently reports the sensor has lost skin/strap contact — only when the
+    /// band supports the optional Heart Rate Measurement sensor-contact flag. `nil` when it can't
+    /// report contact (most generic straps), distinct from `false` ("contact is fine"). No-contact
+    /// readings are dropped in `ingest` (bpm is garbage off-skin) and the UI shows "adjust strap".
+    private(set) var isContactLost: Bool? = nil
+
     /// Coarse Bluetooth usability, for the picker's empty-state messaging.
     private(set) var availability: BluetoothAvailability = .unknown
 
@@ -220,6 +226,7 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
         sessionStart = context.startedAt
         samples.removeAll()
         latestHR = nil
+        isContactLost = nil
         #if canImport(CoreBluetooth)
         prepare()
         if let id = desiredPeripheralID,
@@ -247,9 +254,19 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
 
     // MARK: - Sample ingestion (test seam)
 
-    /// Ingest a parsed bpm at wall-clock `receivedAt`, re-based onto the session timeline.
-    /// Pure given `sessionStart`, so it is unit-testable without a device.
-    func ingest(bpm: Double, receivedAt: Date = .now) {
+    /// Ingest a parsed bpm (and optional sensor-contact state) at wall-clock `receivedAt`, re-based
+    /// onto the session timeline. Pure given `sessionStart`, so it is unit-testable without a device.
+    ///
+    /// `contact == false` (band reports the strap is off-skin / loose): the bpm is garbage, so DROP
+    /// it — don't append, don't move `latestHR` (the pill keeps the last good value), don't flip to
+    /// `.streaming` — and raise `isContactLost` so the UI shows "adjust strap". `contact == true`
+    /// clears the flag and ingests normally; `nil` (the band can't report contact) ingests as before.
+    func ingest(bpm: Double, contact: Bool? = nil, receivedAt: Date = .now) {
+        if contact == false {
+            isContactLost = true
+            return
+        }
+        if contact == true { isContactLost = false }
         latestHR = bpm
         let offset = Self.sessionOffset(sessionStart: sessionStart, receivedAt: receivedAt)
         samples.append(HRSample(t: offset, bpm: bpm))
@@ -266,29 +283,59 @@ final class BLEHeartRateMetricsSource: NSObject, MetricsSource {
 
     // MARK: - Pure HR-measurement parser (unit-testable, no device)
 
-    /// Parse a Heart Rate Measurement characteristic value (`0x2A37`) into a bpm.
+    /// A parsed Heart Rate Measurement: the bpm plus, when the band supports it, the sensor-contact
+    /// state (`nil` = the band can't report contact). Plain value type, so the parse seam is
+    /// unit-testable from byte fixtures with no device.
+    struct HRMeasurement: Equatable, Sendable {
+        let bpm: Double
+        /// `true` = contact detected, `false` = contact lost, `nil` = the band doesn't support it.
+        let contact: Bool?
+    }
+
+    /// Decode the sensor-contact state from the Heart Rate Measurement flags byte.
+    ///
+    /// Bluetooth SIG layout: **bit 2** (`0x04`) = Sensor Contact *Supported*, **bit 1** (`0x02`) =
+    /// Sensor Contact *Status* (meaningful only when supported). These are two independent bits, NOT
+    /// a single 2-bit enum — so we gate on the support bit first: unsupported → `nil` ("unknown",
+    /// never a false "adjust strap"); supported → the status bit (`true` = contact, `false` = lost).
+    /// (Decoding them as a 2-bit value mis-fires on hardware that sets status without support —
+    /// decisions.md 2026-06-08.)
+    nonisolated static func contactStatus(flags: UInt8) -> Bool? {
+        let supported = (flags & 0x04) != 0
+        guard supported else { return nil }
+        return (flags & 0x02) != 0
+    }
+
+    /// Parse a Heart Rate Measurement characteristic value (`0x2A37`) into bpm + sensor contact.
     ///
     /// Layout (Bluetooth SIG Heart Rate Measurement):
-    /// - byte 0 = flags. **bit 0** = HR value format: `0` → next byte is `UInt8` bpm,
-    ///   `1` → next two bytes are little-endian `UInt16` bpm. bits 1–2 = sensor-contact
-    ///   status, bit 3 = energy-expended present, bit 4 = RR-intervals present. We only
-    ///   need the bpm, so the optional sensor-contact / energy-expended / RR fields are
-    ///   ignored — but the format bit must be honored to read the right width.
-    /// - Returns `nil` for an empty or too-short buffer (e.g. flags say UInt16 but only one
-    ///   value byte present), so a malformed packet can't poison the buffer.
-    nonisolated static func parseHeartRate(_ data: Data) -> Double? {
+    /// - byte 0 = flags. **bit 0** = HR value format: `0` → next byte is `UInt8` bpm, `1` → next two
+    ///   bytes are little-endian `UInt16` bpm. **bits 1–2** = sensor-contact support/status (decoded
+    ///   via `contactStatus`), bit 3 = energy-expended present, bit 4 = RR-intervals present. We read
+    ///   bpm + contact; the optional energy-expended / RR fields are not parsed in this PR — but the
+    ///   format bit must be honored to read the right width.
+    /// - Returns `nil` for an empty or too-short buffer (e.g. flags say UInt16 but only one value
+    ///   byte present), so a malformed packet can't poison the buffer.
+    nonisolated static func parseMeasurement(_ data: Data) -> HRMeasurement? {
         let bytes = [UInt8](data)
         guard let flags = bytes.first else { return nil }
         let isUInt16 = (flags & 0x01) != 0
+        let bpm: Double
         if isUInt16 {
             // Need flags + 2 value bytes.
             guard bytes.count >= 3 else { return nil }
-            let value = UInt16(bytes[1]) | (UInt16(bytes[2]) << 8)
-            return Double(value)
+            bpm = Double(UInt16(bytes[1]) | (UInt16(bytes[2]) << 8))
         } else {
             guard bytes.count >= 2 else { return nil }
-            return Double(bytes[1])
+            bpm = Double(bytes[1])
         }
+        return HRMeasurement(bpm: bpm, contact: contactStatus(flags: flags))
+    }
+
+    /// Bpm-only convenience over `parseMeasurement` (back-compat shim): same width logic, same
+    /// nil-on-malformed contract, contact discarded.
+    nonisolated static func parseHeartRate(_ data: Data) -> Double? {
+        parseMeasurement(data)?.bpm
     }
 
     /// Forget the remembered band and disconnect it. The user is telling us "don't auto-use
@@ -476,8 +523,8 @@ extension BLEHeartRateMetricsSource: CBPeripheralDelegate {
                                 error: Error?) {
         guard characteristic.uuid == Self.heartRateMeasurementUUID,
               let data = characteristic.value,
-              let bpm = BLEHeartRateMetricsSource.parseHeartRate(data) else { return }
-        Task { @MainActor [weak self] in self?.ingest(bpm: bpm) }
+              let m = BLEHeartRateMetricsSource.parseMeasurement(data) else { return }
+        Task { @MainActor [weak self] in self?.ingest(bpm: m.bpm, contact: m.contact) }
     }
 }
 #endif
