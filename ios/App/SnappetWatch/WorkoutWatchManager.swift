@@ -25,6 +25,9 @@ final class WorkoutWatchManager: NSObject {
     /// driven from the phone; both converge here via the bidirectional `.pause`/`.resume` relay.
     private(set) var paused = false
     private(set) var elapsed: TimeInterval = 0
+    /// The user's resolved max HR, sent by the phone on start (Phase 2). Drives the on-wrist HR-zone
+    /// tint via `HeartRateZone.forBpm(_:maxHR:)`; `nil` → the shared `defaultMaxHR`, as before.
+    private(set) var maxHR: Double?
 
     private let store = HKHealthStore()
     private var session: HKWorkoutSession?
@@ -42,8 +45,8 @@ final class WorkoutWatchManager: NSObject {
 
     override init() {
         super.init()
-        link.onStart = { [weak self] activityType in
-            Task { @MainActor [weak self] in self?.start(activityType: activityType) }
+        link.onStart = { [weak self] activityType, maxHR in
+            Task { @MainActor [weak self] in self?.start(activityType: activityType, maxHR: maxHR) }
         }
         link.onStop = { [weak self] in
             Task { @MainActor [weak self] in self?.end() }
@@ -77,9 +80,10 @@ final class WorkoutWatchManager: NSObject {
 
     // MARK: - Start / end
 
-    func start(activityType raw: UInt) {
+    func start(activityType raw: UInt, maxHR: Double? = nil) {
         guard !isRunning, !starting else { return }
         starting = true
+        self.maxHR = maxHR
         Task {
             try? await requestAuthorization()
             startSession(activityType: HKWorkoutActivityType(rawValue: raw) ?? .other)

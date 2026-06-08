@@ -74,11 +74,12 @@ final class KilterLiveActivityController {
     /// Begin a Live Activity for a climbing session. No-op if unavailable/unauthorized. If one is
     /// already running it is ended first so a re-start doesn't leave an orphan.
     func start(boardName: String, startedAt: Date, angle: Int,
-               currentClimbName: String = "Resting", currentGrade: String = "", climbCount: Int = 0) {
+               currentClimbName: String = "Resting", currentGrade: String = "", climbCount: Int = 0,
+               maxHR: Double? = nil) {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         if typedActivity != nil { end() }
-        let attributes = KilterActivityAttributes(boardName: boardName)
+        let attributes = KilterActivityAttributes(boardName: boardName, maxHR: maxHR)
         let state = KilterActivityAttributes.ContentState(
             startedAt: startedAt, hrBpm: nil,
             currentClimbName: currentClimbName, currentGrade: currentGrade,

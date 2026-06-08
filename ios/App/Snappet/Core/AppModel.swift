@@ -29,6 +29,12 @@ final class AppModel {
     let videoStudio = VideoStudio()
     let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
 
+    /// The user's on-device HR profile (age / resting / max / weight / sex), shared by **both** apps
+    /// (WorkoutTracker + Kilter) so personalized zones, `%HRR`, effort, and the HR-based calorie
+    /// estimate are computed off one source of truth. Empty until the user fills it in Settings →
+    /// then `resolvedMaxHR` replaces the fixed `HeartRateZone.defaultMaxHR` (fitness-band Phase 2).
+    let userProfile = UserProfileStore()
+
     /// Live workout metrics for WorkoutTracker, behind a pluggable `MetricsSource` (A3).
     /// The coordinator holds an Apple-Watch source (A1, `WCSession`) **and** a generic BLE
     /// heart-rate-band source (`0x180D`/`0x2A37`, CoreBluetooth) and forwards the active

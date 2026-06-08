@@ -66,7 +66,8 @@ struct WorkoutLiveActivity: Widget {
 
     /// Heart rate, tinted by its `HeartRateZone` (shared with the phone overlay + watch face).
     private func heartLabel(_ context: ActivityViewContext<WorkoutActivityAttributes>) -> some View {
-        let zone = HeartRateZone.forBpm(context.state.hrBpm.map(Double.init))
+        let zone = HeartRateZone.forBpm(context.state.hrBpm.map(Double.init),
+                                         maxHR: context.attributes.maxHR ?? HeartRateZone.defaultMaxHR)
         return Label {
             Text(context.state.hrBpm.map { "\($0)" } ?? "—")
         } icon: {
@@ -80,7 +81,8 @@ struct WorkoutLiveActivity: Widget {
 private struct LockScreenView: View {
     let context: ActivityViewContext<WorkoutActivityAttributes>
 
-    private var zone: HeartRateZone { HeartRateZone.forBpm(context.state.hrBpm.map(Double.init)) }
+    private var zone: HeartRateZone { HeartRateZone.forBpm(context.state.hrBpm.map(Double.init),
+                                         maxHR: context.attributes.maxHR ?? HeartRateZone.defaultMaxHR) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

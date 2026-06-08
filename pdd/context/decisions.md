@@ -2717,3 +2717,45 @@ can't balloon the window past the real effort. `maxHR`/`restHR` aren't on `Worko
 recovery dot is an advisory within-session heuristic, not a clean clinical HRR. **Verified off-device:**
 new `WorkoutHRStatsTests.setEfforts` cases (per-`SetKind` window, the capped previous-set lookback, the
 incomplete-set + no-HR guards, bpm-only vs %HRR) + full XCTest suite green.
+
+---
+
+## 2026-06-08 — Fitness-band richness **Phase 2**: on-device user HR profile (the keystone)
+
+**Context:** roadmap Phase 2 (`pdd/prompts/features/fitness-band-richness/ROADMAP.md`, prompt
+`25-ios-user-hr-profile.md`). Phase 1 left `%HRR`/effort anchored to a hardcoded
+`HeartRateZone.defaultMaxHR = 190`; Kilter could already personalize (`KilterSession.maxHR/restHR`),
+WorkoutTracker could not (no such fields). This closes the gap in **both** apps.
+
+**What shipped.** A small, app-agnostic `UserHRProfile` (age / resting / max-override / weight /
+`BiologicalSex`) + `UserProfileStore` (JSON in `UserDefaults`) on `AppModel`, edited in a new
+`UserHRProfileView` reached from Settings, with HealthKit prefill (`HealthKitService.profilePrefill`,
+blank-fields-only merge). `WorkoutSession` gained `maxHR`/`restHR`/`metricsSourceRaw`/`kcalEstimate`
+(additive Optionals → lightweight migration, mirroring `KilterSession`, which gained `kcalEstimate`);
+both are stamped on session end from the shared store. Summaries, the per-set/per-climb
+`HREffortBadge`, live pill, Live Activity, **watch face**, and **widget** all tint off the resolved
+max HR now.
+
+**Decisions worth recording:**
+- **Max-HR formula = Tanaka `208 − 0.7·age`**, not the older `220 − age` — current physiological
+  standard, more accurate across ages. An explicit measured override always wins.
+- **Honest gating is structural, not cosmetic.** `resolvedMaxHR` is `nil` until the user supplies an
+  age or a max override, and sessions store that `nil` — so with no profile, `%HRR`/effort/zones are
+  byte-for-byte the Phase-1 bpm-only behavior, identically in both apps. We never store a phantom
+  `190`.
+- **Calories (Keytel) are BLE-only.** New pure engine helper `EnergyExpenditure` (Keytel et al. 2005
+  HR→kcal/min + a left-edge-dwell series integrator, platform-free, `swift test`'d) fills the band's
+  hardcoded `energy = 0`. Gated on `metricsSourceRaw == ble` + a complete profile (age + weight +
+  male/female sex); the Apple-Watch path measures real active energy on the wrist, so we never
+  override it with an estimate (watch sessions show no estimate). Labelled "kcal est." so it never
+  reads as measured.
+- **The profile reaches off-device processes as a wire field, not a shared store.** The watch + widget
+  can't read the phone's `UserDefaults`, so the resolved `maxHR` rides `LiveMetricsContext` →
+  `LiveWorkoutMessage.start(maxHR:)` (watch face zone) and a new static attribute on **both**
+  `WorkoutActivityAttributes` / `KilterActivityAttributes` (widget zone). All optional / back-compat.
+
+**Verified off-device:** `swift test` (`EnergyExpenditureTests`) + the XCTest suite
+(`UserHRProfileTests` for the resolution precedence / energy gating / Keytel pass-through / prefill
+merge; `WorkoutHRStatsTests` already covers per-set %HRR lighting up with bounds; `LiveWorkoutTests`
+round-trips the `maxHR` start field). **Device-unverified** (no band/HR/watch in the simulator): the
+live personalized zone tints on the watch + widget, and a non-zero BLE calorie estimate end-to-end.

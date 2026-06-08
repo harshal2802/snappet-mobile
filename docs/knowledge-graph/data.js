@@ -129,7 +129,9 @@ const nodes = [
   { id: "wt-history", label: "History section", type: "section", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/HistorySectionView.swift", desc: "Completed sessions; tap to push session detail.", tags: ["section"], shot: "../screenshots/workout-history.png" },
   { id: "wt-settings", label: "Settings section", type: "section", group: "workout-log", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutSettingsView.swift", desc: "Preferred weight unit + custom-exercise management, plus a Live-metrics section that presents the heart-rate source picker (Apple Watch / BLE band).", tags: ["section","settings"], shot: "../screenshots/workout-settings.png" },
+    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutSettingsView.swift", desc: "Preferred weight unit + custom-exercise management, a Live-metrics section that presents the heart-rate source picker (Apple Watch / BLE band), and a Heart-rate profile row that pushes the UserHRProfileView editor.", tags: ["section","settings"], shot: "../screenshots/workout-settings.png" },
+  { id: "wt-hr-profile", label: "UserHRProfileView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/UserHRProfileView.swift", desc: "Editor for the app-global UserHRProfile (fitness-band Phase 2): age, sex, weight, resting HR, optional measured max HR — all optional (blank ⇒ bpm-only defaults). A 'Use Health data' button prefills blank fields from HealthKit without clobbering typed values; the draft writes back to AppModel.userProfile live. Personalizes zones/%HRR/effort/calories across BOTH apps.", tags: ["screen","settings","hr","profile"] },
   { id: "wt-exercise-detail", label: "ExerciseDetailView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/ExerciseDetailView.swift", desc: "An exercise's history, instructions and PRs. Pushes progress; opens an edit sheet.", tags: ["detail"] },
   { id: "wt-routine-detail", label: "RoutineDetailView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
@@ -306,6 +308,8 @@ const nodes = [
     file: "ios/HighlightEngine/Sources/HighlightEngine/HeartRateSeries.swift", desc: "Resample → smooth → %HRR → derivative. Turns raw HR samples into an intensity signal.", tags: ["hr","%hrr"] },
   { id: "climb-effort", label: "ClimbEffort", type: "engine", group: "engine", category: "core", platform: "engine",
     file: "ios/HighlightEngine/Sources/HighlightEngine/ClimbEffort.swift", desc: "Per-effort + recovery over one HR window — the unit of 'a burn' shared by Kilter climbs AND WorkoutTracker sets: smoothed peak bpm, peak %HRR (only with a real max-HR bound, else nil — the bpm-only state), HR rise + time-to-peak, and HRR60/30 recovery read PAST the window end. Reuses HeartRateSeries for the resample→smooth + %HRR. Callers extend each window's END by HighlightConfig.hrLagSec so a post-effort spike just after the logged end is captured: KilterSessionStats per climb (media-assignment climbWindows stays un-extended), WorkoutHRStats.setEfforts per set (window start derived per SetKind — durationSec for timed holds, a capped previous-set lookback for reps/climb). Pure, platform-free, swift-test'd.", tags: ["hr","effort","recovery","%hrr","pure","tested","shared"] },
+  { id: "energy-expenditure", label: "EnergyExpenditure", type: "engine", group: "engine", category: "core", platform: "engine",
+    file: "ios/HighlightEngine/Sources/HighlightEngine/EnergyExpenditure.swift", desc: "Pure HR→calorie estimator (fitness-band Phase 2): the Keytel et al. (2005) kcal/min regression on HR + sex + age + weight, plus a series integrator (left-edge dwell, capped at duration). Fills the BLE band's hardcoded energy = 0; callers gate it to BLE sessions with a complete profile (the watch measures real energy and is never overridden). Platform-free, swift-test'd.", tags: ["hr","energy","calories","keytel","pure","tested"] },
   { id: "highlightselector", label: "HighlightSelector", type: "engine", group: "engine", category: "core", platform: "engine",
     file: "ios/HighlightEngine/Sources/HighlightEngine/HighlightSelector.swift", desc: "Protocol with HRHighlightSelector + SceneHighlightSelector stub + FusionSelector. Pluggable so HR-only → fusion is a one-line swap.", tags: ["selector","pluggable"] },
   { id: "highlightconfig", label: "HighlightConfig", type: "engine", group: "engine", category: "core", platform: "engine",
@@ -331,7 +335,9 @@ const nodes = [
   { id: "workoutactivityattributes", label: "WorkoutActivityAttributes", type: "widget", group: "watch", category: "fitness", platform: "ios",
     file: "ios/App/Shared/WorkoutActivityAttributes.swift", desc: "The shared ActivityAttributes contract compiled into BOTH the app and the widget extension so the Live Activity wire can't drift: static routineName + a Codable/Hashable/Sendable ContentState (startedAt, hrBpm, exerciseName, setProgress, paused).", tags: ["activitykit","shared","contract"] },
   { id: "heartratezone", label: "HeartRateZone", type: "model", group: "core", category: "core", platform: "ios",
-    file: "ios/App/Shared/HeartRateZone.swift", desc: "Pure bpm→training-zone value type (color + label) in Shared/ so the phone overlay, the watch face, and the Live Activity all render the same zone from one source of truth.", tags: ["shared","hr","zone"] },
+    file: "ios/App/Shared/HeartRateZone.swift", desc: "Pure bpm→training-zone value type (color + label) in Shared/ so the phone overlay, the watch face, and the Live Activity all render the same zone from one source of truth. Since fitness-band Phase 2 callers pass a real maxHR resolved from UserHRProfile (else the 190 fallback when there's no profile).", tags: ["shared","hr","zone"] },
+  { id: "userhrprofile", label: "UserHRProfile + Store", type: "model", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Core/UserHRProfile.swift", desc: "The on-device, app-agnostic HR profile (fitness-band Phase 2 keystone): age / resting / max-override / weight / BiologicalSex, with pure derivations — resolvedMaxHR (measured override → Tanaka 208−0.7·age → nil), restingBound, canEstimateEnergy, and an estimatedKcal pass-through to EnergyExpenditure. UserProfileStore persists it (JSON in UserDefaults) once on AppModel, shared by BOTH apps. nil resolvedMaxHR ⇒ unchanged bpm-only behavior (honest gating). The resolved maxHR also rides the wire to the watch + widget. Never leaves the device.", tags: ["hr","profile","shared","%hrr","calories","tested"] },
 
   // ═════════════════ Data models (SwiftData @Model) ═════════════════
   { id: "model-usage", label: "UsageRecord", type: "model", group: "core", category: "core", platform: "ios+android",
@@ -587,6 +593,17 @@ const links = [
   { source: "wt-live-banner", target: "heartratezone", type: "uses" },
   { source: "watchview", target: "heartratezone", type: "uses" },
   { source: "liveactivity-widget", target: "heartratezone", type: "uses" },
+
+  // ---- HR profile (fitness-band Phase 2): one on-device profile personalizes both apps ----
+  { source: "appmodel", target: "userhrprofile", type: "uses", label: "shared store" },
+  { source: "wt-settings", target: "wt-hr-profile", type: "navigate", label: "Heart-rate profile" },
+  { source: "wt-hr-profile", target: "userhrprofile", type: "uses", label: "edit profile" },
+  { source: "wt-hr-profile", target: "healthkitservice", type: "uses", label: "prefill" },
+  { source: "userhrprofile", target: "energy-expenditure", type: "uses", label: "Keytel kcal" },
+  { source: "userhrprofile", target: "wt-session-detail", type: "feeds", label: "maxHR/restHR/kcal" },
+  { source: "userhrprofile", target: "kilter-session-detail", type: "feeds", label: "maxHR/restHR/kcal" },
+  { source: "userhrprofile", target: "watchview", type: "feeds", label: "maxHR (wire)" },
+  { source: "userhrprofile", target: "liveactivity-widget", type: "feeds", label: "maxHR (attr)" },
 
   // ---- Video studio (Track B): media tagging → summary → editor / highlight → share+save ----
   { source: "wt-session-detail", target: "climb-effort", type: "uses", label: "per-set effort/recovery" },

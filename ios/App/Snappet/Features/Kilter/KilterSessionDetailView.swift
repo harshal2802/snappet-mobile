@@ -184,6 +184,12 @@ struct KilterSessionDetailView: View {
                 hrStat("\(Int(hr.maxBpm))", "Max")
                 Divider().frame(height: 28)
                 hrStat("\(Int(hr.minBpm))", "Min")
+                // HR-based calorie estimate (Keytel) for BLE sessions with a complete profile — fills
+                // the band's energy = 0; hidden for watch sessions / incomplete profiles (Phase 2).
+                if let kcal = session?.kcalEstimate {
+                    Divider().frame(height: 28)
+                    hrStat("\(Int(kcal.rounded()))", "kcal est.")
+                }
             }
             if let session, session.hrSeries.count > 1 {
                 Chart(session.hrSeries, id: \.t) { p in

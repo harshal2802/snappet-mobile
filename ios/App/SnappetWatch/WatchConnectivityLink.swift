@@ -9,8 +9,9 @@ import WatchConnectivity
 /// `NSObject` subclass for `WCSessionDelegate`. Callbacks are delivered on a
 /// background queue; the closures hop to the `@MainActor` manager themselves.
 final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Sendable {
-    /// Phone asked to start a workout of this `HKWorkoutActivityType` raw value.
-    var onStart: ((UInt) -> Void)?
+    /// Phone asked to start a workout of this `HKWorkoutActivityType` raw value, with the user's
+    /// resolved max HR (Phase 2) for the on-wrist HR zone — `nil` when the phone has no profile.
+    var onStart: ((UInt, Double?) -> Void)?
     /// Phone asked to stop the workout.
     var onStop: (() -> Void)?
     /// Phone asked to pause the workout (applied without echoing back).
@@ -63,7 +64,7 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
 
     private func dispatch(_ payload: [String: Any]) {
         switch LiveWorkoutMessage(payload: payload) {
-        case .start(let activityType): onStart?(activityType)
+        case .start(let activityType, let maxHR): onStart?(activityType, maxHR)
         case .stop: onStop?()
         case .pause: onPause?()
         case .resume: onResume?()

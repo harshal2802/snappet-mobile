@@ -70,11 +70,11 @@ final class LiveActivityController {
     /// Begin a Live Activity for a workout. No-op if unavailable/unauthorized. If one is
     /// already running it is ended first so a re-start (resume) doesn't leave an orphan.
     func start(routineName: String, startedAt: Date,
-               exerciseName: String = "Starting…", setProgress: String = "") {
+               exerciseName: String = "Starting…", setProgress: String = "", maxHR: Double? = nil) {
         #if canImport(ActivityKit)
         guard #available(iOS 16.1, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         if typedActivity != nil { end() }
-        let attributes = WorkoutActivityAttributes(routineName: routineName)
+        let attributes = WorkoutActivityAttributes(routineName: routineName, maxHR: maxHR)
         let state = WorkoutActivityAttributes.ContentState(
             startedAt: startedAt, hrBpm: nil,
             exerciseName: exerciseName, setProgress: setProgress)

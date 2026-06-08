@@ -13,11 +13,13 @@ import SwiftUI
 /// extension — see `project.yml`) so the watch HR face and the Live Activity render the *same*
 /// zone color/label as the phone overlay, with one source of truth for the bpm→zone mapping.
 ///
-/// **Why a fixed default max HR (`defaultMaxHR = 190`)**: the suite has no user age / HR
-/// profile yet, so we can't compute the usual `220 − age`. 190 is a reasonable mid-range
-/// adult ceiling — enough to give the overlay meaningful *relative* zone color without
-/// pretending to be a personalized training prescription. When a profile lands (a later
-/// prompt), pass a real `maxHR` in; the zone math doesn't change. The zones are the common
+/// **Why a fixed default max HR (`defaultMaxHR = 190`)**: it's the fallback when the user hasn't
+/// filled an HR profile. Since fitness-band Phase 2 a `UserHRProfile` resolves a real max HR
+/// (a measured override, else the Tanaka estimate `208 − 0.7·age`) and callers pass it in via
+/// `maxHR:` — sessions stamp `maxHR`/`restHR` and personalize zones/%HRR/effort/calories. With no
+/// profile, `resolvedMaxHR` is `nil` → callers fall back to this `190` and behave exactly as before.
+/// 190 is a reasonable mid-range adult ceiling — meaningful *relative* zone color without pretending
+/// to be a personalized prescription. The zone math is unchanged either way; the zones are the common
 /// 5-zone %-of-max model (recovery / easy / aerobic / threshold / max).
 enum HeartRateZone: Int, CaseIterable, Equatable, Sendable {
     /// No HR sample / no source connected — the overlay shows its "no source" state instead

@@ -365,6 +365,10 @@ final class KilterSessionManager {
     private var liveWorkout: LiveMetricsCoordinator?
     private var liveActivity: KilterLiveActivityController?
     private var media: SessionMediaService?
+    /// The shared on-device HR profile (Phase 2), used to personalize the session's `maxHR`/`restHR`
+    /// and a BLE calorie estimate on `end`, and to send the resolved max HR to the watch + Live
+    /// Activity. A strong ref to an AppModel-owned singleton (outlives this manager — no cycle).
+    private var userProfile: UserProfileStore?
 
     /// Whether *this* session started the live-metrics source — so `end()` only flushes/stops HR it
     /// owns. Guards against a Kilter session that opened while a WorkoutTracker workout was already
@@ -375,10 +379,12 @@ final class KilterSessionManager {
     /// Live Activity / media discovery. Idempotent; called from the root view on appear.
     func bind(liveWorkout: LiveMetricsCoordinator,
               liveActivity: KilterLiveActivityController,
-              media: SessionMediaService) {
+              media: SessionMediaService,
+              userProfile: UserProfileStore? = nil) {
         self.liveWorkout = liveWorkout
         self.liveActivity = liveActivity
         self.media = media
+        self.userProfile = userProfile
     }
 
     func start(angle: Int, source: String, in context: ModelContext) {
@@ -392,13 +398,15 @@ final class KilterSessionManager {
         resetActiveClimb()
         // Begin live HR capture (Apple Watch or BLE band, whichever the coordinator resolves) — but
         // only if no workout is already driving a source (we must not commandeer a running workout).
+        let maxHR = userProfile?.profile.resolvedMaxHR
         if let liveWorkout, !liveWorkout.isSessionActive {
-            liveWorkout.start(LiveMetricsContext(startedAt: session.startedAt, activityType: .climbing))
+            liveWorkout.start(LiveMetricsContext(startedAt: session.startedAt, activityType: .climbing,
+                                                 maxHR: maxHR))
             didStartMetrics = true
         }
         try? context.save()
         // Lock Screen / Dynamic Island live session widget (no-op if unavailable/unauthorized).
-        liveActivity?.start(boardName: boardName, startedAt: session.startedAt, angle: angle)
+        liveActivity?.start(boardName: boardName, startedAt: session.startedAt, angle: angle, maxHR: maxHR)
     }
 
     /// Re-sync the manager with the persisted store — the single source of truth for "what session is
@@ -447,7 +455,17 @@ final class KilterSessionManager {
         // label from the actually-captured data, so it's never a misleading default.
         if isCurrent, didStartMetrics, let liveWorkout {
             session.hrSeries = WorkoutHRStats.points(from: liveWorkout.samples)
-            if !session.hrSeries.isEmpty { session.metricsSourceRaw = liveWorkout.activeKind.rawValue }
+            if !session.hrSeries.isEmpty {
+                let profile = userProfile?.profile ?? .empty
+                session.metricsSourceRaw = liveWorkout.activeKind.rawValue
+                session.maxHR = profile.resolvedMaxHR
+                session.restHR = profile.restingBound
+                // Calories are BLE-only (the watch measures real energy; never override it).
+                if liveWorkout.activeKind == .ble {
+                    session.kcalEstimate = profile.estimatedKcal(forSeries: session.hrSeries,
+                                                                 durationSec: session.duration)
+                }
+            }
             liveWorkout.stop()
             didStartMetrics = false
         }
@@ -471,7 +489,8 @@ final class KilterSessionManager {
         // Re-attach the Live Activity: adopt one still on the Lock Screen, else (re)start it so the
         // recovered session is visible again. No-op where Live Activities are unavailable.
         if let liveActivity, !liveActivity.adoptRunningActivity() {
-            liveActivity.start(boardName: boardName, startedAt: session.startedAt, angle: session.angle)
+            liveActivity.start(boardName: boardName, startedAt: session.startedAt, angle: session.angle,
+                               maxHR: session.maxHR ?? userProfile?.profile.resolvedMaxHR)
         }
     }
 

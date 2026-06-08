@@ -251,7 +251,8 @@ struct WorkoutHomeView: View {
         let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])
         context.insert(session)
         try? context.save()
-        app.liveWorkout.start(for: session, sport: nil, category: nil)
+        app.liveWorkout.start(for: session, sport: nil, category: nil,
+                              maxHR: app.userProfile.profile.resolvedMaxHR)
         startLiveActivity(for: session)
         playing = session
     }
@@ -281,7 +282,8 @@ struct WorkoutHomeView: View {
             if let routine = routines.first(where: { $0.id == session.routineID }) {
                 startLiveMetrics(for: session, routine: routine)
             } else {
-                app.liveWorkout.start(for: session, sport: nil, category: nil)
+                app.liveWorkout.start(for: session, sport: nil, category: nil,
+                              maxHR: app.userProfile.profile.resolvedMaxHR)
                 startLiveActivity(for: session)
             }
         } else if !app.liveActivity.isRunning {
@@ -300,7 +302,8 @@ struct WorkoutHomeView: View {
     private func startLiveMetrics(for session: WorkoutSession, routine: Routine) {
         let category = WorkoutActivityMapping.dominantCategory(
             of: routine.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category })
-        app.liveWorkout.start(for: session, sport: routine.sport, category: category)
+        app.liveWorkout.start(for: session, sport: routine.sport, category: category,
+                              maxHR: app.userProfile.profile.resolvedMaxHR)
         startLiveActivity(for: session)
     }
 
@@ -317,7 +320,8 @@ struct WorkoutHomeView: View {
         // "Set 1 of 0" — leave it blank until a set is actually logged.
         let progress = first.flatMap { $0.sets.isEmpty ? nil : "Set 1 of \($0.sets.count)" } ?? ""
         app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
-                               exerciseName: name, setProgress: progress)
+                               exerciseName: name, setProgress: progress,
+                               maxHR: app.userProfile.profile.resolvedMaxHR)
     }
 
     private func makeSession(from routine: Routine) -> WorkoutSession {
@@ -351,6 +355,21 @@ struct WorkoutHomeView: View {
         // the summary's chart/stats simply hide. Discards keep no series (the session is deleted).
         if saved {
             session.hrSeries = WorkoutHRStats.points(from: app.liveWorkout.samples)
+            // Stamp the HR-profile-derived bounds + source label from the actually-captured data, so
+            // the summary's zones/%HRR/effort personalize and a calorie estimate fills the band's
+            // `energy = 0` (Phase 2). All `nil`/absent with no HR or no profile → unchanged behavior.
+            if !session.hrSeries.isEmpty {
+                let profile = app.userProfile.profile
+                session.metricsSourceRaw = app.liveWorkout.activeKind.rawValue
+                session.maxHR = profile.resolvedMaxHR
+                session.restHR = profile.restingBound
+                // Calories are BLE-only: the Apple-Watch path measures real active energy on the
+                // wrist, so never override it with a Keytel estimate.
+                if app.liveWorkout.activeKind == .ble {
+                    session.kcalEstimate = profile.estimatedKcal(forSeries: session.hrSeries,
+                                                                 durationSec: session.duration)
+                }
+            }
         }
         // End the watch session regardless of save/discard so the watch isn't left recording.
         app.liveWorkout.stop()

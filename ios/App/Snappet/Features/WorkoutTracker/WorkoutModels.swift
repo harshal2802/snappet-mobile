@@ -344,10 +344,24 @@ final class WorkoutSession {
     /// SwiftData lightweight migration; `SnappetSchema.models` is unchanged (the Journal
     /// `tags` precedent, decisions.md 2026-05-31 / 2026-06-01 B2).
     var hrSeries: [HRPoint] = []
+    /// User max HR for %-of-max zone math, stamped from the `UserHRProfile` on a saved finish; `nil`
+    /// (no profile / no resolvable max) → `HeartRateZone.defaultMaxHR` fallback and bpm-only `%HRR`.
+    /// Mirrors `KilterSession` so per-set effort/zones personalize on the workout side too (Phase 2).
+    var maxHR: Double?
+    /// Resting HR baseline for `%HRR`, when the profile knows it; `nil` → the engine estimates it.
+    var restHR: Double?
+    /// `MetricsSourceKind.rawValue` of the transport that drove HR ("appleWatch"/"ble"), for the
+    /// summary's source label + the BLE-only calorie gate; `nil` when no HR was captured.
+    var metricsSourceRaw: String?
+    /// HR-based calorie estimate (Keytel) for **BLE** sessions with a complete profile — fills the
+    /// band's hardcoded `energy = 0`; `nil` for watch sessions (measured energy is preferred) or an
+    /// incomplete profile. All four fields are additive Optionals → lightweight migration.
+    var kcalEstimate: Double?
 
     init(id: UUID = UUID(), routineID: UUID? = nil, routineName: String,
          startedAt: Date = .now, completedAt: Date? = nil, exercises: [SessionExercise] = [],
-         hrSeries: [HRPoint] = []) {
+         hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil,
+         metricsSourceRaw: String? = nil, kcalEstimate: Double? = nil) {
         self.id = id
         self.routineID = routineID
         self.routineName = routineName
@@ -355,6 +369,10 @@ final class WorkoutSession {
         self.completedAt = completedAt
         self.exercises = exercises
         self.hrSeries = hrSeries
+        self.maxHR = maxHR
+        self.restHR = restHR
+        self.metricsSourceRaw = metricsSourceRaw
+        self.kcalEstimate = kcalEstimate
     }
 
     var isActive: Bool { completedAt == nil }

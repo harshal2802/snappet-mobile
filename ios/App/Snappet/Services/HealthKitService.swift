@@ -36,8 +36,52 @@ final class HealthKitService: @unchecked Sendable {
             .workoutType(),
             HKQuantityType(.heartRate),
             HKQuantityType(.restingHeartRate),
+            // Read-only characteristics + body mass, for the HR-profile prefill (Phase 2). Requesting
+            // them here (alongside the existing reads) means the profile "Use Health data" button
+            // doesn't trigger a second permission sheet.
+            HKQuantityType(.bodyMass),
+            HKCharacteristicType(.dateOfBirth),
+            HKCharacteristicType(.biologicalSex),
         ]
         try await store.requestAuthorization(toShare: [], read: types)
+    }
+
+    /// Best-effort prefill for the user's HR profile from Health: age (from date-of-birth), biological
+    /// sex, latest body mass, and resting heart rate. Each field is independent — a missing/denied one
+    /// is simply left `nil` so the caller merges only what's available into blank profile fields
+    /// (`UserHRProfile.merging(prefill:)`), never clobbering a user-typed value. Device-only; on the
+    /// simulator / without authorization it returns an empty profile.
+    func profilePrefill() async -> UserHRProfile {
+        guard HKHealthStore.isHealthDataAvailable() else { return .empty }
+        var out = UserHRProfile.empty
+
+        if let dob = try? store.dateOfBirthComponents(),
+           let years = Calendar.current.dateComponents([.year], from: dob.date ?? .distantPast, to: .now).year,
+           years > 0, years < 120 {
+            out.age = years
+        }
+        if let sex = try? store.biologicalSex().biologicalSex {
+            switch sex {
+            case .female: out.sex = .female
+            case .male:   out.sex = .male
+            default:      out.sex = .unspecified
+            }
+        }
+        if let kg = try? await latestBodyMassKg() { out.weightKg = kg }
+        if let rest = try? await latestRestingHeartRate() { out.restingHR = Int(rest.rounded()) }
+        return out
+    }
+
+    private func latestBodyMassKg() async throws -> Double? {
+        let type = HKQuantityType(.bodyMass)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let samples = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[HKSample], Error>) in
+            let q = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, r, e in
+                if let e { cont.resume(throwing: e) } else { cont.resume(returning: r ?? []) }
+            }
+            store.execute(q)
+        }
+        return (samples.first as? HKQuantitySample)?.quantity.doubleValue(for: .gramUnit(with: .kilo))
     }
 
     func recentWorkouts(limit: Int) async throws -> [WorkoutSummary] {

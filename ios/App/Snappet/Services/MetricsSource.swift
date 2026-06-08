@@ -14,6 +14,11 @@ struct LiveMetricsContext: Sendable {
     /// The workout type the Apple Watch should start (`HKWorkoutSession`). The BLE band ignores
     /// it — it just streams HR — so only the watch path reads this.
     var activityType: HKWorkoutActivityType
+    /// The user's resolved max HR (`UserHRProfile.resolvedMaxHR`), or `nil` when no profile resolves
+    /// one. The Apple-Watch source relays it to the watch so the on-wrist HR zone is personalized off
+    /// the same value as the phone; the BLE band ignores it (Phase 2). `nil` → the watch falls back to
+    /// `HeartRateZone.defaultMaxHR`, exactly as before.
+    var maxHR: Double? = nil
 }
 
 /// Source-agnostic lifecycle of a live-metrics source, exposed so the UI (A4 overlay,
