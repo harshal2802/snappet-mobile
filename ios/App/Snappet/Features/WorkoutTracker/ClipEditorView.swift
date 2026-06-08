@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVKit
+import HighlightEngine
 
 /// The CapCut-style **non-destructive** per-clip editor (B3), presented as a **sheet** so it
 /// owns its own `NavigationStack` (the WorkoutTracker module rides the App Library's stack and
@@ -61,9 +62,35 @@ struct ClipEditorView: View {
             edit: edit, studio: app.videoStudio,
             insert: { context.insert($0) },
             save: { try? context.save() })
-        model.setHRSamples(hrSamplesForClipWindow())
+        let samples = hrSamplesForClipWindow()
+        model.setHRSamples(samples)
+        let span = (media.durationSec ?? 0) > 0 ? media.durationSec! : 15
+        let ctx = overlayContext(samples: samples, span: span)
+        model.setOverlayContext(maxHR: ctx.maxHR, restHR: ctx.restHR, kcal: ctx.kcal, hrv: ctx.hrv)
         vm = model
         await model.load()
+    }
+
+    /// Profile/session bounds for the configurable HR/fitness overlays (prompt 28): the session's
+    /// `maxHR`/`restHR` (workout **or** Kilter — shared editor) plus the clip-window calorie estimate
+    /// and HRV, computed once from the `UserHRProfile`. Drives which metrics are offered + their values.
+    private func overlayContext(samples: [HRPoint], span: Double)
+        -> (maxHR: Double?, restHR: Double?, kcal: Double?, hrv: HRVMetrics) {
+        let sid = media.sessionID
+        var maxHR: Double?, restHR: Double?
+        if let w = (try? context.fetch(FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate { $0.id == sid })))?.first {
+            maxHR = w.maxHR; restHR = w.restHR
+        } else if let k = (try? context.fetch(FetchDescriptor<KilterSession>(
+            predicate: #Predicate { $0.id == sid })))?.first {
+            maxHR = k.maxHR; restHR = k.restHR
+        }
+        let profile = app.userProfile.profile
+        let kcal = profile.estimatedKcal(forSeries: samples, durationSec: span)
+        let hrv = HRVMetrics.make(
+            from: samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: span)
+        return (maxHR, restHR, kcal, hrv)
     }
 
     /// The session's HR samples sliced to THIS clip's capture window (`[offsetSec, offsetSec+dur]`),
@@ -76,7 +103,7 @@ struct ClipEditorView: View {
         let span = (media.durationSec ?? 0) > 0 ? media.durationSec! : 15
         return series
             .filter { $0.t >= start && $0.t <= start + span }
-            .map { HRPoint(t: $0.t - start, bpm: $0.bpm) }
+            .map { HRPoint(t: $0.t - start, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
     }
 
     /// Reuse an existing primary (unsplit / first) edit for this clip if one exists.
@@ -132,12 +159,21 @@ struct ClipEditorView: View {
                         .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
                         .accessibilityIdentifier("clipEditorPreview")
                     // Live HR chart over the preview (WYSIWYG; burns into export via Core Animation).
-                    if let hr = vm.edit.hrOverlay {
+                    if let hr = vm.edit.hrOverlay, hr.showChart {
                         StudioHRChartView(
                             samples: vm.hrSamples, config: hr,
                             ratio: vm.edit.aspect.ratio ?? (9.0 / 16.0),
                             currentTime: vm.currentTime, totalDuration: vm.outputDuration,
                             onMove: { vm.setHRPosition($0) }, onResize: { vm.setHRScale($0) })
+                            .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    }
+                    // Live HR/fitness number + badge overlays the user picked (prompt 28). Live ones
+                    // track the playhead; static ones show the clip value. Drag to reposition.
+                    if let hr = vm.edit.hrOverlay, !hr.elements.isEmpty {
+                        HROverlayElementsView(
+                            elements: hr.elements, values: vm.overlayValues,
+                            fraction: vm.outputDuration > 0 ? vm.currentTime / vm.outputDuration : 0,
+                            onMove: { vm.setElementPosition($0, $1) })
                             .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
                     }
                 }
@@ -355,13 +391,20 @@ private struct HRClipControls: View {
     @Bindable var vm: ClipEditorViewModel
     private let swatches = ["#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#FFFFFF"]
 
+    /// Metrics not already placed — offered in the "Add" menu (only those with data show up).
+    private var addable: [HROverlayMetric] {
+        let placed = Set(vm.overlayElements.map(\.metric))
+        return vm.availableOverlayMetrics.filter { !placed.contains($0) }
+    }
+
     var body: some View {
-        ControlCard(title: "Heart rate", systemImage: "waveform.path.ecg") {
+        ControlCard(title: "Heart-rate & fitness overlays", systemImage: "waveform.path.ecg") {
             if vm.hrSamples.count >= 2 {
-                Toggle("Show heart-rate chart", isOn: Binding(
-                    get: { vm.edit.hrOverlay != nil }, set: { _ in vm.toggleHROverlay() }))
-                    .accessibilityIdentifier("clipHREnable")
-                if let cfg = vm.edit.hrOverlay {
+                // The chart line (the moving-playhead graph) — independent of the number/badge picks.
+                Toggle("Show chart line", isOn: Binding(
+                    get: { vm.edit.hrOverlay?.showChart ?? false }, set: { vm.setShowChart($0) }))
+                    .accessibilityIdentifier("clipHRChart")
+                if let cfg = vm.edit.hrOverlay, cfg.showChart {
                     HStack(spacing: 10) {
                         ForEach(swatches, id: \.self) { hex in
                             Circle().fill(Color(studioHex: hex)).frame(width: 22, height: 22)
@@ -369,18 +412,75 @@ private struct HRClipControls: View {
                                 .onTapGesture { var c = cfg; c.colorHex = hex; c.zoneColored = false; vm.updateHROverlay(c) }
                         }
                     }
-                    Toggle("Live BPM number", isOn: Binding(
-                        get: { cfg.showBPM }, set: { var c = cfg; c.showBPM = $0; vm.updateHROverlay(c) }))
-                    Toggle("Colour by HR zone", isOn: Binding(
+                    Toggle("Colour line by HR zone", isOn: Binding(
                         get: { cfg.zoneColored }, set: { var c = cfg; c.zoneColored = $0; vm.updateHROverlay(c) }))
-                    Text("Drag the chart on the preview to position it; pinch to resize.")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
+
+                Divider()
+
+                // The selectable numbers/badges — each can be Live (tracks the playhead) and Animated.
+                Text("Numbers & badges").font(.subheadline.weight(.semibold))
+                ForEach(vm.overlayElements) { element in
+                    HRElementRow(vm: vm, element: element)
+                }
+                if !addable.isEmpty {
+                    Menu {
+                        ForEach(addable) { metric in
+                            Button { vm.addOverlayElement(metric) } label: {
+                                Label(metric.label, systemImage: metric.systemImage)
+                            }
+                        }
+                    } label: {
+                        Label("Add overlay", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("addHROverlayElement")
+                }
+                Text("Drag any chart or badge on the preview to position it.")
+                    .font(.caption2).foregroundStyle(.secondary)
             } else {
                 Text("No heart-rate data for this clip's moment (needs a workout recorded with HR).")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// One placed overlay element's row: its label, a remove button, and Live / Animate toggles — the
+/// latter only enabled where the metric supports them (a static aggregate can't be live or animate).
+private struct HRElementRow: View {
+    @Bindable var vm: ClipEditorViewModel
+    let element: HROverlayElement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(element.metric.label, systemImage: element.metric.systemImage)
+                    .font(.subheadline)
+                Spacer()
+                Button(role: .destructive) { vm.removeOverlayElement(element.id) } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("removeHROverlayElement")
+            }
+            HStack(spacing: 16) {
+                Toggle("Live", isOn: Binding(
+                    get: { element.isLive },
+                    set: { vm.setElementLive(element.id, $0) }))
+                    .disabled(!element.metric.supportsLive)
+                Toggle("Animate", isOn: Binding(
+                    get: { element.isAnimated },
+                    set: { vm.setElementAnimated(element.id, $0) }))
+                    .disabled(!element.isLive)
+            }
+            .font(.caption)
+            .toggleStyle(.button)
+            if !element.metric.supportsLive {
+                Text("A clip summary value — shown as a fixed badge.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

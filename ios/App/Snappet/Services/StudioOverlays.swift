@@ -14,12 +14,15 @@ import SwiftUI
 enum StudioOverlays {
 
     static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double,
-                                  hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil)
+                                  hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+                                  hrElements: [ResolvedHROverlay] = [])
         -> AVVideoCompositionCoreAnimationTool? {
         // `.video` overlays are PiP video tracks (handled by the composer), NOT Core Animation layers.
         let visible = overlays.filter { !$0.content.isEmpty && $0.kind != .video }
-        let hasHR = hrConfig != nil && hrSamples.count >= 2
-        guard (!visible.isEmpty || hasHR), canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
+        let hasHR = (hrConfig?.showChart ?? false) && hrSamples.count >= 2
+        let hasElements = !hrElements.isEmpty
+        guard (!visible.isEmpty || hasHR || hasElements),
+              canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
 
         let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: canvas)
         let videoLayer = CALayer(); videoLayer.frame = CGRect(origin: .zero, size: canvas)
@@ -40,6 +43,11 @@ enum StudioOverlays {
         if let hrConfig, hasHR {
             overlayLayer.addSublayer(hrChartLayer(samples: hrSamples, config: hrConfig,
                                                   canvas: canvas, totalDuration: totalDuration))
+        }
+        // The configurable HR/fitness overlay elements (prompt 28): one badge layer per display
+        // segment, opacity-gated to its time window (a static element is a single [0,1] segment).
+        for layer in hrElementLayers(hrElements, canvas: canvas, totalDuration: totalDuration) {
+            overlayLayer.addSublayer(layer)
         }
         parent.addSublayer(videoLayer)
         parent.addSublayer(overlayLayer)
@@ -121,6 +129,73 @@ enum StudioOverlays {
         }
         container.addSublayer(dot)
         return container
+    }
+
+    /// Build the burned-in badge layers for the configurable HR/fitness overlay elements (prompt 28).
+    /// Each resolved overlay contributes one rounded "pill" `CATextLayer` per display segment, all at
+    /// the same position, each opacity-gated to its `[start, end]` fraction window — so a **static**
+    /// element (one `[0,1]` segment) is always visible while an **animated live** element shows its
+    /// changing readings over the clip (Core Animation can't redraw text per frame, so we cross-fade
+    /// pre-rendered per-value layers). Bottom-left layer space (the animation tool's), like the chart.
+    static func hrElementLayers(_ overlays: [ResolvedHROverlay], canvas: CGSize,
+                                totalDuration: Double) -> [CALayer] {
+        guard canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return [] }
+        var layers: [CALayer] = []
+        for o in overlays {
+            let cx = o.normalizedX * canvas.width
+            let cy = canvas.height - o.normalizedY * canvas.height        // flip Y to bottom-left
+            let fontSize = max(10, canvas.height * 0.045 * o.scale)
+            for seg in o.segments {
+                let pill = hrBadgeLayer(text: seg.reading.text, hex: seg.reading.hex,
+                                        fontSize: fontSize, center: CGPoint(x: cx, y: cy))
+                gateSegmentOpacity(pill, start: seg.start, end: seg.end, totalDuration: totalDuration)
+                layers.append(pill)
+            }
+        }
+        return layers
+    }
+
+    /// One rounded badge: a coloured `CATextLayer` on a translucent dark capsule, sized to its text.
+    private static func hrBadgeLayer(text: String, hex: String, fontSize: CGFloat,
+                                     center: CGPoint) -> CALayer {
+        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let color = uiColor(hex)
+        let attributed = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
+        let textSize = attributed.size()
+        let hPad: CGFloat = fontSize * 0.5, vPad: CGFloat = fontSize * 0.3
+        let boxW = ceil(textSize.width) + 2 * hPad, boxH = ceil(textSize.height) + 2 * vPad
+
+        let container = CALayer()
+        container.frame = CGRect(x: center.x - boxW / 2, y: center.y - boxH / 2, width: boxW, height: boxH)
+        container.backgroundColor = UIColor.black.withAlphaComponent(0.4).cgColor
+        container.cornerRadius = boxH / 2
+
+        let label = CATextLayer()
+        label.string = attributed
+        label.contentsScale = 2
+        label.alignmentMode = .center
+        label.frame = CGRect(x: hPad, y: vPad, width: ceil(textSize.width), height: ceil(textSize.height))
+        container.addSublayer(label)
+        return container
+    }
+
+    /// Opacity-gate a badge to its `[start, end]` fraction window. A full-clip `[0,1]` segment stays
+    /// fully visible; a sub-window appears/disappears on cue (the animated-live cross-fade).
+    private static func gateSegmentOpacity(_ layer: CALayer, start: Double, end: Double,
+                                           totalDuration: Double) {
+        if start <= 0.0001 && end >= 0.9999 { layer.opacity = 1; return }   // static → always on
+        let s = min(1, max(0, start)), e = min(1, max(s, end))
+        layer.opacity = 0
+        let anim = CAKeyframeAnimation(keyPath: "opacity")
+        // 0 before the window, 1 across it, 0 after — tiny epsilons keep keyTimes strictly increasing.
+        let eps = 1e-4
+        anim.values = [0, 0, 1, 1, 0] as [Float]
+        anim.keyTimes = [0, max(0, s - eps), s, e, min(1, e + eps)].map { NSNumber(value: $0) }
+        anim.beginTime = AVCoreAnimationBeginTimeAtZero
+        anim.duration = max(0.01, totalDuration)
+        anim.isRemovedOnCompletion = false
+        anim.fillMode = .both
+        layer.add(anim, forKey: "hrSegment")
     }
 
     private static func averageBPM(_ samples: [HRPoint]) -> Double {

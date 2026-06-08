@@ -2843,3 +2843,53 @@ out-window, empty-windows ⇒ HR-only) + XCTest (`RecoveryNudgeSelectorTests` �
 peak-effort window derivations). **Device-unverified** (no live HR / band / watch in the simulator):
 the live "Recovered" nudge on the pills / Live Activity / widget / watch firing as HR drops, and a
 real reel favoring sent-climb / peak-effort moments.
+
+---
+
+## 2026-06-08 — Configurable HR/fitness video-overlay builder (prompt 28)
+
+**Context:** the clip's HR overlay was a single bpm chart + dot (live bpm preview-only). All the
+metrics from Phases 2–4 (zones, %HRR, effort, redline/strain, HRV, calories, recovery) existed but
+none could be placed on the video. The user asked to **select which numbers/charts show, mark each
+live or static, and animate where applicable**, in a simple UI.
+
+**What shipped (single-clip editor — the per-clip "HR overlay on captured video"):**
+- `HROverlayMetric` (bpm/zone/hrr/avgHR/maxHR/redline/strain/hrv/calories/recovery) with
+  `supportsLive`/`supportsAnimation` capabilities, and `HROverlayElement` (metric + live + animated +
+  position/scale/colour). `HROverlayConfig` gained `showChart` (toggle the chart line independently)
+  + `elements`.
+- Pure `HROverlayValues` resolver (text + `#RRGGBB`): static clip aggregates, live-at-playhead
+  readings, and the export **segments** (de-duped, time-tiled). `swift`-unit-tested.
+- Render: `HROverlayElementsView` (SwiftUI preview, drag to place) + `StudioOverlays.hrElementLayers`
+  (export burn-in: one opacity-keyframed badge per display segment). `ClipEditorView` builder UI
+  (add/remove a metric, Live + Animate toggles disabled where N/A), context computed from the session
+  + `UserHRProfile`.
+
+**Decisions worth recording:**
+- **The Core-Animation constraint splits live vs. export.** AVFoundation's animation tool can't
+  redraw text per frame, so a **static** element is one fixed badge; an **animated live** element is
+  rendered by the **opacity-keyframe trick** — one short pre-rendered badge per distinct value,
+  cross-faded over its time window (the resolver's `segments`). A live-but-not-animated element burns
+  in its clip-start reading; the preview always tracks the playhead. "Animate" is disabled for static
+  aggregates ("if applicable").
+- **Back-compat needed a custom `Codable` init.** Synthesized `Codable` throws on a missing key for
+  non-optional fields, so adding `showChart`/`elements` would break **already-persisted**
+  `HROverlayConfig` blobs (it's a SwiftData Codable composite). A hand-written `init(from:)` uses
+  `decodeIfPresent` (→ `showChart=true`, `elements=[]`) so old projects load unchanged. (A reusable
+  gotcha: defaulted struct properties do NOT round-trip through synthesized Codable.)
+- **Colour is one source of truth.** Added `HeartRateZone.colorHex` (the system-colour hexes for
+  `color`) so a burned-in badge tints identically to the SwiftUI pill; zone/%HRR/recovery use the
+  semantic colour, other metrics use the user's swatch.
+- **Computation lives where the data is.** The view model resolves elements → `ResolvedHROverlay`
+  (Sendable) and hands them to the AVFoundation render across the actor boundary, keeping the
+  device-only renderer dumb and the value logic unit-tested.
+
+**Scope / follow-up:** shipped on the **single-clip editor** (`ClipEditorView`), the direct per-clip
+overlay surface. The **multi-clip Studio** (`StudioComposer`/`StudioEditorView`) shares the model and
+still renders its chart (back-compat), but its element **builder UI + export wiring** are a noted
+follow-up (thread `[ResolvedHROverlay]` through `makeComposition`'s 3 `makeAnimationTool` sites).
+
+**Verified off-device:** XCTest `HROverlayModelTests` (capabilities, live-forced-off for static,
+back-compat decode) + `HROverlayValuesTests` (aggregates, calories/HRV gating, live tracking, segment
+build/coalesce). **Device-pending:** the actual burned-in badges + animated-live cross-fade in an
+exported `.mp4` (no Core-Animation export render in the simulator).

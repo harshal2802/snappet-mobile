@@ -84,4 +84,18 @@ enum HeartRateZone: Int, CaseIterable, Equatable, Sendable {
         case .max:       return .red
         }
     }
+
+    /// The zone color as a `#RRGGBB` hex — the system-color values for `color`, so a burned-in video
+    /// overlay (UIKit/Core Animation) tints identically to the SwiftUI pill (one source of truth for
+    /// the bpm→color mapping across phone, watch, widget, and the exported reel). (overlay builder)
+    var colorHex: String {
+        switch self {
+        case .none:      return "#8E8E93"   // secondary gray
+        case .recovery:  return "#007AFF"   // blue
+        case .easy:      return "#30B0C7"   // teal
+        case .aerobic:   return "#34C759"   // green
+        case .threshold: return "#FF9500"   // orange
+        case .max:       return "#FF3B30"   // red
+        }
+    }
 }
