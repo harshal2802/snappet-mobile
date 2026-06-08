@@ -22,6 +22,14 @@ object KilterSettings {
     fun setProductSizeId(context: Context, value: Int) =
         prefs(context).edit().putInt("productSizeId", value).apply()
 
+    // Download-sheet picks (your board) — persisted so re-opening restores them, matching iOS @AppStorage.
+    fun dlLayout(context: Context): Int = prefs(context).getInt("dl.layout", 1)
+    fun setDlLayout(context: Context, value: Int) = prefs(context).edit().putInt("dl.layout", value).apply()
+    fun dlSizeId(context: Context): Int = prefs(context).getInt("dl.sizeId", 10)
+    fun setDlSizeId(context: Context, value: Int) = prefs(context).edit().putInt("dl.sizeId", value).apply()
+    fun dlMaxClimbs(context: Context): Int = prefs(context).getInt("dl.maxClimbs", 2000)
+    fun setDlMaxClimbs(context: Context, value: Int) = prefs(context).edit().putInt("dl.maxClimbs", value).apply()
+
     fun minGrade(context: Context): Int = prefs(context).getInt("minGrade", 10)
     fun setMinGrade(context: Context, value: Int) = prefs(context).edit().putInt("minGrade", value).apply()
 

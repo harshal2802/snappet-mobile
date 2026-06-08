@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,13 +36,18 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +57,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeJoin
@@ -73,6 +80,7 @@ import kotlin.math.roundToInt
  * beta-video link, and — when a board is connected over BLE — illumination (Phase 2). Mirrors the
  * iOS `KilterClimbDetailView`. `onExit` returns to the catalog.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KilterDetailScreen(
     uuid: String,
@@ -222,19 +230,36 @@ fun KilterDetailScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 // The Kilter "No matching" rule: amber chip when the setter forbids matching hands on a
-                // hold, else a quiet "Matching" chip (the default). Mirrors iOS.
+                // hold, else a quiet "Matching" chip (the default). TAP it for an explanation (the
+                // convention isn't obvious) via a rich tooltip. Mirrors iOS.
                 val noMatch = climb?.isNoMatch == true
                 val matchColor = if (noMatch) Color(0xFFF76808) else MaterialTheme.colorScheme.onSurfaceVariant
-                Row(Modifier.background(matchColor.copy(alpha = if (noMatch) 0.18f else 0.14f), CircleShape)
-                    .padding(horizontal = 10.dp, vertical = 4.dp).testTag("kilter.matchTag"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(if (noMatch) Icons.Filled.DoNotTouch else Icons.Filled.PanTool,
-                        contentDescription = if (noMatch) "No matching allowed" else "Matching allowed",
-                        tint = matchColor, modifier = Modifier.size(14.dp))
-                    Text(if (noMatch) "No matching" else "Matching",
-                        style = MaterialTheme.typography.labelMedium, color = matchColor,
-                        fontWeight = FontWeight.SemiBold)
+                val matchTooltip = rememberTooltipState(isPersistent = true)
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+                    tooltip = {
+                        RichTooltip(title = { Text(if (noMatch) "No matching" else "Matching allowed") }) {
+                            Text(
+                                "“Matching” means putting both hands on the same hold. " +
+                                    if (noMatch) "This climb is set no-matching — the setter asks you not to match hands on any hold."
+                                    else "Matching is allowed on this climb (the default).")
+                        }
+                    },
+                    state = matchTooltip,
+                ) {
+                    Row(Modifier.clip(CircleShape)
+                        .background(matchColor.copy(alpha = if (noMatch) 0.18f else 0.14f), CircleShape)
+                        .clickable { scope.launch { matchTooltip.show() } }
+                        .padding(horizontal = 10.dp, vertical = 4.dp).testTag("kilter.matchTag"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(if (noMatch) Icons.Filled.DoNotTouch else Icons.Filled.PanTool,
+                            contentDescription = if (noMatch) "No matching allowed" else "Matching allowed",
+                            tint = matchColor, modifier = Modifier.size(14.dp))
+                        Text(if (noMatch) "No matching" else "Matching",
+                            style = MaterialTheme.typography.labelMedium, color = matchColor,
+                            fontWeight = FontWeight.SemiBold)
+                    }
                 }
                 if (isClassic) {
                     Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)

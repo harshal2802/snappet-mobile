@@ -2588,20 +2588,53 @@ exactly: a size is a box `[edge_left, edge_right, edge_bottom, edge_top]` from `
 table carries these edges, e.g. 7×10 = `[28,116,36,156]`, 12×14 = `[0,144,0,180]`), and a climb fits
 when `c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?`. `CatalogFilter`
 gained `sizeId`/`sizeBox`; `KilterBoardSize` now carries its `box`; the download sheet adds a **Board
-size** picker. **Why the picker reads sizes from the INSTALLED catalog (and hides on a first-ever
-download):** pre-download the board's sizes aren't known — the ~80 MB file isn't fetched yet and the host
-manifest carries no sizes — and embedding Aurora size ids/boxes would duplicate Aurora data (#42). Once a
-catalog exists, its `product_sizes.edge_*` supply the picker + the chosen box; the box is bound straight
-into the trim's WHERE. **Why a dedicated column over description-parsing for `is_nomatch`:** the column is
+size** picker. **[SUPERSEDED the same day — see "Kilter download: board-first" below: the picker now reads
+from an EMBEDDED known-Kilter board table and works on a first download; the next paragraph describes the
+original, replaced approach.]** **Why the picker reads sizes from the INSTALLED catalog (and hides on a
+first-ever download):** pre-download the board's sizes aren't known — the ~80 MB file isn't fetched yet and
+the host manifest carries no sizes — and embedding Aurora size ids/boxes would duplicate Aurora data (#42).
+Once a catalog exists, its `product_sizes.edge_*` supply the picker + the chosen box; the box is bound
+straight into the trim's WHERE. **Why a dedicated column over description-parsing for `is_nomatch`:** the column is
 authoritative and cheap; parsing free text is a heuristic — so prefer the column, parse only as a
 fallback. **Why both newer columns are PRAGMA-guarded:** `climbs.is_nomatch` and `product_sizes.edge_*`
 are absent from older/hand-rolled catalogs (and the validator doesn't require them); detect once on open
 and degrade (matching-allowed default / nil box / no size filter) rather than throw. **Fixture:** added
 `is_nomatch` (Bravo = no-match, with a "No matching" description) and `product_sizes.edge_*` boxes (sizes
 1/2 a tall 0…24 box, size 3 a short top-12 box) across all four mirrors. **Rules out:** an in-app
-"fits-your-board" tag (that was a misread of "match" — it means hand-matching, not board fit); embedding
-static Kilter sizes for the download picker; using `hsm` for the match rule. **Verified (off-device):**
+"fits-your-board" tag (that was a misread of "match" — it means hand-matching, not board fit);
+embedding static Kilter sizes for the download picker *(reversed the same day — see "board-first" below;
+the static table is now the chosen approach)*; using `hsm` for the match rule. **Verified (off-device):**
 new tests — `is_nomatch` read + size-box read (installed reader), the size-fit download filter (tall box
 keeps all 4 climbs, short box keeps none → `noCatalogData`), and the pure description detector — on both
 platforms; regenerated binary fixture validates. **Device-unverified** (visual judgment): the match chip
 + size-filter UX on a real screen.
+
+## 2026-06-07 — Kilter download: board-first, end-user-friendly (layout + size are the only filters)
+
+The in-app catalog download was a 12-field power-user form (board, layout toggles, angle, grade min/max,
+ascents, quality, setter, name, benchmark, listed, single-frame, board size, cap, host) — overwhelming
+for someone who just wants climbs for their board. Reshaped around the **one thing an end user knows:
+which board do you have.** The download sheet (`KilterCatalogDownloadSheet`, iOS + Android) is now: **Your
+board** = a single **layout** pick (Original / Homewall) + a **size** pick; **How many climbs** = a simple
+cap (Most popular N / Everything); Download; host URL tucked under **Advanced**. **Layout + size are the
+only download filters** — they define your physical board. Everything else (angle / grade / quality /
+ascents / setter / name / benchmark) moved to **browse-time** (those controls already exist in the
+catalog list + Filters sheet); `listedOnly`/`singleFrameOnly` stay on as silent mobile defaults. The
+`CatalogFilter` struct is unchanged (still carries the browse-style fields) — `buildFilter` just stops
+*setting* them, so they keep their no-op defaults and the explorer-parity `conditions()` is untouched.
+**Why size needs a static table:** the size picker must work on a **first** download, when no catalog is
+installed and the ~80 MB file isn't fetched — so the well-known Kilter board sizes (layout → sizes with
+their `product_sizes.edge_*` fit boxes) are embedded as `KilterCatalogOptions.boards`, pulled from the
+**real** Aurora data (re-inspected the 165 MB dataset: Original 7×10…16×12, Homewall 7×10/8×12/10×10/
+10×12; Homewall ships each size under several LED-kit ids → keep one per physical box). This is board
+**dimensions** — structural reference like the hardcoded layout ids — **not** climb data, so it's
+consistent with #42 (we still ship no climb catalog). The chosen size's box drives the trim
+(`c.edge_* ⊆ box`); picking a smaller board really does install fewer climbs. **Why a layout single-pick
+(not the old multi-toggle):** a physical board is one layout; "your board" is one choice. **Why keep a
+cap:** layout 1 alone has ~228k listed climbs — without a cap the installed file is huge; the cap is a
+data-size control, not a climbing filter, so it's framed as "how many climbs." **Rules out:** exposing
+the climbing filters at download (they're browse-time); reading sizes from the installed catalog for the
+picker (doesn't exist on a first download — the prior approach, now replaced by the static table);
+multi-layout downloads. **Verified:** iOS `BUILD SUCCEEDED`, Android `compileDebugKotlin` SUCCESSFUL; no
+UI test references the removed controls. **Device-unverified** (visual/UX judgment): that the board-first
+flow actually reads as simpler on a real screen.

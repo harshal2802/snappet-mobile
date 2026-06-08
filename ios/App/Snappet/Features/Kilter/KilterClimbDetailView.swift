@@ -55,6 +55,7 @@ struct KilterClimbDetailView: View {
     @State private var selectedAngle: Int = 40
     @State private var logConfirmation: String?
     @State private var showingShare = false
+    @State private var showingMatchInfo = false
 
     private var currentStat: KilterClimbStat? { stats.first { $0.angle == selectedAngle } }
     private var isFavorite: Bool { favorites.contains { $0.climbUUID == currentUUID } }
@@ -269,18 +270,45 @@ struct KilterClimbDetailView: View {
         .padding(.horizontal)
     }
 
-    /// The Kilter "No matching" rule as a tag: an amber `hand.raised.slash` "No matching" chip when the
-    /// setter forbids matching hands on a hold, else a quiet "Matching" chip (the default). Mirrors the
-    /// official app's no-match icon while still showing the allowed case so the rule is never ambiguous.
+    /// The Kilter "No matching" rule as a **tappable** tag: an amber `hand.raised.slash` "No matching"
+    /// chip when the setter forbids matching hands on a hold, else a quiet "Matching" chip (the default).
+    /// Tapping it explains what matching means (a popover), since the convention isn't obvious. Mirrors
+    /// the official app's no-match icon while still showing the allowed case so the rule is never ambiguous.
     private func matchBadge(noMatch: Bool) -> some View {
-        Label(noMatch ? "No matching" : "Matching",
-              systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 9).padding(.vertical, 3)
-            .background((noMatch ? Color.orange : Color.secondary).opacity(noMatch ? 0.18 : 0.14), in: Capsule())
-            .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
-            .accessibilityIdentifier("kilter.matchTag")
-            .accessibilityLabel(noMatch ? "No matching allowed on this climb" : "Matching allowed")
+        Button { showingMatchInfo = true } label: {
+            Label(noMatch ? "No matching" : "Matching",
+                  systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9).padding(.vertical, 3)
+                .background((noMatch ? Color.orange : Color.secondary).opacity(noMatch ? 0.18 : 0.14), in: Capsule())
+                .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("kilter.matchTag")
+        .accessibilityLabel(noMatch ? "No matching allowed on this climb" : "Matching allowed")
+        .accessibilityHint("Explains what matching means")
+        .popover(isPresented: $showingMatchInfo) {
+            matchInfoPopover(noMatch: noMatch).presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// Small explainer shown when the matching chip is tapped: what "matching" is, and this climb's rule.
+    private func matchInfoPopover(noMatch: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(noMatch ? "No matching" : "Matching allowed",
+                  systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
+            Text("“Matching” means putting both hands on the same hold. "
+                 + (noMatch
+                    ? "This climb is set no-matching — the setter asks you not to match hands on any hold."
+                    : "Matching is allowed on this climb (the default)."))
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(width: 240)
+        .accessibilityIdentifier("kilter.matchInfo")
     }
 
     /// How the grade changes across board angles — the climb's signature. The selected angle is

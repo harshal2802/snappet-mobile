@@ -230,6 +230,16 @@ download). Both newer columns (`is_nomatch`, `product_sizes.edge_*`) are PRAGMA-
 catalogs that lack them. Off-device verified (match read, size-box read, the size-fit filter, and the
 pure detector — both platforms; fixture extended across all four mirrors).
 
+🟢 **Kilter download: board-first, end-user-friendly (2026-06-07).** iOS + Android. The catalog
+download was a 12-field power-user form; reshaped around the one thing an end user knows — **which board
+do you have.** The sheet is now **Your board** (Layout + Size) + **How many climbs** (a cap) + Download,
+with the host URL under Advanced. **Layout + size are the only download filters** (they define your
+physical board); angle/grade/quality/ascents/setter/name/benchmark moved to **browse-time** (already in
+the list + Filters sheet). The size picker works on a first download via an embedded known-Kilter board
+table (`KilterCatalogOptions.boards`, real `product_sizes.edge_*` fit boxes — board *dimensions*, not
+climb data, #42-consistent); the chosen size's box trims the catalog to fitting climbs. Compiles clean
+on both platforms; no UI test touched the removed controls.
+
 ## License
 
 TBD.
