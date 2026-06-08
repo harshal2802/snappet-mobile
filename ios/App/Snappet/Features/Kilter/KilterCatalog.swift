@@ -33,6 +33,11 @@ final class KilterCatalog {
     /// True when the catalog asset opened successfully and has climbs.
     private(set) var isAvailable = false
 
+    /// Whether the installed catalog carries the newer optional columns. Detected once on open so reads
+    /// can prefer them and degrade gracefully on older/hand-rolled catalogs that lack them.
+    private var hasNoMatchColumn = false       // climbs.is_nomatch (the "No matching" rule)
+    private var hasSizeEdges = false           // product_sizes.edge_* (a board size's fit box)
+
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private init() { open() }
@@ -57,6 +62,7 @@ final class KilterCatalog {
     func reload() {
         if db != nil { sqlite3_close(db); db = nil }
         isAvailable = false
+        hasNoMatchColumn = false; hasSizeEdges = false
         grades.removeAll(); roleScreenColor.removeAll(); roleLedColor.removeAll()
         placementXY.removeAll(); placementHole.removeAll()
         renderCache.removeAll(); ledCache.removeAll(); sizesCache.removeAll()
@@ -78,6 +84,18 @@ final class KilterCatalog {
             self.placementXY[pid] = (Self.int(s, 1), Self.int(s, 2))
             self.placementHole[pid] = Self.int(s, 3)
         }
+        hasNoMatchColumn = columnExists("climbs", "is_nomatch")
+        hasSizeEdges = columnExists("product_sizes", "edge_left")
+    }
+
+    /// Whether `table` has `column` — used to read newer optional columns only when the installed
+    /// catalog has them (PRAGMA table_info row layout: cid, name, type, …).
+    private func columnExists(_ table: String, _ column: String) -> Bool {
+        var found = false
+        query("PRAGMA table_info(\(table))") { s in
+            if Self.text(s, 1) == column { found = true }
+        }
+        return found
     }
 
     // MARK: - Public reads
@@ -200,19 +218,25 @@ final class KilterCatalog {
 
     func climb(_ uuid: String) -> KilterClimb? {
         var result: KilterClimb?
+        // Read `is_nomatch` (the "No matching" rule) when the catalog has the column; older catalogs
+        // lack it, so fall back to detecting the setter note in `description`.
+        let nm = hasNoMatchColumn ? ", is_nomatch" : ""
         query("""
             SELECT uuid, name, setter_username, layout_id,
-                   edge_left, edge_right, edge_bottom, edge_top, frames
+                   edge_left, edge_right, edge_bottom, edge_top, frames, description\(nm)
             FROM climbs WHERE uuid = ?
         """, bind: { s in
             sqlite3_bind_text(s, 1, uuid, -1, Self.transient)
         }) { s in
+            let description = Self.text(s, 9)
+            let isNoMatch = hasNoMatchColumn ? (Self.int(s, 10) != 0)
+                                             : kilterDescriptionForbidsMatching(description)
             result = KilterClimb(
                 uuid: Self.text(s, 0), name: Self.text(s, 1), setter: Self.text(s, 2),
                 layoutId: Self.int(s, 3),
                 edgeLeft: Self.int(s, 4), edgeRight: Self.int(s, 5),
                 edgeBottom: Self.int(s, 6), edgeTop: Self.int(s, 7),
-                frames: Self.text(s, 8))
+                frames: Self.text(s, 8), description: description, isNoMatch: isNoMatch)
         }
         return result
     }
@@ -371,18 +395,24 @@ final class KilterCatalog {
     func sizes(forLayout layoutId: Int) -> [KilterBoardSize] {
         if let cached = sizesCache[layoutId] { return cached }
         var out: [KilterBoardSize] = []
+        // Pull the size's fit box (`edge_*`) only when the catalog carries those columns (real Aurora
+        // data); older/hand-rolled catalogs omit them → a nil box (the size filter simply won't apply).
+        let edges = hasSizeEdges ? ", ps.edge_left, ps.edge_right, ps.edge_bottom, ps.edge_top" : ""
         query("""
-            SELECT ps.id, ps.name, COALESCE(ps.description, '')
+            SELECT ps.id, ps.name, COALESCE(ps.description, '')\(edges)
             FROM product_sizes ps
             WHERE ps.id IN (SELECT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ?)
             ORDER BY ps.id
         """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
-            out.append(KilterBoardSize(id: Self.int(s, 0), name: Self.text(s, 1), detail: Self.text(s, 2)))
+            let box = hasSizeEdges ? KilterSizeBox(left: Self.int(s, 3), right: Self.int(s, 4),
+                                                   bottom: Self.int(s, 5), top: Self.int(s, 6)) : nil
+            out.append(KilterBoardSize(id: Self.int(s, 0), name: Self.text(s, 1),
+                                       detail: Self.text(s, 2), box: box))
         }
         if out.isEmpty {
             query("SELECT DISTINCT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ? "
                   + "ORDER BY product_size_id", bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
-                out.append(KilterBoardSize(id: Self.int(s, 0), name: "Size \(Self.int(s, 0))", detail: ""))
+                out.append(KilterBoardSize(id: Self.int(s, 0), name: "Size \(Self.int(s, 0))", detail: "", box: nil))
             }
         }
         sizesCache[layoutId] = out

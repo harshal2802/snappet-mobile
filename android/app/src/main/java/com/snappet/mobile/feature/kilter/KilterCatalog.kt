@@ -21,12 +21,30 @@ data class KilterClimb(
     val name: String,
     val setter: String,
     val layoutId: Int,
+    /** The climb's hold bounding box — used to test whether it fits a board size (see [KilterBoardSize.box]). */
     val edgeLeft: Int,
     val edgeRight: Int,
     val edgeBottom: Int,
     val edgeTop: Int,
     val frames: String,
+    /** The setter's free-text note (carries the "No matching" convention; see [isNoMatch]). */
+    val description: String,
+    /** Whether the setter forbids matching hands on a hold (the Kilter "No matching" rule,
+     *  `climbs.is_nomatch`; matching is allowed by default). Surfaced as a tag on the climb screen. */
+    val isNoMatch: Boolean,
 )
+
+/**
+ * Detect the Kilter "No matching" setter note in a climb's free-text description — the fallback for
+ * catalogs that predate the dedicated `climbs.is_nomatch` column (the reader prefers the column). Setters
+ * write "no matching"/"no match" to forbid matching hands on a hold; default = matching allowed. Pure →
+ * unit-tested. Mirrors iOS `kilterDescriptionForbidsMatching`.
+ */
+fun kilterDescriptionForbidsMatching(description: String): Boolean {
+    // Match the setter note at a WORD BOUNDARY so it can't fire inside ordinary words ("piano matched",
+    // "casino match", "no matches found"). Accepts "no matching"/"no match"/"no-match"/"nomatch".
+    return Regex("(^|[^a-z])no[ -]?match(ing)?([^a-z]|\$)").containsMatchIn(description.lowercase())
+}
 
 data class KilterClimbStat(
     val angle: Int,
@@ -53,10 +71,19 @@ data class KilterHold(
 data class KilterLayout(val id: Int, val name: String)
 
 /**
+ * A board size's bounding box in hole-coordinate units (`product_sizes.edge_*`). A climb fits the size
+ * when its own `edge_*` box is contained within this one — the rule the Board Explorer's size filter uses.
+ */
+data class KilterSizeBox(val left: Int, val right: Int, val bottom: Int, val top: Int) {
+    /** `[left, right, bottom, top]` — the bind order for the download filter's fit condition. */
+    val params: List<Int> get() = listOf(left, right, bottom, top)
+}
+
+/**
  * A physical board size for a layout (a `product_size`), e.g. "8 x 12 — Home". The user picks theirs
  * so the LED mapping matches their board — each size addresses its LEDs differently.
  */
-data class KilterBoardSize(val id: Int, val name: String, val detail: String) {
+data class KilterBoardSize(val id: Int, val name: String, val detail: String, val box: KilterSizeBox?) {
     /** Picker label: "8 x 12 — Home" (or just the name when there's no detail). */
     val label: String get() = if (detail.isEmpty()) name else "$name — $detail"
 }
@@ -154,6 +181,9 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
     private val ledCache = HashMap<Int, Map<Int, Int>>()    // product_size_id -> (holeId -> led position)
     private val sizesCache = HashMap<Int, List<KilterBoardSize>>()   // layoutId -> available sizes
     private val renderCache = HashMap<String, RenderHoles>()   // "layout#size" -> render basis (size 0 = whole layout)
+    // Newer optional columns, detected once on open so reads prefer them and degrade on older catalogs.
+    private var hasNoMatchColumn = false   // climbs.is_nomatch (the "No matching" rule)
+    private var hasSizeEdges = false       // product_sizes.edge_* (a board size's fit box)
 
     init {
         if (db != null) loadReference()
@@ -176,6 +206,20 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
                 placementHole[c.getInt(0)] = c.getInt(3)
             }
         }
+        hasNoMatchColumn = columnExists("climbs", "is_nomatch")
+        hasSizeEdges = columnExists("product_sizes", "edge_left")
+    }
+
+    /** Whether [table] has [column] — to read newer optional columns only when the catalog has them.
+     *  PRAGMA table_info row layout: cid, name, type, …. */
+    private fun columnExists(table: String, column: String): Boolean {
+        val db = db ?: return false
+        return try {
+            db.rawQuery("PRAGMA table_info($table)", null).use { c ->
+                while (c.moveToNext()) if (c.getString(1) == column) return true
+                false
+            }
+        } catch (_: Exception) { false }
     }
 
     fun layouts(): List<KilterLayout> {
@@ -248,13 +292,17 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
 
     fun climb(uuid: String): KilterClimb? {
         val db = db ?: return null
+        // Read is_nomatch (the "No matching" rule) when present; older catalogs fall back to the note in description.
+        val nm = if (hasNoMatchColumn) ", is_nomatch" else ""
         db.rawQuery(
-            "SELECT uuid, name, setter_username, layout_id, edge_left, edge_right, edge_bottom, edge_top, frames " +
+            "SELECT uuid, name, setter_username, layout_id, edge_left, edge_right, edge_bottom, edge_top, frames, description$nm " +
                 "FROM climbs WHERE uuid = ?", arrayOf(uuid)
         ).use { c ->
             if (!c.moveToNext()) return null
+            val description = c.getString(9)
+            val isNoMatch = if (hasNoMatchColumn) c.getInt(10) != 0 else kilterDescriptionForbidsMatching(description)
             return KilterClimb(c.getString(0), c.getString(1), c.getString(2), c.getInt(3),
-                c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getString(8))
+                c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7), c.getString(8), description, isNoMatch)
         }
     }
 
@@ -449,18 +497,26 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
         // helper, which silently yields no rows on a failed prepare). An older/hand-rolled catalog may
         // lack product_sizes (it isn't in the validator's required set), so swallow that and fall
         // through to the bare-id fallback rather than crash — keeping platform parity.
+        // Pull the size's fit box (`edge_*`) only when the catalog has those columns (real Aurora data);
+        // older/hand-rolled catalogs omit them → a null box (the size filter simply won't apply).
+        val edges = if (hasSizeEdges) ", ps.edge_left, ps.edge_right, ps.edge_bottom, ps.edge_top" else ""
         try {
             db.rawQuery(
-                "SELECT ps.id, ps.name, COALESCE(ps.description, '') FROM product_sizes ps WHERE ps.id IN " +
+                "SELECT ps.id, ps.name, COALESCE(ps.description, '')$edges FROM product_sizes ps WHERE ps.id IN " +
                     "(SELECT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ?) ORDER BY ps.id",
                 arrayOf(layoutId.toString())
-            ).use { c -> while (c.moveToNext()) out.add(KilterBoardSize(c.getInt(0), c.getString(1), c.getString(2))) }
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val box = if (hasSizeEdges) KilterSizeBox(c.getInt(3), c.getInt(4), c.getInt(5), c.getInt(6)) else null
+                    out.add(KilterBoardSize(c.getInt(0), c.getString(1), c.getString(2), box))
+                }
+            }
         } catch (_: Exception) { /* product_sizes absent → fall through to bare ids */ }
         if (out.isEmpty()) {
             try {
                 db.rawQuery("SELECT DISTINCT product_size_id FROM product_sizes_layouts_sets WHERE layout_id = ? " +
                     "ORDER BY product_size_id", arrayOf(layoutId.toString())).use { c ->
-                    while (c.moveToNext()) out.add(KilterBoardSize(c.getInt(0), "Size ${c.getInt(0)}", ""))
+                    while (c.moveToNext()) out.add(KilterBoardSize(c.getInt(0), "Size ${c.getInt(0)}", "", null))
                 }
             } catch (_: Exception) { /* no size tables at all → return empty, matching iOS */ }
         }

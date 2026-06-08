@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.snappet.mobile.feature.kilter.CatalogFilter
 import com.snappet.mobile.feature.kilter.HostedCatalogClient
+import com.snappet.mobile.feature.kilter.KilterSizeBox
 import com.snappet.mobile.feature.kilter.KilterCatalog
 import com.snappet.mobile.feature.kilter.KilterCatalogException
 import com.snappet.mobile.feature.kilter.KilterCatalogFixture
@@ -296,6 +297,49 @@ class KilterCatalogStoreTest {
             }
         } finally {
             source.delete(); out.delete()
+        }
+    }
+
+    /** Board-size filter (mirrors the Board Explorer): the fixture's climbs span [4,20,4,20]; a tall
+     *  0..24 box keeps all four, the short Mini box (top 12) fits none. Mirrors iOS. */
+    @Test
+    fun boardSizeFilterKeepsOnlyFittingClimbs() {
+        val source = KilterCatalogFixture.build(tempFile())
+        val out = tempFile()
+        HostedCatalogClient().buildFilteredCatalog(
+            source.path, CatalogFilter(layoutIds = listOf(1), sizeBox = KilterSizeBox(0, 24, 0, 24)), out.path)
+        assertEquals(4, KilterCatalogValidator.validate(out).climbCount)
+        val out2 = tempFile()
+        try {
+            assertThrows(KilterCatalogException::class.java) {
+                HostedCatalogClient().buildFilteredCatalog(
+                    source.path, CatalogFilter(layoutIds = listOf(1), sizeBox = KilterSizeBox(0, 24, 4, 12)), out2.path)
+            }
+        } finally {
+            source.delete(); out.delete(); out2.delete()
+        }
+    }
+
+    /** Reader surfaces the "No matching" rule (`climbs.is_nomatch`) and each size's fit box
+     *  (`product_sizes.edge_*`). Mirrors iOS testClimbNoMatchRuleAndSizeFitBox. */
+    @Test
+    fun climbNoMatchRuleAndSizeFitBox() {
+        val store = KilterCatalogStore.get(ctx)
+        val file = KilterCatalogFixture.build(tempFile())
+        val v = KilterCatalogValidator.validate(file)
+        store.install(file, KilterCatalogMeta(v.version, v.climbCount, v.sizeBytes, "Test", 0L))
+        file.delete()
+        try {
+            KilterCatalog.reset()
+            val cat = KilterCatalog.get(ctx)
+            assertEquals(true, cat.climb("22222222-2222-4222-8222-222222222222")?.isNoMatch)
+            assertEquals("No matching", cat.climb("22222222-2222-4222-8222-222222222222")?.description)
+            assertEquals(false, cat.climb("11111111-1111-4111-8111-111111111111")?.isNoMatch)
+            val sizes = cat.sizes(1)
+            assertEquals(KilterSizeBox(0, 24, 0, 24), sizes.first { it.id == 1 }.box)
+            assertEquals(KilterSizeBox(0, 24, 4, 12), sizes.first { it.id == 3 }.box)
+        } finally {
+            store.clear(); KilterCatalog.reset()
         }
     }
 }

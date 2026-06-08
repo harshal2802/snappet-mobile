@@ -25,7 +25,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DoNotTouch
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
@@ -214,23 +216,36 @@ fun KilterDetailScreen(
                 Stat("Ascents", "${currentStat?.ascents ?: 0}", null)
             }
 
-            // Benchmark ("Classic") badge + first-ascensionist.
+            // Matching rule (always shown) + benchmark ("Classic") badge + first-ascensionist.
             val isClassic = currentStat?.benchmarkDifficulty != null
             val fa = currentStat?.faUsername ?: ""
-            if (isClassic || fa.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    if (isClassic) {
-                        Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)
-                            .padding(horizontal = 10.dp, vertical = 4.dp)) {
-                            Text("★ Classic", style = MaterialTheme.typography.labelMedium,
-                                color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold)
-                        }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                // The Kilter "No matching" rule: amber chip when the setter forbids matching hands on a
+                // hold, else a quiet "Matching" chip (the default). Mirrors iOS.
+                val noMatch = climb?.isNoMatch == true
+                val matchColor = if (noMatch) Color(0xFFF76808) else MaterialTheme.colorScheme.onSurfaceVariant
+                Row(Modifier.background(matchColor.copy(alpha = if (noMatch) 0.18f else 0.14f), CircleShape)
+                    .padding(horizontal = 10.dp, vertical = 4.dp).testTag("kilter.matchTag"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(if (noMatch) Icons.Filled.DoNotTouch else Icons.Filled.PanTool,
+                        contentDescription = if (noMatch) "No matching allowed" else "Matching allowed",
+                        tint = matchColor, modifier = Modifier.size(14.dp))
+                    Text(if (noMatch) "No matching" else "Matching",
+                        style = MaterialTheme.typography.labelMedium, color = matchColor,
+                        fontWeight = FontWeight.SemiBold)
+                }
+                if (isClassic) {
+                    Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)) {
+                        Text("★ Classic", style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold)
                     }
-                    if (fa.isNotEmpty()) {
-                        Text("FA $fa", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                    }
+                }
+                if (fa.isNotEmpty()) {
+                    Text("FA $fa", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
             }
 

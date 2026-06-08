@@ -2566,3 +2566,42 @@ LED-address + `led_color` test stays green; the regenerated binary fixture valid
 **Device-unverified** (visual judgments): that the size-coded schematic + role shapes actually read
 better for a color-blind climber on a real screen, and that the absence of a real board photo is
 acceptable.
+
+## 2026-06-07 — Kilter: "No matching" tag (climbs.is_nomatch) + a board-size download filter
+
+Two more Kilter additions, iOS + Android mirrored. **(1) Matching rule on the climb screen.** The climb
+screen never showed whether a climb forbids **matching hands** on a hold (the Kilter "No matching"
+setter rule). We **grounded this in the real downloaded data** (the user's instinct after an earlier
+wrong guess): inspecting the 165 MB `kilter.sqlite3` showed a dedicated `climbs.is_nomatch` boolean —
+73,864 of 344,504 climbs flagged, and **all** of them also carry "No matching"/"no match" in their
+free-text `description` (the column is the precomputed version of the setter note; the `hsm` column is
+unrelated — a bitmask). So `KilterClimb` now reads `is_nomatch` (added `description` too), and the detail
+screen shows an amber `hand.raised.slash` **"No matching"** chip (else a quiet "Matching") — always on,
+so the rule is never ambiguous, mirroring the official app's icon. A pure
+`kilterDescriptionForbidsMatching` is the **fallback** for catalogs that predate the column — it matches
+the setter note at a **word boundary** (`(^|[^a-z])no[ -]?match(ing)?([^a-z]|$)`) so it reproduces
+`is_nomatch` for the standard phrasings without firing inside ordinary words ("piano matched", "casino
+match", "no matches found"); the column is authoritative when present. Unit-tested (incl. those
+false-positive cases). A review caught the original bare-`contains("no match")` substring leak. **(2) Board-size
+download filter.** The user's Board Explorer gained a size filter; we mirror its `buildConditions`
+exactly: a size is a box `[edge_left, edge_right, edge_bottom, edge_top]` from `product_sizes` (the real
+table carries these edges, e.g. 7×10 = `[28,116,36,156]`, 12×14 = `[0,144,0,180]`), and a climb fits
+when `c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?`. `CatalogFilter`
+gained `sizeId`/`sizeBox`; `KilterBoardSize` now carries its `box`; the download sheet adds a **Board
+size** picker. **Why the picker reads sizes from the INSTALLED catalog (and hides on a first-ever
+download):** pre-download the board's sizes aren't known — the ~80 MB file isn't fetched yet and the host
+manifest carries no sizes — and embedding Aurora size ids/boxes would duplicate Aurora data (#42). Once a
+catalog exists, its `product_sizes.edge_*` supply the picker + the chosen box; the box is bound straight
+into the trim's WHERE. **Why a dedicated column over description-parsing for `is_nomatch`:** the column is
+authoritative and cheap; parsing free text is a heuristic — so prefer the column, parse only as a
+fallback. **Why both newer columns are PRAGMA-guarded:** `climbs.is_nomatch` and `product_sizes.edge_*`
+are absent from older/hand-rolled catalogs (and the validator doesn't require them); detect once on open
+and degrade (matching-allowed default / nil box / no size filter) rather than throw. **Fixture:** added
+`is_nomatch` (Bravo = no-match, with a "No matching" description) and `product_sizes.edge_*` boxes (sizes
+1/2 a tall 0…24 box, size 3 a short top-12 box) across all four mirrors. **Rules out:** an in-app
+"fits-your-board" tag (that was a misread of "match" — it means hand-matching, not board fit); embedding
+static Kilter sizes for the download picker; using `hsm` for the match rule. **Verified (off-device):**
+new tests — `is_nomatch` read + size-box read (installed reader), the size-fit download filter (tall box
+keeps all 4 climbs, short box keeps none → `noCatalogData`), and the pure description detector — on both
+platforms; regenerated binary fixture validates. **Device-unverified** (visual judgment): the match chip
++ size-filter UX on a real screen.

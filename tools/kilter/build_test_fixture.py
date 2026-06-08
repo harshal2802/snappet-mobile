@@ -76,7 +76,11 @@ DDL = {
         CREATE TABLE product_sizes (
             id INT UNSIGNED NOT NULL PRIMARY KEY,
             name TEXT NOT NULL,
-            description TEXT
+            description TEXT,
+            edge_left INT NOT NULL DEFAULT 0,
+            edge_right INT NOT NULL DEFAULT 0,
+            edge_bottom INT NOT NULL DEFAULT 0,
+            edge_top INT NOT NULL DEFAULT 0
         )""",
     "leds": """
         CREATE TABLE leds (
@@ -113,7 +117,8 @@ DDL = {
             frames TEXT NOT NULL,
             is_draft BOOLEAN NOT NULL DEFAULT 0,
             is_listed BOOLEAN NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            is_nomatch BOOLEAN NOT NULL DEFAULT 0
         )""",
     "climb_stats": """
         CREATE TABLE climb_stats (
@@ -173,17 +178,18 @@ SIZE_TWO_OFFSET = 1000
 SIZE_THREE_ROWS = 3
 SIZE_THREE_OFFSET = 2000
 
-# Four invented climbs on layout 1. frames are "p<placement>r<role>" tokens; placement
-# ids equal hole ids (1..25) for layout 1 (see build()). Pure fiction.
+# Four invented climbs on layout 1. Fields: uuid, name, setter, frames, stats, description, is_nomatch.
+# frames are "p<placement>r<role>" tokens; placement ids equal hole ids (1..25) for layout 1 (see
+# build()). Bravo carries the Kilter "No matching" setter rule (description + is_nomatch=1). Pure fiction.
 CLIMBS = [
     ("11111111-1111-4111-8111-111111111111", "Test Problem Alpha", "fixtureSetter",
-     "p1r12p13r13p25r14", [(40, 15.0, 250, 2.6), (25, 12.0, 90, 2.1)]),
+     "p1r12p13r13p25r14", [(40, 15.0, 250, 2.6), (25, 12.0, 90, 2.1)], "", 0),
     ("22222222-2222-4222-8222-222222222222", "Test Problem Bravo", "fixtureSetter",
-     "p5r12p13r13p21r14", [(40, 20.0, 120, 2.9), (30, 18.0, 60, 2.4)]),
+     "p5r12p13r13p21r14", [(40, 20.0, 120, 2.9), (30, 18.0, 60, 2.4)], "No matching", 1),
     ("33333333-3333-4333-8333-333333333333", "Test Problem Charlie", "anotherSetter",
-     "p3r12p7r13p19r13p23r14", [(40, 24.0, 45, 1.8)]),
+     "p3r12p7r13p19r13p23r14", [(40, 24.0, 45, 1.8)], "", 0),
     ("44444444-4444-4444-8444-444444444444", "Test Problem Delta", "anotherSetter",
-     "p2r12p14r13p24r14", [(25, 10.0, 300, 3.0), (40, 16.0, 200, 2.7)]),
+     "p2r12p14r13p24r14", [(25, 10.0, 300, 3.0), (40, 16.0, 200, 2.7)], "", 0),
 ]
 
 
@@ -211,9 +217,11 @@ def build(out_path):
             db.execute("INSERT INTO placement_roles VALUES (?,?,?,?,?,?,?)",
                        (role_id, 1, role_id, name, name, led, screen))
 
-        db.execute("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small')")
-        db.execute("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large')")
-        db.execute("INSERT INTO product_sizes VALUES (3,'5 x 3','Test Mini')")
+        # product_sizes carry a fit box (edge_left/right/bottom/top, hole units): sizes 1/2 are a tall
+        # 0..24 board (fits every climb); size 3 (Mini) is short (top 12) so tall climbs don't fit it.
+        db.execute("INSERT INTO product_sizes VALUES (1,'5 x 5','Test Small',0,24,0,24)")
+        db.execute("INSERT INTO product_sizes VALUES (2,'5 x 5','Test Large',0,24,0,24)")
+        db.execute("INSERT INTO product_sizes VALUES (3,'5 x 3','Test Mini',0,24,4,12)")
 
         # 5x5 holes + a placement per hole on layout 1 (placement id == hole id), plus an LED per
         # hole on each product size (size 2's positions are offset, to test size selection). Size 3
@@ -235,10 +243,10 @@ def build(out_path):
         db.execute("INSERT INTO product_sizes_layouts_sets VALUES (2,2,1,1,'test.png',1)")
         db.execute("INSERT INTO product_sizes_layouts_sets VALUES (3,3,1,1,'test.png',1)")
 
-        for uuid, name, setter, frames, stats in CLIMBS:
+        for uuid, name, setter, frames, stats, description, nomatch in CLIMBS:
             db.execute(
-                "INSERT INTO climbs VALUES (?,?,?,?,?,'',0,?,?,?,?,NULL,1,0,?,0,1,?)",
-                (uuid, 1, 1, setter, name, 4, 20, 4, 20, frames, NOW))
+                "INSERT INTO climbs VALUES (?,?,?,?,?,?,0,?,?,?,?,NULL,1,0,?,0,1,?,?)",
+                (uuid, 1, 1, setter, name, description, 4, 20, 4, 20, frames, NOW, nomatch))
             best = max(stats, key=lambda s: s[2])  # cache fields mirror the most-climbed angle
             db.execute("INSERT INTO climb_cache_fields VALUES (?,?,?,?)",
                        (uuid, best[2], best[1], best[3]))

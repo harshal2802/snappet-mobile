@@ -104,6 +104,15 @@ fun KilterCatalogDownloadSheet(onInstalled: () -> Unit, onDismiss: () -> Unit) {
     var listedOnly by remember { mutableStateOf(true) }
     var singleFrameOnly by remember { mutableStateOf(true) }
     var maxClimbs by remember { mutableStateOf(2000) }
+    // Board-size filter (product_size_id); 0 = any. Sizes (with a fit box) come from the INSTALLED
+    // catalog — empty (and the picker hidden) on a first-ever download, since the board's sizes aren't
+    // known until a catalog exists.
+    var dlSizeId by remember { mutableStateOf(0) }
+    val installedSizes = remember {
+        val cat = KilterCatalog.get(context)
+        if (!cat.isAvailable) emptyList()
+        else (cat.sizes(1) + cat.sizes(8)).filter { it.box != null }.distinctBy { it.id }
+    }
 
     var boards by remember { mutableStateOf<List<CatalogBoardEntry>>(emptyList()) }
     var working by remember { mutableStateOf(false) }
@@ -116,12 +125,16 @@ fun KilterCatalogDownloadSheet(onInstalled: () -> Unit, onDismiss: () -> Unit) {
 
     val hasLayout = includeOriginal || includeHomewall
 
-    fun buildFilter() = CatalogFilter(
-        layoutIds = listOfNotNull(if (includeOriginal) 1 else null, if (includeHomewall) 8 else null),
-        angle = angle, gradeMin = gradeMin, gradeMax = gradeMax,
-        minAscents = minAscents.takeIf { it > 0 }, minQuality = minQuality.takeIf { it > 0 },
-        setter = setter, name = nameContains, benchmarkOnly = benchmarkOnly,
-        listedOnly = listedOnly, singleFrameOnly = singleFrameOnly, maxClimbs = maxClimbs)
+    fun buildFilter(): CatalogFilter {
+        val box = installedSizes.firstOrNull { it.id == dlSizeId }?.box
+        return CatalogFilter(
+            layoutIds = listOfNotNull(if (includeOriginal) 1 else null, if (includeHomewall) 8 else null),
+            sizeId = box?.let { dlSizeId }, sizeBox = box,
+            angle = angle, gradeMin = gradeMin, gradeMax = gradeMax,
+            minAscents = minAscents.takeIf { it > 0 }, minQuality = minQuality.takeIf { it > 0 },
+            setter = setter, name = nameContains, benchmarkOnly = benchmarkOnly,
+            listedOnly = listedOnly, singleFrameOnly = singleFrameOnly, maxClimbs = maxClimbs)
+    }
 
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
         Column(
@@ -185,6 +198,19 @@ fun KilterCatalogDownloadSheet(onInstalled: () -> Unit, onDismiss: () -> Unit) {
             SwitchRow("Benchmarks (classics) only", benchmarkOnly) { benchmarkOnly = it }
             SwitchRow("Listed only", listedOnly) { listedOnly = it }
             SwitchRow("Single-frame only", singleFrameOnly) { singleFrameOnly = it }
+
+            // Board-size filter — only when the installed catalog can supply sizes (with fit boxes).
+            if (installedSizes.isNotEmpty()) {
+                Text("Board size", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                Dropdown("Board size", installedSizes.firstOrNull { it.id == dlSizeId }?.label ?: "Any size") { dismiss ->
+                    DropdownMenuItem(text = { Text("Any size") }, onClick = { dlSizeId = 0; dismiss() })
+                    installedSizes.forEach { s ->
+                        DropdownMenuItem(text = { Text(s.label) }, onClick = { dlSizeId = s.id; dismiss() })
+                    }
+                }
+                Text("Keep only climbs that physically fit this board size (mirrors the Board Explorer).",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
             Text("Catalog size", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             Dropdown("Keep most-climbed", if (maxClimbs == 0) "All matching" else "Top $maxClimbs") { dismiss ->

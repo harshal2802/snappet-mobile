@@ -246,27 +246,41 @@ struct KilterClimbDetailView: View {
         .padding(.horizontal)
     }
 
-    /// Benchmark ("Classic") badge + first-ascensionist, when the catalog has them for this angle.
+    /// The matching rule (always shown), plus a benchmark ("Classic") badge + first-ascensionist when the
+    /// catalog has them for this angle.
     @ViewBuilder private var metaRow: some View {
         let isClassic = currentStat?.benchmarkDifficulty != nil
         let fa = currentStat?.faUsername ?? ""
-        if isClassic || !fa.isEmpty {
-            HStack(spacing: 10) {
-                if isClassic {
-                    Label("Classic", systemImage: "rosette")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 9).padding(.vertical, 3)
-                        .background(SnappetColor.moduleAccent("kilter").opacity(0.18), in: Capsule())
-                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
-                }
-                if !fa.isEmpty {
-                    Label("FA \(fa)", systemImage: "flag.checkered")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
+        HStack(spacing: 10) {
+            matchBadge(noMatch: climb?.isNoMatch ?? false)
+            if isClassic {
+                Label("Classic", systemImage: "rosette")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(SnappetColor.moduleAccent("kilter").opacity(0.18), in: Capsule())
+                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
             }
-            .padding(.horizontal)
+            if !fa.isEmpty {
+                Label("FA \(fa)", systemImage: "flag.checkered")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
         }
+        .padding(.horizontal)
+    }
+
+    /// The Kilter "No matching" rule as a tag: an amber `hand.raised.slash` "No matching" chip when the
+    /// setter forbids matching hands on a hold, else a quiet "Matching" chip (the default). Mirrors the
+    /// official app's no-match icon while still showing the allowed case so the rule is never ambiguous.
+    private func matchBadge(noMatch: Bool) -> some View {
+        Label(noMatch ? "No matching" : "Matching",
+              systemImage: noMatch ? "hand.raised.slash.fill" : "hand.raised.fill")
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background((noMatch ? Color.orange : Color.secondary).opacity(noMatch ? 0.18 : 0.14), in: Capsule())
+            .foregroundStyle(noMatch ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            .accessibilityIdentifier("kilter.matchTag")
+            .accessibilityLabel(noMatch ? "No matching allowed on this climb" : "Matching allowed")
     }
 
     /// How the grade changes across board angles — the climb's signature. The selected angle is

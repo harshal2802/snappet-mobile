@@ -264,4 +264,46 @@ final class KilterCatalogStoreTests: XCTestCase {
         let roleShapes = ["start", "middle", "finish", "foot"].map(KilterHoldShape.forRole)
         XCTAssertEqual(Set(roleShapes).count, 4, "the four roles must be four distinct shapes")
     }
+
+    /// The climb reader surfaces the Kilter "No matching" rule from `climbs.is_nomatch`, and each board
+    /// size carries its fit box from `product_sizes.edge_*`. The fixture flags Bravo as no-match and
+    /// gives sizes 1/2 a tall 0…24 box, size 3 a short (top 12) box.
+    func testClimbNoMatchRuleAndSizeFitBox() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        // is_nomatch: Bravo forbids matching; Alpha allows it (the default).
+        XCTAssertEqual(cat.climb("22222222-2222-4222-8222-222222222222")?.isNoMatch, true)
+        XCTAssertEqual(cat.climb("22222222-2222-4222-8222-222222222222")?.description, "No matching")
+        XCTAssertEqual(cat.climb("11111111-1111-4111-8111-111111111111")?.isNoMatch, false)
+
+        // Size fit boxes from product_sizes.edge_*.
+        let sizes = cat.sizes(forLayout: 1)
+        XCTAssertEqual(sizes.first { $0.id == 1 }?.box, KilterSizeBox(left: 0, right: 24, bottom: 0, top: 24))
+        XCTAssertEqual(sizes.first { $0.id == 3 }?.box, KilterSizeBox(left: 0, right: 24, bottom: 4, top: 12),
+                       "the Mini board is shorter (top 12)")
+    }
+
+    /// The "No matching" detector (the fallback for catalogs without the `is_nomatch` column) reads the
+    /// setter note from the description; default (no note) is matching-allowed.
+    func testNoMatchDescriptionDetector() {
+        XCTAssertTrue(kilterDescriptionForbidsMatching("No matching"))
+        XCTAssertTrue(kilterDescriptionForbidsMatching("Fun jug haul. NO MATCH on the start."))
+        XCTAssertTrue(kilterDescriptionForbidsMatching("crimpy — no-match"))
+        XCTAssertTrue(kilterDescriptionForbidsMatching("nomatch"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("Great climb, match the finish."))
+        XCTAssertFalse(kilterDescriptionForbidsMatching(""))
+        // Must NOT fire inside ordinary words / a trailing-letter form (word-boundary matching).
+        XCTAssertFalse(kilterDescriptionForbidsMatching("piano matched perfectly"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("Casino match on the dyno"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("volcano matches the vibe"))
+        XCTAssertFalse(kilterDescriptionForbidsMatching("no matches found in the log"))
+    }
 }

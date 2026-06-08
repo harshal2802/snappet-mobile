@@ -219,6 +219,17 @@ instead. Off-device verified (new size-geometry + shape-mapping tests on both pl
 green, 3rd fixture size mirrored across all four sources). **Device-unverified**: that the size-coded
 schematic + shapes read better on a real screen for a color-blind climber.
 
+🟢 **Kilter: "No matching" tag + board-size download filter (2026-06-07).** iOS + Android. The climb
+screen now shows the Kilter **"No matching"** rule (whether the setter forbids matching hands on a hold)
+as a tag, read from the real catalog's `climbs.is_nomatch` column (grounded by inspecting the actual
+165 MB Kilter dataset — 73,864/344,504 climbs flagged; `hsm` is unrelated), with a pure
+description-note fallback for older catalogs. The **download** flow gained a **board-size** filter that
+keeps only climbs physically fitting a chosen size — mirroring the Board Explorer's
+`c.edge_* ⊆ product_sizes.edge_*` rule; sizes come from the installed catalog (hidden on a first-ever
+download). Both newer columns (`is_nomatch`, `product_sizes.edge_*`) are PRAGMA-guarded and degrade on
+catalogs that lack them. Off-device verified (match read, size-box read, the size-fit filter, and the
+pure detector — both platforms; fixture extended across all four mirrors).
+
 ## License
 
 TBD.

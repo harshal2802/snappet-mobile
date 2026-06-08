@@ -41,6 +41,11 @@ struct CatalogManifest: Codable, Sendable {
 /// "mobile-compatible" mode: listed + single-frame + Kilter layouts.
 struct CatalogFilter: Sendable, Equatable {
     var layoutIds: [Int] = [1, 8]      // empty = all layouts
+    /// A `product_size`: keep only climbs that physically **fit** that board size (the climb's `edge_*`
+    /// box ⊆ the size's `sizeBox`). `nil` = any size. `sizeId` is the picker's selection; `sizeBox` is
+    /// its resolved `product_sizes.edge_*` box (mirrors the Board Explorer's `withResolvedSize`).
+    var sizeId: Int?
+    var sizeBox: KilterSizeBox?
     var angle: Int?                    // specific board angle, nil = any
     var gradeMin: Int?
     var gradeMax: Int?
@@ -288,6 +293,12 @@ final class HostedCatalogClient {
         if f.singleFrameOnly { conds.append("c.frames_count = 1") }
         if !f.layoutIds.isEmpty {
             conds.append("c.layout_id IN (\(f.layoutIds.map { String($0) }.joined(separator: ",")))")
+        }
+        // Board size: keep only climbs whose bounding box fits inside the size's box (mirrors the Board
+        // Explorer's buildConditions). The box is bound in [left, right, bottom, top] order.
+        if let box = f.sizeBox {
+            conds.append("c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?")
+            params.append(contentsOf: box.params)
         }
         if let angle = f.angle { conds.append("cs.angle = ?"); params.append(angle) }
         if let lo = f.gradeMin { conds.append("ROUND(cs.display_difficulty) >= ?"); params.append(lo) }

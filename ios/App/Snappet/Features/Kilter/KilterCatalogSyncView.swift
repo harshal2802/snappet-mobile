@@ -173,9 +173,22 @@ struct KilterCatalogDownloadSheet: View {
     @AppStorage("kilter.dl.listedOnly") private var listedOnly = true
     @AppStorage("kilter.dl.singleFrameOnly") private var singleFrameOnly = true
     @AppStorage("kilter.dl.maxClimbs") private var maxClimbs = 2000
+    /// Board-size filter (`product_size_id`); 0 = any size. Keep only climbs that fit the chosen board.
+    @AppStorage("kilter.dl.sizeId") private var dlSizeId = 0
 
     @State private var boards: [CatalogBoardEntry] = []
     @State private var loadingBoards = true
+
+    private let catalog = KilterCatalog.shared
+    /// Sizes offered in the size filter — read from the **installed** catalog (with a fit box), deduped
+    /// across the downloaded layouts. Empty (and the section hidden) on a first-ever download, since the
+    /// board's sizes aren't known until a catalog exists. The chosen size's box drives the fit filter.
+    private var installedSizes: [KilterBoardSize] {
+        guard catalog.isAvailable else { return [] }
+        var seen = Set<Int>()
+        return [1, 8].flatMap { catalog.sizes(forLayout: $0) }
+            .filter { $0.box != nil && seen.insert($0.id).inserted }
+    }
 
     private static let caps = [1000, 2000, 5000, 10000, 0]   // 0 = all matching
     private static let ascentChoices = [0, 10, 50, 100, 500, 1000]
@@ -191,6 +204,7 @@ struct KilterCatalogDownloadSheet: View {
                 boardSection
                 layoutSection
                 filterSection
+                boardSizeSection
                 sizeSection
                 actionSection
                 Section("Source") {
@@ -286,6 +300,24 @@ struct KilterCatalogDownloadSheet: View {
         }
     }
 
+    /// Board-size filter — only shown when the installed catalog can supply sizes (with fit boxes).
+    @ViewBuilder private var boardSizeSection: some View {
+        let sizes = installedSizes
+        if !sizes.isEmpty {
+            Section {
+                Picker("Board size", selection: $dlSizeId) {
+                    Text("Any size").tag(0)
+                    ForEach(sizes) { Text($0.label).tag($0.id) }
+                }
+                .accessibilityIdentifier("kilter.dl.size")
+            } header: {
+                Text("Board size")
+            } footer: {
+                Text("Keep only climbs that physically fit this board size (mirrors the Board Explorer).")
+            }
+        }
+    }
+
     @ViewBuilder private var sizeSection: some View {
         Section {
             Picker("Keep most-climbed", selection: $maxClimbs) {
@@ -346,6 +378,11 @@ struct KilterCatalogDownloadSheet: View {
         f.listedOnly = listedOnly
         f.singleFrameOnly = singleFrameOnly
         f.maxClimbs = maxClimbs
+        // Only apply the size filter when the chosen size resolves to a fit box from the installed catalog.
+        if dlSizeId > 0, let box = installedSizes.first(where: { $0.id == dlSizeId })?.box {
+            f.sizeId = dlSizeId
+            f.sizeBox = box
+        }
         return f
     }
 
