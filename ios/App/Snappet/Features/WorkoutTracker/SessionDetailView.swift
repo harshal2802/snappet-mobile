@@ -50,8 +50,10 @@ struct SessionDetailView: View {
                 }
             }
 
-            if let stats = WorkoutHRStats.make(from: session.hrSeries) {
-                HeartRateSummarySection(series: session.hrSeries, stats: stats)
+            if let stats = WorkoutHRStats.make(from: session.hrSeries,
+                                               maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR) {
+                HeartRateSummarySection(series: session.hrSeries, stats: stats,
+                                        sourceRaw: session.metricsSourceRaw, kcal: session.kcalEstimate)
             }
 
             // Unified media + per-set breakdown (the actions header, one section per exercise with
@@ -112,6 +114,11 @@ struct SessionDetailView: View {
 private struct HeartRateSummarySection: View {
     let series: [HRPoint]
     let stats: WorkoutHRStats
+    /// `MetricsSourceKind.rawValue` of the HR transport, for the "via …" source label; `nil` hides it.
+    var sourceRaw: String? = nil
+    /// HR-based calorie estimate (BLE-only, Phase 2); `nil` hides the calories tile (watch sessions
+    /// — where energy is measured, not estimated — and incomplete-profile sessions).
+    var kcal: Double? = nil
 
     var body: some View {
         Section {
@@ -132,12 +139,31 @@ private struct HeartRateSummarySection: View {
                 HStack(spacing: 24) {
                     redlineStat(stats)
                     strainStat(stats)
+                    if let kcal { calorieStat(kcal) }
                 }
                 .frame(maxWidth: .infinity)
             }
         } header: {
-            Text("Heart rate")
+            HStack {
+                Text("Heart rate")
+                if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
+                    Spacer()
+                    Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
         }
+    }
+
+    /// Estimated calories tile: the HR-based (Keytel) energy estimate that fills a BLE band's
+    /// `energy = 0`. Labelled "est." so it never reads as a measured figure (decisions.md 2026-06-08).
+    private func calorieStat(_ kcal: Double) -> some View {
+        VStack(spacing: 2) {
+            Text("\(Int(kcal.rounded()))")
+                .font(.title3.monospacedDigit().weight(.semibold))
+            Text("kcal est.").font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("hrCalorieStat")
     }
 
     private func hrStat(_ label: String, bpm: Double) -> some View {
@@ -330,7 +356,8 @@ private struct SessionMediaSection: View {
         // once and looked up per row — the WorkoutTracker twin of the Kilter per-climb effort.
         let efforts = WorkoutHRStats.setEfforts(
             for: session.exercises, sessionStart: session.startedAt,
-            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })
+            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) },
+            maxHR: session.maxHR, restHR: session.restHR)
         Group {
             actionsSection
             ForEach(session.exercises) { ex in
@@ -341,7 +368,8 @@ private struct SessionMediaSection: View {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
-                                       effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty)
+                                       effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
+                                       maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
                         ForEach(mediaFor(exercise: ex.id, set: nil)) { mediaRow($0) }
@@ -675,6 +703,8 @@ private struct SetTileRow: View {
     /// Per-set HR effort/recovery (peak, %HRR-or-bpm, recovery) over the set's window; `.empty` for
     /// HR-less sessions or sets with no completion → the effort row is hidden.
     var effort: ClimbEffort = .empty
+    /// The session's resolved max HR for the zone tints; defaults to the no-profile fallback (Phase 2).
+    var maxHR: Double = HeartRateZone.defaultMaxHR
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -687,7 +717,7 @@ private struct SetTileRow: View {
                     Text("—").foregroundStyle(.tertiary)
                 }
                 if let bpm {
-                    let zone = HeartRateZone.forBpm(bpm)
+                    let zone = HeartRateZone.forBpm(bpm, maxHR: maxHR)
                     HStack(spacing: 3) {
                         Image(systemName: "heart.fill").font(.caption2)
                         Text("\(Int(bpm.rounded()))").font(.caption.monospacedDigit().weight(.semibold))
@@ -699,7 +729,7 @@ private struct SetTileRow: View {
                 }
             }
             // Peak effort + recovery for the set (shared with the Kilter per-climb badge).
-            HREffortBadge(effort: effort)
+            HREffortBadge(effort: effort, maxHR: maxHR)
                 .accessibilityIdentifier("setEffort")
         }
     }

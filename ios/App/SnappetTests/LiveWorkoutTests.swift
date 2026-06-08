@@ -132,8 +132,12 @@ final class LiveWorkoutOffsetTests: XCTestCase {
     func testMessageRoundTrips() {
         let m = LiveWorkoutMessage.metrics(hrBpm: 130, energyKcal: 12.5, t: 42)
         XCTAssertEqual(LiveWorkoutMessage(payload: m.payload), m)
-        let s = LiveWorkoutMessage.start(activityType: HKWorkoutActivityType.climbing.rawValue)
+        let s = LiveWorkoutMessage.start(activityType: HKWorkoutActivityType.climbing.rawValue, maxHR: nil)
         XCTAssertEqual(LiveWorkoutMessage(payload: s.payload), s)
+        // The Phase-2 maxHR field rides the start message and survives the dictionary round-trip.
+        let sMax = LiveWorkoutMessage.start(activityType: HKWorkoutActivityType.climbing.rawValue, maxHR: 188)
+        XCTAssertEqual(LiveWorkoutMessage(payload: sMax.payload), sMax)
+        XCTAssertNotEqual(sMax, s)   // maxHR participates in equality
         XCTAssertEqual(LiveWorkoutMessage(payload: LiveWorkoutMessage.stop.payload), .stop)
         XCTAssertNil(LiveWorkoutMessage(payload: ["nonsense": 1]))
         // Malformed metrics (missing energyKcal + t) must decode to nil, not phantom 0s.

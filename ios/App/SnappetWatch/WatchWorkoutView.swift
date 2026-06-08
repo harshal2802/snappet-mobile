@@ -43,7 +43,10 @@ struct WatchWorkoutView: View {
 private struct MetricsPage: View {
     let manager: WorkoutWatchManager
 
-    private var zone: HeartRateZone { HeartRateZone.forBpm(manager.latestHR > 0 ? manager.latestHR : nil) }
+    private var zone: HeartRateZone {
+        HeartRateZone.forBpm(manager.latestHR > 0 ? manager.latestHR : nil,
+                             maxHR: manager.maxHR ?? HeartRateZone.defaultMaxHR)
+    }
 
     var body: some View {
         VStack(spacing: 8) {

@@ -96,17 +96,19 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     // MARK: - Start / stop
 
     func start(_ context: LiveMetricsContext) {
-        start(activityType: context.activityType, sessionStart: context.startedAt)
+        start(activityType: context.activityType, sessionStart: context.startedAt, maxHR: context.maxHR)
     }
 
-    /// Lower-level start used by `start(_:)` and by tests/A3.
-    func start(activityType: HKWorkoutActivityType, sessionStart: Date) {
+    /// Lower-level start used by `start(_:)` and by tests/A3. `maxHR` (the profile's resolved max,
+    /// Phase 2) rides the start message so the watch face personalizes its HR zone; `nil` → the watch
+    /// keeps the default ceiling.
+    func start(activityType: HKWorkoutActivityType, sessionStart: Date, maxHR: Double? = nil) {
         self.sessionStart = sessionStart
         samples.removeAll()
         latestHR = nil
         energy = 0
         isPaused = false
-        send(.start(activityType: activityType.rawValue))
+        send(.start(activityType: activityType.rawValue, maxHR: maxHR))
         // Only claim "running" when there's actually a watch to run it — otherwise the
         // A4 overlay would sit at "Waiting for heart rate…" forever (no watch installed).
         if watchUsable { connectionState = .workoutRunning }

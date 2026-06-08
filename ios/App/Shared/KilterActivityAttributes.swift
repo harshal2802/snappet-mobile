@@ -37,5 +37,8 @@ struct KilterActivityAttributes: ActivityAttributes {
 
     /// The board being climbed — fixed for the activity's lifetime (e.g. "Kilter Board").
     var boardName: String
+    /// The user's resolved max HR (Phase 2), so the widget tints the HR zone off the same
+    /// personalized ceiling as the phone; `nil` → `HeartRateZone.defaultMaxHR`, back-compatible.
+    var maxHR: Double?
 }
 #endif

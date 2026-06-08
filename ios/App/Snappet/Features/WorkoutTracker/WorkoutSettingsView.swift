@@ -35,6 +35,21 @@ struct WorkoutSettingsView: View {
                 Text("Choose where live heart rate comes from during a workout — your Apple Watch or a Bluetooth heart-rate band.")
             }
 
+            Section {
+                NavigationLink {
+                    UserHRProfileView()
+                } label: {
+                    LabeledContent("Heart-rate profile",
+                                   value: app.userProfile.profile.resolvedMaxHR
+                                       .map { "Max \(Int($0.rounded()))" } ?? "Not set")
+                }
+                .accessibilityIdentifier("openHRProfile")
+            } header: {
+                Text("Heart-rate profile")
+            } footer: {
+                Text("Personalizes heart-rate zones, % effort, and a calorie estimate across the app. Optional — without it, zones use a default ceiling.")
+            }
+
             Section("Your data") {
                 LabeledContent("Completed workouts", value: "\(history.count)")
                 LabeledContent("Custom exercises", value: "\(customExercises.count)")

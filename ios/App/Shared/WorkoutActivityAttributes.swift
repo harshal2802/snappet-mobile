@@ -37,5 +37,9 @@ struct WorkoutActivityAttributes: ActivityAttributes {
 
     /// The routine being performed — fixed for the activity's lifetime.
     var routineName: String
+    /// The user's resolved max HR (Phase 2), so the widget tints the HR zone off the same
+    /// personalized ceiling as the phone (the widget process can't read the profile store). Fixed for
+    /// the activity's lifetime; `nil` → `HeartRateZone.defaultMaxHR`, back-compatible.
+    var maxHR: Double?
 }
 #endif

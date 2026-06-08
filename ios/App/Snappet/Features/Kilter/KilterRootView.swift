@@ -189,7 +189,8 @@ struct KilterRootView: View {
             syncBoardSize()
             sessions.bind(liveWorkout: app.liveWorkout,
                           liveActivity: app.kilterLiveActivity,
-                          media: app.sessionMedia)
+                          media: app.sessionMedia,
+                          userProfile: app.userProfile)
             // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
             // (and auto-close any duplicate or long-abandoned ones) so the bar, HR, Live Activity, and
             // log-grouping never go stale after navigating away and back.

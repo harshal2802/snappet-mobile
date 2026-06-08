@@ -308,12 +308,16 @@ final class KilterSession {
     /// Resting HR baseline, when known; reserved for %HRR refinement.
     var restHR: Double?
     /// `MetricsSourceKind.rawValue` of the transport that drove HR ("appleWatch"/"ble"), for the
-    /// summary's source label; `nil` when no HR was captured.
+    /// summary's source label + the BLE-only calorie gate; `nil` when no HR was captured.
     var metricsSourceRaw: String?
+    /// HR-based calorie estimate (Keytel) for **BLE** sessions with a complete `UserHRProfile` —
+    /// fills the band's hardcoded `energy = 0`; `nil` for watch sessions or an incomplete profile
+    /// (Phase 2). Additive Optional → lightweight migration, like the other live-metrics fields.
+    var kcalEstimate: Double?
 
     init(id: UUID = UUID(), startedAt: Date = .now, endedAt: Date? = nil, angle: Int, source: String,
          hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil,
-         metricsSourceRaw: String? = nil) {
+         metricsSourceRaw: String? = nil, kcalEstimate: Double? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.endedAt = endedAt
@@ -323,6 +327,7 @@ final class KilterSession {
         self.maxHR = maxHR
         self.restHR = restHR
         self.metricsSourceRaw = metricsSourceRaw
+        self.kcalEstimate = kcalEstimate
     }
 
     /// Session length: `endedAt − startedAt`, or elapsed-so-far while still active.

@@ -68,7 +68,8 @@ struct KilterLiveActivity: Widget {
 
     /// Heart rate, tinted by its `HeartRateZone` (shared with the phone overlay + watch face).
     private func heartLabel(_ context: ActivityViewContext<KilterActivityAttributes>) -> some View {
-        let zone = HeartRateZone.forBpm(context.state.hrBpm.map(Double.init))
+        let zone = HeartRateZone.forBpm(context.state.hrBpm.map(Double.init),
+                                         maxHR: context.attributes.maxHR ?? HeartRateZone.defaultMaxHR)
         return Label {
             Text(context.state.hrBpm.map { "\($0)" } ?? "—")
         } icon: {
@@ -82,7 +83,8 @@ struct KilterLiveActivity: Widget {
 private struct KilterLockScreenView: View {
     let context: ActivityViewContext<KilterActivityAttributes>
 
-    private var zone: HeartRateZone { HeartRateZone.forBpm(context.state.hrBpm.map(Double.init)) }
+    private var zone: HeartRateZone { HeartRateZone.forBpm(context.state.hrBpm.map(Double.init),
+                                         maxHR: context.attributes.maxHR ?? HeartRateZone.defaultMaxHR) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
