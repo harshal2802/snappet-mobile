@@ -174,6 +174,19 @@ struct KilterSessionStats: Sendable, Equatable {
             totalDuration: duration, medianTimeOnClimb: median)
     }
 
+    /// Achievement windows for the effort-aligned reel selector (fitness-band Phase 4): each **sent**
+    /// climb's HR window `[start, end + hrLagSec]` in seconds from the session start (the end extended
+    /// by the HR lag, like the per-climb effort window). Only sends with a recorded start contribute;
+    /// no sends → `[]` ⇒ the reel ranks on HR alone (gated). Pure → unit-tested.
+    static func sentClimbWindows(from logs: [KilterClimbLog], start: Date,
+                                 config: HighlightConfig = .preset(for: .climbing)) -> [ClosedRange<Double>] {
+        logs.filter { $0.isSend && $0.startedAt != nil }.compactMap { log in
+            let s = max(0, log.effectiveStart.timeIntervalSince(start))
+            let e = max(s, log.effectiveEnd.timeIntervalSince(start) + config.hrLagSec)
+            return s...e
+        }
+    }
+
     /// Median of a **sorted, non-empty** array (mean of the two middle values for an even count).
     private static func medianOf(_ sorted: [TimeInterval]) -> TimeInterval {
         let n = sorted.count

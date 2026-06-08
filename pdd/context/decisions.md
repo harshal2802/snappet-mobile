@@ -2799,3 +2799,47 @@ gate, the outlier filter, the window gather) + XCTest (`RRDecodeTests` RR+energy
 `RestHRVStatsTests` per-rest HRV in both apps). **Device-unverified** (no BLE/RR/strap in the
 simulator): live RR capture off a real Polar H10, the `0x2A24` model read firing, and an optical band
 showing no HRV.
+
+---
+
+## 2026-06-08 — Fitness-band richness **Phase 4**: recovery-ready nudge + effort-aligned selector
+
+**Context:** roadmap Phase 4 (prompt `27-ios-recovery-nudge-effort-selector.md`), stacked on Phases
+2 + 3. The two "bigger bets" that turn the personalized HR profile (Phase 2) and HRV (Phase 3) into
+in-the-moment and in-the-reel value.
+
+**What shipped.**
+1. **Live recovery-ready nudge.** New pure engine `RecoveryReadiness.evaluate(currentBpm:restBpm:
+   maxBpm:rrReboundFraction:)` → `{ unknown | recovering | ready, fraction }`. Both live pills
+   (`LiveHRPill`, `KilterHRPill`) show a "Recovered" chip; `recoveryReady` threads through both
+   `…LiveSnapshot`s (counted structural in `shouldPush`), both Live-Activity `ContentState`s, the
+   controllers, and the widget renderers; the **watch** computes it on-wrist (inline %HRR — the watch
+   target doesn't link the engine) from `maxHR` + a new wired `restHR`.
+2. **Effort-aligned highlight selector.** New pure engine `EffortAlignedSelector` (boosts injected
+   `[ClosedRange<Double>]` windows) + `FusionSelector.effortAligned(windows:)`; `AppModel.engine(
+   boosting:)` builds the fused engine. Kilter boosts **sent-climb** windows (`KilterSessionStats
+   .sentClimbWindows` → `ReelSource.boostWindows` → `ReelViewModel`); WorkoutTracker boosts
+   **peak-effort set** windows (`WorkoutHRStats.peakEffortWindows` → `SessionHighlightViewModel`).
+
+**Decisions worth recording:**
+- **Readiness gating is structural.** `.unknown` without both profile bounds → every surface hides
+  the nudge, identically in both apps (no profile ⇒ no nudge). HRV rebound is an optional sharpener
+  (eases the %HRR threshold up to +0.10), never required.
+- **The watch computes readiness inline, not via the engine.** The watch target doesn't link
+  `HighlightEngine`, so rather than add the dependency for a 3-line %HRR check, the watch derives
+  `recoveryReady` from its own live bpm + the wired `maxHR`/`restHR` (mirrors the Phase-2 `maxHR`
+  wire). One more optional `restHR` field on `LiveWorkoutMessage.start` / `LiveMetricsContext`.
+- **The effort boost is gated by empty windows, not a flag.** `FusionSelector.effortAligned([])` makes
+  the effort term 0 everywhere ⇒ pure HR ranking — so no profile / no sends / no scored sets ⇒ today's
+  reels, unchanged. The HealthKit-summary WorkoutTracker reel path (no per-set data) boosts nothing;
+  the peak-effort boost lives in the session-based `SessionHighlightViewModel` path.
+- **Two reel paths, one selector.** Kilter routes through `model.engine(boosting:).generate`;
+  WorkoutTracker's session reel routes through `app.engine(boosting:).selector.select` — both fed the
+  same `EffortAlignedSelector` via the shared windows helpers.
+
+**Verified off-device:** `swift test` (`RecoveryReadinessTests` — state thresholds, HRV easing,
+fraction clamp; `EffortAlignedSelectorTests` — in/out-of-window boost, fusion raises in-window above
+out-window, empty-windows ⇒ HR-only) + XCTest (`RecoveryNudgeSelectorTests` — sent-climb +
+peak-effort window derivations). **Device-unverified** (no live HR / band / watch in the simulator):
+the live "Recovered" nudge on the pills / Live Activity / widget / watch firing as HR drops, and a
+real reel favoring sent-climb / peak-effort moments.

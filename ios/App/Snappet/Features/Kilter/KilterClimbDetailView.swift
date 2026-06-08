@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import HighlightEngine
 import UIKit
 
 /// A single climb: the holds rendered on the board, an angle selector (difficulty is per-angle),
@@ -357,7 +358,11 @@ struct KilterClimbDetailView: View {
                 Spacer()
                 if app.liveWorkout.state != .unavailable {
                     KilterHRPill(bpm: app.liveWorkout.latestHR,
-                                 contactLost: app.liveWorkout.isContactLost == true)
+                                 contactLost: app.liveWorkout.isContactLost == true,
+                                 readiness: RecoveryReadiness.evaluate(
+                                    currentBpm: app.liveWorkout.latestHR,
+                                    restBpm: app.userProfile.profile.restingBound,
+                                    maxBpm: app.userProfile.profile.resolvedMaxHR))
                 }
             }
             .padding(.horizontal)

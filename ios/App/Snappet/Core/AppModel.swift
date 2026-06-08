@@ -91,6 +91,18 @@ final class AppModel {
         )
     }
 
+    /// The engine variant that **boosts achievement windows** (fitness-band Phase 4): sent-climb
+    /// windows (Kilter) / peak-effort set windows (WorkoutTracker), in seconds from session start, so
+    /// the auto-reel features the achievement, not just the raw HR peak. Empty `windows` ⇒ the
+    /// effort term is 0 everywhere ⇒ identical to `engine` (HR-only) — the gated, no-change default.
+    func engine(boosting windows: [ClosedRange<Double>]) -> HighlightEngine {
+        HighlightEngine(
+            selector: FusionSelector.effortAligned(windows: windows),
+            planner: ReelPlanner(targetDuration: nil),
+            feedback: feedback
+        )
+    }
+
     /// Launch entry point. First-time users see value-first onboarding; returning
     /// users go straight to loading their workouts.
     func start() async {

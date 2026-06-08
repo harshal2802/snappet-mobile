@@ -62,13 +62,16 @@ extension ReelSource {
     /// remove / reorder / export) the same way a workout does, built from the session + its tagged
     /// media via `KilterWorkoutBuilder`. The workout is a pure snapshot, so `makeWorkout` ignores the
     /// `AppModel` and manual-media args.
-    static func kilterSession(_ session: KilterSession, media: [SessionMedia]) -> ReelSource {
+    static func kilterSession(_ session: KilterSession, media: [SessionMedia],
+                              logs: [KilterClimbLog] = []) -> ReelSource {
         // Snapshot Sendable values now — the @Model `session`/`media` aren't Sendable and must not be
         // captured into `makeWorkout` (a `@MainActor` escaping closure → Swift-6 data-race error).
         let hr = session.hrSeries, duration = session.duration
         let maxHR = session.maxHR, restHR = session.restHR
         let baseClips = media.map(KilterWorkoutBuilder.Clip.from)
-        return ReelSource(id: session.id.uuidString, activity: .climbing,
+        // Boost sent-climb windows so the auto-reel features the SENDS, not just raw HR peaks (Phase 4).
+        let sentWindows = KilterSessionStats.sentClimbWindows(from: logs, start: session.startedAt)
+        var source = ReelSource(id: session.id.uuidString, activity: .climbing,
                           title: "Climbing reel", start: session.startedAt,
                           makeWorkout: { _, manual in
                               // `manual` (the limited-Photos picker) overrides the auto-tagged media so
@@ -84,6 +87,8 @@ extension ReelSource {
                               return KilterWorkoutBuilder.workout(
                                   hr: hr, duration: duration, maxHR: maxHR, restHR: restHR, clips: clips)
                           })
+        source.boostWindows = sentWindows
+        return source
     }
 }
 

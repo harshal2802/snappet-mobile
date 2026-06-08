@@ -119,11 +119,11 @@ final class LiveMetricsCoordinator: MetricsSource {
     /// `WorkoutActivityMapping`) so the existing call sites don't churn. Kilter sessions call
     /// `start(_:)` directly with `.climbing`.
     func start(for session: WorkoutSession, sport: SportTag?, category: ExerciseCategory?,
-               maxHR: Double? = nil) {
+               maxHR: Double? = nil, restHR: Double? = nil) {
         start(LiveMetricsContext(startedAt: session.startedAt,
                                  activityType: WorkoutActivityMapping.activityType(sport: sport,
                                                                                    category: category),
-                                 maxHR: maxHR))
+                                 maxHR: maxHR, restHR: restHR))
     }
 
     func stop() {

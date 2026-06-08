@@ -80,6 +80,13 @@ private struct MetricsPage: View {
                     .background(zone.color.opacity(0.18), in: Capsule())
                     .foregroundStyle(zone.color)
             }
+            if manager.recoveryReady && !manager.paused {
+                Label("Recovered", systemImage: "checkmark.circle.fill")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(.green.opacity(0.18), in: Capsule())
+                    .foregroundStyle(.green)
+            }
 
             HStack(spacing: 14) {
                 stat("\(Int(manager.energyKcal.rounded()))", "kcal")

@@ -403,7 +403,11 @@ private struct SessionMediaSection: View {
                                 localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
                                 offsetSec: $0.offsetSec, durationSec: $0.durationSec)
                         },
-                        duration: session.duration, sport: sport, category: category))
+                        duration: session.duration, sport: sport, category: category,
+                        // Boost peak-effort set windows so the auto-reel features the hard sets (Phase 4).
+                        boostWindows: WorkoutHRStats.peakEffortWindows(
+                            for: session.exercises, sessionStart: session.startedAt,
+                            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })))
             }
         }
         .task {

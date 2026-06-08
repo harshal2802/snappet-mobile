@@ -33,6 +33,9 @@ struct KilterActivityAttributes: ActivityAttributes {
         /// Whether the session is paused — freezes the timer + shows a "Paused" badge. Defaulted so
         /// callers that don't care construct it without churn.
         var paused: Bool = false
+        /// Whether the user is recovered enough for the next climb (Phase 4); the Lock Screen / Dynamic
+        /// Island show a "Recovered" badge. Defaulted so producer + renderer can't drift mid-session.
+        var recoveryReady: Bool = false
     }
 
     /// The board being climbed — fixed for the activity's lifetime (e.g. "Kilter Board").

@@ -19,6 +19,10 @@ struct LiveMetricsContext: Sendable {
     /// the same value as the phone; the BLE band ignores it (Phase 2). `nil` → the watch falls back to
     /// `HeartRateZone.defaultMaxHR`, exactly as before.
     var maxHR: Double? = nil
+    /// The user's resting HR (`UserHRProfile.restingBound`), relayed to the watch alongside `maxHR` so
+    /// the watch can compute the live "recovery ready" nudge (Phase 4). `nil` → the watch shows no
+    /// nudge (it needs both bounds), exactly as before.
+    var restHR: Double? = nil
 }
 
 /// Source-agnostic lifecycle of a live-metrics source, exposed so the UI (A4 overlay,

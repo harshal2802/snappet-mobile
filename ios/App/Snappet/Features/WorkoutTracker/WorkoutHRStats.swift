@@ -156,6 +156,50 @@ extension WorkoutHRStats {
         return result
     }
 
+    /// Achievement windows for the effort-aligned reel selector (fitness-band Phase 4): the HR window
+    /// of each completed set that produced a peak — `[completedAt − work, completedAt + hrLagSec]`,
+    /// the same window `setEfforts` scores. WorkoutTracker's analogue of the Kilter sent-climb windows;
+    /// the reel then features the peak-effort sets, not just raw HR peaks. Empty `hr` / no scored sets
+    /// → `[]` ⇒ HR-only ranking (gated). Pure → unit-tested.
+    static func peakEffortWindows(for exercises: [SessionExercise],
+                                  sessionStart: Date,
+                                  hr: [HRSample],
+                                  config: HighlightConfig = .preset(for: .strength),
+                                  maxLookback: Double = 120) -> [ClosedRange<Double>] {
+        let efforts = setEfforts(for: exercises, sessionStart: sessionStart, hr: hr,
+                                 config: config, maxLookback: maxLookback)
+        struct Entry { let ref: SetRef; let completedAt: Date; let kind: SetKind; let durationSec: Double? }
+        var entries: [Entry] = []
+        for ex in exercises {
+            for (i, set) in ex.sets.enumerated() {
+                guard let done = set.completedAt else { continue }
+                entries.append(Entry(ref: SetRef(exerciseID: ex.id, setIndex: i),
+                                     completedAt: done, kind: ex.kind, durationSec: set.durationSec))
+            }
+        }
+        entries.sort { $0.completedAt < $1.completedAt }
+
+        var windows: [ClosedRange<Double>] = []
+        var previousCompletedAt: Date?
+        for e in entries {
+            defer { previousCompletedAt = e.completedAt }
+            guard efforts[e.ref]?.peakBpm != nil else { continue }   // only sets we actually scored
+            let endOffset = max(0, e.completedAt.timeIntervalSince(sessionStart))
+            let lookback: Double
+            if e.kind == .duration, let d = e.durationSec, d > 0 {
+                lookback = d
+            } else if let prev = previousCompletedAt {
+                lookback = min(maxLookback, max(0, e.completedAt.timeIntervalSince(prev)))
+            } else {
+                lookback = maxLookback
+            }
+            let lo = max(0, endOffset - lookback)
+            let hi = max(lo, endOffset + config.hrLagSec)
+            windows.append(lo...hi)
+        }
+        return windows
+    }
+
     /// Per-set **rest** HRV across a session (fitness-band Phase 3) — the WorkoutTracker analogue of
     /// the Kilter per-climb rest HRV, computed over the recovery gap *before* each set. The window is
     /// `[previousSet.completedAt, thisSet's work start]`: a `.duration` hold excludes its known work

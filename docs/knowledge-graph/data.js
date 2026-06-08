@@ -314,6 +314,10 @@ const nodes = [
     file: "ios/HighlightEngine/Sources/HighlightEngine/EnergyExpenditure.swift", desc: "Pure HR→calorie estimator (fitness-band Phase 2): the Keytel et al. (2005) kcal/min regression on HR + sex + age + weight, plus a series integrator (left-edge dwell, capped at duration). Fills the BLE band's hardcoded energy = 0; callers gate it to BLE sessions with a complete profile (the watch measures real energy and is never overridden). Platform-free, swift-test'd.", tags: ["hr","energy","calories","keytel","pure","tested"] },
   { id: "hrv-metrics", label: "HRVMetrics", type: "engine", group: "engine", category: "core", platform: "engine",
     file: "ios/HighlightEngine/Sources/HighlightEngine/HRVMetrics.swift", desc: "Pure on-device HRV (fitness-band Phase 3): RMSSD / SDNN / pNN50 over a window of RR-intervals — the recovery-quality signal between efforts. Sibling to ClimbEffort: make(from:start:end:) gathers RR from HRSample.rrIntervalsMs in a rest window. Drops physiologically implausible RR (~[300,2000] ms) and needs a minimum number of beats, else .empty. RR rides the same 0x2A37 packet but is captured ONLY from a trusted chest strap (the BLE source gates it) — optical sensors / the watch path carry none, so HRV degrades to the bpm-only state. Platform-free, swift-test'd.", tags: ["hr","hrv","rmssd","rr","pure","tested"] },
+  { id: "recovery-readiness", label: "RecoveryReadiness", type: "engine", group: "engine", category: "core", platform: "engine",
+    file: "ios/HighlightEngine/Sources/HighlightEngine/RecoveryReadiness.swift", desc: "Pure live 'recovery ready' assessment (fitness-band Phase 4): evaluate(currentBpm:restBpm:maxBpm:rrReboundFraction:) → { unknown | recovering | ready, fraction } — ready when current %HRR ≤ a threshold the optional HRV rebound eases. .unknown without the profile's rest+max bounds, so no profile ⇒ no nudge (gated, both apps). Drives the live 'Recovered' chip on the pills / Live Activity / widget / watch. Platform-free, swift-test'd.", tags: ["hr","recovery","readiness","%hrr","pure","tested"] },
+  { id: "effort-aligned-selector", label: "EffortAlignedSelector", type: "engine", group: "engine", category: "core", platform: "engine",
+    file: "ios/HighlightEngine/Sources/HighlightEngine/EffortAlignedSelector.swift", desc: "HighlightSelector that boosts moments inside injected achievement windows (fitness-band Phase 4) — sent-climb windows (Kilter) / peak-effort set windows (WorkoutTracker) — so an auto-reel features the ACHIEVEMENT, not just the raw HR peak. Same pure protocol surface as HRHighlightSelector; composes with HR via FusionSelector.effortAligned(windows:). Empty windows ⇒ pure HR ranking (gated). AppModel.engine(boosting:) builds the fused engine. Platform-free, swift-test'd.", tags: ["selector","reel","effort","fusion","pure","tested"] },
   { id: "highlightselector", label: "HighlightSelector", type: "engine", group: "engine", category: "core", platform: "engine",
     file: "ios/HighlightEngine/Sources/HighlightEngine/HighlightSelector.swift", desc: "Protocol with HRHighlightSelector + SceneHighlightSelector stub + FusionSelector. Pluggable so HR-only → fusion is a one-line swap.", tags: ["selector","pluggable"] },
   { id: "highlightconfig", label: "HighlightConfig", type: "engine", group: "engine", category: "core", platform: "engine",
@@ -616,6 +620,14 @@ const links = [
   { source: "kilter-session-detail", target: "hrv-badge", type: "uses", label: "rest HRV" },
   { source: "wt-session-detail", target: "hrv-badge", type: "uses", label: "rest HRV" },
   { source: "hrv-badge", target: "hrv-metrics", type: "uses" },
+
+  // ---- Recovery-ready nudge + effort-aligned reel selector (fitness-band Phase 4) ----
+  { source: "wt-player", target: "recovery-readiness", type: "uses", label: "live nudge" },
+  { source: "recovery-readiness", target: "liveactivity-widget", type: "feeds", label: "Recovered badge" },
+  { source: "recovery-readiness", target: "watchview", type: "feeds", label: "Recovered (on-wrist)" },
+  { source: "wt-session-detail", target: "effort-aligned-selector", type: "uses", label: "peak-effort boost" },
+  { source: "kilter-session-detail", target: "effort-aligned-selector", type: "uses", label: "sent-climb boost" },
+  { source: "effort-aligned-selector", target: "heartrateseries", type: "uses" },
 
   // ---- Video studio (Track B): media tagging → summary → editor / highlight → share+save ----
   { source: "wt-session-detail", target: "climb-effort", type: "uses", label: "per-set effort/recovery" },

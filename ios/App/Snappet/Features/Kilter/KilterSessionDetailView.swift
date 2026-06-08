@@ -87,7 +87,10 @@ struct KilterSessionDetailView: View {
         // Reel: the shared auto-generate-then-edit flow (now full-length, uncapped).
         .sheet(isPresented: $showingReel) {
             if let session {
-                NavigationStack { ReelView(source: .kilterSession(session, media: media)) }
+                NavigationStack {
+                    ReelView(source: .kilterSession(session, media: media,
+                                                    logs: entries.map(KilterClimbLog.from)))
+                }
             }
         }
         // All clip editing happens in the full-screen Studio (big preview + trim/speed/crop/text/HR

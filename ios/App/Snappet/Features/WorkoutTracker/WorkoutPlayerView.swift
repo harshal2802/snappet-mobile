@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import HighlightEngine
 
 /// The live workout player: walks the user set-by-set through the session's exercises, logging
 /// reps + weight for each set, running a rest timer between sets, and showing a summary when
@@ -207,9 +208,13 @@ struct WorkoutPlayerView: View {
                 name = session.routineName; progress = ""
             }
         }
+        let profile = app.userProfile.profile
+        let ready = RecoveryReadiness.evaluate(currentBpm: hr.map(Double.init),
+                                               restBpm: profile.restingBound,
+                                               maxBpm: profile.resolvedMaxHR).state == .ready
         return WorkoutLiveSnapshot(startedAt: session.startedAt, hrBpm: hr,
                                    exerciseName: name, setProgress: progress,
-                                   paused: isPaused)
+                                   paused: isPaused, recoveryReady: ready)
     }
 
     private func pushLiveActivity() {
@@ -304,11 +309,16 @@ struct WorkoutPlayerView: View {
     /// the pure `HeartRateZone`; the view just renders it. (live-workout-studio A4)
     @ViewBuilder private var liveMetricsOverlay: some View {
         let bpm = app.liveWorkout.latestHR
+        let profile = app.userProfile.profile
         LiveHRPill(bpm: bpm.map { Int($0.rounded()) },
                    zone: HeartRateZone.forBpm(bpm),
                    sourceName: app.liveWorkout.displayName,
                    noSourceText: liveStatusText,
-                   contactLost: app.liveWorkout.isContactLost == true)
+                   contactLost: app.liveWorkout.isContactLost == true,
+                   // "Rested enough for the next set?" — gated to a profile (Phase 4); `.unknown` hides.
+                   readiness: RecoveryReadiness.evaluate(currentBpm: bpm,
+                                                         restBpm: profile.restingBound,
+                                                         maxBpm: profile.resolvedMaxHR))
             .accessibilityIdentifier("liveMetricsOverlay")
     }
 
@@ -715,6 +725,9 @@ private struct LiveHRPill: View {
     /// Band reports the sensor lost skin/strap contact → show an "adjust strap" hint (the bpm is
     /// momentarily frozen at the last good value). Always `false` for sources that can't report it.
     var contactLost: Bool = false
+    /// Live recovery-ready state (Phase 4); a "Recovered" chip shows only when `.ready`, hidden for
+    /// `.recovering` / `.unknown` (no profile) so HR-less / no-profile sessions are unchanged.
+    var readiness: RecoveryReadiness = .unknown
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -744,6 +757,14 @@ private struct LiveHRPill: View {
                         .background(Color.orange.opacity(0.18), in: Capsule())
                         .foregroundStyle(.orange)
                         .accessibilityIdentifier("hrContactLost")
+                }
+                if readiness.state == .ready {
+                    Label("Recovered", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.green.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.green)
+                        .accessibilityIdentifier("hrRecoveryReady")
                 }
                 Spacer(minLength: 4)
                 Text(sourceName)

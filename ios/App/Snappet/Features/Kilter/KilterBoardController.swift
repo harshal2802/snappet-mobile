@@ -1,6 +1,7 @@
 import CoreBluetooth
 import Foundation
 import HealthKit
+import HighlightEngine
 import SwiftData
 
 /// Drives the physical Kilter board over Bluetooth LE: scan → connect → write the illumination
@@ -401,7 +402,7 @@ final class KilterSessionManager {
         let maxHR = userProfile?.profile.resolvedMaxHR
         if let liveWorkout, !liveWorkout.isSessionActive {
             liveWorkout.start(LiveMetricsContext(startedAt: session.startedAt, activityType: .climbing,
-                                                 maxHR: maxHR))
+                                                 maxHR: maxHR, restHR: userProfile?.profile.restingBound))
             didStartMetrics = true
         }
         try? context.save()
@@ -546,10 +547,15 @@ final class KilterSessionManager {
     /// The current live snapshot for the HUD + Live Activity, or `nil` when no session is active.
     func liveSnapshot(hrBpm: Int?, climbCount: Int) -> KilterLiveSnapshot? {
         guard let session = current else { return nil }
+        let profile = userProfile?.profile ?? .empty
+        let ready = RecoveryReadiness.evaluate(currentBpm: hrBpm.map(Double.init),
+                                               restBpm: profile.restingBound,
+                                               maxBpm: profile.resolvedMaxHR).state == .ready
         return KilterLiveSnapshot(
             startedAt: session.startedAt, hrBpm: hrBpm,
             currentClimbName: activeClimbName, currentGrade: activeClimbGrade,
-            climbCount: climbCount, paused: liveWorkout?.isPaused ?? false)
+            climbCount: climbCount, paused: liveWorkout?.isPaused ?? false,
+            recoveryReady: ready)
     }
 
     /// Push a throttled update to the Live Activity (called by the detail view as HR / the active

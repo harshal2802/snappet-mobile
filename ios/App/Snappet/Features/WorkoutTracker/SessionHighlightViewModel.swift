@@ -40,6 +40,8 @@ final class SessionHighlightViewModel {
     private let duration: Double
     private let sport: SportTag?
     private let category: ExerciseCategory?
+    /// Peak-effort set windows to boost when ranking (fitness-band Phase 4); empty ⇒ HR-only.
+    private let boostWindows: [ClosedRange<Double>]
 
     /// The user's current selection (clip `localIdentifier`s). Default = all video clips (the
     /// casual one-tap path keeps everything; power users deselect). Selected clips become the
@@ -52,6 +54,7 @@ final class SessionHighlightViewModel {
          duration: Double,
          sport: SportTag?,
          category: ExerciseCategory?,
+         boostWindows: [ClosedRange<Double>] = [],
          exporter: ReelExporter = ReelExporter(),
          library: MediaLibraryService = MediaLibraryService()) {
         self.app = app
@@ -60,6 +63,7 @@ final class SessionHighlightViewModel {
         self.duration = duration
         self.sport = sport
         self.category = category
+        self.boostWindows = boostWindows
         self.exporter = exporter
         self.library = library
         // Default selection = every video clip (auto-generate-then-edit default).
@@ -97,8 +101,9 @@ final class SessionHighlightViewModel {
 
         guard !workout.media.isEmpty else { state = .empty; return }
 
-        // 2. Run the EXISTING selector pipeline → highlights (no engine change).
-        let highlights = app.engine.selector.select(
+        // 2. Run the selector pipeline → highlights. The effort-aligned selector boosts peak-effort
+        // set windows (Phase 4); empty windows ⇒ HR-only ranking (gated, unchanged).
+        let highlights = app.engine(boosting: boostWindows).selector.select(
             workout: workout, config: .preset(for: workout.activity))
         guard !highlights.isEmpty else { state = .empty; return }
 
