@@ -62,6 +62,7 @@ final class StudioComposer: Sendable {
     func makeComposition(for snapshot: StudioProjectSnapshot,
                          sourceDurations: [UUID: Double] = [:],
                          hrSamples: [HRPoint] = [],
+                         hrElements: [ResolvedHROverlay] = [],
                          forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
 
@@ -84,8 +85,8 @@ final class StudioComposer: Sendable {
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
                                   overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
                                   videoOverlays: videoOverlays, hrSamples: hrSamples,
-                                  hrConfig: snapshot.hrOverlay, baseFrame: snapshot.baseFrame,
-                                  forPlayback: forPlayback)
+                                  hrConfig: snapshot.hrOverlay, hrElements: hrElements,
+                                  baseFrame: snapshot.baseFrame, forPlayback: forPlayback)
     }
 
     /// Build the multi-clip composition from **already-resolved** `(clip, AVAsset)` pairs — the
@@ -99,6 +100,7 @@ final class StudioComposer: Sendable {
                   audioTracks: [AudioTrack] = [],
                   videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
                   hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+                  hrElements: [ResolvedHROverlay] = [],
                   baseFrame: StudioFrameRect? = nil,
                   forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
@@ -114,12 +116,14 @@ final class StudioComposer: Sendable {
             return try await assembleWithTransitions(
                 resolved: resolved, transitions: transitions, aspect: aspect,
                 sourceDurations: sourceDurations, overlays: overlays,
-                hrSamples: hrSamples, hrConfig: hrConfig, baseFrame: baseFrame, forPlayback: forPlayback)
+                hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements,
+                baseFrame: baseFrame, forPlayback: forPlayback)
         }
         return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
                                              sourceDurations: sourceDurations, overlays: overlays,
                                              audioTracks: audioTracks, videoOverlays: videoOverlays,
                                              hrSamples: hrSamples, hrConfig: hrConfig,
+                                             hrElements: hrElements,
                                              baseFrame: baseFrame, forPlayback: forPlayback)
     }
 
@@ -132,6 +136,7 @@ final class StudioComposer: Sendable {
                                      audioTracks: [AudioTrack] = [],
                                      videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
                                      hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+                  hrElements: [ResolvedHROverlay] = [],
                                      baseFrame: StudioFrameRect? = nil,
                                      forPlayback: Bool) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
@@ -244,7 +249,7 @@ final class StudioComposer: Sendable {
             if !forPlayback {
                 videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                     overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-                    hrSamples: hrSamples, hrConfig: hrConfig)
+                    hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements)
             }
         } else {
             // No filters: the transform/crop path. Build from the composition's own properties (so
@@ -271,7 +276,7 @@ final class StudioComposer: Sendable {
             if !forPlayback {
                 videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                     overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-                    hrSamples: hrSamples, hrConfig: hrConfig)
+                    hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements)
             }
         }
 
@@ -372,6 +377,7 @@ final class StudioComposer: Sendable {
         sourceDurations: [UUID: Double],
         overlays: [OverlayItem] = [],
         hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
+        hrElements: [ResolvedHROverlay] = [],
         baseFrame: StudioFrameRect? = nil,
         forPlayback: Bool = false) async throws
         -> sending (AVMutableComposition, AVVideoComposition?, AVAudioMix?) {
@@ -485,7 +491,7 @@ final class StudioComposer: Sendable {
         if !forPlayback {
             vc.animationTool = StudioOverlays.makeAnimationTool(
                 overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds,
-                hrSamples: hrSamples, hrConfig: hrConfig)
+                hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements)
         }
         // Per-clip volume on the transition path is a follow-up (audio here is a plain stitch).
         return (composition, vc, nil)
@@ -495,9 +501,11 @@ final class StudioComposer: Sendable {
     /// `quality` picks the `AVAssetExportSession` preset; an unsupported preset for this composition
     /// falls back to HighestQuality so export never fails on an over-ambitious 4K request.
     func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:],
-                hrSamples: [HRPoint] = [], quality: StudioExportQuality = .highest) async throws -> URL {
+                hrSamples: [HRPoint] = [], hrElements: [ResolvedHROverlay] = [],
+                quality: StudioExportQuality = .highest) async throws -> URL {
         let (composition, videoComposition, audioMix) = try await makeComposition(
-            for: snapshot, sourceDurations: sourceDurations, hrSamples: hrSamples)
+            for: snapshot, sourceDurations: sourceDurations, hrSamples: hrSamples,
+            hrElements: hrElements)
         let session = AVAssetExportSession(asset: composition, presetName: quality.presetName)
             ?? AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
         guard let session else {

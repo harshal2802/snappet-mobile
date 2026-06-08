@@ -2893,3 +2893,26 @@ follow-up (thread `[ResolvedHROverlay]` through `makeComposition`'s 3 `makeAnima
 back-compat decode) + `HROverlayValuesTests` (aggregates, calories/HRV gating, live tracking, segment
 build/coalesce). **Device-pending:** the actual burned-in badges + animated-live cross-fade in an
 exported `.mp4` (no Core-Animation export render in the simulator).
+
+---
+
+## 2026-06-08 — HR/fitness overlay builder: multi-clip Studio parity (follow-up to prompt 28)
+
+Wired the configurable overlay builder (prompt 28) into the **multi-clip Studio**, the documented
+follow-up after the single-clip editor shipped (PR #60). Same model + pure `HROverlayValues`
+resolver — no new value logic.
+
+- `StudioComposer`: threaded `hrElements: [ResolvedHROverlay]` through `makeComposition` → `assemble`
+  → `assembleSingleTrack` / `assembleWithTransitions` → all **three** `makeAnimationTool` sites (the
+  no-filter, filter, and transition export paths) + `export`. Default `[]` → no behaviour change
+  for projects without elements.
+- `StudioEditorViewModel`: `loadOverlayContext(profile:)` fetches the session (workout **or** Kilter)
+  `maxHR`/`restHR` and computes the session-wide kcal + HRV; element management (add/remove/live/
+  animate/showChart) mirrors `ClipEditorViewModel`; `export` resolves + passes `hrElements`.
+- `StudioEditorView`: `StudioHRControls` is now the same builder (chart-line toggle + per-element
+  Live/Animate rows + Add menu); the preview shows `HROverlayElementsView` badges. The Studio overlay
+  spans the **whole session** HR (vs. the single clip's capture window) — the only behavioural
+  difference from the per-clip editor.
+
+**Verified off-device:** sim build green; the existing `HROverlayValuesTests`/`HROverlayModelTests`
+cover the shared resolver. **Device-pending:** the burned-in badges in a multi-clip Studio export.

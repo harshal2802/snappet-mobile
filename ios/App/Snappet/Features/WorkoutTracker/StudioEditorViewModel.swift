@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import HighlightEngine
 import os
 
 /// View model for the full-studio multi-clip editor (S1). Holds the `StudioProject` `@Model` and an
@@ -523,6 +524,83 @@ final class StudioEditorViewModel {
     func updateHROverlay(_ config: HROverlayConfig) {
         editOverlaysOnly { var s = $0; s.hrOverlay = config; return s }
     }
+
+    // MARK: Configurable HR/fitness overlay builder (prompt 28 — Studio parity)
+
+    /// Profile/session bounds for the overlays, set by the view from the session + `UserHRProfile`.
+    /// The Studio's overlay spans the **whole session** HR, so these are session-wide values.
+    private(set) var hrMaxHR: Double?
+    private(set) var hrRestHR: Double?
+    private(set) var hrKcal: Double?
+    private(set) var hrHRV: HRVMetrics = .empty
+    func setOverlayContext(maxHR: Double?, restHR: Double?, kcal: Double?, hrv: HRVMetrics) {
+        hrMaxHR = maxHR; hrRestHR = restHR; hrKcal = kcal; hrHRV = hrv
+    }
+
+    /// Load the overlay context for the session (workout **or** Kilter) — the bounds for zones/%HRR/
+    /// recovery plus the session-wide calorie + HRV figures (from the `UserHRProfile`, passed by the
+    /// view since the VM has no `AppModel`). Call after `onAppear` (HR series loaded).
+    func loadOverlayContext(profile: UserHRProfile) {
+        let sid = project.sessionID
+        var maxHR: Double?, restHR: Double?
+        if let w = (try? context.fetch(FetchDescriptor<WorkoutSession>(
+            predicate: #Predicate { $0.id == sid })))?.first {
+            maxHR = w.maxHR; restHR = w.restHR
+        } else if let k = (try? context.fetch(FetchDescriptor<KilterSession>(
+            predicate: #Predicate { $0.id == sid })))?.first {
+            maxHR = k.maxHR; restHR = k.restHR
+        }
+        let dur = hrSeries.last?.t ?? 0
+        let kcal = profile.estimatedKcal(forSeries: hrSeries, durationSec: dur)
+        let hrv = HRVMetrics.make(
+            from: hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: dur)
+        setOverlayContext(maxHR: maxHR, restHR: restHR, kcal: kcal, hrv: hrv)
+    }
+
+    /// The pure resolver over the session HR — feeds the preview badges + the export burn-in.
+    var overlayValues: HROverlayValues {
+        HROverlayValues(samples: hrSeries, durationSec: hrSeries.last?.t ?? 0,
+                        maxHR: hrMaxHR, restHR: hrRestHR, kcal: hrKcal, hrv: hrHRV)
+    }
+    private func resolvedOverlayElements() -> [ResolvedHROverlay] {
+        let els = snapshot.hrOverlay?.elements ?? []
+        return els.isEmpty ? [] : overlayValues.resolve(els)
+    }
+    var availableOverlayMetrics: [HROverlayMetric] {
+        let v = overlayValues
+        return HROverlayMetric.allCases.filter {
+            v.staticValue($0, fallbackHex: "#FFFFFF") != nil
+                || v.live($0, atFraction: 0.5, fallbackHex: "#FFFFFF") != nil
+        }
+    }
+    var overlayElements: [HROverlayElement] { snapshot.hrOverlay?.elements ?? [] }
+
+    func addOverlayElement(_ metric: HROverlayMetric) {
+        var c = hrOverlay ?? HROverlayConfig(normalizedX: 0.5, normalizedY: 0.80, scale: 0.86,
+                                             colorHex: "#FF3B30", showBPM: false,
+                                             zoneColored: false, showChart: false)
+        let y = 0.12 + Double(c.elements.count) * 0.08
+        c.elements.append(HROverlayElement(metric: metric, normalizedX: 0.5, normalizedY: min(0.9, y)))
+        updateHROverlay(c)
+    }
+    func removeOverlayElement(_ id: UUID) {
+        guard var c = hrOverlay else { return }
+        c.elements.removeAll { $0.id == id }; updateHROverlay(c)
+    }
+    func setElementLive(_ id: UUID, _ live: Bool) { mutateElement(id) { $0.live = live } }
+    func setElementAnimated(_ id: UUID, _ animated: Bool) { mutateElement(id) { $0.animated = animated } }
+    func setElementPosition(_ id: UUID, _ p: CGPoint) {
+        mutateElement(id) { $0.position = CGPoint(x: min(max(p.x, 0), 1), y: min(max(p.y, 0), 1)) }
+    }
+    private func mutateElement(_ id: UUID, _ change: (inout HROverlayElement) -> Void) {
+        guard var c = hrOverlay, let i = c.elements.firstIndex(where: { $0.id == id }) else { return }
+        change(&c.elements[i]); updateHROverlay(c)
+    }
+    func setShowChart(_ show: Bool) {
+        var c = hrOverlay ?? .default
+        c.showChart = show; updateHROverlay(c)
+    }
     /// Commit the dragged HR chart to a new normalized centre (0…1, top-left).
     func setHRPosition(_ normalized: CGPoint) {
         guard var c = hrOverlay else { return }
@@ -619,7 +697,9 @@ final class StudioEditorViewModel {
         exportState = .exporting
         do {
             let url = try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
-                                                hrSamples: hrSeries, quality: exportQuality)
+                                                hrSamples: hrSeries,
+                                                hrElements: resolvedOverlayElements(),
+                                                quality: exportQuality)
             exportState = .exported(url)
         } catch {
             exportState = .failed((error as? LocalizedError)?.errorDescription ?? "Export failed.")
