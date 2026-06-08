@@ -472,6 +472,30 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
         return out
     }
 
+    /** How many climbs match the full filter (search + grade + extras) — no list limit, for the live
+     *  "N climbs" browse count. Mirrors [list]'s WHERE (one climb_stats row per climb at the angle). */
+    fun count(f: KilterFilter): Int {
+        val db = db ?: return 0
+        val lo = minOf(f.minDifficulty, f.maxDifficulty)
+        val hi = maxOf(f.minDifficulty, f.maxDifficulty)
+        val term = f.search.trim()
+        val args = ArrayList<String>()
+        val sql = StringBuilder(
+            """
+            SELECT COUNT(*) FROM climbs c
+            JOIN climb_stats cs ON cs.climb_uuid = c.uuid AND cs.angle = ?
+            WHERE c.is_listed = 1 AND c.layout_id = ?
+              AND cs.display_difficulty BETWEEN ? AND ?
+              AND cs.ascensionist_count >= ? AND cs.quality_average >= ?
+            """.trimIndent())
+        args.add(f.angle.toString()); args.add(f.layoutId.toString())
+        args.add(lo.toString()); args.add(hi.toString())
+        args.add(f.minAscents.toString()); args.add(f.minQuality.toString())
+        if (term.isNotEmpty()) { sql.append(" AND (c.name LIKE ? OR c.setter_username LIKE ?)"); args.add("%$term%"); args.add("%$term%") }
+        if (f.benchmarksOnly) sql.append(" AND cs.benchmark_difficulty IS NOT NULL")
+        db.rawQuery(sql.toString(), args.toTypedArray()).use { c -> return if (c.moveToNext()) c.getInt(0) else 0 }
+    }
+
     /** A random climb matching the current filter (Discovery "Surprise me"). */
     fun randomClimb(f: KilterFilter): KilterListItem? = list(f, limit = 500).randomOrNull()
 

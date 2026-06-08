@@ -189,25 +189,29 @@ private fun KilterCatalogScreen(
     var moreMenu by remember { mutableStateOf(false) }
     var climbs by remember { mutableStateOf<List<KilterListItem>>(emptyList()) }
     var cotd by remember { mutableStateOf<KilterListItem?>(null) }
+    // True number of climbs matching the current search + filters (not capped by the list) — shown live.
+    var resultCount by remember { mutableStateOf(0) }
 
     val showDiscovery = search.isBlank() && !savedOnly
     val filter = KilterFilter(layoutId, angle, minGrade.toDouble(), maxGrade.toDouble(),
         search, sort, benchmarksOnly, minAscents, minQuality)
 
     androidx.compose.runtime.LaunchedEffect(filter, savedOnly, favorites) {
-        val result = withContext(Dispatchers.IO) {
-            if (!catalog.isAvailable) emptyList<KilterListItem>() to null
+        val result: Triple<List<KilterListItem>, KilterListItem?, Int> = withContext(Dispatchers.IO) {
+            if (!catalog.isAvailable) Triple(emptyList(), null, 0)
             else if (savedOnly) {
                 val all = catalog.climbsByUuid(favorites.map { it.climbUuid })
                 val term = search.trim().lowercase()
                 val filtered = if (term.isEmpty()) all
                     else all.filter { it.name.lowercase().contains(term) || it.setter.lowercase().contains(term) }
-                filtered to null
+                Triple(filtered, null, filtered.size)
             } else {
-                catalog.list(filter) to (if (showDiscovery) catalog.climbOfTheDay(layoutId, angle) else null)
+                Triple(catalog.list(filter),
+                    if (showDiscovery) catalog.climbOfTheDay(layoutId, angle) else null,
+                    catalog.count(filter))
             }
         }
-        climbs = result.first; cotd = result.second
+        climbs = result.first; cotd = result.second; resultCount = result.third
     }
 
     ModuleScaffold(
@@ -321,6 +325,24 @@ private fun KilterCatalogScreen(
                     TextButton(onClick = { scope.launch { sessions.end() } }, modifier = Modifier.testTag("kilter.session.end")) {
                         Text("End")
                     }
+                }
+            }
+
+            // Live count of matching climbs + a quick Clear when search/Saved/extra filters are active.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (resultCount == 0) "No climbs" else "$resultCount climb${if (resultCount == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("kilter.count"))
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                if (search.isNotBlank() || savedOnly || filter.activeExtras > 0) {
+                    TextButton(onClick = {
+                        search = ""; savedOnly = false; sort = KilterSort.POPULAR
+                        benchmarksOnly = false; minAscents = 0; minQuality = 0.0
+                    }, modifier = Modifier.testTag("kilter.clearFilters")) { Text("Clear") }
                 }
             }
 

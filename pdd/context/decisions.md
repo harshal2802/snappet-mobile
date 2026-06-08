@@ -2638,3 +2638,18 @@ picker (doesn't exist on a first download — the prior approach, now replaced b
 multi-layout downloads. **Verified:** iOS `BUILD SUCCEEDED`, Android `compileDebugKotlin` SUCCESSFUL; no
 UI test references the removed controls. **Device-unverified** (visual/UX judgment): that the board-first
 flow actually reads as simpler on a real screen.
+
+## 2026-06-07 — Kilter browse: live "N climbs" count + Clear (search feedback)
+
+The catalog browse gave no feedback on how a search/filter narrowed the catalog. Added a **live count
+bar** under the filter chips (iOS `KilterRootView`, Android `KilterRoot`): "N climbs" updating with the
+filter + search, plus a **Clear** action when a search / Saved / Filters-sheet extra is active (it
+resets those but keeps the board/angle/grade context the user set). **Why a dedicated `count(filter)`
+(not `list().count`):** the browse `list` is capped (LIMIT 500) for render cost, so its size understates
+the true match count; `count` runs the same WHERE as `list` (one `climb_stats` row per climb at the
+angle → `COUNT(*)`) with no limit/sort, giving the real number. Saved-mode count is just the filtered
+favorites' size (already the full set). **Rules out:** counting via `list().count` (capped); a separate
+count query path that could drift from `list`'s WHERE (kept them mirrored). **Verified:** new
+`testCountReflectsFilterAndSearch` (iOS) / `countReflectsFilterAndSearch` (Android) over the fixture —
+count = 4 at 40°, 2 at 25°, 1 for "Bravo"/grade≥22, and equals the uncapped list size; both platforms
+build. **Device-unverified**: the live-update feel on a real screen.

@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.snappet.mobile.feature.kilter.CatalogFilter
 import com.snappet.mobile.feature.kilter.HostedCatalogClient
+import com.snappet.mobile.feature.kilter.KilterFilter
 import com.snappet.mobile.feature.kilter.KilterSizeBox
 import com.snappet.mobile.feature.kilter.KilterCatalog
 import com.snappet.mobile.feature.kilter.KilterCatalogException
@@ -338,6 +339,28 @@ class KilterCatalogStoreTest {
             val sizes = cat.sizes(1)
             assertEquals(KilterSizeBox(0, 24, 0, 24), sizes.first { it.id == 1 }.box)
             assertEquals(KilterSizeBox(0, 24, 4, 12), sizes.first { it.id == 3 }.box)
+        } finally {
+            store.clear(); KilterCatalog.reset()
+        }
+    }
+
+    /** The live browse count: count() reflects the full filter + search. Mirrors iOS testCountReflectsFilterAndSearch. */
+    @Test
+    fun countReflectsFilterAndSearch() {
+        val store = KilterCatalogStore.get(ctx)
+        val file = KilterCatalogFixture.build(tempFile())
+        val v = KilterCatalogValidator.validate(file)
+        store.install(file, KilterCatalogMeta(v.version, v.climbCount, v.sizeBytes, "Test", 0L))
+        file.delete()
+        try {
+            KilterCatalog.reset()
+            val cat = KilterCatalog.get(ctx)
+            val base = KilterFilter(1, 40, 1.0, 39.0)
+            assertEquals(4, cat.count(base))
+            assertEquals(cat.list(base).size, cat.count(base))
+            assertEquals(1, cat.count(base.copy(search = "Bravo")))
+            assertEquals(2, cat.count(KilterFilter(1, 25, 1.0, 39.0)))
+            assertEquals(1, cat.count(base.copy(minDifficulty = 22.0)))
         } finally {
             store.clear(); KilterCatalog.reset()
         }

@@ -42,6 +42,9 @@ struct KilterRootView: View {
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
     @State private var savedOnly = false
     @State private var items: [KilterListItem] = []
+    /// True number of climbs matching the current filter + search (not capped by the list's limit) —
+    /// shown live as "N climbs" so the user sees how their search/filters narrow the catalog.
+    @State private var count = 0
     @State private var showingScanner = false
 
     // Search + advanced filters.
@@ -248,6 +251,7 @@ struct KilterRootView: View {
         VStack(spacing: 0) {
             filterBar
             if sessions.isActive { sessionBar }
+            countBar
             List {
                 if showDiscovery, let cotd {
                     Section("Climb of the day") {
@@ -389,6 +393,37 @@ struct KilterRootView: View {
         }
     }
 
+    /// Live count of climbs matching the current search + filters, with a quick **Clear** when any
+    /// search / Saved / extra filter is active — immediate feedback that makes searching feel responsive.
+    @ViewBuilder private var countBar: some View {
+        HStack(spacing: 8) {
+            Text(count == 0 ? "No climbs" : "\(count) climb\(count == 1 ? "" : "s")")
+                .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                .contentTransition(.numericText())
+                .animation(.snappy, value: count)
+                .accessibilityIdentifier("kilter.count")
+            Spacer()
+            if hasActiveFilters {
+                Button("Clear") { withAnimation(.snappy) { clearFilters() } }
+                    .font(.caption.weight(.semibold))
+                    .accessibilityIdentifier("kilter.clearFilters")
+            }
+        }
+        .padding(.horizontal).padding(.bottom, 4)
+    }
+
+    /// Whether the user has narrowed beyond the board/grade context (search text, the Saved filter, or a
+    /// Filters-sheet extra) — gates the Clear button.
+    private var hasActiveFilters: Bool {
+        !search.trimmingCharacters(in: .whitespaces).isEmpty || savedOnly || filter.activeExtras > 0
+    }
+
+    /// Clear the search + Saved + Filters-sheet extras (keeps the board/angle/grade the user set).
+    private func clearFilters() {
+        search = ""; savedOnly = false
+        sort = .popular; benchmarksOnly = false; minAscents = 0; minQuality = 0
+    }
+
     private func chip(_ title: String, _ value: String, filled: Bool = false, systemImage: String? = nil) -> some View {
         HStack(spacing: 4) {
             if let systemImage { Image(systemName: systemImage) }
@@ -409,7 +444,7 @@ struct KilterRootView: View {
     }
 
     private func refresh() {
-        guard catalog.isAvailable else { items = []; cotd = nil; return }
+        guard catalog.isAvailable else { items = []; cotd = nil; count = 0; return }
         cotd = showDiscovery ? catalog.climbOfTheDay(layoutId: layoutId, angle: angle) : nil
         if savedOnly {
             // Saved list isn't grade/angle-restricted, but still honor the search box (name/setter).
@@ -421,6 +456,8 @@ struct KilterRootView: View {
         } else {
             items = catalog.list(filter)
         }
+        // True match count (Saved is already the full set; the catalog list is capped, so query it).
+        count = savedOnly ? items.count : catalog.count(filter)
     }
 }
 

@@ -170,6 +170,40 @@ final class KilterCatalog {
         return out
     }
 
+    /// How many climbs match the full filter (search + grade + extras) — no list LIMIT, for the live
+    /// "N climbs" count in the browse bar. Mirrors `list`'s WHERE exactly (one `climb_stats` row per
+    /// climb at the angle, so `COUNT(*)` = distinct matching climbs).
+    func count(_ f: KilterFilter) -> Int {
+        let lo = min(f.minDifficulty, f.maxDifficulty), hi = max(f.minDifficulty, f.maxDifficulty)
+        let term = f.search.trimmingCharacters(in: .whitespacesAndNewlines)
+        var sql = """
+            SELECT COUNT(*) FROM climbs c
+            JOIN climb_stats cs ON cs.climb_uuid = c.uuid AND cs.angle = ?
+            WHERE c.is_listed = 1 AND c.layout_id = ?
+              AND cs.display_difficulty BETWEEN ? AND ?
+              AND cs.ascensionist_count >= ?
+              AND cs.quality_average >= ?
+        """
+        if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
+        if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
+        var result = 0
+        query(sql, bind: { s in
+            var i: Int32 = 1
+            sqlite3_bind_int64(s, i, Int64(f.angle)); i += 1
+            sqlite3_bind_int64(s, i, Int64(f.layoutId)); i += 1
+            sqlite3_bind_double(s, i, lo); i += 1
+            sqlite3_bind_double(s, i, hi); i += 1
+            sqlite3_bind_int64(s, i, Int64(f.minAscents)); i += 1
+            sqlite3_bind_double(s, i, f.minQuality); i += 1
+            if !term.isEmpty {
+                let like = "%\(term)%"
+                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
+                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
+            }
+        }) { s in result = Self.int(s, 0) }
+        return result
+    }
+
     /// A random climb matching the current filter (Discovery "Surprise me").
     func randomClimb(_ filter: KilterFilter) -> KilterListItem? {
         list(filter, limit: 500).randomElement()

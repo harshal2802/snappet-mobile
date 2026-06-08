@@ -240,6 +240,11 @@ table (`KilterCatalogOptions.boards`, real `product_sizes.edge_*` fit boxes — 
 climb data, #42-consistent); the chosen size's box trims the catalog to fitting climbs. Compiles clean
 on both platforms; no UI test touched the removed controls.
 
+🟢 **Kilter browse: live climb count + Clear (2026-06-07).** iOS + Android. The catalog list shows a
+**live "N climbs" count** for the current search + filters (a true `count(filter)`, not the capped list)
+with a **Clear** action when a search/Saved/extra filter is active — immediate feedback that makes
+searching friendlier. New `count` unit test on both platforms.
+
 ## License
 
 TBD.

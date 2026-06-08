@@ -306,4 +306,28 @@ final class KilterCatalogStoreTests: XCTestCase {
         XCTAssertFalse(kilterDescriptionForbidsMatching("volcano matches the vibe"))
         XCTAssertFalse(kilterDescriptionForbidsMatching("no matches found in the log"))
     }
+
+    /// The live browse count: `count(_:)` reflects the full filter + search and agrees with the list
+    /// where it isn't capped. Fixture: 4 climbs on layout 1 (angle-40 diffs 15/20/24/16; angle-25 = Alpha+Delta).
+    func testCountReflectsFilterAndSearch() throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        let base = KilterFilter(layoutId: 1, angle: 40, minDifficulty: 1, maxDifficulty: 39)
+        XCTAssertEqual(cat.count(base), 4, "all four fixture climbs have an angle-40 stat")
+        XCTAssertEqual(cat.count(base), cat.list(base).count, "count agrees with the uncapped list here")
+        var byName = base; byName.search = "Bravo"
+        XCTAssertEqual(cat.count(byName), 1)
+        XCTAssertEqual(cat.count(KilterFilter(layoutId: 1, angle: 25, minDifficulty: 1, maxDifficulty: 39)), 2,
+                       "only Alpha + Delta have an angle-25 stat")
+        var byGrade = base; byGrade.minDifficulty = 22
+        XCTAssertEqual(cat.count(byGrade), 1, "only Charlie (24) is >= grade 22 at 40°")
+    }
 }
