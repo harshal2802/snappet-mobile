@@ -85,6 +85,72 @@ final class BLEHeartRateParserTests: XCTestCase {
         XCTAssertEqual(src.energy, 0)                 // HR profile has no energy
         XCTAssertEqual(src.state, .streaming)
     }
+
+    // MARK: - Sensor-contact decode (flags bit 2 = SUPPORT, bit 1 = STATUS; NOT a 2-bit enum)
+
+    func testContactStatusGatesOnSupportBit() {
+        // No support → unknown, regardless of the status bit (the regression the review caught).
+        XCTAssertNil(BLEHeartRateMetricsSource.contactStatus(flags: 0x00))   // support 0, status 0
+        XCTAssertNil(BLEHeartRateMetricsSource.contactStatus(flags: 0x02))   // support 0, status 1 → still nil
+        // Support set → report the status bit.
+        XCTAssertEqual(BLEHeartRateMetricsSource.contactStatus(flags: 0x04), false)  // supported, no contact
+        XCTAssertEqual(BLEHeartRateMetricsSource.contactStatus(flags: 0x06), true)   // supported, contact
+        // The existing fixture's 0x0E (bits 1,2,3) has both contact bits set → true.
+        XCTAssertEqual(BLEHeartRateMetricsSource.contactStatus(flags: 0x0E), true)
+    }
+
+    func testParseMeasurementCarriesBpmAndContact() {
+        // UInt8, no contact support → bpm only, contact nil.
+        XCTAssertEqual(BLEHeartRateMetricsSource.parseMeasurement(Data([0x00, 72])),
+                       .init(bpm: 72, contact: nil))
+        // UInt8, supported + contact lost (0x04) and supported + contact (0x06).
+        XCTAssertEqual(BLEHeartRateMetricsSource.parseMeasurement(Data([0x04, 80])),
+                       .init(bpm: 80, contact: false))
+        XCTAssertEqual(BLEHeartRateMetricsSource.parseMeasurement(Data([0x06, 80])),
+                       .init(bpm: 80, contact: true))
+        // UInt8, status-without-support (0x02) → contact nil (not false).
+        XCTAssertEqual(BLEHeartRateMetricsSource.parseMeasurement(Data([0x02, 80])),
+                       .init(bpm: 80, contact: nil))
+        // UInt16 (bit 0) + supported + contact (0x07): 300 = 0x012C.
+        XCTAssertEqual(BLEHeartRateMetricsSource.parseMeasurement(Data([0x07, 0x2C, 0x01])),
+                       .init(bpm: 300, contact: true))
+        // Same short/empty contract as parseHeartRate.
+        XCTAssertNil(BLEHeartRateMetricsSource.parseMeasurement(Data()))
+        XCTAssertNil(BLEHeartRateMetricsSource.parseMeasurement(Data([0x00])))      // UInt8, no value
+        XCTAssertNil(BLEHeartRateMetricsSource.parseMeasurement(Data([0x01, 0x2C]))) // UInt16, one byte
+    }
+
+    // MARK: - Ingest gating on contact (no-contact samples are dropped)
+
+    @MainActor
+    func testIngestDropsNoContactSampleKeepingLastGood() {
+        let src = BLEHeartRateMetricsSource()
+        src.ingest(bpm: 120, contact: true)            // good
+        XCTAssertEqual(src.latestHR, 120)
+        XCTAssertEqual(src.samples.count, 1)
+        XCTAssertEqual(src.isContactLost, false)
+        // Strap off-skin: drop the garbage bpm, keep the last good value, raise the flag.
+        src.ingest(bpm: 0, contact: false)
+        XCTAssertEqual(src.latestHR, 120)              // unchanged
+        XCTAssertEqual(src.samples.count, 1)           // not appended
+        XCTAssertEqual(src.isContactLost, true)
+        // Strap back on: ingest resumes and the flag clears (count increments only on good samples).
+        src.ingest(bpm: 130, contact: true)
+        XCTAssertEqual(src.latestHR, 130)
+        XCTAssertEqual(src.samples.count, 2)
+        XCTAssertEqual(src.isContactLost, false)
+    }
+
+    @MainActor
+    func testIngestNilContactLeavesFlagUntouched() {
+        let src = BLEHeartRateMetricsSource()
+        XCTAssertNil(src.isContactLost)
+        src.ingest(bpm: 100, contact: nil)             // band can't report contact
+        XCTAssertEqual(src.latestHR, 100)
+        XCTAssertEqual(src.samples.count, 1)
+        XCTAssertNil(src.isContactLost)                // untouched
+        XCTAssertEqual(src.state, .streaming)
+    }
 }
 
 /// Auto-detection / "remember my band" rules — all pure, no CoreBluetooth, no device.
@@ -297,6 +363,24 @@ final class MetricsSourceSelectionTests: XCTestCase {
         XCTAssertEqual(coordinator.energy, 0)
         XCTAssertEqual(coordinator.samples.count, 1)
         XCTAssertEqual(coordinator.displayName, "Heart-rate band")
+    }
+
+    @MainActor
+    func testCoordinatorForwardsContactLost() {
+        let suite = "snappet.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let coordinator = LiveMetricsCoordinator(
+            ble: BLEHeartRateMetricsSource(memory: BandMemory(defaults: defaults)))
+        // Watch path can't report contact → nil; switch to BLE and toggle it.
+        coordinator.selectedSource = .appleWatch
+        XCTAssertNil(coordinator.isContactLost)
+        coordinator.selectedSource = .ble
+        XCTAssertNil(coordinator.isContactLost)
+        coordinator.ble.ingest(bpm: 0, contact: false)
+        XCTAssertEqual(coordinator.isContactLost, true)
+        coordinator.ble.ingest(bpm: 140, contact: true)
+        XCTAssertEqual(coordinator.isContactLost, false)
     }
 
     @MainActor

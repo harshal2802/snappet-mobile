@@ -305,7 +305,8 @@ struct KilterRootView: View {
                     Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
                     Spacer()
                     if app.liveWorkout.state != .unavailable {
-                        KilterHRPill(bpm: app.liveWorkout.latestHR, compact: true)
+                        KilterHRPill(bpm: app.liveWorkout.latestHR, compact: true,
+                                     contactLost: app.liveWorkout.isContactLost == true)
                     }
                     Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
                         .font(.subheadline.weight(.semibold))

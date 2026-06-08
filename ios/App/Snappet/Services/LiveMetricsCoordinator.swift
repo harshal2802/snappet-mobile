@@ -92,6 +92,9 @@ final class LiveMetricsCoordinator: MetricsSource {
     var state: MetricsSourceState { active.state }
     var isReachable: Bool { active.isReachable }
     var displayName: String { active.displayName }
+    /// Sensor-contact state of the active source — `nil` on the watch path (its default), the BLE
+    /// band's reported contact otherwise.
+    var isContactLost: Bool? { active.isContactLost }
 
     /// Paused-display state for stream-only sources (BLE) that have no session to pause. For the
     /// Apple-Watch path the watch source owns the truth (the watch can pause from its own

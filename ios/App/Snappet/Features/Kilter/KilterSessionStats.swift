@@ -1,4 +1,5 @@
 import Foundation
+import HighlightEngine
 
 /// A plain-value view of one logged climb, so session statistics are computed (and unit-tested in
 /// `SnappetTests`) **without** touching the SwiftData `KilterLogEntry` @Model. `KilterSessionStats`
@@ -55,6 +56,10 @@ struct KilterSessionStats: Sendable, Equatable {
     /// Median time-on-climb across climbs that recorded one — `nil` if none did.
     var medianTimeOnClimb: TimeInterval?
 
+    /// The session's single hardest physiological instant as %HRR across all scored climbs — `nil`
+    /// when no climb had HR, or no max-HR bound was set (the bpm-only state).
+    var sessionPeakHRR: Double? { timeline.compactMap(\.peakHRR).max() }
+
     struct GradeCount: Sendable, Equatable, Identifiable {
         var gradeLabel: String
         var difficulty: Double
@@ -73,12 +78,29 @@ struct KilterSessionStats: Sendable, Equatable {
         var timeOnClimb: TimeInterval?
         /// Rest taken before this climb (gap since the previous climb's effective end); `nil` first.
         var restBefore: TimeInterval?
+        // Per-climb heart-rate effort, derived from the session HR series over the climb's window
+        // (extended past its end by the HR lag). All `nil` for HR-less sessions or climbs with no
+        // recorded start; `peakHRR` also `nil` until a real max-HR bound exists (bpm-only state).
+        // The effort UI hides on `peakBpm == nil`.
+        var peakBpm: Double? = nil
+        var peakHRR: Double? = nil
+        var hrRise: Double? = nil
+        var timeToPeak: TimeInterval? = nil
+        var hrRecovery60: Double? = nil
+        var hrRecovery30: Double? = nil
         var id: Int { index }
     }
 
     /// Compute stats from a session's logged climbs and its `[start, end]` interval. Logs are
     /// ordered chronologically by effective start; an empty session yields all-zero stats.
-    static func make(from logs: [KilterClimbLog], start: Date, end: Date) -> KilterSessionStats {
+    ///
+    /// `hrSeries` (the session HR samples, `t` seconds from `start`) is optional: when present, each
+    /// climb that recorded a start is scored for per-climb effort/recovery; when empty, every
+    /// `TimelineItem`'s effort fields stay `nil` (HR-less sessions render exactly as before).
+    /// `maxHR`/`restHR` are the %HRR bounds (no user profile yet → typically `nil` → bpm-only).
+    static func make(from logs: [KilterClimbLog], start: Date, end: Date,
+                     hrSeries: [HRSample] = [], maxHR: Double? = nil, restHR: Double? = nil,
+                     config: HighlightConfig = .preset(for: .climbing)) -> KilterSessionStats {
         let duration = max(0, end.timeIntervalSince(start))
         let sorted = logs.sorted { $0.effectiveStart < $1.effectiveStart }
 
@@ -106,10 +128,26 @@ struct KilterSessionStats: Sendable, Equatable {
         var previousEnd: Date?
         for (i, log) in sorted.enumerated() {
             let rest = previousEnd.map { max(0, log.effectiveStart.timeIntervalSince($0)) }
+            // Per-climb HR effort: score the climb's window, extending its END by the HR lag so a
+            // post-effort spike that lands just after `endedAt` is captured. We compute the window
+            // here from the log's own timestamps (NOT KilterBoardController.climbWindows, which feeds
+            // media auto-assignment and must keep its un-extended end). Empty for HR-less sessions or
+            // climbs with no recorded start.
+            let effort: ClimbEffort = {
+                guard !hrSeries.isEmpty, log.startedAt != nil else { return .empty }
+                let winStart = max(0, log.effectiveStart.timeIntervalSince(start))
+                let winEnd = max(winStart, log.effectiveEnd.timeIntervalSince(start) + config.hrLagSec)
+                return ClimbEffort.make(from: hrSeries, start: winStart, end: winEnd,
+                                        restBpm: restHR, maxBpm: maxHR,
+                                        smoothingWindowSec: config.smoothingWindowSec)
+            }()
             timeline.append(TimelineItem(
                 index: i, climbUUID: log.climbUUID, climbName: log.climbName,
                 gradeLabel: log.gradeLabel, status: log.status, attempts: log.attempts,
-                timeOnClimb: log.timeOnClimb, restBefore: rest))
+                timeOnClimb: log.timeOnClimb, restBefore: rest,
+                peakBpm: effort.peakBpm, peakHRR: effort.peakHRR, hrRise: effort.hrRise,
+                timeToPeak: effort.timeToPeak, hrRecovery60: effort.hrRecovery60,
+                hrRecovery30: effort.hrRecovery30))
             previousEnd = log.effectiveEnd
         }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import HighlightEngine
 
 /// The rich post-session (or live) summary for a Kilter board session: duration, send/attempt
 /// counts, hardest send, a grade pyramid, heart-rate stats + zones (when HR was captured), a
@@ -49,7 +50,9 @@ struct KilterSessionDetailView: View {
     private var stats: KilterSessionStats? {
         guard let session else { return nil }
         return KilterSessionStats.make(from: entries.map(KilterClimbLog.from),
-                                       start: session.startedAt, end: session.endedAt ?? .now)
+                                       start: session.startedAt, end: session.endedAt ?? .now,
+                                       hrSeries: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) },
+                                       maxHR: session.maxHR, restHR: session.restHR)
     }
 
     private var hrStats: WorkoutHRStats? {
@@ -192,10 +195,26 @@ struct KilterSessionDetailView: View {
                 .frame(height: 120)
             }
             zoneBar(hr)
+            if hr.totalSeconds > 0 {
+                HStack {
+                    hrStat(Self.redlineMinutesLabel(hr.redlineSeconds), "Redline")
+                    Divider().frame(height: 28)
+                    hrStat("\(Int((hr.redlineFraction * 100).rounded()))%", "At Z4+")
+                    Divider().frame(height: 28)
+                    hrStat("\(Int(hr.edwardsTRIMP.rounded()))", "Strain")
+                }
+                .accessibilityIdentifier("kilter.hr.load")
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal)
+    }
+
+    /// Compact minutes/seconds label for the redline tile (mirrors the WorkoutTracker ZoneBar).
+    private static func redlineMinutesLabel(_ seconds: Double) -> String {
+        let mins = seconds / 60
+        return mins >= 1 ? "\(Int(mins.rounded()))m" : "\(Int(seconds.rounded()))s"
     }
 
     private func hrStat(_ value: String, _ label: String) -> some View {
@@ -292,6 +311,7 @@ struct KilterSessionDetailView: View {
                         Text("rested \(durationString(rest))")
                             .font(.caption2).foregroundStyle(.tertiary)
                     }
+                    effortRow(item)
                     // The photos/videos shot while working this climb (auto-tagged by time window).
                     if firstIndexForClimb[item.climbUUID] == item.index {
                         climbMediaStrip(climbUUID: item.climbUUID)
@@ -303,6 +323,19 @@ struct KilterSessionDetailView: View {
         .padding()
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal)
+    }
+
+    /// Per-climb HR effort + recovery, via the shared `HREffortBadge` (identical to the WorkoutTracker
+    /// per-set badge). Hidden entirely when the climb wasn't scored (HR-less session / no recorded start).
+    @ViewBuilder private func effortRow(_ item: KilterSessionStats.TimelineItem) -> some View {
+        if item.peakBpm != nil {
+            HREffortBadge(
+                effort: ClimbEffort(peakBpm: item.peakBpm, peakHRR: item.peakHRR, hrRise: item.hrRise,
+                                    timeToPeak: item.timeToPeak, hrRecovery60: item.hrRecovery60,
+                                    hrRecovery30: item.hrRecovery30),
+                maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
+                .accessibilityIdentifier("kilter.climb.effort")
+        }
     }
 
     /// A horizontal strip of the clips tagged to one climb. Tap a video to edit just that clip;

@@ -356,7 +356,8 @@ struct KilterClimbDetailView: View {
                 Text("Session active").font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 Spacer()
                 if app.liveWorkout.state != .unavailable {
-                    KilterHRPill(bpm: app.liveWorkout.latestHR)
+                    KilterHRPill(bpm: app.liveWorkout.latestHR,
+                                 contactLost: app.liveWorkout.isContactLost == true)
                 }
             }
             .padding(.horizontal)

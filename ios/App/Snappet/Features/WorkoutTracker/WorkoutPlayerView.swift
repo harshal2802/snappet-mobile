@@ -307,7 +307,8 @@ struct WorkoutPlayerView: View {
         LiveHRPill(bpm: bpm.map { Int($0.rounded()) },
                    zone: HeartRateZone.forBpm(bpm),
                    sourceName: app.liveWorkout.displayName,
-                   noSourceText: liveStatusText)
+                   noSourceText: liveStatusText,
+                   contactLost: app.liveWorkout.isContactLost == true)
             .accessibilityIdentifier("liveMetricsOverlay")
     }
 
@@ -711,6 +712,9 @@ private struct LiveHRPill: View {
     let sourceName: String
     /// Source-aware status when there's no live HR (e.g. "Open the workout on your watch").
     let noSourceText: String
+    /// Band reports the sensor lost skin/strap contact → show an "adjust strap" hint (the bpm is
+    /// momentarily frozen at the last good value). Always `false` for sources that can't report it.
+    var contactLost: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -733,6 +737,14 @@ private struct LiveHRPill: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(zone.color.opacity(0.18), in: Capsule())
                     .foregroundStyle(zone.color)
+                if contactLost {
+                    Label("Adjust strap", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.18), in: Capsule())
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("hrContactLost")
+                }
                 Spacer(minLength: 4)
                 Text(sourceName)
                     .font(.caption2).foregroundStyle(.secondary)
@@ -753,7 +765,8 @@ private struct LiveHRPill: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(bpm == nil ? "Heart rate"
             : "Heart rate \(bpm!) beats per minute, \(zone.label) zone, source \(sourceName)")
-        .accessibilityValue(bpm == nil ? noSourceText : "\(bpm!) bpm")
+        .accessibilityValue(bpm == nil ? noSourceText
+            : (contactLost ? "\(bpm!) bpm, adjust strap" : "\(bpm!) bpm"))
     }
 }
 

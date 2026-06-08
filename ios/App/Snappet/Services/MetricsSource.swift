@@ -68,6 +68,11 @@ protocol MetricsSource: AnyObject {
     var isReachable: Bool { get }
     /// A user-facing name for this source (e.g. "Apple Watch", "Polar H10").
     var displayName: String { get }
+    /// Whether the source currently reports the sensor has lost skin/strap contact. `nil` when the
+    /// source can't report contact at all (the Apple Watch, or a band that doesn't support the
+    /// optional Heart Rate Measurement sensor-contact flag) — distinct from `false` ("contact is
+    /// fine"). Drives the "adjust strap" affordance + the no-contact sample drop (decisions.md 2026-06-08).
+    var isContactLost: Bool? { get }
 
     /// Start a live session: map the context to whatever the source needs and reset the
     /// HR buffer onto its `startedAt` timeline.
@@ -89,4 +94,8 @@ extension MetricsSource {
     // coordinator still tracks the paused *display* state for those sources.
     func pause() {}
     func resume() {}
+
+    // Sources that can't report sensor contact (the Apple Watch, unsupported bands) default to
+    // `nil` so only the BLE band needs to implement it.
+    var isContactLost: Bool? { nil }
 }

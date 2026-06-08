@@ -7,13 +7,29 @@ struct KilterHRPill: View {
     let bpm: Double?
     /// Drop the " bpm" suffix where space is tight (the root banner).
     var compact: Bool = false
+    /// Band reports lost sensor contact → show an inline "adjust strap" warning; defaults `false`
+    /// (and for sources that can't report contact, like the Apple Watch).
+    var contactLost: Bool = false
 
     private var zone: HeartRateZone { HeartRateZone.forBpm(bpm) }
 
     var body: some View {
-        Label(bpm.map { "\(Int($0))\(compact ? "" : " bpm")" } ?? "—", systemImage: "heart.fill")
-            .font(.subheadline.weight(.semibold)).monospacedDigit()
-            .foregroundStyle(zone == .none ? AnyShapeStyle(.pink) : AnyShapeStyle(zone.color))
-            .accessibilityLabel(bpm.map { "Heart rate \(Int($0)) beats per minute" } ?? "Heart rate unavailable")
+        HStack(spacing: 6) {
+            Label(bpm.map { "\(Int($0))\(compact ? "" : " bpm")" } ?? "—", systemImage: "heart.fill")
+                .font(.subheadline.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(zone == .none ? AnyShapeStyle(.pink) : AnyShapeStyle(zone.color))
+            if contactLost {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2).foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        let base = bpm.map { "Heart rate \(Int($0)) beats per minute" } ?? "Heart rate unavailable"
+        return contactLost ? "\(base), adjust strap" : base
     }
 }
