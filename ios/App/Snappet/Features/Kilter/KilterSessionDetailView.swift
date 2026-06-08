@@ -325,40 +325,16 @@ struct KilterSessionDetailView: View {
         .padding(.horizontal)
     }
 
-    /// Per-climb HR effort + recovery: an effort badge (peak %HRR when a max-HR bound exists, else
-    /// the raw peak bpm, tinted by its zone) and a recovery dot (bpm dropped in the 60 s / 30 s after
-    /// the peak). Hidden entirely when the climb wasn't scored (HR-less session / no recorded start).
+    /// Per-climb HR effort + recovery, via the shared `HREffortBadge` (identical to the WorkoutTracker
+    /// per-set badge). Hidden entirely when the climb wasn't scored (HR-less session / no recorded start).
     @ViewBuilder private func effortRow(_ item: KilterSessionStats.TimelineItem) -> some View {
-        if let peak = item.peakBpm {
-            let zone = HeartRateZone.forBpm(peak, maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
-            HStack(spacing: 10) {
-                Label {
-                    Text(item.peakHRR.map { "\(Int(($0 * 100).rounded()))% effort" }
-                         ?? "\(Int(peak.rounded())) bpm peak")
-                } icon: {
-                    Image(systemName: "flame.fill")
-                }
-                .font(.caption2.weight(.semibold)).foregroundStyle(zone.color)
-                if let drop = item.hrRecovery60 ?? item.hrRecovery30 {
-                    HStack(spacing: 3) {
-                        Circle().fill(recoveryColor(drop)).frame(width: 7, height: 7)
-                        Text("−\(Int(drop.rounded())) bpm rec.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    .accessibilityLabel("recovered \(Int(drop.rounded())) beats per minute after the peak")
-                }
-            }
-            .accessibilityIdentifier("kilter.climb.effort")
-        }
-    }
-
-    /// Recovery dot color: a bigger HR drop after the burn = better recovery (green); small = red.
-    /// A relative within-session heuristic, not a clinical HR-recovery measure.
-    private func recoveryColor(_ drop: Double) -> Color {
-        switch drop {
-        case ..<10: return .red
-        case ..<25: return .orange
-        default:    return .green
+        if item.peakBpm != nil {
+            HREffortBadge(
+                effort: ClimbEffort(peakBpm: item.peakBpm, peakHRR: item.peakHRR, hrRise: item.hrRise,
+                                    timeToPeak: item.timeToPeak, hrRecovery60: item.hrRecovery60,
+                                    hrRecovery30: item.hrRecovery30),
+                maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
+                .accessibilityIdentifier("kilter.climb.effort")
         }
     }
 

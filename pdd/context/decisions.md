@@ -2699,3 +2699,21 @@ out (brand lock-in + cloud, contra the on-device-generic-BLE stance). **Verified
 ingest-drop, redline/TRIMP, per-climb effort). **Device-unverified** (no band/HR in the simulator):
 the live "adjust strap" affordance + sample pause on a real strap toggling on/off-skin, and the live
 per-climb HR spike on a board.
+
+**Parity addendum — per-set effort in WorkoutTracker (same PR).** Extended the per-climb effort to the
+workout logger so both apps reach parity. `ClimbEffort` is now generic ("a burn" = one HR window) and
+the effort badge is a **shared `HREffortBadge`** view used by both the Kilter per-climb timeline and
+the WorkoutTracker per-set tiles (Kilter's inline badge refactored onto it — one source of truth). New
+pure `WorkoutHRStats.setEfforts(for:sessionStart:hr:…)` scores every completed set. **The window
+derivation is the design decision, because a workout `SetLog` has only a single `completedAt`
+(no start/duration window like a Kilter climb), and Quick/freeform sessions log all three `SetKind`s:**
+window **end** = `completedAt + hrLagSec` for every kind; window **start** is per-kind — `.duration`
+(timed hold) uses `completedAt − durationSec` (the known work interval), while `.repsWeight` and
+`.climbAttempt` (no recorded duration) use a lookback to the **previous chronological** set's
+completion (HR doesn't reset across exercises), **capped at 120 s** so the first set or a long rest
+can't balloon the window past the real effort. `maxHR`/`restHR` aren't on `WorkoutSession`, so per-set
+`peakHRR` is `nil` today (bpm-only) — it lights up when the user-HR-profile phase lands, same as Kilter.
+**Caveat:** for short inter-set rests the HRR recovery reads into the *next* set's window, so the
+recovery dot is an advisory within-session heuristic, not a clean clinical HRR. **Verified off-device:**
+new `WorkoutHRStatsTests.setEfforts` cases (per-`SetKind` window, the capped previous-set lookback, the
+incomplete-set + no-HR guards, bpm-only vs %HRR) + full XCTest suite green.

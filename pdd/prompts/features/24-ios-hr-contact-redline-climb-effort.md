@@ -23,6 +23,10 @@ Three quick wins, all derivable from data we already have:
    Edwards zone-weighted **strain** (TRIMP).
 3. **Per-climb effort + recovery.** Score each logged climb's HR window for peak effort and
    post-burn recovery — separating a chill V4 flash from a redline V6 project at the same grade.
+4. **Parity — per-set effort in WorkoutTracker.** Generalize the same effort scoring to the workout
+   logger so both apps match: score each completed set across **every** Quick/freeform `SetKind` and
+   render the identical effort badge (shared `HREffortBadge`). All three wins land in both apps except
+   per-effort, which is per-climb (Kilter) and per-set (WorkoutTracker).
 
 ## Context the implementer needs
 
@@ -39,13 +43,22 @@ Three quick wins, all derivable from data we already have:
   timestamps) and extended by `HighlightConfig.hrLagSec`.
 - No user HR profile exists yet → zones/%HRR still anchor to `HeartRateZone.defaultMaxHR` (190).
   Redline/TRIMP/%HRR are within-user trend figures, not cross-user or clinical numbers.
+- A workout `SetLog` has only a single `completedAt` (no start/duration window like a Kilter
+  `KilterLogEntry`), and Quick/freeform sessions log all three `SetKind`s. Per-set effort therefore
+  needs a window derivation: end = `completedAt + hrLagSec`; start = `completedAt − durationSec` for
+  `.duration` holds, else a capped (120 s) lookback to the previous chronological set's completion.
 
 ## Approach
 
 - **Engine (platform-free):** add `ClimbEffort` (`HighlightEngine`) — pure per-window stats
   (peak bpm, peak %HRR only when a `maxBpm` bound is supplied, HR rise, time-to-peak, HRR60/30),
   reusing `HeartRateSeries` for resample→smooth + %HRR. Peak searched within the window; recovery
-  read past its end. The helper does NOT extend the window — the caller does.
+  read past its end. The helper does NOT extend the window — the caller does. Generic enough that
+  both per-climb and per-set scoring reuse it.
+- **Parity (WorkoutTracker):** a shared `HREffortBadge` view (used by both apps); a pure
+  `WorkoutHRStats.setEfforts(for:sessionStart:hr:…)` that derives a window per `SetKind` and scores
+  each completed set via `ClimbEffort`; `SetTileRow` renders the badge. Refactor the Kilter inline
+  badge onto `HREffortBadge` so there's one source of truth.
 - **Services:** add `isContactLost: Bool?` to `MetricsSource` (default `nil` via a protocol
   extension → the watch path stays `nil`); `BLEHeartRateMetricsSource` gets `parseMeasurement` +
   `contactStatus`, keeps `parseHeartRate` as a bpm-only shim, drops no-contact samples in `ingest`,
@@ -60,13 +73,15 @@ Three quick wins, all derivable from data we already have:
 
 ## Output
 
-- New: `ios/HighlightEngine/Sources/HighlightEngine/ClimbEffort.swift` (+ engine tests).
+- New: `ios/HighlightEngine/Sources/HighlightEngine/ClimbEffort.swift` (+ engine tests);
+  `ios/App/Snappet/Features/WorkoutTracker/HREffortBadge.swift` (shared effort badge).
 - Edits: `MetricsSource.swift`, `BLEHeartRateMetricsSource.swift`, `LiveMetricsCoordinator.swift`,
-  `WorkoutHRStats.swift`, `KilterSessionStats.swift`, `WorkoutPlayerView.swift`, `KilterHRPill.swift`
-  (+ its two call sites), `SessionDetailView.swift`, `KilterSessionDetailView.swift`.
+  `WorkoutHRStats.swift` (+`setEfforts`), `KilterSessionStats.swift`, `WorkoutPlayerView.swift`,
+  `KilterHRPill.swift` (+ its two call sites), `SessionDetailView.swift` (+`SetTileRow` effort),
+  `KilterSessionDetailView.swift` (effort badge → shared view).
 - Tests: `HighlightEngineTests` (ClimbEffort), `MetricsSourceTests` (contact decode + ingest gating
-  + coordinator forward), `WorkoutHRStatsTests` (redline/TRIMP), `KilterSessionStatsTests` (per-climb
-  effort + the lag-extension negative control).
+  + coordinator forward), `WorkoutHRStatsTests` (redline/TRIMP **+ per-set effort across SetKinds**),
+  `KilterSessionStatsTests` (per-climb effort + the lag-extension negative control).
 
 ## Acceptance criteria
 
@@ -76,6 +91,9 @@ Three quick wins, all derivable from data we already have:
       weights minutes-in-zone by zone number.
 - [ ] Each scored climb exposes peak bpm + recovery; a spike within `hrLagSec` after `endedAt` is
       captured (proven by a zero-lag negative-control test); HR-less / start-less climbs stay all-nil.
+- [ ] WorkoutTracker scores per-set effort across all `SetKind`s: `.duration` uses `durationSec`,
+      `.repsWeight`/`.climbAttempt` use the capped previous-set lookback; incomplete / HR-less sets
+      stay unscored; both apps render the identical `HREffortBadge`.
 - [ ] Engine changes ship with passing `swift test`.
 - [ ] App changes type-check (Swift 6) and the full XCTest suite passes on the simulator.
 - [ ] No platform imports added to `HighlightEngine`; `climbWindows` (media) left untouched.

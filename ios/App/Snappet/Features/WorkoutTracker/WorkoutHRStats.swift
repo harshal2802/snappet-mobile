@@ -86,3 +86,73 @@ extension WorkoutHRStats {
         samples.map { HRPoint(t: $0.t, bpm: $0.bpm) }
     }
 }
+
+extension WorkoutHRStats {
+    /// Identifies one logged set within a session, for per-set effort lookup.
+    struct SetRef: Hashable, Sendable {
+        let exerciseID: UUID
+        let setIndex: Int
+        init(exerciseID: UUID, setIndex: Int) {
+            self.exerciseID = exerciseID
+            self.setIndex = setIndex
+        }
+    }
+
+    /// Per-set effort + recovery across a whole session, computed over the persisted `hrSeries`
+    /// (reusing the engine's `ClimbEffort`). The WorkoutTracker analogue of the Kilter per-climb
+    /// effort, generalized to **every `SetKind`** a Quick / freeform session can log:
+    ///
+    /// - Window **end** = the set's `completedAt + hrLagSec` for every kind (HR lags effort; an
+    ///   anaerobic set's HR peak typically lands at / just after completion).
+    /// - Window **start** depends on the kind's available timing:
+    ///   - `.duration` (timed hold): `completedAt − durationSec` — the known work interval.
+    ///   - `.repsWeight` / `.climbAttempt` (no recorded duration): a lookback to the **previous
+    ///     chronological** set's completion (HR doesn't reset across exercises), capped at
+    ///     `maxLookback` so the first set, or a long rest between sets, can't balloon the window.
+    ///
+    /// Only completed sets are scored; sets without `completedAt`, and every set when `hr` is empty,
+    /// are absent from the map (callers default to `.empty`). `maxHR == nil` (no profile yet) → the
+    /// efforts carry peak bpm but no `peakHRR` (the honest bpm-only state). Pure + deterministic →
+    /// unit-tested with no device.
+    static func setEfforts(for exercises: [SessionExercise],
+                           sessionStart: Date,
+                           hr: [HRSample],
+                           maxHR: Double? = nil,
+                           restHR: Double? = nil,
+                           config: HighlightConfig = .preset(for: .strength),
+                           maxLookback: Double = 120) -> [SetRef: ClimbEffort] {
+        guard !hr.isEmpty else { return [:] }
+
+        struct Entry { let ref: SetRef; let completedAt: Date; let kind: SetKind; let durationSec: Double? }
+        var entries: [Entry] = []
+        for ex in exercises {
+            for (i, set) in ex.sets.enumerated() {
+                guard let done = set.completedAt else { continue }
+                entries.append(Entry(ref: SetRef(exerciseID: ex.id, setIndex: i),
+                                     completedAt: done, kind: ex.kind, durationSec: set.durationSec))
+            }
+        }
+        entries.sort { $0.completedAt < $1.completedAt }
+
+        var result: [SetRef: ClimbEffort] = [:]
+        var previousCompletedAt: Date?
+        for e in entries {
+            let endOffset = max(0, e.completedAt.timeIntervalSince(sessionStart))
+            let lookback: Double
+            if e.kind == .duration, let d = e.durationSec, d > 0 {
+                lookback = d
+            } else if let prev = previousCompletedAt {
+                lookback = min(maxLookback, max(0, e.completedAt.timeIntervalSince(prev)))
+            } else {
+                lookback = maxLookback
+            }
+            result[e.ref] = ClimbEffort.make(from: hr,
+                                             start: max(0, endOffset - lookback),
+                                             end: endOffset + config.hrLagSec,
+                                             restBpm: restHR, maxBpm: maxHR,
+                                             smoothingWindowSec: config.smoothingWindowSec)
+            previousCompletedAt = e.completedAt
+        }
+        return result
+    }
+}

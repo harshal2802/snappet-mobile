@@ -156,4 +156,85 @@ final class WorkoutHRStatsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(WorkoutHRStats.make(from: ordered)).edwardsTRIMP,
                        try XCTUnwrap(WorkoutHRStats.make(from: shuffled)).edwardsTRIMP, accuracy: 0.0001)
     }
+
+    // MARK: - Per-set effort (all SetKinds; smoothing disabled for exact assertions)
+
+    private let s0 = Date(timeIntervalSince1970: 1_000)
+    private let fastCfg = HighlightConfig(smoothingWindowSec: 1, hrLagSec: 6)
+
+    private func setLog(at completedAt: Date?, durationSec: Double? = nil) -> SetLog {
+        SetLog(actualReps: nil, actualWeight: nil, weightUnit: nil, completedAt: completedAt,
+               durationSec: durationSec, climbGradeLabel: nil, climbStatusRaw: nil, climbAttempts: nil)
+    }
+
+    private func exercise(_ kind: SetKind, _ sets: [SetLog], id: UUID = UUID()) -> SessionExercise {
+        SessionExercise(id: id, exerciseId: "ex", targetSets: sets.count, targetReps: "",
+                        targetRestSeconds: 0, targetWeight: nil, targetWeightUnit: nil,
+                        sets: sets, skipped: false, displayName: nil, kindRaw: kind.rawValue)
+    }
+
+    private func hr(_ pairs: [(Double, Double)]) -> [HRSample] { pairs.map { HRSample(t: $0.0, bpm: $0.1) } }
+
+    /// A timed-hold set's window is `[completedAt − durationSec, completedAt + lag]` — a spike before
+    /// the window start is excluded.
+    func testDurationSetUsesDurationWindow() throws {
+        let exID = UUID()
+        let ex = exercise(.duration, [setLog(at: s0.addingTimeInterval(60), durationSec: 40)], id: exID)
+        // 200 spike at t=10 (before window start 20) must be excluded; the in-window peak is 180@t30.
+        let samples = hr([(0, 120), (10, 200), (15, 120), (30, 180), (60, 120), (120, 120)])
+        let efforts = WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: samples, config: fastCfg)
+        let e = try XCTUnwrap(efforts[.init(exerciseID: exID, setIndex: 0)])
+        XCTAssertEqual(e.peakBpm, 180)        // not 200 — the pre-window spike is outside [20,66]
+    }
+
+    /// A reps&weight set with no prior set falls back to the capped lookback (here it reaches t=20).
+    func testRepsWeightFirstSetUsesMaxLookback() throws {
+        let exID = UUID()
+        let ex = exercise(.repsWeight, [setLog(at: s0.addingTimeInterval(40))], id: exID)
+        let samples = hr([(0, 120), (20, 180), (40, 120), (120, 120)])
+        let efforts = WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: samples, config: fastCfg)
+        XCTAssertEqual(try XCTUnwrap(efforts[.init(exerciseID: exID, setIndex: 0)]).peakBpm, 180)
+    }
+
+    /// A later set's window starts at the PREVIOUS chronological set's completion, so a spike before
+    /// that earlier set is excluded from the later set (but captured by the earlier one).
+    func testLaterSetLookbackBoundedByPreviousSet() throws {
+        let exID = UUID()
+        let ex = exercise(.repsWeight,
+                          [setLog(at: s0.addingTimeInterval(30)), setLog(at: s0.addingTimeInterval(90))], id: exID)
+        let samples = hr([(0, 120), (10, 200), (15, 120), (60, 180), (65, 120), (90, 120), (150, 120)])
+        let efforts = WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: samples, config: fastCfg)
+        // Set 0 (window [0,36]) sees the t=10 spike…
+        XCTAssertEqual(try XCTUnwrap(efforts[.init(exerciseID: exID, setIndex: 0)]).peakBpm, 200)
+        // …set 1 (window [30,96], starting at set 0's completion) does NOT — its peak is the t=60 spike.
+        XCTAssertEqual(try XCTUnwrap(efforts[.init(exerciseID: exID, setIndex: 1)]).peakBpm, 180)
+    }
+
+    func testNoHRYieldsEmptyMap() {
+        let ex = exercise(.repsWeight, [setLog(at: s0.addingTimeInterval(30))])
+        XCTAssertTrue(WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: []).isEmpty)
+    }
+
+    func testIncompleteSetIsNotScored() {
+        let exID = UUID()
+        let ex = exercise(.repsWeight, [setLog(at: nil)], id: exID)   // never completed
+        let samples = hr([(0, 120), (20, 180), (40, 120)])
+        let efforts = WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: samples, config: fastCfg)
+        XCTAssertNil(efforts[.init(exerciseID: exID, setIndex: 0)])
+        XCTAssertTrue(efforts.isEmpty)
+    }
+
+    func testPeakHRRNilWithoutBoundsPresentWithThem() throws {
+        let exID = UUID()
+        let ex = exercise(.repsWeight, [setLog(at: s0.addingTimeInterval(40))], id: exID)
+        let samples = hr([(0, 120), (20, 180), (40, 120), (120, 120)])
+        let bpmOnly = WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: samples, config: fastCfg)
+        XCTAssertEqual(try XCTUnwrap(bpmOnly[.init(exerciseID: exID, setIndex: 0)]).peakBpm, 180)
+        XCTAssertNil(try XCTUnwrap(bpmOnly[.init(exerciseID: exID, setIndex: 0)]).peakHRR)
+        let withBounds = WorkoutHRStats.setEfforts(for: [ex], sessionStart: s0, hr: samples,
+                                                   maxHR: 200, restHR: 60, config: fastCfg)
+        // %HRR = (180 − 60) / (200 − 60) = 0.857
+        let bounded = try XCTUnwrap(withBounds[.init(exerciseID: exID, setIndex: 0)])
+        XCTAssertEqual(try XCTUnwrap(bounded.peakHRR), 120.0 / 140.0, accuracy: 0.001)
+    }
 }

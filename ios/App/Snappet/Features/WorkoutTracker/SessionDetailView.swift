@@ -326,6 +326,11 @@ private struct SessionMediaSection: View {
     private var hasVideo: Bool { media.contains { $0.kind == .video } }
 
     var body: some View {
+        // Per-set effort/recovery over the session HR series (empty map when there's no HR), computed
+        // once and looked up per row — the WorkoutTracker twin of the Kilter per-climb effort.
+        let efforts = WorkoutHRStats.setEfforts(
+            for: session.exercises, sessionStart: session.startedAt,
+            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })
         Group {
             actionsSection
             ForEach(session.exercises) { ex in
@@ -335,7 +340,8 @@ private struct SessionMediaSection: View {
                     } else {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
-                                       bpm: bpm(forSetCompletedAt: set.completedAt))
+                                       bpm: bpm(forSetCompletedAt: set.completedAt),
+                                       effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty)
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
                         ForEach(mediaFor(exercise: ex.id, set: nil)) { mediaRow($0) }
@@ -666,27 +672,35 @@ private struct SetTileRow: View {
     let kind: SetKind
     let unit: WeightUnit
     let bpm: Double?
+    /// Per-set HR effort/recovery (peak, %HRR-or-bpm, recovery) over the set's window; `.empty` for
+    /// HR-less sessions or sets with no completion → the effort row is hidden.
+    var effort: ClimbEffort = .empty
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text("Set \(index)").font(.subheadline.weight(.medium))
-            Spacer()
-            if set.completedAt != nil {
-                Text(detailText).font(.subheadline.monospacedDigit())
-            } else {
-                Text("—").foregroundStyle(.tertiary)
-            }
-            if let bpm {
-                let zone = HeartRateZone.forBpm(bpm)
-                HStack(spacing: 3) {
-                    Image(systemName: "heart.fill").font(.caption2)
-                    Text("\(Int(bpm.rounded()))").font(.caption.monospacedDigit().weight(.semibold))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Text("Set \(index)").font(.subheadline.weight(.medium))
+                Spacer()
+                if set.completedAt != nil {
+                    Text(detailText).font(.subheadline.monospacedDigit())
+                } else {
+                    Text("—").foregroundStyle(.tertiary)
                 }
-                .foregroundStyle(zone.color)
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(zone.color.opacity(0.15), in: Capsule())
-                .accessibilityIdentifier("setHRBadge")
+                if let bpm {
+                    let zone = HeartRateZone.forBpm(bpm)
+                    HStack(spacing: 3) {
+                        Image(systemName: "heart.fill").font(.caption2)
+                        Text("\(Int(bpm.rounded()))").font(.caption.monospacedDigit().weight(.semibold))
+                    }
+                    .foregroundStyle(zone.color)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(zone.color.opacity(0.15), in: Capsule())
+                    .accessibilityIdentifier("setHRBadge")
+                }
             }
+            // Peak effort + recovery for the set (shared with the Kilter per-climb badge).
+            HREffortBadge(effort: effort)
+                .accessibilityIdentifier("setEffort")
         }
     }
 
