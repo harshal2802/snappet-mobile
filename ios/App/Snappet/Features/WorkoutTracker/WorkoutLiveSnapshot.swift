@@ -17,6 +17,10 @@ struct WorkoutLiveSnapshot: Equatable, Sendable {
     /// Whether the workout is paused (drives the "Paused" state across the player, the Live
     /// Activity, and the in-app banner). Defaulted so existing call sites are untouched.
     var paused: Bool = false
+    /// Whether the user is recovered enough for the next set (Phase 4 nudge); drives a "Recovered"
+    /// badge on the Live Activity / widget. `false` when no profile / still recovering. Defaulted so
+    /// existing call sites are untouched.
+    var recoveryReady: Bool = false
 
     /// Format an elapsed interval as the overall-timer string `H:MM:SS` (hours dropped under an
     /// hour → `M:SS`). Pure + deterministic so it is unit-testable; the in-player header prefers
@@ -40,7 +44,7 @@ struct WorkoutLiveSnapshot: Equatable, Sendable {
         guard let last else { return true }   // first push always goes
         // Structural changes (exercise / set-progress / pause state) push immediately.
         if next.exerciseName != last.exerciseName || next.setProgress != last.setProgress
-            || next.paused != last.paused { return true }
+            || next.paused != last.paused || next.recoveryReady != last.recoveryReady { return true }
         if next.hrBpm == last.hrBpm { return false }   // nothing changed at all
         guard let lastPushedAt else { return true }
         return now.timeIntervalSince(lastPushedAt) >= minHRInterval   // HR-only → rate-limit

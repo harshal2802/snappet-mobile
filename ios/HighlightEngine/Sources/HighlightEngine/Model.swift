@@ -10,9 +10,14 @@ import Foundation
 public struct HRSample: Sendable, Equatable {
     public let t: Double
     public let bpm: Double
-    public init(t: Double, bpm: Double) {
+    /// RR-intervals (milliseconds between consecutive beats) reported in the **same** `0x2A37` packet,
+    /// when the band sends them **and** is a trusted chest strap (fitness-band Phase 3). `nil` = none
+    /// captured / untrusted source / the Apple-Watch path — so HRV degrades to the bpm-only state.
+    public let rrIntervalsMs: [Double]?
+    public init(t: Double, bpm: Double, rrIntervalsMs: [Double]? = nil) {
         self.t = t
         self.bpm = bpm
+        self.rrIntervalsMs = rrIntervalsMs
     }
 }
 

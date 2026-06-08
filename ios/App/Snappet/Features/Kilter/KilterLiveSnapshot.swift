@@ -17,6 +17,9 @@ struct KilterLiveSnapshot: Equatable, Sendable {
     var climbCount: Int
     /// Whether the session is paused. Defaulted so existing call sites are untouched.
     var paused: Bool = false
+    /// Whether the user is recovered enough for the next climb (Phase 4 nudge); drives a "Recovered"
+    /// badge on the Live Activity / widget. `false` when no profile / still recovering. Defaulted.
+    var recoveryReady: Bool = false
 
     /// Decide whether `next` warrants pushing to ActivityKit given the last pushed snapshot.
     /// **Structural** changes (current climb / grade / climb count / pause) always push immediately;
@@ -30,7 +33,8 @@ struct KilterLiveSnapshot: Equatable, Sendable {
         if next.currentClimbName != last.currentClimbName
             || next.currentGrade != last.currentGrade
             || next.climbCount != last.climbCount
-            || next.paused != last.paused { return true }
+            || next.paused != last.paused
+            || next.recoveryReady != last.recoveryReady { return true }
         if next.hrBpm == last.hrBpm { return false }   // nothing changed at all
         guard let lastPushedAt else { return true }
         return now.timeIntervalSince(lastPushedAt) >= minHRInterval   // HR-only → rate-limit

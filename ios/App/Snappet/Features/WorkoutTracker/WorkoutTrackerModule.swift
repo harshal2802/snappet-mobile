@@ -252,7 +252,8 @@ struct WorkoutHomeView: View {
         context.insert(session)
         try? context.save()
         app.liveWorkout.start(for: session, sport: nil, category: nil,
-                              maxHR: app.userProfile.profile.resolvedMaxHR)
+                              maxHR: app.userProfile.profile.resolvedMaxHR,
+                              restHR: app.userProfile.profile.restingBound)
         startLiveActivity(for: session)
         playing = session
     }
@@ -283,7 +284,8 @@ struct WorkoutHomeView: View {
                 startLiveMetrics(for: session, routine: routine)
             } else {
                 app.liveWorkout.start(for: session, sport: nil, category: nil,
-                              maxHR: app.userProfile.profile.resolvedMaxHR)
+                              maxHR: app.userProfile.profile.resolvedMaxHR,
+                              restHR: app.userProfile.profile.restingBound)
                 startLiveActivity(for: session)
             }
         } else if !app.liveActivity.isRunning {
@@ -303,7 +305,8 @@ struct WorkoutHomeView: View {
         let category = WorkoutActivityMapping.dominantCategory(
             of: routine.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category })
         app.liveWorkout.start(for: session, sport: routine.sport, category: category,
-                              maxHR: app.userProfile.profile.resolvedMaxHR)
+                              maxHR: app.userProfile.profile.resolvedMaxHR,
+                              restHR: app.userProfile.profile.restingBound)
         startLiveActivity(for: session)
     }
 

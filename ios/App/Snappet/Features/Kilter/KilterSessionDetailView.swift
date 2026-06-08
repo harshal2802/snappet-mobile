@@ -51,7 +51,7 @@ struct KilterSessionDetailView: View {
         guard let session else { return nil }
         return KilterSessionStats.make(from: entries.map(KilterClimbLog.from),
                                        start: session.startedAt, end: session.endedAt ?? .now,
-                                       hrSeries: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) },
+                                       hrSeries: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
                                        maxHR: session.maxHR, restHR: session.restHR)
     }
 
@@ -87,7 +87,10 @@ struct KilterSessionDetailView: View {
         // Reel: the shared auto-generate-then-edit flow (now full-length, uncapped).
         .sheet(isPresented: $showingReel) {
             if let session {
-                NavigationStack { ReelView(source: .kilterSession(session, media: media)) }
+                NavigationStack {
+                    ReelView(source: .kilterSession(session, media: media,
+                                                    logs: entries.map(KilterClimbLog.from)))
+                }
             }
         }
         // All clip editing happens in the full-screen Studio (big preview + trim/speed/crop/text/HR
@@ -331,16 +334,22 @@ struct KilterSessionDetailView: View {
         .padding(.horizontal)
     }
 
-    /// Per-climb HR effort + recovery, via the shared `HREffortBadge` (identical to the WorkoutTracker
-    /// per-set badge). Hidden entirely when the climb wasn't scored (HR-less session / no recorded start).
+    /// Per-climb HR effort + recovery (shared `HREffortBadge`, identical to the WorkoutTracker per-set
+    /// badge) plus the rest HRV before the climb (shared `HRVBadge`, Phase 3). Hidden entirely when the
+    /// climb wasn't scored and no rest HRV exists (HR-less session / no recorded start / untrusted RR).
     @ViewBuilder private func effortRow(_ item: KilterSessionStats.TimelineItem) -> some View {
-        if item.peakBpm != nil {
-            HREffortBadge(
-                effort: ClimbEffort(peakBpm: item.peakBpm, peakHRR: item.peakHRR, hrRise: item.hrRise,
-                                    timeToPeak: item.timeToPeak, hrRecovery60: item.hrRecovery60,
-                                    hrRecovery30: item.hrRecovery30),
-                maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
-                .accessibilityIdentifier("kilter.climb.effort")
+        if item.peakBpm != nil || item.restHRV.rmssd != nil {
+            HStack(spacing: 10) {
+                if item.peakBpm != nil {
+                    HREffortBadge(
+                        effort: ClimbEffort(peakBpm: item.peakBpm, peakHRR: item.peakHRR, hrRise: item.hrRise,
+                                            timeToPeak: item.timeToPeak, hrRecovery60: item.hrRecovery60,
+                                            hrRecovery30: item.hrRecovery30),
+                        maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
+                        .accessibilityIdentifier("kilter.climb.effort")
+                }
+                HRVBadge(hrv: item.restHRV)
+            }
         }
     }
 

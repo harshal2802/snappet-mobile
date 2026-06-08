@@ -18,8 +18,13 @@ struct ReelSource {
     /// Build the engine input. `manualMedia` (from the limited-access picker) overrides
     /// auto-discovery when provided.
     let makeWorkout: @MainActor (_ model: AppModel, _ manualMedia: [MediaItem]?) async throws -> Workout
+    /// Achievement windows to boost when ranking highlights (fitness-band Phase 4): sent-climb
+    /// windows (Kilter) in seconds from session start. Empty ⇒ pure HR ranking (today's behavior).
+    var boostWindows: [ClosedRange<Double>] = []
 
-    /// The flagship workout source: builds via `AppModel.buildWorkout` (HealthKit HR + Photos).
+    /// The flagship workout source: builds via `AppModel.buildWorkout` (HealthKit HR + Photos). The
+    /// HealthKit path has no per-set effort data, so it boosts nothing (HR-only) — the WorkoutTracker
+    /// peak-effort boost lives in the session-based `SessionHighlightViewModel` path instead.
     static func workout(_ summary: WorkoutSummary) -> ReelSource {
         ReelSource(id: summary.id.uuidString, activity: summary.activity,
                    title: "\(summary.activity.rawValue.capitalized) reel", start: summary.start,
@@ -90,7 +95,9 @@ final class ReelViewModel {
             workout = wk
             // Full-length clips (no per-clip trim); the planner is uncapped (AppModel) so nothing is
             // dropped for length — the user didn't want a limit on session videos.
-            let res = model.engine.generate(for: wk, config: .preset(for: wk.activity).fullLength())
+            // Boost the source's achievement windows (Phase 4) when present; empty ⇒ HR-only.
+            let res = model.engine(boosting: source.boostWindows)
+                .generate(for: wk, config: .preset(for: wk.activity).fullLength())
             result = res
             highlights = res.highlights
             model.engine.logShown(res, workoutId: source.id,

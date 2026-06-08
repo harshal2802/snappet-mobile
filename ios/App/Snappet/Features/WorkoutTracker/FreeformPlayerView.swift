@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HighlightEngine
 
 /// A **freeform / dynamic** session player: unlike the guided `WorkoutPlayerView` (which walks a fixed
 /// routine set-by-set), this is a grow-as-you-go logbook — add exercises and sets/attempts on the fly,
@@ -225,12 +226,17 @@ struct FreeformPlayerView: View {
     private func pushLiveActivity() {
         let current = session.exercises.last { !$0.skipped }
         let name = current.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
+        let profile = app.userProfile.profile
+        let ready = RecoveryReadiness.evaluate(currentBpm: app.liveWorkout.latestHR,
+                                               restBpm: profile.restingBound,
+                                               maxBpm: profile.resolvedMaxHR).state == .ready
         app.liveActivity.update(WorkoutLiveSnapshot(
             startedAt: session.startedAt,
             hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
             exerciseName: name,
             setProgress: "",
-            paused: app.liveWorkout.isPaused))
+            paused: app.liveWorkout.isPaused,
+            recoveryReady: ready))
     }
 
     // MARK: - Pause

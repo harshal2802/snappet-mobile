@@ -33,6 +33,9 @@ struct WorkoutActivityAttributes: ActivityAttributes {
         /// without churn; the producer + renderer are the same app version, so the shape can't
         /// drift mid-session.
         var paused: Bool = false
+        /// Whether the user is recovered enough for the next set (Phase 4); the Lock Screen / Dynamic
+        /// Island show a "Recovered" badge. Defaulted so producer + renderer can't drift mid-session.
+        var recoveryReady: Bool = false
     }
 
     /// The routine being performed — fixed for the activity's lifetime.

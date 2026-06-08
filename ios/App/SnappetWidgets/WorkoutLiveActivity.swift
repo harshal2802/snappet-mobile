@@ -97,6 +97,13 @@ private struct LockScreenView: View {
                         .background(.yellow.opacity(0.25), in: Capsule())
                         .foregroundStyle(.yellow)
                 }
+                if context.state.recoveryReady {
+                    Label("Recovered", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.green.opacity(0.22), in: Capsule())
+                        .foregroundStyle(.green)
+                }
                 Spacer()
                 Label {
                     Text(context.state.hrBpm.map { "\($0) bpm" } ?? "—")

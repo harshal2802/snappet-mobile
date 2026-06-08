@@ -117,7 +117,8 @@ final class KilterLiveActivityController {
         let state = KilterActivityAttributes.ContentState(
             startedAt: startedAt, hrBpm: snapshot.hrBpm,
             currentClimbName: snapshot.currentClimbName, currentGrade: snapshot.currentGrade,
-            climbCount: snapshot.climbCount, angle: angle, paused: snapshot.paused)
+            climbCount: snapshot.climbCount, angle: angle, paused: snapshot.paused,
+            recoveryReady: snapshot.recoveryReady)
         let content = ActivityContent(state: state, staleDate: nil)
         // `Activity` is documented thread-safe + `Sendable`; strip the main-actor tag so the detached
         // async `update` doesn't trip Swift 6 region isolation (mirrors `LiveActivityController`).

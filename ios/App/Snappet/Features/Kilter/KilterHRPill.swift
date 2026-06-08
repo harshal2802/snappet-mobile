@@ -1,4 +1,5 @@
 import SwiftUI
+import HighlightEngine
 
 /// A compact heart-rate pill tinted by its `HeartRateZone` (shared with the Live Activity + watch
 /// face). Used in the Kilter session HUD — the root active-session banner and the climb detail —
@@ -10,6 +11,9 @@ struct KilterHRPill: View {
     /// Band reports lost sensor contact → show an inline "adjust strap" warning; defaults `false`
     /// (and for sources that can't report contact, like the Apple Watch).
     var contactLost: Bool = false
+    /// Live recovery-ready state (Phase 4): a "ready for the next climb" check shows only when
+    /// `.ready`; hidden for `.recovering` / `.unknown` (no profile), so today's pill is unchanged.
+    var readiness: RecoveryReadiness = .unknown
 
     private var zone: HeartRateZone { HeartRateZone.forBpm(bpm) }
 
@@ -23,6 +27,12 @@ struct KilterHRPill: View {
                     .font(.caption2).foregroundStyle(.orange)
                     .accessibilityHidden(true)
             }
+            if readiness.state == .ready {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2).foregroundStyle(.green)
+                    .accessibilityHidden(true)
+                    .accessibilityIdentifier("kilterRecoveryReady")
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
@@ -30,6 +40,7 @@ struct KilterHRPill: View {
 
     private var accessibilityText: String {
         let base = bpm.map { "Heart rate \(Int($0)) beats per minute" } ?? "Heart rate unavailable"
-        return contactLost ? "\(base), adjust strap" : base
+        let withContact = contactLost ? "\(base), adjust strap" : base
+        return readiness.state == .ready ? "\(withContact), recovered" : withContact
     }
 }

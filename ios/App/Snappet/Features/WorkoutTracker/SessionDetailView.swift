@@ -354,10 +354,13 @@ private struct SessionMediaSection: View {
     var body: some View {
         // Per-set effort/recovery over the session HR series (empty map when there's no HR), computed
         // once and looked up per row — the WorkoutTracker twin of the Kilter per-climb effort.
+        let hrSamples = session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
         let efforts = WorkoutHRStats.setEfforts(
             for: session.exercises, sessionStart: session.startedAt,
-            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) },
-            maxHR: session.maxHR, restHR: session.restHR)
+            hr: hrSamples, maxHR: session.maxHR, restHR: session.restHR)
+        // Per-set rest HRV (Phase 3): the recovery-quality signal between sets; empty without trusted RR.
+        let restHRV = WorkoutHRStats.setRestHRV(
+            for: session.exercises, sessionStart: session.startedAt, hr: hrSamples)
         Group {
             actionsSection
             ForEach(session.exercises) { ex in
@@ -369,6 +372,7 @@ private struct SessionMediaSection: View {
                             SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
+                                       restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
@@ -399,7 +403,11 @@ private struct SessionMediaSection: View {
                                 localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
                                 offsetSec: $0.offsetSec, durationSec: $0.durationSec)
                         },
-                        duration: session.duration, sport: sport, category: category))
+                        duration: session.duration, sport: sport, category: category,
+                        // Boost peak-effort set windows so the auto-reel features the hard sets (Phase 4).
+                        boostWindows: WorkoutHRStats.peakEffortWindows(
+                            for: session.exercises, sessionStart: session.startedAt,
+                            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })))
             }
         }
         .task {
@@ -703,6 +711,8 @@ private struct SetTileRow: View {
     /// Per-set HR effort/recovery (peak, %HRR-or-bpm, recovery) over the set's window; `.empty` for
     /// HR-less sessions or sets with no completion → the effort row is hidden.
     var effort: ClimbEffort = .empty
+    /// Per-set rest HRV over the recovery gap before this set (Phase 3); `.empty` hides the HRV badge.
+    var restHRV: HRVMetrics = .empty
     /// The session's resolved max HR for the zone tints; defaults to the no-profile fallback (Phase 2).
     var maxHR: Double = HeartRateZone.defaultMaxHR
 
@@ -728,9 +738,12 @@ private struct SetTileRow: View {
                     .accessibilityIdentifier("setHRBadge")
                 }
             }
-            // Peak effort + recovery for the set (shared with the Kilter per-climb badge).
-            HREffortBadge(effort: effort, maxHR: maxHR)
-                .accessibilityIdentifier("setEffort")
+            // Peak effort + recovery for the set, plus rest HRV (shared with the Kilter per-climb row).
+            HStack(spacing: 10) {
+                HREffortBadge(effort: effort, maxHR: maxHR)
+                    .accessibilityIdentifier("setEffort")
+                HRVBadge(hrv: restHRV)
+            }
         }
     }
 

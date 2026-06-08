@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HighlightEngine
 
 /// Route values pushed onto the App Library's shared `SuiteRouter` path.
 struct KilterClimbRoute: Hashable { let uuid: String }
@@ -307,7 +308,11 @@ struct KilterRootView: View {
                     Spacer()
                     if app.liveWorkout.state != .unavailable {
                         KilterHRPill(bpm: app.liveWorkout.latestHR, compact: true,
-                                     contactLost: app.liveWorkout.isContactLost == true)
+                                     contactLost: app.liveWorkout.isContactLost == true,
+                                     readiness: RecoveryReadiness.evaluate(
+                                        currentBpm: app.liveWorkout.latestHR,
+                                        restBpm: app.userProfile.profile.restingBound,
+                                        maxBpm: app.userProfile.profile.resolvedMaxHR))
                     }
                     Button("End") { withAnimation(.snappy) { sessions.end(in: modelContext) } }
                         .font(.subheadline.weight(.semibold))

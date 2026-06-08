@@ -54,10 +54,14 @@ contact gating + redline/strain in both apps; per-effort is per-climb (Kilter) a
 (WorkoutTracker, all `SetKind`s) via the shared `ClimbEffort` + `HREffortBadge`. Still device-only:
 the live "adjust strap" + live per-effort HR.
 
-## Phase 2 — on-device user HR profile (the keystone)
+## Phase 2 — on-device user HR profile (the keystone) ✅ SHIPPED (PR #57)
 
 A small app-agnostic `UserHRProfile` (age/resting/max/weight/sex; manual + HealthKit prefill)
 replaces the fixed `maxHR = 190`, lighting up personalized zones, real `%HRR`, and HR-based calories.
+**Shipped:** prompt `25-ios-user-hr-profile.md`; `WorkoutSession` gained `maxHR`/`restHR`/
+`metricsSourceRaw`/`kcalEstimate` (parity gap closed); Keytel calories (BLE-only); `maxHR` wired to
+watch + widget; Tanaka max-HR; symmetric no-profile gating. Device-pending: live personalized
+watch/widget zone tints + a non-zero BLE calorie estimate end-to-end.
 
 **Parity requirements:**
 - The profile store lives once on `AppModel` (already shared by both apps).
@@ -71,9 +75,13 @@ replaces the fixed `maxHR = 190`, lighting up personalized zones, real `%HRR`, a
   so zone colors are personalized off-device in both contexts.
 - Gating: no profile → today's bpm-only behavior, identically in both apps.
 
-## Phase 3 — RR-intervals → on-device HRV (device-gated)
+## Phase 3 — RR-intervals → on-device HRV (device-gated) ✅ SHIPPED (PR #58)
 
 Parse the RR-interval array we discard and compute RMSSD/SDNN/pNN50 purely in the engine.
+**Shipped:** prompt `26-ios-rr-intervals-hrv.md`; RR decoded in `parseMeasurement` (energy-skip),
+threaded as optional `rrIntervalsMs` on `HRSample`/`HRPoint`; `HRVMetrics` engine helper + shared
+`HRVBadge`; per-rest HRV on both apps' timelines; chest-strap trust gate (`rrTrusted`, default-deny,
+name + `0x180A` model). Device-pending: live RR off a real strap; optical band shows no HRV.
 
 **Parity requirements:**
 - Capture is at the **shared** `BLEHeartRateMetricsSource` → both apps get RR for free; thread an
@@ -86,7 +94,13 @@ Parse the RR-interval array we discard and compute RMSSD/SDNN/pNN50 purely in th
   Watch path emit no genuine RR → degrade to the bpm-only effort/recovery already shipped. Use a
   Device-Info (`0x180A`) model gate to decide trust.
 
-## Phase 4 — bigger bets (build on 2 & 3)
+## Phase 4 — bigger bets (build on 2 & 3) ✅ SHIPPED (PR #59)
+
+**Shipped:** prompt `27-ios-recovery-nudge-effort-selector.md`. `RecoveryReadiness` + a live
+"Recovered" nudge on both pills / Live Activity / widget / watch (watch computes it inline from the
+wired `maxHR`/`restHR`); `EffortAlignedSelector` + `FusionSelector.effortAligned` + `AppModel.engine(
+boosting:)` boosting sent-climb (Kilter) / peak-effort set (WorkoutTracker) windows in the auto-reels.
+Device-pending: the live nudge firing + a real reel favoring achievement moments. Original plan:
 
 - **Live "recovery ready" nudge.** Both the **Kilter** HUD/Live Activity **and** the
   **WorkoutTracker** live player overlay/Live Activity — "rested enough for the next burn" = next

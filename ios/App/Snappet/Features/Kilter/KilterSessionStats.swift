@@ -88,6 +88,10 @@ struct KilterSessionStats: Sendable, Equatable {
         var timeToPeak: TimeInterval? = nil
         var hrRecovery60: Double? = nil
         var hrRecovery30: Double? = nil
+        /// On-device HRV over the **rest before** this climb (the `restBefore` gap), from the RR
+        /// captured on a trusted chest strap (fitness-band Phase 3). `.empty` for the first climb, no
+        /// rest, HR-less sessions, or RR-less / untrusted sources — the HRV badge hides on it.
+        var restHRV: HRVMetrics = .empty
         var id: Int { index }
     }
 
@@ -128,6 +132,14 @@ struct KilterSessionStats: Sendable, Equatable {
         var previousEnd: Date?
         for (i, log) in sorted.enumerated() {
             let rest = previousEnd.map { max(0, log.effectiveStart.timeIntervalSince($0)) }
+            // HRV over the rest gap before this climb [prevEnd, thisStart] — the recovery-quality
+            // signal between burns (Phase 3). Empty unless RR was captured in that window.
+            let restHRV: HRVMetrics = {
+                guard !hrSeries.isEmpty, let prevEnd = previousEnd else { return .empty }
+                let restStart = max(0, prevEnd.timeIntervalSince(start))
+                let restEnd = max(restStart, log.effectiveStart.timeIntervalSince(start))
+                return HRVMetrics.make(from: hrSeries, start: restStart, end: restEnd)
+            }()
             // Per-climb HR effort: score the climb's window, extending its END by the HR lag so a
             // post-effort spike that lands just after `endedAt` is captured. We compute the window
             // here from the log's own timestamps (NOT KilterBoardController.climbWindows, which feeds
@@ -147,7 +159,7 @@ struct KilterSessionStats: Sendable, Equatable {
                 timeOnClimb: log.timeOnClimb, restBefore: rest,
                 peakBpm: effort.peakBpm, peakHRR: effort.peakHRR, hrRise: effort.hrRise,
                 timeToPeak: effort.timeToPeak, hrRecovery60: effort.hrRecovery60,
-                hrRecovery30: effort.hrRecovery30))
+                hrRecovery30: effort.hrRecovery30, restHRV: restHRV))
             previousEnd = log.effectiveEnd
         }
 
@@ -160,6 +172,19 @@ struct KilterSessionStats: Sendable, Equatable {
             hardestSendDifficulty: hardest?.difficulty, hardestSendGrade: hardest?.gradeLabel,
             sendsPerHour: sendsPerHour, pyramid: pyramid, timeline: timeline,
             totalDuration: duration, medianTimeOnClimb: median)
+    }
+
+    /// Achievement windows for the effort-aligned reel selector (fitness-band Phase 4): each **sent**
+    /// climb's HR window `[start, end + hrLagSec]` in seconds from the session start (the end extended
+    /// by the HR lag, like the per-climb effort window). Only sends with a recorded start contribute;
+    /// no sends → `[]` ⇒ the reel ranks on HR alone (gated). Pure → unit-tested.
+    static func sentClimbWindows(from logs: [KilterClimbLog], start: Date,
+                                 config: HighlightConfig = .preset(for: .climbing)) -> [ClosedRange<Double>] {
+        logs.filter { $0.isSend && $0.startedAt != nil }.compactMap { log in
+            let s = max(0, log.effectiveStart.timeIntervalSince(start))
+            let e = max(s, log.effectiveEnd.timeIntervalSince(start) + config.hrLagSec)
+            return s...e
+        }
     }
 
     /// Median of a **sorted, non-empty** array (mean of the two middle values for an even count).
