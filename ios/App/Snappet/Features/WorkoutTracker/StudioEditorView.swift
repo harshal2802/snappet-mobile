@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 struct StudioEditorView: View {
     @State private var vm: StudioEditorViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     @State private var showingShare = false
     @State private var addingText = false
     @State private var textDraft = ""
@@ -50,6 +51,7 @@ struct StudioEditorView: View {
         .tint(SnappetColor.workout)
         .task {
             await vm.onAppear()
+            vm.loadOverlayContext(profile: app.userProfile.profile)   // overlay-builder bounds (prompt 28)
             // Jump straight to the tapped clip (gallery → edit-this-clip), if one was requested.
             if let mid = focusClipMediaID, let clip = vm.clips.first(where: { $0.sessionMediaID == mid }) {
                 vm.select(clip.id)
@@ -161,12 +163,19 @@ struct StudioEditorView: View {
                                 onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
                                 onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
             // Live heart-rate chart overlay (moving-playhead line), draggable to reposition.
-            if let hr = vm.hrOverlay {
+            if let hr = vm.hrOverlay, hr.showChart {
                 StudioHRChartView(samples: vm.hrSeries, config: hr, ratio: vm.previewRatio,
                                   currentTime: vm.currentTime, totalDuration: vm.totalDuration,
                                   onMove: { vm.setHRPosition($0) },
                                   onResize: { vm.setHRScale($0) })
                     .accessibilityIdentifier("studioHRChart")
+            }
+            // Configurable HR/fitness overlay badges (prompt 28): live ones track the playhead.
+            if let hr = vm.hrOverlay, !hr.elements.isEmpty {
+                HROverlayElementsView(
+                    elements: hr.elements, values: vm.overlayValues,
+                    fraction: vm.totalDuration > 0 ? vm.currentTime / vm.totalDuration : 0,
+                    onMove: { vm.setElementPosition($0, $1) })
             }
             if let err = vm.previewError {
                 Text(err)
@@ -450,13 +459,19 @@ private struct StudioHRControls: View {
     @Bindable var vm: StudioEditorViewModel
     private let swatches = ["#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#FFFFFF"]
 
+    private var addable: [HROverlayMetric] {
+        let placed = Set(vm.overlayElements.map(\.metric))
+        return vm.availableOverlayMetrics.filter { !placed.contains($0) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Toggle("Show heart-rate chart", isOn: Binding(
-                get: { vm.hrOverlay != nil },
-                set: { _ in vm.toggleHROverlay() }))
-                .accessibilityIdentifier("hrEnable")
-            if let cfg = vm.hrOverlay {
+            // The chart line (moving-playhead graph) — independent of the number/badge picks.
+            Toggle("Show chart line", isOn: Binding(
+                get: { vm.hrOverlay?.showChart ?? false },
+                set: { vm.setShowChart($0) }))
+                .accessibilityIdentifier("hrChartEnable")
+            if let cfg = vm.hrOverlay, cfg.showChart {
                 HStack(spacing: 10) {
                     Text("Colour").font(.caption).frame(width: 60, alignment: .leading)
                     ForEach(swatches, id: \.self) { hex in
@@ -471,14 +486,61 @@ private struct StudioHRControls: View {
                                           set: { var c = cfg; c.scale = $0; vm.updateHROverlay(c) }),
                            in: 0.4...1).accessibilityIdentifier("hrSize")
                 }
-                Toggle("Live BPM number", isOn: Binding(
-                    get: { cfg.showBPM }, set: { var c = cfg; c.showBPM = $0; vm.updateHROverlay(c) }))
-                Toggle("Colour by HR zone", isOn: Binding(
+                Toggle("Colour line by HR zone", isOn: Binding(
                     get: { cfg.zoneColored }, set: { var c = cfg; c.zoneColored = $0; vm.updateHROverlay(c) }))
-                Text("Drag the chart on the preview to position it.")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
+
+            Divider().overlay(Color.white.opacity(0.1))
+
+            // Selectable numbers/badges — each Live (tracks the playhead) and/or Animated.
+            Text("Numbers & badges").font(.subheadline.weight(.semibold))
+            ForEach(vm.overlayElements) { element in
+                StudioHRElementRow(vm: vm, element: element)
+            }
+            if !addable.isEmpty {
+                Menu {
+                    ForEach(addable) { metric in
+                        Button { vm.addOverlayElement(metric) } label: {
+                            Label(metric.label, systemImage: metric.systemImage)
+                        }
+                    }
+                } label: { Label("Add overlay", systemImage: "plus") }
+                    .accessibilityIdentifier("studioAddHROverlay")
+            }
+            Text("Drag any chart or badge on the preview to position it.")
+                .font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// One Studio overlay element row: label, remove, and Live/Animate toggles (enabled only where the
+/// metric supports them — a static aggregate can't be live or animate).
+private struct StudioHRElementRow: View {
+    @Bindable var vm: StudioEditorViewModel
+    let element: HROverlayElement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(element.metric.label, systemImage: element.metric.systemImage).font(.subheadline)
+                Spacer()
+                Button(role: .destructive) { vm.removeOverlayElement(element.id) } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("studioRemoveHROverlay")
+            }
+            HStack(spacing: 16) {
+                Toggle("Live", isOn: Binding(get: { element.isLive },
+                                             set: { vm.setElementLive(element.id, $0) }))
+                    .disabled(!element.metric.supportsLive)
+                Toggle("Animate", isOn: Binding(get: { element.isAnimated },
+                                                set: { vm.setElementAnimated(element.id, $0) }))
+                    .disabled(!element.isLive)
+            }
+            .font(.caption).toggleStyle(.button)
+        }
+        .padding(.vertical, 4)
     }
 }
 
