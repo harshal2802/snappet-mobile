@@ -159,6 +159,17 @@ fixture (Python generator verified locally + in-code `KilterCatalogFixture` on b
 tests. Authored on Linux — `xcodebuild test` (Mac) + Android `connectedDebugAndroidTest` owed at the
 merge gate.
 
+🟡 **Kilter create-a-climb — authoring (2026-06-09, `30-ios-create-climb-identity-dedup.md`, PR 1/3).**
+The module is no longer browse-only: a manual hold editor (`CreateClimbView` + `KilterEditableBoardView`,
+tap-to-cycle role) produces a real climb, validated against the whole downloaded dataset + previously
+created climbs (`KilterDuplicateChecker`) and given a **deterministic content uuid**
+(`KilterClimbIdentity` — same holds ⇒ same uuid on every device, the cross-device-identity requirement)
+before persisting as a `KilterCreatedClimb`. Created climbs surface under a **Mine** browse filter and
+reuse the existing detail/render/BLE/logging path via a `KilterClimb` adapter. iOS-only so far. **Next:**
+PR 2 wires the board-explorer's on-device ONNX generator (✨ Generate tab, lazy-downloaded model); PR 3
+adds live BLE preview + frames export. Pure logic is sim-tested (`KilterCreateClimbTests`); the on-board
+author→illuminate path is device-pending.
+
 🟢 **Kilter rich session (2026-06-05, `pdd/prompts/features/18-ios-kilter-rich-session.md`).** Brought
 the Live Workout toolkit to a climbing session by **reuse, not rebuild**: live HR (Apple Watch *or* a BLE
 chest strap, via a `LiveMetricsContext` that decouples `LiveMetricsCoordinator` from `WorkoutSession`),
