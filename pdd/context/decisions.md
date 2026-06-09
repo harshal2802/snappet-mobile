@@ -3000,3 +3000,19 @@ preview + frames export) onto Android. Non-obvious choices:
 green — `KilterCreateClimbTest` (14, incl. the iOS-matching golden vector) + `KilterGeneratorTest` (8).
 **Device-pending (Android):** model download + on-device ONNX inference, BLE draft-lighting, clipboard/share
 — all runtime/emulator-or-device only. Create-a-climb now exists on **both** platforms.
+
+### 2026-06-09 addendum — Android create-climb: emulator UI tests + a real bug they caught
+
+Added `KilterCreateUITest` (instrumented, runs on the emulator with the synthetic catalog fixture):
+opening the editor, disabled-until-valid Save, draw→save→find-under-Mine, the duplicate-guard dialog
+on re-save, and the ✨ Generate download prompt. **5/5 pass.**
+
+The first run failed 4/5 and surfaced a genuine bug: `KilterEditableBoard`'s `pointerInput(placeable)`
+captured a **stale** `onCycle` (the gesture isn't restarted when `assignments` change), so every tap
+reset the climb to a single hold — multi-hold placement was silently broken on Android. Fixed by reading
+the callback through `rememberUpdatedState`. iOS is unaffected (SwiftUI re-creates the gesture closure each
+body eval, capturing the live binding).
+
+**Infra note:** Gradle's `connectedDebugAndroidTest` wedges on this iCloud-synced Desktop (the daemon
+hangs before installing the test APK). Workaround that runs cleanly: build the APKs, then
+`adb install` + `adb shell am instrument` directly (bypassing Gradle's device orchestration).

@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -29,6 +31,10 @@ fun KilterEditableBoard(
     modifier: Modifier = Modifier,
 ) {
     val aspect = if (geometry.aspect > 0) geometry.aspect.toFloat() else 1f
+    // The tap detector is keyed only on `placeable` (so it isn't torn down every time a hold is placed),
+    // so capture the LATEST onCycle via rememberUpdatedState — otherwise a stale callback (built from an
+    // earlier `assignments`) would reset the climb to a single hold on every tap.
+    val currentOnCycle by rememberUpdatedState(onCycle)
     Canvas(
         modifier
             .aspectRatio(aspect)
@@ -46,7 +52,7 @@ fun KilterEditableBoard(
                         val dist = hypot(c.x - tap.x, c.y - tap.y)
                         if (dist < bestDist) { bestDist = dist; bestPid = hold.placementId }
                     }
-                    if (bestPid >= 0 && bestDist <= holdD) onCycle(bestPid)
+                    if (bestPid >= 0 && bestDist <= holdD) currentOnCycle(bestPid)
                 }
             },
     ) {

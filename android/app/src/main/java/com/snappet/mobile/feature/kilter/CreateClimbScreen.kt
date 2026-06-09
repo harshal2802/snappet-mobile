@@ -317,7 +317,7 @@ private fun ManualSection(
         Text("No matching", Modifier.weight(1f))
         Switch(checked = isNoMatch, onCheckedChange = onNoMatch, modifier = Modifier.testTag("kilter.create.noMatch"))
     }
-    KilterEditableBoard(geometry, placeable, assignments, onCycle, Modifier.fillMaxWidth())
+    KilterEditableBoard(geometry, placeable, assignments, onCycle, Modifier.fillMaxWidth().testTag("kilter.create.board"))
     RoleCounts(assignments.values.toList())
     if (validation != null) {
         Text(validation.message, color = Color(0xFFD97706), style = MaterialTheme.typography.bodySmall,
