@@ -11,6 +11,11 @@ options:
 packages:
   HighlightEngine:
     path: ../HighlightEngine
+  # On-device climb generator (Features/Kilter/KilterGeneratorRuntime.swift): runs the board-explorer's
+  # quantized transformer (model.q.onnx, lazy-downloaded) via ONNX Runtime's Objective-C/Swift API.
+  onnxruntime:
+    url: https://github.com/microsoft/onnxruntime-swift-package-manager
+    from: "1.19.0"
 targets:
   Snappet:
     type: application
@@ -22,6 +27,9 @@ targets:
       - path: Shared
     dependencies:
       - package: HighlightEngine
+      # ONNX Runtime (ObjC/Swift API) for the on-device climb generator.
+      - package: onnxruntime
+        product: onnxruntime
       # Read-only access to the user-installed Kilter catalog (Features/Kilter, `import SQLite3`).
       - sdk: libsqlite3.tbd
       # gzip inflate for the Kilter hosted-catalog download (Features/Kilter/KilterAuroraSync.swift).

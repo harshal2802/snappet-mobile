@@ -166,9 +166,18 @@ created climbs (`KilterDuplicateChecker`) and given a **deterministic content uu
 (`KilterClimbIdentity` — same holds ⇒ same uuid on every device, the cross-device-identity requirement)
 before persisting as a `KilterCreatedClimb`. Created climbs surface under a **Mine** browse filter and
 reuse the existing detail/render/BLE/logging path via a `KilterClimb` adapter. iOS-only so far. **Next:**
-PR 2 wires the board-explorer's on-device ONNX generator (✨ Generate tab, lazy-downloaded model); PR 3
-adds live BLE preview + frames export. Pure logic is sim-tested (`KilterCreateClimbTests`); the on-board
-author→illuminate path is device-pending.
+PR 3 adds live BLE preview + frames export. Pure logic is sim-tested (`KilterCreateClimbTests`); the
+on-board author→illuminate path is device-pending.
+
+🟡 **Kilter create-a-climb — on-device generator (2026-06-09, `31-ios-onnx-climb-generator.md`, PR 2/3).**
+The ✨ Generate tab in `CreateClimbView` runs the board-explorer's quantized **ONNX transformer**
+(`model.q.onnx`, lazy-downloaded by `KilterGeneratorAssets` from the existing host) to design a climb for
+a chosen size / angle / target grade. The decode is a pure Swift port (`KilterClimbGenerator` over a
+`KilterLogitsProviding` protocol — unit-tested with a stub, no ONNX) behind a thin ONNX Runtime edge
+(`KilterORTSession`, the only `import OnnxRuntimeBindings`; isolated in the `KilterGeneratorRuntime`
+actor). Adds the `onnxruntime` SPM dependency. Generated climbs save through PR 1's dedup + content-uuid
+path (`source = "generated"`). Sim-tested (`KilterGeneratorTests`, 467 total green); **device-pending:**
+a real model download + an on-device inference run + frames-parity spot checks vs the web explorer.
 
 🟢 **Kilter rich session (2026-06-05, `pdd/prompts/features/18-ios-kilter-rich-session.md`).** Brought
 the Live Workout toolkit to a climbing session by **reuse, not rebuild**: live HR (Apple Watch *or* a BLE
