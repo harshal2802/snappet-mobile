@@ -2916,3 +2916,59 @@ resolver — no new value logic.
 
 **Verified off-device:** sim build green; the existing `HROverlayValuesTests`/`HROverlayModelTests`
 cover the shared resolver. **Device-pending:** the burned-in badges in a multi-clip Studio export.
+
+---
+
+## 2026-06-09 — HR-on-video: never-missing, per-clip heart-rate windows (prompt 29)
+
+Bug: "wrist band was connected and working but a tagged video is missing HR." A deep multi-agent
+review traced 47 failure modes → 32 confirmed. The band *was* recording; the breakage was in how a
+clip is matched to the session's HR series. Two root causes, both fixed:
+
+- **The multi-clip Studio drew the WHOLE session, not each clip's moment** (regression shipped with the
+  Studio parity work above, 2026-06-08). `StudioEditorViewModel` loaded the whole-session `hrSeries`
+  and handed it un-sliced to `StudioComposer`, which mapped it across the *concatenated composition*
+  timeline — so a clip filmed at minute 25 of a 30-min session showed the session-wide chart crammed
+  to a chart edge and session-aggregate badges. The single-clip editor already slices per clip; the
+  Studio never did, though `TimelineClip.sessionMediaID` can resolve each clip's `SessionMedia.offsetSec`.
+- **The strict window filter dropped HR for edge/sparse/short clips.** The slice used a hard
+  `t >= start && t <= start+span` with no bracketing → a clip before the band connected, a victory clip
+  in the trailing ±90 s pad after HR stopped, or a short clip between sparse band samples → **0
+  samples** → the chart (needs ≥2) and every badge silently vanished. ~12 findings reduced to this.
+
+**Decisions:**
+
+- **One pure slicer, `HRWindowSlicer`, is the single guarantee.** In-coverage: bracket the window with
+  *interpolated* endpoints (so a gap between sparse samples still draws a correct line). Just outside
+  coverage but within a **90 s tolerance** (the same ±90 s `SessionMediaService` discovery pad): clamp
+  to a **flat last-known line** so legit edge clips never go blank. Beyond tolerance, or empty series:
+  return `[]` (honest "no HR" — we don't pass off a reading minutes away as live). Non-empty ⇒ always
+  ≥2 points. This kills the whole element-vanishes family with one helper. (Clamp-within-pad-else-honest
+  was a deliberate product call over "always clamp": a cool-down clip 5 min later showing the final
+  climbing HR as if live would mislead.)
+- **Per-clip in the Studio, keyed on `SessionMedia.offsetSec`.** New pure `StudioHRPlacement` slices the
+  session series per visible video clip (trim-adjusted window). `StudioComposer` threads `clipHRByID`
+  through `makeComposition`/`assemble`/both assembly paths/`export` and `StudioOverlays` renders **one
+  chart + element set per clip**, opacity-gated/animated to each clip's output slot (so only the
+  current clip's HR shows). Slot math stays in the composer (it owns it); pure sample/badge resolution
+  stays in the VM. The single-clip `VideoStudio` path is byte-for-byte unchanged — the slot params
+  default to the whole timeline (no gate). The chart normalizes its own x-axis, so per-clip samples
+  only need clip-local rebasing, not output-second scaling.
+- **Active-session live fallback (`SessionHRSeries.forSession(_:in:liveSamples:)` + pure `LiveHRMerge`).**
+  The non-Kilter workout path has no mid-session `syncLiveHR`, so a clip opened while the workout is
+  live read an empty persisted series. Fallback: only when the session is still active, adopt the live
+  coordinator buffer — **both** transports merged (not just the active one) so a mid-session HR-source
+  switch doesn't drop the earlier transport's samples. Read-only; never persists.
+- **Manual-pick offset hardening is subsumed by the slicer.** Out-of-window / future / nil-creationDate
+  manual picks no longer lose HR silently: in-coverage → correct, near-edge → last-known, far-out →
+  honest empty. No offset clamp added (would risk mis-tagging a genuine in-session manual pick).
+
+**Out of scope (separate PRs) — persistence-time data loss, NOT slicing:** force-quit tail loss,
+source-switch-at-*finish* (the flush reads only the active source's buffer), orphan-Kilter no-flush.
+If `hrSeries` was never written there's nothing to slice; the live fallback only covers the in-editor
+*active* case. Flagged, not fixed here.
+
+**Verified off-device:** 441 unit tests green incl. new `HRWindowSlicerTests` / `LiveHRMergeTests` /
+`StudioHRPlacementTests`. **Device-pending:** the per-clip Studio export burn-in (Core Animation
+per-clip chart/badge layers; -11838-sensitive, can't render on the simulator) — record a session with
+a band, film clips early/late/at-the-end, confirm each clip's exported overlay shows its own HR.

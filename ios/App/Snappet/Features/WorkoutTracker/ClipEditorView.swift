@@ -96,14 +96,20 @@ struct ClipEditorView: View {
     /// The session's HR samples sliced to THIS clip's capture window (`[offsetSec, offsetSec+dur]`),
     /// rebased to 0 — so the HR chart shows the heart rate during the moment this clip was filmed.
     private func hrSamplesForClipWindow() -> [HRPoint] {
-        // The clip's session may be a workout OR a Kilter board session (shared editor).
-        let series = SessionHRSeries.forSession(media.sessionID, in: context)
+        // The clip's session may be a workout OR a Kilter board session (shared editor). For a still-
+        // live session whose hrSeries isn't flushed yet (the WorkoutTracker has no mid-session
+        // syncLiveHR), fall back to the live coordinator buffer — both transports merged so a
+        // mid-session source switch doesn't drop the earlier samples.
+        let series = SessionHRSeries.forSession(
+            media.sessionID, in: context,
+            liveSamples: WorkoutHRStats.points(from: LiveHRMerge.merge(
+                app.liveWorkout.watch.samples, app.liveWorkout.ble.samples)))
         guard !series.isEmpty else { return [] }
-        let start = media.offsetSec
+        // Slice to this clip's capture window, rebased to 0. `HRWindowSlicer` brackets/clamps so a
+        // short, edge, or sparse-cadence clip still gets a drawable, aligned window instead of the
+        // old strict filter's empty result (which made the whole overlay silently vanish).
         let span = (media.durationSec ?? 0) > 0 ? media.durationSec! : 15
-        return series
-            .filter { $0.t >= start && $0.t <= start + span }
-            .map { HRPoint(t: $0.t - start, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
+        return HRWindowSlicer.slice(series, start: media.offsetSec, span: span)
     }
 
     /// Reuse an existing primary (unsplit / first) edit for this clip if one exists.

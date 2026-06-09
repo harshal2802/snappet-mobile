@@ -32,6 +32,12 @@ final class StudioEditorViewModel {
     private(set) var sourceAspects: [String: CGFloat] = [:]
     /// The session's heart-rate samples (for the HR chart overlay), loaded on appear from the FK.
     private(set) var hrSeries: [HRPoint] = []
+    /// `SessionMedia.id` → capture `offsetSec`, loaded once, so each clip's HR can be sliced to the
+    /// moment it was filmed (keyed by media id, not clip id, so a split clip inherits its offset).
+    private var mediaOffsets: [UUID: Double] = [:]
+    /// The user's HR profile (set by the view via `loadOverlayContext`) — needed to resolve per-clip
+    /// calorie/HRV badges over each clip's own window.
+    private var hrProfile: UserHRProfile?
     var previewPlayer: AVPlayer?
     var isBuildingPreview = false
     /// Set when the player rejects the composition (see `rebuildPreview`) — the studio stays open
@@ -160,8 +166,9 @@ final class StudioEditorViewModel {
 
     // MARK: Lifecycle
 
-    func onAppear() async {
-        loadHRSeries()
+    func onAppear(liveSamples: () -> [HRPoint] = { [] }) async {
+        loadHRSeries(liveSamples: liveSamples)
+        loadMediaOffsets()
         for clip in clips where !clip.isPhoto && sourceDurations[clip.id] == nil {
             if let d = await composer.sourceDuration(localIdentifier: clip.localIdentifier) {
                 sourceDurations[clip.id] = d
@@ -176,10 +183,28 @@ final class StudioEditorViewModel {
 
     /// Load the session's HR samples (FK by `sessionID`) so the HR chart overlay can render. The
     /// whole series maps across the whole video; the playhead dot tracks the video's progress.
-    private func loadHRSeries() {
+    private func loadHRSeries(liveSamples: () -> [HRPoint] = { [] }) {
         guard hrSeries.isEmpty else { return }
-        // The project's session may be a workout OR a Kilter board session (shared studio).
-        hrSeries = SessionHRSeries.forSession(project.sessionID, in: context)
+        // The project's session may be a workout OR a Kilter board session (shared studio). For a
+        // still-live session whose hrSeries isn't flushed yet, fall back to the live coordinator buffer
+        // the view supplies (the VM has no AppModel).
+        hrSeries = SessionHRSeries.forSession(project.sessionID, in: context,
+                                              liveSamples: liveSamples())
+    }
+
+    /// Load each tagged media's capture `offsetSec` once (the session's `SessionMedia` rows), so the
+    /// per-clip HR windows can be sliced to when each clip was filmed.
+    private func loadMediaOffsets() {
+        guard mediaOffsets.isEmpty else { return }
+        let sid = project.sessionID
+        let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        mediaOffsets = Dictionary(media.map { ($0.id, $0.offsetSec) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// A clip's capture offset (seconds from session start) via its backing `SessionMedia`.
+    private func captureOffset(of clip: TimelineClip) -> Double? {
+        clip.sessionMediaID.flatMap { mediaOffsets[$0] }
     }
     /// True when the session has enough HR data to draw a chart.
     var hasHRData: Bool { hrSeries.count >= 2 }
@@ -541,6 +566,7 @@ final class StudioEditorViewModel {
     /// recovery plus the session-wide calorie + HRV figures (from the `UserHRProfile`, passed by the
     /// view since the VM has no `AppModel`). Call after `onAppear` (HR series loaded).
     func loadOverlayContext(profile: UserHRProfile) {
+        hrProfile = profile
         let sid = project.sessionID
         var maxHR: Double?, restHR: Double?
         if let w = (try? context.fetch(FetchDescriptor<WorkoutSession>(
@@ -566,6 +592,81 @@ final class StudioEditorViewModel {
     private func resolvedOverlayElements() -> [ResolvedHROverlay] {
         let els = snapshot.hrOverlay?.elements ?? []
         return els.isEmpty ? [] : overlayValues.resolve(els)
+    }
+
+    // MARK: - Per-clip HR (the fix: each clip shows its OWN capture-window HR, not the whole session)
+
+    /// Per-clip HR content for **export**, keyed by clip id: the session series sliced to each visible
+    /// video clip's capture window (`StudioHRPlacement` + `HRWindowSlicer`) plus that clip's resolved
+    /// overlay badges. Empty (→ composer falls back to the session-wide path) when there's no HR, no
+    /// media offsets, or the overlay is off. The composer places each entry at the clip's output slot.
+    private func clipHRContent() -> [UUID: StudioClipHRContent] {
+        guard !hrSeries.isEmpty else { return [:] }
+        let videoClips = visibleSnapshotClips.filter { !$0.isPhoto }
+        let offsets = Dictionary(uniqueKeysWithValues: videoClips.compactMap { c in
+            captureOffset(of: c).map { (c.id, $0) }
+        })
+        guard !offsets.isEmpty else { return [:] }
+        let samplesByID = StudioHRPlacement.sample(clips: videoClips, offsets: offsets,
+                                                   sourceDurations: sourceDurations, series: hrSeries)
+        guard !samplesByID.isEmpty else { return [:] }
+        let elements = snapshot.hrOverlay?.elements ?? []
+        var out: [UUID: StudioClipHRContent] = [:]
+        for (id, samples) in samplesByID {
+            out[id] = StudioClipHRContent(samples: samples,
+                                          elements: resolveClipElements(elements, samples: samples))
+        }
+        return out
+    }
+
+    /// Resolve the overlay badge elements over ONE clip's window — per-clip avg/max/zone/calories/HRV
+    /// (not the session-wide values the old Studio drew). Bounds (max/rest HR) stay session-wide;
+    /// calories/HRV are computed over the clip's own samples.
+    private func resolveClipElements(_ elements: [HROverlayElement], samples: [HRPoint]) -> [ResolvedHROverlay] {
+        guard !elements.isEmpty else { return [] }
+        let span = samples.last?.t ?? 0
+        let kcal = hrProfile?.estimatedKcal(forSeries: samples, durationSec: span)
+        let hrv = HRVMetrics.make(
+            from: samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: span)
+        return HROverlayValues(samples: samples, durationSec: span, maxHR: hrMaxHR, restHR: hrRestHR,
+                               kcal: kcal, hrv: hrv).resolve(elements)
+    }
+
+    /// Per-clip HR for the **preview** chart (WYSIWYG with export): the clip under the playhead sliced
+    /// to its own window, with the clip-local playhead time + duration so the dot tracks within the
+    /// clip. Falls back to the whole-session series for a clip with no media link.
+    var previewHR: (samples: [HRPoint], currentTime: Double, totalDuration: Double) {
+        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips.filter { !$0.isPhoto },
+                                             sourceDurations: sourceDurations,
+                                             transitions: snapshot.transitions)
+        guard let p = placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }) ?? placed.last,
+              let offset = captureOffset(of: p.clip) else {
+            return (hrSeries, currentTime, max(0.01, totalDuration))
+        }
+        let w = StudioHRPlacement.captureWindow(offset: offset, trimStart: p.clip.trimStart,
+                                                trimEnd: p.clip.trimEnd, sourceDuration: sourceDurations[p.clip.id])
+        let samples = HRWindowSlicer.slice(hrSeries, start: w.start, span: w.span)
+        return (samples, currentTime - p.startSec, max(0.01, p.durationSec))
+    }
+
+    /// Per-clip overlay VALUES for the preview badges (the clip under the playhead) — so the preview
+    /// badges read that clip's own avg/max/zone/calories/HRV, matching the per-clip export.
+    var previewOverlayValues: HROverlayValues {
+        let p = previewHR
+        let span = p.samples.last?.t ?? 0
+        let kcal = hrProfile?.estimatedKcal(forSeries: p.samples, durationSec: span)
+        let hrv = HRVMetrics.make(
+            from: p.samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: span)
+        return HROverlayValues(samples: p.samples, durationSec: span, maxHR: hrMaxHR, restHR: hrRestHR,
+                               kcal: kcal, hrv: hrv)
+    }
+
+    /// Playhead fraction WITHIN the clip under the playhead — drives the preview's live badges.
+    var previewElementFraction: Double {
+        let p = previewHR
+        return p.totalDuration > 0 ? min(1, max(0, p.currentTime / p.totalDuration)) : 0
     }
     var availableOverlayMetrics: [HROverlayMetric] {
         let v = overlayValues
@@ -696,9 +797,13 @@ final class StudioEditorViewModel {
     func export() async {
         exportState = .exporting
         do {
+            // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples/
+            // hrElements in the composer; the session-wide values stay as the fallback for clips with
+            // no media link.
             let url = try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
                                                 hrSamples: hrSeries,
                                                 hrElements: resolvedOverlayElements(),
+                                                clipHRByID: clipHRContent(),
                                                 quality: exportQuality)
             exportState = .exported(url)
         } catch {
