@@ -179,6 +179,13 @@ actor). Adds the `onnxruntime` SPM dependency. Generated climbs save through PR 
 path (`source = "generated"`). Sim-tested (`KilterGeneratorTests`, 467 total green); **device-pending:**
 a real model download + an on-device inference run + frames-parity spot checks vs the web explorer.
 
+🟡 **Kilter create-a-climb — polish (2026-06-09, `32-ios-create-climb-ble-preview-export.md`, PR 3/3).**
+Closes the arc: `CreateClimbView` now lights the climb being authored/generated on a connected board over
+BLE (reusing `KilterCatalog.holds` + `KilterBoardController.illuminate`), and both create tabs +
+`KilterShareView` export the climb's `p…r…` frames (Copy / Share) so an authored climb is portable as
+text. Full suite green (467); **device-pending:** BLE draft-lighting + clipboard/share on hardware.
+Create-a-climb (PRs 30→31→32) is feature-complete on iOS; the Android mirror is still owed.
+
 🟢 **Kilter rich session (2026-06-05, `pdd/prompts/features/18-ios-kilter-rich-session.md`).** Brought
 the Live Workout toolkit to a climbing session by **reuse, not rebuild**: live HR (Apple Watch *or* a BLE
 chest strap, via a `LiveMetricsContext` that decouples `LiveMetricsCoordinator` from `WorkoutSession`),

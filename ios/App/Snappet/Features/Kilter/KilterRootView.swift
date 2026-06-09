@@ -168,10 +168,10 @@ struct KilterRootView: View {
                                minAscents: $minAscents, minQuality: $minQuality)
         }
         .sheet(isPresented: $showingCreate) {
-            CreateClimbView { uuid in
+            CreateClimbView(onCreated: { uuid in
                 // Open the freshly-created climb in the normal detail screen.
                 router.push(KilterClimbRoute(uuid: uuid))
-            }
+            }, board: board)
         }
         .sheet(isPresented: $showingScanner) {
             KilterScannerView { link in

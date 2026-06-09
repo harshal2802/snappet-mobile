@@ -3032,3 +3032,21 @@ Wired the board-explorer's generator into the app (the ✨ Generate tab). Non-ob
 **Device-pending:** the real model download + an actual ONNX inference run on-device (the simulator
 linked ORT fine, but inference timing/parity is worth confirming on hardware), and frames-parity spot
 checks against the web explorer.
+
+## 2026-06-09 — Create-a-climb polish: live BLE preview + frames export (PR 3 of 3)
+
+Closed out the create-a-climb feature.
+
+- **Live BLE preview reuses the whole render path.** `CreateClimbView` takes the shared
+  `KilterBoardController` and lights the draft via `KilterCatalog.holds(for:)` + `illuminate` — auto on
+  `onChange(of: assignments)` and after a generation, plus an explicit "Light on board" row that's hidden
+  unless a board is connected. No new BLE code; the draft is shaped as a `KilterClimb` (same trick as the
+  render/detail reuse).
+- **Frames are the portable artifact.** A climb's `p<placement>r<role>` string is both the catalog's
+  storage and the board-explorer's "Copy frames" format, so Copy/Share-frames (canonical form) is the
+  natural export — added to both create tabs and to `KilterShareView` (so authored climbs, which have no
+  shareable catalog uuid for the QR path, are still portable as text).
+
+**Verified off-device:** full `SnappetTests` green (467). **Device-pending:** BLE lighting of the draft
+on a real board and the clipboard/share sheet (both runtime/device-only). Closes the create-a-climb arc
+(PRs 30→31→32); Android mirror still outstanding (iOS-lead).

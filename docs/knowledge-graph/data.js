@@ -825,6 +825,9 @@ const links = [
   { source: "kilter-generator-runtime", target: "ext-onnxruntime", type: "uses", label: "ORTSession" },
   { source: "kilter-generator", target: "kilter-generator-meta", type: "uses", label: "vocab + masks" },
   { source: "kilter-generator-assets", target: "kilter-generator-meta", type: "uses", label: "decode meta.json" },
+  // ---- Create-climb polish (PR 3): live BLE preview + frames export ----
+  { source: "kilter-create", target: "kilter-board-ctrl", type: "uses", label: "live BLE preview" },
+  { source: "kilter-share", target: "kilter-created-climb", type: "uses", label: "Copy / Share frames" },
   { source: "kilter-catalog-sync", target: "kilter-catalog-download", type: "uses", label: "Download from Kilter" },
   { source: "kilter-settings", target: "kilter-catalog-download", type: "uses", label: "Download from Kilter" },
   { source: "kilter-catalog-download", target: "kilter-catalog-provider", type: "uses", label: "HostedCatalogProvider" },
