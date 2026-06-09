@@ -65,6 +65,47 @@ data class KilterFavorite(
     val addedAt: Long,
 )
 
+/**
+ * A climb the user authored on this device — manually (hold-by-hold) or via the on-device generator.
+ * Keyed by the deterministic content uuid ([KilterClimbIdentity]) so the same climb authored twice (even
+ * on another device) collapses to one row. [asClimb] adapts it to the read-only [KilterClimb] so it flows
+ * through the normal render / detail / BLE / logging path. Mirrors iOS `KilterCreatedClimb`. Surfaced via
+ * the browse list's "Mine" filter.
+ */
+@Entity(tableName = "kilter_created")
+data class KilterCreatedClimb(
+    @PrimaryKey val uuid: String,
+    val name: String,
+    /** The author's display name (the [KilterClimb.setter] for this climb). */
+    val setterUsername: String,
+    val layoutId: Int,
+    /** The `product_size_id` the climb was authored against (the board it fits + its LED basis). */
+    val sizeId: Int,
+    /** The angle the user designed for (created climbs have no per-angle catalog stats). */
+    val angle: Int,
+    /** `p<placement>r<role>` hold encoding (canonical/sorted). */
+    val frames: String,
+    val edgeLeft: Int,
+    val edgeRight: Int,
+    val edgeBottom: Int,
+    val edgeTop: Int,
+    val isNoMatch: Boolean = false,
+    /** The generator's predicted grade, or the user's pick; null when unknown. */
+    val predictedGrade: Double? = null,
+    /** `"manual"` or `"generated"`. */
+    val source: String = "manual",
+    /** The generator model id when generated (provenance), else null. */
+    val modelId: String? = null,
+    val createdAt: Long,
+) {
+    /** Adapt to the read-only catalog value type so created climbs reuse the whole render/detail/BLE path. */
+    fun asClimb(): KilterClimb = KilterClimb(
+        uuid = uuid, name = name, setter = setterUsername, layoutId = layoutId,
+        edgeLeft = edgeLeft, edgeRight = edgeRight, edgeBottom = edgeBottom, edgeTop = edgeTop,
+        frames = frames, description = "", isNoMatch = isNoMatch,
+    )
+}
+
 @Dao
 interface KilterDao {
     @Insert suspend fun insertLog(entry: KilterLogEntry)
@@ -89,4 +130,16 @@ interface KilterDao {
 
     @Insert suspend fun addFavorite(favorite: KilterFavorite)
     @Delete suspend fun removeFavorite(favorite: KilterFavorite)
+
+    // Authored climbs (manual editor / generator).
+    @androidx.room.Upsert suspend fun upsertCreated(climb: KilterCreatedClimb)
+
+    @Query("SELECT * FROM kilter_created ORDER BY createdAt DESC")
+    fun createdFlow(): Flow<List<KilterCreatedClimb>>
+
+    @Query("SELECT * FROM kilter_created")
+    suspend fun allCreated(): List<KilterCreatedClimb>
+
+    @Query("SELECT * FROM kilter_created WHERE uuid = :uuid LIMIT 1")
+    suspend fun createdByUuid(uuid: String): KilterCreatedClimb?
 }

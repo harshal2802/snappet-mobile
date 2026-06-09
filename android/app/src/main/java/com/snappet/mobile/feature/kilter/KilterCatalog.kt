@@ -567,6 +567,67 @@ class KilterCatalog private constructor(private val db: SQLiteDatabase?) {
         return map
     }
 
+    // MARK: - Authoring support (manual editor + duplicate detection). Mirrors iOS KilterCatalog.
+
+    /** Tappable placement targets for the authoring board at a `(layout, size)` — one placement per hole,
+     *  normalized to the **same render extent** as [holds], so editor targets line up with the grid. Falls
+     *  back to the whole layout when the size has no `leds` rows for it (same robustness as [renderHoles]). */
+    fun placeableHolds(layoutId: Int, sizeId: Int = 0): List<KilterPlaceableHold> {
+        val db = db ?: return emptyList()
+        val eff = effectiveSizeId(layoutId, sizeId)
+        val r = renderHoles(layoutId, if (sizeId == 0) 0 else eff)
+        val w = (r.maxX - r.minX).toDouble(); val h = (r.maxY - r.minY).toDouble()
+        if (w <= 0 || h <= 0) return emptyList()
+        val sizeHoles: Set<Int> = if (sizeId > 0) ledPositions(eff).keys else emptySet()
+
+        // rows: [placementId, holeId, x, y], ordered by placement id.
+        val rows = ArrayList<IntArray>()
+        db.rawQuery(
+            "SELECT p.id, p.hole_id, h.x, h.y FROM placements p JOIN holes h ON h.id = p.hole_id " +
+                "WHERE p.layout_id = ? ORDER BY p.id", arrayOf(layoutId.toString())
+        ).use { c ->
+            while (c.moveToNext()) rows.add(intArrayOf(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3)))
+        }
+        var kept: List<IntArray> = rows
+        if (sizeHoles.isNotEmpty()) {
+            val f = rows.filter { sizeHoles.contains(it[1]) }
+            if (f.isNotEmpty()) kept = f
+        }
+        val out = ArrayList<KilterPlaceableHold>()
+        val seenHole = HashSet<Int>()
+        for (row in kept) {
+            if (!seenHole.add(row[1])) continue   // one placement per hole
+            val nx = (row[2] - r.minX) / w
+            val ny = (row[3] - r.minY) / h
+            out.add(KilterPlaceableHold(row[0], row[1], nx.coerceIn(0.0, 1.0), 1 - ny.coerceIn(0.0, 1.0)))
+        }
+        return out
+    }
+
+    /** The hold bounding box (board units) spanned by a set of placements — the `edge_*` for an authored
+     *  climb (drives the size-fit rule). null when none of the placements is known to the catalog. */
+    fun boardBounds(placementIds: List<Int>): KilterSizeBox? {
+        val xs = placementIds.mapNotNull { placementXY[it]?.first }
+        val ys = placementIds.mapNotNull { placementXY[it]?.second }
+        if (xs.isEmpty() || ys.isEmpty()) return null
+        return KilterSizeBox(xs.min(), xs.max(), ys.min(), ys.max())
+    }
+
+    /** Every climb for a layout reduced to what the duplicate check needs (uuid, name, setter, frames). */
+    fun climbFramesForDedup(layoutId: Int): List<KilterDuplicateChecker.CatalogRow> {
+        val db = db ?: return emptyList()
+        val out = ArrayList<KilterDuplicateChecker.CatalogRow>()
+        db.rawQuery(
+            "SELECT uuid, name, setter_username, frames FROM climbs WHERE layout_id = ?",
+            arrayOf(layoutId.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(KilterDuplicateChecker.CatalogRow(c.getString(0), c.getString(1), c.getString(2), c.getString(3)))
+            }
+        }
+        return out
+    }
+
     companion object {
         @Volatile private var instance: KilterCatalog? = null
 

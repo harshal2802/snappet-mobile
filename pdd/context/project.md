@@ -147,6 +147,15 @@ and share/save — bridging WorkoutTracker to `HighlightEngine`. Tracking: GitHu
 board, log Flash/Sent/Project/Attempt, review history, QR-share climbs, and (gated, device-unverified)
 light the physical board over BLE.
 
+🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
+by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,
+ONNX, lazy-downloaded). Every save is validated against the downloaded dataset + prior creations and given a
+**deterministic content uuid** — the *same holds on iOS and Android collapse to one id* (UUIDv5, shared
+golden vector). Live BLE preview + frames export round it out. **iOS:** PRs #63→#64→#65 (prompts 30–32).
+**Android:** full Kotlin/Compose mirror (prompt `33-android-create-climb.md`) — `:app:assembleDebug` +
+`:app:testDebugUnitTest` green (golden UUID matches iOS). Device-pending on both: real model download +
+on-device ONNX inference, BLE draft-lighting.
+
 🟢 **Kilter opt-in on-device catalog (2026-06-05, #42, `22-kilter-opt-in-catalog.md`).** The app ships
 **no** Aurora climb data — the bundled `kilter.sqlite3` is gone from both platforms. On first open the
 Kilter module shows an opt-in **"Get the climb catalog"** screen (surfacing Aurora's Terms of Use) that

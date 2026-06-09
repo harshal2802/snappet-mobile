@@ -15,6 +15,7 @@ import com.snappet.mobile.feature.habit.HabitCompletion
 import com.snappet.mobile.feature.habit.HabitDao
 import com.snappet.mobile.feature.journal.JournalDao
 import com.snappet.mobile.feature.journal.JournalEntry
+import com.snappet.mobile.feature.kilter.KilterCreatedClimb
 import com.snappet.mobile.feature.kilter.KilterDao
 import com.snappet.mobile.feature.kilter.KilterFavorite
 import com.snappet.mobile.feature.kilter.KilterLogEntry
@@ -45,9 +46,9 @@ import com.snappet.mobile.feature.workout.WorkoutSession
         ExpenseGroup::class, ExpenseRecord::class,
         BudgetCategory::class, BudgetTransaction::class,
         WorkoutRoutine::class, WorkoutSession::class, WorkoutCustomExercise::class,
-        KilterLogEntry::class, KilterSession::class, KilterFavorite::class,
+        KilterLogEntry::class, KilterSession::class, KilterFavorite::class, KilterCreatedClimb::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class SnappetDatabase : RoomDatabase() {

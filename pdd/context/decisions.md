@@ -2972,3 +2972,31 @@ If `hrSeries` was never written there's nothing to slice; the live fallback only
 `StudioHRPlacementTests`. **Device-pending:** the per-clip Studio export burn-in (Core Animation
 per-clip chart/badge layers; -11838-sensitive, can't render on the simulator) — record a session with
 a band, film clips early/late/at-the-end, confirm each clip's exported overlay shows its own HR.
+
+## 2026-06-09 — Create a new climb: Android port (Kotlin / Compose)
+
+Mirrored the full iOS create-a-climb arc (manual editor + ONNX generator + dedup + content identity + BLE
+preview + frames export) onto Android. Non-obvious choices:
+
+- **Cross-platform identity is exact, not approximate.** `KilterClimbIdentity` (Kotlin) computes the same
+  UUIDv5 as iOS — same namespace, SHA-1 over `"<layoutId>:<sorted-frames>"`, version/variant bits — using
+  `java.util.UUID` MSB/LSB → big-endian bytes (matching the iOS `uuid` tuple order). A **shared golden
+  vector** (`d4e7b15e-…`) is asserted in both `KilterCreateClimbTest` (Kotlin) and `KilterCreateClimbTests`
+  (Swift), so a climb authored on an iPhone and an Android phone collapses to one id.
+- **Same pure-core / thin-edge split as iOS.** Identity, dedup, frames/validation, and the generator
+  decode (`KilterClimbGenerator` over a `KilterLogitsProviding` interface) are Android-dependency-free →
+  JVM unit-tested with a stub session (no ONNX, no model, no device). `KilterOrtSession`
+  (`ai.onnxruntime`) is the only binary-dependent file.
+- **Two new deps via the version catalog:** `onnxruntime-android` (generator runtime; Java OrtSession +
+  `float[1][block][vocab]` logits, last-token slice) and `kotlinx-serialization-json` (so `meta.json`
+  decode is JVM-testable). HTTP download is plain `HttpURLConnection` (no OkHttp added).
+- **Room, not SwiftData.** `KilterCreatedClimb` is a Room `@Entity` (DB 3→4, `fallbackToDestructiveMigration`
+  as the module already uses); `@Upsert` keyed by the content uuid mirrors iOS's unique-uuid upsert.
+- **Reuse parity:** `KilterCreatedClimb.asClimb()` + `KilterDetailScreen` resolver + `KilterEditableBoard`
+  on `KilterCatalog.placeableHolds` mirror the iOS reuse so created climbs flow through the existing
+  render/detail/BLE/logging path.
+
+**Verified off-device:** `:app:compileDebugKotlin` + `:app:assembleDebug` succeed; `:app:testDebugUnitTest`
+green — `KilterCreateClimbTest` (14, incl. the iOS-matching golden vector) + `KilterGeneratorTest` (8).
+**Device-pending (Android):** model download + on-device ONNX inference, BLE draft-lighting, clipboard/share
+— all runtime/emulator-or-device only. Create-a-climb now exists on **both** platforms.

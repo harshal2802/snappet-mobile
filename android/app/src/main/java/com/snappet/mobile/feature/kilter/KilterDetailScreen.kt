@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoNotTouch
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
@@ -120,11 +121,20 @@ fun KilterDetailScreen(
 
     androidx.compose.runtime.LaunchedEffect(uuid) {
         val loaded = withContext(Dispatchers.IO) {
-            val c = catalog.climb(uuid) ?: return@withContext null
+            // Resolve a catalog climb first, else one the user authored (KilterCreatedClimb → asClimb) so
+            // created climbs open in this same screen — render, logging, favorite, BLE all work unchanged.
+            val created = dao.createdByUuid(uuid)
+            val c = catalog.climb(uuid) ?: created?.asClimb() ?: return@withContext null
             // Seed the board size to this layout's default if unset/invalid, then map LEDs for it.
             val eff = if (catalog.sizes(c.layoutId).any { it.id == productSizeId }) productSizeId
             else catalog.defaultSizeId(c.layoutId)
-            Loaded(c, catalog.stats(uuid), catalog.holds(c, eff), catalog.boardGeometry(c.layoutId, eff),
+            // Created climbs have no per-angle catalog stats — synthesize one from the designed angle +
+            // predicted/chosen grade so the grade row and angle picker still read.
+            var s = catalog.stats(uuid)
+            if (s.isEmpty() && created?.predictedGrade != null) {
+                s = listOf(KilterClimbStat(created.angle, created.predictedGrade, null, 0, 0.0, ""))
+            }
+            Loaded(c, s, catalog.holds(c, eff), catalog.boardGeometry(c.layoutId, eff),
                 catalog.betaLinks(uuid), eff)
         } ?: return@LaunchedEffect
         climb = loaded.climb; stats = loaded.stats; holds = loaded.holds
@@ -184,6 +194,15 @@ fun KilterDetailScreen(
         title = climb?.name ?: "Climb",
         onExit = onExit,
         actions = {
+            // Frames export — the raw p<placement>r<role> string (catalog storage + the board-explorer's
+            // "Copy frames" format), so any climb (incl. one you authored) is portable as plain text.
+            climb?.let { c ->
+                if (c.frames.isNotEmpty()) {
+                    IconButton(onClick = { shareFrames(context, c.frames) }, modifier = Modifier.testTag("kilter.share")) {
+                        Icon(Icons.Filled.Share, contentDescription = "Share frames")
+                    }
+                }
+            }
             IconButton(onClick = { toggleFavorite() }, modifier = Modifier.testTag("kilter.favorite")) {
                 Icon(if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                     contentDescription = if (isFavorite) "Remove from saved" else "Save climb")
