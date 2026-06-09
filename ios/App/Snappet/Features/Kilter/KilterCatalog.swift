@@ -498,6 +498,67 @@ final class KilterCatalog {
         }
     }
 
+    // MARK: - Authoring support (manual editor + duplicate detection)
+
+    /// Tappable placement targets for the authoring board at a `(layout, size)` — one placement per hole,
+    /// normalized to the **same render extent** as `holds(for:sizeId:)`, so the editor's targets line up
+    /// exactly with the faint grid (and any lit holds). Falls back to the whole layout when the size has
+    /// no `leds` rows for it (same robustness as `renderHoles`), so the editor is never empty.
+    func placeableHolds(forLayout layoutId: Int, sizeId: Int = 0) -> [KilterPlaceableHold] {
+        let eff = effectiveSizeId(forLayout: layoutId, requested: sizeId)
+        let r = renderHoles(forLayout: layoutId, sizeId: sizeId == 0 ? 0 : eff)
+        let w = Double(r.maxX - r.minX), h = Double(r.maxY - r.minY)
+        guard w > 0, h > 0 else { return [] }
+        let sizeHoles: Set<Int> = sizeId > 0 ? Set(ledPositions(forSize: eff).keys) : []
+
+        var rows: [(pid: Int, hole: Int, x: Int, y: Int)] = []
+        query("""
+            SELECT p.id, p.hole_id, h.x, h.y
+            FROM placements p JOIN holes h ON h.id = p.hole_id
+            WHERE p.layout_id = ? ORDER BY p.id
+        """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+            rows.append((Self.int(s, 0), Self.int(s, 1), Self.int(s, 2), Self.int(s, 3)))
+        }
+        // Keep only the size's holes — but only if that filter selects some of this layout's holes;
+        // otherwise (size has no leds for the layout) keep the whole layout.
+        var kept = rows
+        if !sizeHoles.isEmpty {
+            let f = rows.filter { sizeHoles.contains($0.hole) }
+            if !f.isEmpty { kept = f }
+        }
+        var out: [KilterPlaceableHold] = []
+        var seenHole = Set<Int>()
+        for row in kept where seenHole.insert(row.hole).inserted {   // one placement per hole
+            let nx = (Double(row.x) - Double(r.minX)) / w
+            let ny = (Double(row.y) - Double(r.minY)) / h
+            out.append(KilterPlaceableHold(placementId: row.pid, holeId: row.hole,
+                                           x: min(max(nx, 0), 1), y: 1 - min(max(ny, 0), 1)))
+        }
+        return out
+    }
+
+    /// The hold bounding box (board units) spanned by a set of placements — the `edge_*` for an authored
+    /// climb (drives the size-fit rule). `nil` when none of the placements is known to the catalog.
+    func boardBounds(forPlacementIds ids: [Int]) -> KilterSizeBox? {
+        let xs = ids.compactMap { placementXY[$0]?.x }
+        let ys = ids.compactMap { placementXY[$0]?.y }
+        guard let l = xs.min(), let rr = xs.max(), let b = ys.min(), let t = ys.max() else { return nil }
+        return KilterSizeBox(left: l, right: rr, bottom: b, top: t)
+    }
+
+    /// Every climb for a layout reduced to what the duplicate check needs: `(uuid, name, setter, frames)`.
+    /// Read straight from the read-only catalog; `KilterDuplicateChecker` canonicalizes + indexes them so
+    /// an authored climb that matches an existing one (any hold order) is caught before it's saved.
+    func climbFramesForDedup(forLayout layoutId: Int)
+        -> [(uuid: String, name: String, setter: String, frames: String)] {
+        var out: [(uuid: String, name: String, setter: String, frames: String)] = []
+        query("SELECT uuid, name, setter_username, frames FROM climbs WHERE layout_id = ?",
+              bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+            out.append((Self.text(s, 0), Self.text(s, 1), Self.text(s, 2), Self.text(s, 3)))
+        }
+        return out
+    }
+
     // MARK: - tiny sqlite helpers
 
     private func query(_ sql: String,

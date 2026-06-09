@@ -141,6 +141,17 @@ struct KilterBoardGeometry: Sendable {
     static let empty = KilterBoardGeometry(aspect: 1, grid: [])
 }
 
+/// A tappable hole on the **authoring** board: a placement the user can assign a role to, normalized to
+/// the same view space (x,y in 0…1, y from the top) as `KilterHold` so the editor's targets line up with
+/// the faint grid and any lit holds. Deduped to one placement per hole for a layout/size.
+struct KilterPlaceableHold: Identifiable, Hashable, Sendable {
+    let placementId: Int
+    let holeId: Int
+    let x: Double
+    let y: Double
+    var id: Int { placementId }
+}
+
 /// The full set of catalog browse criteria (search + filters + sort). Drives `KilterCatalog.list`.
 struct KilterFilter: Equatable, Sendable {
     var layoutId: Int

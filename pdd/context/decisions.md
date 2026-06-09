@@ -2972,3 +2972,34 @@ If `hrSeries` was never written there's nothing to slice; the live fallback only
 `StudioHRPlacementTests`. **Device-pending:** the per-clip Studio export burn-in (Core Animation
 per-clip chart/badge layers; -11838-sensitive, can't render on the simulator) — record a session with
 a band, film clips early/late/at-the-end, confirm each clip's exported overlay shows its own HR.
+
+## 2026-06-09 — Create a new climb: identity, dedup, manual editor (PR 1 of 3)
+
+The Kilter module became *authorable*: users can design a climb (manual editor now; the on-device
+generator in PR 2) instead of only browsing the read-only catalog. Non-obvious choices:
+
+- **Content-derived uuid, NOT a time-based one.** The brief asked for a "time-based uuid that's the
+  same across devices for the same climb" — internally contradictory: a v1/v7 time UUID embeds the
+  clock + a node, so two devices necessarily differ. Only a hash of the climb's content can be equal
+  across devices. So a created climb's id is a **UUIDv5** (`KilterClimbIdentity`, CryptoKit SHA-1,
+  fixed namespace) over the canonical `(layoutId, sorted holds)`. Creation time lives in a separate
+  `createdAt` field — never folded into the id (that would break cross-device equality). Pinned with a
+  golden-vector test so a refactor can't silently re-key every created climb.
+- **Canonicalization = sorted `p<placement>r<role>` tokens**, layout-scoped (a placement id only means
+  something within its layout — matches Aurora's own `layout_id`+`frames` identity). Order-independent,
+  so it underpins both the uuid and duplicate detection.
+- **Dedup is two-channel.** Catalog climbs keep Aurora's *random* uuids, so a draft that matches a
+  *catalog* climb is caught by comparing canonical frames; *created* climbs are caught directly by the
+  deterministic uuid. `KilterDuplicateChecker` indexes both per layout; built fresh at save time (one
+  indexed SELECT — cheap, always current). On a hit the user gets Open existing / Save anyway / Keep
+  editing.
+- **Reuse via a `KilterClimb` adapter.** `KilterCreatedClimb.asClimb` shapes an authored climb as the
+  read-only catalog value type, so it flows through the *existing* `KilterCatalog.holds(for:)` render,
+  `KilterClimbDetailView`, BLE illumination and logging with no special-casing. The detail screen
+  resolves a created climb by uuid and synthesizes a single-angle stat (created climbs have no catalog
+  `climb_stats`). Authoring requires an installed catalog (for hole geometry) — consistent with the
+  whole module.
+
+**Verified off-device:** full `SnappetTests` suite green (458 tests, 0 failures, 2 pre-existing skips),
+incl. new `KilterCreateClimbTests`. **Device-pending:** the end-to-end author → save → render → BLE
+illuminate path on a real board (BLE can't run on the simulator, like prior Kilter work).
