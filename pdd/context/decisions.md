@@ -3003,3 +3003,32 @@ generator in PR 2) instead of only browsing the read-only catalog. Non-obvious c
 **Verified off-device:** full `SnappetTests` suite green (458 tests, 0 failures, 2 pre-existing skips),
 incl. new `KilterCreateClimbTests`. **Device-pending:** the end-to-end author → save → render → BLE
 illuminate path on a real board (BLE can't run on the simulator, like prior Kilter work).
+
+## 2026-06-09 — On-device climb generator: ONNX transformer (PR 2 of 3)
+
+Wired the board-explorer's generator into the app (the ✨ Generate tab). Non-obvious choices:
+
+- **Run the real ONNX model, via ONNX Runtime, not a reimplementation.** The explorer ships a quantized
+  transformer (`model.q.onnx`); we run that exact artifact through `onnxruntime`
+  (microsoft/onnxruntime-swift-package-manager, import `OnnxRuntimeBindings`) so on-device output matches
+  the web tool. Considered Core ML (no third-party dep) but the int8-transformer conversion carries real
+  divergence risk; ONNX Runtime runs the file unchanged.
+- **Pure core behind a thin edge.** Everything except the tensor call is a pure Swift port
+  (`KilterGeneratorMeta`/`KilterClimbGenerator`, decode `at`/`rt`/`st`/`nt`) depending only on a
+  `KilterLogitsProviding` protocol — so the whole sampler is unit-tested with a stub session (no ONNX, no
+  model file, no device). `KilterORTSession` is the *only* `import OnnxRuntimeBindings`; an `actor`
+  (`KilterGeneratorRuntime`) isolates the non-Sendable session and returns only the Sendable result.
+- **Model I/O, learned from the bundle:** int64 `tokens` `[1, block]` left-packed + `pad`-filled; `logits`
+  `[1, block, vocab]` read at the last real token's position. Prompt
+  `[BOS, SIZE, ANGLE, GRADE, MATCH|NOMATCH]`; candidates masked to `sizeMasks[sizeId]` minus used
+  placements; EOS gated on minHolds+start+finish; missing start/finish repaired ⇒ valid by construction.
+- **Lazy-download, not bundled.** `KilterGeneratorAssets` fetches model + meta from the existing host on
+  first use (mirrors `HostedCatalogClient`), keeping the binary slim and the model updatable host-side.
+- **Generated climbs reuse PR 1's save path** (shared `SavePayload` → dedup → content uuid →
+  `KilterCreatedClimb`, `source = "generated"`, predicted grade recorded).
+
+**Verified off-device:** full `SnappetTests` green (467 tests, 0 failures) incl. `KilterGeneratorTests`
+(deterministic decode, start/finish guarantee, repair, no-dup-placement, mask honored, grade regression).
+**Device-pending:** the real model download + an actual ONNX inference run on-device (the simulator
+linked ORT fine, but inference timing/parity is worth confirming on hardware), and frames-parity spot
+checks against the web explorer.

@@ -1,15 +1,18 @@
 import SwiftUI
 import SwiftData
 
-/// Author a brand-new climb by hand: pick the layout / board size / angle, then tap holes on the editable
-/// board to cycle each through start → middle → finish → foot. On Save the climb is validated against the
-/// downloaded dataset *and* your previously-created climbs (`KilterDuplicateChecker`); a stable
-/// content-derived uuid (`KilterClimbIdentity`) is assigned, and it's stored as a `KilterCreatedClimb` that
-/// flows through the normal detail/render/BLE/logging path. (The ✨ Generate tab — the on-device model —
-/// is added in the next change; this is the manual half.)
+/// Author a brand-new climb — two ways, in one sheet:
+/// - **Manual**: pick layout / board size / angle / no-match, then tap holes on `KilterEditableBoardView`
+///   to cycle each through start → middle → finish → foot.
+/// - **✨ Generate**: the on-device transformer (`KilterClimbGenerator`, model lazy-downloaded by
+///   `KilterGeneratorAssets`) designs a climb for a chosen size / angle / target grade.
+///
+/// Either way, Save validates against the downloaded dataset + previously-created climbs
+/// (`KilterDuplicateChecker`) — offering Open existing / Save anyway / Keep editing — assigns the
+/// deterministic content uuid (`KilterClimbIdentity`) and persists a `KilterCreatedClimb` that flows
+/// through the normal detail / render / BLE / logging path.
 struct CreateClimbView: View {
-    /// Called with the new (or existing duplicate's) uuid after a successful save, so the caller can open
-    /// it. The sheet dismisses itself.
+    /// Called with the new (or existing duplicate's) uuid after a successful save. The sheet dismisses.
     var onCreated: (String) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
@@ -22,26 +25,66 @@ struct CreateClimbView: View {
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.angle") private var angle = 40
 
+    enum Mode: String, CaseIterable { case manual = "Manual", generate = "✨ Generate" }
+    @State private var mode: Mode = .manual
     @State private var name = ""
+
+    // Manual editor state.
     @State private var isNoMatch = false
     @State private var assignments: [Int: KilterAuthorRole] = [:]
     @State private var placeable: [KilterPlaceableHold] = []
     @State private var geometry: KilterBoardGeometry = .empty
 
+    // Generator state.
+    @State private var genModel: KilterGeneratorModel?
+    @State private var genRuntime: KilterGeneratorRuntime?
+    @State private var genPhase: GenPhase = .needsModel
+    @State private var genSizeId = 0
+    @State private var genAngle = 40
+    @State private var genGrade = 17
+    @State private var genNoMatch = false
+    @State private var genResult: KilterGeneratedClimb?
+    @State private var genHolds: [KilterHold] = []
+    @State private var genGeometry: KilterBoardGeometry = .empty
+
+    // Duplicate handling (shared by both tabs).
     @State private var duplicate: KilterDuplicateChecker.Duplicate?
+    @State private var pendingSave: SavePayload?
     @State private var showingDuplicate = false
+
+    enum GenPhase: Equatable {
+        case needsModel, preparing, idle, generating, ready, error(String)
+    }
+
+    /// Everything needed to persist a climb — built by either tab, replayed on "Save anyway".
+    private struct SavePayload {
+        let frames: String, layoutId: Int, sizeId: Int, angle: Int
+        let isNoMatch: Bool, predictedGrade: Double?, source: String
+    }
 
     private var layouts: [KilterLayout] { catalog.layouts() }
     private var sizes: [KilterBoardSize] { catalog.sizes(forLayout: layoutId) }
     private var availableAngles: [Int] { catalog.angles() }
-    private var frames: String { kilterFrames(from: assignments) }
+    private var manualFrames: String { kilterFrames(from: assignments) }
     private var validation: KilterClimbValidationError? { kilterValidate(assignments) }
 
     var body: some View {
         NavigationStack {
             Form {
-                detailsSection
-                boardSection
+                Section {
+                    Picker("Mode", selection: $mode) {
+                        ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("kilter.create.mode")
+                    TextField("Name", text: $name).accessibilityIdentifier("kilter.create.name")
+                }
+                if mode == .manual {
+                    manualDetailsSection
+                    manualBoardSection
+                } else {
+                    generateSection
+                }
             }
             .navigationTitle("Create climb")
             .navigationBarTitleDisplayMode(.inline)
@@ -50,17 +93,20 @@ struct CreateClimbView: View {
                     Button("Cancel") { dismiss() }.accessibilityIdentifier("kilter.create.cancel")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { attemptSave(force: false) }
-                        .disabled(validation != nil)
-                        .accessibilityIdentifier("kilter.create.save")
+                    if mode == .manual {
+                        Button("Save") { saveManual() }
+                            .disabled(validation != nil)
+                            .accessibilityIdentifier("kilter.create.save")
+                    }
                 }
             }
             .onAppear { syncBoardSize(); reloadBoard() }
             .onChange(of: layoutId) { syncBoardSize(); assignments = [:]; reloadBoard() }
             .onChange(of: productSizeId) { reloadBoard() }
+            .onChange(of: mode) { _, m in if m == .generate { Task { await prepareModelIfNeeded() } } }
             .alert("Climb already exists", isPresented: $showingDuplicate, presenting: duplicate) { dup in
                 Button("Open existing") { onCreated(dup.uuid); dismiss() }
-                Button("Save anyway") { attemptSave(force: true) }
+                Button("Save anyway") { if let p = pendingSave { commit(p) } }
                 Button("Keep editing", role: .cancel) {}
             } message: { dup in
                 Text(dup.origin == .catalog
@@ -70,9 +116,10 @@ struct CreateClimbView: View {
         }
     }
 
-    private var detailsSection: some View {
+    // MARK: - Manual tab
+
+    private var manualDetailsSection: some View {
         Section("Details") {
-            TextField("Name", text: $name).accessibilityIdentifier("kilter.create.name")
             Picker("Layout", selection: $layoutId) {
                 ForEach(layouts) { Text($0.name).tag($0.id) }
             }
@@ -84,19 +131,26 @@ struct CreateClimbView: View {
             Picker("Angle", selection: $angle) {
                 ForEach(availableAngles, id: \.self) { Text("\($0)°").tag($0) }
             }
-            Toggle("No matching", isOn: $isNoMatch)
-                .accessibilityIdentifier("kilter.create.noMatch")
+            Toggle("No matching", isOn: $isNoMatch).accessibilityIdentifier("kilter.create.noMatch")
         }
     }
 
-    private var boardSection: some View {
+    private var manualBoardSection: some View {
         Section {
             KilterEditableBoardView(geometry: geometry, placeable: placeable, assignments: $assignments)
                 .frame(maxHeight: 420)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
-            roleCounts
-            validityRow
+            roleCounts(for: assignments.values)
+            if let validation {
+                Label(validation.message, systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.orange)
+                    .accessibilityIdentifier("kilter.create.invalid")
+            } else {
+                Label("Ready to save · \(assignments.count) holds", systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+                    .accessibilityIdentifier("kilter.create.valid")
+            }
             if !assignments.isEmpty {
                 Button(role: .destructive) { assignments = [:] } label: {
                     Label("Clear all holds", systemImage: "trash")
@@ -110,17 +164,91 @@ struct CreateClimbView: View {
         }
     }
 
-    /// Live tally per role — the same counts the user is reasoning about as they set.
-    private var roleCounts: some View {
-        let counts = Dictionary(grouping: assignments.values, by: { $0 }).mapValues(\.count)
+    // MARK: - Generate tab
+
+    @ViewBuilder private var generateSection: some View {
+        switch genPhase {
+        case .needsModel:
+            Section {
+                Button { Task { await prepareModelIfNeeded(force: true) } } label: {
+                    Label("Download generator model (~9 MB)", systemImage: "arrow.down.circle")
+                }
+                .accessibilityIdentifier("kilter.generate.download")
+            } footer: {
+                Text("A small transformer runs entirely on your device. Downloaded once from the Snappet host.")
+            }
+        case .preparing:
+            Section { busyRow("Loading the generator model…") }
+        case .error(let message):
+            Section {
+                Label(message, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Button("Try again") { Task { await prepareModelIfNeeded(force: true) } }
+            }
+        case .idle, .generating, .ready:
+            generateControls
+            if genPhase == .generating { Section { busyRow("Generating…") } }
+            if genPhase == .ready, let result = genResult { generatePreview(result) }
+        }
+    }
+
+    @ViewBuilder private var generateControls: some View {
+        if let model = genModel {
+            Section("Conditions") {
+                Picker("Board size", selection: $genSizeId) {
+                    ForEach(model.meta.sizes) { Text($0.name).tag($0.id) }
+                }
+                Picker("Angle", selection: $genAngle) {
+                    ForEach(model.meta.angles, id: \.self) { Text("\($0)°").tag($0) }
+                }
+                Picker("Target grade", selection: $genGrade) {
+                    ForEach(model.meta.grades, id: \.self) { Text(model.gradeLabel($0)).tag($0) }
+                }
+                Toggle("No matching", isOn: $genNoMatch)
+                Button { generate() } label: {
+                    Label(genResult == nil ? "Generate climb" : "Generate another",
+                          systemImage: "sparkles")
+                }
+                .disabled(genPhase == .generating)
+                .accessibilityIdentifier("kilter.generate.run")
+            }
+        }
+    }
+
+    @ViewBuilder private func generatePreview(_ result: KilterGeneratedClimb) -> some View {
+        Section {
+            KilterBoardView(geometry: genGeometry, holds: genHolds)
+                .frame(maxHeight: 380)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            HStack {
+                Label("Predicted \(genModel?.gradeLabel(Int(result.predictedGrade.rounded())) ?? "—")",
+                      systemImage: "chart.bar")
+                Spacer()
+                Text("target \(genModel?.gradeLabel(genGrade) ?? "\(genGrade)")")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+            roleCounts(for: genHolds.compactMap { KilterAuthorRole(roleId: roleId(forRole: $0.role)) })
+            Button { useGeneratedClimb(result) } label: {
+                Label("Use this climb", systemImage: "checkmark.circle.fill")
+            }
+            .accessibilityIdentifier("kilter.generate.use")
+        } footer: {
+            Text("Generated on-device — the grade is a model estimate. Valid by construction (fits the size, has a start & finish).")
+        }
+    }
+
+    // MARK: - Shared bits
+
+    private func roleCounts<S: Sequence>(for roles: S) -> some View where S.Element == KilterAuthorRole {
+        let counts = Dictionary(grouping: roles, by: { $0 }).mapValues(\.count)
         return HStack(spacing: 14) {
             roleTally("Start", counts[.start] ?? 0, "00DD00")
             roleTally("Hand", counts[.middle] ?? 0, "00FFFF")
             roleTally("Finish", counts[.finish] ?? 0, "FF00FF")
             roleTally("Foot", counts[.foot] ?? 0, "FFA500")
         }
-        .font(.caption)
-        .frame(maxWidth: .infinity)
+        .font(.caption).frame(maxWidth: .infinity)
     }
 
     private func roleTally(_ label: String, _ n: Int, _ hex: String) -> some View {
@@ -130,21 +258,23 @@ struct CreateClimbView: View {
         }
     }
 
-    @ViewBuilder private var validityRow: some View {
-        if let validation {
-            Label(validation.message, systemImage: "exclamationmark.circle")
-                .font(.caption).foregroundStyle(.orange)
-                .accessibilityIdentifier("kilter.create.invalid")
-        } else {
-            Label("Ready to save · \(assignments.count) holds", systemImage: "checkmark.circle.fill")
-                .font(.caption).foregroundStyle(.green)
-                .accessibilityIdentifier("kilter.create.valid")
+    private func busyRow(_ text: String) -> some View {
+        HStack(spacing: 8) { ProgressView(); Text(text).foregroundStyle(.secondary) }
+            .accessibilityIdentifier("kilter.generate.busy")
+    }
+
+    /// Role name → main-line role id (inverse of `KilterCatalog.roleName`), for counting preview holds.
+    private func roleId(forRole role: String) -> Int {
+        switch role {
+        case "start": return 12
+        case "finish": return 14
+        case "foot": return 15
+        default: return 13
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Actions: manual
 
-    /// Keep the chosen size valid for the layout (seed the default when unset) — same guard as browse.
     private func syncBoardSize() {
         if !sizes.contains(where: { $0.id == productSizeId }) {
             productSizeId = catalog.defaultSizeId(forLayout: layoutId)
@@ -156,39 +286,110 @@ struct CreateClimbView: View {
         geometry = catalog.boardGeometry(forLayout: layoutId, sizeId: productSizeId)
     }
 
-    /// Validate → dedupe (unless the user chose "Save anyway") → assign the deterministic uuid → persist.
-    private func attemptSave(force: Bool) {
+    private func saveManual() {
         guard validation == nil else { return }
-        let canonical = KilterClimbIdentity.canonicalFrames(frames)
+        attemptSave(SavePayload(frames: manualFrames, layoutId: layoutId, sizeId: productSizeId,
+                                angle: angle, isNoMatch: isNoMatch, predictedGrade: nil, source: "manual"))
+    }
 
-        if !force {
-            let checker = KilterDuplicateChecker.build(layoutId: layoutId, created: created)
-            if let dup = checker.find(layoutId: layoutId, frames: canonical) {
-                duplicate = dup
-                showingDuplicate = true
-                return
+    // MARK: - Actions: generate
+
+    /// Ensure the model is downloaded + a runtime is ready. `force` re-attempts after an error.
+    private func prepareModelIfNeeded(force: Bool = false) async {
+        if genModel != nil, !force { if genPhase == .needsModel { genPhase = .idle }; return }
+        if !force, !KilterGeneratorAssets.shared.isInstalled { genPhase = .needsModel; return }
+        genPhase = .preparing
+        do {
+            let model = try await KilterGeneratorAssets.shared.ensureInstalled()
+            genModel = model
+            genRuntime = KilterGeneratorRuntime(model: model, modelURL: KilterGeneratorAssets.shared.modelURL)
+            seedGenPickers(model)
+            genPhase = .idle
+        } catch {
+            genPhase = .error(error.localizedDescription)
+        }
+    }
+
+    private func seedGenPickers(_ model: KilterGeneratorModel) {
+        if !model.meta.sizes.contains(where: { $0.id == genSizeId }) {
+            genSizeId = model.meta.sizes.contains(where: { $0.id == productSizeId }) ? productSizeId : model.meta.defaultSize
+        }
+        if !model.meta.angles.contains(genAngle) { genAngle = model.meta.angles.contains(angle) ? angle : (model.meta.angles.first ?? 40) }
+        if !model.meta.grades.contains(genGrade) { genGrade = model.meta.grades[model.meta.grades.count / 2] }
+    }
+
+    private func generate() {
+        guard let runtime = genRuntime else { return }
+        genPhase = .generating
+        let request = KilterGenerateRequest(sizeId: genSizeId, angle: genAngle, grade: genGrade,
+                                            nomatch: genNoMatch, candidates: 3)
+        Task {
+            do {
+                let result = try await runtime.generate(request)
+                let layout = layoutForSize(genSizeId)
+                let preview = KilterClimb(uuid: "preview", name: "", setter: "", layoutId: layout,
+                                          edgeLeft: 0, edgeRight: 0, edgeBottom: 0, edgeTop: 0,
+                                          frames: result.frames, description: "", isNoMatch: genNoMatch)
+                genHolds = catalog.holds(for: preview, sizeId: genSizeId)
+                genGeometry = catalog.boardGeometry(forLayout: layout, sizeId: genSizeId)
+                genResult = result
+                genPhase = .ready
+            } catch {
+                genPhase = .error(error.localizedDescription)
             }
         }
+    }
 
-        let uuid = KilterClimbIdentity.uuid(forLayout: layoutId, frames: canonical)
-        // The uuid is content-derived, so re-saving the same holds maps onto the existing row — open it
-        // rather than inserting a conflicting unique key.
+    private func useGeneratedClimb(_ result: KilterGeneratedClimb) {
+        attemptSave(SavePayload(frames: result.frames, layoutId: layoutForSize(genSizeId), sizeId: genSizeId,
+                                angle: genAngle, isNoMatch: genNoMatch,
+                                predictedGrade: result.predictedGrade, source: "generated"))
+    }
+
+    /// The layout that owns a `product_size` (the model only knows sizes; a climb needs its layout).
+    private func layoutForSize(_ sizeId: Int) -> Int {
+        for l in catalog.layouts() where catalog.sizes(forLayout: l.id).contains(where: { $0.id == sizeId }) {
+            return l.id
+        }
+        return layoutId
+    }
+
+    // MARK: - Save (shared)
+
+    /// Run the duplicate check, then persist (or surface the duplicate alert).
+    private func attemptSave(_ payload: SavePayload) {
+        let canonical = KilterClimbIdentity.canonicalFrames(payload.frames)
+        let checker = KilterDuplicateChecker.build(layoutId: payload.layoutId, created: created)
+        if let dup = checker.find(layoutId: payload.layoutId, frames: canonical) {
+            duplicate = dup
+            pendingSave = payload
+            showingDuplicate = true
+            return
+        }
+        commit(payload)
+    }
+
+    /// Assign the deterministic uuid and write the climb (opening an existing row if the same holds were
+    /// already saved, since the uuid is content-derived).
+    private func commit(_ payload: SavePayload) {
+        let canonical = KilterClimbIdentity.canonicalFrames(payload.frames)
+        let uuid = KilterClimbIdentity.uuid(forLayout: payload.layoutId, frames: canonical)
         if let existing = created.first(where: { $0.uuid == uuid }) {
             onCreated(existing.uuid); dismiss(); return
         }
-
-        let box = catalog.boardBounds(forPlacementIds: Array(assignments.keys))
+        let box = catalog.boardBounds(forPlacementIds: KilterCatalog.parseFrames(canonical).map(\.0))
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let climb = KilterCreatedClimb(
-            uuid: uuid, name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "Untitled climb" : name.trimmingCharacters(in: .whitespacesAndNewlines),
-            setterUsername: "You", layoutId: layoutId, sizeId: productSizeId, angle: angle,
+            uuid: uuid, name: trimmed.isEmpty ? "Untitled climb" : trimmed,
+            setterUsername: "You", layoutId: payload.layoutId, sizeId: payload.sizeId, angle: payload.angle,
             frames: canonical,
             edgeLeft: box?.left ?? 0, edgeRight: box?.right ?? 0,
             edgeBottom: box?.bottom ?? 0, edgeTop: box?.top ?? 0,
-            isNoMatch: isNoMatch, predictedGrade: nil, source: "manual")
+            isNoMatch: payload.isNoMatch, predictedGrade: payload.predictedGrade, source: payload.source)
         modelContext.insert(climb)
         try? modelContext.save()
-        core.log(module: "kilter", action: "created", summary: "Created \(climb.name)")
+        core.log(module: "kilter", action: "created",
+                 summary: "\(payload.source == "generated" ? "Generated" : "Created") \(climb.name)")
         onCreated(uuid)
         dismiss()
     }
