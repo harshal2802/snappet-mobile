@@ -50,7 +50,12 @@ struct StudioEditorView: View {
         .preferredColorScheme(.dark)
         .tint(SnappetColor.workout)
         .task {
-            await vm.onAppear()
+            // For a still-live session whose HR isn't flushed yet, supply the live coordinator buffer
+            // (both transports merged) as the fallback so mid-session clips still show HR.
+            await vm.onAppear {
+                WorkoutHRStats.points(from: LiveHRMerge.merge(
+                    app.liveWorkout.watch.samples, app.liveWorkout.ble.samples))
+            }
             vm.loadOverlayContext(profile: app.userProfile.profile)   // overlay-builder bounds (prompt 28)
             // Jump straight to the tapped clip (gallery → edit-this-clip), if one was requested.
             if let mid = focusClipMediaID, let clip = vm.clips.first(where: { $0.sessionMediaID == mid }) {
@@ -162,10 +167,12 @@ struct StudioEditorView: View {
                                 onScale: { vm.setOverlayScale($0, $1) },
                                 onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
                                 onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
-            // Live heart-rate chart overlay (moving-playhead line), draggable to reposition.
+            // Live heart-rate chart overlay (moving-playhead line), draggable to reposition. Per-clip:
+            // shows the HR of the clip currently under the playhead (WYSIWYG with the per-clip export).
             if let hr = vm.hrOverlay, hr.showChart {
-                StudioHRChartView(samples: vm.hrSeries, config: hr, ratio: vm.previewRatio,
-                                  currentTime: vm.currentTime, totalDuration: vm.totalDuration,
+                let preview = vm.previewHR
+                StudioHRChartView(samples: preview.samples, config: hr, ratio: vm.previewRatio,
+                                  currentTime: preview.currentTime, totalDuration: preview.totalDuration,
                                   onMove: { vm.setHRPosition($0) },
                                   onResize: { vm.setHRScale($0) })
                     .accessibilityIdentifier("studioHRChart")
@@ -173,8 +180,8 @@ struct StudioEditorView: View {
             // Configurable HR/fitness overlay badges (prompt 28): live ones track the playhead.
             if let hr = vm.hrOverlay, !hr.elements.isEmpty {
                 HROverlayElementsView(
-                    elements: hr.elements, values: vm.overlayValues,
-                    fraction: vm.totalDuration > 0 ? vm.currentTime / vm.totalDuration : 0,
+                    elements: hr.elements, values: vm.previewOverlayValues,
+                    fraction: vm.previewElementFraction,
                     onMove: { vm.setElementPosition($0, $1) })
             }
             if let err = vm.previewError {
