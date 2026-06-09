@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// Author a brand-new climb — two ways, in one sheet:
 /// - **Manual**: pick layout / board size / angle / no-match, then tap holes on `KilterEditableBoardView`
@@ -14,6 +15,9 @@ import SwiftData
 struct CreateClimbView: View {
     /// Called with the new (or existing duplicate's) uuid after a successful save. The sheet dismisses.
     var onCreated: (String) -> Void = { _ in }
+    /// The shared board controller, so the climb being authored / generated can be previewed on a
+    /// physically-connected board over BLE. `nil` (e.g. previews) simply disables the live-light affordance.
+    var board: KilterBoardController? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -102,7 +106,9 @@ struct CreateClimbView: View {
             }
             .onAppear { syncBoardSize(); reloadBoard() }
             .onChange(of: layoutId) { syncBoardSize(); assignments = [:]; reloadBoard() }
-            .onChange(of: productSizeId) { reloadBoard() }
+            .onChange(of: productSizeId) { reloadBoard(); liveLight(manualLitHolds) }
+            // Light the draft on a connected board as holds are placed/cleared.
+            .onChange(of: assignments) { liveLight(manualLitHolds) }
             .onChange(of: mode) { _, m in if m == .generate { Task { await prepareModelIfNeeded() } } }
             .alert("Climb already exists", isPresented: $showingDuplicate, presenting: duplicate) { dup in
                 Button("Open existing") { onCreated(dup.uuid); dismiss() }
@@ -152,16 +158,27 @@ struct CreateClimbView: View {
                     .accessibilityIdentifier("kilter.create.valid")
             }
             if !assignments.isEmpty {
+                copyFramesButton(manualFrames, enabled: true)
                 Button(role: .destructive) { assignments = [:] } label: {
                     Label("Clear all holds", systemImage: "trash")
                 }
                 .accessibilityIdentifier("kilter.create.clear")
             }
+            bleRow(holds: manualLitHolds)
         } header: {
             Text("Holds")
         } footer: {
             Text("Tap a hole to cycle: start → middle → finish → foot → off.")
         }
+    }
+
+    /// The manual draft's holds, positioned for render / BLE (empty when nothing is placed).
+    private var manualLitHolds: [KilterHold] {
+        guard !assignments.isEmpty else { return [] }
+        let draft = KilterClimb(uuid: "draft", name: "", setter: "", layoutId: layoutId,
+                                edgeLeft: 0, edgeRight: 0, edgeBottom: 0, edgeTop: 0,
+                                frames: manualFrames, description: "", isNoMatch: isNoMatch)
+        return catalog.holds(for: draft, sizeId: productSizeId)
     }
 
     // MARK: - Generate tab
@@ -233,6 +250,8 @@ struct CreateClimbView: View {
                 Label("Use this climb", systemImage: "checkmark.circle.fill")
             }
             .accessibilityIdentifier("kilter.generate.use")
+            copyFramesButton(result.frames, enabled: true)
+            bleRow(holds: genHolds)
         } footer: {
             Text("Generated on-device — the grade is a model estimate. Valid by construction (fits the size, has a start & finish).")
         }
@@ -261,6 +280,36 @@ struct CreateClimbView: View {
     private func busyRow(_ text: String) -> some View {
         HStack(spacing: 8) { ProgressView(); Text(text).foregroundStyle(.secondary) }
             .accessibilityIdentifier("kilter.generate.busy")
+    }
+
+    /// Copy the climb's canonical frames (the `p<placement>r<role>` string) to the clipboard — the same
+    /// format the catalog stores and the board-explorer's "Copy frames" emits, so a draft can be pasted
+    /// into another tool / shared as text.
+    private func copyFramesButton(_ frames: String, enabled: Bool) -> some View {
+        Button { UIPasteboard.general.string = KilterClimbIdentity.canonicalFrames(frames) } label: {
+            Label("Copy frames", systemImage: "doc.on.doc")
+        }
+        .disabled(!enabled)
+        .accessibilityIdentifier("kilter.create.copyFrames")
+    }
+
+    /// When a board is connected over BLE, a row to light the in-progress climb on the physical board
+    /// (the draft also auto-lights as you build / after generating). Hidden when no board is connected.
+    @ViewBuilder private func bleRow(holds: [KilterHold]) -> some View {
+        if let board, board.isConnected {
+            Button { board.illuminate(holds) } label: {
+                Label(holds.isEmpty ? "Board connected — place holds to light it"
+                                    : "Light \(holds.count) holds on board",
+                      systemImage: "lightbulb.fill")
+            }
+            .disabled(holds.isEmpty)
+            .accessibilityIdentifier("kilter.create.illuminate")
+        }
+    }
+
+    /// Light the holds on a connected board (no-op otherwise) — called as the draft changes.
+    private func liveLight(_ holds: [KilterHold]) {
+        if board?.isConnected == true { board?.illuminate(holds) }
     }
 
     /// Role name → main-line role id (inverse of `KilterCatalog.roleName`), for counting preview holds.
@@ -334,6 +383,7 @@ struct CreateClimbView: View {
                 genGeometry = catalog.boardGeometry(forLayout: layout, sizeId: genSizeId)
                 genResult = result
                 genPhase = .ready
+                liveLight(genHolds)
             } catch {
                 genPhase = .error(error.localizedDescription)
             }

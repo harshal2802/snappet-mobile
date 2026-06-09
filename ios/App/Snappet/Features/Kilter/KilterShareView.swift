@@ -10,6 +10,7 @@ struct KilterShareView: View {
     let gradeLabel: String
     let angle: Int
     @Environment(\.dismiss) private var dismiss
+    @State private var copiedFrames = false
 
     private var link: KilterClimbLink { KilterClimbLink(uuid: climb.uuid, angle: angle) }
 
@@ -43,6 +44,26 @@ struct KilterShareView: View {
                     ShareLink(item: url) { Label("Share link", systemImage: "square.and.arrow.up") }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("kilter.share.link")
+                }
+
+                // Frames export — the raw `p<placement>r<role>` string (what the catalog stores and the
+                // board-explorer's "Copy frames" emits), so a climb (incl. one you authored) is portable
+                // as plain text into other tools, even without Snappet.
+                if !climb.frames.isEmpty {
+                    HStack(spacing: 12) {
+                        Button {
+                            UIPasteboard.general.string = climb.frames
+                            copiedFrames = true
+                        } label: {
+                            Label(copiedFrames ? "Copied" : "Copy frames",
+                                  systemImage: copiedFrames ? "checkmark" : "doc.on.doc")
+                        }
+                        .accessibilityIdentifier("kilter.share.copyFrames")
+                        ShareLink(item: climb.frames) { Label("Share frames", systemImage: "text.quote") }
+                            .accessibilityIdentifier("kilter.share.shareFrames")
+                    }
+                    .font(.subheadline)
+                    .buttonStyle(.bordered)
                 }
                 Spacer()
             }
