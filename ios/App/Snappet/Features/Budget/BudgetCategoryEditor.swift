@@ -10,6 +10,7 @@ struct BudgetCategoryEditor: View {
 
     @State private var name: String
     @State private var limit: Double?
+    @FocusState private var limitFocused: Bool
 
     init(category: BudgetCategory?, onSave: @escaping (String, Double) -> Void) {
         self.category = category
@@ -37,6 +38,7 @@ struct BudgetCategoryEditor: View {
                 Section("Monthly limit") {
                     TextField("Amount", value: $limit, format: .currency(code: currencyCode))
                         .keyboardType(.decimalPad)
+                        .focused($limitFocused)
                 }
             }
             .navigationTitle(category == nil ? "New Category" : "Edit Category")
@@ -46,13 +48,30 @@ struct BudgetCategoryEditor: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(trimmedName, limit ?? 0)
-                        dismiss()
-                    }
+                    Button("Save") { commitAndSave() }
                     .disabled(!isValid)
                 }
             }
+            .keypadDoneToolbar($limitFocused)
         }
+    }
+
+    /// Resign-then-save so a mid-edit Save can't read the stale, uncommitted limit
+    /// (the value-formatted field commits on focus loss — issue #82).
+    private func commitAndSave() {
+        guard !limitFocused else {
+            limitFocused = false
+            Task { @MainActor in performSave() }
+            return
+        }
+        performSave()
+    }
+
+    private func performSave() {
+        // Keep the sheet open if the committed value invalidated (matches the Expense
+        // sheets) — dismissing here would be a silent Cancel of the edit.
+        guard isValid else { return }
+        onSave(trimmedName, limit ?? 0)
+        dismiss()
     }
 }

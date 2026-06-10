@@ -144,6 +144,7 @@ struct RoutineExerciseEditor: View {
     let defaultUnit: WeightUnit
 
     @State private var weightText = ""
+    @FocusState private var keypadFocused: Bool
 
     private var exercise: Exercise? { resolver.exercise(id: item.exerciseId) }
 
@@ -161,6 +162,7 @@ struct RoutineExerciseEditor: View {
                 LabeledContent("Weight") {
                     TextField("—", text: $weightText)
                         .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        .focused($keypadFocused)
                 }
                 Picker("Unit", selection: Binding(
                     get: { item.weightUnit ?? defaultUnit },
@@ -178,6 +180,7 @@ struct RoutineExerciseEditor: View {
             }
         }
         .navigationTitle(exercise?.name ?? resolver.name(for: item.exerciseId, override: item.displayName))
+        .keypadDoneToolbar($keypadFocused)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { weightText = item.weight.map { Self.format($0) } ?? "" }
         .onChange(of: weightText) { _, newValue in

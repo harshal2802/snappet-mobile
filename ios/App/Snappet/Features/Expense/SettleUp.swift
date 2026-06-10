@@ -20,6 +20,59 @@ enum SettleUp {
         let id = UUID()
     }
 
+    /// Whether two participant names refer to the same person — trimmed and
+    /// case-insensitive, the same identity rule `participantSuggestions` dedupes by
+    /// (".words" autocapitalization means the same human can be "alice" and "Alice").
+    static func isSamePerson(_ a: String, _ b: String?) -> Bool {
+        guard let b else { return false }
+        return a.trimmingCharacters(in: .whitespaces).lowercased()
+            == b.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    /// Second-person phrasing (issue #82): when the user has told us who they are
+    /// ("me"), balances and transfers read "You owe Bob", not "Alice owes Bob".
+    /// Pure string building → unit-tested.
+    static func transferLabel(debtor: String, creditor: String, me: String?) -> String {
+        if isSamePerson(debtor, me) { return "You owe \(creditor)" }
+        if isSamePerson(creditor, me) { return "\(debtor) owes you" }
+        return "\(debtor) owes \(creditor)"
+    }
+
+    /// The display name for a balance row — directional second person for the user's
+    /// own row ("You are owed" / "You owe", the issue's headline ask), the plain name
+    /// for everyone else.
+    static func balanceName(_ name: String, me: String?) -> String {
+        isSamePerson(name, me) ? "You" : name
+    }
+
+    /// The full balance-row label: the user's own row carries the direction in words
+    /// ("You are owed" / "You owe" / "You're settled"); others stay the bare name with
+    /// the signed, colored amount carrying direction as before.
+    static func balanceRowLabel(name: String, net: Double, me: String?) -> String {
+        guard isSamePerson(name, me) else { return name }
+        if net > 0.005 { return "You are owed" }
+        if net < -0.005 { return "You owe" }
+        return "You're settled"
+    }
+
+    /// Participant-name suggestions for a new group: every name used across existing
+    /// groups (first-seen order, deduped case-insensitively), minus names already
+    /// typed into the form. Pure → unit-tested.
+    static func participantSuggestions(existingGroups: [[String]], alreadyChosen: [String]) -> [String] {
+        var seen = Set<String>()
+        let chosen = Set(alreadyChosen.map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+        var result: [String] = []
+        for group in existingGroups {
+            for name in group {
+                let trimmed = name.trimmingCharacters(in: .whitespaces)
+                let key = trimmed.lowercased()
+                guard !trimmed.isEmpty, !chosen.contains(key), seen.insert(key).inserted else { continue }
+                result.append(trimmed)
+            }
+        }
+        return result
+    }
+
     /// Net balance per participant across all expenses.
     ///
     /// For each expense the cost is split equally among its `participants`; the `payer`

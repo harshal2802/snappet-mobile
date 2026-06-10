@@ -21,6 +21,11 @@ struct NewReceiptSheet: View {
     @State private var items: [ReceiptItem]
     @State private var taxAmount: Double
     @State private var discountAmount: Double
+    /// One focus enum across every money field on the sheet (discount, tax, and each
+    /// item's price) so the shared keypad Done toolbar can resign whichever is active
+    /// and Save can commit-then-read (issue #82).
+    enum MoneyField: Hashable { case discount, tax, itemPrice(UUID) }
+    @FocusState private var focusedMoneyField: MoneyField?
     @State private var showingPaste = false
     @State private var showingScanner = false
     /// The receipt kind used to tune parsing; `.auto` resolves via `ReceiptClassifier` on scan/paste.
@@ -89,11 +94,12 @@ struct NewReceiptSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button("Save") { commitAndSave() }
                         .disabled(!canSave)
                         .accessibilityIdentifier("expense.receipt.save")
                 }
             }
+            .keypadDoneToolbar($focusedMoneyField)
             .sheet(isPresented: $showingPaste) {
                 PasteReceiptSheet { text in apply(parseText(text)) }
             }
@@ -155,7 +161,7 @@ struct NewReceiptSheet: View {
     private var itemsSection: some View {
         Section {
             ForEach($items) { $item in
-                ItemRow(item: $item, participants: group.participants,
+                ItemRow(item: $item, focus: $focusedMoneyField, participants: group.participants,
                         currencyCode: currencyCode)
             }
             .onDelete { items.remove(atOffsets: $0) }
@@ -182,6 +188,7 @@ struct NewReceiptSheet: View {
                           format: .currency(code: currencyCode))
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
+                    .focused($focusedMoneyField, equals: .discount)
                     .accessibilityIdentifier("expense.receipt.discount")
             }
             HStack {
@@ -191,6 +198,7 @@ struct NewReceiptSheet: View {
                           format: .currency(code: currencyCode))
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
+                    .focused($focusedMoneyField, equals: .tax)
                     .accessibilityIdentifier("expense.receipt.tax")
             }
         }
@@ -231,6 +239,14 @@ struct NewReceiptSheet: View {
         detectedTax = parsed.tax
         detectedTotal = parsed.total
         detectedItemCount = parsed.itemCount
+    }
+
+    /// Resign-then-save so a mid-edit Save can't read a stale, uncommitted money field
+    /// (value-formatted fields commit on focus loss — issue #82).
+    private func commitAndSave() {
+        guard focusedMoneyField != nil else { return save() }
+        focusedMoneyField = nil
+        Task { @MainActor in save() }
     }
 
     private func save() {
@@ -279,6 +295,8 @@ struct NewReceiptSheet: View {
 /// One editable item line: name, price, and a push to choose who shares it.
 private struct ItemRow: View {
     @Binding var item: ReceiptItem
+    /// The sheet's shared money-field focus, so the keypad Done toolbar covers this row.
+    var focus: FocusState<NewReceiptSheet.MoneyField?>.Binding
     let participants: [String]
     let currencyCode: String
 
@@ -292,6 +310,7 @@ private struct ItemRow: View {
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 110)
+                    .focused(focus, equals: .itemPrice(item.id))
                     .accessibilityIdentifier("expense.receipt.item.price")
             }
             NavigationLink {

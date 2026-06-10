@@ -17,6 +17,9 @@ struct UserHRProfileView: View {
     @State private var weightText = ""
     @State private var sex: BiologicalSex = .unspecified
     @State private var prefilling = false
+    /// One shared focus across the numeric fields — the number pad has no return key,
+    /// so the keypad Done toolbar is the only way to dismiss it (issue #82).
+    @FocusState private var keypadFocused: Bool
 
     var body: some View {
         Form {
@@ -24,6 +27,7 @@ struct UserHRProfileView: View {
                 LabeledContent("Age") {
                     TextField("years", text: $ageText)
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                        .focused($keypadFocused)
                         .accessibilityIdentifier("profileAge")
                 }
                 Picker("Sex", selection: $sex) {
@@ -32,6 +36,7 @@ struct UserHRProfileView: View {
                 LabeledContent("Weight") {
                     TextField("kg", text: $weightText)
                         .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        .focused($keypadFocused)
                         .accessibilityIdentifier("profileWeight")
                 }
             } header: {
@@ -44,11 +49,13 @@ struct UserHRProfileView: View {
                 LabeledContent("Resting HR") {
                     TextField("bpm", text: $restingText)
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                        .focused($keypadFocused)
                         .accessibilityIdentifier("profileRestingHR")
                 }
                 LabeledContent("Max HR") {
                     TextField("bpm (optional)", text: $maxText)
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                        .focused($keypadFocused)
                         .accessibilityIdentifier("profileMaxHR")
                 }
             } header: {
@@ -73,6 +80,7 @@ struct UserHRProfileView: View {
             }
         }
         .navigationTitle("Heart-rate profile")
+        .keypadDoneToolbar($keypadFocused)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
         .onChange(of: ageText) { save() }

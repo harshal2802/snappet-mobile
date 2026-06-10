@@ -15,6 +15,7 @@ struct AddTransactionView: View {
     @State private var amount: Double?
     @State private var note: String
     @State private var date: Date
+    @FocusState private var amountFocused: Bool
 
     init(categories: [BudgetCategory],
          transaction: BudgetTransaction? = nil,
@@ -40,6 +41,25 @@ struct AddTransactionView: View {
         selectedCategory != nil && (amount ?? 0) > 0
     }
 
+    /// Resign-then-save so a mid-edit Save can't read the stale, uncommitted amount
+    /// (the value-formatted field commits on focus loss — issue #82).
+    private func commitAndSave() {
+        guard !amountFocused else {
+            amountFocused = false
+            Task { @MainActor in performSave() }
+            return
+        }
+        performSave()
+    }
+
+    private func performSave() {
+        // Keep the sheet open if the committed value invalidated (matches the Expense
+        // sheets) — dismissing here would be a silent Cancel of the edit.
+        guard let category = selectedCategory, let value = amount, value > 0 else { return }
+        onSave(category, value, note, date)
+        dismiss()
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -53,6 +73,7 @@ struct AddTransactionView: View {
                 Section("Amount") {
                     TextField("Amount", value: $amount, format: .currency(code: currencyCode))
                         .keyboardType(.decimalPad)
+                        .focused($amountFocused)
                         .accessibilityIdentifier("budget.txnAmount")
                 }
                 Section("Details") {
@@ -67,16 +88,12 @@ struct AddTransactionView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isEditing ? "Save" : "Add") {
-                        if let category = selectedCategory, let value = amount {
-                            onSave(category, value, note, date)
-                        }
-                        dismiss()
-                    }
+                    Button(isEditing ? "Save" : "Add") { commitAndSave() }
                     .accessibilityIdentifier("budget.txnSave")
                     .disabled(!isValid)
                 }
             }
+            .keypadDoneToolbar($amountFocused)
             .onAppear {
                 if selectedCategoryID == nil {
                     selectedCategoryID = categories.first?.id

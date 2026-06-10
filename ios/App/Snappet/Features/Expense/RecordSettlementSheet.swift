@@ -15,14 +15,18 @@ struct RecordSettlementSheet: View {
 
     @State private var payer: String
     @State private var recipient: String
-    @State private var amount = 0.0
+    @State private var amount: Double
+    @FocusState private var amountFocused: Bool
 
-    init(group: ExpenseGroup) {
+    /// Blank sheet (toolbar path) — or **prefilled** from a tapped settle-up transfer
+    /// (issue #82: recording the exact suggested amount used to mean retyping it).
+    init(group: ExpenseGroup, payer: String? = nil, recipient: String? = nil, amount: Double = 0) {
         self.group = group
-        _payer = State(initialValue: group.participants.first ?? "")
+        _payer = State(initialValue: payer ?? group.participants.first ?? "")
         // Default the recipient to a different person when possible.
-        _recipient = State(initialValue: group.participants.dropFirst().first
+        _recipient = State(initialValue: recipient ?? group.participants.dropFirst().first
             ?? group.participants.first ?? "")
+        _amount = State(initialValue: amount)
     }
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "USD" }
@@ -54,6 +58,7 @@ struct RecordSettlementSheet: View {
                     TextField("Amount", value: $amount,
                               format: .currency(code: currencyCode))
                         .keyboardType(.decimalPad)
+                        .focused($amountFocused)
                         .accessibilityIdentifier("expense.settle.amount")
                 } header: {
                     Text("Amount")
@@ -68,12 +73,24 @@ struct RecordSettlementSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button("Save") { commitAndSave() }
                         .disabled(!canSave)
                         .accessibilityIdentifier("expense.settle.save")
                 }
             }
+            .keypadDoneToolbar($amountFocused)
         }
+    }
+
+    /// Resign-then-save so a mid-edit Save can't act on the stale, uncommitted amount
+    /// (the value-formatted field commits on focus loss — issue #82).
+    private func commitAndSave() {
+        guard !amountFocused else {
+            amountFocused = false
+            Task { @MainActor in save() }
+            return
+        }
+        save()
     }
 
     private var canSave: Bool {
