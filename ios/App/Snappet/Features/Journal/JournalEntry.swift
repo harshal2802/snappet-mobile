@@ -38,6 +38,14 @@ final class JournalEntry {
             && tags.isEmpty
     }
 
+    /// An abandoned pre-inserted row from `createEntry()`: blank **and** never Done-saved
+    /// (`save()` is the only place `updatedAt` moves off `createdAt`). The extra clause keeps
+    /// the appear-time sweep from ever touching a real entry the user deliberately emptied.
+    static func isAbandonedBlank(_ entry: JournalEntry) -> Bool {
+        isBlank(title: entry.title, body: entry.body, tags: entry.tags)
+            && entry.updatedAt == entry.createdAt
+    }
+
     /// Normalize raw tag strings: trim whitespace, lowercase, drop empties, and de-duplicate
     /// while preserving first-seen order.
     static func normalizeTags(_ raw: [String]) -> [String] {

@@ -59,4 +59,28 @@ final class DeleteConfirmationTests: XCTestCase {
     func testTagAloneIsContent() {
         XCTAssertFalse(JournalEntry.isBlank(title: "", body: "", tags: ["trip"]))
     }
+
+    // MARK: - Journal abandoned-blank (sweep) definition
+
+    /// A fresh pre-inserted row (one shared creation instant, no content) is sweepable.
+    func testFreshBlankEntryIsAbandonedBlank() {
+        let now = Date.now
+        let entry = JournalEntry(title: "", body: "", createdAt: now, updatedAt: now)
+        XCTAssertTrue(JournalEntry.isAbandonedBlank(entry))
+    }
+
+    /// Once `save()` has moved `updatedAt`, the sweep must never touch the entry — even
+    /// if the user later deletes all its content deliberately.
+    func testDoneSavedEntryIsNeverSwept() {
+        let now = Date.now
+        let entry = JournalEntry(title: "", body: "", createdAt: now,
+                                 updatedAt: now.addingTimeInterval(60))
+        XCTAssertFalse(JournalEntry.isAbandonedBlank(entry))
+    }
+
+    func testEntryWithContentIsNotAbandonedBlank() {
+        let now = Date.now
+        let entry = JournalEntry(title: "Morning", body: "", createdAt: now, updatedAt: now)
+        XCTAssertFalse(JournalEntry.isAbandonedBlank(entry))
+    }
 }

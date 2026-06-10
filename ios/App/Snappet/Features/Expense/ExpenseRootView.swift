@@ -8,14 +8,12 @@ struct ExpenseRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SuiteRouter.self) private var router
     @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var groups: [ExpenseGroup]
-    /// All expense rows, fetched here so group deletion can report and clean up the rows
-    /// keyed to the group — `ExpenseRecord.groupID` is a flat reference (see
-    /// `ExpenseModels.swift`), so nothing cascades on its own.
-    @Query private var records: [ExpenseRecord]
 
     @State private var showingNewGroup = false
-    /// The group staged by a context-menu Delete, awaiting the user's confirmation.
-    @State private var pendingDelete: ExpenseGroup?
+    /// The group staged by a context-menu Delete, awaiting the user's confirmation. The
+    /// impact message is snapshotted at staging time (a one-off fetch count, not a standing
+    /// query over every record) so the dialog copy stays stable through dismissal.
+    @State private var pendingDelete: StagedGroupDelete?
 
     var body: some View {
         Group {
@@ -43,19 +41,20 @@ struct ExpenseRootView: View {
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet()
         }
+        // Static title + `presenting:` keeps the dialog copy stable through the dismiss
+        // animation (no nil-fallback flash); the group's name rides on the delete button.
         .confirmationDialog(
-            "Delete \u{201C}\(pendingDelete?.name ?? "")\u{201D}?",
+            "Delete this group?",
             isPresented: deleteDialogBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let group = pendingDelete { delete(group) }
-                pendingDelete = nil
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { staged in
+            Button("Delete \u{201C}\(staged.group.name)\u{201D}", role: .destructive) {
+                ExpenseGroupDeletion.delete(staged.group, from: modelContext)
             }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: {
-            Text(ExpenseGroupDeleteImpact.message(
-                recordCount: pendingDelete.map(recordCount(in:)) ?? 0))
+            Button("Cancel", role: .cancel) {}
+        } message: { staged in
+            Text(staged.message)
         }
     }
 
@@ -66,8 +65,11 @@ struct ExpenseRootView: View {
         )
     }
 
-    private func recordCount(in group: ExpenseGroup) -> Int {
-        records.count { $0.groupID == group.id }
+    private func stageDelete(_ group: ExpenseGroup) {
+        let count = ExpenseGroupDeletion.recordCount(for: group.id, in: modelContext)
+        pendingDelete = StagedGroupDelete(
+            group: group,
+            message: ExpenseGroupDeleteImpact.message(recordCount: count))
     }
 
     // A ScrollView + VStack of Buttons (not a List) — the suite's proven XCUITest-tappable
@@ -86,7 +88,7 @@ struct ExpenseRootView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("expenseGroupRow")
                     .contextMenu {
-                        Button("Delete", role: .destructive) { pendingDelete = group }
+                        Button("Delete", role: .destructive) { stageDelete(group) }
                     }
                 }
             }
@@ -94,15 +96,13 @@ struct ExpenseRootView: View {
         }
     }
 
-    /// Deletes the group **and** every expense row keyed to it — without the explicit
-    /// sweep the flat `groupID` reference would leave the rows orphaned and unreachable.
-    private func delete(_ group: ExpenseGroup) {
-        for record in records where record.groupID == group.id {
-            modelContext.delete(record)
-        }
-        modelContext.delete(group)
-        try? modelContext.save()
-    }
+}
+
+/// A group-delete awaiting confirmation: the group plus its impact message, snapshotted
+/// when the user asks to delete so the dialog can't drift or flash fallbacks.
+private struct StagedGroupDelete {
+    let group: ExpenseGroup
+    let message: String
 }
 
 /// Pure message builder for the group-delete confirmation, kept off the view so the

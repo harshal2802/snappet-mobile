@@ -18,8 +18,9 @@ struct BudgetRootView: View {
     @State private var showingAddTransaction = false
     @State private var editingCategory: BudgetCategory?
     /// Categories staged by a swipe-delete, awaiting confirmation — deleting a category
-    /// cascades to every one of its transactions across all months.
-    @State private var pendingCategoryDeletes: [BudgetCategory]?
+    /// cascades to every one of its transactions across all months. The impact message is
+    /// snapshotted at staging time so the dialog copy stays stable through dismissal.
+    @State private var pendingCategoryDeletes: StagedCategoryDelete?
     /// The month the whole screen is scoped to. Defaults to the current month.
     @State private var month = MonthScope()
 
@@ -82,27 +83,21 @@ struct BudgetRootView: View {
         .navigationDestination(for: BudgetTrendsRoute.self) { _ in
             BudgetTrendsView(transactions: transactions)
         }
+        // Static title + `presenting:` keeps the dialog copy stable through the dismiss
+        // animation (no nil-fallback flash); the category's name rides on the delete button.
         .confirmationDialog(
-            deleteDialogTitle,
+            "Delete this category?",
             isPresented: deleteDialogBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let pending = pendingCategoryDeletes { delete(pending) }
-                pendingCategoryDeletes = nil
+            titleVisibility: .visible,
+            presenting: pendingCategoryDeletes
+        ) { staged in
+            Button("Delete \u{201C}\(staged.name)\u{201D}", role: .destructive) {
+                delete(staged.categories)
             }
-            Button("Cancel", role: .cancel) { pendingCategoryDeletes = nil }
-        } message: {
-            Text(BudgetCategoryDeleteImpact.message(
-                transactionCount: pendingCategoryDeletes.map(transactionCount(for:)) ?? 0))
+            Button("Cancel", role: .cancel) {}
+        } message: { staged in
+            Text(staged.message)
         }
-    }
-
-    private var deleteDialogTitle: String {
-        if let pending = pendingCategoryDeletes, pending.count == 1, let first = pending.first {
-            return "Delete \u{201C}\(first.name)\u{201D}?"
-        }
-        return "Delete \(pendingCategoryDeletes?.count ?? 0) categories?"
     }
 
     private var deleteDialogBinding: Binding<Bool> {
@@ -110,11 +105,6 @@ struct BudgetRootView: View {
             get: { pendingCategoryDeletes != nil },
             set: { if !$0 { pendingCategoryDeletes = nil } }
         )
-    }
-
-    private func transactionCount(for pending: [BudgetCategory]) -> Int {
-        let ids = Set(pending.map(\.id))
-        return transactions.count { ids.contains($0.categoryID) }
     }
 
     // MARK: - States
@@ -308,7 +298,14 @@ struct BudgetRootView: View {
     /// transactions the cascade will take with them — across all months, not just the
     /// one on screen.
     private func deleteCategories(at offsets: IndexSet) {
-        pendingCategoryDeletes = offsets.map { categories[$0] }
+        let staged = offsets.map { categories[$0] }
+        guard let first = staged.first else { return }
+        let ids = Set(staged.map(\.id))
+        let count = transactions.count { ids.contains($0.categoryID) }
+        pendingCategoryDeletes = StagedCategoryDelete(
+            categories: staged,
+            name: first.name,
+            message: BudgetCategoryDeleteImpact.message(transactionCount: count))
     }
 
     private func delete(_ pending: [BudgetCategory]) {
@@ -321,6 +318,14 @@ struct BudgetRootView: View {
         }
         try? context.save()
     }
+}
+
+/// A category-delete awaiting confirmation: the categories plus the name/impact message,
+/// snapshotted when the swipe happens so the dialog can't drift or flash fallbacks.
+private struct StagedCategoryDelete {
+    let categories: [BudgetCategory]
+    let name: String
+    let message: String
 }
 
 /// Pure message builder for the category-delete confirmation, kept off the view so the

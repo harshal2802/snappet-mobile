@@ -35,31 +35,38 @@ accumulate. Close both holes.
 
 ## Approach
 
-- **Expense** (`ExpenseRootView.swift`): context-menu Delete stages the group in
-  `@State pendingDelete`; a `confirmationDialog(presenting:)` names the group and states how
-  many expense rows go with it; confirm deletes the matching `ExpenseRecord`s **then** the
-  group. Add a `@Query` for records to count/cleanup. Pure message builder
+- **Expense** (`ExpenseRootView.swift`, `ExpenseModels.swift`): context-menu Delete stages
+  the group + a snapshotted impact message; a static-title `confirmationDialog(presenting:)`
+  confirms (copy can't flash fallbacks during dismissal). The cascade lives in a testable
+  `ExpenseGroupDeletion` helper (`fetchCount` for the message, predicate fetch + sweep for
+  the delete) — no standing all-records `@Query` on the root list. Pure message builder
   (`ExpenseGroupDeleteImpact.message`) so pluralization is unit-testable.
-- **Budget** (`BudgetRootView.swift`): `.onDelete` stages the swiped categories; the dialog
-  states the total transaction count it will cascade-delete
-  (`BudgetCategoryDeleteImpact.message`, pure); confirm runs the existing loop.
-- **Journal** (`JournalRootView.swift`, `JournalEditorView.swift`, `JournalEntry.swift`):
-  swipe-delete stages entries and confirms. Blank-entry fix: a pure
-  `JournalEntry.isBlank(title:body:tags:)` used by both the existing **Done** guard and a new
-  `.onDisappear` cleanup in the editor, gated by a `didFinish` flag set on every **Done** path
-  so the two never double-delete.
+- **Budget** (`BudgetRootView.swift`): `.onDelete` stages the swiped categories with a
+  snapshotted count message (`BudgetCategoryDeleteImpact.message`, pure); a static-title
+  `presenting:` dialog confirms; confirm runs the existing loop.
+- **Journal** (`JournalRootView.swift`, `JournalEntry.swift`): swipe-delete stages entries
+  and confirms. Blank-entry fix at the **presentation site**, not the editor: the
+  `navigationDestination(item: $newEntry)` binding nils exactly on pop (never on a tab
+  switch — an `onDisappear` cleanup in the editor would delete the entry out from under a
+  still-pushed editor when the user visits the Home tab), so `.onChange(of: newEntry)`
+  discards a popped blank; an appear-time sweep (`JournalEntry.isAbandonedBlank`: blank
+  **and** never Done-saved) catches rows persisted by autosave when the process died with
+  the editor open. `createEntry()` pins `createdAt == updatedAt` to one instant so the
+  never-saved check is exact.
 - Knowledge graph: no new surface or navigation/data-flow edge — dialogs are guards on
   existing flows — so `docs/knowledge-graph/data.js` is intentionally untouched.
 
 ## Output
 
-- Modified: `ExpenseRootView.swift`, `BudgetRootView.swift`, `JournalRootView.swift`,
-  `JournalEditorView.swift`, `JournalEntry.swift`.
+- Modified: `ExpenseRootView.swift`, `ExpenseModels.swift`, `BudgetRootView.swift`,
+  `JournalRootView.swift`, `JournalEditorView.swift`, `JournalEntry.swift`.
 - New: `ios/App/SnappetTests/DeleteConfirmationTests.swift` (impact-message pluralization,
-  `isBlank` truth table).
+  `isBlank` / `isAbandonedBlank` truth tables) and
+  `ios/App/SnappetTests/ExpenseGroupDeletionTests.swift` (in-memory container: the cascade
+  sweeps even splits + receipts + settlements and spares other groups).
 - Extended: `ios/App/SnappetUITests/JournalUITests.swift` — abandoning a new entry via the
-  back button leaves no "Untitled" row.
-- `pdd/context/decisions.md` entry for the didFinish/onDisappear choice.
+  back button leaves no "Untitled" row; a tab switch mid-compose never loses the entry.
+- `pdd/context/decisions.md` entry for the pop-vs-disappear choice.
 
 ## Acceptance criteria
 

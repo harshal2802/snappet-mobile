@@ -40,6 +40,34 @@ struct ReceiptItem: Codable, Hashable, Identifiable {
     }
 }
 
+/// Group deletion, extracted from the view so the cascade is unit-testable against an
+/// in-memory container: `ExpenseRecord.groupID` is a flat reference (no SwiftData
+/// relationship), so deleting a group MUST explicitly sweep its records or they end up
+/// orphaned and unreachable.
+@MainActor
+enum ExpenseGroupDeletion {
+    /// How many expense rows (even splits, receipts, and settlements all share the one
+    /// `ExpenseRecord` model) are keyed to the group — a one-off count for the
+    /// confirmation message, not a standing query.
+    static func recordCount(for groupID: UUID, in context: ModelContext) -> Int {
+        let descriptor = FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { $0.groupID == groupID })
+        return (try? context.fetchCount(descriptor)) ?? 0
+    }
+
+    /// Delete the group and every record keyed to it, then save.
+    static func delete(_ group: ExpenseGroup, from context: ModelContext) {
+        let groupID = group.id
+        let descriptor = FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { $0.groupID == groupID })
+        for record in (try? context.fetch(descriptor)) ?? [] {
+            context.delete(record)
+        }
+        context.delete(group)
+        try? context.save()
+    }
+}
+
 /// A single expense within a group. We reference the owning group by `groupID`
 /// (matching `ExpenseGroup.id`) rather than a SwiftData relationship — this keeps the
 /// model flat and the settle-up math easy to fetch per group via a predicate.

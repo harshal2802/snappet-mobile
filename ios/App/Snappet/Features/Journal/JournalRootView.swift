@@ -56,17 +56,26 @@ struct JournalRootView: View {
         .navigationDestination(item: $newEntry) { entry in
             JournalEditorView(entry: entry, isNew: true)
         }
+        .onChange(of: newEntry) { oldValue, newValue in
+            // The item binding nils out exactly when the new-entry editor pops (Done,
+            // back button, or edge swipe). Unlike the editor's own onDisappear, it does
+            // NOT fire on a tab switch — so a still-pushed editor can never have its
+            // entry deleted out from under it.
+            guard newValue == nil, let abandoned = oldValue else { return }
+            discardIfAbandonedBlank(abandoned)
+        }
+        .onAppear { sweepAbandonedBlanks() }
+        // Static title + `presenting:` keeps the dialog copy stable through the dismiss
+        // animation (no nil-fallback flash) — the same immunity the Habit dialog has.
         .confirmationDialog(
-            pendingDeletes?.count == 1 ? "Delete this entry?" : "Delete \(pendingDeletes?.count ?? 0) entries?",
+            "Delete this entry?",
             isPresented: deleteDialogBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let entries = pendingDeletes { delete(entries) }
-                pendingDeletes = nil
-            }
-            Button("Cancel", role: .cancel) { pendingDeletes = nil }
-        } message: {
+            titleVisibility: .visible,
+            presenting: pendingDeletes
+        ) { staged in
+            Button("Delete", role: .destructive) { delete(staged) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
             Text("This permanently removes the entry and can't be undone.")
         }
     }
@@ -92,9 +101,31 @@ struct JournalRootView: View {
     }
 
     private func createEntry() {
-        let entry = JournalEntry(title: "", body: "")
+        // One shared instant: `isAbandonedBlank` relies on `updatedAt == createdAt`, and the
+        // init's two independent `.now` defaults would differ by microseconds.
+        let now = Date.now
+        let entry = JournalEntry(title: "", body: "", createdAt: now, updatedAt: now)
         modelContext.insert(entry)
         newEntry = entry
+    }
+
+    /// Drop a popped new entry that never got content — the back-button/edge-swipe path
+    /// the editor's Done guard can't see. Idempotent with Done's own blank-delete via the
+    /// `modelContext` check.
+    private func discardIfAbandonedBlank(_ entry: JournalEntry) {
+        guard entry.modelContext != nil, JournalEntry.isAbandonedBlank(entry) else { return }
+        modelContext.delete(entry)
+        try? modelContext.save()
+    }
+
+    /// Remove blank never-saved rows that survived a process death while the new-entry
+    /// editor was open (autosave persists the pre-inserted row and no view callback ever
+    /// fires). Runs on appear, when no abandoned editor can be on top of us.
+    private func sweepAbandonedBlanks() {
+        let strays = entries.filter { $0 !== newEntry && JournalEntry.isAbandonedBlank($0) }
+        guard !strays.isEmpty else { return }
+        for entry in strays { modelContext.delete(entry) }
+        try? modelContext.save()
     }
 
     /// Swipe-delete stages the entries behind a confirmation — a journal entry is a whole

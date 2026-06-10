@@ -89,6 +89,30 @@ final class JournalUITests: XCTestCase {
         XCTAssertTrue(plainCell.waitForExistence(timeout: 4), "clearing search should restore the plain entry")
     }
 
+    /// Prompt 34 (review blocker guard): switching tabs while composing a new entry must
+    /// not delete it out from under the editor — the typed entry still saves on Done.
+    func testTabSwitchWhileComposingKeepsTheEntry() {
+        openJournal()
+
+        app.buttons["journal.add"].tap()
+        let titleField = app.textFields["journal.titleField"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 4), "editor should open")
+
+        // Leave for Home mid-compose (the editor stays pushed on the Apps tab's stack)…
+        app.tabBars.buttons["Home"].tap()
+        app.tabBars.buttons["Apps"].tap()
+
+        // …come back, type the entry, and save it.
+        XCTAssertTrue(titleField.waitForExistence(timeout: 4), "editor should still be up")
+        titleField.tap()
+        titleField.typeText("Survived the tab switch")
+        app.buttons["journal.save"].tap()
+
+        XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 4), "should return to the list")
+        XCTAssertTrue(app.staticTexts["Survived the tab switch"].waitForExistence(timeout: 4),
+                      "the entry typed after a tab switch must persist")
+    }
+
     /// Prompt 34: opening the editor with + and leaving via the back button without typing
     /// anything must not persist a blank "Untitled" row.
     func testAbandoningNewEntryLeavesNoBlankRow() {
