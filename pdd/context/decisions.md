@@ -4,6 +4,23 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Pomodoro: app-owned timer + schedule-at-start notifications + third Live Activity (issue #70)
+
+**Decision** (prompt 35): `PomodoroTimer` is **owned by `AppModel`** (the `KilterSessionManager`
+hoist pattern) so popping to the Apps grid no longer kills a running session; the view is just a
+window onto it. Background alerting hangs off **one seam** — `PomodoroTimer.onScheduleChanged(phase,
+endDate?)`, fired on start / auto-advance (absolute end) and pause/reset (`nil`) — wired once in
+`AppModel.init` to (a) `PomodoroNotifications` (the `WorkoutNotifications` schedule-at-start pattern:
+a foreground ticker is suspended in the background, a scheduled `UNNotification` is not; stable id,
+replace-don't-stack) and (b) `PomodoroLiveActivityController` (a **third, separate**
+`ActivityAttributes` type — same reasoning as Kilter's, 2026-06-06; countdown rendered with
+`Text/ProgressView(timerInterval:)` so the OS ticks it with zero background CPU; no update throttle
+needed — phase edges only). Rules out: scenePhase-driven re-sync hacks, a foreground-only haptic as
+the sole completion signal, and overloading the workout/Kilter activity contracts. The in-app
+re-entry chip is **scoped to the Apps tab's NavigationStack** (overlay on `AppLibraryView`) because
+`SuiteRouter` is still `@State` there — the shell-global surface arrives with the #71 hoist.
+Live Activity / lock-screen **render** is device-pending (the Kilter verification class).
+
 ## [2026-06-10] Destructive deletes confirm via dialog (no UndoManager); Journal blank cleanup on onDisappear, not defer-insert
 
 **Decision** (prompt 34, issue #69): Expense-group, budget-category, and journal-entry deletes stage a

@@ -5,6 +5,7 @@ import SwiftData
 /// it sets only a `navigationTitle` (no nested NavigationStack).
 struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,7 +16,10 @@ struct PomodoroRootView: View {
     @AppStorage("pomodoro.focusMinutes") private var focusSetting = 25
     @AppStorage("pomodoro.breakMinutes") private var breakSetting = 5
 
-    @State private var timer = PomodoroTimer()
+    /// The app-owned countdown engine (`AppModel.pomodoro`, issue #70): popping back to
+    /// the Apps grid no longer kills a running session — this screen is just a window
+    /// onto it.
+    private var timer: PomodoroTimer { app.pomodoro }
     @State private var showingSettings = false
 
     init() {
@@ -73,7 +77,11 @@ struct PomodoroRootView: View {
         .onAppear {
             timer.onFocusCompleted = handleFocusCompleted
             timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
+            app.pomodoroScreenVisible = true
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
+        }
+        .onDisappear {
+            app.pomodoroScreenVisible = false
         }
     }
 

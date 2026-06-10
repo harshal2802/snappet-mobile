@@ -58,6 +58,37 @@ final class PomodoroUITests: XCTestCase {
                       "Should return to the Pomodoro root")
     }
 
+    /// Issue #70: the timer is app-owned (`AppModel.pomodoro`), so leaving the module and
+    /// coming back must show the session still running — and the App Library must show
+    /// the "focus running" re-entry chip while we're away.
+    func testTimerSurvivesNavigation() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFreshStore"]
+        app.launch()
+        openPomodoro(app)
+
+        let start = app.buttons["pomodoro.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 6), "Start button should exist")
+        start.tap()
+        XCTAssertTrue(app.buttons["pomodoro.pause"].waitForExistence(timeout: 4),
+                      "timer should be running")
+
+        // Pop back to the Apps grid — previously this destroyed the @State timer.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let chip = app.buttons["pomodoro.liveChip"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 6),
+                      "the focus-running chip should appear once the screen is left")
+
+        // The chip itself is the way back in.
+        chip.tap()
+        XCTAssertTrue(app.buttons["pomodoro.pause"].waitForExistence(timeout: 6),
+                      "re-entering must show the session still running (Pause visible)")
+
+        // Clean up: stop the session so later tests start idle.
+        app.buttons["pomodoro.pause"].tap()
+        app.buttons["pomodoro.reset"].tap()
+    }
+
     func testSettingsPersistAcrossRelaunch() {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]

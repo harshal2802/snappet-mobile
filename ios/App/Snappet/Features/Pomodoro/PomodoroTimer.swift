@@ -38,7 +38,15 @@ final class PomodoroTimer {
     /// this up to persist a `PomodoroSession` and log usage.
     var onFocusCompleted: ((Int) -> Void)?
 
-    private var endDate: Date?
+    /// Fires whenever the wall-clock schedule changes: a phase starts or auto-advances
+    /// (the phase now running + its absolute end), or the countdown stops (`nil` on
+    /// pause/reset). `AppModel` wires this to the phase-end notification + Live Activity
+    /// so background alerting can't drift from the in-app timer.
+    var onScheduleChanged: ((PomodoroPhase, Date?) -> Void)?
+
+    /// Absolute end of the running phase (`nil` while idle/paused). Read-only outside so
+    /// the chip/Live Activity can render OS-ticked countdowns off the same wall clock.
+    private(set) var endDate: Date?
     private var ticker: Timer?
 
     init() {
@@ -70,6 +78,7 @@ final class PomodoroTimer {
         endDate = Date().addingTimeInterval(remaining)
         isRunning = true
         scheduleTicker()
+        onScheduleChanged?(phase, endDate)
     }
 
     func pause() {
@@ -78,6 +87,7 @@ final class PomodoroTimer {
         isRunning = false
         invalidateTicker()
         endDate = nil
+        onScheduleChanged?(phase, nil)
     }
 
     /// Stop and return to the top of the FOCUS phase.
@@ -87,6 +97,7 @@ final class PomodoroTimer {
         endDate = nil
         phase = .focus
         remaining = phaseDuration
+        onScheduleChanged?(phase, nil)
     }
 
     /// Recompute `remaining` from the wall clock; advance phases on completion.
@@ -111,6 +122,7 @@ final class PomodoroTimer {
         } else {
             endDate = nil
         }
+        onScheduleChanged?(phase, endDate)
     }
 
     private func scheduleTicker() {

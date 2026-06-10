@@ -68,6 +68,37 @@ final class AppModel {
     /// unauthorized (live-workout-studio next pass).
     let workoutNotifications = WorkoutNotifications()
 
+    /// The Pomodoro countdown engine. Owned here — not as `@State` on `PomodoroRootView` —
+    /// so popping back to the Apps grid no longer kills a running focus session (the same
+    /// stale-on-pop fix as `kilterSessions`, issue #70). The view still wires its
+    /// store-dependent `onFocusCompleted` on appear.
+    let pomodoro = PomodoroTimer()
+    /// Phase-end alerts for a backgrounded / locked phone (scheduled at phase start,
+    /// cancelled on pause/reset) + the Lock Screen / Dynamic Island countdown. Driven
+    /// entirely off `pomodoro.onScheduleChanged` in `init` so they can't drift from the timer.
+    let pomodoroNotifications = PomodoroNotifications()
+    let pomodoroLiveActivity = PomodoroLiveActivityController()
+    /// Whether `PomodoroRootView` is on screen — hides the App Library's "focus running"
+    /// re-entry chip while the user is already looking at the timer.
+    var pomodoroScreenVisible = false
+
+    init() {
+        // Capture the services (not self), and the timer weakly — the closure is stored on
+        // the timer itself, so a strong capture would be a retain cycle.
+        pomodoro.onScheduleChanged = { [pomodoroNotifications, pomodoroLiveActivity, weak pomodoro] phase, endDate in
+            if let endDate {
+                pomodoroNotifications.requestAuthorization()
+                pomodoroNotifications.schedulePhaseEnd(for: phase, at: endDate)
+                pomodoroLiveActivity.sync(
+                    isFocus: phase == .focus, endDate: endDate,
+                    phaseSeconds: pomodoro?.phaseDuration ?? endDate.timeIntervalSinceNow)
+            } else {
+                pomodoroNotifications.clear()
+                pomodoroLiveActivity.end()
+            }
+        }
+    }
+
     /// Value-first onboarding is shown until the user has been through it once.
     /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
     private let onboardedKey = "snappet.hasOnboarded"
