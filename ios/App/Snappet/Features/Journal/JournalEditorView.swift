@@ -76,7 +76,7 @@ struct JournalEditorView: View {
         let trimmedBody = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Drop an entirely empty new entry rather than persisting a blank row.
-        if isNew && trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty {
+        if isNew && JournalEntry.isBlank(title: entry.title, body: entry.body, tags: entry.tags) {
             modelContext.delete(entry)
             try? modelContext.save()
             dismiss()

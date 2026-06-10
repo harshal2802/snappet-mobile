@@ -4,6 +4,35 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Destructive deletes confirm via dialog (no UndoManager); Journal blank cleanup on onDisappear, not defer-insert
+
+**Decision** (prompt 34, issue #69): Expense-group, budget-category, and journal-entry deletes stage a
+`pending…` value and confirm through `confirmationDialog(presenting:)` — the pattern Habits already
+shipped — with a **pure impact-message builder** (`ExpenseGroupDeleteImpact` / `BudgetCategoryDeleteImpact`)
+stating exactly what cascades (group → its `ExpenseRecord`s, which the flat `groupID` reference would
+otherwise orphan; category → its transactions across **all** months). Rules out an Undo affordance: no
+`UndoManager` is configured anywhere in the suite, and one dialog idiom everywhere beats two recovery
+models.
+
+**Journal blank rows — discard on POP, never on onDisappear**: kept `createEntry()`'s
+insert-before-navigate (the editor's `@Bindable` and SwiftData autosave preserve typed content if the
+user back-swipes), and the abandoned-blank discard runs in `JournalRootView` from
+`.onChange(of: newEntry)` — the `navigationDestination(item:)` binding nils exactly on pop. An
+`.onDisappear` cleanup in the editor was tried first and **adversarial review proved it a blocker**:
+`onDisappear` also fires on a TabView tab switch (the Apps tab's stack is preserved `@State`), which
+deleted the entry out from under the still-pushed editor — Done then silently failed to persist the
+typed entry. Rules out: editor-side onDisappear cleanup (tab-switch hazard) and defer-insert-until-save
+(silently discards typed content on back-swipe). Residual process-death path (autosave persists the
+pre-inserted blank; no view callback fires) is closed by an appear-time sweep using
+`JournalEntry.isAbandonedBlank` = blank **and** `updatedAt == createdAt` (never Done-saved — so a real
+entry the user deliberately emptied is never swept); `createEntry()` pins both dates to one instant
+because the init's two `.now` defaults differ by microseconds. All definitions unit-tested in
+`DeleteConfirmationTests`; the Expense cascade is locked by `ExpenseGroupDeletionTests` (in-memory
+container). Confirmation dialogs use a **static title + `presenting:`** so the copy can't flash nil
+fallbacks during the dismiss animation (the Habit dialog's immunity, kept deliberately).
+
+Tip/Kilter-history single-row swipes stay unconfirmed deliberately — one low-stakes row per swipe.
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned
