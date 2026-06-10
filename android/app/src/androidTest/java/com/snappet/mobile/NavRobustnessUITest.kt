@@ -210,6 +210,51 @@ class NavRobustnessUITest : SuiteTest() {
         composeRule.waitUntil(timeoutMillis = 5_000) { !existsTag("workout.resumeBanner") }
     }
 
+    /** Resume must continue at the first incomplete set — never back over already-logged sets,
+     *  where Complete-set would silently overwrite the persisted log (issue #86 review). */
+    @Test
+    fun resumeLandsOnFirstIncompleteSet() {
+        launch()
+
+        val container = AppContainer.get(ApplicationProvider.getApplicationContext())
+        val done = WorkoutSetLog(actualReps = 8, completedAt = System.currentTimeMillis())
+        val exercises = listOf(
+            WorkoutSessionExercise(
+                exerciseId = "nav-test-finished",
+                targetSets = 1,
+                targetReps = "8",
+                targetRestSeconds = 0,
+                sets = listOf(done),
+                displayName = "Finished exercise",
+            ),
+            WorkoutSessionExercise(
+                exerciseId = "nav-test-next-up",
+                targetSets = 2,
+                targetReps = "8",
+                targetRestSeconds = 0,
+                sets = listOf(done, WorkoutSetLog()),
+                displayName = "Next-up exercise",
+            ),
+        )
+        runBlocking {
+            container.database.workoutDao().insertSession(
+                WorkoutSession.create(null, "Half-done Routine", exercises),
+            )
+        }
+
+        openModule("workout-log")
+        composeRule.waitUntil(timeoutMillis = 5_000) { existsTag("workout.resumeBanner") }
+        composeRule.onNodeWithTag("workout.resume").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { existsTag("workout.completeSet") }
+
+        // Lands on the second exercise's second set — not back on the finished work.
+        composeRule.onNodeWithText("Next-up exercise").assertIsDisplayed()
+        composeRule.onNodeWithText("Set 2 of 2").assertIsDisplayed()
+
+        discardLiveWorkout()
+        composeRule.waitUntil(timeoutMillis = 5_000) { !existsTag("workout.resumeBanner") }
+    }
+
     @Test
     fun recreatePreservesCreateClimbDraft() {
         TestHooks.installKilterCatalogFixture = true

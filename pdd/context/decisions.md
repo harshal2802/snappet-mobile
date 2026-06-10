@@ -3351,14 +3351,29 @@ through to the NavHost (→ app grid). The #99 Today-home nav hoist builds on th
 - **Accepted residuals**: `BackupScreen.pendingImportText` (MB-scale JSON) deliberately not saveable —
   Bundle transaction limits; momentary confirm-dialog staging stays `remember`; BLE board/session
   controller objects still rebuild on rotation (device-phase; their *navigation context* restores);
-  banner resume opens the player at the first non-skipped exercise, not the first incomplete set
-  (logged sets intact; smart positioning is a follow-up); Pomodoro `focus`/`brk` stay `remember` —
-  their initializers re-read SharedPreferences (the real source of truth), a Bundle copy could shadow
-  it stale.
+  Pomodoro `focus`/`brk` stay `remember` — their initializers re-read SharedPreferences (the real
+  source of truth), a Bundle copy could shadow it stale.
+
+**Pre-merge adversarial review round** (3 lenses + per-finding skeptics; 5 confirmed, all fixed):
+(1) the banner resume was **completion-blind** — it opened at the first non-skipped exercise, set 0,
+and `completeSet()` unconditionally replaces the set at the current position, so tapping forward
+would have silently overwritten real logged sets with target-prefilled values (and Skip would have
+hidden a trained exercise from the stats). The player now starts at the **first incomplete set**
+(`firstIncomplete`, also the out-of-range clamp fallback) and opens straight on the summary when
+everything is logged. (2) The generated climb (`genResult`) was runtime-only although the prompt
+required saving it — generation is stochastic, so the dropped result was unrecoverable. Frames +
+predicted grade now survive via `GenResultSaver`; the preview holds re-derive from frames, and
+`prepareModel` lands on READY when a result exists (also fixing the pre-existing
+tab-switch-hides-result quirk). (3) Kilter catalog `search`/`sort`/`benchmarksOnly`/`minAscents`/
+`minQuality` had missed the promotion — half-restored UI (the saveable sheet reopened over reset
+values). (4) Journal now uses the same null-initial gate as workout/budget — no list flash while the
+flow loads, and a deleted staged row resets `editorOpen` so back isn't absorbed as a no-op.
+(5) Expense got the same gate — no false "No groups yet" flash; a deleted staged group self-heals
+its id.
 
 **Verified**: unit suite green (incl. new `KilterAssignmentsCodecTest`); instrumented suite green on
 the emulator — 39-test baseline + new `NavRobustnessUITest` (back-pops-one-level, End-dialog-on-back,
 recreate-preserves journal/create-climb drafts, recreate-mid-workout restores the player, tab-switch
-retention, resume-banner resume + discard). UI-test infra gotcha recorded: `recreate()` while
-`TestHooks.freshInMemoryStore` is still true rebuilds an *empty* store mid-test — `launchForRecreate()`
-pins the container after first launch.
+retention, resume-banner resume + discard, resume-lands-on-first-incomplete-set). UI-test infra
+gotcha recorded: `recreate()` while `TestHooks.freshInMemoryStore` is still true rebuilds an *empty*
+store mid-test — `launchForRecreate()` pins the container after first launch.

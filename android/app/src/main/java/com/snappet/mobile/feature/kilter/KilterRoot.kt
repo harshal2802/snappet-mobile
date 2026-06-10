@@ -199,11 +199,11 @@ private fun KilterCatalogScreen(
     }
     var savedOnly by rememberSaveable { mutableStateOf(false) }
     var mineOnly by rememberSaveable { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
-    var sort by remember { mutableStateOf(KilterSort.POPULAR) }
-    var benchmarksOnly by remember { mutableStateOf(false) }
-    var minAscents by remember { mutableStateOf(0) }
-    var minQuality by remember { mutableStateOf(0.0) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var sort by rememberSaveable { mutableStateOf(KilterSort.POPULAR) }
+    var benchmarksOnly by rememberSaveable { mutableStateOf(false) }
+    var minAscents by rememberSaveable { mutableStateOf(0) }
+    var minQuality by rememberSaveable { mutableStateOf(0.0) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var climbs by remember { mutableStateOf<List<KilterListItem>>(emptyList()) }

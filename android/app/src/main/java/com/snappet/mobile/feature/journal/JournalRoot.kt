@@ -61,12 +61,21 @@ fun JournalRoot(onExit: () -> Unit) {
     var editorOpen by rememberSaveable { mutableStateOf(false) }
     var editingEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
     var searchText by rememberSaveable { mutableStateOf("") }
-    val entries by dao.allFlow().collectAsState(initial = emptyList())
+    // Null until Room's first emission, so a restored editor doesn't flash the list while the
+    // flow loads (same gate as workout/budget — issue #86 review).
+    val entriesOrNull by dao.allFlow().collectAsState(initial = null)
+    val entries = entriesOrNull ?: emptyList()
     val editingEntry = entries.firstOrNull { it.id == editingEntryId }
 
     fun closeEditor() {
         editorOpen = false
         editingEntryId = null
+    }
+
+    // The staged row is genuinely gone (deleted elsewhere, flow has emitted) — reset, which also
+    // disarms the BackHandler so the next back press isn't absorbed as a no-op close.
+    if (editorOpen && editingEntryId != null && entriesOrNull != null && editingEntry == null) {
+        closeEditor()
     }
 
     // System back mirrors the editor's top-bar arrow: close, discarding the unsaved draft.
@@ -75,12 +84,15 @@ fun JournalRoot(onExit: () -> Unit) {
 
     // Only compose the editor once the id resolves to a row (or is null = new entry): composing
     // it with a transiently-null entry while the flow loads would re-key the drafts and wipe a
-    // rotation-restored draft. A deleted row self-heals to the list.
+    // rotation-restored draft.
     if (editorOpen && (editingEntryId == null || editingEntry != null)) {
         JournalEditorScreen(
             entry = editingEntry,
             onExit = { closeEditor() },
         )
+    } else if (editorOpen && entriesOrNull == null) {
+        // Restored existing-entry editor, flow not yet emitted: render nothing for the frame or
+        // two it takes Room to resolve, instead of flashing the list under the armed handler.
     } else {
         ModuleScaffold(
             title = "Journal",

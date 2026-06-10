@@ -76,9 +76,18 @@ fun WorkoutPlayerScreen(
     // Deliberately plain remember (issue #86): every completed set is persisted via [persist], so
     // a recreated composition re-derives it from the Room session, not the size-limited Bundle.
     var exercises by remember { mutableStateOf(session.exercises) }
-    var phase by rememberSaveable { mutableStateOf(PlayerPhase.EXERCISE) }
-    var exerciseIndex by rememberSaveable { mutableStateOf(firstPlayable(session.exercises)) }
-    var setIndex by rememberSaveable { mutableStateOf(0) }
+    // Fresh entry (no Bundle — e.g. a banner resume of an interrupted session) starts at the first
+    // incomplete set, never back over already-logged sets: completeSet() replaces the set at the
+    // current position, so a completion-blind start would invite silently overwriting real logs
+    // (issue #86 review). All sets complete → straight to the summary.
+    val startPosition = remember { firstIncomplete(session.exercises) }
+    var phase by rememberSaveable {
+        mutableStateOf(if (startPosition == null) PlayerPhase.DONE else PlayerPhase.EXERCISE)
+    }
+    var exerciseIndex by rememberSaveable {
+        mutableStateOf(startPosition?.first ?: firstPlayable(session.exercises))
+    }
+    var setIndex by rememberSaveable { mutableStateOf(startPosition?.second ?: 0) }
 
     var repsText by rememberSaveable { mutableStateOf("") }
     var weightText by rememberSaveable { mutableStateOf("") }
@@ -91,8 +100,13 @@ fun WorkoutPlayerScreen(
     var confirmingSkip by rememberSaveable { mutableStateOf(false) }
 
     // Indices restore from the Bundle while `exercises` rebuilds from Room — clamp so a restored
-    // position can never point past the rebuilt lists (issue #86).
-    if (exerciseIndex >= exercises.size) exerciseIndex = firstPlayable(exercises)
+    // position can never point past the rebuilt lists (issue #86). The fallback re-derives the
+    // first incomplete position so it also never lands on an already-logged set.
+    if (exerciseIndex >= exercises.size) {
+        val pos = firstIncomplete(exercises)
+        exerciseIndex = pos?.first ?: firstPlayable(exercises)
+        setIndex = pos?.second ?: 0
+    }
     exercises.getOrNull(exerciseIndex)?.let { ex ->
         if (setIndex >= ex.sets.size) setIndex = (ex.sets.size - 1).coerceAtLeast(0)
     }
@@ -397,6 +411,18 @@ private fun Stat(value: String, label: String) {
 
 private fun firstPlayable(exercises: List<WorkoutSessionExercise>): Int =
     exercises.indexOfFirst { !it.skipped }.coerceAtLeast(0)
+
+/** The first non-skipped exercise with an incomplete set, and that set's index — where a resumed
+ *  session continues. Null when every non-skipped set is already logged (issue #86 review). */
+private fun firstIncomplete(exercises: List<WorkoutSessionExercise>): Pair<Int, Int>? {
+    exercises.forEachIndexed { i, ex ->
+        if (!ex.skipped) {
+            val s = ex.sets.indexOfFirst { !it.isCompleted }
+            if (s >= 0) return i to s
+        }
+    }
+    return null
+}
 
 private fun formatWeight(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()

@@ -75,7 +75,10 @@ fun ExpenseRoot(onExit: () -> Unit) {
     val core = container.core
     val scope = rememberCoroutineScope()
 
-    val groups by dao.groupsFlow().collectAsState(initial = emptyList())
+    // Null until Room's first emission, so a restored group detail doesn't flash the (falsely
+    // empty) group list while the flow loads (same gate as workout/budget — issue #86 review).
+    val groupsOrNull by dao.groupsFlow().collectAsState(initial = null)
+    val groups = groupsOrNull ?: emptyList()
     val expenses by dao.expensesFlow().collectAsState(initial = emptyList())
 
     var selectedGroupId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -92,6 +95,10 @@ fun ExpenseRoot(onExit: () -> Unit) {
     val selectedGroup = groups.firstOrNull { it.groupId == selectedGroupId }
     val editingGroup = groups.firstOrNull { it.groupId == editingGroupId }
 
+    // The staged group is genuinely gone (flow has emitted) — clear the stale id, which also
+    // disarms the BackHandler so the next back press isn't absorbed clearing it (issue #86 review).
+    if (selectedGroupId != null && groupsOrNull != null && selectedGroup == null) selectedGroupId = null
+
     // Issue #86: system back pops one level — group detail back to the group list, exactly like
     // the top-bar arrow. Disabled at the module root so back falls through to the app NavHost.
     // The receipt detail registers its own (innermost-wins) handler inside GroupDetail.
@@ -106,6 +113,9 @@ fun ExpenseRoot(onExit: () -> Unit) {
             scope = scope,
             onExit = { selectedGroupId = null },
         )
+    } else if (selectedGroupId != null && groupsOrNull == null) {
+        // Restored group detail, flow not yet emitted: render nothing for the frame or two it
+        // takes Room to resolve (a deleted group self-heals above once the flow emits).
     } else {
         ModuleScaffold(
             title = "Split Expenses",

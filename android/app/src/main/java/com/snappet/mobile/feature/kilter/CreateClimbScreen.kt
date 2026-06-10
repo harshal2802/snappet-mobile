@@ -68,6 +68,17 @@ private val AssignmentsSaver = Saver<Map<Int, KilterAuthorRole>, ArrayList<Strin
     restore = { decodeAssignments(it) },
 )
 
+/** Bundle Saver for a generated climb (issue #86): generation is stochastic sampling, so a result
+ *  dropped on rotation is unrecoverable — frames + predicted grade survive; the preview holds
+ *  re-derive from frames, and holdTokens (consumed nowhere downstream) restore empty. */
+private val GenResultSaver = Saver<KilterGeneratedClimb?, ArrayList<Any>>(
+    save = { result -> if (result == null) arrayListOf() else arrayListOf(result.frames, result.predictedGrade) },
+    restore = { saved ->
+        if (saved.size < 2) null
+        else KilterGeneratedClimb(saved[0] as String, emptyList(), saved[1] as Double)
+    },
+)
+
 /**
  * Author a brand-new climb — Manual (tap holes on [KilterEditableBoard]) or ✨ Generate (the on-device
  * transformer). Either way Save validates against the downloaded dataset + prior creations
@@ -111,14 +122,15 @@ fun CreateClimbScreen(
     var genRuntime by remember { mutableStateOf<KilterGeneratorRuntime?>(null) }
     var genPhase by remember { mutableStateOf(GenPhase.NEEDS_MODEL) }
     var genError by remember { mutableStateOf<String?>(null) }
-    // The generation *request* (size/angle/grade/no-match) is saveable; the model/runtime/result
-    // stay runtime-only — after restoration the LaunchedEffect below re-prepares and prepareModel's
-    // meta clamps keep the restored values valid (issue #86).
+    // The generation *request* (size/angle/grade/no-match) and the *result* (frames + grade — a
+    // stochastic sample, unrecoverable if dropped) are saveable; the model/runtime stay
+    // runtime-only — after restoration the LaunchedEffects below re-prepare and re-derive the
+    // preview holds, and prepareModel's meta clamps keep the restored values valid (issue #86).
     var genSizeId by rememberSaveable { mutableStateOf(0) }
     var genAngle by rememberSaveable { mutableStateOf(40) }
     var genGrade by rememberSaveable { mutableStateOf(17) }
     var genNoMatch by rememberSaveable { mutableStateOf(false) }
-    var genResult by remember { mutableStateOf<KilterGeneratedClimb?>(null) }
+    var genResult by rememberSaveable(stateSaver = GenResultSaver) { mutableStateOf<KilterGeneratedClimb?>(null) }
     var genHolds by remember { mutableStateOf<List<KilterHold>>(emptyList()) }
     var genGeometry by remember { mutableStateOf(KilterBoardGeometry.EMPTY) }
 
@@ -192,7 +204,8 @@ fun CreateClimbScreen(
                 if (model.meta.sizes.none { it.id == genSizeId }) genSizeId = if (model.meta.sizes.any { it.id == productSizeId }) productSizeId else model.meta.defaultSize
                 if (!model.meta.angles.contains(genAngle)) genAngle = if (model.meta.angles.contains(angle)) angle else (model.meta.angles.firstOrNull() ?: 40)
                 if (!model.meta.grades.contains(genGrade)) genGrade = model.meta.grades[model.meta.grades.size / 2]
-                genPhase = GenPhase.IDLE
+                // A restored (or tab-switched-back) result lands on READY, not on the pickers.
+                genPhase = if (genResult != null) GenPhase.READY else GenPhase.IDLE
             } catch (e: Exception) {
                 genError = e.message; genPhase = GenPhase.NEEDS_MODEL
             }
@@ -222,6 +235,21 @@ fun CreateClimbScreen(
     // A restored composition can land directly on the Generate tab (mode is saveable, the runtime
     // is not) — re-prepare so it doesn't offer to re-download an already-installed model (issue #86).
     LaunchedEffect(Unit) { if (mode == CreateMode.GENERATE) prepareModel(false) }
+
+    // A restored result has frames + grade but no preview: re-derive the holds exactly the way
+    // generate() does (issue #86 review). No-op while a live generate() owns the state.
+    LaunchedEffect(genResult, genSizeId) {
+        val result = genResult ?: return@LaunchedEffect
+        if (genHolds.isEmpty()) {
+            val layout = layoutForSize(catalog, genSizeId, layoutId)
+            val holds = withContext(Dispatchers.IO) {
+                catalog.holds(KilterClimb("preview", "", "", layout, 0, 0, 0, 0, result.frames, "", genNoMatch), genSizeId) to
+                    catalog.boardGeometry(layout, genSizeId)
+            }
+            genHolds = holds.first
+            genGeometry = holds.second
+        }
+    }
 
     ModuleScaffold(title = "Create climb", onExit = onExit) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
