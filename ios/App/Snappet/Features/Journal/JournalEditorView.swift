@@ -13,6 +13,8 @@ struct JournalEditorView: View {
 
     @FocusState private var bodyFocused: Bool
     @State private var tagInput: String = ""
+    /// Tracks whether the user tapped Done, so onDisappear can skip cleanup on the explicit-save path.
+    @State private var savedExplicitly = false
 
     var body: some View {
         Form {
@@ -54,6 +56,9 @@ struct JournalEditorView: View {
         .onAppear {
             if isNew { bodyFocused = true }
         }
+        .onDisappear {
+            cleanupIfAbandoned()
+        }
     }
 
     /// Fold the current `tagInput` (possibly comma-separated) into `entry.tags`, normalized.
@@ -68,7 +73,19 @@ struct JournalEditorView: View {
         entry.tags.removeAll { $0 == tag }
     }
 
+    /// Deletes the entry if the user back-swiped out of a brand-new, still-empty entry.
+    /// Guards on `savedExplicitly` so this is a no-op when dismissal came from Done.
+    private func cleanupIfAbandoned() {
+        guard isNew && !savedExplicitly else { return }
+        let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty else { return }
+        modelContext.delete(entry)
+        try? modelContext.save()
+    }
+
     private func save() {
+        savedExplicitly = true
         // Fold any uncommitted text in the tag field before persisting.
         commitTags()
 

@@ -19,6 +19,7 @@ struct BudgetRootView: View {
     @State private var editingCategory: BudgetCategory?
     /// The month the whole screen is scoped to. Defaults to the current month.
     @State private var month = MonthScope()
+    @State private var pendingDeleteOffsets: IndexSet?
 
     var body: some View {
         Group {
@@ -78,6 +79,19 @@ struct BudgetRootView: View {
         }
         .navigationDestination(for: BudgetTrendsRoute.self) { _ in
             BudgetTrendsView(transactions: transactions)
+        }
+        .confirmationDialog(
+            "Delete category?",
+            isPresented: deleteCategoryDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteOffsets { deleteCategories(at: offsets) }
+                pendingDeleteOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteOffsets = nil }
+        } message: {
+            Text(deleteCategoryMessage)
         }
     }
 
@@ -142,7 +156,7 @@ struct BudgetRootView: View {
                         .tint(.blue)
                     }
                 }
-                .onDelete(perform: deleteCategories)
+                .onDelete { pendingDeleteOffsets = $0 }
             }
         }
     }
@@ -266,6 +280,28 @@ struct BudgetRootView: View {
     private func deleteTransaction(_ transaction: BudgetTransaction) {
         context.delete(transaction)
         try? context.save()
+    }
+
+    private var deleteCategoryDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteOffsets != nil },
+            set: { if !$0 { pendingDeleteOffsets = nil } }
+        )
+    }
+
+    private var pendingDeleteTransactionCount: Int {
+        guard let offsets = pendingDeleteOffsets else { return 0 }
+        return offsets.reduce(0) { total, index in
+            guard index < categories.count else { return total }
+            return total + transactions.filter { $0.categoryID == categories[index].id }.count
+        }
+    }
+
+    private var deleteCategoryMessage: String {
+        let count = pendingDeleteTransactionCount
+        if count == 0 { return "This category has no transactions." }
+        let noun = count == 1 ? "transaction" : "transactions"
+        return "This removes \(count) \(noun) across all months."
     }
 
     private func deleteCategories(at offsets: IndexSet) {

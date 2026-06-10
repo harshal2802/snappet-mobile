@@ -8,8 +8,10 @@ struct ExpenseRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SuiteRouter.self) private var router
     @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var groups: [ExpenseGroup]
+    @Query private var allExpenseRecords: [ExpenseRecord]
 
     @State private var showingNewGroup = false
+    @State private var pendingDeleteGroup: ExpenseGroup?
 
     var body: some View {
         Group {
@@ -37,6 +39,21 @@ struct ExpenseRootView: View {
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet()
         }
+        .confirmationDialog(
+            "Delete \"\(pendingDeleteGroup?.name ?? "")\"?",
+            isPresented: deleteGroupDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let group = pendingDeleteGroup { delete(group) }
+                pendingDeleteGroup = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteGroup = nil }
+        } message: {
+            Text(pendingGroupRecordCount == 0
+                ? "This group is empty."
+                : "This permanently removes the group and all \(pendingGroupRecordCount) \(pendingGroupRecordCount == 1 ? "record" : "records") inside it.")
+        }
     }
 
     // A ScrollView + VStack of Buttons (not a List) — the suite's proven XCUITest-tappable
@@ -55,7 +72,7 @@ struct ExpenseRootView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("expenseGroupRow")
                     .contextMenu {
-                        Button("Delete", role: .destructive) { delete(group) }
+                        Button("Delete", role: .destructive) { pendingDeleteGroup = group }
                     }
                 }
             }
@@ -63,7 +80,22 @@ struct ExpenseRootView: View {
         }
     }
 
+    private var deleteGroupDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteGroup != nil },
+            set: { if !$0 { pendingDeleteGroup = nil } }
+        )
+    }
+
+    private var pendingGroupRecordCount: Int {
+        guard let group = pendingDeleteGroup else { return 0 }
+        return allExpenseRecords.filter { $0.groupID == group.id }.count
+    }
+
     private func delete(_ group: ExpenseGroup) {
+        for record in allExpenseRecords where record.groupID == group.id {
+            modelContext.delete(record)
+        }
         modelContext.delete(group)
         try? modelContext.save()
     }

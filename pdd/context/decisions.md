@@ -4,6 +4,18 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Journal blank-entry cleanup via onDisappear guard, not defer-insert
+
+**Decision**: `JournalEditorView` still inserts the `JournalEntry` into the model context *before* pushing the editor (in `createEntry()`). The blank-row guard is extended to the back-swipe path via an `onDisappear` check rather than deferring insertion until first content.
+
+**Why**: The defer-insert approach (build in `@State`, insert on save) would require removing `@Bindable` from the entry parameter — `@Bindable` requires an already-inserted `PersistentModel`. That would force a full restructure of `JournalEditorView` (separate draft struct, manual sync on save), touching more code than the fix justifies. The `onDisappear` guard is three lines and mirrors the existing `save()` empty-entry guard already present at line 79.
+
+**Guard design**: A `@State private var savedExplicitly = false` flag is set at the top of `save()`. `onDisappear` only runs the delete if `isNew && !savedExplicitly` and all three fields (title, body, tags) are empty. This ensures: (a) saving non-empty content via back-swipe keeps the entry, (b) tapping Done skips the guard entirely, (c) the existing `save()` empty-guard remains in place as a belt-and-suspenders for the Done path.
+
+**Rules out**: Defer-insert with a draft struct; UndoManager (adds complexity, no existing UndoManager configured anywhere); a navigation `.onChange` hook (less predictable than `onDisappear` across iOS versions).
+
+(`pdd/prompts/features/34-ios-destructive-delete-safety.md`)
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

@@ -12,6 +12,7 @@ struct JournalRootView: View {
 
     @State private var newEntry: JournalEntry?
     @State private var searchText: String = ""
+    @State private var pendingDeleteEntry: JournalEntry?
 
     /// Entries matching the current search query (title, body, or any tag — case-insensitive).
     /// Kept out of `body` so the view stays thin.
@@ -54,6 +55,19 @@ struct JournalRootView: View {
         .navigationDestination(item: $newEntry) { entry in
             JournalEditorView(entry: entry, isNew: true)
         }
+        .confirmationDialog(
+            "Delete this entry?",
+            isPresented: deleteEntryDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let entry = pendingDeleteEntry { deleteEntry(entry) }
+                pendingDeleteEntry = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteEntry = nil }
+        } message: {
+            Text("This entry will be permanently deleted.")
+        }
     }
 
     private var entryList: some View {
@@ -64,9 +78,23 @@ struct JournalRootView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("journalRow")
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) {
+                        pendingDeleteEntry = entry
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .accessibilityIdentifier("journal.deleteEntry")
+                }
             }
-            .onDelete(perform: deleteEntries)
         }
+    }
+
+    private var deleteEntryDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteEntry != nil },
+            set: { if !$0 { pendingDeleteEntry = nil } }
+        )
     }
 
     private func createEntry() {
@@ -75,12 +103,8 @@ struct JournalRootView: View {
         newEntry = entry
     }
 
-    private func deleteEntries(at offsets: IndexSet) {
-        // Map list offsets through the filtered view so the right entries are removed.
-        let visible = filteredEntries
-        for index in offsets {
-            modelContext.delete(visible[index])
-        }
+    private func deleteEntry(_ entry: JournalEntry) {
+        modelContext.delete(entry)
         try? modelContext.save()
     }
 }
