@@ -20,6 +20,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -320,10 +323,10 @@ private fun ManualSection(
     KilterEditableBoard(geometry, placeable, assignments, onCycle, Modifier.fillMaxWidth().testTag("kilter.create.board"))
     RoleCounts(assignments.values.toList())
     if (validation != null) {
-        Text(validation.message, color = Color(0xFFD97706), style = MaterialTheme.typography.bodySmall,
+        Text(validation.message, color = com.snappet.mobile.ui.theme.pulseWarning(), style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("kilter.create.invalid"))
     } else {
-        Text("Ready to save · ${assignments.size} holds", color = Color(0xFF30A46C),
+        Text("Ready to save · ${assignments.size} holds", color = com.snappet.mobile.ui.theme.pulseSuccess(),
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("kilter.create.valid"))
     }
     if (board.isConnected && holds.isNotEmpty()) {
@@ -351,7 +354,7 @@ private fun GenerateSection(
 ) {
     when (phase) {
         GenPhase.NEEDS_MODEL -> {
-            error?.let { Text(it, color = Color(0xFFD97706), style = MaterialTheme.typography.bodySmall) }
+            error?.let { Text(it, color = com.snappet.mobile.ui.theme.pulseWarning(), style = MaterialTheme.typography.bodySmall) }
             Button(onClick = onDownload, modifier = Modifier.fillMaxWidth().testTag("kilter.generate.download")) {
                 Text("Download generator model (~9 MB)")
             }
@@ -410,7 +413,14 @@ private fun RoleCounts(roles: List<KilterAuthorRole>) {
 @Composable
 private fun Tally(label: String, n: Int, hex: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("$n", color = hexColor(hex), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        // The LED hex codes the ROLE as a swatch dot (mirrors the editor's ring colors);
+        // the numeral itself reads in onSurface — raw cyan/green digits were ~1.3–1.8:1
+        // on the light background (issue #96 review).
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.size(8.dp).background(hexColor(hex), CircleShape))
+            Text("$n", color = MaterialTheme.colorScheme.onSurface,
+                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        }
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

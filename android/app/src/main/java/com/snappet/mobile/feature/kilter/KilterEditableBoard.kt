@@ -30,6 +30,13 @@ fun KilterEditableBoard(
     onCycle: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Resolved here (the Canvas draw scope can't read the theme): mode-aware board paper
+    // instead of a fixed light rectangle (issue #96).
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val paper = if (dark) com.snappet.mobile.ui.theme.PulseColors.BoardPaperDark
+                else com.snappet.mobile.ui.theme.PulseColors.BoardPaperLight
+    val paperGrid = if (dark) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.14f)
+                    else androidx.compose.ui.graphics.Color.Gray.copy(alpha = 0.28f)
     val aspect = if (geometry.aspect > 0) geometry.aspect.toFloat() else 1f
     // The tap detector is keyed only on `placeable` (so it isn't torn down every time a hold is placed),
     // so capture the LATEST onCycle via rememberUpdatedState — otherwise a stale callback (built from an
@@ -62,16 +69,16 @@ fun KilterEditableBoard(
         val r = holdD / 2f
         fun pt(x: Double, y: Double) = Offset((r + x * (w - holdD)).toFloat(), (r + y * (h - holdD)).toFloat())
 
-        drawRect(Color(0xFFF1F0ED))
+        drawRect(paper)
 
         // 1) faint full grid
         val gridR = holdD * 0.16f
-        for (p in geometry.grid) drawCircle(Color.Gray.copy(alpha = 0.28f), gridR, pt(p.x, p.y))
+        for (p in geometry.grid) drawCircle(paperGrid, gridR, pt(p.x, p.y))
 
         // 2) hint ring at every unassigned placeable hole, so targets are discoverable
         val hintR = holdD * 0.25f
         for (hold in placeable) if (assignments[hold.placementId] == null) {
-            drawCircle(Color.Gray.copy(alpha = 0.22f), hintR, pt(hold.x, hold.y), style = Stroke(width = 1f))
+            drawCircle(paperGrid.copy(alpha = paperGrid.alpha * 0.8f), hintR, pt(hold.x, hold.y), style = Stroke(width = 1f))
         }
 
         // 3) placed holds, role-colored + role-shaped

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pulse Coral, the brand color (mirrors PulseColors.PrimaryLight). -->
+    <color name="snappet_brand">#FF5A4D</color>
+    <!-- Window backgrounds (mirror PulseColors.Background*) so the cold-start frame
+         matches what Compose paints next - no white flash in dark mode (issue #96). -->
+    <color name="snappet_background_light">#FBFAF8</color>
+    <color name="snappet_background_dark">#121214</color>
+</resources>

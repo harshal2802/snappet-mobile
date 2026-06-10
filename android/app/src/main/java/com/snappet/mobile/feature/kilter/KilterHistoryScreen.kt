@@ -117,7 +117,7 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
                             Box(Modifier.weight(1f))
                             val ble = session.source == "ble"
                             Box(
-                                Modifier.background(if (ble) Color(0x3330A46C) else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                                Modifier.background(if (ble) com.snappet.mobile.ui.theme.pulseSuccess().copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                                     .padding(horizontal = 8.dp, vertical = 2.dp)
                             ) { Text(if (ble) "BLE" else "Manual", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold) }
                         }
@@ -153,9 +153,9 @@ private fun SectionHeader(title: String) {
 private fun AscentRow(entry: KilterLogEntry) {
     val status = KilterAscentStatus.from(entry.status)
     val color = when (status) {
-        KilterAscentStatus.FLASH, KilterAscentStatus.SENT -> Color(0xFF30A46C)
-        KilterAscentStatus.PROJECT -> Color(0xFFF76808)
-        KilterAscentStatus.ATTEMPT -> Color(0xFF888888)
+        KilterAscentStatus.FLASH, KilterAscentStatus.SENT -> com.snappet.mobile.ui.theme.pulseSuccess()
+        KilterAscentStatus.PROJECT -> com.snappet.mobile.ui.theme.pulseWarning()
+        KilterAscentStatus.ATTEMPT -> com.snappet.mobile.ui.theme.pulseNeutral()
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("kilter.historyRow"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -349,13 +349,14 @@ private fun KilterCatalogScreen(
 
             sessions.currentSessionId?.let { sid ->
                 val count = logs.count { it.sessionId == sid }
+                val live = com.snappet.mobile.ui.theme.pulseSuccess()
                 Row(
-                    Modifier.fillMaxWidth().background(Color(0xFF30A46C).copy(alpha = 0.12f))
+                    Modifier.fillMaxWidth().background(live.copy(alpha = 0.12f))
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = Color(0xFF30A46C), modifier = Modifier.size(10.dp))
+                    Icon(Icons.Filled.FiberManualRecord, contentDescription = null, tint = live, modifier = Modifier.size(10.dp))
                     Text("Session · $count climb${if (count == 1) "" else "s"}",
                         style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
@@ -517,7 +518,7 @@ private fun KilterClimbRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (featured) {
-            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color(0xFFD97706),
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = com.snappet.mobile.ui.theme.pulseWarning(),
                 modifier = Modifier.padding(end = 8.dp).size(18.dp))
         }
         Column(Modifier.weight(1f)) {

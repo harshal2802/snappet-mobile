@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Android branding + dark mode: vector Pulse mark, splash handoff, mode-aware board paper (issue #96)
+
+**Decision** (prompt 39): the launcher icon is a **hand-authored vector** (white ECG "Pulse mark" on
+brand coral, adaptive + monochrome) — no raster assets to generate or license; the same drawable is
+the splash icon (`androidx.core:core-splashscreen`, `Theme.Snappet.Starting` → `Theme.Snappet`).
+The white-flash fix is at the **window level** (`windowBackground` matching the Compose Pulse
+background, with a `values-night` variant) — Compose theming alone can't fix a cold-start frame.
+The Kilter board keeps its schematic look but reads a **mode-aware "board paper"** token
+(`PulseColors.BoardPaper*`), resolved in the composable because a Canvas draw scope can't read the
+theme; the lit (BLE) render stays black in both modes by design. Status text goes through
+**`pulseSuccess()`/`pulseWarning()`** (≥4.5:1 per mode) — the old hardcoded `#1E7E48`-class hexes
+were ~2.6:1 on dark surfaces. Filled send/project button colors are left for #93 (log-button
+clarity) — changing fills changes meaning, not just legibility.
+
+**Adversarial-review addenda (same day):** the 4.5:1 bar is computed against the text's OWN
+alpha-tinted chip wash (the harder case — a token that passes on plain paper can fail on its wash):
+SuccessLight/WarningLight darkened to `#136134`/`#854C00`, all placements verified ≥4.5:1 up to a
+0.22 wash in both modes. A **`pulseNeutral()`** token covers the Attempt status (the old `#888888`
+failed both modes on its chip); the BLE session chip rides `pulseSuccess()`; the create-screen role
+tallies keep the LED hex as a swatch DOT while the numeral reads in `onSurface` (raw cyan digits
+were ~1.3:1 on light). Accepted residuals: the tokens read `isSystemInDarkTheme()` directly (a
+`SnappetTheme(darkTheme:)` override or dynamicColor would desync them — no such call site exists;
+revisit with the #97 token sweep), the icon's pulse endpoints sit 0.5dp inside the adaptive safe
+zone (don't widen the stroke), and #93 must include the filled log-button contrast (white on
+`#30A46C` ≈ 3.2:1), not just layout clarity.
+
 ## [2026-06-10] Android: schema changes are migrations, never wipes; backup is schema-agnostic SQLite-level JSON (issue #84)
 
 **Decision** (prompt 38) — REVERSES the documented norm that DB bumps "ride the existing

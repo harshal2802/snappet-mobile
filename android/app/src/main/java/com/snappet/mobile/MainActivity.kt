@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.runtime.CompositionLocalProvider
 import com.snappet.mobile.core.AppContainer
 import com.snappet.mobile.core.TestHooks
@@ -16,6 +17,9 @@ import com.snappet.mobile.ui.theme.SnappetTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The AndroidX splash (Theme.Snappet.Starting) hands off here; must run before
+        // super.onCreate on the launcher activity (issue #96).
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
