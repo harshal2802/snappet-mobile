@@ -51,11 +51,32 @@ enum SetMeasure {
         set.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:))?.isSend ?? false
     }
 
+    // MARK: - Input parsing (shared by the live player and the summary's edit mode, issue #73)
+
+    /// Reps text → `Int`, whitespace-trimmed; empty/non-numeric → `nil` (the player's exact rule).
+    static func parseReps(_ text: String) -> Int? {
+        Int(text.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Weight text → `Double`, accepting a decimal comma ("62,5"); empty/non-numeric → `nil`.
+    /// Bounded: non-finite values and magnitudes ≥ 100 000 are rejected — no real lift, and they
+    /// poison formatting and every downstream stat.
+    static func parseWeight(_ text: String) -> Double? {
+        guard let value = Double(text.replacingOccurrences(of: ",", with: ".")
+                                     .trimmingCharacters(in: .whitespaces)),
+              value.isFinite, abs(value) < 100_000 else { return nil }
+        return value
+    }
+
     // MARK: - Formatting
 
-    /// Weight without a trailing ".0" (60.0 → "60", 62.5 → "62.5").
+    /// Weight without a trailing ".0" (60.0 → "60", 62.5 → "62.5"). `Int(exactly:)`, not `Int(_:)`
+    /// — a value past `Int.max` (corrupt/legacy data) must fall back to `String(value)`, not trap.
     static func formatWeight(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(value)
+        if value == value.rounded(), let whole = Int(exactly: value.rounded()) {
+            return String(whole)
+        }
+        return String(value)
     }
 
     /// Seconds → "M:SS" (or "H:MM:SS" past an hour).

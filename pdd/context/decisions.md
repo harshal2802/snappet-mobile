@@ -3377,3 +3377,69 @@ recreate-preserves journal/create-climb drafts, recreate-mid-workout restores th
 retention, resume-banner resume + discard, resume-lands-on-first-incomplete-set). UI-test infra
 gotcha recorded: `recreate()` while `TestHooks.freshInMemoryStore` is still true rebuilds an *empty*
 store mid-test — `launchForRecreate()` pins the container after first launch.
+
+## [2026-06-10] iOS — close the set-logging loop: cross-session prefill, edit completed sets, history search (#73)
+
+**Decision shape** (prompt 45): three pure cores at thin edges, no schema change, no new screens.
+
+- **Prefill source = the deciding session's *last* completed set, not its first.** Issue #73 says
+  "the most recent completed SetLog" — that's what the user finished on (their working weight after
+  in-session adjustments), so set 1 today starts there. The hint summarizes *all* of that session's
+  completed sets ("Last time: 3×8 @ 60 kg"; mixed reps → "8/8/6"; mixed weights → a "55–60 kg"
+  range; bodyweight omits weight). `LastSetLookup` is pure (sessions in, prefill+hint out), ignores
+  active sessions and non-reps/weight kinds, aggregates duplicate `exerciseId` occurrences (the
+  `WorkoutMath` freeform rule), and sorts by `completedAt` itself rather than trusting caller order.
+  Precedence in `prefillInputs()`: current-session previous set → cross-session → routine target
+  (the issue's "current-session sets still win").
+- **Mixed-unit hint converts via kg rounded to one decimal** — otherwise 132 lb re-expressed in kg
+  prints float noise ("59.874144…"). Same-unit weights (the overwhelming case) pass through raw.
+- **Edit mode mutates ONLY `actualReps`/`actualWeight`.** `SessionSetEditing.apply` never adds,
+  removes, or reorders sets and never touches `completedAt`/`weightUnit`/`kindRaw` — per-set media
+  assignment and HR-effort lookups key on `(exercise UUID, set index)`, so a structural edit would
+  silently re-tag clips/efforts to the wrong set. Duration/climb sets and never-completed sets stay
+  read-only (the issue scopes editing to reps/weight). Input parsing is the **shared**
+  `SetMeasure.parseReps/parseWeight` (extracted from the player's inline parsing), so the editor's
+  sanity rules can't drift from the live player's.
+- **Edit-mode plumbing via the drafts dictionary, not a mode flag.** The parent (`SessionDetailView`)
+  owns `[Key: Draft]`; a tile renders edit fields exactly when a draft exists for its key — drafts
+  are non-empty only between Edit and Save/Cancel, so no separate `editing` boolean threads through
+  `SessionMediaSection`. Save rewrites `session.exercises` wholesale (value-array on the `@Model`)
+  + `context.save()`; stats/charts recompute via `@Observable`/`@Query` observation. The SwiftData
+  round-trip is locked by a unit test (in-memory container **held as a test property** — a
+  `ModelContext` doesn't retain its container; letting it dealloc traps EXC_BREAKPOINT), proving
+  `WorkoutMath` PR/volume change from the corrected *stored* values. Live re-render of an already
+  pushed Dashboard/Progress screen is asserted by design (observation), not by an automated UI test.
+- **History search/chips are the pure `HistorySearch`** (chip = exact `routineName`, query =
+  case-insensitive substring, chips ordered most-recently-trained). Chips render in a top
+  `safeAreaInset` only when history spans >1 routine name. The History row keeps its value-based
+  `NavigationLink` (the documented Button-never-fires quirk) — untouched.
+- **Accepted residuals**: the guided player still seeds `unit` from the *previous in-session set*
+  before the cross-session unit (consistent with the old behavior); `FreeformPlayerView`'s
+  LogSetSheet keeps its own inline parsing (same rules; consolidating it is incidental churn);
+  no "sort" control on History — search + chips cover the issue's acceptance criteria.
+
+**Pre-merge adversarial review round** (6 confirmed, all fixed): (1) sets completed *before* an
+exercise was skipped count in `WorkoutMath` volume/PRs but were invisible and uneditable — rule:
+skipped sets are **visible + editable + counted**; the detail view renders the completed tiles
+under the "Skipped" caption and `drafts(for:)` drops its `!skipped` guard. `LastSetLookup` keeps
+counting them too — consistent with `WorkoutMath`, and now fixable when wrong. (2) Edit mode was a
+unit trap: the tile shows the preferred-unit conversion but the field showed the raw stored
+value+unit, so "confirming" a kg-stored set while on lb relabeled kilos as pounds. Rule:
+**WYSIWYG** — drafts seed the weight converted to the preferred unit (the hint's one-decimal
+rounding) and Save writes the parsed weight **with** `weightUnit = preferred`; `apply` re-derives
+the seeded drafts and skips untouched ones wholesale, so conversion rounding can never drift a set
+the user didn't edit (bit-identical round trip locked by test). (3) Deleting the filtered routine's
+last session hid the chip row and left History stuck on empty — `HistorySearch.effectiveRoutine
+(filter:names:)` makes a stale filter inert, and the chip row stays visible while an effective
+filter is on so it can always be toggled off. (4) The player's inline `lastTime(ex)` hint re-scanned
+all history on every body render (~1 Hz under live HR) — now cached in `@State` by
+`prefillInputs()`/`prefillEditing()` (one scan per set transition). (5) `formatWeight`'s
+`Int(Double)` trapped past `Int.max` (a duplicate copy lived in the player) — `Int(exactly:)` with
+a `String(value)` fallback, duplicate deleted; `parseWeight` rejects non-finite and ≥100 000 inputs.
+(6) The compact "N×R" hint miscounted when reps-bearing and weight-only sets mixed ("2×8" for three
+sets) — compact only when *every* set carries equal reps, else a per-set list with "–" placeholders
+("8/–/8"); all-weight-only still omits reps.
+
+**Verified**: `xcodegen generate` clean. The simulator suite (new `LastSetLookupTests`,
+`SessionSetEditingTests`, `HistorySearchTests`, extended `SetMeasureTests` + the existing
+walkthroughs) is run by the orchestrator — not from this worktree.
