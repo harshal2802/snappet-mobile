@@ -4,6 +4,39 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Data backup / export / restore — DTO layer + additive import
+
+**Decision**: Backup format is **versioned JSON** (`SnappetBackup { schemaVersion: 1, exportedAt, ...}`),
+not a SQLite copy, not a CBOR blob. The payload is built from **plain `Codable` DTO structs** that
+mirror model fields 1-for-1. The pure `SnappetBackupEngine` only sees DTOs (no SwiftData import);
+`SnappetDataService` is the only layer that imports SwiftData and bridges model ↔ DTO. Restore is
+**additive** (existing rows kept; incoming rows inserted; UUID-keyed models skip duplicates).
+(`pdd/prompts/features/34-ios-data-backup-export-restore.md`.)
+
+**Why**: A SQLite copy is smaller but brittle (schema version changes, WAL files, iCloud file
+locks). A DTO layer keeps the pure engine testable without a device, lets the format evolve
+independently of the schema, and satisfies "serialization/restore logic is pure and unit-tested
+without a simulator" (acceptance criterion). JSON is human-readable, debuggable, and compatible
+with third-party tooling (the workout history export is the same shape).
+
+**On PHAsset references**: `SessionMedia` and `ClipEdit` store PHAsset `localIdentifier`s.
+These are device-specific — they point at items in the local Photos library and won't resolve
+on a different device. The decision: back up the metadata (localIdentifier, offset, duration,
+edit instructions) so the data is preserved and assignments/edits survive a restore onto the same
+device; document that the asset bytes travel with the device backup, not this file. A future
+iCloud Photos-aware export is out of scope (on-device-only posture).
+
+**Additive restore**: wipe-and-replace was rejected because it would silently destroy new data
+entered after the backup was made. Additive import is safer and matches the "data never leaves
+the device except via user-initiated action" posture (no destructive side effect without consent).
+
+**Corrupt-store banner**: `AppModel.storeFailedToOpen: Bool` is the shared signal — stamped in
+`SnappetApp.init()` when the in-memory fallback fires, read by `RootShell` to show a persistent
+`CorruptStoreBanner`. Chosen over an `EnvironmentKey` because `AppModel` is already the app-wide
+observable state; adding one bool is cheaper than a new environment plumbing channel.
+
+**Rules out**: ZIP/binary bundle, cloud sync, automatic periodic backup, wipe-and-replace restore.
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

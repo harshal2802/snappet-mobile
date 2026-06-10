@@ -15,6 +15,10 @@ final class AppModel {
     /// Current Photo Library access. `.limited` means we can't auto-scan the library
     /// and must fall back to a manual picker (#60 §C).
     var photoAccess: PHAuthorizationStatus = .notDetermined
+    /// `true` when the on-disk SwiftData store failed to open and the app is running with
+    /// an in-memory fallback. Stamped by `SnappetApp.init()` before the body renders.
+    /// Drives the `CorruptStoreBanner` in `RootShell`.
+    var storeFailedToOpen: Bool = false
     var photosLimited: Bool { photoAccess == .limited }
 
     let health = HealthKitService()

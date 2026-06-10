@@ -38,16 +38,21 @@ struct SnappetApp: App {
             // simulator) starts clean — see clearRememberedBandSeedIfStale.
             StudioDemoSeed.clearRememberedBandSeedIfStale()
         }
-        _appModel = State(wrappedValue: AppModel())
+        let appModelInstance = AppModel()
         if freshStore {
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         } else if let c = try? ModelContainer(for: schema) {
             container = c
         } else {
+            // The on-disk store couldn't be opened (corrupt / unreadable). Fall back to
+            // an in-memory container so the app doesn't crash, and raise a visible alert
+            // via CorruptStoreBanner so the user knows their session is ephemeral.
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+            appModelInstance.storeFailedToOpen = true
         }
+        _appModel = State(wrappedValue: appModelInstance)
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production
         // impact. Seeds into the fresh in-memory store before any UI appears.
         if seedStudioDemo {

@@ -2,13 +2,22 @@ import SwiftUI
 import SwiftData
 
 /// Builds `SnappetCore` from the shared model context, then shows the suite shell.
+/// When the SwiftData store failed to open (`AppModel.storeFailedToOpen`), a persistent
+/// `CorruptStoreBanner` is pinned above the tab bar so the user can act before losing data.
 struct RootShell: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     @State private var core: SnappetCore?
 
     var body: some View {
         if let core {
-            content.environment(core)
+            ZStack(alignment: .top) {
+                content.environment(core)
+                if app.storeFailedToOpen {
+                    CorruptStoreBanner()
+                        .zIndex(999)
+                }
+            }
         } else {
             LoadingView()
                 .task { core = SnappetCore(context: context) }

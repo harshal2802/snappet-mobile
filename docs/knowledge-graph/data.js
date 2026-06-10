@@ -129,7 +129,17 @@ const nodes = [
   { id: "wt-history", label: "History section", type: "section", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/HistorySectionView.swift", desc: "Completed sessions; tap to push session detail.", tags: ["section"], shot: "../screenshots/workout-history.png" },
   { id: "wt-settings", label: "Settings section", type: "section", group: "workout-log", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutSettingsView.swift", desc: "Preferred weight unit + custom-exercise management, a Live-metrics section that presents the heart-rate source picker (Apple Watch / BLE band), and a Heart-rate profile row that pushes the UserHRProfileView editor.", tags: ["section","settings"], shot: "../screenshots/workout-settings.png" },
+    file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutSettingsView.swift", desc: "Preferred weight unit + custom-exercise management, a Live-metrics section that presents the heart-rate source picker (Apple Watch / BLE band), a Heart-rate profile row that pushes the UserHRProfileView editor, and a 'Back up & export data' link to DataManagementView (issue #68).", tags: ["section","settings"], shot: "../screenshots/workout-settings.png" },
+
+  // ═════════════════ DATA SAFETY (issue #68) ═════════════════
+  { id: "data-management", label: "DataManagementView", type: "screen", group: "shell", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Features/Shell/DataManagementView.swift", desc: "Suite-level data management: Back up (all 18 @Model types → versioned JSON via .fileExporter), Restore from backup (.fileImporter, additive), and per-module exports (Journal → Markdown, Budget/Expense → CSV, Workout history → JSON). User-initiated only; nothing transmitted.", tags: ["backup","restore","export","data-safety","fileExporter","fileImporter"] },
+  { id: "corrupt-store-banner", label: "CorruptStoreBanner", type: "screen", group: "shell", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Features/Shell/CorruptStoreBanner.swift", desc: "Persistent non-dismissable banner shown at the top of RootShell when AppModel.storeFailedToOpen is true (the SwiftData store couldn't be opened and the app is running with an in-memory fallback). Offers 'Restore backup…' CTA and makes clear that unsaved data won't survive a relaunch.", tags: ["alert","corrupt-store","data-safety"] },
+  { id: "backup-engine", label: "SnappetBackupEngine", type: "engine", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Core/SnappetBackupEngine.swift", desc: "PURE serializer + text-format converters: serialize/deserialize SnappetBackup (versioned JSON), journalMarkdown, budgetCSV, expenseCSV, workoutHistoryJSON. No SwiftData / platform imports — all inputs are DTO value types so every function is unit-tested in SnappetBackupEngineTests without a device.", tags: ["pure","tested","backup","serialization"] },
+  { id: "data-service", label: "SnappetDataService", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Services/SnappetDataService.swift", desc: "Platform bridge: fetches all @Model objects from ModelContext, maps them to/from DTO types (via SnappetBackupPayload extensions), and delegates encoding/decoding to SnappetBackupEngine. The only layer that imports SwiftData for the backup feature.", tags: ["service","swiftdata","backup"] },
   { id: "wt-hr-profile", label: "UserHRProfileView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/UserHRProfileView.swift", desc: "Editor for the app-global UserHRProfile (fitness-band Phase 2): age, sex, weight, resting HR, optional measured max HR — all optional (blank ⇒ bpm-only defaults). A 'Use Health data' button prefills blank fields from HealthKit without clobbering typed values; the draft writes back to AppModel.userProfile live. Personalizes zones/%HRR/effort/calories across BOTH apps.", tags: ["screen","settings","hr","profile"] },
   { id: "wt-exercise-detail", label: "ExerciseDetailView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
@@ -882,6 +892,15 @@ const links = [
   { source: "kilter-climb-panel", target: "kilter-catalog", type: "uses", label: "name / grade / board" },
   { source: "kilter-climb-panel", target: "kilter-models", type: "persists", label: "angle / result / tries / note" },
   { source: "kilter-climb-panel", target: "model-sessionmedia", type: "persists", label: "move clip → climb" },
+
+  // Data management (issue #68)
+  { source: "corrupt-store-banner", target: "data-management", type: "present", label: "Restore backup…" },
+  { source: "rootshell", target: "corrupt-store-banner", type: "contains", label: "when storeFailedToOpen" },
+  { source: "data-management", target: "backup-engine", type: "uses", label: "serialize / deserialize" },
+  { source: "data-management", target: "data-service", type: "uses", label: "fetch + write" },
+  { source: "data-service", target: "backup-engine", type: "uses", label: "encode / format" },
+  { source: "data-service", target: "app", type: "uses", label: "ModelContext" },
+  { source: "wt-settings", target: "data-management", type: "navigate", label: "Back up & export data" },
 ];
 
 // Expose for the renderer (also works as an ES module if imported).
