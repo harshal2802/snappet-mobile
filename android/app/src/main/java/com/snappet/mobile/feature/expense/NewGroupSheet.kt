@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +32,11 @@ import androidx.compose.ui.unit.dp
  * form is pre-filled and saving updates it in place. Mirrors iOS `NewGroupSheet`.
  */
 @Composable
-fun NewGroupSheet(existing: ExpenseGroup?, onSave: (name: String, participants: List<String>) -> Unit) {
+fun NewGroupSheet(
+    existing: ExpenseGroup?,
+    suggestions: List<String> = emptyList(),
+    onSave: (name: String, participants: List<String>) -> Unit,
+) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     // Editing: pre-fill existing names. Creating: two empty slots to fill in.
     val participants = remember {
@@ -76,6 +81,26 @@ fun NewGroupSheet(existing: ExpenseGroup?, onSave: (name: String, participants: 
         ) {
             Icon(Icons.Filled.AddCircle, contentDescription = null)
             Text("  Add Participant")
+        }
+
+        // Known names from other groups — one tap fills the next empty slot instead of
+        // retyping (issue #88).
+        val remaining = suggestions.filter { s -> participants.none { it.trim().equals(s, ignoreCase = true) } }
+        if (remaining.isNotEmpty()) {
+            Text("Known names", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(remaining.size) { i ->
+                    val suggestion = remaining[i]
+                    androidx.compose.material3.SuggestionChip(
+                        onClick = {
+                            val empty = participants.indexOfFirst { it.isBlank() }
+                            if (empty >= 0) participants[empty] = suggestion else participants.add(suggestion)
+                        },
+                        label = { Text(suggestion) },
+                        modifier = Modifier.testTag("expense.group.suggest.$suggestion"),
+                    )
+                }
+            }
         }
         Text(
             "Add at least two people to split expenses between.",

@@ -1,7 +1,9 @@
 package com.snappet.mobile.feature.expense
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +77,12 @@ fun ExpenseRoot(onExit: () -> Unit) {
     val expenses by dao.expensesFlow().collectAsState(initial = emptyList())
 
     var selectedGroupId by remember { mutableStateOf<String?>(null) }
+    // Issue #88: a group long-pressed for actions (edit participants/name, or delete).
+    var groupActions by remember { mutableStateOf<ExpenseGroup?>(null) }
+    var editingGroup by remember { mutableStateOf<ExpenseGroup?>(null) }
+    var confirmingGroupDelete by remember { mutableStateOf<ExpenseGroup?>(null) }
+    // A group save that drops names still on records, awaiting the warning's confirm.
+    var pendingGroupSave by remember { mutableStateOf<Triple<ExpenseGroup, String, List<String>>?>(null) }
     var showNewGroup by remember { mutableStateOf(false) }
 
     val selectedGroup = groups.firstOrNull { it.groupId == selectedGroupId }
@@ -101,14 +109,109 @@ fun ExpenseRoot(onExit: () -> Unit) {
             if (groups.isEmpty()) {
                 EmptyGroups(padding) { showNewGroup = true }
             } else {
-                GroupList(padding, groups) { selectedGroupId = it.groupId }
+                GroupList(padding, groups,
+                          onOpen = { selectedGroupId = it.groupId },
+                          onLongPress = { groupActions = it })
             }
         }
     }
 
+    groupActions?.let { group ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { groupActions = null },
+            title = { Text(group.name) },
+            text = { Text("Rename the group or change who's in it, or delete it with its expenses.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { groupActions = null; editingGroup = group },
+                    modifier = Modifier.testTag("expense.editGroup"),
+                ) { Text("Edit group") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { groupActions = null; confirmingGroupDelete = group },
+                    modifier = Modifier.testTag("expense.deleteGroup"),
+                ) { Text("Delete\u2026", color = MaterialTheme.colorScheme.error) }
+            },
+        )
+    }
+
+    editingGroup?.let { group ->
+        ModalBottomSheet(onDismissRequest = { editingGroup = null }, sheetState = rememberModalBottomSheetState()) {
+            // Issue #88: edit mode was dead code — a group can finally gain/lose
+            // participants and be renamed after creation. Names referenced by existing
+            // records warn before being dropped (their entries stay and still count in
+            // the balances — kept zero-sum by SettleUp; review fix).
+            val usedNames = expenses.filter { it.groupId == group.groupId }
+                .flatMap { it.participants + it.payer }.toSet()
+            NewGroupSheet(
+                existing = group,
+                suggestions = SettleUp.participantSuggestions(groups.map { it.participants }),
+            ) { name, participants ->
+                val dropped = usedNames.filter { used -> participants.none { it.equals(used, ignoreCase = true) } }
+                if (dropped.isEmpty()) {
+                    editingGroup = null
+                    scope.launch {
+                        dao.updateGroup(group.copy(
+                            name = name,
+                            participantsRaw = ExpenseGroup.joinParticipants(participants)))
+                        core.log("expense", "group", "Edited group: $name")
+                    }
+                } else {
+                    pendingGroupSave = Triple(group, name, participants)
+                }
+            }
+        }
+    }
+
+    pendingGroupSave?.let { (group, name, participants) ->
+        val usedNames = expenses.filter { it.groupId == group.groupId }
+            .flatMap { it.participants + it.payer }.toSet()
+        val dropped = usedNames.filter { used -> participants.none { it.equals(used, ignoreCase = true) } }
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Remove participants?",
+            message = "${dropped.joinToString(", ")} still appear on existing expenses. " +
+                "Their past entries stay and still count in the balances, but they won't be " +
+                "selectable for new ones.",
+            confirmLabel = "Remove anyway",
+            onConfirm = {
+                pendingGroupSave = null
+                editingGroup = null
+                scope.launch {
+                    dao.updateGroup(group.copy(
+                        name = name,
+                        participantsRaw = ExpenseGroup.joinParticipants(participants)))
+                    core.log("expense", "group", "Edited group: $name")
+                }
+            },
+            onDismiss = { pendingGroupSave = null },
+        )
+    }
+
+    confirmingGroupDelete?.let { group ->
+        val count = expenses.count { it.groupId == group.groupId }
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete \u201C${group.name}\u201D?",
+            message = if (count == 0) "This group has no expenses yet. This can't be undone."
+                      else "This also permanently deletes its $count expense${if (count == 1) "" else "s"}, receipts, and settlements. This can't be undone.",
+            onConfirm = {
+                confirmingGroupDelete = null
+                if (selectedGroupId == group.groupId) selectedGroupId = null
+                scope.launch {
+                    dao.deleteExpensesFor(group.groupId)
+                    dao.deleteGroup(group)
+                }
+            },
+            onDismiss = { confirmingGroupDelete = null },
+        )
+    }
+
     if (showNewGroup) {
         ModalBottomSheet(onDismissRequest = { showNewGroup = false }, sheetState = rememberModalBottomSheetState()) {
-            NewGroupSheet(existing = null) { name, participants ->
+            NewGroupSheet(
+                existing = null,
+                suggestions = SettleUp.participantSuggestions(groups.map { it.participants }),
+            ) { name, participants ->
                 showNewGroup = false
                 scope.launch {
                     dao.insertGroup(
@@ -143,8 +246,14 @@ private fun EmptyGroups(padding: PaddingValues, onAdd: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GroupList(padding: PaddingValues, groups: List<ExpenseGroup>, onOpen: (ExpenseGroup) -> Unit) {
+private fun GroupList(
+    padding: PaddingValues,
+    groups: List<ExpenseGroup>,
+    onOpen: (ExpenseGroup) -> Unit,
+    onLongPress: (ExpenseGroup) -> Unit,
+) {
     LazyColumn(
         Modifier.fillMaxSize().padding(padding).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -155,7 +264,8 @@ private fun GroupList(padding: PaddingValues, groups: List<ExpenseGroup>, onOpen
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { onOpen(group) }
+                    // Tap opens; long-press offers edit/delete (issue #88).
+                    .combinedClickable(onClick = { onOpen(group) }, onLongClick = { onLongPress(group) })
                     .padding(16.dp)
                     .testTag("expenseGroupRow"),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -196,6 +306,26 @@ private fun GroupDetail(
     var editing by remember { mutableStateOf<ExpenseRecord?>(null) }
     var editingReceipt by remember { mutableStateOf<ExpenseRecord?>(null) }
     var viewingReceipt by remember { mutableStateOf<ExpenseRecord?>(null) }
+    // Issue #88: any row — expense, receipt, or settlement (a typo'd one used to corrupt
+    // who-owes-whom forever) — can be long-pressed and deleted; balances recompute.
+    var confirmingExpenseDelete by remember { mutableStateOf<ExpenseRecord?>(null) }
+
+    confirmingExpenseDelete?.let { record ->
+        val kind = when {
+            record.isSettlement -> "settlement"
+            record.isReceipt -> "receipt"
+            else -> "expense"
+        }
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete this $kind?",
+            message = "\u201C${record.title}\u201D is removed and the group's balances recompute.",
+            onConfirm = {
+                confirmingExpenseDelete = null
+                scope.launch { dao.deleteExpense(record) }
+            },
+            onDismiss = { confirmingExpenseDelete = null },
+        )
+    }
 
     // Keep the viewed receipt in sync with the latest DB row (e.g. after an edit), and close the
     // detail if it was deleted.
@@ -288,14 +418,16 @@ private fun GroupDetail(
 
                 item { SectionHeader("Expenses") }
                 items(expenses, key = { it.id }) { expense ->
-                    ExpenseRow(expense) {
-                        // A receipt opens its per-person breakdown; an even-split expense edits in
-                        // place; a settlement has no editor.
-                        when {
-                            expense.isReceipt -> viewingReceipt = expense
-                            !expense.isSettlement -> editing = expense
-                        }
-                    }
+                    ExpenseRow(expense,
+                        onTap = {
+                            // A receipt opens its per-person breakdown; an even-split expense
+                            // edits in place; a settlement has no editor.
+                            when {
+                                expense.isReceipt -> viewingReceipt = expense
+                                !expense.isSettlement -> editing = expense
+                            }
+                        },
+                        onLongPress = { confirmingExpenseDelete = expense })
                 }
             }
         }
@@ -413,15 +545,17 @@ private fun SectionHeader(title: String) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ExpenseRow(expense: ExpenseRecord, onTap: () -> Unit) {
-    // Settlements have no detail/editor, so the row isn't tappable for them (no inert ripple).
+private fun ExpenseRow(expense: ExpenseRecord, onTap: () -> Unit, onLongPress: () -> Unit = {}) {
+    // Every row is pressable now: tap acts only where a detail/editor exists, and
+    // long-press offers delete everywhere — incl. settlements (issue #88).
     val tappable = !expense.isSettlement
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .then(if (tappable) Modifier.clickable(onClick = onTap) else Modifier)
+            .combinedClickable(onClick = { if (tappable) onTap() }, onLongClick = onLongPress)
             .padding(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

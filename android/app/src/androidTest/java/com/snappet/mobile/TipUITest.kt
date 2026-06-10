@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -39,6 +41,34 @@ class TipUITest : SuiteTest() {
             composeRule.onAllNodesWithTag("tip.historyRow").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onAllNodesWithTag("tip.historyRow")[0].assertIsDisplayed()
+    }
+
+    /** Issue #88: long-press a history row -> confirm -> the row is gone. The one
+     *  instrumented pass over the shared ConfirmDeleteDialog flow. */
+    @Test
+    fun longPressDeletesAHistoryRow() {
+        launch()
+        openModule("tip")
+
+        // Create one calculation so history has a row (the same commit path the
+        // committingCalculationAppearsInHistory test uses).
+        composeRule.onNodeWithTag("tip.bill").performTextInput("50")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("tip.commit").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("tip.history").performClick()
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("tip.historyRow").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        composeRule.onAllNodesWithTag("tip.historyRow")[0]
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithTag("confirm.delete").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodesWithTag("tip.historyRow").fetchSemanticsNodes().isEmpty()
+        }
     }
 
     @Test

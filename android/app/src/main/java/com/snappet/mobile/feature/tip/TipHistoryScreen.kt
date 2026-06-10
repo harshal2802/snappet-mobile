@@ -11,15 +11,22 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.LocalAppContainer
+import kotlinx.coroutines.launch
 import com.snappet.mobile.ui.ModuleScaffold
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -30,11 +37,15 @@ import kotlin.math.roundToInt
  * Past tip calculations, newest first. Each row shows the bill + tip% + people on top and the total
  * + date below. Mirrors iOS `TipHistoryView`. `onExit` returns to the calculator root.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TipHistoryScreen(onExit: () -> Unit) {
     val container = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
     val calculations by container.database.tipDao().allFlow().collectAsState(initial = emptyList())
     val dateFmt = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
+    // A row staged for deletion by a long-press (issue #88).
+    var pendingDelete by remember { mutableStateOf<TipCalculation?>(null) }
 
     ModuleScaffold(title = "History", onExit = onExit) { padding ->
         if (calculations.isEmpty()) {
@@ -56,7 +67,10 @@ fun TipHistoryScreen(onExit: () -> Unit) {
             ) {
                 items(calculations, key = { it.id }) { calc ->
                     Column(
-                        Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("tip.historyRow"),
+                        Modifier.fillMaxWidth()
+                            // Long-press to delete — the suite's secondary-action idiom.
+                            .combinedClickable(onClick = {}, onLongClick = { pendingDelete = calc })
+                            .padding(vertical = 8.dp).testTag("tip.historyRow"),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -83,5 +97,17 @@ fun TipHistoryScreen(onExit: () -> Unit) {
                 }
             }
         }
+    }
+
+    pendingDelete?.let { calc ->
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete this calculation?",
+            message = "This permanently removes it from your history.",
+            onConfirm = {
+                pendingDelete = null
+                scope.launch { container.database.tipDao().delete(calc) }
+            },
+            onDismiss = { pendingDelete = null },
+        )
     }
 }

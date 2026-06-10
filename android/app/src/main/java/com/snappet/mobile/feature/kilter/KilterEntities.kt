@@ -113,6 +113,12 @@ interface KilterDao {
     @Query("SELECT * FROM kilter_log ORDER BY createdAt DESC")
     fun logsFlow(): Flow<List<KilterLogEntry>>
 
+    /** Issue #88: a fat-fingered Flash is correctable — single-row delete + status fix. */
+    @Delete suspend fun deleteLog(entry: KilterLogEntry)
+
+    @Query("UPDATE kilter_log SET status = :status WHERE id = :id")
+    suspend fun updateLogStatus(id: Long, status: String)
+
     @Query("DELETE FROM kilter_log") suspend fun clearLogs()
 
     @Insert suspend fun insertSession(session: KilterSession)

@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
  * the name is blank. Mirrors iOS `HabitEditorView`.
  */
 @Composable
-fun HabitEditorSheet(existing: Habit?, onSave: (String, String) -> Unit) {
+fun HabitEditorSheet(existing: Habit?, onDelete: (() -> Unit)? = null, onSave: (String, String) -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var symbol by remember { mutableStateOf(existing?.symbol ?: HabitSymbols.default) }
     val trimmed = name.trim()
@@ -94,6 +94,16 @@ fun HabitEditorSheet(existing: Habit?, onSave: (String, String) -> Unit) {
             modifier = Modifier.fillMaxWidth().testTag("habit.save"),
         ) {
             Text(if (existing != null) "Save" else "Add")
+        }
+
+        // Issue #88: a habit (and its history) is finally deletable — confirm upstream.
+        if (existing != null && onDelete != null) {
+            androidx.compose.material3.TextButton(
+                onClick = onDelete,
+                modifier = Modifier.fillMaxWidth().testTag("habit.delete"),
+            ) {
+                Text("Delete habit…", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }

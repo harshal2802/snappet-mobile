@@ -87,6 +87,8 @@ fun BudgetRoot(onExit: () -> Unit) {
 
     var showAddCategory by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<BudgetCategory?>(null) }
+    // Issue #88: a category staged for deletion — confirmed with its cascade count.
+    var confirmingCategoryDelete by remember { mutableStateOf<BudgetCategory?>(null) }
     var showAddTransaction by remember { mutableStateOf(false) }
 
     val selectedCategory = categories.firstOrNull { it.categoryId == selectedCategoryId }
@@ -109,6 +111,7 @@ fun BudgetRoot(onExit: () -> Unit) {
                             core.log("budget", "edit", "Edited ${amount.asCurrency()} on ${cat.name}", amount)
                         }
                     },
+                    onDelete = { txn -> coroutineScope.launch { dao.deleteTransaction(txn) } },
                     onExit = { screen = BudgetScreen.ROOT },
                 )
             }
@@ -172,13 +175,35 @@ fun BudgetRoot(onExit: () -> Unit) {
 
     editingCategory?.let { category ->
         ModalBottomSheet(onDismissRequest = { editingCategory = null }, sheetState = rememberModalBottomSheetState()) {
-            BudgetCategoryEditor(existing = category) { name, limit ->
-                editingCategory = null
-                coroutineScope.launch {
-                    dao.updateCategory(category.copy(name = name, monthlyLimit = limit))
-                }
-            }
+            BudgetCategoryEditor(
+                existing = category,
+                onSave = { name, limit ->
+                    editingCategory = null
+                    coroutineScope.launch {
+                        dao.updateCategory(category.copy(name = name, monthlyLimit = limit))
+                    }
+                },
+                onDelete = { editingCategory = null; confirmingCategoryDelete = category },
+            )
         }
+    }
+
+    confirmingCategoryDelete?.let { category ->
+        // Cross-month count — deleting cascades to every month, not just the one on screen.
+        val count = transactions.count { it.categoryId == category.categoryId }
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete \u201C${category.name}\u201D?",
+            message = if (count == 0) "This category has no transactions. This can't be undone."
+                      else "This also permanently deletes its $count transaction${if (count == 1) "" else "s"} (across all months). This can't be undone.",
+            onConfirm = {
+                confirmingCategoryDelete = null
+                coroutineScope.launch {
+                    dao.deleteTransactionsFor(category.categoryId)
+                    dao.deleteCategory(category)
+                }
+            },
+            onDismiss = { confirmingCategoryDelete = null },
+        )
     }
 
     if (showAddTransaction) {
