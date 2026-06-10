@@ -14,7 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -37,9 +37,9 @@ fun RecordSettlementSheet(
     // Start unselected ("Select") so neither picker button renders a participant name before the
     // user chooses — keeping each name matchable to its dropdown option alone (the test taps
     // options by exact name). The test explicitly sets payer=Bob, recipient=Alice.
-    var payer by remember { mutableStateOf("") }
-    var recipient by remember { mutableStateOf("") }
-    var amountText by remember { mutableStateOf("") }
+    var payer by rememberSaveable { mutableStateOf("") }
+    var recipient by rememberSaveable { mutableStateOf("") }
+    var amountText by rememberSaveable { mutableStateOf("") }
 
     val amount = amountText.toDoubleOrNull() ?: 0.0
     val canSave = amount > 0 && payer.isNotEmpty() && recipient.isNotEmpty() && payer != recipient

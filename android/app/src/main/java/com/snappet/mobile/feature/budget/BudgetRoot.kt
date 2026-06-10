@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.budget
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -38,6 +39,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +60,12 @@ import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.launch
 
 private enum class BudgetScreen { ROOT, CATEGORY, TRENDS }
+
+/** Saves a [MonthScope] as its start-of-month anchor so the month selection survives rotation/process death (issue #86). */
+private val MonthScopeSaver = Saver<MonthScope, Long>(
+    save = { it.start },
+    restore = { MonthScope(it) },
+)
 
 private val Blue = SnappetAccents.Azure
 private val Purple = SnappetAccents.Violet
@@ -78,27 +87,38 @@ fun BudgetRoot(onExit: () -> Unit) {
     val core = container.core
     val coroutineScope = rememberCoroutineScope()
 
-    val categories by dao.categoriesFlow().collectAsState(initial = emptyList())
+    // Null until Room's first emission. A restored CATEGORY screen composes before that emission;
+    // the row-gone guard below must not self-heal to ROOT against a list that simply hasn't
+    // loaded yet (issue #86).
+    val categoriesOrNull by dao.categoriesFlow().collectAsState(initial = null)
+    val categories = categoriesOrNull ?: emptyList()
     val transactions by dao.transactionsFlow().collectAsState(initial = emptyList())
 
-    var screen by remember { mutableStateOf(BudgetScreen.ROOT) }
-    var selectedCategoryId by remember { mutableStateOf<String?>(null) }
-    var month by remember { mutableStateOf(MonthScope.current()) }
+    var screen by rememberSaveable { mutableStateOf(BudgetScreen.ROOT) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var month by rememberSaveable(stateSaver = MonthScopeSaver) { mutableStateOf(MonthScope.current()) }
 
-    var showAddCategory by remember { mutableStateOf(false) }
-    var editingCategory by remember { mutableStateOf<BudgetCategory?>(null) }
+    var showAddCategory by rememberSaveable { mutableStateOf(false) }
+    // Issue #86: staged by id, not object — after restore the sheet self-heals shut if the row is gone.
+    var editingCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
     // Issue #88: a category staged for deletion — confirmed with its cascade count.
     var confirmingCategoryDelete by remember { mutableStateOf<BudgetCategory?>(null) }
-    var showAddTransaction by remember { mutableStateOf(false) }
+    var showAddTransaction by rememberSaveable { mutableStateOf(false) }
 
     val selectedCategory = categories.firstOrNull { it.categoryId == selectedCategoryId }
+    val editingCategory = categories.firstOrNull { it.categoryId == editingCategoryId }
+
+    // Issue #86: system back pops one level (TRENDS/CATEGORY → ROOT), mirroring the top-bar arrow;
+    // disabled at ROOT so back falls through to the app-level NavHost (→ app grid).
+    BackHandler(enabled = screen != BudgetScreen.ROOT) { screen = BudgetScreen.ROOT }
 
     when (screen) {
         BudgetScreen.TRENDS -> BudgetTrendsScreen(transactions = transactions, onExit = { screen = BudgetScreen.ROOT })
 
         BudgetScreen.CATEGORY -> {
             if (selectedCategory == null) {
-                screen = BudgetScreen.ROOT
+                // Only self-heal once the flow has actually emitted — the row is genuinely gone.
+                if (categoriesOrNull != null) screen = BudgetScreen.ROOT
             } else {
                 BudgetCategoryTransactionsScreen(
                     category = selectedCategory,
@@ -155,7 +175,7 @@ fun BudgetRoot(onExit: () -> Unit) {
                     onNextMonth = { month = month.next() },
                     onOpenTrends = { screen = BudgetScreen.TRENDS },
                     onOpenCategory = { selectedCategoryId = it.categoryId; screen = BudgetScreen.CATEGORY },
-                    onEditCategory = { editingCategory = it },
+                    onEditCategory = { editingCategoryId = it.categoryId },
                 )
             }
         }
@@ -174,16 +194,16 @@ fun BudgetRoot(onExit: () -> Unit) {
     }
 
     editingCategory?.let { category ->
-        ModalBottomSheet(onDismissRequest = { editingCategory = null }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { editingCategoryId = null }, sheetState = rememberModalBottomSheetState()) {
             BudgetCategoryEditor(
                 existing = category,
                 onSave = { name, limit ->
-                    editingCategory = null
+                    editingCategoryId = null
                     coroutineScope.launch {
                         dao.updateCategory(category.copy(name = name, monthlyLimit = limit))
                     }
                 },
-                onDelete = { editingCategory = null; confirmingCategoryDelete = category },
+                onDelete = { editingCategoryId = null; confirmingCategoryDelete = category },
             )
         }
     }

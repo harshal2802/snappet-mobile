@@ -14,7 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -34,11 +34,12 @@ fun AddTransactionSheet(
     existing: BudgetTransaction?,
     onSave: (BudgetCategory, Double, String) -> Unit,
 ) {
-    var selectedId by remember {
+    // Issue #86: draft survives rotation; keyed by record so switching transactions doesn't restore a stale draft.
+    var selectedId by rememberSaveable(existing?.id) {
         mutableStateOf(existing?.categoryId ?: categories.firstOrNull()?.categoryId)
     }
-    var amount by remember { mutableStateOf(existing?.amount?.toString() ?: "") }
-    var note by remember { mutableStateOf(existing?.note ?: "") }
+    var amount by rememberSaveable(existing?.id) { mutableStateOf(existing?.amount?.toString() ?: "") }
+    var note by rememberSaveable(existing?.id) { mutableStateOf(existing?.note ?: "") }
 
     val parsedAmount = amount.trim().toDoubleOrNull()
     val selectedCategory = categories.firstOrNull { it.categoryId == selectedId }

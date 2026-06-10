@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,7 +56,9 @@ fun BudgetCategoryTransactionsScreen(
     onDelete: (BudgetTransaction) -> Unit,
     onExit: () -> Unit,
 ) {
-    var editing by remember { mutableStateOf<BudgetTransaction?>(null) }
+    // Issue #86: staged by id, not object — after restore the sheet self-heals shut if the row is gone.
+    var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editing = transactions.firstOrNull { it.id == editingId }
     // Issue #88: a row staged for deletion by long-press, pending confirmation.
     var confirmingDelete by remember { mutableStateOf<BudgetTransaction?>(null) }
 
@@ -82,7 +85,7 @@ fun BudgetCategoryTransactionsScreen(
             ) {
                 items(rows, key = { it.id }) { txn ->
                     TransactionRow(category = category, txn = txn,
-                                   onEdit = { editing = txn },
+                                   onEdit = { editingId = txn.id },
                                    onLongPress = { confirmingDelete = txn })
                 }
             }
@@ -90,9 +93,9 @@ fun BudgetCategoryTransactionsScreen(
     }
 
     editing?.let { txn ->
-        ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { editingId = null }, sheetState = rememberModalBottomSheetState()) {
             AddTransactionSheet(categories = categories, existing = txn) { cat, amount, note ->
-                editing = null
+                editingId = null
                 onEdit(txn, cat, amount, note)
             }
         }

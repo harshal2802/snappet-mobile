@@ -21,7 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,8 +39,9 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun HabitEditorSheet(existing: Habit?, onDelete: (() -> Unit)? = null, onSave: (String, String) -> Unit) {
-    var name by remember { mutableStateOf(existing?.name ?: "") }
-    var symbol by remember { mutableStateOf(existing?.symbol ?: HabitSymbols.default) }
+    // Issue #86: drafts survive rotation; keyed by habit so switching records doesn't restore a stale draft.
+    var name by rememberSaveable(existing?.habitId) { mutableStateOf(existing?.name ?: "") }
+    var symbol by rememberSaveable(existing?.habitId) { mutableStateOf(existing?.symbol ?: HabitSymbols.default) }
     val trimmed = name.trim()
 
     Column(

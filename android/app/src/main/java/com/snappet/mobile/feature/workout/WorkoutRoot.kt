@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.workout
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Delete
@@ -31,6 +32,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +66,8 @@ private enum class WorkoutSection(val title: String) {
  * Root entry for the Workout Tracker mini-app (module id `workout-log`). A dashboard with headline
  * stats sits above a 4-way section selector (Exercises / Routines / History / Settings). Deeper
  * screens — exercise detail, routine detail, the live player and session detail — are managed with
- * local navigation state, each in its own [ModuleScaffold]. Mirrors iOS `WorkoutHomeView`.
+ * local navigation state, each in its own [ModuleScaffold]. An interrupted active session surfaces
+ * a Resume/Discard banner above the selector (issue #86). Mirrors iOS `WorkoutHomeView`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,21 +78,37 @@ fun WorkoutRoot(onExit: () -> Unit) {
     val core = container.core
     val scope = rememberCoroutineScope()
 
-    val routines by dao.routinesFlow().collectAsState(initial = emptyList())
-    val sessions by dao.sessionsFlow().collectAsState(initial = emptyList())
-    val customExercises by dao.customExercisesFlow().collectAsState(initial = emptyList())
+    // Null until Room's first emission. A sub-screen restored by rotation / process death / tab
+    // retention composes before that emission; the row-gone guards in the `when` below must not
+    // self-heal to ROOT against a list that simply hasn't loaded yet (issue #86).
+    val routinesOrNull by dao.routinesFlow().collectAsState(initial = null)
+    val sessionsOrNull by dao.sessionsFlow().collectAsState(initial = null)
+    val customExercisesOrNull by dao.customExercisesFlow().collectAsState(initial = null)
+    val routines = routinesOrNull ?: emptyList()
+    val sessions = sessionsOrNull ?: emptyList()
+    val customExercises = customExercisesOrNull ?: emptyList()
 
-    var unit by remember { mutableStateOf(WorkoutSettings.preferredUnit(context)) }
-    var screen by remember { mutableStateOf(WorkoutScreen.ROOT) }
-    var section by remember { mutableStateOf(WorkoutSection.EXERCISES) }
+    var unit by rememberSaveable { mutableStateOf(WorkoutSettings.preferredUnit(context)) }
+    var screen by rememberSaveable { mutableStateOf(WorkoutScreen.ROOT) }
+    var section by rememberSaveable { mutableStateOf(WorkoutSection.EXERCISES) }
 
-    var selectedExerciseId by remember { mutableStateOf<String?>(null) }
-    var selectedRoutineRow by remember { mutableStateOf<Long?>(null) }
-    var selectedSessionRow by remember { mutableStateOf<Long?>(null) }
-    var playingSessionRow by remember { mutableStateOf<Long?>(null) }
+    var selectedExerciseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedRoutineRow by rememberSaveable { mutableStateOf<Long?>(null) }
+    var selectedSessionRow by rememberSaveable { mutableStateOf<Long?>(null) }
+    var playingSessionRow by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    // System back pops one level (issue #86). Disabled at ROOT so back falls through to the
+    // app-level NavHost, and for PLAYER, which registers its own handler (End/Discard dialog;
+    // innermost-wins keeps it above this one anyway).
+    BackHandler(
+        enabled = screen == WorkoutScreen.EXERCISE_DETAIL ||
+            screen == WorkoutScreen.ROUTINE_DETAIL ||
+            screen == WorkoutScreen.SESSION_DETAIL,
+    ) { screen = WorkoutScreen.ROOT }
 
     val resolver = remember(customExercises) { WorkoutResolver(customExercises) }
     val history = remember(sessions) { sessions.filter { !it.isActive } }
+    val activeSessions = remember(sessions) { sessions.filter { it.isActive } }
     val catalog = remember(customExercises) {
         (WorkoutCatalog.all + customExercises.map { it.asExercise() }).sortedBy { it.name.lowercase() }
     }
@@ -100,6 +120,13 @@ fun WorkoutRoot(onExit: () -> Unit) {
     val selectedRoutine = routines.firstOrNull { it.id == selectedRoutineRow }
     val selectedSession = sessions.firstOrNull { it.id == selectedSessionRow }
     val playingSession = sessions.firstOrNull { it.id == playingSessionRow }
+
+    // Issue #86 resume policy: an unfinished session (finishedAt == null) is only ever finalized
+    // by the user — resumed and finished, or explicitly discarded — never auto-deleted, never
+    // auto-finished. Surface the newest; resuming/discarding it reveals the next. Suppressed while
+    // playingSessionRow is set so the session being finalized never flashes a banner.
+    val resumableSession =
+        if (playingSessionRow == null) activeSessions.maxByOrNull { it.startedAt } else null
 
     fun startWorkout(routine: WorkoutRoutine) {
         scope.launch {
@@ -125,13 +152,13 @@ fun WorkoutRoot(onExit: () -> Unit) {
     when (screen) {
         WorkoutScreen.EXERCISE_DETAIL -> {
             val ex = selectedExercise
-            if (ex == null) screen = WorkoutScreen.ROOT
+            if (ex == null) { if (customExercisesOrNull != null) screen = WorkoutScreen.ROOT }
             else ExerciseDetailScreen(ex, onExit = { screen = WorkoutScreen.ROOT })
         }
 
         WorkoutScreen.ROUTINE_DETAIL -> {
             val r = selectedRoutine
-            if (r == null) screen = WorkoutScreen.ROOT
+            if (r == null) { if (routinesOrNull != null) screen = WorkoutScreen.ROOT }
             else RoutineDetailScreen(
                 routine = r, resolver = resolver,
                 onStart = { startWorkout(r) },
@@ -147,7 +174,7 @@ fun WorkoutRoot(onExit: () -> Unit) {
 
         WorkoutScreen.SESSION_DETAIL -> {
             val s = selectedSession
-            if (s == null) screen = WorkoutScreen.ROOT
+            if (s == null) { if (sessionsOrNull != null) screen = WorkoutScreen.ROOT }
             else SessionDetailScreen(
                 s, resolver, unit,
                 onDelete = {
@@ -161,7 +188,12 @@ fun WorkoutRoot(onExit: () -> Unit) {
         WorkoutScreen.PLAYER -> {
             val s = playingSession
             if (s == null) {
-                screen = WorkoutScreen.ROOT
+                // Row genuinely gone (vs. not yet loaded): clear the id too so the resume banner
+                // isn't suppressed by a dangling reference (issue #86).
+                if (sessionsOrNull != null) {
+                    playingSessionRow = null
+                    screen = WorkoutScreen.ROOT
+                }
             } else {
                 WorkoutPlayerScreen(
                     session = s, resolver = resolver, defaultUnit = unit,
@@ -191,6 +223,9 @@ fun WorkoutRoot(onExit: () -> Unit) {
                 section = section,
                 onSection = { section = it },
                 history = history,
+                activeSession = resumableSession,
+                onResumeActive = { playingSessionRow = it.id; screen = WorkoutScreen.PLAYER },
+                onDiscardActive = { session -> scope.launch { dao.deleteSession(session) } },
                 routines = routines,
                 catalog = catalog,
                 resolver = resolver,
@@ -213,6 +248,9 @@ private fun RootContent(
     section: WorkoutSection,
     onSection: (WorkoutSection) -> Unit,
     history: List<WorkoutSession>,
+    activeSession: WorkoutSession?,
+    onResumeActive: (WorkoutSession) -> Unit,
+    onDiscardActive: (WorkoutSession) -> Unit,
     routines: List<WorkoutRoutine>,
     catalog: List<WorkoutExercise>,
     resolver: WorkoutResolver,
@@ -224,6 +262,13 @@ private fun RootContent(
 ) {
     Column(Modifier.fillMaxSize().padding(padding)) {
         DashboardStrip(history)
+        if (activeSession != null) {
+            ActiveSessionBanner(
+                session = activeSession,
+                onResume = { onResumeActive(activeSession) },
+                onDiscard = { onDiscardActive(activeSession) },
+            )
+        }
         SectionSelector(section, onSection)
         when (section) {
             WorkoutSection.EXERCISES -> ExercisesSection(catalog, onOpenExercise)
@@ -278,6 +323,59 @@ private fun SectionSelector(section: WorkoutSection, onSection: (WorkoutSection)
                 modifier = Modifier.testTag("workout.section.${s.title}"),
             ) {
                 Text(s.title, maxLines = 1, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+// MARK: - Active-session resume banner
+
+/**
+ * Issue #86: an interrupted session (`finishedAt == null`) is hidden from History and used to be
+ * unrecoverable. The banner offers Resume (back into the player) or Discard (confirmed delete) —
+ * the only two ways an unfinished session is ever finalized.
+ */
+@Composable
+private fun ActiveSessionBanner(
+    session: WorkoutSession,
+    onResume: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    var confirmingDiscard by remember { mutableStateOf(false) }
+    if (confirmingDiscard) {
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Discard this workout?",
+            message = "\u201C${session.routineName}\u201D and its logged sets are deleted.",
+            confirmLabel = "Discard",
+            onConfirm = { confirmingDiscard = false; onDiscard() },
+            onDismiss = { confirmingDiscard = false },
+        )
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Orange.copy(alpha = 0.12f))
+            .padding(14.dp)
+            .testTag("workout.resumeBanner"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("Active workout", style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold, color = Orange)
+        Text(session.routineName, style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(onClick = onResume, modifier = Modifier.testTag("workout.resume")) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("Resume")
+            }
+            TextButton(onClick = { confirmingDiscard = true }, modifier = Modifier.testTag("workout.discardActive")) {
+                Text("Discard")
             }
         }
     }

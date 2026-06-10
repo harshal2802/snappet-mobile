@@ -34,8 +34,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -64,7 +67,7 @@ fun NewReceiptSheet(
     var showPaste by remember { mutableStateOf(false) }
 
     // The receipt kind used to tune parsing; AUTO resolves via ReceiptClassifier on scan/paste.
-    var receiptType by remember { mutableStateOf(ReceiptType.AUTO) }
+    var receiptType by rememberSaveable { mutableStateOf(ReceiptType.AUTO) }
 
     // Totals read off the most recent scan/paste, so the validation banner can cross-check the
     // edited items against what the receipt printed.
@@ -73,7 +76,9 @@ fun NewReceiptSheet(
     var detectedTotal by remember { mutableStateOf<Double?>(null) }
     var detectedItemCount by remember { mutableStateOf<Int?>(null) }
 
-    val items = remember {
+    // Issue #86: the line items are the OCR payoff — losing them to a rotation means re-scanning
+    // the receipt — so they get a custom Saver, keyed by the record being edited (null = new).
+    val items = rememberSaveable(record?.id, saver = ItemEditListSaver) {
         mutableStateListOf<ItemEdit>().apply {
             record?.items?.forEach { add(ItemEdit(it.name, formatAmount(it.price), it.assignees)) }
         }
@@ -245,6 +250,20 @@ private class ItemEdit(name: String, price: String, assignees: List<String>) {
     val assignees = mutableStateListOf<String>().apply { addAll(assignees) }
     val price: Double get() = priceText.toDoubleOrNull() ?: 0.0
 }
+
+/**
+ * Saver for the receipt's item list (issue #86): [ItemEdit] holds `MutableState` fields, which
+ * `autoSaver` can't bundle, so each item flattens to `[name, priceText, assignees...]` (plain
+ * strings) and restore builds fresh [ItemEdit]s.
+ */
+private val ItemEditListSaver = listSaver<SnapshotStateList<ItemEdit>, ArrayList<String>>(
+    save = { list ->
+        list.map { item -> arrayListOf(item.name, item.priceText).apply { addAll(item.assignees) } }
+    },
+    restore = { saved ->
+        saved.map { fields -> ItemEdit(fields[0], fields[1], fields.drop(2)) }.toMutableStateList()
+    },
+)
 
 @Composable
 private fun ItemEditRow(item: ItemEdit, participants: List<String>, onDelete: () -> Unit) {

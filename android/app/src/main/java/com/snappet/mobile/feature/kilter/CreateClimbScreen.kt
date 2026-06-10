@@ -36,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +61,13 @@ private data class SavePayload(
     val isNoMatch: Boolean, val predictedGrade: Double?, val source: String, val modelId: String?,
 )
 
+/** Bundle Saver for the authored-holds draft (issue #86) — the wire shape is the pure, unit-tested
+ *  codec in [encodeAssignments]/[decodeAssignments]. */
+private val AssignmentsSaver = Saver<Map<Int, KilterAuthorRole>, ArrayList<String>>(
+    save = { encodeAssignments(it) },
+    restore = { decodeAssignments(it) },
+)
+
 /**
  * Author a brand-new climb — Manual (tap holes on [KilterEditableBoard]) or ✨ Generate (the on-device
  * transformer). Either way Save validates against the downloaded dataset + prior creations
@@ -78,15 +87,16 @@ fun CreateClimbScreen(
     val core = LocalAppContainer.current.core
     val scope = rememberCoroutineScope()
 
-    var mode by remember { mutableStateOf(CreateMode.MANUAL) }
-    var name by remember { mutableStateOf("") }
+    var mode by rememberSaveable { mutableStateOf(CreateMode.MANUAL) }
+    var name by rememberSaveable { mutableStateOf("") }
 
-    // Manual state.
-    var layoutId by remember { mutableStateOf(KilterSettings.layout(context)) }
-    var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
-    var angle by remember { mutableStateOf(KilterSettings.angle(context)) }
-    var isNoMatch by remember { mutableStateOf(false) }
-    var assignments by remember { mutableStateOf<Map<Int, KilterAuthorRole>>(emptyMap()) }
+    // Manual state. The whole draft is saveable (issue #86) — layoutId/size restore *with*
+    // assignments because the placement ids only make sense on the layout they were authored on.
+    var layoutId by rememberSaveable { mutableStateOf(KilterSettings.layout(context)) }
+    var productSizeId by rememberSaveable { mutableStateOf(KilterSettings.productSizeId(context)) }
+    var angle by rememberSaveable { mutableStateOf(KilterSettings.angle(context)) }
+    var isNoMatch by rememberSaveable { mutableStateOf(false) }
+    var assignments by rememberSaveable(stateSaver = AssignmentsSaver) { mutableStateOf<Map<Int, KilterAuthorRole>>(emptyMap()) }
     var placeable by remember { mutableStateOf<List<KilterPlaceableHold>>(emptyList()) }
     var geometry by remember { mutableStateOf(KilterBoardGeometry.EMPTY) }
     var manualHolds by remember { mutableStateOf<List<KilterHold>>(emptyList()) }
@@ -101,10 +111,13 @@ fun CreateClimbScreen(
     var genRuntime by remember { mutableStateOf<KilterGeneratorRuntime?>(null) }
     var genPhase by remember { mutableStateOf(GenPhase.NEEDS_MODEL) }
     var genError by remember { mutableStateOf<String?>(null) }
-    var genSizeId by remember { mutableStateOf(0) }
-    var genAngle by remember { mutableStateOf(40) }
-    var genGrade by remember { mutableStateOf(17) }
-    var genNoMatch by remember { mutableStateOf(false) }
+    // The generation *request* (size/angle/grade/no-match) is saveable; the model/runtime/result
+    // stay runtime-only — after restoration the LaunchedEffect below re-prepares and prepareModel's
+    // meta clamps keep the restored values valid (issue #86).
+    var genSizeId by rememberSaveable { mutableStateOf(0) }
+    var genAngle by rememberSaveable { mutableStateOf(40) }
+    var genGrade by rememberSaveable { mutableStateOf(17) }
+    var genNoMatch by rememberSaveable { mutableStateOf(false) }
     var genResult by remember { mutableStateOf<KilterGeneratedClimb?>(null) }
     var genHolds by remember { mutableStateOf<List<KilterHold>>(emptyList()) }
     var genGeometry by remember { mutableStateOf(KilterBoardGeometry.EMPTY) }
@@ -205,6 +218,10 @@ fun CreateClimbScreen(
             }
         }
     }
+
+    // A restored composition can land directly on the Generate tab (mode is saveable, the runtime
+    // is not) — re-prepare so it doesn't offer to re-download an already-installed model (issue #86).
+    LaunchedEffect(Unit) { if (mode == CreateMode.GENERATE) prepareModel(false) }
 
     ModuleScaffold(title = "Create climb", onExit = onExit) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),

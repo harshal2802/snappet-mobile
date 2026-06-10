@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,8 +78,10 @@ fun HabitRoot(onExit: () -> Unit) {
     val habits by dao.habitsFlow().collectAsState(initial = emptyList())
     val completions by dao.completionsFlow().collectAsState(initial = emptyList())
 
-    var showAdd by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<Habit?>(null) }
+    var showAdd by rememberSaveable { mutableStateOf(false) }
+    // Issue #86: staged by id, not object — after restore the edit sheet self-heals shut if the habit is gone.
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editing = habits.firstOrNull { it.habitId == editingId }
     // Issue #88: a habit staged for deletion (from the edit sheet), pending confirmation.
     var confirmingDelete by remember { mutableStateOf<Habit?>(null) }
 
@@ -99,7 +102,7 @@ fun HabitRoot(onExit: () -> Unit) {
                 habits = habits,
                 completions = completions,
                 onToggleDay = { habit, dayStart -> toggle(scope, dao, core, completions, habit, dayStart) },
-                onEdit = { editing = it },
+                onEdit = { editingId = it.habitId },
             )
         }
     }
@@ -117,17 +120,17 @@ fun HabitRoot(onExit: () -> Unit) {
     }
 
     editing?.let { habit ->
-        ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { editingId = null }, sheetState = rememberModalBottomSheetState()) {
             HabitEditorSheet(
                 existing = habit,
                 onSave = { name, symbol ->
-                    editing = null
+                    editingId = null
                     scope.launch {
                         dao.updateHabit(habit.copy(name = name, symbol = symbol))
                         core.log("habit", "edit", "Edited habit: $name")
                     }
                 },
-                onDelete = { editing = null; confirmingDelete = habit },
+                onDelete = { editingId = null; confirmingDelete = habit },
             )
         }
     }

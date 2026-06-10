@@ -22,8 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -45,10 +45,12 @@ fun JournalEditorScreen(entry: JournalEntry?, onExit: () -> Unit) {
     val dao = container.database.journalDao()
     val isNew = entry == null
 
-    var title by remember { mutableStateOf(entry?.title ?: "") }
-    var body by remember { mutableStateOf(entry?.body ?: "") }
-    var tags by remember { mutableStateOf(entry?.tagList ?: emptyList()) }
-    var tagInput by remember { mutableStateOf("") }
+    // Issue #86: drafts survive rotation/process death. Keyed by the entry id so switching to a
+    // different entry never restores a stale draft; null is a valid stable key for a new entry.
+    var title by rememberSaveable(entry?.id) { mutableStateOf(entry?.title ?: "") }
+    var body by rememberSaveable(entry?.id) { mutableStateOf(entry?.body ?: "") }
+    var tags by rememberSaveable(entry?.id) { mutableStateOf(entry?.tagList ?: emptyList()) }
+    var tagInput by rememberSaveable(entry?.id) { mutableStateOf("") }
 
     // Fold the current (possibly comma-separated) tag input into the chip list, normalized.
     fun commitTags() {

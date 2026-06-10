@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.workout
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,28 +73,48 @@ fun WorkoutPlayerScreen(
     onFinish: (WorkoutSession, Boolean) -> Unit,
 ) {
     // Local working copy: list of exercises with their set logs, mutated as the user trains.
+    // Deliberately plain remember (issue #86): every completed set is persisted via [persist], so
+    // a recreated composition re-derives it from the Room session, not the size-limited Bundle.
     var exercises by remember { mutableStateOf(session.exercises) }
-    var phase by remember { mutableStateOf(PlayerPhase.EXERCISE) }
-    var exerciseIndex by remember { mutableStateOf(firstPlayable(session.exercises)) }
-    var setIndex by remember { mutableStateOf(0) }
+    var phase by rememberSaveable { mutableStateOf(PlayerPhase.EXERCISE) }
+    var exerciseIndex by rememberSaveable { mutableStateOf(firstPlayable(session.exercises)) }
+    var setIndex by rememberSaveable { mutableStateOf(0) }
 
-    var repsText by remember { mutableStateOf("") }
-    var weightText by remember { mutableStateOf("") }
+    var repsText by rememberSaveable { mutableStateOf("") }
+    var weightText by rememberSaveable { mutableStateOf("") }
     val unit = defaultUnit
 
-    var restRemaining by remember { mutableStateOf(0) }
-    var restTotal by remember { mutableStateOf(0) }
+    var restRemaining by rememberSaveable { mutableStateOf(0) }
+    var restTotal by rememberSaveable { mutableStateOf(0) }
 
-    var showEnd by remember { mutableStateOf(false) }
-    var confirmingSkip by remember { mutableStateOf(false) }
+    var showEnd by rememberSaveable { mutableStateOf(false) }
+    var confirmingSkip by rememberSaveable { mutableStateOf(false) }
+
+    // Indices restore from the Bundle while `exercises` rebuilds from Room — clamp so a restored
+    // position can never point past the rebuilt lists (issue #86).
+    if (exerciseIndex >= exercises.size) exerciseIndex = firstPlayable(exercises)
+    exercises.getOrNull(exerciseIndex)?.let { ex ->
+        if (setIndex >= ex.sets.size) setIndex = (ex.sets.size - 1).coerceAtLeast(0)
+    }
+
+    // System back mirrors the top-bar exit: the End/Discard dialog while training, a saving finish
+    // from the summary. Always enabled — innermost-wins keeps it above WorkoutRoot's handler, so
+    // back can never silently abandon the session (issue #86).
+    BackHandler {
+        if (phase == PlayerPhase.DONE) onFinish(session.withExercises(exercises), true)
+        else showEnd = true
+    }
 
     fun save() = persist(session.withExercises(exercises))
 
     val current = exercises.getOrNull(exerciseIndex)
 
-    // Prefill the rep target whenever we land on a new set.
+    // Prefill the rep target whenever we land on a new set. The saveable key skips the re-prefill
+    // after recreation so restored mid-edit reps/weight text isn't clobbered (issue #86).
+    var prefilledSetKey by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(exerciseIndex, setIndex, phase) {
-        if (phase == PlayerPhase.EXERCISE) {
+        if (phase == PlayerPhase.EXERCISE && prefilledSetKey != "$exerciseIndex:$setIndex") {
+            prefilledSetKey = "$exerciseIndex:$setIndex"
             val ex = exercises.getOrNull(exerciseIndex)
             repsText = ex?.targetReps?.takeWhile { it.isDigit() }?.ifEmpty { "" } ?: ""
             weightText = ex?.targetWeight?.let { formatWeight(it) } ?: ""
