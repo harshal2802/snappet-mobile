@@ -67,6 +67,9 @@ targets:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: [health-records]
         com.apple.developer.healthkit.background-delivery: true
+        # Phase-end alerts (Pomodoro) keep .timeSensitive through a user's focus mode —
+        # without this the system silently downgrades the interruption level (#70).
+        com.apple.developer.usernotifications.time-sensitive: true
   # watchOS companion: runs HKWorkoutSession + HKLiveWorkoutBuilder and relays live HR /
   # energy to the phone over WCSession (live-workout-studio A1).
   SnappetWatch:

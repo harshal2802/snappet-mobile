@@ -9,5 +9,6 @@ struct SnappetWidgetsBundle: WidgetBundle {
     var body: some Widget {
         WorkoutLiveActivity()
         KilterLiveActivity()
+        PomodoroLiveActivity()
     }
 }
