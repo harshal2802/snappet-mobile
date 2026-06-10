@@ -8,8 +8,10 @@ struct ExpenseRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SuiteRouter.self) private var router
     @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var groups: [ExpenseGroup]
+    @Query private var allExpenses: [ExpenseRecord]
 
     @State private var showingNewGroup = false
+    @State private var pendingDeleteGroup: ExpenseGroup?
 
     var body: some View {
         Group {
@@ -37,6 +39,26 @@ struct ExpenseRootView: View {
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet()
         }
+        .confirmationDialog(
+            "Delete \"\(pendingDeleteGroup?.name ?? "")\"?",
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Group", role: .destructive) {
+                if let group = pendingDeleteGroup { deleteGroupWithOrphans(group) }
+                pendingDeleteGroup = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteGroup = nil }
+        } message: {
+            if let group = pendingDeleteGroup {
+                let count = allExpenses.filter { $0.groupID == group.id }.count
+                if count > 0 {
+                    Text("This removes the group and all \(count) expense\(count == 1 ? "" : "s") in it.")
+                } else {
+                    Text("This removes the group.")
+                }
+            }
+        }
     }
 
     // A ScrollView + VStack of Buttons (not a List) — the suite's proven XCUITest-tappable
@@ -55,7 +77,7 @@ struct ExpenseRootView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("expenseGroupRow")
                     .contextMenu {
-                        Button("Delete", role: .destructive) { delete(group) }
+                        Button("Delete", role: .destructive) { pendingDeleteGroup = group }
                     }
                 }
             }
@@ -63,7 +85,17 @@ struct ExpenseRootView: View {
         }
     }
 
-    private func delete(_ group: ExpenseGroup) {
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteGroup != nil },
+            set: { if !$0 { pendingDeleteGroup = nil } }
+        )
+    }
+
+    private func deleteGroupWithOrphans(_ group: ExpenseGroup) {
+        for expense in allExpenses where expense.groupID == group.id {
+            modelContext.delete(expense)
+        }
         modelContext.delete(group)
         try? modelContext.save()
     }

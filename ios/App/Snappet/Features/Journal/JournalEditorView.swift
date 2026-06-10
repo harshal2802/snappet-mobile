@@ -13,6 +13,7 @@ struct JournalEditorView: View {
 
     @FocusState private var bodyFocused: Bool
     @State private var tagInput: String = ""
+    @State private var didSave = false
 
     var body: some View {
         Form {
@@ -54,6 +55,16 @@ struct JournalEditorView: View {
         .onAppear {
             if isNew { bodyFocused = true }
         }
+        .onDisappear {
+            // Clean up a blank new entry abandoned via system back-swipe (which bypasses save()).
+            guard isNew && !didSave else { return }
+            let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedBody = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty {
+                modelContext.delete(entry)
+                try? modelContext.save()
+            }
+        }
     }
 
     /// Fold the current `tagInput` (possibly comma-separated) into `entry.tags`, normalized.
@@ -74,6 +85,9 @@ struct JournalEditorView: View {
 
         let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Mark saved first so onDisappear skips the blank-entry guard when dismiss() fires it.
+        didSave = true
 
         // Drop an entirely empty new entry rather than persisting a blank row.
         if isNew && trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty {

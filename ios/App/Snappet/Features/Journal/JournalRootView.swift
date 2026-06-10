@@ -12,6 +12,7 @@ struct JournalRootView: View {
 
     @State private var newEntry: JournalEntry?
     @State private var searchText: String = ""
+    @State private var pendingDeleteEntry: JournalEntry?
 
     /// Entries matching the current search query (title, body, or any tag — case-insensitive).
     /// Kept out of `body` so the view stays thin.
@@ -54,6 +55,22 @@ struct JournalRootView: View {
         .navigationDestination(item: $newEntry) { entry in
             JournalEditorView(entry: entry, isNew: true)
         }
+        .confirmationDialog(
+            "Delete this entry?",
+            isPresented: deleteEntryDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Entry", role: .destructive) {
+                if let entry = pendingDeleteEntry {
+                    modelContext.delete(entry)
+                    try? modelContext.save()
+                }
+                pendingDeleteEntry = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteEntry = nil }
+        } message: {
+            Text("This cannot be undone.")
+        }
     }
 
     private var entryList: some View {
@@ -65,8 +82,15 @@ struct JournalRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("journalRow")
             }
-            .onDelete(perform: deleteEntries)
+            .onDelete(perform: requestDeleteEntries)
         }
+    }
+
+    private var deleteEntryDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteEntry != nil },
+            set: { if !$0 { pendingDeleteEntry = nil } }
+        )
     }
 
     private func createEntry() {
@@ -75,13 +99,12 @@ struct JournalRootView: View {
         newEntry = entry
     }
 
-    private func deleteEntries(at offsets: IndexSet) {
-        // Map list offsets through the filtered view so the right entries are removed.
+    private func requestDeleteEntries(at offsets: IndexSet) {
+        // Map list offsets through the filtered view so the right entry is targeted.
         let visible = filteredEntries
-        for index in offsets {
-            modelContext.delete(visible[index])
+        if let index = offsets.first {
+            pendingDeleteEntry = visible[index]
         }
-        try? modelContext.save()
     }
 }
 

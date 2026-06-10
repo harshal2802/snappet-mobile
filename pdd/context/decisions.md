@@ -4,6 +4,26 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Journal blank-entry cleanup — onDisappear guard instead of deferred insert
+
+**Decision**: The blank-entry-on-back-swipe bug in `JournalEditorView` is fixed with an
+`onDisappear` guard (delete if `isNew && !didSave && title+body+tags all empty`) rather than
+deferring the `modelContext.insert` to save time.
+
+**Why**: `JournalEditorView` binds the entry via `@Bindable var entry: JournalEntry`, which
+requires the model to be a live SwiftData object in the context. Deferring insertion would
+require replacing `@Bindable` with a separate `@State` value that gets inserted on save —
+a significant structural change that touches the tag-chip flow, the `isNew` branch in `save()`,
+and the logging path, with no user-visible benefit. The `onDisappear` approach is additive and
+keeps all existing behavior intact.
+
+`didSave` is set to `true` in `save()` before the first `dismiss()` so the `onDisappear`
+callback skips the guard when the Done path fires (which also calls `dismiss()`, triggering
+`onDisappear`). Without the flag, Done-on-blank would double-delete (already-deleted model).
+
+**Rules out**: defer-insert (too invasive given `@Bindable`); `UndoManager` (not configured
+anywhere in the app).
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

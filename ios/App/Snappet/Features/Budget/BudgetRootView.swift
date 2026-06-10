@@ -19,6 +19,8 @@ struct BudgetRootView: View {
     @State private var editingCategory: BudgetCategory?
     /// The month the whole screen is scoped to. Defaults to the current month.
     @State private var month = MonthScope()
+    /// IndexSet from the pending swipe-delete, held until the confirmationDialog resolves.
+    @State private var pendingDeleteOffsets: IndexSet?
 
     var body: some View {
         Group {
@@ -78,6 +80,24 @@ struct BudgetRootView: View {
         }
         .navigationDestination(for: BudgetTrendsRoute.self) { _ in
             BudgetTrendsView(transactions: transactions)
+        }
+        .confirmationDialog(
+            "Delete categor\(pendingDeleteOffsets?.count == 1 ? "y" : "ies")?",
+            isPresented: deleteCategoryDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteOffsets { performDeleteCategories(at: offsets) }
+                pendingDeleteOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteOffsets = nil }
+        } message: {
+            let count = pendingDeleteTransactionCount
+            if count > 0 {
+                Text("This removes the categor\(pendingDeleteOffsets?.count == 1 ? "y" : "ies") and \(count) transaction\(count == 1 ? "" : "s") across all months.")
+            } else {
+                Text("This removes the categor\(pendingDeleteOffsets?.count == 1 ? "y" : "ies").")
+            }
         }
     }
 
@@ -268,10 +288,28 @@ struct BudgetRootView: View {
         try? context.save()
     }
 
+    private var deleteCategoryDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteOffsets != nil },
+            set: { if !$0 { pendingDeleteOffsets = nil } }
+        )
+    }
+
+    private var pendingDeleteTransactionCount: Int {
+        guard let offsets = pendingDeleteOffsets else { return 0 }
+        return offsets.reduce(0) { count, index in
+            let categoryID = categories[index].id
+            return count + transactions.filter { $0.categoryID == categoryID }.count
+        }
+    }
+
     private func deleteCategories(at offsets: IndexSet) {
+        pendingDeleteOffsets = offsets
+    }
+
+    private func performDeleteCategories(at offsets: IndexSet) {
         for index in offsets {
             let category = categories[index]
-            // Remove the category and all of its transactions (cascade by foreign key).
             for transaction in transactions where transaction.categoryID == category.id {
                 context.delete(transaction)
             }
