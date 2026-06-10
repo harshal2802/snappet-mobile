@@ -53,6 +53,8 @@ class KilterUITest : SuiteTest() {
         composeRule.waitUntil(timeoutMillis = 6_000) {
             composeRule.onAllNodesWithTag("kilter.catalog.import").fetchSemanticsNodes().isNotEmpty()
         }
+        // Both install paths are offered; Download leads (issue #94).
+        composeRule.onNodeWithTag("kilter.catalog.sync").assertIsDisplayed()
         composeRule.onNodeWithTag("kilter.catalog.import").assertIsDisplayed()
         // No climbs are listed in the opt-in empty state.
         assert(composeRule.onAllNodesWithTag("kilter.climbRow").fetchSemanticsNodes().isEmpty())

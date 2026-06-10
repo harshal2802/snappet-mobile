@@ -38,11 +38,10 @@ class ExpenseUITest : SuiteTest() {
         // Open the group.
         composeRule.onAllNodesWithTag("expenseGroupRow")[0].performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("expense.groupActions").assertIsDisplayed()
 
-        // Add an expense: Alice (default payer) paid 100, split between both -> Bob owes Alice 50.
-        composeRule.onNodeWithTag("expense.groupActions").performClick()
-        composeRule.waitForIdle()
+        // Add an expense via the visible FAB (issue #94): Alice (default payer) paid 100,
+        // split between both -> Bob owes Alice 50.
+        composeRule.onNodeWithTag("expense.newExpense").assertIsDisplayed()
         composeRule.onNodeWithTag("expense.newExpense").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("expense.expense.title").performTextInput("Dinner")
@@ -63,9 +62,8 @@ class ExpenseUITest : SuiteTest() {
 
         composeRule.onNodeWithText("Bob owes Alice").assertIsDisplayed()
 
-        // Record a settlement: Bob pays Alice 30 -> the pair clears.
-        composeRule.onNodeWithTag("expense.groupActions").performClick()
-        composeRule.waitForIdle()
+        // Record a settlement via the inline Settle-up button (issue #94): Bob pays Alice 30
+        // -> the pair clears.
         composeRule.onNodeWithTag("expense.settle").performClick()
         composeRule.waitForIdle()
 

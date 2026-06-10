@@ -39,11 +39,13 @@ private sealed interface InstallPhase {
 }
 
 /**
- * The opt-in empty state shown when no catalog is installed (issue #42). Snappet ships no Aurora data;
- * the user brings the climb catalog onto this device once — by importing a `.sqlite3` they built
- * themselves via Storage Access Framework (Phase 1) — and from then on browse/detail/log/illuminate
- * work offline. Surfaces Aurora's Terms of Use + a link before any fetch. Mirrors the iOS
- * `KilterCatalogSyncView`.
+ * The opt-in empty state shown when no catalog is installed (issue #42; emphasis reversed in #94).
+ * Snappet ships no Aurora data; the user brings the climb catalog onto this device once — primarily
+ * by downloading it from the user-configured hosted dataset (trimmed on-device by their filters),
+ * or secondarily by importing a `.sqlite3` catalog file they already have via Storage Access
+ * Framework — and from then on browse/detail/log/illuminate work offline. Surfaces Aurora's Terms
+ * of Use + a link before any fetch. Mirrors the iOS `KilterCatalogSyncView` (whose first-run order
+ * is tracked separately).
  */
 @Composable
 fun KilterCatalogSyncScreen(onInstalled: () -> Unit, onExit: () -> Unit) {
@@ -122,22 +124,23 @@ fun KilterCatalogSyncScreen(onInstalled: () -> Unit, onExit: () -> Unit) {
                 InstallPhase.Idle -> {}
             }
 
+            // Issue #94: Download leads — it's the path that works on a phone. Importing a
+            // catalog file you already have is the secondary, power-user route.
             Button(
-                onClick = { picker.launch(arrayOf("*/*")) },
-                enabled = phase != InstallPhase.Working,
-                modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.import"),
-            ) { Text("Import catalog file…") }
-
-            // Phase 2 (HostedCatalogProvider): download + trim a hosted dataset on-device.
-            OutlinedButton(
                 onClick = { showDownload = true },
                 enabled = phase != InstallPhase.Working,
                 modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.sync"),
             ) { Text("Download from Kilter…") }
 
+            OutlinedButton(
+                onClick = { picker.launch(arrayOf("*/*")) },
+                enabled = phase != InstallPhase.Working,
+                modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.import"),
+            ) { Text("Import catalog file…") }
+
             Text(
-                "Download fetches the catalog from a hosted dataset (filters trim it on-device). Or build " +
-                    "a file yourself with the boardlib tool — see tools/kilter.",
+                "Download fetches the catalog from a hosted dataset and trims it on-device with " +
+                    "your filters. Import installs a catalog file you already have.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

@@ -27,9 +27,11 @@ fun ModuleScaffold(
     title: String,
     onExit: () -> Unit,
     actions: @Composable (androidx.compose.foundation.layout.RowScope.() -> Unit) = {},
+    floatingActionButton: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
+        floatingActionButton = floatingActionButton,
         topBar = {
             TopAppBar(
                 title = { Text(title) },

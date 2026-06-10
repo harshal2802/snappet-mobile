@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,16 +22,15 @@ import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -284,10 +284,11 @@ private fun GroupList(
 }
 
 /**
- * Group detail: per-participant balances, the greedy settle-up plan, and the expense list. A
- * `expense.groupActions` overflow menu opens "New expense" / "Settle up". Tapping an expense row
- * (its title) opens an edit sheet. Its back arrow returns to the group list. Mirrors iOS
- * `ExpenseGroupView`.
+ * Group detail: per-participant balances, the greedy settle-up plan, and the expense list. The
+ * primary actions are visible (issue #94): a "New expense" FAB, a top-bar receipt button (the
+ * entrance to receipt OCR), and an inline "Settle up" button on its section header — no overflow
+ * menu. Tapping an expense row (its title) opens an edit sheet. Its back arrow returns to the
+ * group list. Mirrors iOS `ExpenseGroupView`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -299,7 +300,6 @@ private fun GroupDetail(
     scope: CoroutineScope,
     onExit: () -> Unit,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
     var showNewExpense by remember { mutableStateOf(false) }
     var showNewReceipt by remember { mutableStateOf(false) }
     var showSettle by remember { mutableStateOf(false) }
@@ -357,38 +357,31 @@ private fun GroupDetail(
         title = group.name,
         onExit = onExit,
         actions = {
-            Box {
-                IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("expense.groupActions")) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Group actions")
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("New expense") },
-                        onClick = { menuOpen = false; showNewExpense = true },
-                        modifier = Modifier.testTag("expense.newExpense"),
-                    )
-                    DropdownMenuItem(
-                        text = { Text("New receipt") },
-                        onClick = { menuOpen = false; showNewReceipt = true },
-                        modifier = Modifier.testTag("expense.newReceipt"),
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Settle up") },
-                        onClick = { menuOpen = false; showSettle = true },
-                        modifier = Modifier.testTag("expense.settle"),
-                    )
-                }
+            // The receipt scanner's only entrance — a visible top-bar action (issue #94).
+            IconButton(onClick = { showNewReceipt = true }, modifier = Modifier.testTag("expense.newReceipt")) {
+                Icon(Icons.Filled.ReceiptLong, contentDescription = "New receipt")
             }
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = { showNewExpense = true },
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("New expense") },
+                modifier = Modifier.testTag("expense.newExpense"),
+            )
         },
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            // Bottom padding keeps the New-expense FAB clear of the last row.
+            contentPadding = PaddingValues(bottom = 88.dp),
         ) {
             if (expenses.isEmpty()) {
                 item {
                     Text(
-                        "No expenses yet. Use the menu to add the group's first expense.",
+                        "No expenses yet. Tap New expense to add the group's first one, " +
+                            "or the receipt button above to scan one.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -399,7 +392,16 @@ private fun GroupDetail(
                     BalanceRow(name = balance.name, net = balance.net)
                 }
 
-                item { SectionHeader("Settle Up") }
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        SectionHeader("Settle Up")
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            onClick = { showSettle = true },
+                            modifier = Modifier.testTag("expense.settle"),
+                        ) { Text("Settle up") }
+                    }
+                }
                 if (transfers.isEmpty()) {
                     item {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

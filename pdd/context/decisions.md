@@ -3286,3 +3286,33 @@ body eval, capturing the live binding).
 **Infra note:** Gradle's `connectedDebugAndroidTest` wedges on this iCloud-synced Desktop (the daemon
 hangs before installing the test APK). Workaround that runs cleanly: build the APKs, then
 `adb install` + `adb shell am instrument` directly (bypassing Gradle's device orchestration).
+
+## [2026-06-10] Android — primary actions promoted out of overflow menus; Download leads the Kilter first-run (#94)
+
+**Decision**: the platform's differentiated create actions are now visible controls instead of kebab
+items (prompt 42, the last Android Wave-1 item from the 2026-06 product review):
+
+- `ModuleScaffold` gained an optional `floatingActionButton` slot (the app previously had **zero**
+  FABs, which is why everything had landed in overflow menus).
+- **Kilter browse**: "Create climb" is an extended FAB (`kilter.create` moved off the menu item);
+  the More menu keeps start/end session, surprise me, settings. The Mine empty state now points at
+  the FAB instead of teaching the menu path ("Tap More ▸ …").
+- **Expense group detail**: "New expense" is an extended FAB, "New receipt" (the only entrance to
+  receipt OCR) is a visible top-bar receipt icon, and "Settle up" is an inline button on its section
+  header — which emptied the kebab, so the `expense.groupActions` menu is **gone**. Lists under FABs
+  get 88 dp bottom content padding so the FAB never covers the last row. The settle button renders
+  with the sections (i.e. only once the group has records) — settling an empty group is meaningless.
+
+**Reversal recorded — "file-import primary" (Android first-run only).** The [2026-06-05/06] entries
+kept "Import catalog file…" as the primary filled button on `KilterCatalogSyncScreen` as a deliberate
+legal-posture signal. That buried the only path that works for most phone users behind a power-user
+flow, and the helper copy referenced "the boardlib tool — see tools/kilter" — a git-repo artifact a
+phone user cannot see or act on. Now **Download from Kilter leads** (filled, first) with Import as the
+outlined secondary, and the repo-artifact sentence is deleted (the caption explains both paths in user
+terms). Everything that actually carries the legal posture is **unchanged**: the Aurora ToU notice +
+link before any fetch, the user-controlled host, no Aurora API, personal/sideload-only scope. iOS
+emphasis is untouched (its first-run order is an iOS-tracker concern).
+
+**Verified**: unit suite + the full 39-test instrumented suite green on the emulator
+(`KilterCreateUITest` now drives the FAB, `ExpenseUITest` the FAB + inline settle,
+`KilterUITest.emptyStateShowsCatalogSyncScreen` asserts both install buttons).

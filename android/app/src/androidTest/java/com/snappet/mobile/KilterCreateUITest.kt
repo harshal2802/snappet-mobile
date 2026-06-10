@@ -50,7 +50,7 @@ class KilterCreateUITest : SuiteTest() {
 
     private fun openCreate() {
         openKilter()
-        composeRule.onNodeWithTag("kilter.more").performClick()
+        // Issue #94: Create climb is a visible FAB on the catalog, not a kebab item.
         composeRule.onNodeWithTag("kilter.create").performClick()
         composeRule.waitForIdle()
     }
@@ -123,7 +123,6 @@ class KilterCreateUITest : SuiteTest() {
         tapBack()   // back on the catalog root
 
         // Author the identical climb again → the duplicate checker warns before saving.
-        composeRule.onNodeWithTag("kilter.more").performClick()
         composeRule.onNodeWithTag("kilter.create").performClick()
         composeRule.waitForIdle()
         placeValidClimb()
