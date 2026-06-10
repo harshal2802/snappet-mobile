@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.kilter
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -56,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -118,8 +120,13 @@ fun KilterRoot(onExit: () -> Unit) {
         return
     }
 
-    var screen by remember { mutableStateOf(KilterScreen.ROOT) }
-    var selectedUuid by remember { mutableStateOf<String?>(null) }
+    var screen by rememberSaveable { mutableStateOf(KilterScreen.ROOT) }
+    var selectedUuid by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Issue #86: system back pops one level, mirroring each sub-screen's onExit (all of them —
+    // including DETAIL when entered from CREATE — return to ROOT). At ROOT the handler is disabled
+    // so back falls through to the app-level NavHost (→ app grid).
+    BackHandler(enabled = screen != KilterScreen.ROOT) { screen = KilterScreen.ROOT }
 
     when (screen) {
         KilterScreen.HISTORY -> KilterHistoryScreen(dao = dao, onExit = { screen = KilterScreen.ROOT })
@@ -190,14 +197,14 @@ private fun KilterCatalogScreen(
             KilterSettings.setProductSizeId(context, productSizeId)
         }
     }
-    var savedOnly by remember { mutableStateOf(false) }
-    var mineOnly by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
-    var sort by remember { mutableStateOf(KilterSort.POPULAR) }
-    var benchmarksOnly by remember { mutableStateOf(false) }
-    var minAscents by remember { mutableStateOf(0) }
-    var minQuality by remember { mutableStateOf(0.0) }
-    var showFilters by remember { mutableStateOf(false) }
+    var savedOnly by rememberSaveable { mutableStateOf(false) }
+    var mineOnly by rememberSaveable { mutableStateOf(false) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var sort by rememberSaveable { mutableStateOf(KilterSort.POPULAR) }
+    var benchmarksOnly by rememberSaveable { mutableStateOf(false) }
+    var minAscents by rememberSaveable { mutableStateOf(0) }
+    var minQuality by rememberSaveable { mutableStateOf(0.0) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
     var moreMenu by remember { mutableStateOf(false) }
     var climbs by remember { mutableStateOf<List<KilterListItem>>(emptyList()) }
     var cotd by remember { mutableStateOf<KilterListItem?>(null) }

@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.tip
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,14 +73,18 @@ fun TipRoot(onExit: () -> Unit) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
 
-    var screen by remember { mutableStateOf(TipScreen.ROOT) }
-    var showPresetEditor by remember { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf(TipScreen.ROOT) }
+    var showPresetEditor by rememberSaveable { mutableStateOf(false) }
 
-    var billText by remember { mutableStateOf("") }
-    var tipPercent by remember { mutableStateOf(18) }
-    var splitCount by remember { mutableStateOf(1) }
-    var roundUp by remember { mutableStateOf(false) }
+    var billText by rememberSaveable { mutableStateOf("") }
+    var tipPercent by rememberSaveable { mutableStateOf(18) }
+    var splitCount by rememberSaveable { mutableStateOf(1) }
+    var roundUp by rememberSaveable { mutableStateOf(false) }
     val presets = remember { mutableStateListOf(*TipSettings.presets(context).toTypedArray()) }
+
+    // Issue #86: system back pops HISTORY → ROOT, mirroring the top-bar arrow; disabled at ROOT
+    // so back falls through to the app-level NavHost (→ app grid).
+    BackHandler(enabled = screen == TipScreen.HISTORY) { screen = TipScreen.ROOT }
 
     val bill = billText.toDoubleOrNull() ?: 0.0
     val rawTip = (if (bill > 0) bill else 0.0) * tipPercent / 100.0

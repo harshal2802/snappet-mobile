@@ -3316,3 +3316,64 @@ emphasis is untouched (its first-run order is an iOS-tracker concern).
 **Verified**: unit suite + the full 39-test instrumented suite green on the emulator
 (`KilterCreateUITest` now drives the FAB, `ExpenseUITest` the FAB + inline settle,
 `KilterUITest.emptyStateShowsCatalogSyncScreen` asserts both install buttons).
+
+## [2026-06-10] Android — system back, rotation/process death, tab retention, workout resume (#86)
+
+**Decision**: module-local `BackHandler` + `rememberSaveable`, **not** a NavHost migration (prompt 43,
+first Android Wave-2 item). The issue offered two shapes; promoting every module's sub-screens into
+the `library → module/{id}` NavHost graph would have rewritten all eight module roots. Instead each
+multi-screen module root keeps its enum/id state and adds a `BackHandler(enabled = <in sub-screen>)`
+that does exactly what its top-bar arrow does; at module root the handler is disabled so back falls
+through to the NavHost (→ app grid). The #99 Today-home nav hoist builds on this later.
+
+- **Tab retention**: `RootShell` wraps the `when (tab)` content in a `SaveableStateHolder` entry per
+  tab — the NavHost back stack (savedState-backed) and every `rememberSaveable` below it now survive
+  Today ↔ Apps. The bare `when` previously disposed the whole Apps subtree per switch.
+- **Saveable promotion, not ViewModels**: screen/section enums (Serializable → autoSaver), selection
+  ids, search text, filters, sheet booleans, and text drafts went straight to `rememberSaveable`.
+  Object staging (`editing: Foo?`) became **id staging** + derive-from-flow, so process death restores
+  by Room lookup and a deleted row self-heals to null. Three custom Savers: kilter hold assignments
+  (`Map<Int, KilterAuthorRole>` ↔ `"id:roleName"` strings — pure codec, unit-tested), receipt line
+  items (`ItemEdit` holds `MutableState` fields → flatten to strings), budget `MonthScope` (epoch-anchor
+  Long).
+- **The load-race gate** (the subtle bug): every module had `if (row == null) screen = ROOT` self-heal
+  guards. Once `screen` is saveable, a restored sub-screen composes against `collectAsState(initial =
+  emptyList())` **before Room's first emission** and instantly bounces to ROOT — rotation/tab-return
+  would "work" but always land on the dashboard. Fix: `initial = null` + guard only when the flow has
+  emitted (workout, budget; journal gates editor composition the same way). Expense/kilter derive
+  rather than write, so they self-heal without the gate.
+- **Workout resume policy**: an unfinished session (`finishedAt == null`) is only ever finalized by the
+  user — resumed and finished, or explicitly discarded — never auto-deleted, never auto-finished. The
+  dashboard banner (Resume / confirmed Discard) is the only surface; History stays finished-only. The
+  live player was already persisting every completed set (`dao.updateSession` per set), so resume is
+  pure UI — no schema change, store stays v4. Player back always routes through the End/Discard dialog
+  (innermost-wins over the module root's handler).
+- **Accepted residuals**: `BackupScreen.pendingImportText` (MB-scale JSON) deliberately not saveable —
+  Bundle transaction limits; momentary confirm-dialog staging stays `remember`; BLE board/session
+  controller objects still rebuild on rotation (device-phase; their *navigation context* restores);
+  Pomodoro `focus`/`brk` stay `remember` — their initializers re-read SharedPreferences (the real
+  source of truth), a Bundle copy could shadow it stale.
+
+**Pre-merge adversarial review round** (3 lenses + per-finding skeptics; 5 confirmed, all fixed):
+(1) the banner resume was **completion-blind** — it opened at the first non-skipped exercise, set 0,
+and `completeSet()` unconditionally replaces the set at the current position, so tapping forward
+would have silently overwritten real logged sets with target-prefilled values (and Skip would have
+hidden a trained exercise from the stats). The player now starts at the **first incomplete set**
+(`firstIncomplete`, also the out-of-range clamp fallback) and opens straight on the summary when
+everything is logged. (2) The generated climb (`genResult`) was runtime-only although the prompt
+required saving it — generation is stochastic, so the dropped result was unrecoverable. Frames +
+predicted grade now survive via `GenResultSaver`; the preview holds re-derive from frames, and
+`prepareModel` lands on READY when a result exists (also fixing the pre-existing
+tab-switch-hides-result quirk). (3) Kilter catalog `search`/`sort`/`benchmarksOnly`/`minAscents`/
+`minQuality` had missed the promotion — half-restored UI (the saveable sheet reopened over reset
+values). (4) Journal now uses the same null-initial gate as workout/budget — no list flash while the
+flow loads, and a deleted staged row resets `editorOpen` so back isn't absorbed as a no-op.
+(5) Expense got the same gate — no false "No groups yet" flash; a deleted staged group self-heals
+its id.
+
+**Verified**: unit suite green (incl. new `KilterAssignmentsCodecTest`); instrumented suite green on
+the emulator — 39-test baseline + new `NavRobustnessUITest` (back-pops-one-level, End-dialog-on-back,
+recreate-preserves journal/create-climb drafts, recreate-mid-workout restores the player, tab-switch
+retention, resume-banner resume + discard, resume-lands-on-first-incomplete-set). UI-test infra
+gotcha recorded: `recreate()` while `TestHooks.freshInMemoryStore` is still true rebuilds an *empty*
+store mid-test — `launchForRecreate()` pins the container after first launch.

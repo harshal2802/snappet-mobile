@@ -19,12 +19,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,10 +51,13 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
     val scope = rememberCoroutineScope()
     val dateFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
     // Issue #88: the whole climbing history must not be one unconfirmed tap away.
-    var confirmingClearAll by remember { mutableStateOf(false) }
-    // The ascent staged by a long-press: correct its status or delete it.
-    var editingEntry by remember { mutableStateOf<KilterLogEntry?>(null) }
-    var confirmingDelete by remember { mutableStateOf<KilterLogEntry?>(null) }
+    var confirmingClearAll by rememberSaveable { mutableStateOf(false) }
+    // The ascent staged by a long-press: correct its status or delete it. Staged by id (issue #86)
+    // so the dialog survives recreation and self-heals closed if the row vanished meanwhile.
+    var editingEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var confirmingDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editingEntry = entries.firstOrNull { it.id == editingEntryId }
+    val confirmingDelete = entries.firstOrNull { it.id == confirmingDeleteId }
 
     if (confirmingClearAll) {
         com.snappet.mobile.ui.ConfirmDeleteDialog(
@@ -74,10 +77,10 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
             title = "Delete this ascent?",
             message = "${entry.climbName} (${entry.gradeLabel}) is removed from your history and stats.",
             onConfirm = {
-                confirmingDelete = null
+                confirmingDeleteId = null
                 scope.launch { dao.deleteLog(entry) }
             },
-            onDismiss = { confirmingDelete = null },
+            onDismiss = { confirmingDeleteId = null },
         )
     }
 
@@ -85,11 +88,11 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
         AscentEditDialog(
             entry = entry,
             onSetStatus = { status ->
-                editingEntry = null
+                editingEntryId = null
                 scope.launch { dao.updateLogStatus(entry.id, status.name) }
             },
-            onDelete = { editingEntry = null; confirmingDelete = entry },
-            onDismiss = { editingEntry = null },
+            onDelete = { editingEntryId = null; confirmingDeleteId = entry.id },
+            onDismiss = { editingEntryId = null },
         )
     }
 
@@ -179,7 +182,7 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
 
             item { SectionHeader("Ascents") }
             items(entries, key = { it.id }) { entry ->
-                AscentRow(entry, onLongPress = { editingEntry = entry })
+                AscentRow(entry, onLongPress = { editingEntryId = entry.id })
             }
         }
     }

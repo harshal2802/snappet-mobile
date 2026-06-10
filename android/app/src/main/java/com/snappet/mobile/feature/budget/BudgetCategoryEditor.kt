@@ -12,7 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -29,8 +29,9 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun BudgetCategoryEditor(existing: BudgetCategory?, onDelete: (() -> Unit)? = null, onSave: (String, Double) -> Unit) {
-    var name by remember { mutableStateOf(existing?.name ?: "") }
-    var limit by remember { mutableStateOf(existing?.monthlyLimit?.toString() ?: "") }
+    // Issue #86: drafts survive rotation; keyed by category so switching records doesn't restore a stale draft.
+    var name by rememberSaveable(existing?.categoryId) { mutableStateOf(existing?.name ?: "") }
+    var limit by rememberSaveable(existing?.categoryId) { mutableStateOf(existing?.monthlyLimit?.toString() ?: "") }
     val trimmed = name.trim()
     val parsedLimit = limit.trim().toDoubleOrNull()
     val isValid = trimmed.isNotEmpty() && (parsedLimit ?: 0.0) > 0.0

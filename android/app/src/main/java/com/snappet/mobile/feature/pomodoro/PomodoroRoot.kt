@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -47,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,11 +81,17 @@ fun PomodoroRoot(onExit: () -> Unit) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
 
-    var screen by remember { mutableStateOf(PomodoroScreen.ROOT) }
-    var showSettings by remember { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf(PomodoroScreen.ROOT) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    // Deliberately `remember` (issue #86): the initializers re-read SharedPreferences on
+    // recreation, which is already the persisted source of truth for these durations.
     var focus by remember { mutableStateOf(PomodoroSettings.focusMinutes(context)) }
     var brk by remember { mutableStateOf(PomodoroSettings.breakMinutes(context)) }
     val sessions by container.database.pomodoroDao().allFlow().collectAsState(initial = emptyList())
+
+    // Issue #86: system back pops HISTORY → ROOT, mirroring the top-bar arrow; disabled at ROOT
+    // so back falls through to the app-level NavHost (→ app grid).
+    BackHandler(enabled = screen == PomodoroScreen.HISTORY) { screen = PomodoroScreen.ROOT }
 
     // App-owned engine (issue #85): survives back-out/tab-switch/rotation; the container
     // wires session logging, persistence, the countdown notification, and the phase-end

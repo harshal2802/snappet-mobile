@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -27,10 +28,14 @@ import com.snappet.mobile.ui.library.AppLibraryScreen
 /**
  * The suite shell: a two-tab bottom bar over the Home dashboard and the App Library, mirroring
  * the iOS `RootShell` `TabView`. Tab tags ("Today"/"Apps") match the labels the smoke tests tap.
+ * Each tab renders inside a [rememberSaveableStateHolder] entry so switching tabs keeps the other
+ * tab's `rememberSaveable` state (NavHost back stack, module position, drafts) instead of
+ * disposing it (issue #86).
  */
 @Composable
 fun RootShell() {
     var tab by rememberSaveable { mutableStateOf(0) }
+    val tabStateHolder = rememberSaveableStateHolder()
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -52,9 +57,12 @@ fun RootShell() {
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            when (tab) {
-                0 -> HomeDashboardScreen()
-                else -> AppLibraryScreen()
+            val key = if (tab == 0) "today" else "apps"
+            tabStateHolder.SaveableStateProvider(key) {
+                when (tab) {
+                    0 -> HomeDashboardScreen()
+                    else -> AppLibraryScreen()
+                }
             }
         }
     }

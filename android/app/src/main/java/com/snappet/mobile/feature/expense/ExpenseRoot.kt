@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.expense
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -38,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,19 +75,34 @@ fun ExpenseRoot(onExit: () -> Unit) {
     val core = container.core
     val scope = rememberCoroutineScope()
 
-    val groups by dao.groupsFlow().collectAsState(initial = emptyList())
+    // Null until Room's first emission, so a restored group detail doesn't flash the (falsely
+    // empty) group list while the flow loads (same gate as workout/budget — issue #86 review).
+    val groupsOrNull by dao.groupsFlow().collectAsState(initial = null)
+    val groups = groupsOrNull ?: emptyList()
     val expenses by dao.expensesFlow().collectAsState(initial = emptyList())
 
-    var selectedGroupId by remember { mutableStateOf<String?>(null) }
+    var selectedGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     // Issue #88: a group long-pressed for actions (edit participants/name, or delete).
     var groupActions by remember { mutableStateOf<ExpenseGroup?>(null) }
-    var editingGroup by remember { mutableStateOf<ExpenseGroup?>(null) }
+    // Issue #86: the edit sheet stages the stable groupId (saveable) and re-derives the group
+    // from the flow, so its draft survives rotation; a deleted group self-heals to null.
+    var editingGroupId by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmingGroupDelete by remember { mutableStateOf<ExpenseGroup?>(null) }
     // A group save that drops names still on records, awaiting the warning's confirm.
     var pendingGroupSave by remember { mutableStateOf<Triple<ExpenseGroup, String, List<String>>?>(null) }
-    var showNewGroup by remember { mutableStateOf(false) }
+    var showNewGroup by rememberSaveable { mutableStateOf(false) }
 
     val selectedGroup = groups.firstOrNull { it.groupId == selectedGroupId }
+    val editingGroup = groups.firstOrNull { it.groupId == editingGroupId }
+
+    // The staged group is genuinely gone (flow has emitted) — clear the stale id, which also
+    // disarms the BackHandler so the next back press isn't absorbed clearing it (issue #86 review).
+    if (selectedGroupId != null && groupsOrNull != null && selectedGroup == null) selectedGroupId = null
+
+    // Issue #86: system back pops one level — group detail back to the group list, exactly like
+    // the top-bar arrow. Disabled at the module root so back falls through to the app NavHost.
+    // The receipt detail registers its own (innermost-wins) handler inside GroupDetail.
+    BackHandler(enabled = selectedGroupId != null) { selectedGroupId = null }
 
     if (selectedGroup != null) {
         GroupDetail(
@@ -96,6 +113,9 @@ fun ExpenseRoot(onExit: () -> Unit) {
             scope = scope,
             onExit = { selectedGroupId = null },
         )
+    } else if (selectedGroupId != null && groupsOrNull == null) {
+        // Restored group detail, flow not yet emitted: render nothing for the frame or two it
+        // takes Room to resolve (a deleted group self-heals above once the flow emits).
     } else {
         ModuleScaffold(
             title = "Split Expenses",
@@ -123,7 +143,7 @@ fun ExpenseRoot(onExit: () -> Unit) {
             text = { Text("Rename the group or change who's in it, or delete it with its expenses.") },
             confirmButton = {
                 androidx.compose.material3.TextButton(
-                    onClick = { groupActions = null; editingGroup = group },
+                    onClick = { groupActions = null; editingGroupId = group.groupId },
                     modifier = Modifier.testTag("expense.editGroup"),
                 ) { Text("Edit group") }
             },
@@ -137,7 +157,7 @@ fun ExpenseRoot(onExit: () -> Unit) {
     }
 
     editingGroup?.let { group ->
-        ModalBottomSheet(onDismissRequest = { editingGroup = null }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { editingGroupId = null }, sheetState = rememberModalBottomSheetState()) {
             // Issue #88: edit mode was dead code — a group can finally gain/lose
             // participants and be renamed after creation. Names referenced by existing
             // records warn before being dropped (their entries stay and still count in
@@ -150,7 +170,7 @@ fun ExpenseRoot(onExit: () -> Unit) {
             ) { name, participants ->
                 val dropped = usedNames.filter { used -> participants.none { it.equals(used, ignoreCase = true) } }
                 if (dropped.isEmpty()) {
-                    editingGroup = null
+                    editingGroupId = null
                     scope.launch {
                         dao.updateGroup(group.copy(
                             name = name,
@@ -176,7 +196,7 @@ fun ExpenseRoot(onExit: () -> Unit) {
             confirmLabel = "Remove anyway",
             onConfirm = {
                 pendingGroupSave = null
-                editingGroup = null
+                editingGroupId = null
                 scope.launch {
                     dao.updateGroup(group.copy(
                         name = name,
@@ -300,12 +320,16 @@ private fun GroupDetail(
     scope: CoroutineScope,
     onExit: () -> Unit,
 ) {
-    var showNewExpense by remember { mutableStateOf(false) }
-    var showNewReceipt by remember { mutableStateOf(false) }
-    var showSettle by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<ExpenseRecord?>(null) }
-    var editingReceipt by remember { mutableStateOf<ExpenseRecord?>(null) }
-    var viewingReceipt by remember { mutableStateOf<ExpenseRecord?>(null) }
+    var showNewExpense by rememberSaveable { mutableStateOf(false) }
+    var showNewReceipt by rememberSaveable { mutableStateOf(false) }
+    var showSettle by rememberSaveable { mutableStateOf(false) }
+    // Issue #86: sheet/detail staging holds row ids (saveable) and re-derives the record from
+    // the flow, so a mid-draft sheet survives rotation; a deleted row self-heals to null.
+    var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var editingReceiptId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var viewingReceiptId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editing = expenses.firstOrNull { it.id == editingId }
+    val editingReceipt = expenses.firstOrNull { it.id == editingReceiptId }
     // Issue #88: any row — expense, receipt, or settlement (a typo'd one used to corrupt
     // who-owes-whom forever) — can be long-pressed and deleted; balances recompute.
     var confirmingExpenseDelete by remember { mutableStateOf<ExpenseRecord?>(null) }
@@ -329,13 +353,16 @@ private fun GroupDetail(
 
     // Keep the viewed receipt in sync with the latest DB row (e.g. after an edit), and close the
     // detail if it was deleted.
-    val activeReceipt = viewingReceipt?.let { v -> expenses.firstOrNull { it.id == v.id } }
+    val activeReceipt = expenses.firstOrNull { it.id == viewingReceiptId }
+    // Issue #86: system back from the receipt detail pops to the group screen, same as its
+    // top-bar arrow. Composed after ExpenseRoot's group-level handler, so this one wins here.
+    BackHandler(enabled = activeReceipt != null) { viewingReceiptId = null }
     if (activeReceipt != null) {
         ReceiptDetail(
             group = group,
             record = activeReceipt,
-            onBack = { viewingReceipt = null },
-            onEdit = { editingReceipt = activeReceipt },
+            onBack = { viewingReceiptId = null },
+            onEdit = { editingReceiptId = activeReceipt.id },
         )
         ReceiptSheets(
             group = group,
@@ -345,7 +372,7 @@ private fun GroupDetail(
             core = core,
             scope = scope,
             onCloseNew = {},
-            onCloseEdit = { editingReceipt = null },
+            onCloseEdit = { editingReceiptId = null },
         )
         return
     }
@@ -425,8 +452,8 @@ private fun GroupDetail(
                             // A receipt opens its per-person breakdown; an even-split expense
                             // edits in place; a settlement has no editor.
                             when {
-                                expense.isReceipt -> viewingReceipt = expense
-                                !expense.isSettlement -> editing = expense
+                                expense.isReceipt -> viewingReceiptId = expense.id
+                                !expense.isSettlement -> editingId = expense.id
                             }
                         },
                         onLongPress = { confirmingExpenseDelete = expense })
@@ -457,9 +484,9 @@ private fun GroupDetail(
     }
 
     editing?.let { record ->
-        ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = rememberModalBottomSheetState()) {
+        ModalBottomSheet(onDismissRequest = { editingId = null }, sheetState = rememberModalBottomSheetState()) {
             NewExpenseSheet(group = group, record = record) { title, amount, payer, split ->
-                editing = null
+                editingId = null
                 scope.launch {
                     dao.updateExpense(
                         record.copy(

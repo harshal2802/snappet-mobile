@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.journal
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,11 +45,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private sealed interface JournalScreen {
-    data object Root : JournalScreen
-    data class Editor(val entry: JournalEntry?) : JournalScreen
-}
-
 /**
  * Root entry for the Journal mini-app: a list of entries (newest first) with create / edit /
  * delete, plus live search by title, body, or tag. Mirrors the iOS `JournalRootView`.
@@ -59,22 +56,53 @@ fun JournalRoot(onExit: () -> Unit) {
     val scope = rememberCoroutineScope()
     val dao = container.database.journalDao()
 
-    var screen by remember { mutableStateOf<JournalScreen>(JournalScreen.Root) }
-    var searchText by remember { mutableStateOf("") }
-    val entries by dao.allFlow().collectAsState(initial = emptyList())
+    // Issue #86: navigation state as saveable primitives (a sealed screen carrying the full
+    // JournalEntry is not Bundle-able). editorOpen with a null editingEntryId means a new entry.
+    var editorOpen by rememberSaveable { mutableStateOf(false) }
+    var editingEntryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var searchText by rememberSaveable { mutableStateOf("") }
+    // Null until Room's first emission, so a restored editor doesn't flash the list while the
+    // flow loads (same gate as workout/budget — issue #86 review).
+    val entriesOrNull by dao.allFlow().collectAsState(initial = null)
+    val entries = entriesOrNull ?: emptyList()
+    val editingEntry = entries.firstOrNull { it.id == editingEntryId }
 
-    when (val s = screen) {
-        is JournalScreen.Editor -> JournalEditorScreen(
-            entry = s.entry,
-            onExit = { screen = JournalScreen.Root },
+    fun closeEditor() {
+        editorOpen = false
+        editingEntryId = null
+    }
+
+    // The staged row is genuinely gone (deleted elsewhere, flow has emitted) — reset, which also
+    // disarms the BackHandler so the next back press isn't absorbed as a no-op close.
+    if (editorOpen && editingEntryId != null && entriesOrNull != null && editingEntry == null) {
+        closeEditor()
+    }
+
+    // System back mirrors the editor's top-bar arrow: close, discarding the unsaved draft.
+    // Disabled at the list root so back falls through to the app-level NavHost (issue #86).
+    BackHandler(enabled = editorOpen) { closeEditor() }
+
+    // Only compose the editor once the id resolves to a row (or is null = new entry): composing
+    // it with a transiently-null entry while the flow loads would re-key the drafts and wipe a
+    // rotation-restored draft.
+    if (editorOpen && (editingEntryId == null || editingEntry != null)) {
+        JournalEditorScreen(
+            entry = editingEntry,
+            onExit = { closeEditor() },
         )
-
-        is JournalScreen.Root -> ModuleScaffold(
+    } else if (editorOpen && entriesOrNull == null) {
+        // Restored existing-entry editor, flow not yet emitted: render nothing for the frame or
+        // two it takes Room to resolve, instead of flashing the list under the armed handler.
+    } else {
+        ModuleScaffold(
             title = "Journal",
             onExit = onExit,
             actions = {
                 IconButton(
-                    onClick = { screen = JournalScreen.Editor(null) },
+                    onClick = {
+                        editingEntryId = null
+                        editorOpen = true
+                    },
                     modifier = Modifier.testTag("journal.add"),
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = "New entry")
@@ -86,8 +114,14 @@ fun JournalRoot(onExit: () -> Unit) {
                 searchText = searchText,
                 onSearchChange = { searchText = it },
                 onClearSearch = { searchText = "" },
-                onAdd = { screen = JournalScreen.Editor(null) },
-                onOpen = { screen = JournalScreen.Editor(it) },
+                onAdd = {
+                    editingEntryId = null
+                    editorOpen = true
+                },
+                onOpen = {
+                    editingEntryId = it.id
+                    editorOpen = true
+                },
                 onDelete = { entry -> scope.launch { dao.delete(entry) } },
                 padding = padding,
             )
