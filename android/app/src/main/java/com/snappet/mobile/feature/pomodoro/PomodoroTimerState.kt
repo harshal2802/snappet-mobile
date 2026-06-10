@@ -17,8 +17,10 @@ enum class PomodoroPhase(val title: String) { FOCUS("Focus"), BREAK("Break") }
 class PomodoroTimerState(
     focusMinutes: Int,
     breakMinutes: Int,
-    /** Called when a FOCUS phase completes, with its length in minutes (persist + log). */
-    var onFocusCompleted: (Int) -> Unit = {},
+    /** Called when a FOCUS phase completes: its length in minutes + the boundary's true
+     *  absolute end (epoch millis) — a catch-up walk after a night away must log each
+     *  session on the day it actually finished, not at restore time (issue #85 review). */
+    var onFocusCompleted: (Int, Long) -> Unit = { _, _ -> },
     /**
      * Fires whenever the wall-clock schedule changes: a phase starts or auto-advances (the
      * phase now running + its absolute end, epoch millis), or the countdown stops (`null`
@@ -57,7 +59,7 @@ class PomodoroTimerState(
         }
 
     fun start(now: Long = System.currentTimeMillis()) {
-        if (isRunning) return
+        if (isRunning || phaseDuration <= 0) return
         if (remaining <= 0) remaining = phaseDuration
         endTime = now + (remaining * 1000).toLong()
         isRunning = true
@@ -121,10 +123,13 @@ class PomodoroTimerState(
         var end = endTime ?: return
         remaining = (end - now) / 1000.0
         if (remaining > 0) return
+        // A degenerate duration can't advance — bail rather than re-emitting the same
+        // past schedule (and its notifications) on every tick (issue #85 review).
+        if (phaseDuration <= 0) return
 
         while (end <= now && phaseDuration > 0) {
             val finished = phase
-            if (finished == PomodoroPhase.FOCUS) onFocusCompleted(focusMinutes)
+            if (finished == PomodoroPhase.FOCUS) onFocusCompleted(focusMinutes, end)
             phase = if (finished == PomodoroPhase.FOCUS) PomodoroPhase.BREAK else PomodoroPhase.FOCUS
             end += (phaseDuration * 1000).toLong()
         }

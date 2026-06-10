@@ -26,7 +26,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".SnappetApplication"
@@ -60,6 +61,13 @@
         <receiver
             android:name=".feature.pomodoro.PomodoroAlarmReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".feature.pomodoro.PomodoroBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Shares the temporary receipt photo with the system camera app for OCR capture. -->
         <provider

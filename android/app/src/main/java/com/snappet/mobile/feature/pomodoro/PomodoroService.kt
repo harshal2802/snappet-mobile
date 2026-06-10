@@ -24,31 +24,34 @@ class PomodoroService : Service() {
         val end = intent?.getLongExtra(EXTRA_END, 0L) ?: 0L
         val phase = runCatching { PomodoroPhase.valueOf(phaseName) }.getOrDefault(PomodoroPhase.FOCUS)
         PomodoroAlerts.ensureChannels(this)
-
-        val open = PendingIntent.getActivity(
-            this, 0,
-            packageManager.getLaunchIntentForPackage(packageName),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification = NotificationCompat.Builder(this, PomodoroAlerts.RUNNING_CHANNEL)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(if (phase == PomodoroPhase.FOCUS) "Focusing" else "On a break")
-            .setUsesChronometer(true)
-            .setChronometerCountDown(true)
-            .setWhen(end)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(open)
-            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
-            .build()
-        startForeground(PomodoroAlerts.RUNNING_NOTIFICATION_ID, notification)
-        // If the system kills us, the persisted endTime + the exact alarm still cover the
-        // user; nothing to resume here.
+        startForeground(PomodoroAlerts.RUNNING_NOTIFICATION_ID, countdownNotification(this, phase, end))
+        // If the system kills us, the persisted endTime + the chained exact alarm still
+        // cover the user; nothing to resume here.
         return START_NOT_STICKY
     }
 
     companion object {
         const val EXTRA_PHASE = "phase"
         const val EXTRA_END = "endTimeMillis"
+
+        /** The ongoing countdown — system-ticked chronometer to the phase's absolute end.
+         *  Shared with the receivers, which refresh it via plain notify() (same id). */
+        fun countdownNotification(context: android.content.Context, phase: PomodoroPhase, end: Long) =
+            NotificationCompat.Builder(context, PomodoroAlerts.RUNNING_CHANNEL)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle(if (phase == PomodoroPhase.FOCUS) "Focusing" else "On a break")
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+                .setWhen(end)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(
+                    PendingIntent.getActivity(
+                        context, 0,
+                        context.packageManager.getLaunchIntentForPackage(context.packageName),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    ))
+                .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+                .build()
     }
 }

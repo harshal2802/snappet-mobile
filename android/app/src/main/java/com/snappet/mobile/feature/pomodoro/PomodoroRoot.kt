@@ -69,7 +69,6 @@ import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private enum class PomodoroScreen { ROOT, HISTORY }
 
@@ -137,13 +136,13 @@ fun PomodoroRoot(onExit: () -> Unit) {
             SettingsSheet(
                 focus = focus, brk = brk,
                 onFocusChange = {
-                    focus = it
-                    PomodoroSettings.setFocusMinutes(context, it)
+                    focus = it.coerceIn(PomodoroSettings.focusRange)
+                    PomodoroSettings.setFocusMinutes(context, focus)
                     timer.applyDurations(focus, brk)
                 },
                 onBreakChange = {
-                    brk = it
-                    PomodoroSettings.setBreakMinutes(context, it)
+                    brk = it.coerceIn(PomodoroSettings.breakRange)
+                    PomodoroSettings.setBreakMinutes(context, brk)
                     timer.applyDurations(focus, brk)
                 },
                 onDone = { showSettings = false },

@@ -18,6 +18,22 @@ while dead is **logged to Room during restore**. Rules out WorkManager (15-min m
 for a 25-minute boundary) and a sticky service holding timer logic (the engine stays pure; the
 service only renders). `POST_NOTIFICATIONS` asked in-context on the screen, not at app launch.
 
+**Adversarial-review addenda (same day):** (1) **the alarm receiver chains the schedule itself** —
+a single un-chained alarm meant every boundary after the first was silent and the countdown went
+stale once the screen-scoped ticker died; the receiver now walks the persisted anchor via the pure
+`PomodoroSchedule` (the SAME walk the engine's restore does, so they can't disagree), posts the
+alert, refreshes the countdown via plain `notify()` (no FGS start from a background process), and
+arms the next boundary. (2) A **BOOT_COMPLETED receiver** re-arms the chain — alarms die on reboot,
+the SharedPreferences anchor doesn't. (3) **`MainActivity` touches `container.pomodoro` at launch**
+(a foreground context) so a process-death session restores — and away-completed focuses get logged
+with their **true boundary timestamps** (the seam now carries `completedAtMillis`) — without
+opening the module. (4) **`USE_EXACT_ALARM`** replaces `SCHEDULE_EXACT_ALARM`: a timer app
+qualifies, and the grantable variant is denied-by-default on API 34+ which would have made the
+inexact (~up-to-15-min-late) path the norm. (5) Settings stepper values are clamped at the change
+site and the engine refuses degenerate durations (a 0-minute phase briefly made the seam re-emit a
+past schedule 4×/sec). (6) Fresh-test container swaps also clear the displaced service/alarm;
+instrumented tests pre-grant `POST_NOTIFICATIONS` (`GrantPermissionRule`).
+
 ## [2026-06-10] Android branding + dark mode: vector Pulse mark, splash handoff, mode-aware board paper (issue #96)
 
 **Decision** (prompt 39): the launcher icon is a **hand-authored vector** (white ECG "Pulse mark" on

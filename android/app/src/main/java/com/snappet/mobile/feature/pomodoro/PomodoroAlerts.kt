@@ -29,34 +29,66 @@ class PomodoroAlerts(private val context: Context) {
         context.startForegroundService(service)
 
         // Exact wake-from-Doze alarm at the boundary, so a locked phone still hears the
-        // phase end even if the process is later killed. Falls back to an inexact alarm
-        // when the user hasn't granted exact-alarm access (API 31+ special access).
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
-        if (canExact) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endTimeMillis, alarmIntent(phase))
-        } else {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endTimeMillis, alarmIntent(phase))
-        }
+        // phase end even if the process is later killed (USE_EXACT_ALARM keeps the exact
+        // path the default for a timer app; inexact fallback if access is ever off).
+        armAlarm(endTimeMillis)
     }
 
     /** Pause/reset: drop the ongoing notification and the pending alarm. */
     fun clear() {
         context.stopService(Intent(context, PomodoroService::class.java))
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarmManager.cancel(alarmIntent(PomodoroPhase.FOCUS))
-        // Also clear any delivered phase-end alert so a stale banner doesn't linger.
+        alarmManager.cancel(alarmIntent())
+        // Also clear both notifications so neither a stale alert nor a receiver-posted
+        // countdown (not owned by the service) lingers.
         notificationManager(context).cancel(PHASE_END_NOTIFICATION_ID)
+        notificationManager(context).cancel(RUNNING_NOTIFICATION_ID)
     }
 
-    private fun alarmIntent(phase: PomodoroPhase): PendingIntent =
+    private fun alarmIntent(): PendingIntent =
         PendingIntent.getBroadcast(
             context,
             ALARM_REQUEST_CODE,   // one stable code: re-scheduling replaces, cancel hits it
-            Intent(context, PomodoroAlarmReceiver::class.java)
-                .putExtra(PomodoroService.EXTRA_PHASE, phase.name),
+            Intent(context, PomodoroAlarmReceiver::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+    /**
+     * Re-arm the boundary alarm without starting the foreground service — safe from a
+     * receiver running in a background-started process. The receivers chain the WHOLE
+     * session off this: each boundary posts its alert, computes the next boundary from
+     * the persisted anchor ([PomodoroSchedule] — the same walk the engine's restore
+     * does, so they can't disagree), refreshes the countdown notification via plain
+     * notify(), and arms the next alarm (issue #85 review: a single un-chained alarm
+     * meant every boundary after the first was silent and the countdown went stale).
+     */
+    fun advanceDueBoundaries(now: Long = System.currentTimeMillis()) {
+        val saved = PomodoroStateStore.load(context) as? PomodoroStateStore.Saved.Running ?: return
+        val position = PomodoroSchedule.at(
+            saved.phase, saved.endTimeMillis,
+            PomodoroSettings.focusMinutes(context), PomodoroSettings.breakMinutes(context), now)
+        position.endedPhase?.let { postPhaseEnd(context, it) }
+        armAlarm(position.endTimeMillis)
+        postCountdown(position.phase, position.endTimeMillis)
+    }
+
+    private fun armAlarm(endTimeMillis: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+        if (canExact) {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endTimeMillis, alarmIntent())
+        } else {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endTimeMillis, alarmIntent())
+        }
+    }
+
+    /** The countdown notification WITHOUT the service (background-safe refresh; replaces
+     *  the FGS notification when the service is still alive — same id/channel). */
+    private fun postCountdown(phase: PomodoroPhase, endTimeMillis: Long) {
+        notificationManager(context).notify(
+            RUNNING_NOTIFICATION_ID,
+            PomodoroService.countdownNotification(context, phase, endTimeMillis))
+    }
 
     companion object {
         const val RUNNING_CHANNEL = "pomodoro.running"

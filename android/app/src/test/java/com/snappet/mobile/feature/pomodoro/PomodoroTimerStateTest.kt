@@ -65,7 +65,7 @@ class PomodoroTimerStateTest {
     fun catchUpWalksBoundariesAnchoredAtPhaseEnds() {
         val t = timer(focus = 25, brk = 5)
         var focusCompletions = 0
-        t.onFocusCompleted = { focusCompletions += 1 }
+        t.onFocusCompleted = { _, _ -> focusCompletions += 1 }
         t.start(now = 0L)
 
         // Locked through the whole focus + 2 min of break: land 3 min FROM the break's
@@ -95,12 +95,14 @@ class PomodoroTimerStateTest {
     fun restoreWithPastEndCatchesUpAndLogsTheFocus() {
         val t = timer(focus = 25, brk = 5)
         var logged = 0
-        t.onFocusCompleted = { logged += 1 }
+        var loggedAt = 0L
+        t.onFocusCompleted = { _, at -> logged += 1; loggedAt = at }
 
         // Process died mid-focus; the phase ended at +25 and we reopen at +26.
         t.restore(PomodoroPhase.FOCUS, endTimeMillis = 25 * 60_000L, now = 26 * 60_000L)
 
         assertEquals(1, logged)                      // the away-completed focus IS logged
+        assertEquals(25 * 60_000L, loggedAt)         // ...stamped at its TRUE end, not restore time
         assertEquals(PomodoroPhase.BREAK, t.phase)   // and we land mid-break
         assertEquals(4 * 60.0, t.remaining, 0.5)
         assertNotNull(t.endTime)
@@ -113,6 +115,37 @@ class PomodoroTimerStateTest {
         assertFalse(t.isRunning)
         assertTrue(t.isPaused)
         assertEquals(12 * 60.0, t.remaining, 0.01)
+    }
+
+    @Test
+    fun zeroDurationNeverStartsOrStorms() {
+        val t = timer(focus = 25, brk = 5)
+        t.applyDurations(0, 5)
+        var scheduleEvents = 0
+        t.onScheduleChanged = { _, _ -> scheduleEvents += 1 }
+        t.start(now = 0L)
+        assertFalse(t.isRunning)
+        assertEquals(0, scheduleEvents)
+    }
+
+    // The receivers' boundary chain must agree with the engine's walk — same anchors.
+    @Test
+    fun scheduleWalkMatchesEngineCatchUp() {
+        // Anchor: FOCUS ending at 25min; focus 25 / break 5.
+        val at27 = PomodoroSchedule.at(PomodoroPhase.FOCUS, 25 * 60_000L, 25, 5, now = 27 * 60_000L)
+        assertEquals(PomodoroPhase.FOCUS, at27.endedPhase)
+        assertEquals(PomodoroPhase.BREAK, at27.phase)
+        assertEquals(30 * 60_000L, at27.endTimeMillis)
+
+        val at32 = PomodoroSchedule.at(PomodoroPhase.FOCUS, 25 * 60_000L, 25, 5, now = 32 * 60_000L)
+        assertEquals(PomodoroPhase.BREAK, at32.endedPhase)
+        assertEquals(PomodoroPhase.FOCUS, at32.phase)
+        assertEquals(55 * 60_000L, at32.endTimeMillis)
+
+        // Future anchor: nothing ended, alarm target unchanged.
+        val early = PomodoroSchedule.at(PomodoroPhase.FOCUS, 25 * 60_000L, 25, 5, now = 10 * 60_000L)
+        assertNull(early.endedPhase)
+        assertEquals(25 * 60_000L, early.endTimeMillis)
     }
 
     // The phase-end notification copy is pure — lock it (mirrors iOS).

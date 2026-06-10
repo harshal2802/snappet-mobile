@@ -39,10 +39,10 @@ class AppContainer private constructor(
         val timer = PomodoroTimerState(
             focusMinutes = PomodoroSettings.focusMinutes(appContext),
             breakMinutes = PomodoroSettings.breakMinutes(appContext),
-            onFocusCompleted = { minutes ->
+            onFocusCompleted = { minutes, completedAtMillis ->
                 scope.launch {
                     database.pomodoroDao().insert(
-                        PomodoroSession(minutes = minutes, completedAt = System.currentTimeMillis()))
+                        PomodoroSession(minutes = minutes, completedAt = completedAtMillis))
                     core.log("pomodoro", "session", "Focused $minutes min", minutes.toDouble())
                 }
             },
@@ -78,8 +78,10 @@ class AppContainer private constructor(
          */
         fun get(context: Context, freshInMemory: Boolean = false): AppContainer {
             if (freshInMemory) {
-                // Fresh runs also drop any persisted session so timer tests start idle.
+                // Fresh runs drop any persisted session AND the displaced container's
+                // service/alarm/notifications, so timer tests can't leak into each other.
                 PomodoroStateStore.clear(context.applicationContext)
+                PomodoroAlerts(context.applicationContext).clear()
                 val fresh = AppContainer(context.applicationContext,
                                          SnappetDatabase.buildInMemory(context.applicationContext))
                 instance = fresh
