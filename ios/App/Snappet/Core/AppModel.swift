@@ -12,6 +12,10 @@ final class AppModel {
 
     var phase: Phase = .loading
     var workouts: [WorkoutSummary] = []
+    /// `true` when the on-disk SwiftData store failed to open and the app is running on an empty
+    /// in-memory container. Set once in `SnappetApp.init()` before any view renders; never mutated
+    /// again. The `FallbackStoreBanner` in `RootShell` reads this to show the persistent warning.
+    var isUsingFallbackStore: Bool = false
     /// Current Photo Library access. `.limited` means we can't auto-scan the library
     /// and must fall back to a manual picker (#60 §C).
     var photoAccess: PHAuthorizationStatus = .notDetermined

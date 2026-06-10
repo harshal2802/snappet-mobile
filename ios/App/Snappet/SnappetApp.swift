@@ -22,6 +22,10 @@ struct SnappetApp: App {
         let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo
+        // `-uiTestSimulateFallbackStore` forces the in-memory fallback path AND sets the
+        // `isUsingFallbackStore` flag — lets UI tests verify the corrupt-store banner without
+        // actually corrupting the on-disk store.
+        let simulateFallback = args.contains("-uiTestSimulateFallbackStore")
         // Kilter catalog (issue #42): the app ships no catalog. Under the catalog test args this clears
         // any leftover on-device catalog and — only with `-uiTestInstallKilterCatalog` — installs a
         // synthetic fixture so the Kilter UI tests have data to browse. No-ops on a normal launch.
@@ -38,16 +42,26 @@ struct SnappetApp: App {
             // simulator) starts clean — see clearRememberedBandSeedIfStale.
             StudioDemoSeed.clearRememberedBandSeedIfStale()
         }
-        _appModel = State(wrappedValue: AppModel())
+        // Build the container first so we know whether the fallback path fired, then wire the
+        // flag into AppModel before wrapping it in State (no mutation after init).
+        let usingFallback: Bool
         if freshStore {
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        } else if let c = try? ModelContainer(for: schema) {
+            usingFallback = false
+        } else if !simulateFallback, let c = try? ModelContainer(for: schema) {
             container = c
+            usingFallback = false
         } else {
+            // Store failed to open (or simulation forced) — fall back to in-memory. The banner
+            // in RootShell will surface this to the user.
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+            usingFallback = true
         }
+        var model = AppModel()
+        model.isUsingFallbackStore = usingFallback
+        _appModel = State(wrappedValue: model)
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production
         // impact. Seeds into the fresh in-memory store before any UI appears.
         if seedStudioDemo {

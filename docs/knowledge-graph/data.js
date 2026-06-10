@@ -473,6 +473,14 @@ const nodes = [
     file: "ios/App/Snappet/Features/Kilter/KilterRecommender.swift", desc: "Pure, device-free recommender: turns logged history (KilterClimbLog) + a catalog candidate pool (KilterListItem) into a suggested session — warm-ups below the working grade, sends at it, a project above. Detects the working grade from the send pyramid; deterministic + unit-tested (KilterRecommenderTests).", tags: ["pure","recommender","tested"] },
   { id: "kilter-plan", label: "KilterPlanView", type: "screen", group: "kilter", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Kilter/KilterPlanView.swift", desc: "\"Plan a session\": reads the ascent log, queries the catalog for a difficulty window around the working grade, runs KilterRecommender, and shows the picks grouped Warm up / Send / Project. Start session begins a manual KilterSession and taps through to each climb.", tags: ["plan","recommend","session"] },
+
+  // ═════════════════ DATA SAFETY: Backup / Export / Restore (issue #68) ═════════════════
+  { id: "data-backup-view", label: "DataBackupView", type: "sheet", group: "shell", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Features/Shell/DataBackupView.swift", desc: "Suite-level data management sheet: full backup (all SwiftData models → versioned JSON via .fileExporter), restore from backup (.fileImporter), and per-module exports (Journal → Markdown, Budget/Expense → CSV, Workouts → JSON). Accessed from the Home toolbar.", tags: ["backup","restore","export","privacy","fileexporter"] },
+  { id: "data-backup-service", label: "DataBackupService", type: "service", group: "shell", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Services/DataBackupService.swift", desc: "Pure serialization/restore logic: SnappetBackupBundle (versioned JSON DTO over all @Model types), serialize(context:), restore(from:into:), and format-specific exports (journalMarkdown, budgetCSV, expenseCSV, workoutJSON). MainActor for ModelContext access; format helpers are actor-independent and unit-tested.", tags: ["pure","serialization","dto","backup","tested"] },
+  { id: "fallback-store-banner", label: "FallbackStoreBanner", type: "section", group: "shell", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Features/Shell/DataBackupView.swift", desc: "Persistent top-of-screen banner shown when the on-disk SwiftData store failed to open (AppModel.isUsingFallbackStore). Warns that unsaved changes will be lost and offers a Restore action into DataBackupView. Testable via -uiTestSimulateFallbackStore launch arg.", tags: ["banner","fallback","corrupt-store","ux"] },
 ];
 
 const links = [
@@ -882,6 +890,14 @@ const links = [
   { source: "kilter-climb-panel", target: "kilter-catalog", type: "uses", label: "name / grade / board" },
   { source: "kilter-climb-panel", target: "kilter-models", type: "persists", label: "angle / result / tries / note" },
   { source: "kilter-climb-panel", target: "model-sessionmedia", type: "persists", label: "move clip → climb" },
+  // ---- Data backup / export / restore (issue #68) ----
+  { source: "home", target: "data-backup-view", type: "present", label: "Data & Privacy toolbar" },
+  { source: "fallback-store-banner", target: "data-backup-view", type: "present", label: "Restore" },
+  { source: "rootshell", target: "fallback-store-banner", type: "contains" },
+  { source: "data-backup-view", target: "data-backup-service", type: "uses" },
+  { source: "data-backup-service", target: "snappetcore", type: "feeds", label: "serialize / restore all models" },
+  { source: "data-backup-service", target: "feedbackstore", type: "uses", label: "FeedbackStore.fileURL export path" },
+  { source: "app", target: "fallback-store-banner", type: "feeds", label: "isUsingFallbackStore flag" },
 ];
 
 // Expose for the renderer (also works as an ES module if imported).

@@ -4,6 +4,37 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Data backup/restore — DTO layer; restore = full replace; `schemaVersion: 0`
+
+**Decision**: `@Model` types cannot conform to `Codable` (the `@Model` macro generates stored
+properties that conflict with synthesized `Codable`), so a **DTO layer** (`*Backup` structs in
+`DataBackupService.swift`) is required for serialization. Each DTO mirrors the model's stored fields
+exactly; the backup/restore logic maps between them. This is the only approach that works without
+patching the existing `@Model` bodies.
+
+**Restore = full replace**: `restore(from:into:)` calls `context.delete(model:)` for every type before
+inserting from the bundle. A merge/upsert was considered but rejected: (a) there are no server-side
+conflict markers, (b) users expect "restore from backup" to mean "put things back the way they were",
+and (c) SwiftData's bulk-delete API makes it clean. A partial restore (by module) is deferred.
+
+**`schemaVersion: 0`** is stamped on every bundle now. Future schema changes (new fields on existing
+models, new model types) must increment this and add explicit migration logic in `restore(from:into:)`.
+The restore function guards on `schemaVersion == 0` and throws `BackupError.unsupportedSchemaVersion`
+for anything else, so an old build doesn't silently corrupt a newer backup.
+
+**Per-module exports are pure functions** (`journalMarkdown`, `budgetCSV`, `expenseCSV`, `workoutJSON`)
+on `DataBackupService` — they take plain `[ModelType]` arrays and return `Data`. No `ModelContext`
+needed, so they're unit-testable without a device.
+
+**`isUsingFallbackStore` is set once, in `SnappetApp.init()`, before `State` is created.** `AppModel`
+is `@MainActor @Observable` but the flag is effectively immutable after init — no binding, no didSet.
+The `-uiTestSimulateFallbackStore` launch arg forces the in-memory path AND sets the flag, enabling
+the `FallbackStoreBanner` UI test without corrupting the on-disk store.
+
+**Rules out**: Codable conformance on `@Model` types; merge/upsert restore; per-bundle partial restore
+(deferred). **Note**: no build/sim run on this authoring box — `xcodebuild test` + a sim pass on macOS
+is owed before merging.
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

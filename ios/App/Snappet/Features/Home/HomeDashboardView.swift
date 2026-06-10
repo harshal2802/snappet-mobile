@@ -10,6 +10,7 @@ struct HomeDashboardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Drives the 7-day chart's grow-up-from-baseline animation on appear.
     @State private var chartAppeared = false
+    @State private var showingDataBackup = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,20 @@ struct HomeDashboardView: View {
             }
             .snappetAnimation(SnappetMotion.standard, value: records.isEmpty)
             .navigationTitle("Today")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingDataBackup = true
+                    } label: {
+                        Image(systemName: "archivebox")
+                    }
+                    .accessibilityLabel("Data & Privacy")
+                    .accessibilityIdentifier("openDataBackup")
+                }
+            }
+            .sheet(isPresented: $showingDataBackup) {
+                DataBackupView()
+            }
         }
     }
 

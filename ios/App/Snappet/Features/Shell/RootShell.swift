@@ -4,11 +4,19 @@ import SwiftData
 /// Builds `SnappetCore` from the shared model context, then shows the suite shell.
 struct RootShell: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     @State private var core: SnappetCore?
 
     var body: some View {
         if let core {
-            content.environment(core)
+            content
+                .environment(core)
+                .overlay(alignment: .top) {
+                    if app.isUsingFallbackStore {
+                        FallbackStoreBanner()
+                            .padding(.top, 8)
+                    }
+                }
         } else {
             LoadingView()
                 .task { core = SnappetCore(context: context) }
