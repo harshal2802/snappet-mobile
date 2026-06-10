@@ -38,16 +38,24 @@ struct SnappetApp: App {
             // simulator) starts clean — see clearRememberedBandSeedIfStale.
             StudioDemoSeed.clearRememberedBandSeedIfStale()
         }
-        _appModel = State(wrappedValue: AppModel())
+        // Capture whether the on-disk store failed to open so the UI can surface a
+        // persistent banner (issue #68). `-uiTestCorruptStore` simulates the condition
+        // without requiring an actually corrupted store on the simulator.
+        let simulateCorrupt = args.contains("-uiTestCorruptStore")
+        var storeCorrupted = false
+        let theAppModel = AppModel()
         if freshStore {
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        } else if let c = try? ModelContainer(for: schema) {
+        } else if !simulateCorrupt, let c = try? ModelContainer(for: schema) {
             container = c
         } else {
+            storeCorrupted = !freshStore // true only on a real failure or the test arg
             container = try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         }
+        theAppModel.storeCorrupted = storeCorrupted
+        _appModel = State(wrappedValue: theAppModel)
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production
         // impact. Seeds into the fresh in-memory store before any UI appears.
         if seedStudioDemo {

@@ -473,6 +473,12 @@ const nodes = [
     file: "ios/App/Snappet/Features/Kilter/KilterRecommender.swift", desc: "Pure, device-free recommender: turns logged history (KilterClimbLog) + a catalog candidate pool (KilterListItem) into a suggested session — warm-ups below the working grade, sends at it, a project above. Detects the working grade from the send pyramid; deterministic + unit-tested (KilterRecommenderTests).", tags: ["pure","recommender","tested"] },
   { id: "kilter-plan", label: "KilterPlanView", type: "screen", group: "kilter", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Kilter/KilterPlanView.swift", desc: "\"Plan a session\": reads the ascent log, queries the catalog for a difficulty window around the working grade, runs KilterRecommender, and shows the picks grouped Warm up / Send / Project. Start session begins a manual KilterSession and taps through to each climb.", tags: ["plan","recommend","session"] },
+
+  // ═════════════════ DATA SAFETY: Backup / Export / Restore (#68) ═════════════════
+  { id: "data-management", label: "DataManagementView", type: "sheet", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Core/DataBackup/DataManagementView.swift", desc: "Suite-level data management sheet: full JSON backup (.fileExporter) and restore (.fileImporter) for all schema models, plus per-module text exports (Journal → Markdown, Expense/Budget → CSV, Workout → JSON) and FeedbackStore JSONL share. Surfaced from WorkoutSettings → Your data → Backup & Restore, and from the corrupt-store alert in RootShell.", tags: ["backup","restore","export","data-safety","fileexporter"] },
+  { id: "backup-core", label: "Backup / Export / Restore (pure)", type: "core", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Core/DataBackup/SnappetBackup.swift", desc: "Pure, device-free layer: SnappetBackupBundle (versioned Codable root with snapshot structs for every @Model type), SnappetExporter (bundleJSON / journalMarkdown / expenseCSV / budgetCSV / workoutSessionsJSON), SnappetRestorer (restoreBundle with schema-version enforcement), and BackupState (pure value-type state machine, mirroring ExportShareState). Unit-tested in SnappetTests (BackupExportTests) with no simulator.", tags: ["pure","codable","tested","state-machine"] },
 ];
 
 const links = [
@@ -882,6 +888,14 @@ const links = [
   { source: "kilter-climb-panel", target: "kilter-catalog", type: "uses", label: "name / grade / board" },
   { source: "kilter-climb-panel", target: "kilter-models", type: "persists", label: "angle / result / tries / note" },
   { source: "kilter-climb-panel", target: "model-sessionmedia", type: "persists", label: "move clip → climb" },
+
+  // ---- Data safety: Backup / Export / Restore (#68) ----
+  { source: "wt-settings", target: "data-management", type: "navigate", label: "Backup & Restore" },
+  { source: "rootshell", target: "data-management", type: "present", label: "corrupt store alert" },
+  { source: "data-management", target: "snappetcore", type: "uses", label: "fetch all models" },
+  { source: "data-management", target: "feedbackstore", type: "uses", label: "exportAll()" },
+  { source: "data-management", target: "backup-core", type: "uses", label: "serialize / restore" },
+  { source: "appmodel", target: "backup-core", type: "uses", label: "storeCorrupted flag" },
 ];
 
 // Expose for the renderer (also works as an ES module if imported).

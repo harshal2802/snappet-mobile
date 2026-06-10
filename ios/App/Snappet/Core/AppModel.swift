@@ -11,6 +11,10 @@ final class AppModel {
     enum Phase: Equatable { case onboarding, loading, ready, error(String) }
 
     var phase: Phase = .loading
+    /// Set to `true` when the on-device SwiftData store failed to open and the app fell back
+    /// to an empty in-memory container (issue #68). Surfaced by `RootShell` as a persistent
+    /// banner so the user knows their changes won't be saved and can restore from backup.
+    var storeCorrupted: Bool = false
     var workouts: [WorkoutSummary] = []
     /// Current Photo Library access. `.limited` means we can't auto-scan the library
     /// and must fall back to a manual picker (#60 §C).

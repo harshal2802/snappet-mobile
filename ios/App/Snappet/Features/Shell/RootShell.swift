@@ -6,9 +6,26 @@ struct RootShell: View {
     @Environment(\.modelContext) private var context
     @State private var core: SnappetCore?
 
+    @Environment(AppModel.self) private var appModel
+    @State private var showingCorruptStoreAlert = false
+    @State private var showingDataManagement = false
+
     var body: some View {
         if let core {
-            content.environment(core)
+            content
+                .environment(core)
+                .onAppear {
+                    if appModel.storeCorrupted { showingCorruptStoreAlert = true }
+                }
+                .alert("Data couldn't be opened", isPresented: $showingCorruptStoreAlert) {
+                    Button("Restore from backup") { showingDataManagement = true }
+                    Button("Continue anyway", role: .cancel) {}
+                } message: {
+                    Text("Your data couldn't be opened — changes made now won't be saved after you quit. Restore from a backup or continue with an empty app.")
+                }
+                .sheet(isPresented: $showingDataManagement) {
+                    NavigationStack { DataManagementView() }
+                }
         } else {
             LoadingView()
                 .task { core = SnappetCore(context: context) }

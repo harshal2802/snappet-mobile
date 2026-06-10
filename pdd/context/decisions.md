@@ -4,6 +4,34 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Data backup/export/restore: DTO snapshot layer, no SwiftData in pure code, PHAsset exclusion
+
+**Decision**: The portable backup serialises `@Model` instances through a parallel set of plain
+`Codable` value types (`SnappetBackupBundle` + `*Snapshot` structs), NOT by adding `Codable`
+conformance to the SwiftData models themselves.
+
+**Why**: SwiftData `@Model` classes are reference types bound to a `ModelContext`; adding
+`Codable` conformance conflicts with the `@Model` macro's synthesised methods and breaks
+Swift 6 Sendable requirements. A DTO layer keeps the pure serialisation logic (`SnappetExporter`,
+`SnappetRestorer`) completely free of SwiftData imports, which makes it unit-testable without any
+model context or simulator. It also lets the snapshot shape diverge from the storage shape (e.g.
+versioned migrations) without coupling the two.
+
+**Excluded from backup**: `SessionMedia`, `ClipEdit`, and `StudioProject` embed
+`PHAsset.localIdentifier` values that are device-local and cannot round-trip to another device
+or even to the same device after a full restore (Photos library generates new identifiers). The
+backup bundle notes this exclusion explicitly in its footer text and the `DataManagementView` UI
+explains it to the user.
+
+**`storeCorrupted` stamped in `SnappetApp.init`, not lazily**: The AppModel is created before the
+ModelContainer resolves, so the flag is set on the `AppModel` instance via a local `let` before
+`_appModel = State(wrappedValue:)` is called. This avoids needing an `@AppStorage` flag (which
+would persist and show the alert on every subsequent launch) or a second `@State` property.
+
+**Rules out**: adding `Codable` to `@Model` types; including device-local media references in the
+portable bundle; showing the corrupt-store alert only after the user taps a button (it is shown on
+appear so the user can't enter data into a session that won't be saved).
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

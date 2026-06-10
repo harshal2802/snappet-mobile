@@ -53,6 +53,12 @@ struct WorkoutSettingsView: View {
             Section("Your data") {
                 LabeledContent("Completed workouts", value: "\(history.count)")
                 LabeledContent("Custom exercises", value: "\(customExercises.count)")
+                NavigationLink {
+                    DataManagementView()
+                } label: {
+                    Label("Backup & Restore", systemImage: "externaldrive.badge.plus")
+                }
+                .accessibilityIdentifier("openDataManagement")
             }
 
             if !customExercises.isEmpty {
