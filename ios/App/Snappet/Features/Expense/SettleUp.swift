@@ -20,6 +20,40 @@ enum SettleUp {
         let id = UUID()
     }
 
+    /// Second-person phrasing (issue #82): when the user has told us who they are
+    /// ("me"), balances and transfers read "You owe Bob", not "Alice owes Bob".
+    /// Pure string building → unit-tested.
+    static func transferLabel(debtor: String, creditor: String, me: String?) -> String {
+        switch me {
+        case debtor: return "You owe \(creditor)"
+        case creditor: return "\(debtor) owes you"
+        default: return "\(debtor) owes \(creditor)"
+        }
+    }
+
+    /// The display name for a balance row — "You" when it's the user's own.
+    static func balanceName(_ name: String, me: String?) -> String {
+        name == me ? "You" : name
+    }
+
+    /// Participant-name suggestions for a new group: every name used across existing
+    /// groups (first-seen order, deduped case-insensitively), minus names already
+    /// typed into the form. Pure → unit-tested.
+    static func participantSuggestions(existingGroups: [[String]], alreadyChosen: [String]) -> [String] {
+        var seen = Set<String>()
+        let chosen = Set(alreadyChosen.map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+        var result: [String] = []
+        for group in existingGroups {
+            for name in group {
+                let trimmed = name.trimmingCharacters(in: .whitespaces)
+                let key = trimmed.lowercased()
+                guard !trimmed.isEmpty, !chosen.contains(key), seen.insert(key).inserted else { continue }
+                result.append(trimmed)
+            }
+        }
+        return result
+    }
+
     /// Net balance per participant across all expenses.
     ///
     /// For each expense the cost is split equally among its `participants`; the `payer`

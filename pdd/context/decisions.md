@@ -4,6 +4,19 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Money entry: commit-then-save + keypad Done everywhere; "me" is a device-local convention (issue #82)
+
+**Decision** (prompt 37): every value-formatted money form saves through **commit-then-save** (resign
+focus, then save on the next runloop tick) because `TextField(value:format:)` commits its binding on
+focus resign — a mid-edit Save must never read the stale value. The keypad-Done affordance is **one
+shared `keypadDoneToolbar`** (Tip's `placement: .keyboard` pattern, promoted to DesignSystem with a
+`Bool` and a `Hashable?` overload) rather than per-form copies. The settle-up rows became buttons that
+open `RecordSettlementSheet` **prefilled** via a new initializer — same sheet node, new entry point, so
+the knowledge graph is unchanged. **"Me" is `@AppStorage("expense.myName")`, set by convention from
+slot 1 of a group the user creates** — rules out accounts, contacts access, and a profile screen for
+what is one string; an edit never overwrites it (you may manage a group you're not in). Second-person
+phrasing + cross-group name suggestions are pure `SettleUp` helpers (`FinanceUXTests`).
+
 ## [2026-06-10] One tactile language: shared Haptics + a single celebration primitive (issue #80)
 
 **Decision** (prompt 36): all commit feedback goes through **one** `DesignSystem/Haptics` helper

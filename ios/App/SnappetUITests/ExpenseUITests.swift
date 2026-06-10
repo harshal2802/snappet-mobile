@@ -68,18 +68,20 @@ final class ExpenseUITests: XCTestCase {
         snap("03-group-detail")
 
         // Add an expense: Alice paid 100, split between both → Bob owes Alice 50.
-        XCTAssertTrue(groupActions.waitForExistence(timeout: 6), "group actions menu should exist")
-        groupActions.tap()
-        app.buttons["expense.newExpense"].tap()
+        // Add Expense is a direct one-tap toolbar button now (issue #82), not a menu item.
+        let newExpense = app.buttons["expense.newExpense"]
+        XCTAssertTrue(newExpense.waitForExistence(timeout: 6), "Add Expense should be a direct button")
+        newExpense.tap()
 
         setField(app.textFields["expense.expense.title"], to: "Dinner")
         setField(app.textFields["expense.expense.amount"], to: "100")
         app.buttons["expense.expense.save"].tap()
         snap("04-expense-added")
 
-        // The settle-up plan should now suggest Bob owes Alice.
-        XCTAssertTrue(app.staticTexts["Bob owes Alice"].waitForExistence(timeout: 6),
-                      "settle-up plan should show Bob owing Alice after a split expense")
+        // The settle-up plan should now suggest Bob owes Alice — and read in the second
+        // person: creating the group stored slot 1 ("Alice") as the user's own name.
+        XCTAssertTrue(app.staticTexts["Bob owes you"].waitForExistence(timeout: 6),
+                      "settle-up plan should show Bob owing the user after a split expense")
 
         // Edit the expense amount to 60 → Bob now owes Alice 30.
         let expenseRow = app.staticTexts["Dinner"].firstMatch
@@ -91,20 +93,20 @@ final class ExpenseUITests: XCTestCase {
         app.buttons["expense.expense.save"].tap()
         snap("05-expense-edited")
 
-        XCTAssertTrue(app.staticTexts["Bob owes Alice"].waitForExistence(timeout: 6),
-                      "edited expense should still show Bob owing Alice")
+        XCTAssertTrue(app.staticTexts["Bob owes you"].waitForExistence(timeout: 6),
+                      "edited expense should still show Bob owing the user")
 
-        // Record a settlement: Bob pays Alice 30 → the pair clears.
-        groupActions.tap()
-        app.buttons["expense.settle"].tap()
-
-        // Settlement defaults payer=Alice, recipient=Bob; flip via the pickers so Bob pays Alice.
-        app.buttons["expense.settle.payer"].tap()
-        app.buttons["Bob"].firstMatch.tap()
-        app.buttons["expense.settle.recipient"].tap()
-        app.buttons["Alice"].firstMatch.tap()
-        setField(app.textFields["expense.settle.amount"], to: "30")
-        app.buttons["expense.settle.save"].tap()
+        // Record the settlement by TAPPING the computed transfer (issue #82): the sheet
+        // opens prefilled with payer=Bob, recipient=Alice, amount=30 — save in one tap.
+        let transferRow = app.buttons["expense.transfer.Bob.Alice"]
+        XCTAssertTrue(transferRow.waitForExistence(timeout: 6), "transfer row should be tappable")
+        transferRow.tap()
+        let settleSave = app.buttons["expense.settle.save"]
+        XCTAssertTrue(settleSave.waitForExistence(timeout: 6), "prefilled settlement sheet should open")
+        XCTAssertTrue(app.staticTexts["Bob paid Alice $30.00."].waitForExistence(timeout: 4)
+                      || app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Bob paid Alice")).firstMatch.exists,
+                      "the sheet should be prefilled from the tapped transfer")
+        settleSave.tap()
         snap("06-settled")
 
         // With a settlement equal to the suggested transfer, the pair is settled.

@@ -18,6 +18,12 @@ struct ExpenseGroupView: View {
     @State private var showingEditGroup = false
     /// The expense currently being edited via `NewExpenseSheet`, if any.
     @State private var editingExpense: ExpenseRecord?
+    /// A settle-up transfer the user tapped — opens `RecordSettlementSheet` prefilled
+    /// with payer/recipient/amount so recording it is two taps (issue #82).
+    @State private var prefilledSettlement: SettleUp.Transfer?
+    /// Who the user is, remembered across groups — balances and settle-up rows read in
+    /// the second person ("You owe Bob") when set. Stored by `NewGroupSheet` on save.
+    @AppStorage("expense.myName") private var myName = ""
 
     init(group: ExpenseGroup) {
         self.group = group
@@ -41,15 +47,20 @@ struct ExpenseGroupView: View {
         .navigationTitle(group.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // The dominant action gets its own one-tap button (issue #82); the rarer
+            // actions live behind the ellipsis menu.
             ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingNewExpense = true
+                } label: {
+                    Label("Add Expense", systemImage: "plus")
+                }
+                .accessibilityIdentifier("expense.newExpense")
+            }
+            // .topBarTrailing, NOT .secondaryAction — secondary items collapse behind a
+            // system "More" button, hiding this menu (and its identifier) from the bar.
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button {
-                        showingNewExpense = true
-                    } label: {
-                        Label("Add Expense", systemImage: "plus")
-                    }
-                    .accessibilityIdentifier("expense.newExpense")
-
                     Button {
                         showingNewReceipt = true
                     } label: {
@@ -71,7 +82,7 @@ struct ExpenseGroupView: View {
                     }
                     .accessibilityIdentifier("expense.editGroup")
                 } label: {
-                    Label("Group Actions", systemImage: "plus")
+                    Label("Group Actions", systemImage: "ellipsis.circle")
                 }
                 .accessibilityIdentifier("expense.groupActions")
             }
@@ -90,6 +101,10 @@ struct ExpenseGroupView: View {
         }
         .sheet(isPresented: $showingSettlement) {
             RecordSettlementSheet(group: group)
+        }
+        .sheet(item: $prefilledSettlement) { transfer in
+            RecordSettlementSheet(group: group, payer: transfer.debtor,
+                                  recipient: transfer.creditor, amount: transfer.amount)
         }
         .sheet(isPresented: $showingEditGroup) {
             NewGroupSheet(group: group, usedNames: usedNames)
@@ -131,7 +146,7 @@ struct ExpenseGroupView: View {
         Section("Balances") {
             ForEach(balances) { balance in
                 HStack {
-                    Text(balance.name)
+                    Text(SettleUp.balanceName(balance.name, me: myName.isEmpty ? nil : myName))
                     Spacer()
                     Text(currency(balance.net))
                         .foregroundStyle(color(for: balance.net))
@@ -154,13 +169,26 @@ struct ExpenseGroupView: View {
                     .foregroundStyle(SnappetColor.habits)
             } else {
                 ForEach(transfers) { transfer in
-                    HStack {
-                        Text("\(transfer.debtor) owes \(transfer.creditor)")
-                        Spacer()
-                        Text(currency(transfer.amount))
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
+                    // Tapping a computed transfer records it with the exact amount
+                    // prefilled — it used to mean re-typing the number on screen.
+                    Button {
+                        prefilledSettlement = transfer
+                    } label: {
+                        HStack {
+                            Text(SettleUp.transferLabel(debtor: transfer.debtor,
+                                                        creditor: transfer.creditor,
+                                                        me: myName.isEmpty ? nil : myName))
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(currency(transfer.amount))
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                            Image(systemName: "chevron.right")
+                                .imageScale(.small)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
+                    .accessibilityIdentifier("expense.transfer.\(transfer.debtor).\(transfer.creditor)")
                 }
             }
         }

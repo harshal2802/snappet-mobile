@@ -17,12 +17,18 @@ struct NewGroupSheet: View {
     @State private var name: String
     @State private var participants: [String]
     @State private var showingDropWarning = false
+    /// Who the user is, remembered across groups (issue #82): prefills slot 1 on a new
+    /// group, and lets balances/settle-up read in the second person. Updated on save.
+    @AppStorage("expense.myName") private var myName = ""
+    /// Every group, for cross-group participant-name suggestions.
+    @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var allGroups: [ExpenseGroup]
 
     init(group: ExpenseGroup? = nil, usedNames: Set<String> = []) {
         self.group = group
         self.usedNames = usedNames
         _name = State(initialValue: group?.name ?? "")
-        // Editing: pre-fill existing names. Creating: two empty slots to fill in.
+        // Editing: pre-fill existing names. Creating: two empty slots to fill in
+        // (slot 1 seeded with the remembered "me" once known — see onAppear).
         _participants = State(initialValue: group?.participants ?? ["", ""])
     }
 
@@ -54,8 +60,28 @@ struct NewGroupSheet: View {
                 } footer: {
                     Text("Add at least two people to split expenses between.")
                 }
+
+                if !suggestions.isEmpty {
+                    Section("Known names") {
+                        // Names already used in other groups — one tap fills the next
+                        // empty slot instead of retyping (issue #82).
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(suggestions, id: \.self) { suggestion in
+                                    Button(suggestion) { fill(with: suggestion) }
+                                        .buttonStyle(.bordered)
+                                        .buttonBorderShape(.capsule)
+                                        .controlSize(.small)
+                                        .accessibilityIdentifier("expense.group.suggest.\(suggestion)")
+                                }
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                    }
+                }
             }
             .navigationTitle(isEditing ? "Edit Group" : "New Group")
+            .onAppear { prefillMe() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -114,6 +140,30 @@ struct NewGroupSheet: View {
         participants.remove(atOffsets: offsets)
     }
 
+    /// Names used across other groups, minus what's already typed here.
+    private var suggestions: [String] {
+        SettleUp.participantSuggestions(
+            existingGroups: allGroups.filter { $0.id != group?.id }.map(\.participants),
+            alreadyChosen: participants + (myName.isEmpty ? [] : [myName]))
+    }
+
+    /// Drop a suggested name into the first empty slot (or a new one).
+    private func fill(with suggestion: String) {
+        if let empty = participants.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            participants[empty] = suggestion
+        } else {
+            participants.append(suggestion)
+        }
+    }
+
+    /// Seed slot 1 with the remembered "me" on a fresh form.
+    private func prefillMe() {
+        guard !isEditing, !myName.isEmpty,
+              participants.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty })
+        else { return }
+        participants[0] = myName
+    }
+
     private func save() {
         guard canSave else { return }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -128,6 +178,13 @@ struct NewGroupSheet: View {
             modelContext.insert(newGroup)
         }
         try? modelContext.save()
+        // Slot 1 is "you" by convention on a fresh group — remember it so the next
+        // group prefills and balances can read in the second person. Never cleared by
+        // an edit (the user may be absent from a group they manage for others).
+        if !isEditing, let first = cleanedParticipants.first {
+            myName = first
+        }
+        Haptics.success()
         dismiss()
     }
 }

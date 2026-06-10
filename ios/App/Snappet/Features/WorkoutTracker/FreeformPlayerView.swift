@@ -283,15 +283,19 @@ private struct LogSetSheet: View {
         _unitSel = State(initialValue: unit)
     }
 
+    @FocusState private var keypadFocused: Bool
+
     var body: some View {
         NavigationStack {
             Form {
                 switch kind {
                 case .repsWeight:
                     TextField("Reps", text: $reps).keyboardType(.numberPad)
+                        .focused($keypadFocused)
                         .accessibilityIdentifier("logset.reps")
                     HStack {
                         TextField("Weight", text: $weight).keyboardType(.decimalPad)
+                            .focused($keypadFocused)
                             .accessibilityIdentifier("logset.weight")
                         Picker("Unit", selection: $unitSel) {
                             ForEach(WeightUnit.allCases) { Text($0.display).tag($0) }
@@ -301,8 +305,10 @@ private struct LogSetSheet: View {
                 case .duration:
                     HStack {
                         TextField("Min", text: $minutes).keyboardType(.numberPad)
+                            .focused($keypadFocused)
                         Text(":").foregroundStyle(.secondary)
                         TextField("Sec", text: $seconds).keyboardType(.numberPad)
+                            .focused($keypadFocused)
                     }
                     .accessibilityIdentifier("logset.duration")
                 case .climbAttempt:
@@ -315,6 +321,7 @@ private struct LogSetSheet: View {
                 }
             }
             .navigationTitle(kind.addLabel)
+            .keypadDoneToolbar($keypadFocused)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

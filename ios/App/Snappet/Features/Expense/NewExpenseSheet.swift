@@ -16,6 +16,7 @@ struct NewExpenseSheet: View {
 
     @State private var title = ""
     @State private var amount = 0.0
+    @FocusState private var amountFocused: Bool
     @State private var payer: String
     /// Names included in the split; defaults to everyone.
     @State private var splitAmong: Set<String>
@@ -42,6 +43,7 @@ struct NewExpenseSheet: View {
                     TextField("Amount", value: $amount,
                               format: .currency(code: currencyCode))
                         .keyboardType(.decimalPad)
+                        .focused($amountFocused)
                         .accessibilityIdentifier("expense.expense.amount")
                 }
 
@@ -84,12 +86,25 @@ struct NewExpenseSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button("Save") { commitAndSave() }
                         .disabled(!canSave)
                         .accessibilityIdentifier("expense.expense.save")
                 }
             }
+            .keypadDoneToolbar($amountFocused)
         }
+    }
+
+    /// The value-formatted amount field only commits its binding when focus resigns —
+    /// saving mid-edit would act on the stale value (issue #82). Resign first, save on
+    /// the next runloop tick, after the commit.
+    private func commitAndSave() {
+        guard !amountFocused else {
+            amountFocused = false
+            Task { @MainActor in save() }
+            return
+        }
+        save()
     }
 
     private var canSave: Bool {
