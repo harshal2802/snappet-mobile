@@ -10,6 +10,8 @@ struct KilterHistoryView: View {
     @Query(sort: \KilterLogEntry.date, order: .reverse) private var entries: [KilterLogEntry]
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var allSessions: [KilterSession]
 
+    @State private var pendingDeleteEntryOffsets: IndexSet?
+
     var body: some View {
         Group {
             if entries.isEmpty {
@@ -32,6 +34,22 @@ struct KilterHistoryView: View {
                         .accessibilityIdentifier("kilter.history.clear")
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete this ascent?",
+            isPresented: Binding(
+                get: { pendingDeleteEntryOffsets != nil },
+                set: { if !$0 { pendingDeleteEntryOffsets = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteEntryOffsets { deleteEntries(at: offsets) }
+                pendingDeleteEntryOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteEntryOffsets = nil }
+        } message: {
+            Text("This cannot be undone.")
         }
     }
 
@@ -133,7 +151,7 @@ struct KilterHistoryView: View {
             ForEach(entries) { entry in
                 KilterAscentRow(entry: entry).accessibilityIdentifier("kilter.historyRow")
             }
-            .onDelete(perform: deleteEntries)
+            .onDelete { pendingDeleteEntryOffsets = $0 }
         }
     }
 

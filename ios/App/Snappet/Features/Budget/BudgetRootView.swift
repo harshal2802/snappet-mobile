@@ -17,6 +17,7 @@ struct BudgetRootView: View {
     @State private var showingAddCategory = false
     @State private var showingAddTransaction = false
     @State private var editingCategory: BudgetCategory?
+    @State private var pendingDeleteCategoryOffsets: IndexSet?
     /// The month the whole screen is scoped to. Defaults to the current month.
     @State private var month = MonthScope()
 
@@ -78,6 +79,27 @@ struct BudgetRootView: View {
         }
         .navigationDestination(for: BudgetTrendsRoute.self) { _ in
             BudgetTrendsView(transactions: transactions)
+        }
+        .confirmationDialog(
+            "Delete this category?",
+            isPresented: Binding(
+                get: { pendingDeleteCategoryOffsets != nil },
+                set: { if !$0 { pendingDeleteCategoryOffsets = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteCategoryOffsets { deleteCategories(at: offsets) }
+                pendingDeleteCategoryOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteCategoryOffsets = nil }
+        } message: {
+            if let offsets = pendingDeleteCategoryOffsets {
+                let count = offsets.reduce(0) { acc, index in
+                    acc + transactions.filter { $0.categoryID == categories[index].id }.count
+                }
+                Text("This removes the category and \(count) transaction\(count == 1 ? "" : "s").")
+            }
         }
     }
 
@@ -142,7 +164,7 @@ struct BudgetRootView: View {
                         .tint(.blue)
                     }
                 }
-                .onDelete(perform: deleteCategories)
+                .onDelete { pendingDeleteCategoryOffsets = $0 }
             }
         }
     }

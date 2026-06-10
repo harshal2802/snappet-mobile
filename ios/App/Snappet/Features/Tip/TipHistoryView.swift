@@ -11,6 +11,8 @@ struct TipHistoryView: View {
 
     private var currencyCode: String { Locale.current.currency?.identifier ?? "USD" }
 
+    @State private var pendingDeleteOffsets: IndexSet?
+
     var body: some View {
         Group {
             if calculations.isEmpty {
@@ -29,6 +31,22 @@ struct TipHistoryView: View {
                 }
             }
         }
+        .confirmationDialog(
+            "Delete this calculation?",
+            isPresented: Binding(
+                get: { pendingDeleteOffsets != nil },
+                set: { if !$0 { pendingDeleteOffsets = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteOffsets { delete(at: offsets) }
+                pendingDeleteOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteOffsets = nil }
+        } message: {
+            Text("This cannot be undone.")
+        }
     }
 
     private var historyList: some View {
@@ -37,7 +55,7 @@ struct TipHistoryView: View {
                 TipHistoryRow(calculation: calc, currencyCode: currencyCode)
                     .accessibilityIdentifier("tip.historyRow")
             }
-            .onDelete(perform: delete)
+            .onDelete { pendingDeleteOffsets = $0 }
         }
     }
 

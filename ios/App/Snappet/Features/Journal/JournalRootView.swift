@@ -12,6 +12,7 @@ struct JournalRootView: View {
 
     @State private var newEntry: JournalEntry?
     @State private var searchText: String = ""
+    @State private var pendingDeleteOffsets: IndexSet?
 
     /// Entries matching the current search query (title, body, or any tag — case-insensitive).
     /// Kept out of `body` so the view stays thin.
@@ -54,6 +55,22 @@ struct JournalRootView: View {
         .navigationDestination(item: $newEntry) { entry in
             JournalEditorView(entry: entry, isNew: true)
         }
+        .confirmationDialog(
+            "Delete this entry?",
+            isPresented: Binding(
+                get: { pendingDeleteOffsets != nil },
+                set: { if !$0 { pendingDeleteOffsets = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteOffsets { deleteEntries(at: offsets) }
+                pendingDeleteOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteOffsets = nil }
+        } message: {
+            Text("This cannot be undone.")
+        }
     }
 
     private var entryList: some View {
@@ -65,7 +82,7 @@ struct JournalRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("journalRow")
             }
-            .onDelete(perform: deleteEntries)
+            .onDelete { pendingDeleteOffsets = $0 }
         }
     }
 

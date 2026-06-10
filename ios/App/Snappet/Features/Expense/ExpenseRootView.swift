@@ -8,8 +8,10 @@ struct ExpenseRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SuiteRouter.self) private var router
     @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var groups: [ExpenseGroup]
+    @Query private var allRecords: [ExpenseRecord]
 
     @State private var showingNewGroup = false
+    @State private var pendingDeleteGroup: ExpenseGroup?
 
     var body: some View {
         Group {
@@ -37,6 +39,25 @@ struct ExpenseRootView: View {
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet()
         }
+        .confirmationDialog(
+            "Delete this group?",
+            isPresented: Binding(
+                get: { pendingDeleteGroup != nil },
+                set: { if !$0 { pendingDeleteGroup = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let group = pendingDeleteGroup { delete(group) }
+                pendingDeleteGroup = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteGroup = nil }
+        } message: {
+            if let group = pendingDeleteGroup {
+                let count = allRecords.filter { $0.groupID == group.id }.count
+                Text("This removes the group and \(count) expense\(count == 1 ? "" : "s") inside it.")
+            }
+        }
     }
 
     // A ScrollView + VStack of Buttons (not a List) — the suite's proven XCUITest-tappable
@@ -55,7 +76,7 @@ struct ExpenseRootView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("expenseGroupRow")
                     .contextMenu {
-                        Button("Delete", role: .destructive) { delete(group) }
+                        Button("Delete", role: .destructive) { pendingDeleteGroup = group }
                     }
                 }
             }
@@ -64,6 +85,9 @@ struct ExpenseRootView: View {
     }
 
     private func delete(_ group: ExpenseGroup) {
+        for record in allRecords where record.groupID == group.id {
+            modelContext.delete(record)
+        }
         modelContext.delete(group)
         try? modelContext.save()
     }

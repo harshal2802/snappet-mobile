@@ -3094,3 +3094,27 @@ body eval, capturing the live binding).
 **Infra note:** Gradle's `connectedDebugAndroidTest` wedges on this iCloud-synced Desktop (the daemon
 hangs before installing the test APK). Workaround that runs cleanly: build the APKs, then
 `adb install` + `adb shell am instrument` directly (bypassing Gradle's device orchestration).
+
+## 2026-06-10 — Destructive-delete safety: confirmations and orphan cleanup (issue #69)
+
+Added confirmation dialogs to every unguarded destructive delete across six surfaces, and fixed
+the expense-group orphan bug. Non-obvious choices:
+
+- **`confirmationDialog` over `.swipeActions` with a confirm button.** The standard iOS HIG pattern
+  is a `confirmationDialog` (action sheet on iPhone). We match the existing `HabitRootView` precedent
+  rather than introducing a second pattern.
+- **Store `IndexSet` in `@State`, confirm, then delete.** `.onDelete` gives us an `IndexSet`; we
+  store it, show the dialog, then pass it to the real delete function. The index stability window
+  (fraction of a second while the sheet is up) is acceptable — no concurrent mutations can happen
+  while a modal sheet is presented.
+- **Journal back-swipe fix via `onDisappear` + `savedOrDiscarded` flag.** The entry is inserted
+  immediately (required for `@Bindable`) and cleaned up on `onDisappear` if it is still blank and
+  `save()` was never called. A `savedOrDiscarded` bool prevents double-delete in the path where
+  `save()` itself deletes the empty entry and then calls `dismiss()` (which triggers `onDisappear`).
+- **ExpenseRecord orphan cleanup.** `ExpenseGroup` uses a flat `groupID` foreign key (not a SwiftData
+  relationship) so `delete(group)` never cascaded. Added `@Query private var allRecords: [ExpenseRecord]`
+  to `ExpenseRootView` and loop-delete matching records before deleting the group.
+- **Knowledge graph not updated.** Confirmation dialogs are system-modal behaviors on existing screens;
+  they add no new nodes or edges to the structural graph.
+- **"Clear all" actions in Tip and Kilter history are out of scope.** They are toolbar-level operations
+  (already a deliberate destructive action distinct from a per-row swipe), addressed separately if needed.

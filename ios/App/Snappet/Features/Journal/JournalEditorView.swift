@@ -13,6 +13,7 @@ struct JournalEditorView: View {
 
     @FocusState private var bodyFocused: Bool
     @State private var tagInput: String = ""
+    @State private var savedOrDiscarded = false
 
     var body: some View {
         Form {
@@ -54,6 +55,15 @@ struct JournalEditorView: View {
         .onAppear {
             if isNew { bodyFocused = true }
         }
+        .onDisappear {
+            guard isNew && !savedOrDiscarded else { return }
+            let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let body = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty && body.isEmpty && entry.tags.isEmpty {
+                modelContext.delete(entry)
+                try? modelContext.save()
+            }
+        }
     }
 
     /// Fold the current `tagInput` (possibly comma-separated) into `entry.tags`, normalized.
@@ -79,6 +89,7 @@ struct JournalEditorView: View {
         if isNew && trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty {
             modelContext.delete(entry)
             try? modelContext.save()
+            savedOrDiscarded = true
             dismiss()
             return
         }
@@ -90,6 +101,7 @@ struct JournalEditorView: View {
             core.log(module: "journal", action: "entry",
                      summary: "Journaled: \(firstWords(title: trimmedTitle, body: trimmedBody))")
         }
+        savedOrDiscarded = true
         dismiss()
     }
 
