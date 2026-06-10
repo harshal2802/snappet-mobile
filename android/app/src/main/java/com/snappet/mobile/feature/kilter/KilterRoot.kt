@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -67,7 +69,7 @@ import com.snappet.mobile.ui.ModuleScaffold
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS }
+private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS, CREATE }
 
 /**
  * Root entry for the Kilter Board mini-app. Browse the user-installed read-only catalog (filtered by
@@ -130,6 +132,11 @@ fun KilterRoot(onExit: () -> Unit) {
                 onExit = { screen = KilterScreen.ROOT },
             )
         }
+        KilterScreen.CREATE -> CreateClimbScreen(
+            catalog = cat, dao = dao, board = board,
+            onCreated = { selectedUuid = it; screen = KilterScreen.DETAIL },
+            onExit = { screen = KilterScreen.ROOT },
+        )
         KilterScreen.ROOT -> KilterCatalogScreen(
             catalog = cat,
             dao = dao,
@@ -137,6 +144,7 @@ fun KilterRoot(onExit: () -> Unit) {
             onOpenClimb = { selectedUuid = it; screen = KilterScreen.DETAIL },
             onOpenHistory = { screen = KilterScreen.HISTORY },
             onOpenSettings = { screen = KilterScreen.SETTINGS },
+            onOpenCreate = { screen = KilterScreen.CREATE },
             onExit = onExit,
         )
     }
@@ -151,12 +159,14 @@ private fun KilterCatalogScreen(
     onOpenClimb: (String) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenCreate: () -> Unit,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val favorites by dao.favoritesFlow().collectAsState(initial = emptyList())
     val logs by dao.logsFlow().collectAsState(initial = emptyList())
+    val createdClimbs by dao.createdFlow().collectAsState(initial = emptyList())
     val favoriteUuids = remember(favorites) { favorites.map { it.climbUuid }.toSet() }
     val gradeFormat = remember { KilterSettings.gradeFormat(context) }
 
@@ -180,6 +190,7 @@ private fun KilterCatalogScreen(
         }
     }
     var savedOnly by remember { mutableStateOf(false) }
+    var mineOnly by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var sort by remember { mutableStateOf(KilterSort.POPULAR) }
     var benchmarksOnly by remember { mutableStateOf(false) }
@@ -192,14 +203,24 @@ private fun KilterCatalogScreen(
     // True number of climbs matching the current search + filters (not capped by the list) — shown live.
     var resultCount by remember { mutableStateOf(0) }
 
-    val showDiscovery = search.isBlank() && !savedOnly
+    val showDiscovery = search.isBlank() && !savedOnly && !mineOnly
     val filter = KilterFilter(layoutId, angle, minGrade.toDouble(), maxGrade.toDouble(),
         search, sort, benchmarksOnly, minAscents, minQuality)
 
-    androidx.compose.runtime.LaunchedEffect(filter, savedOnly, favorites) {
+    androidx.compose.runtime.LaunchedEffect(filter, savedOnly, mineOnly, favorites, createdClimbs) {
         val result: Triple<List<KilterListItem>, KilterListItem?, Int> = withContext(Dispatchers.IO) {
             if (!catalog.isAvailable) Triple(emptyList(), null, 0)
-            else if (savedOnly) {
+            else if (mineOnly) {
+                val term = search.trim().lowercase()
+                val mine = createdClimbs.filter { it.layoutId == layoutId }
+                    .filter { term.isEmpty() || it.name.lowercase().contains(term) || it.setterUsername.lowercase().contains(term) }
+                    .map {
+                        KilterListItem(it.uuid, it.name, it.setterUsername,
+                            it.predictedGrade ?: 0.0,
+                            it.predictedGrade?.let { g -> catalog.gradeLabel(g) } ?: "—", 0.0, 0)
+                    }
+                Triple(mine, null, mine.size)
+            } else if (savedOnly) {
                 val all = catalog.climbsByUuid(favorites.map { it.climbUuid })
                 val term = search.trim().lowercase()
                 val filtered = if (term.isEmpty()) all
@@ -230,6 +251,11 @@ private fun KilterCatalogScreen(
                     Icon(Icons.Filled.MoreVert, contentDescription = "More")
                 }
                 DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                    DropdownMenuItem(text = { Text("Create climb") },
+                        leadingIcon = { Icon(Icons.Filled.Add, null) },
+                        modifier = Modifier.testTag("kilter.create"),
+                        onClick = { moreMenu = false; onOpenCreate() })
+                    HorizontalDivider()
                     if (sessions.currentSessionId != null) {
                         DropdownMenuItem(text = { Text("End session") },
                             leadingIcon = { Icon(Icons.Filled.StopCircle, null) },
@@ -296,7 +322,18 @@ private fun KilterCatalogScreen(
                 FilterDropdown("To", catalog.gradeLabel(maxGrade.toDouble()),
                     gradeScale.map { it.first to it.second }, "kilter.maxGrade") { maxGrade = it; KilterSettings.setMaxGrade(context, it) }
                 AssistChip(
-                    onClick = { savedOnly = !savedOnly },
+                    onClick = { mineOnly = !mineOnly; if (mineOnly) savedOnly = false },
+                    label = { Text("Mine") },
+                    leadingIcon = { Icon(Icons.Filled.Build, contentDescription = null) },
+                    colors = if (mineOnly) AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        labelColor = MaterialTheme.colorScheme.onPrimary,
+                        leadingIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    ) else AssistChipDefaults.assistChipColors(),
+                    modifier = Modifier.testTag("kilter.mineToggle"),
+                )
+                AssistChip(
+                    onClick = { savedOnly = !savedOnly; if (savedOnly) mineOnly = false },
                     label = { Text("Saved") },
                     leadingIcon = {
                         Icon(if (savedOnly) Icons.Filled.Star else Icons.Outlined.StarBorder, contentDescription = null)
@@ -338,9 +375,9 @@ private fun KilterCatalogScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("kilter.count"))
                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                if (search.isNotBlank() || savedOnly || filter.activeExtras > 0) {
+                if (search.isNotBlank() || savedOnly || mineOnly || filter.activeExtras > 0) {
                     TextButton(onClick = {
-                        search = ""; savedOnly = false; sort = KilterSort.POPULAR
+                        search = ""; savedOnly = false; mineOnly = false; sort = KilterSort.POPULAR
                         benchmarksOnly = false; minAscents = 0; minQuality = 0.0
                     }, modifier = Modifier.testTag("kilter.clearFilters")) { Text("Clear") }
                 }
@@ -348,9 +385,13 @@ private fun KilterCatalogScreen(
 
             if (climbs.isEmpty() && cotd == null) {
                 EmptyState(PaddingValues(0.dp),
-                    if (search.isNotBlank()) "No matches" else if (savedOnly) "No saved climbs" else "No climbs match",
-                    if (search.isNotBlank()) "No climbs match “$search” with the current filters."
-                    else if (savedOnly) "Star climbs to find them here." else "Try a wider grade range or fewer filters.")
+                    when { search.isNotBlank() -> "No matches"; mineOnly -> "No climbs yet"; savedOnly -> "No saved climbs"; else -> "No climbs match" },
+                    when {
+                        search.isNotBlank() -> "No climbs match “$search” with the current filters."
+                        mineOnly -> "Tap More ▸ Create climb to design your first one for this layout."
+                        savedOnly -> "Star climbs to find them here."
+                        else -> "Try a wider grade range or fewer filters."
+                    })
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     cotd?.let { c ->

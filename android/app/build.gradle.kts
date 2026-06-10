@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
 
@@ -59,6 +60,10 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     // On-device receipt OCR (Split Expenses). Bundled Latin text-recognition model.
     implementation(libs.mlkit.text.recognition)
+    // On-device climb generator: the board-explorer's quantized transformer (model.q.onnx, lazy-downloaded).
+    implementation(libs.onnxruntime.android)
+    // JSON decode of the generator's meta.json (JVM-testable, no Android dep).
+    implementation(libs.kotlinx.serialization.json)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

@@ -3050,3 +3050,47 @@ Closed out the create-a-climb feature.
 **Verified off-device:** full `SnappetTests` green (467). **Device-pending:** BLE lighting of the draft
 on a real board and the clipboard/share sheet (both runtime/device-only). Closes the create-a-climb arc
 (PRs 30→31→32); Android mirror still outstanding (iOS-lead).
+
+## 2026-06-09 — Create a new climb: Android port (Kotlin / Compose)
+
+Mirrored the full iOS create-a-climb arc (manual editor + ONNX generator + dedup + content identity + BLE
+preview + frames export) onto Android. Non-obvious choices:
+
+- **Cross-platform identity is exact, not approximate.** `KilterClimbIdentity` (Kotlin) computes the same
+  UUIDv5 as iOS — same namespace, SHA-1 over `"<layoutId>:<sorted-frames>"`, version/variant bits — using
+  `java.util.UUID` MSB/LSB → big-endian bytes (matching the iOS `uuid` tuple order). A **shared golden
+  vector** (`d4e7b15e-…`) is asserted in both `KilterCreateClimbTest` (Kotlin) and `KilterCreateClimbTests`
+  (Swift), so a climb authored on an iPhone and an Android phone collapses to one id.
+- **Same pure-core / thin-edge split as iOS.** Identity, dedup, frames/validation, and the generator
+  decode (`KilterClimbGenerator` over a `KilterLogitsProviding` interface) are Android-dependency-free →
+  JVM unit-tested with a stub session (no ONNX, no model, no device). `KilterOrtSession`
+  (`ai.onnxruntime`) is the only binary-dependent file.
+- **Two new deps via the version catalog:** `onnxruntime-android` (generator runtime; Java OrtSession +
+  `float[1][block][vocab]` logits, last-token slice) and `kotlinx-serialization-json` (so `meta.json`
+  decode is JVM-testable). HTTP download is plain `HttpURLConnection` (no OkHttp added).
+- **Room, not SwiftData.** `KilterCreatedClimb` is a Room `@Entity` (DB 3→4, `fallbackToDestructiveMigration`
+  as the module already uses); `@Upsert` keyed by the content uuid mirrors iOS's unique-uuid upsert.
+- **Reuse parity:** `KilterCreatedClimb.asClimb()` + `KilterDetailScreen` resolver + `KilterEditableBoard`
+  on `KilterCatalog.placeableHolds` mirror the iOS reuse so created climbs flow through the existing
+  render/detail/BLE/logging path.
+
+**Verified off-device:** `:app:compileDebugKotlin` + `:app:assembleDebug` succeed; `:app:testDebugUnitTest`
+green — `KilterCreateClimbTest` (14, incl. the iOS-matching golden vector) + `KilterGeneratorTest` (8).
+**Device-pending (Android):** model download + on-device ONNX inference, BLE draft-lighting, clipboard/share
+— all runtime/emulator-or-device only. Create-a-climb now exists on **both** platforms.
+
+### 2026-06-09 addendum — Android create-climb: emulator UI tests + a real bug they caught
+
+Added `KilterCreateUITest` (instrumented, runs on the emulator with the synthetic catalog fixture):
+opening the editor, disabled-until-valid Save, draw→save→find-under-Mine, the duplicate-guard dialog
+on re-save, and the ✨ Generate download prompt. **5/5 pass.**
+
+The first run failed 4/5 and surfaced a genuine bug: `KilterEditableBoard`'s `pointerInput(placeable)`
+captured a **stale** `onCycle` (the gesture isn't restarted when `assignments` change), so every tap
+reset the climb to a single hold — multi-hold placement was silently broken on Android. Fixed by reading
+the callback through `rememberUpdatedState`. iOS is unaffected (SwiftUI re-creates the gesture closure each
+body eval, capturing the live binding).
+
+**Infra note:** Gradle's `connectedDebugAndroidTest` wedges on this iCloud-synced Desktop (the daemon
+hangs before installing the test APK). Workaround that runs cleanly: build the APKs, then
+`adb install` + `adb shell am instrument` directly (bypassing Gradle's device orchestration).
