@@ -230,8 +230,14 @@ private struct ExportedView: View {
         }
         .padding()
         .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: landed)
+        // Full-size host: an overlay on the content-hugging card would clip the
+        // confetti to ~220pt (Canvas clips to its bounds — review fix).
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .celebrates(on: celebrationTrigger)
         .onAppear {
+            // Once per landing — onAppear re-fires on tab switches, and the landed
+            // export shouldn't re-celebrate itself (review fix).
+            guard !landed else { return }
             landed = true
             celebrationTrigger += 1   // burst + success haptic (haptic-only under Reduce Motion)
         }

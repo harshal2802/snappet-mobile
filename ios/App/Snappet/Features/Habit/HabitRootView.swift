@@ -20,6 +20,9 @@ struct HabitRootView: View {
     @State private var pendingDelete: Habit?
     /// Incremented when a streak milestone is crossed — drives `.celebrates(on:)`.
     @State private var celebrationTrigger = 0
+    /// Milestones already celebrated this launch, per habit — unchecking and re-checking
+    /// today must not replay the same burst (review fix).
+    @State private var celebratedMilestones: [UUID: Set<Int>] = [:]
 
     var body: some View {
         Group {
@@ -187,7 +190,9 @@ struct HabitRootView: View {
                 action: isToday ? "done" : "backfill",
                 summary: isToday ? "Did: \(habit.name)" : "Backfilled: \(habit.name)"
             )
-            if HabitMilestones.crossed(previousStreak: streakBefore, newStreak: streakAfter) != nil {
+            if let milestone = HabitMilestones.crossed(previousStreak: streakBefore, newStreak: streakAfter),
+               !(celebratedMilestones[habit.id]?.contains(milestone) ?? false) {
+                celebratedMilestones[habit.id, default: []].insert(milestone)
                 celebrationTrigger += 1   // burst + success haptic via .celebrates(on:)
             } else {
                 Haptics.success()

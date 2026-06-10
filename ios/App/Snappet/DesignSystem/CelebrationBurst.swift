@@ -93,6 +93,10 @@ private struct CelebrationModifier: ViewModifier {
             .overlay {
                 if activeBurst > 0 {
                     CelebrationBurstView(seed: activeBurst)
+                        // Per-firing identity: a second burst inside the first one's
+                        // window must re-anchor startDate (fresh onAppear), not swap
+                        // particles mid-flight against the old clock (review fix).
+                        .id(activeBurst)
                 }
             }
             .onChange(of: trigger) { _, newValue in

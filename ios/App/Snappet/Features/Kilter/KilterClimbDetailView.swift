@@ -592,7 +592,16 @@ struct KilterClimbDetailView: View {
            let existing = existingSessionEntry(climbUUID: climb.uuid, sessionId: id) {
             existing.attempts += 1
             if status == .attempt { existing.attemptTimestamps.append(now) }
-            if !existing.status.isSend { existing.statusRaw = status.rawValue }   // a send stays a send
+            if !existing.status.isSend {
+                existing.statusRaw = status.rawValue   // a send stays a send
+                // Refresh the grade snapshot with the angle actually climbed — the angle
+                // picker may have moved since the row was first logged, and the
+                // first-send milestone + history read these fields (review fix). Once a
+                // send landed, its snapshot is history and stays put.
+                existing.angle = selectedAngle
+                existing.difficulty = stat.difficulty
+                existing.gradeLabel = grade
+            }
             existing.endedAt = now
             existing.date = now
         } else {
