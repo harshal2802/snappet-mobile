@@ -12,6 +12,8 @@ struct JournalRootView: View {
 
     @State private var newEntry: JournalEntry?
     @State private var searchText: String = ""
+    /// Offsets pending a swipe-delete confirmation; set on swipe, cleared on cancel or confirm.
+    @State private var pendingDeleteOffsets: IndexSet?
 
     /// Entries matching the current search query (title, body, or any tag — case-insensitive).
     /// Kept out of `body` so the view stays thin.
@@ -54,6 +56,19 @@ struct JournalRootView: View {
         .navigationDestination(item: $newEntry) { entry in
             JournalEditorView(entry: entry, isNew: true)
         }
+        .confirmationDialog(
+            pendingDeleteOffsets?.count == 1 ? "Delete entry?" : "Delete entries?",
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = pendingDeleteOffsets { deleteEntries(at: offsets) }
+                pendingDeleteOffsets = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteOffsets = nil }
+        } message: {
+            Text("This permanently removes the selected journal \(pendingDeleteOffsets?.count == 1 ? "entry" : "entries").")
+        }
     }
 
     private var entryList: some View {
@@ -65,8 +80,15 @@ struct JournalRootView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("journalRow")
             }
-            .onDelete(perform: deleteEntries)
+            .onDelete { offsets in pendingDeleteOffsets = offsets }
         }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteOffsets != nil },
+            set: { if !$0 { pendingDeleteOffsets = nil } }
+        )
     }
 
     private func createEntry() {

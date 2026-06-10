@@ -19,6 +19,8 @@ struct BudgetRootView: View {
     @State private var editingCategory: BudgetCategory?
     /// The month the whole screen is scoped to. Defaults to the current month.
     @State private var month = MonthScope()
+    /// The category pending delete confirmation, paired with its transaction count.
+    @State private var pendingDeleteCategory: BudgetCategory?
 
     var body: some View {
         Group {
@@ -78,6 +80,22 @@ struct BudgetRootView: View {
         }
         .navigationDestination(for: BudgetTrendsRoute.self) { _ in
             BudgetTrendsView(transactions: transactions)
+        }
+        .confirmationDialog(
+            "Delete \"\(pendingDeleteCategory?.name ?? "\")\"?",
+            isPresented: deleteCategoryDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Category", role: .destructive) {
+                if let cat = pendingDeleteCategory { deleteCategory(cat) }
+                pendingDeleteCategory = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteCategory = nil }
+        } message: {
+            if let cat = pendingDeleteCategory {
+                let count = transactions.filter { $0.categoryID == cat.id }.count
+                Text("This removes the category and \(count) transaction\(count == 1 ? "" : "s").")
+            }
         }
     }
 
@@ -142,7 +160,10 @@ struct BudgetRootView: View {
                         .tint(.blue)
                     }
                 }
-                .onDelete(perform: deleteCategories)
+                .onDelete { offsets in
+                    guard let index = offsets.first else { return }
+                    pendingDeleteCategory = categories[index]
+                }
             }
         }
     }
@@ -216,6 +237,15 @@ struct BudgetRootView: View {
         }
     }
 
+    // MARK: - Bindings
+
+    private var deleteCategoryDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteCategory != nil },
+            set: { if !$0 { pendingDeleteCategory = nil } }
+        )
+    }
+
     // MARK: - Mutations
 
     private func addCategory(name: String, limit: Double) {
@@ -268,15 +298,11 @@ struct BudgetRootView: View {
         try? context.save()
     }
 
-    private func deleteCategories(at offsets: IndexSet) {
-        for index in offsets {
-            let category = categories[index]
-            // Remove the category and all of its transactions (cascade by foreign key).
-            for transaction in transactions where transaction.categoryID == category.id {
-                context.delete(transaction)
-            }
-            context.delete(category)
+    private func deleteCategory(_ category: BudgetCategory) {
+        for transaction in transactions where transaction.categoryID == category.id {
+            context.delete(transaction)
         }
+        context.delete(category)
         try? context.save()
     }
 }

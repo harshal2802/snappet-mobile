@@ -10,6 +10,7 @@ struct ExpenseRootView: View {
     @Query(sort: \ExpenseGroup.createdAt, order: .reverse) private var groups: [ExpenseGroup]
 
     @State private var showingNewGroup = false
+    @State private var pendingDeleteGroup: ExpenseGroup?
 
     var body: some View {
         Group {
@@ -37,6 +38,19 @@ struct ExpenseRootView: View {
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet()
         }
+        .confirmationDialog(
+            "Delete \"\(pendingDeleteGroup?.name ?? "\")\"?",
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Group", role: .destructive) {
+                if let g = pendingDeleteGroup { delete(g) }
+                pendingDeleteGroup = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteGroup = nil }
+        } message: {
+            Text("This removes all expenses, itemized receipts, and settlements in the group.")
+        }
     }
 
     // A ScrollView + VStack of Buttons (not a List) — the suite's proven XCUITest-tappable
@@ -55,7 +69,7 @@ struct ExpenseRootView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("expenseGroupRow")
                     .contextMenu {
-                        Button("Delete", role: .destructive) { delete(group) }
+                        Button("Delete", role: .destructive) { pendingDeleteGroup = group }
                     }
                 }
             }
@@ -63,7 +77,24 @@ struct ExpenseRootView: View {
         }
     }
 
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteGroup != nil },
+            set: { if !$0 { pendingDeleteGroup = nil } }
+        )
+    }
+
     private func delete(_ group: ExpenseGroup) {
+        // Also remove all ExpenseRecords that reference this group by foreign key;
+        // the model uses a flat groupID reference rather than a SwiftData relationship,
+        // so orphan cleanup is manual.
+        let groupID = group.id
+        let descriptor = FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { $0.groupID == groupID }
+        )
+        if let records = try? modelContext.fetch(descriptor) {
+            for record in records { modelContext.delete(record) }
+        }
         modelContext.delete(group)
         try? modelContext.save()
     }

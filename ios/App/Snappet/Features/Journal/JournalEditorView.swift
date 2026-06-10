@@ -13,6 +13,9 @@ struct JournalEditorView: View {
 
     @FocusState private var bodyFocused: Bool
     @State private var tagInput: String = ""
+    /// Set to true when the user explicitly saves via Done, so the onDisappear guard
+    /// (for back-swipe cleanup) knows not to run.
+    @State private var didSave = false
 
     var body: some View {
         Form {
@@ -54,6 +57,17 @@ struct JournalEditorView: View {
         .onAppear {
             if isNew { bodyFocused = true }
         }
+        .onDisappear {
+            // Back-swipe (or any non-Done dismissal) on a new entry: delete it if still
+            // completely blank so it doesn't appear as an "Untitled" row.
+            guard isNew, !didSave else { return }
+            let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedBody = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty {
+                modelContext.delete(entry)
+                try? modelContext.save()
+            }
+        }
     }
 
     /// Fold the current `tagInput` (possibly comma-separated) into `entry.tags`, normalized.
@@ -69,6 +83,9 @@ struct JournalEditorView: View {
     }
 
     private func save() {
+        // Mark as saved first so onDisappear does not run the blank-entry guard.
+        didSave = true
+
         // Fold any uncommitted text in the tag field before persisting.
         commitTags()
 
