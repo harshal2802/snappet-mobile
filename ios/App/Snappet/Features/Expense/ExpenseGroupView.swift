@@ -146,7 +146,10 @@ struct ExpenseGroupView: View {
         Section("Balances") {
             ForEach(balances) { balance in
                 HStack {
-                    Text(SettleUp.balanceName(balance.name, me: myName.isEmpty ? nil : myName))
+                    // The user's own row says the direction in words ("You are owed") —
+                    // the issue's headline ask; others keep the signed, colored amount.
+                    Text(SettleUp.balanceRowLabel(name: balance.name, net: balance.net,
+                                                  me: myName.isEmpty ? nil : myName))
                     Spacer()
                     Text(currency(balance.net))
                         .foregroundStyle(color(for: balance.net))
@@ -183,6 +186,7 @@ struct ExpenseGroupView: View {
                             Text(currency(transfer.amount))
                                 .fontWeight(.semibold)
                                 .monospacedDigit()
+                                .foregroundStyle(.primary)
                             Image(systemName: "chevron.right")
                                 .imageScale(.small)
                                 .foregroundStyle(.tertiary)

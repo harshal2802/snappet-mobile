@@ -53,9 +53,10 @@ struct AddTransactionView: View {
     }
 
     private func performSave() {
-        if let category = selectedCategory, let value = amount, value > 0 {
-            onSave(category, value, note, date)
-        }
+        // Keep the sheet open if the committed value invalidated (matches the Expense
+        // sheets) — dismissing here would be a silent Cancel of the edit.
+        guard let category = selectedCategory, let value = amount, value > 0 else { return }
+        onSave(category, value, note, date)
         dismiss()
     }
 

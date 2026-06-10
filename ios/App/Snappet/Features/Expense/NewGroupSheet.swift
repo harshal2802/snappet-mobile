@@ -44,7 +44,9 @@ struct NewGroupSheet: View {
 
                 Section {
                     ForEach(participants.indices, id: \.self) { index in
-                        TextField("Participant \(index + 1)", text: $participants[index])
+                        // Slot 1 is "you" by convention on a new group — say so.
+                        TextField(index == 0 && !isEditing ? "Participant 1 (you)" : "Participant \(index + 1)",
+                                  text: $participants[index])
                             .textInputAutocapitalization(.words)
                             .accessibilityIdentifier("expense.group.participant.\(index)")
                     }
@@ -144,7 +146,8 @@ struct NewGroupSheet: View {
     private var suggestions: [String] {
         SettleUp.participantSuggestions(
             existingGroups: allGroups.filter { $0.id != group?.id }.map(\.participants),
-            alreadyChosen: participants + (myName.isEmpty ? [] : [myName]))
+            // When editing a group the user isn't in, "me" must stay suggestible.
+            alreadyChosen: participants + (myName.isEmpty || isEditing ? [] : [myName]))
     }
 
     /// Drop a suggested name into the first empty slot (or a new one).
@@ -178,10 +181,14 @@ struct NewGroupSheet: View {
             modelContext.insert(newGroup)
         }
         try? modelContext.save()
-        // Slot 1 is "you" by convention on a fresh group — remember it so the next
-        // group prefills and balances can read in the second person. Never cleared by
-        // an edit (the user may be absent from a group they manage for others).
-        if !isEditing, let first = cleanedParticipants.first {
+        // Slot 1 of the FIRST group you create establishes "me" (the field is labelled
+        // "(you)"); it is never silently overwritten afterwards — creating a group on
+        // someone else's behalf must not re-frame every existing group's balances
+        // around the wrong person (review blocker). Read slot 1 verbatim, not the first
+        // non-empty slot.
+        if !isEditing, myName.isEmpty,
+           let first = participants.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !first.isEmpty {
             myName = first
         }
         Haptics.success()

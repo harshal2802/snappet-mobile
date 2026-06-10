@@ -68,7 +68,9 @@ struct BudgetCategoryEditor: View {
     }
 
     private func performSave() {
-        guard isValid else { return dismiss() }
+        // Keep the sheet open if the committed value invalidated (matches the Expense
+        // sheets) — dismissing here would be a silent Cancel of the edit.
+        guard isValid else { return }
         onSave(trimmedName, limit ?? 0)
         dismiss()
     }

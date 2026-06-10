@@ -365,6 +365,10 @@ struct WorkoutPlayerView: View {
         .snappetAnimation(SnappetMotion.standard, value: setIndex)
     }
 
+    /// One shared focus across the reps/weight fields — the number pad has no return
+    /// key, so the keypad Done toolbar is the only way to dismiss it (issue #82).
+    @FocusState private var keypadFocused: Bool
+
     private var inputs: some View {
         HStack(spacing: 16) {
             field(title: "Reps", text: $repsText, keyboard: .numberPad, suffix: nil)
@@ -377,6 +381,7 @@ struct WorkoutPlayerView: View {
                 .pickerStyle(.segmented).frame(width: 96)
             }
         }
+        .keypadDoneToolbar($keypadFocused)
     }
 
     private func field(title: String, text: Binding<String>, keyboard: UIKeyboardType, suffix: String?) -> some View {
@@ -385,6 +390,7 @@ struct WorkoutPlayerView: View {
             HStack(spacing: 2) {
                 TextField("0", text: text)
                     .keyboardType(keyboard).multilineTextAlignment(.center)
+                    .focused($keypadFocused)
                     .font(.title3.weight(.semibold)).frame(width: 64)
                 if let suffix { Text(suffix).font(.caption).foregroundStyle(.secondary) }
             }

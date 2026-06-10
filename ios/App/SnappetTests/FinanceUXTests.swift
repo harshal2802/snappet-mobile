@@ -31,6 +31,24 @@ final class FinanceUXTests: XCTestCase {
         XCTAssertEqual(SettleUp.balanceName("Alice", me: nil), "Alice")
     }
 
+    /// Identity matching follows the same trimmed/case-insensitive rule the suggestion
+    /// dedup uses — ".words" autocapitalization makes "alice"/"Alice" the same human.
+    func testMeMatchingIsCaseAndWhitespaceInsensitive() {
+        XCTAssertEqual(SettleUp.transferLabel(debtor: "alice", creditor: "Bob", me: "Alice "),
+                       "You owe Bob")
+        XCTAssertEqual(SettleUp.balanceName("ALICE", me: "alice"), "You")
+    }
+
+    /// The user's own balance row carries the direction in words — the issue's headline
+    /// "You are owed $12" ask. Others keep the bare name.
+    func testBalanceRowLabelReadsDirectionForMe() {
+        XCTAssertEqual(SettleUp.balanceRowLabel(name: "Alice", net: 12, me: "Alice"), "You are owed")
+        XCTAssertEqual(SettleUp.balanceRowLabel(name: "Alice", net: -5, me: "Alice"), "You owe")
+        XCTAssertEqual(SettleUp.balanceRowLabel(name: "Alice", net: 0.001, me: "Alice"), "You're settled")
+        XCTAssertEqual(SettleUp.balanceRowLabel(name: "Alice", net: 12, me: "Bob"), "Alice")
+        XCTAssertEqual(SettleUp.balanceRowLabel(name: "Alice", net: 12, me: nil), "Alice")
+    }
+
     // MARK: - Participant suggestions
 
     func testSuggestionsCollectAcrossGroupsInFirstSeenOrder() {

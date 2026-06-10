@@ -20,20 +20,39 @@ enum SettleUp {
         let id = UUID()
     }
 
+    /// Whether two participant names refer to the same person — trimmed and
+    /// case-insensitive, the same identity rule `participantSuggestions` dedupes by
+    /// (".words" autocapitalization means the same human can be "alice" and "Alice").
+    static func isSamePerson(_ a: String, _ b: String?) -> Bool {
+        guard let b else { return false }
+        return a.trimmingCharacters(in: .whitespaces).lowercased()
+            == b.trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
     /// Second-person phrasing (issue #82): when the user has told us who they are
     /// ("me"), balances and transfers read "You owe Bob", not "Alice owes Bob".
     /// Pure string building → unit-tested.
     static func transferLabel(debtor: String, creditor: String, me: String?) -> String {
-        switch me {
-        case debtor: return "You owe \(creditor)"
-        case creditor: return "\(debtor) owes you"
-        default: return "\(debtor) owes \(creditor)"
-        }
+        if isSamePerson(debtor, me) { return "You owe \(creditor)" }
+        if isSamePerson(creditor, me) { return "\(debtor) owes you" }
+        return "\(debtor) owes \(creditor)"
     }
 
-    /// The display name for a balance row — "You" when it's the user's own.
+    /// The display name for a balance row — directional second person for the user's
+    /// own row ("You are owed" / "You owe", the issue's headline ask), the plain name
+    /// for everyone else.
     static func balanceName(_ name: String, me: String?) -> String {
-        name == me ? "You" : name
+        isSamePerson(name, me) ? "You" : name
+    }
+
+    /// The full balance-row label: the user's own row carries the direction in words
+    /// ("You are owed" / "You owe" / "You're settled"); others stay the bare name with
+    /// the signed, colored amount carrying direction as before.
+    static func balanceRowLabel(name: String, net: Double, me: String?) -> String {
+        guard isSamePerson(name, me) else { return name }
+        if net > 0.005 { return "You are owed" }
+        if net < -0.005 { return "You owe" }
+        return "You're settled"
     }
 
     /// Participant-name suggestions for a new group: every name used across existing

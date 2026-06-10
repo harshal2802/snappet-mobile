@@ -82,13 +82,9 @@ struct TipRootView: View {
                 }
                 .accessibilityIdentifier("tip.history")
             }
-            if billFocused {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") { billFocused = false }
-                }
-            }
         }
+        // The pattern this view pioneered, now shared suite-wide (issue #82).
+        .keypadDoneToolbar($billFocused)
         .navigationDestination(for: TipHistoryRoute.self) { _ in
             TipHistoryView()
         }

@@ -22,6 +22,12 @@ struct SnappetApp: App {
         let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo
+        if freshStore {
+            // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
+            // touch — clear the remembered "me" so expense tests are deterministic
+            // (the KilterCatalogFixture precedent for its kilter.* keys).
+            UserDefaults.standard.removeObject(forKey: "expense.myName")
+        }
         // Kilter catalog (issue #42): the app ships no catalog. Under the catalog test args this clears
         // any leftover on-device catalog and — only with `-uiTestInstallKilterCatalog` — installs a
         // synthetic fixture so the Kilter UI tests have data to browse. No-ops on a normal launch.
