@@ -22,6 +22,8 @@
     <application
         android:name=".SnappetApplication"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Snappet"
         android:supportsRtl="true"
         android:theme="@style/Theme.Snappet">
@@ -29,7 +31,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="Snappet"
-            android:theme="@style/Theme.Snappet">
+            android:theme="@style/Theme.Snappet.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

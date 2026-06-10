@@ -320,10 +320,10 @@ private fun ManualSection(
     KilterEditableBoard(geometry, placeable, assignments, onCycle, Modifier.fillMaxWidth().testTag("kilter.create.board"))
     RoleCounts(assignments.values.toList())
     if (validation != null) {
-        Text(validation.message, color = Color(0xFFD97706), style = MaterialTheme.typography.bodySmall,
+        Text(validation.message, color = com.snappet.mobile.ui.theme.pulseWarning(), style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("kilter.create.invalid"))
     } else {
-        Text("Ready to save · ${assignments.size} holds", color = Color(0xFF30A46C),
+        Text("Ready to save · ${assignments.size} holds", color = com.snappet.mobile.ui.theme.pulseSuccess(),
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("kilter.create.valid"))
     }
     if (board.isConnected && holds.isNotEmpty()) {
@@ -351,7 +351,7 @@ private fun GenerateSection(
 ) {
     when (phase) {
         GenPhase.NEEDS_MODEL -> {
-            error?.let { Text(it, color = Color(0xFFD97706), style = MaterialTheme.typography.bodySmall) }
+            error?.let { Text(it, color = com.snappet.mobile.ui.theme.pulseWarning(), style = MaterialTheme.typography.bodySmall) }
             Button(onClick = onDownload, modifier = Modifier.fillMaxWidth().testTag("kilter.generate.download")) {
                 Text("Download generator model (~9 MB)")
             }

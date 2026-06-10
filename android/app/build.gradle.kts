@@ -74,6 +74,7 @@ dependencies {
     implementation(libs.onnxruntime.android)
     // JSON decode of the generator's meta.json (JVM-testable, no Android dep).
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.core.splashscreen)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

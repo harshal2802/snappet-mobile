@@ -153,8 +153,8 @@ private fun SectionHeader(title: String) {
 private fun AscentRow(entry: KilterLogEntry) {
     val status = KilterAscentStatus.from(entry.status)
     val color = when (status) {
-        KilterAscentStatus.FLASH, KilterAscentStatus.SENT -> Color(0xFF30A46C)
-        KilterAscentStatus.PROJECT -> Color(0xFFF76808)
+        KilterAscentStatus.FLASH, KilterAscentStatus.SENT -> com.snappet.mobile.ui.theme.pulseSuccess()
+        KilterAscentStatus.PROJECT -> com.snappet.mobile.ui.theme.pulseWarning()
         KilterAscentStatus.ATTEMPT -> Color(0xFF888888)
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("kilter.historyRow"), verticalArrangement = Arrangement.spacedBy(2.dp)) {

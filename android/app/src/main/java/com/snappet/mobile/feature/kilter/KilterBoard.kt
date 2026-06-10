@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.snappet.mobile.ui.theme.PulseColors
 import kotlin.math.min
 
 /**
@@ -31,6 +32,11 @@ fun KilterBoard(
     lit: Boolean = false,
 ) {
     val aspect = if (geometry.aspect > 0) geometry.aspect.toFloat() else 1f
+    // Resolved in the composable (Canvas draw scope can't read the theme): the unlit
+    // schematic uses the mode's board paper instead of a fixed light rectangle (issue #96).
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val paper = if (dark) PulseColors.BoardPaperDark else PulseColors.BoardPaperLight
+    val paperGrid = if (dark) Color.White.copy(alpha = 0.14f) else Color.Gray.copy(alpha = 0.28f)
     Canvas(modifier.aspectRatio(aspect)) {
         val w = size.width
         val h = size.height
@@ -40,10 +46,10 @@ fun KilterBoard(
 
         fun pt(x: Double, y: Double) = Offset((r + x * (w - holdD)).toFloat(), (r + y * (h - holdD)).toFloat())
 
-        drawRect(color = if (lit) Color(0xFF0E0E12) else Color(0xFFF1F0ED))
+        drawRect(color = if (lit) Color(0xFF0E0E12) else paper)
 
         // 1) faint full grid
-        val gridColor = if (lit) Color.White.copy(alpha = 0.10f) else Color.Gray.copy(alpha = 0.28f)
+        val gridColor = if (lit) Color.White.copy(alpha = 0.10f) else paperGrid
         val gridR = holdD * 0.16f
         for (p in geometry.grid) drawCircle(gridColor, radius = gridR, center = pt(p.x, p.y))
 

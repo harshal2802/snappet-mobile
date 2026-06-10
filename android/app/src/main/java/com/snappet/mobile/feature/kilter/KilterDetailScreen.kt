@@ -252,7 +252,7 @@ fun KilterDetailScreen(
                 // hold, else a quiet "Matching" chip (the default). TAP it for an explanation (the
                 // convention isn't obvious) via a rich tooltip. Mirrors iOS.
                 val noMatch = climb?.isNoMatch == true
-                val matchColor = if (noMatch) Color(0xFFF76808) else MaterialTheme.colorScheme.onSurfaceVariant
+                val matchColor = if (noMatch) com.snappet.mobile.ui.theme.pulseWarning() else MaterialTheme.colorScheme.onSurfaceVariant
                 val matchTooltip = rememberTooltipState(isPersistent = true)
                 TooltipBox(
                     positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
@@ -281,10 +281,11 @@ fun KilterDetailScreen(
                     }
                 }
                 if (isClassic) {
-                    Box(Modifier.background(Color(0xFFD97706).copy(alpha = 0.18f), CircleShape)
+                    val classic = com.snappet.mobile.ui.theme.pulseWarning()
+                    Box(Modifier.background(classic.copy(alpha = 0.18f), CircleShape)
                         .padding(horizontal = 10.dp, vertical = 4.dp)) {
                         Text("★ Classic", style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFFD97706), fontWeight = FontWeight.SemiBold)
+                            color = classic, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 if (fa.isNotEmpty()) {
@@ -302,10 +303,11 @@ fun KilterDetailScreen(
                 LogButton("Attempt", Icons.Filled.Bolt, false, Modifier.weight(1f), "kilter.log.attempt") { log(KilterAscentStatus.ATTEMPT) }
             }
             androidx.compose.animation.AnimatedVisibility(visible = logConfirmation != null) {
-                Box(Modifier.background(Color(0xFF30A46C).copy(alpha = 0.16f), CircleShape)
+                val confirm = com.snappet.mobile.ui.theme.pulseSuccess()
+                Box(Modifier.background(confirm.copy(alpha = 0.16f), CircleShape)
                     .padding(horizontal = 12.dp, vertical = 6.dp)) {
                     Text("✓ ${logConfirmation ?: ""}", style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF1E7E48), fontWeight = FontWeight.Medium,
+                        color = confirm, fontWeight = FontWeight.Medium,
                         modifier = Modifier.testTag("kilter.logConfirmation"))
                 }
             }
@@ -477,7 +479,7 @@ private fun LogButton(
 /** How grade changes across board angles — the selected angle highlighted in the Kilter accent. */
 @Composable
 private fun GradeChart(stats: List<KilterClimbStat>, selectedAngle: Int, catalog: KilterCatalog) {
-    val accent = Color(0xFFD97706)
+    val accent = com.snappet.mobile.ui.theme.pulseWarning()
     val muted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f)
     val diffs = stats.map { it.difficulty }
     val lo = (diffs.minOrNull() ?: 0.0) - 1.0
