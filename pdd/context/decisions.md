@@ -2973,6 +2973,84 @@ If `hrSeries` was never written there's nothing to slice; the live fallback only
 per-clip chart/badge layers; -11838-sensitive, can't render on the simulator) — record a session with
 a band, film clips early/late/at-the-end, confirm each clip's exported overlay shows its own HR.
 
+## 2026-06-09 — Create a new climb: identity, dedup, manual editor (PR 1 of 3)
+
+The Kilter module became *authorable*: users can design a climb (manual editor now; the on-device
+generator in PR 2) instead of only browsing the read-only catalog. Non-obvious choices:
+
+- **Content-derived uuid, NOT a time-based one.** The brief asked for a "time-based uuid that's the
+  same across devices for the same climb" — internally contradictory: a v1/v7 time UUID embeds the
+  clock + a node, so two devices necessarily differ. Only a hash of the climb's content can be equal
+  across devices. So a created climb's id is a **UUIDv5** (`KilterClimbIdentity`, CryptoKit SHA-1,
+  fixed namespace) over the canonical `(layoutId, sorted holds)`. Creation time lives in a separate
+  `createdAt` field — never folded into the id (that would break cross-device equality). Pinned with a
+  golden-vector test so a refactor can't silently re-key every created climb.
+- **Canonicalization = sorted `p<placement>r<role>` tokens**, layout-scoped (a placement id only means
+  something within its layout — matches Aurora's own `layout_id`+`frames` identity). Order-independent,
+  so it underpins both the uuid and duplicate detection.
+- **Dedup is two-channel.** Catalog climbs keep Aurora's *random* uuids, so a draft that matches a
+  *catalog* climb is caught by comparing canonical frames; *created* climbs are caught directly by the
+  deterministic uuid. `KilterDuplicateChecker` indexes both per layout; built fresh at save time (one
+  indexed SELECT — cheap, always current). On a hit the user gets Open existing / Save anyway / Keep
+  editing.
+- **Reuse via a `KilterClimb` adapter.** `KilterCreatedClimb.asClimb` shapes an authored climb as the
+  read-only catalog value type, so it flows through the *existing* `KilterCatalog.holds(for:)` render,
+  `KilterClimbDetailView`, BLE illumination and logging with no special-casing. The detail screen
+  resolves a created climb by uuid and synthesizes a single-angle stat (created climbs have no catalog
+  `climb_stats`). Authoring requires an installed catalog (for hole geometry) — consistent with the
+  whole module.
+
+**Verified off-device:** full `SnappetTests` suite green (458 tests, 0 failures, 2 pre-existing skips),
+incl. new `KilterCreateClimbTests`. **Device-pending:** the end-to-end author → save → render → BLE
+illuminate path on a real board (BLE can't run on the simulator, like prior Kilter work).
+
+## 2026-06-09 — On-device climb generator: ONNX transformer (PR 2 of 3)
+
+Wired the board-explorer's generator into the app (the ✨ Generate tab). Non-obvious choices:
+
+- **Run the real ONNX model, via ONNX Runtime, not a reimplementation.** The explorer ships a quantized
+  transformer (`model.q.onnx`); we run that exact artifact through `onnxruntime`
+  (microsoft/onnxruntime-swift-package-manager, import `OnnxRuntimeBindings`) so on-device output matches
+  the web tool. Considered Core ML (no third-party dep) but the int8-transformer conversion carries real
+  divergence risk; ONNX Runtime runs the file unchanged.
+- **Pure core behind a thin edge.** Everything except the tensor call is a pure Swift port
+  (`KilterGeneratorMeta`/`KilterClimbGenerator`, decode `at`/`rt`/`st`/`nt`) depending only on a
+  `KilterLogitsProviding` protocol — so the whole sampler is unit-tested with a stub session (no ONNX, no
+  model file, no device). `KilterORTSession` is the *only* `import OnnxRuntimeBindings`; an `actor`
+  (`KilterGeneratorRuntime`) isolates the non-Sendable session and returns only the Sendable result.
+- **Model I/O, learned from the bundle:** int64 `tokens` `[1, block]` left-packed + `pad`-filled; `logits`
+  `[1, block, vocab]` read at the last real token's position. Prompt
+  `[BOS, SIZE, ANGLE, GRADE, MATCH|NOMATCH]`; candidates masked to `sizeMasks[sizeId]` minus used
+  placements; EOS gated on minHolds+start+finish; missing start/finish repaired ⇒ valid by construction.
+- **Lazy-download, not bundled.** `KilterGeneratorAssets` fetches model + meta from the existing host on
+  first use (mirrors `HostedCatalogClient`), keeping the binary slim and the model updatable host-side.
+- **Generated climbs reuse PR 1's save path** (shared `SavePayload` → dedup → content uuid →
+  `KilterCreatedClimb`, `source = "generated"`, predicted grade recorded).
+
+**Verified off-device:** full `SnappetTests` green (467 tests, 0 failures) incl. `KilterGeneratorTests`
+(deterministic decode, start/finish guarantee, repair, no-dup-placement, mask honored, grade regression).
+**Device-pending:** the real model download + an actual ONNX inference run on-device (the simulator
+linked ORT fine, but inference timing/parity is worth confirming on hardware), and frames-parity spot
+checks against the web explorer.
+
+## 2026-06-09 — Create-a-climb polish: live BLE preview + frames export (PR 3 of 3)
+
+Closed out the create-a-climb feature.
+
+- **Live BLE preview reuses the whole render path.** `CreateClimbView` takes the shared
+  `KilterBoardController` and lights the draft via `KilterCatalog.holds(for:)` + `illuminate` — auto on
+  `onChange(of: assignments)` and after a generation, plus an explicit "Light on board" row that's hidden
+  unless a board is connected. No new BLE code; the draft is shaped as a `KilterClimb` (same trick as the
+  render/detail reuse).
+- **Frames are the portable artifact.** A climb's `p<placement>r<role>` string is both the catalog's
+  storage and the board-explorer's "Copy frames" format, so Copy/Share-frames (canonical form) is the
+  natural export — added to both create tabs and to `KilterShareView` (so authored climbs, which have no
+  shareable catalog uuid for the QR path, are still portable as text).
+
+**Verified off-device:** full `SnappetTests` green (467). **Device-pending:** BLE lighting of the draft
+on a real board and the clipboard/share sheet (both runtime/device-only). Closes the create-a-climb arc
+(PRs 30→31→32); Android mirror still outstanding (iOS-lead).
+
 ## 2026-06-09 — Create a new climb: Android port (Kotlin / Compose)
 
 Mirrored the full iOS create-a-climb arc (manual editor + ONNX generator + dedup + content identity + BLE

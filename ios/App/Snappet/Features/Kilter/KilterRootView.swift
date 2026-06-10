@@ -21,6 +21,8 @@ struct KilterRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var favorites: [KilterFavorite]
     @Query private var allEntries: [KilterLogEntry]
+    /// Climbs the user authored on this device (manual editor / generator) — the "Mine" filter's source.
+    @Query private var createdClimbs: [KilterCreatedClimb]
 
     private let catalog = KilterCatalog.shared
     /// Whether a catalog is installed — flips the view between the browse list and the opt-in
@@ -42,6 +44,9 @@ struct KilterRootView: View {
     @AppStorage("kilter.minGrade") private var minGrade: Int = 10
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
     @State private var savedOnly = false
+    /// Browse only climbs the user created (mutually exclusive with `savedOnly`).
+    @State private var mineOnly = false
+    @State private var showingCreate = false
     @State private var items: [KilterListItem] = []
     /// True number of climbs matching the current filter + search (not capped by the list's limit) —
     /// shown live as "N climbs" so the user sees how their search/filters narrow the catalog.
@@ -65,7 +70,9 @@ struct KilterRootView: View {
     @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
     private var apiLevel: KilterProtocol.APILevel { .init(rawValue: apiLevelRaw) ?? .v3 }
     /// Discovery (climb-of-the-day) shows only on the plain browse view, not while searching/saved.
-    private var showDiscovery: Bool { search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly }
+    private var showDiscovery: Bool {
+        search.trimmingCharacters(in: .whitespaces).isEmpty && !savedOnly && !mineOnly
+    }
 
     /// The current browse criteria assembled into one value (drives the catalog query + `.task` id).
     private var filter: KilterFilter {
@@ -122,6 +129,11 @@ struct KilterRootView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Button { showingCreate = true } label: {
+                        Label("Create climb", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("kilter.create")
+                    Divider()
                     if sessions.isActive {
                         Button(role: .destructive) { sessions.end(in: modelContext) } label: {
                             Label("End session", systemImage: "stop.circle")
@@ -154,6 +166,12 @@ struct KilterRootView: View {
         .sheet(isPresented: $showingFilters) {
             KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
                                minAscents: $minAscents, minQuality: $minQuality)
+        }
+        .sheet(isPresented: $showingCreate) {
+            CreateClimbView(onCreated: { uuid in
+                // Open the freshly-created climb in the normal detail screen.
+                router.push(KilterClimbRoute(uuid: uuid))
+            }, board: board)
         }
         .sheet(isPresented: $showingScanner) {
             KilterScannerView { link in
@@ -280,12 +298,18 @@ struct KilterRootView: View {
             .overlay {
                 if items.isEmpty && !(showDiscovery && cotd != nil) {
                     let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
-                    ContentUnavailableView(
-                        searching ? "No matches" : (savedOnly ? "No saved climbs" : "No climbs match"),
-                        systemImage: searching ? "magnifyingglass" : (savedOnly ? "star" : "line.3.horizontal.decrease.circle"),
-                        description: Text(searching ? "No climbs match “\(search)” with the current filters."
-                                          : (savedOnly ? "Star climbs to find them here."
-                                                       : "Try a wider grade range, another angle, or fewer filters.")))
+                    if mineOnly && !searching {
+                        ContentUnavailableView(
+                            "No climbs yet", systemImage: "hammer",
+                            description: Text("Tap More ▸ Create climb to design your first one for this layout."))
+                    } else {
+                        ContentUnavailableView(
+                            searching ? "No matches" : (savedOnly ? "No saved climbs" : "No climbs match"),
+                            systemImage: searching ? "magnifyingglass" : (savedOnly ? "star" : "line.3.horizontal.decrease.circle"),
+                            description: Text(searching ? "No climbs match “\(search)” with the current filters."
+                                              : (savedOnly ? "Star climbs to find them here."
+                                                           : "Try a wider grade range, another angle, or fewer filters.")))
+                    }
                 }
             }
         }
@@ -392,7 +416,12 @@ struct KilterRootView: View {
                 .padding(.vertical, 8)
             }
 
-            Button { savedOnly.toggle() } label: {
+            Button { withAnimation(.snappy) { mineOnly.toggle(); if mineOnly { savedOnly = false } } } label: {
+                chip("", "Mine", filled: mineOnly, systemImage: mineOnly ? "hammer.fill" : "hammer")
+            }
+            .accessibilityIdentifier("kilter.mineToggle")
+
+            Button { withAnimation(.snappy) { savedOnly.toggle(); if savedOnly { mineOnly = false } } } label: {
                 chip("", "Saved", filled: savedOnly, systemImage: savedOnly ? "star.fill" : "star")
             }
             .accessibilityIdentifier("kilter.savedToggle")
@@ -422,12 +451,12 @@ struct KilterRootView: View {
     /// Whether the user has narrowed beyond the board/grade context (search text, the Saved filter, or a
     /// Filters-sheet extra) — gates the Clear button.
     private var hasActiveFilters: Bool {
-        !search.trimmingCharacters(in: .whitespaces).isEmpty || savedOnly || filter.activeExtras > 0
+        !search.trimmingCharacters(in: .whitespaces).isEmpty || savedOnly || mineOnly || filter.activeExtras > 0
     }
 
-    /// Clear the search + Saved + Filters-sheet extras (keeps the board/angle/grade the user set).
+    /// Clear the search + Saved/Mine + Filters-sheet extras (keeps the board/angle/grade the user set).
     private func clearFilters() {
-        search = ""; savedOnly = false
+        search = ""; savedOnly = false; mineOnly = false
         sort = .popular; benchmarksOnly = false; minAscents = 0; minQuality = 0
     }
 
@@ -446,14 +475,16 @@ struct KilterRootView: View {
 
     /// Identity for `.task(id:)` — recompute the list whenever any criterion (or the favorites set) changes.
     private var filterKey: String {
-        "\(layoutId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(favoriteUUIDs.count)"
-        + "|\(search)|\(sort.rawValue)|\(benchmarksOnly)|\(minAscents)|\(minQuality)"
+        "\(layoutId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(favoriteUUIDs.count)"
+        + "|\(createdClimbs.count)|\(search)|\(sort.rawValue)|\(benchmarksOnly)|\(minAscents)|\(minQuality)"
     }
 
     private func refresh() {
         guard catalog.isAvailable else { items = []; cotd = nil; count = 0; return }
         cotd = showDiscovery ? catalog.climbOfTheDay(layoutId: layoutId, angle: angle) : nil
-        if savedOnly {
+        if mineOnly {
+            items = createdListItems()
+        } else if savedOnly {
             // Saved list isn't grade/angle-restricted, but still honor the search box (name/setter).
             let saved = favorites.sorted { $0.addedAt > $1.addedAt }.map(\.climbUUID)
             let all = catalog.climbsByUUID(saved)
@@ -463,8 +494,26 @@ struct KilterRootView: View {
         } else {
             items = catalog.list(filter)
         }
-        // True match count (Saved is already the full set; the catalog list is capped, so query it).
-        count = savedOnly ? items.count : catalog.count(filter)
+        // True match count (Saved/Mine are already the full set; the catalog list is capped, so query it).
+        count = (savedOnly || mineOnly) ? items.count : catalog.count(filter)
+    }
+
+    /// The user's created climbs for the current layout, newest first, honoring the search box — mapped to
+    /// `KilterListItem` so they render in the same rows as catalog climbs (grade = the predicted/chosen
+    /// grade; quality/ascents are 0, since a brand-new climb has none).
+    private func createdListItems() -> [KilterListItem] {
+        let term = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let mine = createdClimbs
+            .filter { $0.layoutId == layoutId }
+            .sorted { $0.createdAt > $1.createdAt }
+        let filtered = term.isEmpty ? mine
+            : mine.filter { $0.name.lowercased().contains(term) || $0.setterUsername.lowercased().contains(term) }
+        return filtered.map { c in
+            KilterListItem(uuid: c.uuid, name: c.name, setter: c.setterUsername,
+                           difficulty: c.predictedGrade ?? 0,
+                           gradeLabel: c.predictedGrade.map { catalog.gradeLabel($0) } ?? "—",
+                           quality: 0, ascents: 0)
+        }
     }
 }
 

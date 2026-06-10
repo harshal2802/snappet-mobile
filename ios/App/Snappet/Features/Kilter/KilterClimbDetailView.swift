@@ -523,10 +523,31 @@ struct KilterClimbDetailView: View {
 
     // MARK: - Actions
 
+    /// Resolve a climb by uuid: a catalog climb first, else one the user authored (`KilterCreatedClimb`,
+    /// adapted via `asClimb`) so created climbs open in this same screen — render, logging, favorite, and
+    /// BLE illumination all work unchanged.
+    private func resolveClimb(_ uuid: String) -> KilterClimb? {
+        if let c = catalog.climb(uuid) { return c }
+        return createdClimb(uuid)?.asClimb
+    }
+
+    /// The user-authored climb with this uuid, if any.
+    private func createdClimb(_ uuid: String) -> KilterCreatedClimb? {
+        let d = FetchDescriptor<KilterCreatedClimb>(predicate: #Predicate { $0.uuid == uuid })
+        return try? modelContext.fetch(d).first
+    }
+
     private func load() {
-        guard let c = catalog.climb(currentUUID) else { return }
+        guard let c = resolveClimb(currentUUID) else { return }
         climb = c
-        stats = catalog.stats(currentUUID)
+        var resolvedStats = catalog.stats(currentUUID)
+        // Created climbs have no per-angle catalog stats — synthesize a single stat from the climb's
+        // designed angle + predicted/chosen grade so the grade row and angle picker still read.
+        if resolvedStats.isEmpty, let created = createdClimb(currentUUID), let g = created.predictedGrade {
+            resolvedStats = [KilterClimbStat(angle: created.angle, difficulty: g, benchmarkDifficulty: nil,
+                                             ascents: 0, quality: 0, faUsername: "")]
+        }
+        stats = resolvedStats
         // Seed the board size to this layout's default if unset/invalid, so the picker shows a real
         // selection and the LED map is concrete.
         if !catalog.sizes(forLayout: c.layoutId).contains(where: { $0.id == productSizeId }) {
