@@ -39,11 +39,13 @@ private sealed interface InstallPhase {
 }
 
 /**
- * The opt-in empty state shown when no catalog is installed (issue #42). Snappet ships no Aurora data;
- * the user brings the climb catalog onto this device once — by importing a `.sqlite3` they built
- * themselves via Storage Access Framework (Phase 1) — and from then on browse/detail/log/illuminate
- * work offline. Surfaces Aurora's Terms of Use + a link before any fetch. Mirrors the iOS
- * `KilterCatalogSyncView`.
+ * The opt-in empty state shown when no catalog is installed (issue #42; emphasis reversed in #94).
+ * Snappet ships no Aurora data; the user brings the climb catalog onto this device once — primarily
+ * by downloading it from the user-configured hosted dataset (trimmed on-device by their filters),
+ * or secondarily by importing a `.sqlite3` catalog file they already have via Storage Access
+ * Framework — and from then on browse/detail/log/illuminate work offline. Surfaces Aurora's Terms
+ * of Use + a link before any fetch. Mirrors the iOS `KilterCatalogSyncView` (whose first-run order
+ * is tracked separately).
  */
 @Composable
 fun KilterCatalogSyncScreen(onInstalled: () -> Unit, onExit: () -> Unit) {
