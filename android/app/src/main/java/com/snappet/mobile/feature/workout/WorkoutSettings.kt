@@ -15,4 +15,14 @@ object WorkoutSettings {
 
     fun setPreferredUnit(context: Context, unit: WorkoutWeightUnit) =
         prefs(context).edit().putString("preferredUnit", unit.raw).apply()
+
+    /** Starter keys the user deleted — `seedIfNeeded` must not resurrect them (the iOS
+     *  `dismissedStarters` tombstone, ported; issue #88 review). */
+    fun dismissedStarters(context: Context): Set<String> =
+        prefs(context).getStringSet("dismissedStarters", emptySet()) ?: emptySet()
+
+    fun dismissStarter(context: Context, key: String) =
+        prefs(context).edit()
+            .putStringSet("dismissedStarters", dismissedStarters(context) + key)
+            .apply()
 }

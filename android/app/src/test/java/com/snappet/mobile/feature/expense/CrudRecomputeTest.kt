@@ -61,6 +61,22 @@ class CrudRecomputeTest {
         assertEquals(0, HabitStats.streak(emptySet()))
     }
 
+    /** Issue #88 review blocker: removing/renaming a participant via group edit must not
+     *  break the zero-sum invariant — orphaned names stay in the balances output. */
+    @Test
+    fun balancesStayZeroSumWhenAParticipantWasRemoved() {
+        val dinner = expense("g", "Dinner", 100.0, "Alice", listOf("Alice", "Bob"))
+        // Group edited: Bob replaced by Cleo, but Bob's history remains.
+        val balances = SettleUp.balances(listOf("Alice", "Cleo"), listOf(dinner))
+
+        assertEquals(0.0, balances.sumOf { it.net }, 0.01)          // zero-sum holds
+        assertEquals(-50.0, balances.first { it.name == "Bob" }.net, 0.01)  // orphan kept
+        val transfers = SettleUp.transfers(balances)
+        assertEquals(1, transfers.size)                              // plan not truncated
+        assertEquals("Bob", transfers[0].debtor)
+        assertEquals("Alice", transfers[0].creditor)
+    }
+
     @Test
     fun participantSuggestionsDedupeAcrossGroups() {
         val names = SettleUp.participantSuggestions(

@@ -56,10 +56,12 @@ object WorkoutStarters {
         ),
     )
 
-    /** Insert any starter not already present (by `starterKey`). Safe to call on every open — it
-     * no-ops once everything is seeded. Mirrors iOS `StarterRoutines.seedIfNeeded`. */
-    suspend fun seedIfNeeded(dao: WorkoutDao) {
-        val present = dao.allRoutines().mapNotNull { it.starterKey }.toSet()
+    /** Insert any starter not already present (by `starterKey`) and not deliberately
+     * deleted by the user ([dismissed] — without the tombstone a confirmed delete
+     * silently un-deleted itself on the next open). Safe to call on every open.
+     * Mirrors iOS `StarterRoutines.seedIfNeeded(dismissed:)`. */
+    suspend fun seedIfNeeded(dao: WorkoutDao, dismissed: Set<String> = emptySet()) {
+        val present = dao.allRoutines().mapNotNull { it.starterKey }.toSet() + dismissed
         // Fixed early timestamp so starters sort after the freshest user routine but stay grouped.
         val seedTime = 0L
         for (spec in specs) {

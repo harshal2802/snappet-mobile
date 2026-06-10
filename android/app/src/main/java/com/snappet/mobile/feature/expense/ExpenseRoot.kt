@@ -81,6 +81,8 @@ fun ExpenseRoot(onExit: () -> Unit) {
     var groupActions by remember { mutableStateOf<ExpenseGroup?>(null) }
     var editingGroup by remember { mutableStateOf<ExpenseGroup?>(null) }
     var confirmingGroupDelete by remember { mutableStateOf<ExpenseGroup?>(null) }
+    // A group save that drops names still on records, awaiting the warning's confirm.
+    var pendingGroupSave by remember { mutableStateOf<Triple<ExpenseGroup, String, List<String>>?>(null) }
     var showNewGroup by remember { mutableStateOf(false) }
 
     val selectedGroup = groups.firstOrNull { it.groupId == selectedGroupId }
@@ -137,12 +139,43 @@ fun ExpenseRoot(onExit: () -> Unit) {
     editingGroup?.let { group ->
         ModalBottomSheet(onDismissRequest = { editingGroup = null }, sheetState = rememberModalBottomSheetState()) {
             // Issue #88: edit mode was dead code — a group can finally gain/lose
-            // participants and be renamed after creation.
+            // participants and be renamed after creation. Names referenced by existing
+            // records warn before being dropped (their entries stay and still count in
+            // the balances — kept zero-sum by SettleUp; review fix).
+            val usedNames = expenses.filter { it.groupId == group.groupId }
+                .flatMap { it.participants + it.payer }.toSet()
             NewGroupSheet(
                 existing = group,
-                suggestions = SettleUp.participantSuggestions(
-                    groups.filter { it.groupId != group.groupId }.map { it.participants }),
+                suggestions = SettleUp.participantSuggestions(groups.map { it.participants }),
             ) { name, participants ->
+                val dropped = usedNames.filter { used -> participants.none { it.equals(used, ignoreCase = true) } }
+                if (dropped.isEmpty()) {
+                    editingGroup = null
+                    scope.launch {
+                        dao.updateGroup(group.copy(
+                            name = name,
+                            participantsRaw = ExpenseGroup.joinParticipants(participants)))
+                        core.log("expense", "group", "Edited group: $name")
+                    }
+                } else {
+                    pendingGroupSave = Triple(group, name, participants)
+                }
+            }
+        }
+    }
+
+    pendingGroupSave?.let { (group, name, participants) ->
+        val usedNames = expenses.filter { it.groupId == group.groupId }
+            .flatMap { it.participants + it.payer }.toSet()
+        val dropped = usedNames.filter { used -> participants.none { it.equals(used, ignoreCase = true) } }
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Remove participants?",
+            message = "${dropped.joinToString(", ")} still appear on existing expenses. " +
+                "Their past entries stay and still count in the balances, but they won't be " +
+                "selectable for new ones.",
+            confirmLabel = "Remove anyway",
+            onConfirm = {
+                pendingGroupSave = null
                 editingGroup = null
                 scope.launch {
                     dao.updateGroup(group.copy(
@@ -150,8 +183,9 @@ fun ExpenseRoot(onExit: () -> Unit) {
                         participantsRaw = ExpenseGroup.joinParticipants(participants)))
                     core.log("expense", "group", "Edited group: $name")
                 }
-            }
-        }
+            },
+            onDismiss = { pendingGroupSave = null },
+        )
     }
 
     confirmingGroupDelete?.let { group ->
@@ -514,7 +548,8 @@ private fun SectionHeader(title: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExpenseRow(expense: ExpenseRecord, onTap: () -> Unit, onLongPress: () -> Unit = {}) {
-    // Settlements have no detail/editor, so the row isn't tappable for them (no inert ripple).
+    // Every row is pressable now: tap acts only where a detail/editor exists, and
+    // long-press offers delete everywhere — incl. settlements (issue #88).
     val tappable = !expense.isSettlement
     Column(
         Modifier

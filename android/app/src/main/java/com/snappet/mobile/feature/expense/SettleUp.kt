@@ -80,7 +80,13 @@ object SettleUp {
         }
 
         // Preserve the group's participant order for a stable UI.
-        return participants.map { Balance(it, net[it] ?: 0.0) }
+        // Current participants in group order — then any name records still reference
+        // but the group no longer lists (a participant removed/renamed via group edit).
+        // Dropping those nets broke the zero-sum invariant and silently truncated the
+        // settle-up plan (issue #88 review blocker).
+        val ordered = participants.map { Balance(it, net[it] ?: 0.0) }
+        val orphaned = net.keys.filter { it !in participants }.map { Balance(it, net[it] ?: 0.0) }
+        return ordered + orphaned
     }
 
     /**

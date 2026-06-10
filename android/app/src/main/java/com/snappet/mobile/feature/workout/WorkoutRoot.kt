@@ -94,7 +94,7 @@ fun WorkoutRoot(onExit: () -> Unit) {
     }
 
     // Seed starter routines on first open if the store is empty.
-    LaunchedEffect(Unit) { WorkoutStarters.seedIfNeeded(dao) }
+    LaunchedEffect(Unit) { WorkoutStarters.seedIfNeeded(dao, WorkoutSettings.dismissedStarters(context)) }
 
     val selectedExercise = selectedExerciseId?.let { id -> catalog.firstOrNull { it.id == id } }
     val selectedRoutine = routines.firstOrNull { it.id == selectedRoutineRow }
@@ -136,6 +136,8 @@ fun WorkoutRoot(onExit: () -> Unit) {
                 routine = r, resolver = resolver,
                 onStart = { startWorkout(r) },
                 onDelete = {
+                    // Tombstone a starter so seedIfNeeded can't resurrect it (review fix).
+                    r.starterKey?.let { WorkoutSettings.dismissStarter(context, it) }
                     scope.launch { dao.deleteRoutine(r) }
                     screen = WorkoutScreen.ROOT
                 },
