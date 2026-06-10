@@ -48,10 +48,16 @@ class SnappetBackupManager(private val db: SnappetDatabase) {
             }
             var rows = 0
             var tables = 0
-            sqlite.beginTransaction()
-            try {
-                for (table in userTables(sqlite)) {
-                    sqlite.execSQL("DELETE FROM `$table`")
+            // Through Room's transaction wrapper (not raw begin/endTransaction) so the
+            // InvalidationTracker refreshes afterwards — every module screen observes
+            // DAO Flows, which would otherwise keep rendering pre-import data (review fix).
+            // Tables are deleted in one pass and inserted in a second; no @Entity declares
+            // foreign keys today, and if one ever does, wipe-all-then-insert-all stays
+            // safe regardless of alphabetical table order.
+            db.runInTransaction {
+                val userTables = userTables(sqlite)
+                for (table in userTables) sqlite.execSQL("DELETE FROM `$table`")
+                for (table in userTables) {
                     val incoming = payload.tables[table] ?: continue
                     tables += 1
                     for (row in incoming) {
@@ -61,15 +67,13 @@ class SnappetBackupManager(private val db: SnappetDatabase) {
                     }
                 }
                 // Auto-increment counters follow the restored rows, not the wiped past.
-                // (`sqlite_sequence` only exists if some column ever used AUTOINCREMENT —
-                // Room's plain `INTEGER PRIMARY KEY` doesn't — so probe before touching it.)
+                // (Room's @PrimaryKey(autoGenerate = true) emits AUTOINCREMENT, so
+                // `sqlite_sequence` exists on any real store — but probe anyway so a
+                // schema with no auto-ids can't make this throw.)
                 val hasSequence = sqlite.query(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
                 ).use { it.moveToFirst() }
                 if (hasSequence) sqlite.execSQL("DELETE FROM sqlite_sequence")
-                sqlite.setTransactionSuccessful()
-            } finally {
-                sqlite.endTransaction()
             }
             Summary(tables, rows)
         }
@@ -78,14 +82,17 @@ class SnappetBackupManager(private val db: SnappetDatabase) {
         /** Every table that holds user data — i.e. everything but SQLite/Room bookkeeping. */
         fun userTables(sqlite: SupportSQLiteDatabase): List<String> {
             val names = ArrayList<String>()
-            sqlite.query(
-                "SELECT name FROM sqlite_master WHERE type = 'table' " +
-                    "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'android_%' " +
-                    "AND name NOT LIKE 'room_%' ORDER BY name"
-            ).use { cursor ->
-                while (cursor.moveToNext()) names.add(cursor.getString(0))
+            sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+                .use { cursor ->
+                    while (cursor.moveToNext()) names.add(cursor.getString(0))
+                }
+            // Filter in Kotlin, where startsWith is literal — in SQL LIKE, '_' is a
+            // single-character wildcard, so `NOT LIKE 'room_%'` would also silently drop
+            // a future user table named e.g. "rooms" from every backup (review fix).
+            return names.filterNot { name ->
+                name.startsWith("sqlite_") || name == "android_metadata" ||
+                    name == "room_master_table" || name.startsWith("room_")
             }
-            return names
         }
 
         private fun readRows(sqlite: SupportSQLiteDatabase, table: String): List<Map<String, Any?>> {

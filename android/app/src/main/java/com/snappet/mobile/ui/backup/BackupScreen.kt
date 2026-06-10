@@ -34,7 +34,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.core.SnappetBackup
 import com.snappet.mobile.ui.LocalAppContainer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,17 +63,27 @@ fun BackupScreen(onExit: () -> Unit) {
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
+            // Encode + stream I/O off the main thread: the JSON spans the whole store,
+            // and a SAF uri can be backed by a remote provider (review fix).
             status = runCatching {
-                val payload = container.backup.exportPayload()
-                val text = SnappetBackup.encode(payload)
-                context.contentResolver.openOutputStream(uri)?.use { stream ->
-                    stream.write(text.toByteArray(Charsets.UTF_8))
-                } ?: error("Couldn't open the chosen location.")
-                val rows = payload.tables.values.sumOf { it.size }
-                container.core.log("backup", "export",
-                    "Exported $rows records across ${payload.tables.size} tables")
-                "Exported $rows records across ${payload.tables.size} tables."
-            }.getOrElse { "Export failed: ${it.message ?: "unknown error"}" }
+                withContext(Dispatchers.IO) {
+                    val payload = container.backup.exportPayload()
+                    val text = SnappetBackup.encode(payload)
+                    context.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(text.toByteArray(Charsets.UTF_8))
+                    } ?: error("Couldn't open the chosen location.")
+                    val rows = payload.tables.values.sumOf { it.size }
+                    container.core.log("backup", "export",
+                        "Exported $rows records across ${payload.tables.size} tables")
+                    "Exported $rows records across ${payload.tables.size} tables."
+                }
+            }.getOrElse {
+                // Don't leave the just-created empty document behind (review fix).
+                runCatching {
+                    android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+                }
+                "Export failed: ${it.message ?: "unknown error"}"
+            }
         }
     }
 
@@ -81,9 +93,11 @@ fun BackupScreen(onExit: () -> Unit) {
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             runCatching {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.readBytes().toString(Charsets.UTF_8)
-                } ?: error("Couldn't read the chosen file.")
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes().toString(Charsets.UTF_8)
+                    } ?: error("Couldn't read the chosen file.")
+                }
             }.fold(
                 onSuccess = { pendingImportText = it },   // confirm before replacing everything
                 onFailure = { status = "Import failed: ${it.message ?: "unknown error"}" },
@@ -164,11 +178,13 @@ fun BackupScreen(onExit: () -> Unit) {
                         pendingImportText = null
                         scope.launch {
                             status = runCatching {
-                                val payload = SnappetBackup.decode(text)
-                                val summary = container.backup.importPayload(payload)
-                                container.core.log("backup", "import",
-                                    "Imported ${summary.rows} records across ${summary.tables} tables")
-                                "Imported ${summary.rows} records across ${summary.tables} tables."
+                                withContext(Dispatchers.IO) {
+                                    val payload = SnappetBackup.decode(text)
+                                    val summary = container.backup.importPayload(payload)
+                                    container.core.log("backup", "import",
+                                        "Imported ${summary.rows} records across ${summary.tables} tables")
+                                    "Imported ${summary.rows} records across ${summary.tables} tables."
+                                }
                             }.getOrElse { "Import failed: ${it.message ?: "unknown error"}" }
                         }
                     },

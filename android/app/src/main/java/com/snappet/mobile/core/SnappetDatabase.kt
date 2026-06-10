@@ -70,8 +70,12 @@ abstract class SnappetDatabase : RoomDatabase() {
     companion object {
         fun build(context: Context): SnappetDatabase =
             Room.databaseBuilder(context, SnappetDatabase::class.java, "snappet.db")
-                // No destructive fallback: a missing migration must fail loudly in
-                // development, not silently erase the user's data in production.
+                // No destructive fallback FROM v4 ONWARD: a missing migration must fail
+                // loudly in development, not silently erase user data in production.
+                // Pre-baseline versions (1–3) keep the old wipe-on-upgrade behavior —
+                // their schemas were never exported, so correct migrations can't be
+                // authored retroactively, and a crash loop would brick those installs.
+                .fallbackToDestructiveMigrationFrom(1, 2, 3)
                 .build()
 
         /** Fresh, isolated in-memory store used by UI tests (mirrors iOS `-uiTestFreshStore`). */

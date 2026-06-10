@@ -41,8 +41,9 @@ wipes, and give the user a one-file backup/restore.
   `app/build.gradle.kts`, `gradle/libs.versions.toml` (room-testing).
 - New: `core/SnappetBackup.kt`, `core/SnappetBackupManager.kt`,
   `ui/backup/BackupScreen.kt`, `app/schemas/...4.json`,
-  `test/.../SnappetBackupTest.kt` (JVM), `androidTest/.../BackupRoundTripTest.kt`,
-  `androidTest/.../MigrationBaselineTest.kt`.
+  `test/.../SnappetBackupTest.kt` (JVM), `androidTest/.../BackupRoundTripTest.kt`
+  (all 17 entities seeded), `androidTest/.../MigrationBaselineTest.kt`,
+  `androidTest/.../BackupUITest.kt` (surface reachable, both actions render).
 
 ## Acceptance criteria
 
