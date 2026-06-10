@@ -18,6 +18,11 @@ struct HabitRootView: View {
     @State private var editingHabit: Habit?
     /// The habit pending delete confirmation, if any.
     @State private var pendingDelete: Habit?
+    /// Incremented when a streak milestone is crossed — drives `.celebrates(on:)`.
+    @State private var celebrationTrigger = 0
+    /// Milestones already celebrated this launch, per habit — unchecking and re-checking
+    /// today must not replay the same burst (review fix).
+    @State private var celebratedMilestones: [UUID: Set<Int>] = [:]
 
     var body: some View {
         Group {
@@ -36,6 +41,7 @@ struct HabitRootView: View {
             }
         }
         .navigationTitle("Habits")
+        .celebrates(on: celebrationTrigger)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showingAdd = true } label: {
@@ -116,30 +122,11 @@ struct HabitRootView: View {
         }
     }
 
-    /// Current streak = number of consecutive calendar days completed, ending today.
-    /// If today isn't done yet we still count a streak ending *yesterday*, so a streak
-    /// stays "alive" until midnight passes without completing — only after a full missed
-    /// day does it reset to 0.
+    /// Current streak = number of consecutive calendar days completed, ending today (or
+    /// yesterday — alive until a full missed day). The math lives in the pure
+    /// `HabitMilestones.streak` so the toggle-time celebration shares one definition.
     private func streak(for habit: Habit) -> Int {
-        let days = completionDays(for: habit)
-        guard !days.isEmpty else { return 0 }
-
-        let today = calendar.startOfDay(for: .now)
-        // Start counting from today if done, otherwise from yesterday.
-        var cursor = days.contains(today)
-            ? today
-            : calendar.date(byAdding: .day, value: -1, to: today) ?? today
-
-        // If neither today nor yesterday is completed, the streak is broken.
-        guard days.contains(cursor) else { return 0 }
-
-        var count = 0
-        while days.contains(cursor) {
-            count += 1
-            guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = prev
-        }
-        return count
+        HabitMilestones.streak(days: completionDays(for: habit), today: .now, calendar: calendar)
     }
 
     /// 30-day completion rate: completions in the trailing 30 days ÷ days the habit has existed
@@ -180,13 +167,21 @@ struct HabitRootView: View {
     }
 
     /// Insert or remove a completion for `day` (already start-of-day). Logs `done` for today
-    /// and `backfill` for any other (past) day.
+    /// and `backfill` for any other (past) day. Completing fires a success haptic, and a
+    /// crossed streak milestone (7/30/100) fires the celebration burst (issue #80).
     private func toggle(_ habit: Habit, day: Date) {
         let normalized = calendar.startOfDay(for: day)
         if let existing = completions.first(where: { $0.habitID == habit.id && calendar.isDate($0.day, inSameDayAs: normalized) }) {
             context.delete(existing)
             try? context.save()
         } else {
+            // Streak before/after computed on plain day-sets — the @Query refresh timing
+            // doesn't matter to the milestone decision.
+            let daysBefore = completionDays(for: habit)
+            let streakBefore = HabitMilestones.streak(days: daysBefore, today: .now, calendar: calendar)
+            let streakAfter = HabitMilestones.streak(days: daysBefore.union([normalized]),
+                                                     today: .now, calendar: calendar)
+
             context.insert(HabitCompletion(habitID: habit.id, day: normalized))
             try? context.save()
             let isToday = calendar.isDateInToday(normalized)
@@ -195,6 +190,13 @@ struct HabitRootView: View {
                 action: isToday ? "done" : "backfill",
                 summary: isToday ? "Did: \(habit.name)" : "Backfilled: \(habit.name)"
             )
+            if let milestone = HabitMilestones.crossed(previousStreak: streakBefore, newStreak: streakAfter),
+               !(celebratedMilestones[habit.id]?.contains(milestone) ?? false) {
+                celebratedMilestones[habit.id, default: []].insert(milestone)
+                celebrationTrigger += 1   // burst + success haptic via .celebrates(on:)
+            } else {
+                Haptics.success()
+            }
         }
     }
 

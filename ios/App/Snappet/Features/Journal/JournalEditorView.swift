@@ -90,6 +90,7 @@ struct JournalEditorView: View {
             core.log(module: "journal", action: "entry",
                      summary: "Journaled: \(firstWords(title: trimmedTitle, body: trimmedBody))")
         }
+        Haptics.success()
         dismiss()
     }
 

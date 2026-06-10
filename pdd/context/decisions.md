@@ -4,6 +4,20 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] One tactile language: shared Haptics + a single celebration primitive (issue #80)
+
+**Decision** (prompt 36): all commit feedback goes through **one** `DesignSystem/Haptics` helper
+(success / warning / tap; the `WorkoutPlayerView` enum promoted, Pomodoro's bespoke generator
+removed) and all milestone moments through **one** `.celebrates(on:)` modifier wrapping a
+TimelineView/Canvas confetti burst (no particle dependencies). **Reduce Motion suppresses the burst
+entirely — the success haptic alone acknowledges the moment** (consistent with the SnappetMotion
+contract; a "reduced burst" would still be motion). Milestone decisions are pure and unit-tested:
+`HabitMilestones` (streak math extracted from the view — one definition for the list UI and the
+toggle-time decision; milestones [7, 30, 100], a backfill jump fires only the highest) and
+`KilterMilestones.isFirstSend` (prior-send count fetched BEFORE the new log lands so an entry can't
+shadow itself). Rules out per-feature generators and `.sensoryFeedback` scattered per-view (one seam
+to tune), and celebration on every send (only the *first* at a grade — scarcity keeps it meaningful).
+
 ## [2026-06-10] Pomodoro: app-owned timer + schedule-at-start notifications + third Live Activity (issue #70)
 
 **Decision** (prompt 35): `PomodoroTimer` is **owned by `AppModel`** (the `KilterSessionManager`

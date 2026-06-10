@@ -106,6 +106,7 @@ struct RecordSettlementSheet: View {
         core.log(module: "expense", action: "settle",
                  summary: "\(payer) paid \(recipient) \(amount.formatted(.currency(code: currencyCode)))",
                  metric: amount)
+        Haptics.success()
         dismiss()
     }
 }

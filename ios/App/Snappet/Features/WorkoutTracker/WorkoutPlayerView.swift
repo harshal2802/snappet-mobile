@@ -791,8 +791,3 @@ private struct LiveHRPill: View {
     }
 }
 
-/// Thin haptics wrapper (UIKit is fine in the app target; only `HighlightEngine` is platform-free).
-enum Haptics {
-    @MainActor static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    @MainActor static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-}

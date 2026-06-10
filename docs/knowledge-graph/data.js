@@ -368,6 +368,8 @@ const nodes = [
     file: "ios/App/Snappet/Features/WorkoutTracker/ClipEdit.swift", desc: "Non-destructive edit list for one tagged video, keyed to its SessionMedia by FK: trim/split (splitOrder), normalized crop + OutputAspect, speed, inline Codable text overlays, mute / music. Nothing is baked until export — editing is instant and reversible.", tags: ["@model","editor","non-destructive"] },
   { id: "model-studio-project", label: "StudioProject", type: "model", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/StudioProject.swift", desc: "The full-studio edit document (S1), keyed to its WorkoutSession by FK: a multi-clip timeline — ordered TimelineClips (trim/speed/crop/filter/Ken-Burns keyframes), StudioTransitions, OverlayItems (text/sticker/climbName + .video PiP; keyframable; PiP carries optional per-axis normalizedWidth/Height for split-screen grids, default = uniform scale; OverlayItem.scale also drives text font size; text overlays carry rich style — colorHex, optional highlightHex background, StudioFont preset, bold/italic — all additive/migration-safe), AudioTracks, an optional baseFrame (StudioFrameRect — places the MAIN video into a collage sub-rect of the canvas instead of full-frame, same convention as a PiP cell; nil = legacy full-frame), plus canvas aspect + background. Generalizes ClipEdit from one clip to many; non-destructive, resolution-independent Codable composites. Edited via the pure StudioProjectEditor (snapshot ops + undo/redo); placement math is the pure StudioGeometry.", tags: ["@model","studio","multi-clip","timeline"] },
+  { id: "design-haptics-celebrations", label: "Haptics + CelebrationBurst", type: "core", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/DesignSystem/Haptics.swift", desc: "The suite's one tactile language (issue #80): a shared Haptics helper (success/warning/tap) fired at every commit point — habit check-off, Kilter log, expense/settlement/journal save, favorite toggle, reel landing, Pomodoro phase end — plus the .celebrates(on:) confetti burst for milestones (habit streak 7/30/100, first send of a grade, reel landed). Reduce Motion suppresses the burst; the haptic alone acknowledges.", tags: ["haptics","celebration","delight","reduce-motion"] },
   { id: "pomodoro-notifications", label: "PomodoroNotifications", type: "service", group: "pomodoro", category: "productivity", platform: "ios",
     file: "ios/App/Snappet/Services/PomodoroNotifications.swift", desc: "Local phase-end alerts for a backgrounded/locked phone: scheduled when a phase starts (a foreground ticker is suspended in the background; a scheduled UNNotification is not), replaced on auto-advance, cancelled on pause/reset. Pure, testable copy builder (phaseEndContent).", tags: ["notifications","background"] },
   { id: "pomodoro-live-activity-ctrl", label: "PomodoroLiveActivityController", type: "service", group: "pomodoro", category: "productivity", platform: "ios",
@@ -748,6 +750,12 @@ const links = [
   { source: "pomodoro-live-activity-widget", target: "ext-widgetkit", type: "uses" },
   { source: "applibrary", target: "pomodoro-live-chip", type: "contains" },
   { source: "pomodoro-live-chip", target: "m-pomodoro", type: "navigate", label: "re-enter" },
+  { source: "m-habit", target: "design-haptics-celebrations", type: "uses", label: "check-off + streak burst" },
+  { source: "m-kilter", target: "design-haptics-celebrations", type: "uses", label: "log + first-send burst" },
+  { source: "m-expense", target: "design-haptics-celebrations", type: "uses" },
+  { source: "m-journal", target: "design-haptics-celebrations", type: "uses" },
+  { source: "m-pomodoro", target: "design-haptics-celebrations", type: "uses" },
+  { source: "reel", target: "design-haptics-celebrations", type: "uses", label: "export landed" },
 
   // ---- Habits ----
   { source: "m-habit", target: "habit-root", type: "contains" },

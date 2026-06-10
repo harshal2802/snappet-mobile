@@ -233,6 +233,16 @@ enum KilterAscentStatus: String, CaseIterable, Codable, Sendable {
     var isSend: Bool { self == .sent || self == .flash }
 }
 
+/// Pure decision behind the first-send-of-a-grade celebration (issue #80): celebrate a
+/// send when no earlier entry at that grade label was already a send. Kept off the view
+/// so the truth table runs in `SnappetTests`; the caller supplies the prior-send count
+/// (a one-off `fetchCount`).
+enum KilterMilestones {
+    static func isFirstSend(status: KilterAscentStatus, priorSendCountAtGrade: Int) -> Bool {
+        status.isSend && priorSendCountAtGrade == 0
+    }
+}
+
 /// One logged attempt on a climb at a given angle. Persisted in SnappetCore (separate from the
 /// read-only catalog). Snapshots `climbName`/`gradeLabel` so History renders without re-opening
 /// the catalog. Optionally tagged with the `sessionId` of the board session it was logged in.
