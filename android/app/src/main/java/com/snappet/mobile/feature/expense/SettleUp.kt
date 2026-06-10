@@ -6,6 +6,24 @@ package com.snappet.mobile.feature.expense
  */
 object SettleUp {
 
+    /**
+     * Participant-name suggestions for the group sheet: every name used across groups
+     * (first-seen order, deduped case-insensitively, trimmed). Pure → unit-tested.
+     * Mirrors iOS `SettleUp.participantSuggestions` (issue #88).
+     */
+    fun participantSuggestions(existingGroups: List<List<String>>): List<String> {
+        val seen = HashSet<String>()
+        val result = ArrayList<String>()
+        for (group in existingGroups) {
+            for (raw in group) {
+                val trimmed = raw.trim()
+                if (trimmed.isEmpty() || !seen.add(trimmed.lowercase())) continue
+                result.add(trimmed)
+            }
+        }
+        return result
+    }
+
     /** A participant's net position: `paid - owed`. Positive => owed to them; negative => they owe. */
     data class Balance(val name: String, val net: Double)
 

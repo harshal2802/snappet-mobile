@@ -2,6 +2,7 @@ package com.snappet.mobile.feature.workout
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
@@ -133,6 +135,10 @@ fun WorkoutRoot(onExit: () -> Unit) {
             else RoutineDetailScreen(
                 routine = r, resolver = resolver,
                 onStart = { startWorkout(r) },
+                onDelete = {
+                    scope.launch { dao.deleteRoutine(r) }
+                    screen = WorkoutScreen.ROOT
+                },
                 onExit = { screen = WorkoutScreen.ROOT },
             )
         }
@@ -140,7 +146,14 @@ fun WorkoutRoot(onExit: () -> Unit) {
         WorkoutScreen.SESSION_DETAIL -> {
             val s = selectedSession
             if (s == null) screen = WorkoutScreen.ROOT
-            else SessionDetailScreen(s, resolver, unit, onExit = { screen = WorkoutScreen.ROOT })
+            else SessionDetailScreen(
+                s, resolver, unit,
+                onDelete = {
+                    scope.launch { dao.deleteSession(s) }
+                    screen = WorkoutScreen.ROOT
+                },
+                onExit = { screen = WorkoutScreen.ROOT },
+            )
         }
 
         WorkoutScreen.PLAYER -> {
@@ -479,9 +492,24 @@ private fun RoutineDetailScreen(
     routine: WorkoutRoutine,
     resolver: WorkoutResolver,
     onStart: () -> Unit,
+    onDelete: () -> Unit,
     onExit: () -> Unit,
 ) {
-    ModuleScaffold(title = routine.name, onExit = onExit) { padding ->
+    // Issue #88: routines are deletable (starters can be re-seeded; custom ones were stuck forever).
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) {
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete \u201C${routine.name}\u201D?",
+            message = "Past sessions you ran from it stay in History.",
+            onConfirm = { confirmingDelete = false; onDelete() },
+            onDismiss = { confirmingDelete = false },
+        )
+    }
+    ModuleScaffold(title = routine.name, onExit = onExit, actions = {
+        IconButton(onClick = { confirmingDelete = true }, modifier = Modifier.testTag("workout.deleteRoutine")) {
+            Icon(Icons.Filled.Delete, contentDescription = "Delete routine")
+        }
+    }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
@@ -535,9 +563,24 @@ private fun SessionDetailScreen(
     session: WorkoutSession,
     resolver: WorkoutResolver,
     unit: WorkoutWeightUnit,
+    onDelete: () -> Unit,
     onExit: () -> Unit,
 ) {
-    ModuleScaffold(title = session.routineName, onExit = onExit) { padding ->
+    // Issue #88: a finished session is deletable; dashboard stats recompute from what's left.
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) {
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete this session?",
+            message = "It's removed from History and your stats recompute.",
+            onConfirm = { confirmingDelete = false; onDelete() },
+            onDismiss = { confirmingDelete = false },
+        )
+    }
+    ModuleScaffold(title = session.routineName, onExit = onExit, actions = {
+        IconButton(onClick = { confirmingDelete = true }, modifier = Modifier.testTag("workout.deleteSession")) {
+            Icon(Icons.Filled.Delete, contentDescription = "Delete session")
+        }
+    }) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

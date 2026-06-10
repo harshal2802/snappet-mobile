@@ -27,6 +27,11 @@ interface ExpenseDao {
     @Delete
     suspend fun deleteExpense(record: ExpenseRecord)
 
+    /** Issue #88: deleting a group must sweep its records — `groupId` is a flat
+     *  reference (no Room relation), so nothing cascades on its own (mirrors iOS). */
+    @Query("DELETE FROM expense_records WHERE groupId = :groupId")
+    suspend fun deleteExpensesFor(groupId: String)
+
     /** All groups, newest first — mirrors the iOS `@Query(sort: \ExpenseGroup.createdAt, .reverse)`. */
     @Query("SELECT * FROM expense_groups ORDER BY createdAt DESC")
     fun groupsFlow(): Flow<List<ExpenseGroup>>

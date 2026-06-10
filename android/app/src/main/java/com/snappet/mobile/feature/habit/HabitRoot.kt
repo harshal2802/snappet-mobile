@@ -79,6 +79,8 @@ fun HabitRoot(onExit: () -> Unit) {
 
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Habit?>(null) }
+    // Issue #88: a habit staged for deletion (from the edit sheet), pending confirmation.
+    var confirmingDelete by remember { mutableStateOf<Habit?>(null) }
 
     ModuleScaffold(
         title = "Habits",
@@ -116,14 +118,33 @@ fun HabitRoot(onExit: () -> Unit) {
 
     editing?.let { habit ->
         ModalBottomSheet(onDismissRequest = { editing = null }, sheetState = rememberModalBottomSheetState()) {
-            HabitEditorSheet(existing = habit) { name, symbol ->
-                editing = null
-                scope.launch {
-                    dao.updateHabit(habit.copy(name = name, symbol = symbol))
-                    core.log("habit", "edit", "Edited habit: $name")
-                }
-            }
+            HabitEditorSheet(
+                existing = habit,
+                onSave = { name, symbol ->
+                    editing = null
+                    scope.launch {
+                        dao.updateHabit(habit.copy(name = name, symbol = symbol))
+                        core.log("habit", "edit", "Edited habit: $name")
+                    }
+                },
+                onDelete = { editing = null; confirmingDelete = habit },
+            )
         }
+    }
+
+    confirmingDelete?.let { habit ->
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete \u201C${habit.name}\u201D?",
+            message = "This removes the habit and all its completion history.",
+            onConfirm = {
+                confirmingDelete = null
+                scope.launch {
+                    dao.deleteCompletionsFor(habit.habitId)
+                    dao.deleteHabit(habit)
+                }
+            },
+            onDismiss = { confirmingDelete = null },
+        )
     }
 }
 

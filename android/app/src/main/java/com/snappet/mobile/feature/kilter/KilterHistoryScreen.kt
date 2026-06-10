@@ -16,6 +16,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,19 +43,62 @@ import java.util.Locale
  * while connected over BLE — Phase 2), and the full ascent log, newest first. Mirrors the iOS
  * `KilterHistoryView`. `onExit` returns to the catalog.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
     val entries by dao.logsFlow().collectAsState(initial = emptyList())
     val allSessions by dao.sessionsFlow().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val dateFmt = SimpleDateFormat("EEE d MMM", Locale.getDefault())
+    // Issue #88: the whole climbing history must not be one unconfirmed tap away.
+    var confirmingClearAll by remember { mutableStateOf(false) }
+    // The ascent staged by a long-press: correct its status or delete it.
+    var editingEntry by remember { mutableStateOf<KilterLogEntry?>(null) }
+    var confirmingDelete by remember { mutableStateOf<KilterLogEntry?>(null) }
+
+    if (confirmingClearAll) {
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Clear all history?",
+            message = "This permanently removes every logged climb and session.",
+            confirmLabel = "Clear all",
+            onConfirm = {
+                confirmingClearAll = false
+                scope.launch { dao.clearLogs(); dao.clearSessions() }
+            },
+            onDismiss = { confirmingClearAll = false },
+        )
+    }
+
+    confirmingDelete?.let { entry ->
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete this ascent?",
+            message = "${entry.climbName} (${entry.gradeLabel}) is removed from your history and stats.",
+            onConfirm = {
+                confirmingDelete = null
+                scope.launch { dao.deleteLog(entry) }
+            },
+            onDismiss = { confirmingDelete = null },
+        )
+    }
+
+    editingEntry?.let { entry ->
+        AscentEditDialog(
+            entry = entry,
+            onSetStatus = { status ->
+                editingEntry = null
+                scope.launch { dao.updateLogStatus(entry.id, status.name) }
+            },
+            onDelete = { editingEntry = null; confirmingDelete = entry },
+            onDismiss = { editingEntry = null },
+        )
+    }
 
     ModuleScaffold(
         title = "History",
         onExit = onExit,
         actions = {
             if (entries.isNotEmpty()) {
-                TextButton(onClick = { scope.launch { dao.clearLogs(); dao.clearSessions() } },
+                TextButton(onClick = { confirmingClearAll = true },
                     modifier = Modifier.testTag("kilter.history.clear")) { Text("Clear all") }
             }
         },
@@ -130,7 +178,9 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
             }
 
             item { SectionHeader("Ascents") }
-            items(entries, key = { it.id }) { entry -> AscentRow(entry) }
+            items(entries, key = { it.id }) { entry ->
+                AscentRow(entry, onLongPress = { editingEntry = entry })
+            }
         }
     }
 }
@@ -149,15 +199,21 @@ private fun SectionHeader(title: String) {
         modifier = Modifier.padding(top = 8.dp))
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AscentRow(entry: KilterLogEntry) {
+private fun AscentRow(entry: KilterLogEntry, onLongPress: () -> Unit = {}) {
     val status = KilterAscentStatus.from(entry.status)
     val color = when (status) {
         KilterAscentStatus.FLASH, KilterAscentStatus.SENT -> com.snappet.mobile.ui.theme.pulseSuccess()
         KilterAscentStatus.PROJECT -> com.snappet.mobile.ui.theme.pulseWarning()
         KilterAscentStatus.ATTEMPT -> com.snappet.mobile.ui.theme.pulseNeutral()
     }
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("kilter.historyRow"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(
+        Modifier.fillMaxWidth()
+            .combinedClickable(onClick = {}, onLongClick = onLongPress)
+            .padding(vertical = 4.dp).testTag("kilter.historyRow"),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.background(color.copy(alpha = 0.22f), RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp)) {
                 Text(status.label, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
@@ -166,4 +222,41 @@ private fun AscentRow(entry: KilterLogEntry) {
         }
         Text("${entry.gradeLabel} · ${entry.angle}°", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** Long-press menu for one logged ascent (issue #88): correct the status — a
+ *  fat-fingered Flash no longer inflates the pyramid forever — or delete the row. */
+@Composable
+private fun AscentEditDialog(
+    entry: KilterLogEntry,
+    onSetStatus: (KilterAscentStatus) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${entry.climbName} · ${entry.gradeLabel}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Logged as ${KilterAscentStatus.from(entry.status).label}. Correct it:",
+                     style = MaterialTheme.typography.bodyMedium)
+                KilterAscentStatus.entries.forEach { status ->
+                    androidx.compose.material3.TextButton(
+                        onClick = { onSetStatus(status) },
+                        modifier = Modifier.fillMaxWidth().testTag("kilter.setStatus.${status.name}"),
+                        enabled = status.name != entry.status,
+                    ) { Text(status.label) }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = onDelete,
+                modifier = Modifier.testTag("kilter.deleteAscent"),
+            ) { Text("Delete…", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

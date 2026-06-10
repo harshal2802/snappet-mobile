@@ -4,6 +4,20 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Android CRUD sweep: one confirm component, long-press as the secondary-action idiom (issue #88)
+
+**Decision** (prompt 41): every destructive flow goes through **one** `ConfirmDeleteDialog`
+(static title, consequence in the message, destructive confirm — the iOS `confirmationDialog`
+idiom), and **long-press is the suite's secondary-action gesture** (the Budget category row had
+already established it; swipe-to-dismiss was rejected — it fights LazyColumn scrolling and has no
+established precedent in this codebase). Kilter ascents get **status correction** (not just
+delete) — a fat-fingered Flash is fixed in place, preserving timing fields. Expense group deletion
+**cascades records** via `deleteExpensesFor` (flat `groupId`, mirroring the iOS sweep). Group
+EDITING reuses the dormant `NewGroupSheet(existing)` mode + pure cross-group name suggestions;
+the iOS "remembered me" framing is deliberately deferred (beyond this issue's ACs). The recompute
+guarantee is locked at the **pure layer** (`CrudRecomputeTest`) — the stats/balance functions are
+pure over input lists, so delete-then-recompute equals never-existed.
+
 ## [2026-06-10] Android Pomodoro: app-owned engine + FGS chronometer + exact alarm (issue #85)
 
 **Decision** (prompt 40, mirroring iOS #70): `PomodoroTimerState` is owned by **`AppContainer`** —

@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
  * The text fields are tagged `Name` / `Amount` (capitalised) to match the shared iOS test contract.
  */
 @Composable
-fun BudgetCategoryEditor(existing: BudgetCategory?, onSave: (String, Double) -> Unit) {
+fun BudgetCategoryEditor(existing: BudgetCategory?, onDelete: (() -> Unit)? = null, onSave: (String, Double) -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var limit by remember { mutableStateOf(existing?.monthlyLimit?.toString() ?: "") }
     val trimmed = name.trim()
@@ -65,6 +65,17 @@ fun BudgetCategoryEditor(existing: BudgetCategory?, onSave: (String, Double) -> 
             modifier = Modifier.fillMaxWidth().testTag("Save"),
         ) {
             Text("Save")
+        }
+
+        // Issue #88: a category is deletable — the cascade is confirmed upstream with
+        // its transaction count.
+        if (existing != null && onDelete != null) {
+            androidx.compose.material3.TextButton(
+                onClick = onDelete,
+                modifier = Modifier.fillMaxWidth().testTag("budget.deleteCategory"),
+            ) {
+                Text("Delete category…", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }

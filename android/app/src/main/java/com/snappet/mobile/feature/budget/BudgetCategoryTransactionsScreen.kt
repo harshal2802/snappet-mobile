@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -42,7 +44,7 @@ import java.util.Locale
  * Tapping a row's edit affordance opens the editor sheet. Back returns to the Budget root. Mirrors
  * iOS `BudgetCategoryTransactionsView`.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BudgetCategoryTransactionsScreen(
     category: BudgetCategory,
@@ -50,9 +52,12 @@ fun BudgetCategoryTransactionsScreen(
     transactions: List<BudgetTransaction>,
     scope: MonthScope,
     onEdit: (BudgetTransaction, BudgetCategory, Double, String) -> Unit,
+    onDelete: (BudgetTransaction) -> Unit,
     onExit: () -> Unit,
 ) {
     var editing by remember { mutableStateOf<BudgetTransaction?>(null) }
+    // Issue #88: a row staged for deletion by long-press, pending confirmation.
+    var confirmingDelete by remember { mutableStateOf<BudgetTransaction?>(null) }
 
     val rows = transactions
         .filter { it.categoryId == category.categoryId && scope.contains(it.date) }
@@ -76,7 +81,9 @@ fun BudgetCategoryTransactionsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(rows, key = { it.id }) { txn ->
-                    TransactionRow(category = category, txn = txn, onEdit = { editing = txn })
+                    TransactionRow(category = category, txn = txn,
+                                   onEdit = { editing = txn },
+                                   onLongPress = { confirmingDelete = txn })
                 }
             }
         }
@@ -90,18 +97,29 @@ fun BudgetCategoryTransactionsScreen(
             }
         }
     }
+
+    confirmingDelete?.let { txn ->
+        com.snappet.mobile.ui.ConfirmDeleteDialog(
+            title = "Delete this transaction?",
+            message = "This permanently removes it; the month's totals recompute.",
+            onConfirm = { confirmingDelete = null; onDelete(txn) },
+            onDismiss = { confirmingDelete = null },
+        )
+    }
 }
 
 private val rowDateFmt = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TransactionRow(category: BudgetCategory, txn: BudgetTransaction, onEdit: () -> Unit) {
+private fun TransactionRow(category: BudgetCategory, txn: BudgetTransaction, onEdit: () -> Unit, onLongPress: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onEdit)
+            // Tap edits (as before); long-press stages a delete (issue #88).
+            .combinedClickable(onClick = onEdit, onLongClick = onLongPress)
             .padding(12.dp)
             .testTag("budget.editTxn"),
         verticalAlignment = Alignment.CenterVertically,
