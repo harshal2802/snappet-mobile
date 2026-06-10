@@ -41,6 +41,10 @@ final class PomodoroTimer {
     private var endDate: Date?
     private var ticker: Timer?
 
+    /// The wall-clock end of the current phase; non-nil when running. Exposed so callers can
+    /// schedule a `UNNotification` and start/update a Live Activity at the correct deadline.
+    var phaseEndDate: Date? { endDate }
+
     init() {
         remaining = 25 * 60
     }

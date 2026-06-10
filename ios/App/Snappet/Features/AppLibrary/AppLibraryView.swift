@@ -5,6 +5,7 @@ import SwiftUI
 /// to the module's own screen.
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Namespace private var zoom
     @State private var router = SuiteRouter()
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
@@ -15,6 +16,12 @@ struct AppLibraryView: View {
                 // Plain VStack layout — `Section` only renders inside List/Form/Table,
                 // not a ScrollView (that showed a blank Apps tab).
                 VStack(alignment: .leading, spacing: 28) {
+                    if app.pomodoroTimer.isRunning {
+                        // Chip holds the timer directly so only it (not this view) re-renders per tick.
+                        FocusRunningChip(timer: app.pomodoroTimer) {
+                            router.push(ModuleRoute(id: "pomodoro"))
+                        }
+                    }
                     ForEach(ModuleCategory.allCases) { category in
                         let modules = ModuleRegistry.modules(in: category)
                         if !modules.isEmpty {
@@ -61,6 +68,44 @@ struct AppLibraryView: View {
                     core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
                 }
         }
+    }
+}
+
+/// Persistent chip shown on the App Library grid while a Pomodoro focus session is running.
+/// Holds the `PomodoroTimer` directly so only this view (not the parent grid) re-renders per
+/// tick when `timeText` changes. Tapping navigates into the Pomodoro module.
+private struct FocusRunningChip: View {
+    let timer: PomodoroTimer
+    let onTap: () -> Void
+
+    private var tint: Color { timer.phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits }
+    private var icon: String { timer.phase == .focus ? "brain.head.profile" : "cup.and.saucer.fill" }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.subheadline)
+                    .foregroundStyle(tint)
+                    .symbolEffect(.pulse, options: .repeating)
+                Text("\(timer.phase.title) · \(timer.timeText)")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SnappetColor.textSecondary)
+            }
+            .padding(.horizontal, SnappetSpacing.lg)
+            .padding(.vertical, SnappetSpacing.md)
+            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(tint.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("pomodoro.focusRunningChip")
+        .accessibilityLabel("\(timer.phase.title) timer running: \(timer.timeText). Tap to open Pomodoro.")
     }
 }
 

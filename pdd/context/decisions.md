@@ -4,6 +4,29 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Pomodoro timer hoisted to AppModel; dedicated Live Activity + notification service
+
+**Decision**: `PomodoroTimer` is **owned by `AppModel`** (not `@State` on `PomodoroRootView`) so it
+survives navigating out of the module. `PomodoroRootView` is a `navigationDestination`; SwiftUI
+destroyed/recreated it on pop, resetting the `@State` timer and silently killing any running session.
+Hoisting mirrors the 2026-06-07 `KilterSessionManager` fix for the same bug class.
+
+A dedicated `PomodoroNotifications` service schedules a `UNNotification` at **phase start** (not
+completion) so the phase-end alert fires even when the phone is locked or the app is backgrounded.
+A dedicated `PomodoroLiveActivityController` + `PomodoroActivityAttributes` (in `Shared/`) vends a
+third Live Activity: the `endDate`-anchored countdown ticks on the Lock Screen / Dynamic Island with
+zero background CPU via `Text(timerInterval:countsDown:true)`.
+
+**Why separate services (not generalising WorkoutNotifications / LiveActivityController)**: the Pomodoro
+phase concept (focus / break) maps to different copy and tint than rest-between-sets or climbing; merging
+them would add branching to three already-stable services. Dedicated types keep each path independently
+testable and follow the Kilter precedent (decisions.md 2026-06-06).
+
+**Rules out**: tracking Pomodoro state purely in the view layer; generalising the workout Live Activity
+to carry Pomodoro state; using a background `Task.sleep` countdown (suspended when app is backgrounded).
+**Device-pending verification**: Live Activity Lock Screen / Dynamic Island rendering (same class as
+Kilter; clean build proves shape only).
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

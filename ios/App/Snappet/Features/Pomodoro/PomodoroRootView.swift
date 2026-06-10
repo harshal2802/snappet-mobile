@@ -5,6 +5,7 @@ import SwiftData
 /// it sets only a `navigationTitle` (no nested NavigationStack).
 struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,8 +16,10 @@ struct PomodoroRootView: View {
     @AppStorage("pomodoro.focusMinutes") private var focusSetting = 25
     @AppStorage("pomodoro.breakMinutes") private var breakSetting = 5
 
-    @State private var timer = PomodoroTimer()
     @State private var showingSettings = false
+
+    // The timer is owned by AppModel so it survives pop/push on the NavigationStack.
+    private var timer: PomodoroTimer { app.pomodoroTimer }
 
     init() {
         let start = Calendar.current.date(byAdding: .day, value: -6,
@@ -35,7 +38,7 @@ struct PomodoroRootView: View {
                           tint: Self.tint(for: timer.phase), reduceMotion: reduceMotion)
                     .frame(width: 260, height: 260)
                     .accessibilityIdentifier("pomodoro.timeRemaining")
-                    // Phase change (focus↔break) cross-fades the ring colour (issue #30 §5.4).
+                    // Phase change (focus↔break) cross-fades the ring colour.
                     .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion),
                                value: timer.phase)
                 controls
@@ -73,7 +76,17 @@ struct PomodoroRootView: View {
         .onAppear {
             timer.onFocusCompleted = handleFocusCompleted
             timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
+            app.pomodoroNotifications.requestAuthorization()
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
+        }
+        // When the phase auto-switches (timer runs through a full focus or break block), reschedule
+        // the notification for the new phase and push a live activity update.
+        .onChange(of: timer.phase) { _, newPhase in
+            guard timer.isRunning, let endDate = timer.phaseEndDate else { return }
+            app.pomodoroNotifications.schedulePhaseComplete(phase: newPhase, after: timer.remaining)
+            app.pomodoroLiveActivity.update(
+                phase: newPhase, endDate: endDate,
+                phaseDurationSeconds: Int(timer.phaseDuration))
         }
     }
 
@@ -81,7 +94,7 @@ struct PomodoroRootView: View {
 
     private var controls: some View {
         HStack(spacing: 16) {
-            Button(action: timer.reset) {
+            Button(action: handleReset) {
                 Label("Reset", systemImage: "arrow.counterclockwise")
                     .frame(maxWidth: .infinity)
             }
@@ -89,14 +102,14 @@ struct PomodoroRootView: View {
             .accessibilityIdentifier("pomodoro.reset")
 
             if timer.isRunning {
-                Button(action: timer.pause) {
+                Button(action: handlePause) {
                     Label("Pause", systemImage: "pause.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("pomodoro.pause")
             } else {
-                Button(action: timer.start) {
+                Button(action: handleStart) {
                     Label("Start", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
@@ -122,7 +135,41 @@ struct PomodoroRootView: View {
     private var focusMinutes: Int { todaySessions.reduce(0) { $0 + $1.minutes } }
     private var chartData: [DailyFocus] { PomodoroStats.last7Days(recentSessions) }
 
-    // MARK: Actions
+    // MARK: Timer actions
+
+    private func handleStart() {
+        timer.start()
+        guard let endDate = timer.phaseEndDate else { return }
+        app.pomodoroNotifications.schedulePhaseComplete(phase: timer.phase, after: timer.remaining)
+        if app.pomodoroLiveActivity.isRunning {
+            app.pomodoroLiveActivity.update(
+                phase: timer.phase, endDate: endDate,
+                phaseDurationSeconds: Int(timer.phaseDuration))
+        } else {
+            app.pomodoroLiveActivity.start(
+                phase: timer.phase, endDate: endDate,
+                phaseDurationSeconds: Int(timer.phaseDuration))
+        }
+    }
+
+    private func handlePause() {
+        timer.pause()
+        app.pomodoroNotifications.clear()
+        app.pomodoroLiveActivity.update(
+            phase: timer.phase,
+            endDate: Date().addingTimeInterval(timer.remaining),
+            phaseDurationSeconds: Int(timer.phaseDuration),
+            paused: true,
+            remainingSeconds: Int(timer.remaining.rounded(.up)))
+    }
+
+    private func handleReset() {
+        timer.reset()
+        app.pomodoroNotifications.clear()
+        app.pomodoroLiveActivity.end()
+    }
+
+    // MARK: Session persistence
 
     private func handleFocusCompleted(_ minutes: Int) {
         modelContext.insert(PomodoroSession(minutes: minutes, completedAt: .now))
