@@ -21,6 +21,22 @@ re-entry chip is **scoped to the Apps tab's NavigationStack** (overlay on `AppLi
 `SuiteRouter` is still `@State` there — the shell-global surface arrives with the #71 hoist.
 Live Activity / lock-screen **render** is device-pending (the Kilter verification class).
 
+**Adversarial-review addenda (same day):** (1) notification `add()` fails silently while auth is
+`.notDetermined`, so `scheduleBoundaries` issues its adds **from the authorization completion**
+(immediate pass-through once determined) and the screen prompts on appear — otherwise the first-ever
+focus block alerts nothing. (2) **Two boundaries stay scheduled** (this end + the next phase's end):
+the app can't schedule while suspended, so a phone locked through focus still gets "break's over".
+(3) `sync(now:)` walks **every** elapsed boundary anchored at each phase's end (not at resume time)
+— reopening after a long lock lands mid-whatever-phase the wall clock says; internal for injected-now
+tests. (4) The timer distinguishes **paused from idle** (`isPaused`) so the root view's re-applied
+durations can't wipe a paused session's progress. (5) The chip overlay hangs on the
+**NavigationStack itself** — on the root page it would slide away under every pushed module.
+(6) Relaunch **adopts an orphaned Live Activity** (the Kilter `adoptRunningActivity` pattern) and
+restores the countdown from its absolute end, or cleans up if the end passed (that focus is not
+retro-logged — the store isn't reachable from `AppModel.init`; accepted). (7) The
+`com.apple.developer.usernotifications.time-sensitive` entitlement is declared so the phase-end alert
+survives a user's focus mode — the canonical Pomodoro configuration.
+
 ## [2026-06-10] Destructive deletes confirm via dialog (no UndoManager); Journal blank cleanup on onDisappear, not defer-insert
 
 **Decision** (prompt 34, issue #69): Expense-group, budget-category, and journal-entry deletes stage a

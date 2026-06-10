@@ -34,6 +34,24 @@ final class PomodoroLiveActivityController {
 
     init() {}
 
+    /// Re-attach to a Live Activity that's still on the Lock Screen but whose in-memory
+    /// handle was lost (relaunch after termination mid-session — the Kilter
+    /// `adoptRunningActivity` pattern). Returns the orphan's state so the caller can
+    /// restore the timer (end still ahead) or clean up (end past).
+    func adoptRunning() -> (isFocus: Bool, endDate: Date)? {
+        #if canImport(ActivityKit)
+        guard #available(iOS 16.1, *) else { return nil }
+        if typedActivity == nil {
+            guard let running = Activity<PomodoroActivityAttributes>.activities.first else { return nil }
+            typedActivity = running
+        }
+        guard let state = typedActivity?.content.state else { return nil }
+        return (state.isFocus, state.endDate)
+        #else
+        return nil
+        #endif
+    }
+
     /// Reflect a (re)started or auto-advanced phase: starts an activity if none is
     /// running, otherwise pushes the new phase/end. `phaseStartedAt` is derived from the
     /// phase length so progress animates over the whole phase.

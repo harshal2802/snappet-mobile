@@ -86,15 +86,34 @@ final class AppModel {
         // Capture the services (not self), and the timer weakly — the closure is stored on
         // the timer itself, so a strong capture would be a retain cycle.
         pomodoro.onScheduleChanged = { [pomodoroNotifications, pomodoroLiveActivity, weak pomodoro] phase, endDate in
-            if let endDate {
-                pomodoroNotifications.requestAuthorization()
-                pomodoroNotifications.schedulePhaseEnd(for: phase, at: endDate)
-                pomodoroLiveActivity.sync(
-                    isFocus: phase == .focus, endDate: endDate,
-                    phaseSeconds: pomodoro?.phaseDuration ?? endDate.timeIntervalSinceNow)
+            if let endDate, let pomodoro {
+                // Two boundaries stay scheduled (this phase's end + the next phase's end):
+                // the app can't schedule while suspended, so a phone locked through a whole
+                // focus block still gets the "break's over" alert that follows it.
+                let nextPhase: PomodoroPhase = phase == .focus ? .breakTime : .focus
+                let nextLength = TimeInterval((phase == .focus ? pomodoro.breakMinutes : pomodoro.focusMinutes) * 60)
+                pomodoroNotifications.scheduleBoundaries([
+                    (phase, endDate),
+                    (nextPhase, endDate.addingTimeInterval(nextLength)),
+                ])
+                pomodoroLiveActivity.sync(isFocus: phase == .focus, endDate: endDate,
+                                          phaseSeconds: pomodoro.phaseDuration)
             } else {
                 pomodoroNotifications.clear()
                 pomodoroLiveActivity.end()
+            }
+        }
+
+        // Relaunch after termination mid-session: the Lock Screen may still hold a live,
+        // correct countdown (the OS owns it). Re-attach and rebuild the timer from its
+        // absolute end while the phase is still ahead; past the end, clean up the orphan
+        // (the elapsed focus can't be retro-logged — the store isn't reachable here).
+        if let orphan = pomodoroLiveActivity.adoptRunning() {
+            if orphan.endDate.timeIntervalSinceNow > 0 {
+                pomodoro.restore(phase: orphan.isFocus ? .focus : .breakTime, endDate: orphan.endDate)
+            } else {
+                pomodoroLiveActivity.end()
+                pomodoroNotifications.clear()
             }
         }
     }

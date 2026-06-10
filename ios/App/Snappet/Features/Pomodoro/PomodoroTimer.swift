@@ -31,6 +31,9 @@ final class PomodoroTimer {
 
     private(set) var phase: PomodoroPhase = .focus
     private(set) var isRunning = false
+    /// Paused mid-phase (as opposed to idle at the top of one) — `applyDurations` must
+    /// not reseed `remaining` over a paused session's progress (issue #70 review).
+    private(set) var isPaused = false
     /// Seconds left in the current phase.
     private(set) var remaining: TimeInterval
 
@@ -77,6 +80,7 @@ final class PomodoroTimer {
         if remaining <= 0 { remaining = phaseDuration }
         endDate = Date().addingTimeInterval(remaining)
         isRunning = true
+        isPaused = false
         scheduleTicker()
         onScheduleChanged?(phase, endDate)
     }
@@ -85,6 +89,7 @@ final class PomodoroTimer {
         guard isRunning else { return }
         sync()
         isRunning = false
+        isPaused = true
         invalidateTicker()
         endDate = nil
         onScheduleChanged?(phase, nil)
@@ -93,6 +98,7 @@ final class PomodoroTimer {
     /// Stop and return to the top of the FOCUS phase.
     func reset() {
         isRunning = false
+        isPaused = false
         invalidateTicker()
         endDate = nil
         phase = .focus
@@ -100,28 +106,44 @@ final class PomodoroTimer {
         onScheduleChanged?(phase, nil)
     }
 
-    /// Recompute `remaining` from the wall clock; advance phases on completion.
-    private func sync() {
-        guard let endDate else { return }
-        remaining = endDate.timeIntervalSinceNow
-        if remaining <= 0 { completePhase() }
+    /// Re-attach to a phase that an orphaned Live Activity says is still counting down
+    /// (relaunch after the app was terminated mid-session): rebuild the countdown off the
+    /// absolute end. Fires no schedule callback — the orphaned notification for this
+    /// phase is already pending, and the caller re-attached the activity itself.
+    func restore(phase: PomodoroPhase, endDate: Date, now: Date = Date()) {
+        guard !isRunning, endDate.timeIntervalSince(now) > 0 else { return }
+        self.phase = phase
+        self.endDate = endDate
+        remaining = endDate.timeIntervalSince(now)
+        isRunning = true
+        isPaused = false
+        scheduleTicker()
     }
 
-    private func completePhase() {
-        let finished = phase
-        if finished == .focus {
-            onFocusCompleted?(focusMinutes)
+    /// Recompute `remaining` from the wall clock; advance through **every** phase
+    /// boundary that elapsed while ticks were suspended — each next phase is anchored at
+    /// the *previous phase's end*, not at catch-up time, so reopening the app after being
+    /// locked through focus + break lands mid-whatever-phase the wall clock says
+    /// (#70 review). Internal (not private) so the catch-up math is unit-testable with an
+    /// injected `now`.
+    func sync(now: Date = Date()) {
+        guard let currentEnd = endDate else { return }
+        remaining = currentEnd.timeIntervalSince(now)
+        guard remaining <= 0 else { return }
+
+        var end = currentEnd
+        var lastFinished = phase
+        while end.timeIntervalSince(now) <= 0, phaseDuration > 0 {
+            lastFinished = phase
+            if phase == .focus { onFocusCompleted?(focusMinutes) }
+            // Auto-switch focus -> break -> focus; the new phase's length anchors its end.
+            phase = (phase == .focus) ? .breakTime : .focus
+            end = end.addingTimeInterval(phaseDuration)
         }
-        // Tactile cue that a phase ended (success for finishing focus, warning for break-over).
-        playCompletionHaptic(success: finished == .focus)
-        // Auto-switch focus -> break -> focus and keep running.
-        phase = (finished == .focus) ? .breakTime : .focus
-        remaining = phaseDuration
-        if isRunning {
-            endDate = Date().addingTimeInterval(remaining)
-        } else {
-            endDate = nil
-        }
+        endDate = end
+        remaining = end.timeIntervalSince(now)
+        // One tactile cue per catch-up (success for finishing focus, warning for break-over).
+        playCompletionHaptic(success: lastFinished == .focus)
         onScheduleChanged?(phase, endDate)
     }
 
@@ -140,12 +162,14 @@ final class PomodoroTimer {
         ticker = nil
     }
 
-    /// Apply persisted lengths from settings. When the timer is idle this also re-seeds
-    /// `remaining` so the new focus length shows immediately at the top of a phase.
+    /// Apply persisted lengths from settings. When the timer is **idle** this also
+    /// re-seeds `remaining` so the new focus length shows immediately at the top of a
+    /// phase — but never over a *paused* session's progress (the timer is app-owned now,
+    /// and the root view re-applies durations on every appearance).
     func applyDurations(focusMinutes: Int, breakMinutes: Int) {
         self.focusMinutes = focusMinutes
         self.breakMinutes = breakMinutes
-        if !isRunning { remaining = phaseDuration }
+        if !isRunning && !isPaused { remaining = phaseDuration }
     }
 
     private func playCompletionHaptic(success: Bool) {

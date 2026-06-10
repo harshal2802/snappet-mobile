@@ -84,7 +84,21 @@ final class PomodoroUITests: XCTestCase {
         XCTAssertTrue(app.buttons["pomodoro.pause"].waitForExistence(timeout: 6),
                       "re-entering must show the session still running (Pause visible)")
 
-        // Clean up: stop the session so later tests start idle.
+        // The chip must also float over OTHER pushed modules — the overlay lives on the
+        // NavigationStack, not the grid page (review fix).
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let journalCard = app.buttons["moduleCard.journal"]
+        XCTAssertTrue(journalCard.waitForExistence(timeout: 6), "back on the grid")
+        var tries = 0
+        while !journalCard.isHittable && tries < 8 { app.swipeUp(); tries += 1 }
+        journalCard.tap()
+        XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 6), "Journal should open")
+        XCTAssertTrue(chip.waitForExistence(timeout: 4),
+                      "the focus-running chip should float over a pushed module screen")
+
+        // Clean up: back into Pomodoro via the chip, stop the session.
+        chip.tap()
+        XCTAssertTrue(app.buttons["pomodoro.pause"].waitForExistence(timeout: 6))
         app.buttons["pomodoro.pause"].tap()
         app.buttons["pomodoro.reset"].tap()
     }

@@ -50,20 +50,22 @@ struct AppLibraryView: View {
                 moduleDestination(route)
                     .navigationTransition(.zoom(sourceID: route.id, in: zoom))
             }
-            // The "focus running" re-entry chip (#70): visible anywhere in this stack
-            // while a Pomodoro phase runs, except on the Pomodoro screen itself.
-            .overlay(alignment: .bottom) {
-                if app.pomodoro.isRunning && !app.pomodoroScreenVisible {
-                    PomodoroLiveChip(timer: app.pomodoro) {
-                        router.push(ModuleRoute(id: "pomodoro"))
-                    }
-                    .padding(.bottom, SnappetSpacing.lg)
-                    .transition(.liveBanner)
-                }
-            }
-            .animation(.snappyNav, value: app.pomodoro.isRunning)
-            .animation(.snappyNav, value: app.pomodoroScreenVisible)
         }
+        // The "focus running" re-entry chip (#70), on the NavigationStack itself — an
+        // overlay on the root page would slide away under every pushed module screen.
+        // Visible anywhere in this stack while a phase runs, except on the Pomodoro
+        // screen itself (the pomodoroScreenVisible flag).
+        .overlay(alignment: .bottom) {
+            if app.pomodoro.isRunning && !app.pomodoroScreenVisible {
+                PomodoroLiveChip(timer: app.pomodoro) {
+                    router.push(ModuleRoute(id: "pomodoro"))
+                }
+                .padding(.bottom, SnappetSpacing.lg)
+                .transition(.liveBanner)
+            }
+        }
+        .animation(.snappyNav, value: app.pomodoro.isRunning)
+        .animation(.snappyNav, value: app.pomodoroScreenVisible)
         .environment(router)
     }
 

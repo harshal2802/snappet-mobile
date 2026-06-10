@@ -16,45 +16,66 @@ import UserNotifications
 @MainActor
 final class PomodoroNotifications {
 
-    /// Stable identifier so a re-scheduled phase alert replaces the previous one.
-    private static let phaseEndID = "snappet.pomodoro.phaseEnd"
+    /// Stable identifiers — one per scheduled boundary — so re-scheduling replaces
+    /// rather than stacks. Two boundaries are kept scheduled (the running phase's end
+    /// **and** the following phase's end) because the app can't schedule anything while
+    /// suspended: locking the phone through a whole focus block still gets the user the
+    /// "break's over" alert that follows it.
+    private static let boundaryIDs = ["snappet.pomodoro.phaseEnd", "snappet.pomodoro.phaseEnd.next"]
 
     init() {}
 
     /// Ask for notification permission once (best-effort). Safe to call repeatedly; a
-    /// denied user is respected by the system.
+    /// denied user is respected by the system. Called from the Pomodoro screen's appear
+    /// so the dialog shows in context, before the first Start.
     func requestAuthorization() {
         #if canImport(UserNotifications)
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         #endif
     }
 
-    /// Schedule the end-of-phase alert for the phase that just started running.
-    /// `endDate` is the timer's absolute wall-clock end. No-op if it's not in the future.
-    func schedulePhaseEnd(for phase: PomodoroPhase, at endDate: Date) {
+    /// Schedule alerts for the upcoming phase boundaries (absolute wall-clock ends,
+    /// soonest first; anything past or beyond `boundaryIDs.count` is dropped). The adds
+    /// are issued **from the authorization completion** — `requestAuthorization` is an
+    /// immediate pass-through once status is determined, and routing through it means a
+    /// first-ever schedule isn't silently dropped while the permission dialog is still
+    /// up (`add()` fails while status is .notDetermined; #70 review blocker).
+    func scheduleBoundaries(_ boundaries: [(phase: PomodoroPhase, endDate: Date)]) {
         #if canImport(UserNotifications)
-        let seconds = endDate.timeIntervalSinceNow
-        guard seconds > 0 else { return }
-        let (title, body) = Self.phaseEndContent(endedPhase: phase)
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
-        let request = UNNotificationRequest(identifier: Self.phaseEndID, content: content, trigger: trigger)
-        // Replace any prior pending alert first so phase auto-advance doesn't stack.
-        clear()
-        UNUserNotificationCenter.current().add(request)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: Self.boundaryIDs)
+        center.removeDeliveredNotifications(withIdentifiers: Self.boundaryIDs)
+        let plan = boundaries.prefix(Self.boundaryIDs.count).map { ($0.phase, $0.endDate) }
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            // Re-resolve the center inside the @Sendable completion (UNUserNotificationCenter
+            // isn't statically Sendable under Swift 6 even though it's thread-safe).
+            let center = UNUserNotificationCenter.current()
+            for (index, boundary) in plan.enumerated() {
+                // Recompute the interval after the (possibly slow) grant so the trigger
+                // still lands on the absolute end date.
+                let seconds = boundary.1.timeIntervalSinceNow
+                guard seconds > 0 else { continue }
+                let (title, body) = Self.phaseEndContent(endedPhase: boundary.0)
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = body
+                content.sound = .default
+                content.interruptionLevel = .timeSensitive
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+                center.add(UNNotificationRequest(identifier: Self.boundaryIDs[index],
+                                                 content: content, trigger: trigger))
+            }
+        }
         #endif
     }
 
-    /// Cancel any pending/delivered phase-end alert (pause, reset).
+    /// Cancel all pending/delivered phase-end alerts (pause, reset, orphan cleanup).
     func clear() {
         #if canImport(UserNotifications)
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [Self.phaseEndID])
-        center.removeDeliveredNotifications(withIdentifiers: [Self.phaseEndID])
+        center.removePendingNotificationRequests(withIdentifiers: Self.boundaryIDs)
+        center.removeDeliveredNotifications(withIdentifiers: Self.boundaryIDs)
         #endif
     }
 

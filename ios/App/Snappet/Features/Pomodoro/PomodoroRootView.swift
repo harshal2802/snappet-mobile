@@ -78,6 +78,9 @@ struct PomodoroRootView: View {
             timer.onFocusCompleted = handleFocusCompleted
             timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
             app.pomodoroScreenVisible = true
+            // Prompt for notification permission here, in context, before the first
+            // Start — scheduling alone would race the permission dialog on first use.
+            app.pomodoroNotifications.requestAuthorization()
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
         }
         .onDisappear {
