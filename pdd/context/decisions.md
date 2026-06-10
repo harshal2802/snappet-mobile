@@ -4,6 +4,39 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Android: schema changes are migrations, never wipes; backup is schema-agnostic SQLite-level JSON (issue #84)
+
+**Decision** (prompt 38) — REVERSES the documented norm that DB bumps "ride the existing
+fallbackToDestructiveMigration": `exportSchema = true`, the v4 schema JSON is **committed**
+(`app/schemas/`), and the destructive fallback is **gone from the build path entirely** — a missing
+migration fails loudly in development instead of silently erasing every module's history in
+production (the wipe path had already fired across bumps 1→4). Every future bump ships an
+`autoMigrations`/`Migration` entry; `MigrationBaselineTest` is the scaffold each bump extends.
+
+**Backup format**: one versioned JSON of column→value row maps read at the **SQLite level**
+(`sqlite_master` walk + `SELECT *`), not per-entity DTOs — 17 serializable mirrors would drift,
+whereas a new `@Entity` is covered with zero backup changes. Import is **strict same-schema-version**
+(cross-version restore = open in the old build, migrate, re-export; never best-effort money/health
+restore) and **transactional all-or-nothing**. Codec is pure (`SnappetBackupTest`, JVM); the
+round-trip (export → wipe → import → identical reads + re-export equality) is instrumented.
+Instrumented runs use direct `adb shell am instrument` (Gradle's connected task wedges on this
+iCloud Desktop, 2026-06-09 note).
+
+**Adversarial-review addenda (same day):** (1) pre-baseline installs (DB v1–3, whose schemas were
+never exported) keep the old wipe via `fallbackToDestructiveMigrationFrom(1, 2, 3)` — a crash loop
+would brick them and correct migrations can't be authored retroactively; never-wipe holds from the
+committed v4 baseline forward. (2) Import runs through `db.runInTransaction` so Room's
+InvalidationTracker refreshes — every module screen observes DAO Flows, which a raw SQLite
+transaction left rendering pre-import data. (3) `userTables` filters in Kotlin with literal
+prefixes — SQL `LIKE 'room_%'` treats `_` as a wildcard and would silently drop a future table
+named e.g. `rooms` from every backup. (4) BackupScreen's encode/stream legs run on Dispatchers.IO
+(SAF uris can be remote providers), and a failed export deletes the empty document it created.
+**Accepted residuals (tracked, not fixed here):** strict same-version import means backups don't
+outlive a schema bump — the v5-era follow-up is migrate-on-import (materialize the payload into a
+temp DB at its version, run the now-mandatory migrations, re-read); and the migration tripwire is
+instrumented-only (no Android CI exists in this repo) — bumps must run `MigrationBaselineTest`
+manually until CI lands.
+
 ## [2026-06-10] Money entry: commit-then-save + keypad Done everywhere; "me" is a device-local convention (issue #82)
 
 **Decision** (prompt 37): every value-formatted money form saves through **commit-then-save** (resign

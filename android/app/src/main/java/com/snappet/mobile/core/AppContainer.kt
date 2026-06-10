@@ -9,6 +9,8 @@ import android.content.Context
  */
 class AppContainer private constructor(val database: SnappetDatabase) {
     val core: SnappetCore by lazy { SnappetCore(database.usageDao()) }
+    /** Export/import of the whole store as one SAF file (issue #84). */
+    val backup: SnappetBackupManager by lazy { SnappetBackupManager(database) }
 
     companion object {
         @Volatile private var instance: AppContainer? = null

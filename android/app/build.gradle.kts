@@ -19,6 +19,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Room writes each schema version's JSON here (committed — issue #84) so migrations
+    // are testable; androidTest reads them back via MigrationTestHelper.
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -42,6 +47,10 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -57,6 +66,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    androidTestImplementation(libs.androidx.room.testing)
     implementation(libs.androidx.datastore.preferences)
     // On-device receipt OCR (Split Expenses). Bundled Latin text-recognition model.
     implementation(libs.mlkit.text.recognition)
