@@ -4,6 +4,20 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Android Pomodoro: app-owned engine + FGS chronometer + exact alarm (issue #85)
+
+**Decision** (prompt 40, mirroring iOS #70): `PomodoroTimerState` is owned by **`AppContainer`** —
+never `remember {}`-scoped — and everything background hangs off **one seam**
+(`onScheduleChanged(phase, end?)`): SharedPreferences persistence (`PomodoroStateStore`, incl.
+paused progress), the **foreground-service chronometer notification** (`specialUse` FGS — timers
+have no dedicated type on API 34+; the system ticks the countdown, zero app CPU), and an **exact
+wake-from-Doze alarm** (`setExactAndAllowWhileIdle`; inexact fallback when the API-31+ special
+access is off) whose receiver posts the phase-end alert even after process death. `sync(now)` walks
+every elapsed boundary anchored at phase ends (the #70-review catch-up, ported), so a focus completed
+while dead is **logged to Room during restore**. Rules out WorkManager (15-min minimum, wrong tool
+for a 25-minute boundary) and a sticky service holding timer logic (the engine stays pure; the
+service only renders). `POST_NOTIFICATIONS` asked in-context on the screen, not at app launch.
+
 ## [2026-06-10] Android branding + dark mode: vector Pulse mark, splash handoff, mode-aware board paper (issue #96)
 
 **Decision** (prompt 39): the launcher icon is a **hand-authored vector** (white ECG "Pulse mark" on

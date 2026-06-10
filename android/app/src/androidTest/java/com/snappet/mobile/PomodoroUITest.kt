@@ -44,6 +44,27 @@ class PomodoroUITest : SuiteTest() {
         composeRule.onNodeWithTag("pomodoro.start").assertIsDisplayed()
     }
 
+    /** Issue #85: the engine is app-owned — leaving the module must not kill a running session. */
+    @Test
+    fun timerSurvivesLeavingTheModule() {
+        launch()
+        openModule("pomodoro")
+
+        composeRule.onNodeWithTag("pomodoro.start").performClick()
+        composeRule.onNodeWithTag("pomodoro.pause").assertIsDisplayed()
+
+        // Back out to the App Library (this used to dispose the remember{}-scoped timer),
+        // then come back: the session must still be running.
+        tapBack()
+        composeRule.onNodeWithTag("appLibraryGrid").assertIsDisplayed()
+        openModule("pomodoro")
+        composeRule.onNodeWithTag("pomodoro.pause").assertIsDisplayed()
+
+        // Clean up so later tests start idle.
+        composeRule.onNodeWithTag("pomodoro.pause").performClick()
+        composeRule.onNodeWithTag("pomodoro.reset").performClick()
+    }
+
     @Test
     fun settingsPersistAcrossRelaunch() {
         var scenario = launch()
