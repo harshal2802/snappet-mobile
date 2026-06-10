@@ -68,6 +68,21 @@ final class AppModel {
     /// unauthorized (live-workout-studio next pass).
     let workoutNotifications = WorkoutNotifications()
 
+    /// The active Pomodoro countdown engine. Owned here — not as `@State` on `PomodoroRootView` —
+    /// so it survives navigating out of and back into the Pomodoro module (the root is a
+    /// `navigationDestination` SwiftUI destroys on pop). Mirrors the `kilterSessions` pattern.
+    let pomodoroTimer = PomodoroTimer()
+
+    /// Local notifications for the Pomodoro timer: schedules a "phase complete" alert at the
+    /// phase's wall-clock `endDate` so the user is reached even when the phone is locked or the
+    /// app is backgrounded (the in-app ticker is suspended). No-ops when unauthorized.
+    let pomodoroNotifications = PomodoroNotifications()
+
+    /// Drives the **Pomodoro session Live Activity** (Lock Screen + Dynamic Island): phase label +
+    /// countdown. Started/ended via `PomodoroRootView`'s `onPhaseStarted` callback wiring. No-ops
+    /// where ActivityKit/Live Activities are unavailable or unauthorized.
+    let pomodoroLiveActivity = PomodoroLiveActivityController()
+
     /// Value-first onboarding is shown until the user has been through it once.
     /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
     private let onboardedKey = "snappet.hasOnboarded"

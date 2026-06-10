@@ -187,11 +187,17 @@ const nodes = [
   { id: "m-pomodoro", label: "Pomodoro", type: "module", group: "pomodoro", category: "productivity", platform: "ios+android",
     file: "ios/App/Snappet/Features/Pomodoro/PomodoroModule.swift", desc: "Focus timer with session history and persisted settings.", tags: ["timer","focus"] },
   { id: "pomodoro-root", label: "PomodoroRootView", type: "screen", group: "pomodoro", category: "productivity", platform: "ios",
-    file: "ios/App/Snappet/Features/Pomodoro/PomodoroRootView.swift", desc: "The timer face + a 7-day focus chart. Pushes History; presents Settings.", tags: ["root","timer"], shot: "../screenshots/04-pomodoro.png" },
+    file: "ios/App/Snappet/Features/Pomodoro/PomodoroRootView.swift", desc: "The timer face + a 7-day focus chart. Pushes History; presents Settings. Timer owned by AppModel so it survives navigation away/back.", tags: ["root","timer"], shot: "../screenshots/04-pomodoro.png" },
   { id: "pomodoro-history", label: "PomodoroHistoryView", type: "screen", group: "pomodoro", category: "productivity", platform: "ios+android",
     file: "ios/App/Snappet/Features/Pomodoro/PomodoroHistoryView.swift", desc: "Past focus sessions (pushed via PomodoroRoute).", tags: ["history"] },
   { id: "pomodoro-settings", label: "PomodoroSettingsView", type: "sheet", group: "pomodoro", category: "productivity", platform: "ios",
     file: "ios/App/Snappet/Features/Pomodoro/PomodoroSettingsView.swift", desc: "Persisted work/break durations and round count.", tags: ["settings"] },
+  { id: "pomodoro-notifications", label: "PomodoroNotifications", type: "service", group: "pomodoro", category: "productivity", platform: "ios",
+    file: "ios/App/Snappet/Services/PomodoroNotifications.swift", desc: "Schedules a UNNotification at the phase's wall-clock deadline on phase start; cancels on pause/reset. Pure phaseCompleteContent(phase:) is unit-tested.", tags: ["notifications","background"] },
+  { id: "pomodoro-live-activity-ctrl", label: "PomodoroLiveActivityController", type: "service", group: "pomodoro", category: "productivity", platform: "ios",
+    file: "ios/App/Snappet/Services/PomodoroLiveActivityController.swift", desc: "Manages the Pomodoro Live Activity lifecycle (start/update/end). Started from onPhaseStarted; paused/ended on user action. No-ops where ActivityKit is unavailable.", tags: ["live-activity","background"] },
+  { id: "pomodoro-widget", label: "PomodoroLiveActivity", type: "widget", group: "pomodoro", category: "productivity", platform: "ios",
+    file: "ios/App/SnappetWidgets/PomodoroLiveActivity.swift", desc: "Lock Screen + Dynamic Island countdown widget for a running Pomodoro phase. Uses Text(timerInterval:countsDown:) anchored on phaseEndDate for zero background CPU.", tags: ["widget","live-activity","lock-screen"] },
 
   // ═════════════════ MODULE: Habits ═════════════════
   { id: "m-habit", label: "Habits", type: "module", group: "habit", category: "productivity", platform: "ios+android",
@@ -730,6 +736,12 @@ const links = [
   { source: "pomodoro-root", target: "pomodoro-settings", type: "present" },
   { source: "pomodoro-root", target: "model-pomodoro", type: "persists" },
   { source: "pomodoro-root", target: "snappetcore", type: "feeds", label: "log usage" },
+  { source: "appmodel", target: "pomodoro-notifications", type: "contains" },
+  { source: "appmodel", target: "pomodoro-live-activity-ctrl", type: "contains" },
+  { source: "pomodoro-root", target: "pomodoro-notifications", type: "uses", label: "onPhaseStarted / pause / reset" },
+  { source: "pomodoro-root", target: "pomodoro-live-activity-ctrl", type: "uses", label: "onPhaseStarted / pause / reset" },
+  { source: "pomodoro-live-activity-ctrl", target: "pomodoro-widget", type: "feeds", label: "ContentState" },
+  { source: "applibrary", target: "pomodoro-root", type: "navigate", label: "focus banner" },
 
   // ---- Habits ----
   { source: "m-habit", target: "habit-root", type: "contains" },

@@ -19,9 +19,9 @@ enum PomodoroPhase {
 /// Drift-free Pomodoro countdown engine.
 ///
 /// Rather than decrementing a counter each tick (which accumulates error), the engine
-/// stores an absolute `endDate` and derives `remaining` from wall-clock time on every
+/// stores an absolute `phaseEndDate` and derives `remaining` from wall-clock time on every
 /// tick. The 1s `Timer` only drives UI refreshes; the math stays exact even if a tick
-/// is late. Pause captures the remaining interval; resume rebuilds `endDate` from it.
+/// is late. Pause captures the remaining interval; resume rebuilds `phaseEndDate` from it.
 @MainActor
 @Observable
 final class PomodoroTimer {
@@ -38,7 +38,15 @@ final class PomodoroTimer {
     /// this up to persist a `PomodoroSession` and log usage.
     var onFocusCompleted: ((Int) -> Void)?
 
-    private var endDate: Date?
+    /// Called whenever a new phase's countdown starts — on `start()` (including resume after
+    /// pause) and on each auto-advance in `completePhase()`. Services wire this to schedule a
+    /// `UNNotification` at `phaseEndDate` and to start/update the Live Activity.
+    var onPhaseStarted: ((PomodoroPhase, Date) -> Void)?
+
+    /// The wall-clock deadline for the current phase. `nil` when paused or idle.
+    /// Exposed so services and the re-entry banner can schedule/render without polling.
+    private(set) var phaseEndDate: Date?
+
     private var ticker: Timer?
 
     init() {
@@ -67,9 +75,11 @@ final class PomodoroTimer {
         guard !isRunning else { return }
         // If we're at the top of a fresh/reset phase, seed remaining from config.
         if remaining <= 0 { remaining = phaseDuration }
-        endDate = Date().addingTimeInterval(remaining)
+        let end = Date().addingTimeInterval(remaining)
+        phaseEndDate = end
         isRunning = true
         scheduleTicker()
+        onPhaseStarted?(phase, end)
     }
 
     func pause() {
@@ -77,22 +87,22 @@ final class PomodoroTimer {
         sync()
         isRunning = false
         invalidateTicker()
-        endDate = nil
+        phaseEndDate = nil
     }
 
     /// Stop and return to the top of the FOCUS phase.
     func reset() {
         isRunning = false
         invalidateTicker()
-        endDate = nil
+        phaseEndDate = nil
         phase = .focus
         remaining = phaseDuration
     }
 
     /// Recompute `remaining` from the wall clock; advance phases on completion.
     private func sync() {
-        guard let endDate else { return }
-        remaining = endDate.timeIntervalSinceNow
+        guard let phaseEndDate else { return }
+        remaining = phaseEndDate.timeIntervalSinceNow
         if remaining <= 0 { completePhase() }
     }
 
@@ -107,9 +117,11 @@ final class PomodoroTimer {
         phase = (finished == .focus) ? .breakTime : .focus
         remaining = phaseDuration
         if isRunning {
-            endDate = Date().addingTimeInterval(remaining)
+            let end = Date().addingTimeInterval(remaining)
+            phaseEndDate = end
+            onPhaseStarted?(phase, end)
         } else {
-            endDate = nil
+            phaseEndDate = nil
         }
     }
 

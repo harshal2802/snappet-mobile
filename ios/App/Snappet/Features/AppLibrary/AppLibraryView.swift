@@ -5,6 +5,7 @@ import SwiftUI
 /// to the module's own screen.
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Namespace private var zoom
     @State private var router = SuiteRouter()
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
@@ -43,7 +44,18 @@ struct AppLibraryView: View {
                 .padding()
             }
             // Clear the suite's floating tab bar so the last Finance card isn't covered.
-            .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
+            // When a Pomodoro session is running, show a re-entry chip above the tab-bar inset
+            // so the user can return to the timer without hunting for the Pomodoro card.
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    if app.pomodoroTimer.isRunning {
+                        PomodoroFocusBanner(timer: app.pomodoroTimer) {
+                            router.push(ModuleRoute(id: "pomodoro"))
+                        }
+                    }
+                    Color.clear.frame(height: SnappetSpacing.xxl)
+                }
+            }
             .navigationTitle("Apps")
             .navigationDestination(for: ModuleRoute.self) { route in
                 moduleDestination(route)
@@ -61,6 +73,52 @@ struct AppLibraryView: View {
                     core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
                 }
         }
+    }
+}
+
+/// A persistent "focus session running" chip shown at the bottom of the Apps grid while a Pomodoro
+/// timer is active, so the user can tap to return without having to scroll back to the tile.
+/// Pure presentation: handed already-resolved timer state and a `resume` action.
+private struct PomodoroFocusBanner: View {
+    let timer: PomodoroTimer
+    let resume: () -> Void
+
+    private var tint: Color { timer.phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits }
+
+    var body: some View {
+        Button(action: resume) {
+            HStack(spacing: 12) {
+                Image(systemName: timer.phase == .focus ? "timer" : "cup.and.saucer.fill")
+                    .font(.title2)
+                    .foregroundStyle(tint)
+                    .symbolEffect(.pulse, isActive: timer.isRunning)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(timer.phase.title)
+                        .font(.subheadline.weight(.semibold))
+                    HStack(spacing: 4) {
+                        Text(timer.timeText)
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text("· Tap to return")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer(minLength: 8)
+            }
+            .padding(.vertical, 10).padding(.horizontal, 14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(tint.opacity(0.4), lineWidth: 1)
+            )
+            .padding(.horizontal)
+            .padding(.bottom, 6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("pomodoro.focusBanner")
+        .accessibilityLabel("Pomodoro \(timer.phase.title) session in progress")
+        .accessibilityHint("Double-tap to return to the timer")
     }
 }
 

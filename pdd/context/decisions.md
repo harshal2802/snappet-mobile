@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Pomodoro timer hoisted to AppModel; phase-started callback drives services
+
+**Decision**: `PomodoroTimer` is now owned by `AppModel` (not `@State` on `PomodoroRootView`). A
+new `onPhaseStarted: ((PomodoroPhase, Date) -> Void)?` callback fires from `start()` and from
+`completePhase()` whenever a new phase's countdown begins, passing the wall-clock `phaseEndDate`.
+`PomodoroRootView` wires this callback (on every `onAppear`) to: (a) `PomodoroNotifications` —
+schedules a `UNNotification` at `phaseEndDate`; and (b) `PomodoroLiveActivityController` —
+starts/updates a Live Activity. Pause and reset are wrapped in view-side functions that also clear
+notifications and update/end the activity. `onFocusCompleted` remains view-wired (needs
+`modelContext`). The `phaseEndDate` property (formerly `private var endDate`) is exposed as
+`private(set)` for the re-entry banner and services.
+
+**Why**: `PomodoroRootView` is a `navigationDestination`; SwiftUI destroyed/recreated it on pop,
+resetting the `@State` timer while a session was in progress. The same root cause as the Kilter
+session bug (decisions.md 2026-06-07) and the same fix: own the mutable session state in
+`AppModel`. The `onPhaseStarted` callback avoids polling — services subscribe once and receive the
+exact deadline. The `UNNotification` pattern is a straight copy of `WorkoutNotifications`; the
+Live Activity pattern follows `KilterLiveActivityController`.
+
+**Live Activity verification**: the actual Lock Screen / Dynamic Island rendering requires a device
+(or careful simulator support). A clean build proves the `PomodoroActivityAttributes` shape and the
+controller lifecycle but not the visual output — same class as Kilter's device-pending note above.
+
+**Rules out**: keeping the timer in view `@State`; using a `Timer`-based polling loop in services
+to reschedule notifications; coupling phase-start side-effects to the SwiftUI lifecycle.
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

@@ -5,6 +5,7 @@ import SwiftData
 /// it sets only a `navigationTitle` (no nested NavigationStack).
 struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,8 +16,12 @@ struct PomodoroRootView: View {
     @AppStorage("pomodoro.focusMinutes") private var focusSetting = 25
     @AppStorage("pomodoro.breakMinutes") private var breakSetting = 5
 
-    @State private var timer = PomodoroTimer()
     @State private var showingSettings = false
+
+    /// Convenience accessor — the timer is owned by AppModel so it survives navigating away and
+    /// back (PomodoroRootView is a navigationDestination SwiftUI destroys on pop). Mirrors the
+    /// `KilterRootView` → `app.kilterSessions` pattern (decisions.md 2026-06-07 / 2026-06-10).
+    private var timer: PomodoroTimer { app.pomodoroTimer }
 
     init() {
         let start = Calendar.current.date(byAdding: .day, value: -6,
@@ -71,8 +76,22 @@ struct PomodoroRootView: View {
                                  onChange: handleSettingsChange)
         }
         .onAppear {
+            // Wire the focus-complete callback every time the view appears — the closure
+            // captures `modelContext`, which is view-scoped, so re-wiring on each appear keeps
+            // the reference current (the view is destroyed/recreated on pop/push but the timer
+            // in AppModel persists and runs through those transitions).
             timer.onFocusCompleted = handleFocusCompleted
+            // Wire services to the phase-started callback: schedule a local notification at
+            // the phase's wall-clock deadline (so the user is reached when the phone is locked)
+            // and start/update the Live Activity (Lock Screen + Dynamic Island countdown).
+            timer.onPhaseStarted = { [app] phase, endDate in
+                app.pomodoroNotifications.schedulePhaseComplete(for: phase, at: endDate)
+                app.pomodoroLiveActivity.startOrUpdate(
+                    phase: phase, phaseEndDate: endDate,
+                    focusMinutes: app.pomodoroTimer.focusMinutes)
+            }
             timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
+            app.pomodoroNotifications.requestAuthorization()
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
         }
     }
@@ -81,7 +100,7 @@ struct PomodoroRootView: View {
 
     private var controls: some View {
         HStack(spacing: 16) {
-            Button(action: timer.reset) {
+            Button(action: resetTimer) {
                 Label("Reset", systemImage: "arrow.counterclockwise")
                     .frame(maxWidth: .infinity)
             }
@@ -89,7 +108,7 @@ struct PomodoroRootView: View {
             .accessibilityIdentifier("pomodoro.reset")
 
             if timer.isRunning {
-                Button(action: timer.pause) {
+                Button(action: pauseTimer) {
                     Label("Pause", systemImage: "pause.fill")
                         .frame(maxWidth: .infinity)
                 }
@@ -135,6 +154,25 @@ struct PomodoroRootView: View {
     /// the new focus length shows immediately at the top of a phase.
     private func handleSettingsChange() {
         timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
+    }
+
+    /// Pause the timer and cancel the pending phase-complete notification + update the Live
+    /// Activity to show a "Paused" state.
+    private func pauseTimer() {
+        let phase = timer.phase
+        timer.pause()
+        app.pomodoroNotifications.clear()
+        // Update the Live Activity as paused. `phaseEndDate` is nil after pause, so we pass
+        // `Date.distantFuture` as a placeholder — the widget won't display it (paused: true
+        // causes the widget to show "Paused" instead of the countdown).
+        app.pomodoroLiveActivity.update(phase: phase, phaseEndDate: .distantFuture, paused: true)
+    }
+
+    /// Reset the timer, cancel the pending notification, and end the Live Activity.
+    private func resetTimer() {
+        timer.reset()
+        app.pomodoroNotifications.clear()
+        app.pomodoroLiveActivity.end()
     }
 }
 
