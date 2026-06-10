@@ -16,14 +16,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import com.snappet.mobile.ui.backup.BackupScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -63,7 +67,20 @@ fun AppLibraryScreen() {
 
     NavHost(navController = nav, startDestination = "library") {
         composable("library") {
-            Scaffold(topBar = { TopAppBar(title = { Text("Apps") }) }) { padding ->
+            Scaffold(topBar = {
+                TopAppBar(
+                    title = { Text("Apps") },
+                    actions = {
+                        // Backup & restore (issue #84) — the suite-level data surface.
+                        IconButton(
+                            onClick = { nav.navigate("backup") },
+                            modifier = Modifier.testTag("library.backup"),
+                        ) {
+                            Icon(Icons.Filled.SettingsBackupRestore, contentDescription = "Backup & restore")
+                        }
+                    },
+                )
+            }) { padding ->
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)
@@ -93,6 +110,9 @@ fun AppLibraryScreen() {
                     }
                 }
             }
+        }
+        composable("backup") {
+            BackupScreen(onExit = { nav.popBackStack() })
         }
         composable("module/{id}") { backStack ->
             val id = backStack.arguments?.getString("id")
