@@ -143,7 +143,8 @@ struct WorkoutHomeView: View {
                                        onClose: { saved in finishWorkout(session, saved: saved) },
                                        onMinimize: { minimizeWorkout() })
                 } else {
-                    WorkoutPlayerView(session: session, resolver: resolver, defaultUnit: unit,
+                    WorkoutPlayerView(session: session, resolver: resolver, history: history,
+                                      defaultUnit: unit,
                                       onClose: { saved in finishWorkout(session, saved: saved) },
                                       onMinimize: { minimizeWorkout() })
                 }

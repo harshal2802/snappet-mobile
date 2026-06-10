@@ -3377,3 +3377,47 @@ recreate-preserves journal/create-climb drafts, recreate-mid-workout restores th
 retention, resume-banner resume + discard, resume-lands-on-first-incomplete-set). UI-test infra
 gotcha recorded: `recreate()` while `TestHooks.freshInMemoryStore` is still true rebuilds an *empty*
 store mid-test — `launchForRecreate()` pins the container after first launch.
+
+## [2026-06-10] iOS — close the set-logging loop: cross-session prefill, edit completed sets, history search (#73)
+
+**Decision shape** (prompt 45): three pure cores at thin edges, no schema change, no new screens.
+
+- **Prefill source = the deciding session's *last* completed set, not its first.** Issue #73 says
+  "the most recent completed SetLog" — that's what the user finished on (their working weight after
+  in-session adjustments), so set 1 today starts there. The hint summarizes *all* of that session's
+  completed sets ("Last time: 3×8 @ 60 kg"; mixed reps → "8/8/6"; mixed weights → a "55–60 kg"
+  range; bodyweight omits weight). `LastSetLookup` is pure (sessions in, prefill+hint out), ignores
+  active sessions and non-reps/weight kinds, aggregates duplicate `exerciseId` occurrences (the
+  `WorkoutMath` freeform rule), and sorts by `completedAt` itself rather than trusting caller order.
+  Precedence in `prefillInputs()`: current-session previous set → cross-session → routine target
+  (the issue's "current-session sets still win").
+- **Mixed-unit hint converts via kg rounded to one decimal** — otherwise 132 lb re-expressed in kg
+  prints float noise ("59.874144…"). Same-unit weights (the overwhelming case) pass through raw.
+- **Edit mode mutates ONLY `actualReps`/`actualWeight`.** `SessionSetEditing.apply` never adds,
+  removes, or reorders sets and never touches `completedAt`/`weightUnit`/`kindRaw` — per-set media
+  assignment and HR-effort lookups key on `(exercise UUID, set index)`, so a structural edit would
+  silently re-tag clips/efforts to the wrong set. Duration/climb sets and never-completed sets stay
+  read-only (the issue scopes editing to reps/weight). Input parsing is the **shared**
+  `SetMeasure.parseReps/parseWeight` (extracted from the player's inline parsing), so the editor's
+  sanity rules can't drift from the live player's.
+- **Edit-mode plumbing via the drafts dictionary, not a mode flag.** The parent (`SessionDetailView`)
+  owns `[Key: Draft]`; a tile renders edit fields exactly when a draft exists for its key — drafts
+  are non-empty only between Edit and Save/Cancel, so no separate `editing` boolean threads through
+  `SessionMediaSection`. Save rewrites `session.exercises` wholesale (value-array on the `@Model`)
+  + `context.save()`; stats/charts recompute via `@Observable`/`@Query` observation. The SwiftData
+  round-trip is locked by a unit test (in-memory container **held as a test property** — a
+  `ModelContext` doesn't retain its container; letting it dealloc traps EXC_BREAKPOINT), proving
+  `WorkoutMath` PR/volume change from the corrected *stored* values. Live re-render of an already
+  pushed Dashboard/Progress screen is asserted by design (observation), not by an automated UI test.
+- **History search/chips are the pure `HistorySearch`** (chip = exact `routineName`, query =
+  case-insensitive substring, chips ordered most-recently-trained). Chips render in a top
+  `safeAreaInset` only when history spans >1 routine name. The History row keeps its value-based
+  `NavigationLink` (the documented Button-never-fires quirk) — untouched.
+- **Accepted residuals**: the guided player still seeds `unit` from the *previous in-session set*
+  before the cross-session unit (consistent with the old behavior); `FreeformPlayerView`'s
+  LogSetSheet keeps its own inline parsing (same rules; consolidating it is incidental churn);
+  no "sort" control on History — search + chips cover the issue's acceptance criteria.
+
+**Verified**: `xcodegen generate` clean. The simulator suite (new `LastSetLookupTests`,
+`SessionSetEditingTests`, `HistorySearchTests`, extended `SetMeasureTests` + the existing
+walkthroughs) is run by the orchestrator — not from this worktree.

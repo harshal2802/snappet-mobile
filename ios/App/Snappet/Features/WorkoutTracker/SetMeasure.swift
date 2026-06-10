@@ -51,6 +51,18 @@ enum SetMeasure {
         set.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:))?.isSend ?? false
     }
 
+    // MARK: - Input parsing (shared by the live player and the summary's edit mode, issue #73)
+
+    /// Reps text → `Int`, whitespace-trimmed; empty/non-numeric → `nil` (the player's exact rule).
+    static func parseReps(_ text: String) -> Int? {
+        Int(text.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Weight text → `Double`, accepting a decimal comma ("62,5"); empty/non-numeric → `nil`.
+    static func parseWeight(_ text: String) -> Double? {
+        Double(text.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+    }
+
     // MARK: - Formatting
 
     /// Weight without a trailing ".0" (60.0 → "60", 62.5 → "62.5").

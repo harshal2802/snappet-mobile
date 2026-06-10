@@ -9,7 +9,10 @@ import HighlightEngine
 /// **per-set** breakdown — each set is one tile showing its reps/weight, the heart rate at that set,
 /// and the photos/videos tagged to it (multiple media → multiple rows under the tile). Media is
 /// auto-discovered by capture-time window and/or added by hand; a **General** bucket holds anything
-/// not tied to a set.
+/// not tied to a set. An **Edit sets** mode (issue #73) turns the completed reps/weight tiles into
+/// text fields so a fat-fingered entry can be corrected after the fact — Save rewrites
+/// `SessionExercise.sets` in place (via the pure `SessionSetEditing`), so PRs / volume / progress
+/// recompute from the corrected values.
 struct SessionDetailView: View {
     let session: WorkoutSession
     let resolver: ExerciseResolver
@@ -33,6 +36,13 @@ struct SessionDetailView: View {
     @State private var editingClip: SessionMedia?
     /// A clip the user asked to remove — drives the destructive confirmation (hosted on the List).
     @State private var pendingRemoval: SessionMedia?
+    /// Edit-sets mode (issue #73): while on, each completed reps/weight tile shows text fields
+    /// editing `drafts`; Save parses them back into the session, Cancel discards.
+    @State private var editingSets = false
+    @State private var setDrafts: [SessionSetEditing.Key: SessionSetEditing.Draft] = [:]
+    /// One shared focus across all edit fields — the number pad has no return key, so the keypad
+    /// Done toolbar is the only way to dismiss it (the live player's pattern).
+    @FocusState private var keypadFocused: Bool
     @Environment(\.modelContext) private var context
     private let mediaLibrary = MediaLibraryService()
 
@@ -60,11 +70,33 @@ struct SessionDetailView: View {
             // per-set tiles + their media, and a General bucket).
             SessionMediaSection(session: session, resolver: resolver, unit: unit,
                                 sport: sport, category: dominantCategory,
+                                setDrafts: $setDrafts, keypadFocus: $keypadFocused,
                                 onEditClip: { editingClip = $0 },
                                 onRemove: { pendingRemoval = $0 })
         }
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
+        .keypadDoneToolbar($keypadFocused)
+        .toolbar {
+            // Edit completed reps/weight sets in place (issue #73). Hidden when the session has
+            // nothing editable (e.g. duration/climb-only freeform sessions).
+            if editingSets {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { cancelSetEdits() }
+                        .accessibilityIdentifier("session.cancelEditSets")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") { saveSetEdits() }
+                        .fontWeight(.semibold)
+                        .accessibilityIdentifier("session.saveSets")
+                }
+            } else if !SessionSetEditing.drafts(for: session.exercises).isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Edit") { beginSetEdits() }
+                        .accessibilityIdentifier("session.editSets")
+                }
+            }
+        }
         // Presented from the List (a stable host), so opening the editor never tears itself down.
         .sheet(item: $editingClip) { clip in ClipEditorView(media: clip) }
         // Destructive remove, confirmed (also hosted on the List). "Delete from Photos" removes the
@@ -81,6 +113,28 @@ struct SessionDetailView: View {
         } message: { _ in
             Text("“Remove from session” keeps the video in your Photos library. “Delete from Photos” permanently removes it (iOS will ask once more).")
         }
+    }
+
+    // MARK: Edit sets (issue #73)
+
+    private func beginSetEdits() {
+        setDrafts = SessionSetEditing.drafts(for: session.exercises)
+        editingSets = true
+    }
+
+    private func cancelSetEdits() {
+        editingSets = false
+        setDrafts = [:]
+        keypadFocused = false
+    }
+
+    /// Parse the drafts back into the session (the player's input rules) and persist. The model is
+    /// `@Observable`, so the tiles, header stats, and every history-derived stat re-render from the
+    /// corrected values.
+    private func saveSetEdits() {
+        session.exercises = SessionSetEditing.apply(drafts: setDrafts, to: session.exercises)
+        try? context.save()
+        cancelSetEdits()
     }
 
     private func removeTag(_ item: SessionMedia) {
@@ -308,6 +362,11 @@ private struct SessionMediaSection: View {
     /// Activity inputs for the B4 highlight engine (passed down from the detail view).
     let sport: SportTag?
     let category: ExerciseCategory?
+    /// Edit-sets drafts owned by the parent (issue #73): non-empty only while edit mode is on, so a
+    /// tile renders edit fields exactly when a draft exists for its (exercise, set index) key.
+    @Binding var setDrafts: [SessionSetEditing.Key: SessionSetEditing.Draft]
+    /// The parent's shared keypad focus, so its Done toolbar dismisses any edit field.
+    var keypadFocus: FocusState<Bool>.Binding
     /// Open the clip editor — presented by the parent on a stable host (see `SessionDetailView`).
     let onEditClip: (SessionMedia) -> Void
     /// Ask the parent to confirm + perform removal (tag-only or delete-from-Photos).
@@ -335,6 +394,8 @@ private struct SessionMediaSection: View {
 
     init(session: WorkoutSession, resolver: ExerciseResolver, unit: WeightUnit,
          sport: SportTag?, category: ExerciseCategory?,
+         setDrafts: Binding<[SessionSetEditing.Key: SessionSetEditing.Draft]>,
+         keypadFocus: FocusState<Bool>.Binding,
          onEditClip: @escaping (SessionMedia) -> Void,
          onRemove: @escaping (SessionMedia) -> Void) {
         self.session = session
@@ -342,6 +403,8 @@ private struct SessionMediaSection: View {
         self.unit = unit
         self.sport = sport
         self.category = category
+        self._setDrafts = setDrafts
+        self.keypadFocus = keypadFocus
         self.onEditClip = onEditClip
         self.onRemove = onRemove
         let sid = session.id
@@ -373,7 +436,9 @@ private struct SessionMediaSection: View {
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
-                                       maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
+                                       maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR,
+                                       editDraft: draftBinding(exerciseID: ex.id, setIndex: i),
+                                       keypadFocus: keypadFocus)
                             ForEach(mediaFor(exercise: ex.id, set: i)) { mediaRow($0) }
                         }
                         ForEach(mediaFor(exercise: ex.id, set: nil)) { mediaRow($0) }
@@ -529,6 +594,17 @@ private struct SessionMediaSection: View {
         Button(role: .destructive) { onRemove(item) } label: {
             Label("Remove…", systemImage: "trash")
         }
+    }
+
+    // MARK: Edit drafts (issue #73)
+
+    /// A binding into the parent's draft dictionary for one set — nil (read-only tile) when edit
+    /// mode is off or the set isn't editable (never completed, or not a reps/weight set).
+    private func draftBinding(exerciseID: UUID, setIndex: Int) -> Binding<SessionSetEditing.Draft>? {
+        let key = SessionSetEditing.Key(exerciseID: exerciseID, setIndex: setIndex)
+        guard setDrafts[key] != nil else { return nil }
+        return Binding(get: { setDrafts[key] ?? SessionSetEditing.Draft(reps: "", weight: "") },
+                       set: { setDrafts[key] = $0 })
     }
 
     // MARK: Grouping + per-set HR
@@ -715,13 +791,21 @@ private struct SetTileRow: View {
     var restHRV: HRVMetrics = .empty
     /// The session's resolved max HR for the zone tints; defaults to the no-profile fallback (Phase 2).
     var maxHR: Double = HeartRateZone.defaultMaxHR
+    /// Editable reps/weight draft while the summary's edit mode is on (issue #73); nil renders the
+    /// read-only tile. Paired with the host's shared keypad focus for the Done toolbar.
+    var editDraft: Binding<SessionSetEditing.Draft>? = nil
+    var keypadFocus: FocusState<Bool>.Binding? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 Text("Set \(index)").font(.subheadline.weight(.medium))
                 Spacer()
-                if set.completedAt != nil {
+                if let editDraft, let keypadFocus {
+                    SetEditFields(draft: editDraft,
+                                  unitLabel: (set.weightUnit ?? unit).display,
+                                  focus: keypadFocus)
+                } else if set.completedAt != nil {
                     Text(detailText).font(.subheadline.monospacedDigit())
                 } else {
                     Text("—").foregroundStyle(.tertiary)
@@ -762,6 +846,36 @@ private struct SetTileRow: View {
             }
             return set.actualReps.map { "\($0) reps" } ?? "done"
         }
+    }
+}
+
+/// The reps × weight text fields a completed set tile swaps to in edit mode (issue #73). The text
+/// mirrors the live player's inputs and is parsed with the same rules on Save (`SetMeasure`);
+/// the unit is the set's stored unit and isn't editable here.
+private struct SetEditFields: View {
+    @Binding var draft: SessionSetEditing.Draft
+    let unitLabel: String
+    var focus: FocusState<Bool>.Binding
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField("Reps", text: $draft.reps)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .frame(width: 56)
+                .focused(focus)
+                .accessibilityIdentifier("session.editReps")
+            Text("×").foregroundStyle(.secondary)
+            TextField("Weight", text: $draft.weight)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.center)
+                .frame(width: 72)
+                .focused(focus)
+                .accessibilityIdentifier("session.editWeight")
+            Text(unitLabel).font(.caption).foregroundStyle(.secondary)
+        }
+        .textFieldStyle(.roundedBorder)
+        .font(.subheadline.monospacedDigit())
     }
 }
 
