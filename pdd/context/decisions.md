@@ -4,6 +4,36 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Android Pomodoro: app-owned engine + FGS chronometer + exact alarm (issue #85)
+
+**Decision** (prompt 40, mirroring iOS #70): `PomodoroTimerState` is owned by **`AppContainer`** —
+never `remember {}`-scoped — and everything background hangs off **one seam**
+(`onScheduleChanged(phase, end?)`): SharedPreferences persistence (`PomodoroStateStore`, incl.
+paused progress), the **foreground-service chronometer notification** (`specialUse` FGS — timers
+have no dedicated type on API 34+; the system ticks the countdown, zero app CPU), and an **exact
+wake-from-Doze alarm** (`setExactAndAllowWhileIdle`; inexact fallback when the API-31+ special
+access is off) whose receiver posts the phase-end alert even after process death. `sync(now)` walks
+every elapsed boundary anchored at phase ends (the #70-review catch-up, ported), so a focus completed
+while dead is **logged to Room during restore**. Rules out WorkManager (15-min minimum, wrong tool
+for a 25-minute boundary) and a sticky service holding timer logic (the engine stays pure; the
+service only renders). `POST_NOTIFICATIONS` asked in-context on the screen, not at app launch.
+
+**Adversarial-review addenda (same day):** (1) **the alarm receiver chains the schedule itself** —
+a single un-chained alarm meant every boundary after the first was silent and the countdown went
+stale once the screen-scoped ticker died; the receiver now walks the persisted anchor via the pure
+`PomodoroSchedule` (the SAME walk the engine's restore does, so they can't disagree), posts the
+alert, refreshes the countdown via plain `notify()` (no FGS start from a background process), and
+arms the next boundary. (2) A **BOOT_COMPLETED receiver** re-arms the chain — alarms die on reboot,
+the SharedPreferences anchor doesn't. (3) **`MainActivity` touches `container.pomodoro` at launch**
+(a foreground context) so a process-death session restores — and away-completed focuses get logged
+with their **true boundary timestamps** (the seam now carries `completedAtMillis`) — without
+opening the module. (4) **`USE_EXACT_ALARM`** replaces `SCHEDULE_EXACT_ALARM`: a timer app
+qualifies, and the grantable variant is denied-by-default on API 34+ which would have made the
+inexact (~up-to-15-min-late) path the norm. (5) Settings stepper values are clamped at the change
+site and the engine refuses degenerate durations (a 0-minute phase briefly made the seam re-emit a
+past schedule 4×/sec). (6) Fresh-test container swaps also clear the displaced service/alarm;
+instrumented tests pre-grant `POST_NOTIFICATIONS` (`GrantPermissionRule`).
+
 ## [2026-06-10] Android branding + dark mode: vector Pulse mark, splash handoff, mode-aware board paper (issue #96)
 
 **Decision** (prompt 39): the launcher icon is a **hand-authored vector** (white ECG "Pulse mark" on

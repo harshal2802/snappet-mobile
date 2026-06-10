@@ -4,6 +4,12 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +47,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,7 +69,6 @@ import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private enum class PomodoroScreen { ROOT, HISTORY }
 
@@ -74,7 +78,6 @@ private enum class PomodoroScreen { ROOT, HISTORY }
 fun PomodoroRoot(onExit: () -> Unit) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
-    val scope = rememberCoroutineScope()
 
     var screen by remember { mutableStateOf(PomodoroScreen.ROOT) }
     var showSettings by remember { mutableStateOf(false) }
@@ -82,17 +85,21 @@ fun PomodoroRoot(onExit: () -> Unit) {
     var brk by remember { mutableStateOf(PomodoroSettings.breakMinutes(context)) }
     val sessions by container.database.pomodoroDao().allFlow().collectAsState(initial = emptyList())
 
-    val timer = remember {
-        PomodoroTimerState(focus, brk).apply {
-            onFocusCompleted = { minutes ->
-                scope.launch {
-                    container.database.pomodoroDao().insert(
-                        PomodoroSession(minutes = minutes, completedAt = System.currentTimeMillis())
-                    )
-                    container.core.log("pomodoro", "session", "Focused $minutes min", minutes.toDouble())
-                }
-            }
-        }
+    // App-owned engine (issue #85): survives back-out/tab-switch/rotation; the container
+    // wires session logging, persistence, the countdown notification, and the phase-end
+    // alarm. This screen is just a window onto it.
+    val timer = container.pomodoro
+    LaunchedEffect(Unit) { timer.applyDurations(focus, brk) }
+
+    // Phase-end alerts need POST_NOTIFICATIONS on API 33+ — ask in context, before the
+    // first start, like the iOS screen does for UNUserNotifications (#70).
+    val notifPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()) { /* best-effort */ }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     // 4x/sec UI ticker — only runs while the timer is running (drift-free; math is wall-clock based).
@@ -129,13 +136,13 @@ fun PomodoroRoot(onExit: () -> Unit) {
             SettingsSheet(
                 focus = focus, brk = brk,
                 onFocusChange = {
-                    focus = it
-                    PomodoroSettings.setFocusMinutes(context, it)
+                    focus = it.coerceIn(PomodoroSettings.focusRange)
+                    PomodoroSettings.setFocusMinutes(context, focus)
                     timer.applyDurations(focus, brk)
                 },
                 onBreakChange = {
-                    brk = it
-                    PomodoroSettings.setBreakMinutes(context, it)
+                    brk = it.coerceIn(PomodoroSettings.breakRange)
+                    PomodoroSettings.setBreakMinutes(context, brk)
                     timer.applyDurations(focus, brk)
                 },
                 onDone = { showSettings = false },

@@ -25,6 +25,12 @@ abstract class SuiteTest {
     @get:Rule
     val composeRule = createEmptyComposeRule()
 
+    /** Pomodoro asks for POST_NOTIFICATIONS on module entry (API 33+) — pre-grant it so
+     *  the system dialog never overlays a test. No-op below 33. */
+    @get:Rule
+    val notifications: androidx.test.rule.GrantPermissionRule =
+        androidx.test.rule.GrantPermissionRule.grant(android.Manifest.permission.POST_NOTIFICATIONS)
+
     @Before
     fun useFreshStore() {
         TestHooks.freshInMemoryStore = true

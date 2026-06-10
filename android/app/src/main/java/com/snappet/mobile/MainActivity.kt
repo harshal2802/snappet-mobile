@@ -26,6 +26,10 @@ class MainActivity : ComponentActivity() {
         // Fresh in-memory store when a UI test asks for it (via TestHooks or an intent extra).
         val fresh = TestHooks.freshInMemoryStore || intent?.getBooleanExtra("uiTestFreshStore", false) == true
         val container = AppContainer.get(applicationContext, freshInMemory = fresh)
+        // Touch the Pomodoro engine at launch (a foreground context) so a session that
+        // survived process death restores — and away-completed focuses get logged —
+        // without requiring the user to open the module first (issue #85 review).
+        container.pomodoro
 
         // Kilter catalog (issue #42): the app ships none. Under the catalog test hook, install the
         // synthetic fixture so the Kilter instrumented tests have data to browse; otherwise (fresh
