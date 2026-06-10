@@ -38,6 +38,15 @@ final class PomodoroTimer {
     /// this up to persist a `PomodoroSession` and log usage.
     var onFocusCompleted: ((Int) -> Void)?
 
+    /// Called when a phase starts or auto-transitions, with the new phase and its wall-clock
+    /// end date. `AppModel` wires this to `PomodoroNotifications` and `PomodoroLiveActivityController`
+    /// so notifications and the Live Activity survive backgrounding without device callbacks.
+    var onPhaseDidStart: ((PomodoroPhase, Date) -> Void)?
+
+    /// Called when the timer is paused or reset. `AppModel` wires this to cancel the pending
+    /// notification and end the Live Activity.
+    var onTimerDidStop: (() -> Void)?
+
     private var endDate: Date?
     private var ticker: Timer?
 
@@ -70,6 +79,7 @@ final class PomodoroTimer {
         endDate = Date().addingTimeInterval(remaining)
         isRunning = true
         scheduleTicker()
+        onPhaseDidStart?(phase, endDate!)
     }
 
     func pause() {
@@ -78,15 +88,20 @@ final class PomodoroTimer {
         isRunning = false
         invalidateTicker()
         endDate = nil
+        onTimerDidStop?()
     }
 
     /// Stop and return to the top of the FOCUS phase.
     func reset() {
+        let wasRunning = isRunning
         isRunning = false
         invalidateTicker()
         endDate = nil
         phase = .focus
         remaining = phaseDuration
+        // Only fire the stop callback when there was an active session to cancel; an idle
+        // reset (timer was never started) produces no-op service calls.
+        if wasRunning { onTimerDidStop?() }
     }
 
     /// Recompute `remaining` from the wall clock; advance phases on completion.
@@ -108,6 +123,8 @@ final class PomodoroTimer {
         remaining = phaseDuration
         if isRunning {
             endDate = Date().addingTimeInterval(remaining)
+            // Notify services about the new phase so the notification + Live Activity update.
+            onPhaseDidStart?(phase, endDate!)
         } else {
             endDate = nil
         }

@@ -5,6 +5,7 @@ import SwiftUI
 /// to the module's own screen.
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Namespace private var zoom
     @State private var router = SuiteRouter()
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
@@ -15,6 +16,14 @@ struct AppLibraryView: View {
                 // Plain VStack layout — `Section` only renders inside List/Form/Table,
                 // not a ScrollView (that showed a blank Apps tab).
                 VStack(alignment: .leading, spacing: 28) {
+                    // Persistent re-entry chip: visible while a Pomodoro focus session is
+                    // running in the background (the timer survives navigation via AppModel).
+                    if app.pomodoroTimer.isRunning {
+                        PomodoroFocusBanner(timer: app.pomodoroTimer) {
+                            router.push(ModuleRoute(id: "pomodoro"))
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     ForEach(ModuleCategory.allCases) { category in
                         let modules = ModuleRegistry.modules(in: category)
                         if !modules.isEmpty {
@@ -41,6 +50,7 @@ struct AppLibraryView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+                .animation(.snappy, value: app.pomodoroTimer.isRunning)
             }
             // Clear the suite's floating tab bar so the last Finance card isn't covered.
             .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
@@ -76,6 +86,42 @@ private struct ModuleCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .snappetTile()
+    }
+}
+
+/// In-app re-entry chip shown in the App Library while a Pomodoro focus session is
+/// running in the background (the timer survives navigation via AppModel). Tapping it
+/// navigates back into the Pomodoro module.
+private struct PomodoroFocusBanner: View {
+    let timer: PomodoroTimer
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: "brain.head.profile")
+                    .font(.title2)
+                    .foregroundStyle(Color.red)
+                    .symbolEffect(.pulse)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Focus session running")
+                        .font(.subheadline.weight(.semibold))
+                    Text("\(timer.timeText) remaining · Tap to return")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+            }
+            .padding(.vertical, 10).padding(.horizontal, 14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(Color.red.opacity(0.4), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("pomodoroFocusBanner")
+        .accessibilityLabel("Pomodoro focus session running: \(timer.timeText) remaining")
+        .accessibilityHint("Double-tap to return to the Pomodoro timer")
     }
 }
 

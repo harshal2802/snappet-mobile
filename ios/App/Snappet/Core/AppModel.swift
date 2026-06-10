@@ -68,6 +68,34 @@ final class AppModel {
     /// unauthorized (live-workout-studio next pass).
     let workoutNotifications = WorkoutNotifications()
 
+    /// The active Pomodoro timer. Owned here — not as `@State` on `PomodoroRootView` — so it
+    /// survives navigating out of and back into the module (the root is a `navigationDestination`
+    /// that SwiftUI destroys on pop). Same pattern as `kilterSessions`.
+    let pomodoroTimer = PomodoroTimer()
+
+    /// Local notifications for the Pomodoro timer: fires a "phase ended" alert at the wall-clock
+    /// end of each phase so a backgrounded / locked user still learns the phase is over.
+    let pomodoroNotifications = PomodoroNotifications()
+
+    /// Drives the **Pomodoro session Live Activity** (Lock Screen + Dynamic Island): phase label
+    /// + countdown to phase end. Started/updated when a phase begins; ended on stop/reset.
+    let pomodoroLiveActivity = PomodoroLiveActivityController()
+
+    init() {
+        // Wire the Pomodoro timer's phase-lifecycle callbacks into the persistent services.
+        // Capturing self weakly breaks the AppModel → timer.closure → services ← AppModel cycle.
+        pomodoroTimer.onPhaseDidStart = { [weak self] phase, endDate in
+            guard let self else { return }
+            pomodoroNotifications.schedulePhaseEnd(phase: phase, at: endDate)
+            pomodoroLiveActivity.push(phaseLabel: phase.title, phaseEndDate: endDate)
+        }
+        pomodoroTimer.onTimerDidStop = { [weak self] in
+            guard let self else { return }
+            pomodoroNotifications.clear()
+            pomodoroLiveActivity.end()
+        }
+    }
+
     /// Value-first onboarding is shown until the user has been through it once.
     /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
     private let onboardedKey = "snappet.hasOnboarded"

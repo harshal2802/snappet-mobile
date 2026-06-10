@@ -5,6 +5,7 @@ import SwiftData
 /// it sets only a `navigationTitle` (no nested NavigationStack).
 struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,7 +16,9 @@ struct PomodoroRootView: View {
     @AppStorage("pomodoro.focusMinutes") private var focusSetting = 25
     @AppStorage("pomodoro.breakMinutes") private var breakSetting = 5
 
-    @State private var timer = PomodoroTimer()
+    /// The timer lives in `AppModel` (not `@State` here) so it survives navigating out of and
+    /// back into the module — this view is a `navigationDestination` SwiftUI destroys on pop.
+    private var timer: PomodoroTimer { app.pomodoroTimer }
     @State private var showingSettings = false
 
     init() {
@@ -73,6 +76,8 @@ struct PomodoroRootView: View {
         .onAppear {
             timer.onFocusCompleted = handleFocusCompleted
             timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
+            // Request permission just-in-time (first open), matching the WorkoutTracker pattern.
+            app.pomodoroNotifications.requestAuthorization()
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
         }
     }

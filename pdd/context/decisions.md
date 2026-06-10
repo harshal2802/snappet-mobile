@@ -4,6 +4,42 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Pomodoro timer hoisted to AppModel; notifications + Live Activity
+
+**Decision**: `PomodoroTimer` is owned by `AppModel` (not `@State` on `PomodoroRootView`) so it
+survives navigating out of and back into the module — the same fix applied to `KilterSessionManager`
+(decisions.md 2026-06-07). Two new services are wired in `AppModel.init()` via pure callbacks on
+the timer (`onPhaseDidStart`, `onTimerDidStop`): `PomodoroNotifications` (schedules a
+`UNCalendarNotificationTrigger` at the absolute `endDate` on each phase start, cancels on
+pause/reset) and `PomodoroLiveActivityController` (starts/updates/ends a `PomodoroActivityAttributes`
+Live Activity). A `PomodoroFocusBanner` in `AppLibraryView` provides in-app re-entry while the timer
+runs in the background.
+
+**Why**: The `@State`-on-`navigationDestination` pattern destroys and re-creates the view on every
+pop/push, silently resetting the running timer. The completion haptic (the only prior signal) is
+suppressed when the phone is locked or the app is backgrounded — exactly the scenario a focus timer
+is designed for.
+
+**`onFocusCompleted` stays in the view**: persistence needs `modelContext` (a view-environment value).
+The closure captures `modelContext` by reference; even after the view is popped, the closure remains
+set on the `AppModel`-owned timer and holds a valid reference to the app's main context.
+
+**`UNCalendarNotificationTrigger` over `UNTimeIntervalNotificationTrigger`**: the calendar trigger
+fires at the absolute `endDate` regardless of suspension; a time-interval trigger computed at `start()`
+is less robust against clock drift during long pauses.
+
+**`PomodoroActivityAttributes` has no static attributes**: phase label, countdown target, and paused
+state are all in `ContentState` (they change at each phase transition). This differs from
+`WorkoutActivityAttributes` (routine name is fixed) and `KilterActivityAttributes` (board name is
+fixed) — Pomodoro has no session-scoped fixed metadata.
+
+**Dedicated Live Activity controller** (not generalizing `LiveActivityController`): keeps each
+module's activity type and update logic isolated, matching the Kilter precedent (decisions.md
+2026-06-06).
+
+**Rules out**: tracking "active" in view `@State`; hooking into `scenePhase` for notifications;
+generalizing `LiveActivityController` to handle multiple activity types.
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned
