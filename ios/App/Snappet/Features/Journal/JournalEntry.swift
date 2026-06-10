@@ -29,6 +29,15 @@ final class JournalEntry {
         self.tags = JournalEntry.normalizeTags(tags)
     }
 
+    /// Whether an entry with these fields carries no user content at all — the shared
+    /// definition behind both the editor's Done guard and the abandoned-entry cleanup,
+    /// so "blank" can't drift between the two paths.
+    static func isBlank(title: String, body: String, tags: [String]) -> Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && tags.isEmpty
+    }
+
     /// Normalize raw tag strings: trim whitespace, lowercase, drop empties, and de-duplicate
     /// while preserving first-seen order.
     static func normalizeTags(_ raw: [String]) -> [String] {

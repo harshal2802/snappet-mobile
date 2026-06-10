@@ -17,6 +17,9 @@ struct BudgetRootView: View {
     @State private var showingAddCategory = false
     @State private var showingAddTransaction = false
     @State private var editingCategory: BudgetCategory?
+    /// Categories staged by a swipe-delete, awaiting confirmation — deleting a category
+    /// cascades to every one of its transactions across all months.
+    @State private var pendingCategoryDeletes: [BudgetCategory]?
     /// The month the whole screen is scoped to. Defaults to the current month.
     @State private var month = MonthScope()
 
@@ -79,6 +82,39 @@ struct BudgetRootView: View {
         .navigationDestination(for: BudgetTrendsRoute.self) { _ in
             BudgetTrendsView(transactions: transactions)
         }
+        .confirmationDialog(
+            deleteDialogTitle,
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let pending = pendingCategoryDeletes { delete(pending) }
+                pendingCategoryDeletes = nil
+            }
+            Button("Cancel", role: .cancel) { pendingCategoryDeletes = nil }
+        } message: {
+            Text(BudgetCategoryDeleteImpact.message(
+                transactionCount: pendingCategoryDeletes.map(transactionCount(for:)) ?? 0))
+        }
+    }
+
+    private var deleteDialogTitle: String {
+        if let pending = pendingCategoryDeletes, pending.count == 1, let first = pending.first {
+            return "Delete \u{201C}\(first.name)\u{201D}?"
+        }
+        return "Delete \(pendingCategoryDeletes?.count ?? 0) categories?"
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingCategoryDeletes != nil },
+            set: { if !$0 { pendingCategoryDeletes = nil } }
+        )
+    }
+
+    private func transactionCount(for pending: [BudgetCategory]) -> Int {
+        let ids = Set(pending.map(\.id))
+        return transactions.count { ids.contains($0.categoryID) }
     }
 
     // MARK: - States
@@ -268,9 +304,15 @@ struct BudgetRootView: View {
         try? context.save()
     }
 
+    /// Swipe-delete stages the categories behind a confirmation that states how many
+    /// transactions the cascade will take with them — across all months, not just the
+    /// one on screen.
     private func deleteCategories(at offsets: IndexSet) {
-        for index in offsets {
-            let category = categories[index]
+        pendingCategoryDeletes = offsets.map { categories[$0] }
+    }
+
+    private func delete(_ pending: [BudgetCategory]) {
+        for category in pending {
             // Remove the category and all of its transactions (cascade by foreign key).
             for transaction in transactions where transaction.categoryID == category.id {
                 context.delete(transaction)
@@ -278,6 +320,21 @@ struct BudgetRootView: View {
             context.delete(category)
         }
         try? context.save()
+    }
+}
+
+/// Pure message builder for the category-delete confirmation, kept off the view so the
+/// pluralization is unit-testable without a simulator.
+enum BudgetCategoryDeleteImpact {
+    static func message(transactionCount: Int) -> String {
+        switch transactionCount {
+        case 0:
+            return "This category has no transactions. This can't be undone."
+        case 1:
+            return "This also permanently deletes its 1 transaction (across all months). This can't be undone."
+        default:
+            return "This also permanently deletes its \(transactionCount) transactions (across all months). This can't be undone."
+        }
     }
 }
 

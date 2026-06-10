@@ -12,6 +12,8 @@ struct JournalRootView: View {
 
     @State private var newEntry: JournalEntry?
     @State private var searchText: String = ""
+    /// Entries staged by a swipe-delete, awaiting the user's confirmation.
+    @State private var pendingDeletes: [JournalEntry]?
 
     /// Entries matching the current search query (title, body, or any tag — case-insensitive).
     /// Kept out of `body` so the view stays thin.
@@ -54,6 +56,26 @@ struct JournalRootView: View {
         .navigationDestination(item: $newEntry) { entry in
             JournalEditorView(entry: entry, isNew: true)
         }
+        .confirmationDialog(
+            pendingDeletes?.count == 1 ? "Delete this entry?" : "Delete \(pendingDeletes?.count ?? 0) entries?",
+            isPresented: deleteDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let entries = pendingDeletes { delete(entries) }
+                pendingDeletes = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeletes = nil }
+        } message: {
+            Text("This permanently removes the entry and can't be undone.")
+        }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeletes != nil },
+            set: { if !$0 { pendingDeletes = nil } }
+        )
     }
 
     private var entryList: some View {
@@ -75,11 +97,17 @@ struct JournalRootView: View {
         newEntry = entry
     }
 
+    /// Swipe-delete stages the entries behind a confirmation — a journal entry is a whole
+    /// document, so one accidental swipe shouldn't silently destroy it.
     private func deleteEntries(at offsets: IndexSet) {
-        // Map list offsets through the filtered view so the right entries are removed.
+        // Map list offsets through the filtered view so the right entries are staged.
         let visible = filteredEntries
-        for index in offsets {
-            modelContext.delete(visible[index])
+        pendingDeletes = offsets.map { visible[$0] }
+    }
+
+    private func delete(_ entries: [JournalEntry]) {
+        for entry in entries {
+            modelContext.delete(entry)
         }
         try? modelContext.save()
     }

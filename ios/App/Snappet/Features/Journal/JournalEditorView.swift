@@ -13,6 +13,9 @@ struct JournalEditorView: View {
 
     @FocusState private var bodyFocused: Bool
     @State private var tagInput: String = ""
+    /// Set on every Done path so the onDisappear cleanup never races the explicit save:
+    /// a pop that Done already handled (saved or deleted) must not delete again.
+    @State private var didFinish = false
 
     var body: some View {
         Form {
@@ -54,6 +57,22 @@ struct JournalEditorView: View {
         .onAppear {
             if isNew { bodyFocused = true }
         }
+        .onDisappear {
+            discardIfAbandonedBlank()
+        }
+    }
+
+    /// A new entry popped via the system back button / edge swipe never went through
+    /// `save()`, so the blank-row guard there can't fire. If the user abandoned the
+    /// editor without entering anything, drop the pre-inserted entry instead of letting
+    /// an "Untitled" row accumulate in the list. Typed content is left alone — only a
+    /// fully blank new entry is discarded.
+    private func discardIfAbandonedBlank() {
+        guard isNew, !didFinish, entry.modelContext != nil,
+              JournalEntry.isBlank(title: entry.title, body: entry.body, tags: entry.tags)
+        else { return }
+        modelContext.delete(entry)
+        try? modelContext.save()
     }
 
     /// Fold the current `tagInput` (possibly comma-separated) into `entry.tags`, normalized.
@@ -71,12 +90,13 @@ struct JournalEditorView: View {
     private func save() {
         // Fold any uncommitted text in the tag field before persisting.
         commitTags()
+        didFinish = true
 
         let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Drop an entirely empty new entry rather than persisting a blank row.
-        if isNew && trimmedTitle.isEmpty && trimmedBody.isEmpty && entry.tags.isEmpty {
+        if isNew && JournalEntry.isBlank(title: entry.title, body: entry.body, tags: entry.tags) {
             modelContext.delete(entry)
             try? modelContext.save()
             dismiss()

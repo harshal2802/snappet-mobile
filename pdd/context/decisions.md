@@ -4,6 +4,25 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Destructive deletes confirm via dialog (no UndoManager); Journal blank cleanup on onDisappear, not defer-insert
+
+**Decision** (prompt 34, issue #69): Expense-group, budget-category, and journal-entry deletes stage a
+`pending…` value and confirm through `confirmationDialog(presenting:)` — the pattern Habits already
+shipped — with a **pure impact-message builder** (`ExpenseGroupDeleteImpact` / `BudgetCategoryDeleteImpact`)
+stating exactly what cascades (group → its `ExpenseRecord`s, which the flat `groupID` reference would
+otherwise orphan; category → its transactions across **all** months). Rules out an Undo affordance: no
+`UndoManager` is configured anywhere in the suite, and one dialog idiom everywhere beats two recovery
+models.
+
+**Journal blank rows**: kept `createEntry()`'s insert-before-navigate (the editor's `@Bindable` and
+SwiftData autosave preserve typed content if the user back-swipes) and instead added an
+`.onDisappear` cleanup in `JournalEditorView`, gated by a `didFinish` flag set on every Done path so it
+never double-deletes. Rules out defer-insert-until-save: that would silently discard *typed* content on a
+back-swipe — worse than the blank-row bug it fixes. `JournalEntry.isBlank` is the single shared
+definition of "blank" for both paths (unit-tested in `DeleteConfirmationTests`).
+
+Tip/Kilter-history single-row swipes stay unconfirmed deliberately — one low-stakes row per swipe.
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

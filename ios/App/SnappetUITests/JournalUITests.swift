@@ -88,4 +88,23 @@ final class JournalUITests: XCTestCase {
         XCTAssertTrue(taggedCell.waitForExistence(timeout: 4), "clearing search should restore the tagged entry")
         XCTAssertTrue(plainCell.waitForExistence(timeout: 4), "clearing search should restore the plain entry")
     }
+
+    /// Prompt 34: opening the editor with + and leaving via the back button without typing
+    /// anything must not persist a blank "Untitled" row.
+    func testAbandoningNewEntryLeavesNoBlankRow() {
+        openJournal()
+
+        app.buttons["journal.add"].tap()
+        let titleField = app.textFields["journal.titleField"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 4), "editor should open")
+
+        // Leave via the system back button (not Done) — the abandoned-entry path.
+        app.navigationBars["New Entry"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 4), "should return to the list")
+
+        // Fresh store + no content ⇒ the list must be back to its empty state, with no row.
+        XCTAssertTrue(app.staticTexts["No entries yet"].waitForExistence(timeout: 4),
+                      "abandoning a blank entry should leave the journal empty")
+        XCTAssertFalse(app.buttons["journalRow"].exists, "no Untitled row should persist")
+    }
 }
