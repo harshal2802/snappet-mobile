@@ -192,6 +192,12 @@ const nodes = [
     file: "ios/App/Snappet/Features/Pomodoro/PomodoroHistoryView.swift", desc: "Past focus sessions (pushed via PomodoroRoute).", tags: ["history"] },
   { id: "pomodoro-settings", label: "PomodoroSettingsView", type: "sheet", group: "pomodoro", category: "productivity", platform: "ios",
     file: "ios/App/Snappet/Features/Pomodoro/PomodoroSettingsView.swift", desc: "Persisted work/break durations and round count.", tags: ["settings"] },
+  { id: "pomodoro-notifications", label: "PomodoroNotifications", type: "service", group: "pomodoro", category: "productivity", platform: "ios",
+    file: "ios/App/Snappet/Services/PomodoroNotifications.swift", desc: "Local notifications for phase-end alerts when the phone is locked or the app is backgrounded. Owned by AppModel.", tags: ["notifications","background"] },
+  { id: "pomodoro-live-activity", label: "PomodoroLiveActivityController", type: "service", group: "pomodoro", category: "productivity", platform: "ios",
+    file: "ios/App/Snappet/Services/PomodoroLiveActivityController.swift", desc: "Owns the Pomodoro Live Activity (Lock Screen + Dynamic Island): phase label + countdown timer. Owned by AppModel.", tags: ["live-activity","background"] },
+  { id: "pomodoro-widget", label: "PomodoroLiveActivity (widget)", type: "widget", group: "pomodoro", category: "productivity", platform: "ios",
+    file: "ios/App/SnappetWidgets/PomodoroLiveActivity.swift", desc: "Widget renderer for the Pomodoro Live Activity: Lock Screen countdown + Dynamic Island compact/expanded views.", tags: ["widget","live-activity"] },
 
   // ═════════════════ MODULE: Habits ═════════════════
   { id: "m-habit", label: "Habits", type: "module", group: "habit", category: "productivity", platform: "ios+android",
@@ -730,6 +736,10 @@ const links = [
   { source: "pomodoro-root", target: "pomodoro-settings", type: "present" },
   { source: "pomodoro-root", target: "model-pomodoro", type: "persists" },
   { source: "pomodoro-root", target: "snappetcore", type: "feeds", label: "log usage" },
+  { source: "pomodoro-root", target: "pomodoro-notifications", type: "uses", label: "schedule/cancel phase-end" },
+  { source: "pomodoro-root", target: "pomodoro-live-activity", type: "uses", label: "start/pause/end" },
+  { source: "pomodoro-live-activity", target: "pomodoro-widget", type: "feeds", label: "ActivityKit ContentState" },
+  { source: "applibrary", target: "pomodoro-root", type: "navigate", label: "FocusRunningChip re-entry" },
 
   // ---- Habits ----
   { source: "m-habit", target: "habit-root", type: "contains" },

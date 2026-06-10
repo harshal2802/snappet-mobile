@@ -4,6 +4,28 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-10] Pomodoro: timer hoisted to AppModel; notifications + Live Activity added
+
+**Decision**: `PomodoroTimer` is now **owned by `AppModel`** (mirroring `KilterSessionManager`) and
+**no longer `@State` on `PomodoroRootView`**. Three pure callbacks (`onPhaseStarted`, `onPaused`,
+`onReset`) let `PomodoroRootView.onAppear` wire in the notification and Live Activity services without
+importing platform frameworks into the timer. `PomodoroNotifications` (UNNotification, copies
+`WorkoutNotifications`) and `PomodoroLiveActivityController` (ActivityKit) are owned by `AppModel`.
+`PomodoroActivityAttributes` lives in `Shared/` (compiled into app + widget). `PomodoroLiveActivity`
+widget renders a `Text(timerInterval: Date.distantPast...endDate, countsDown: true)` countdown
+(wall-clock ticking, zero background CPU — same OS mechanism as the Kilter/Workout elapsed timers
+but counting down). AppLibraryView gains a `FocusRunningChip` re-entry banner when the timer is running.
+
+**Why**: `PomodoroRootView` is a `navigationDestination`; SwiftUI destroys it on pop, silently killing
+the `@State` timer — identical failure class to the Kilter session bug fixed 2026-06-07. A foreground
+RunLoop ticker is also suspended when the phone locks, so the haptic-only completion signal never fires
+for the primary use case (locking the phone during a 25-minute block). Local notifications scheduled at
+`endDate` fire regardless of app state; the Live Activity keeps the phase visible on the Lock Screen.
+
+**Rules out**: tracking the timer purely in memory on the view; relying on foreground-only haptic for
+completion; importing `UserNotifications` or `ActivityKit` into `PomodoroTimer` (it stays platform-free).
+**Device-pending**: Live Activity Lock Screen / Dynamic Island rendering (build proves shape, not render).
+
 ## [2026-06-07] Kilter board session lifecycle — persisted store is the single source of truth
 
 **Decision**: The active Kilter session is no longer in-memory-only. `KilterSessionManager` is **owned

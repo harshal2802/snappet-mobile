@@ -4,6 +4,7 @@ import SwiftData
 /// Root screen for the Pomodoro mini-app. Pushed into the suite's NavigationStack, so
 /// it sets only a `navigationTitle` (no nested NavigationStack).
 struct PomodoroRootView: View {
+    @Environment(AppModel.self) private var app
     @Environment(SnappetCore.self) private var core
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -15,7 +16,10 @@ struct PomodoroRootView: View {
     @AppStorage("pomodoro.focusMinutes") private var focusSetting = 25
     @AppStorage("pomodoro.breakMinutes") private var breakSetting = 5
 
-    @State private var timer = PomodoroTimer()
+    /// Owned by AppModel — not @State here — so the session survives navigating away and
+    /// back (this view is a navigationDestination SwiftUI destroys on pop).
+    private var timer: PomodoroTimer { app.pomodoroTimer }
+
     @State private var showingSettings = false
 
     init() {
@@ -72,6 +76,19 @@ struct PomodoroRootView: View {
         }
         .onAppear {
             timer.onFocusCompleted = handleFocusCompleted
+            timer.onPhaseStarted = { [app] phase, endDate in
+                app.pomodoroNotifications.schedulePhaseEnd(phase: phase.title, at: endDate)
+                app.pomodoroLiveActivity.start(phase: phase.title, endDate: endDate)
+            }
+            timer.onPaused = { [app] phase, frozenEndDate in
+                app.pomodoroNotifications.cancel()
+                app.pomodoroLiveActivity.pause(endDate: frozenEndDate, phase: phase.title)
+            }
+            timer.onReset = { [app] in
+                app.pomodoroNotifications.cancel()
+                app.pomodoroLiveActivity.end()
+            }
+            app.pomodoroNotifications.requestAuthorization()
             timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
         }

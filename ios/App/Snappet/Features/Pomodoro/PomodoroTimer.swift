@@ -38,7 +38,22 @@ final class PomodoroTimer {
     /// this up to persist a `PomodoroSession` and log usage.
     var onFocusCompleted: ((Int) -> Void)?
 
-    private var endDate: Date?
+    /// Called when a phase starts (or auto-advances to the next phase), with the current
+    /// phase and the absolute wall-clock end date. Wired by the app layer to schedule a
+    /// local notification and start/update the Live Activity.
+    var onPhaseStarted: ((PomodoroPhase, Date) -> Void)?
+
+    /// Called when the timer pauses, with the phase and a "frozen" end date representing
+    /// `remaining` seconds from now (so the caller can freeze the Live Activity countdown
+    /// at the right value). Wired to cancel the pending notification and mark the Live
+    /// Activity as paused.
+    var onPaused: ((PomodoroPhase, Date) -> Void)?
+
+    /// Called when the timer resets to the top of a focus phase. Wired to cancel the pending
+    /// notification and end the Live Activity.
+    var onReset: (() -> Void)?
+
+    private(set) var endDate: Date?
     private var ticker: Timer?
 
     init() {
@@ -70,6 +85,7 @@ final class PomodoroTimer {
         endDate = Date().addingTimeInterval(remaining)
         isRunning = true
         scheduleTicker()
+        onPhaseStarted?(phase, endDate!)
     }
 
     func pause() {
@@ -77,7 +93,12 @@ final class PomodoroTimer {
         sync()
         isRunning = false
         invalidateTicker()
+        // Capture `remaining` before clearing state — build a virtual end date at the
+        // current remaining interval so the caller can freeze the Live Activity countdown.
+        let frozenEndDate = Date().addingTimeInterval(remaining)
+        let frozenPhase = phase
         endDate = nil
+        onPaused?(frozenPhase, frozenEndDate)
     }
 
     /// Stop and return to the top of the FOCUS phase.
@@ -87,6 +108,7 @@ final class PomodoroTimer {
         endDate = nil
         phase = .focus
         remaining = phaseDuration
+        onReset?()
     }
 
     /// Recompute `remaining` from the wall clock; advance phases on completion.
@@ -108,6 +130,7 @@ final class PomodoroTimer {
         remaining = phaseDuration
         if isRunning {
             endDate = Date().addingTimeInterval(remaining)
+            onPhaseStarted?(phase, endDate!)
         } else {
             endDate = nil
         }

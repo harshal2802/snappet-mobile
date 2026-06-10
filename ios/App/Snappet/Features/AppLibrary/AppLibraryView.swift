@@ -5,6 +5,7 @@ import SwiftUI
 /// to the module's own screen.
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
+    @Environment(AppModel.self) private var app
     @Namespace private var zoom
     @State private var router = SuiteRouter()
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
@@ -15,6 +16,11 @@ struct AppLibraryView: View {
                 // Plain VStack layout — `Section` only renders inside List/Form/Table,
                 // not a ScrollView (that showed a blank Apps tab).
                 VStack(alignment: .leading, spacing: 28) {
+                    // Persistent chip when a Pomodoro session is running in the background —
+                    // lets the user re-enter without scrolling through the grid.
+                    if app.pomodoroTimer.isRunning {
+                        FocusRunningChip()
+                    }
                     ForEach(ModuleCategory.allCases) { category in
                         let modules = ModuleRegistry.modules(in: category)
                         if !modules.isEmpty {
@@ -76,6 +82,40 @@ private struct ModuleCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .snappetTile()
+    }
+}
+
+/// A tappable banner shown at the top of the App Library when a Pomodoro session is running in
+/// the background — lets the user re-enter the timer without scrolling through the module grid.
+/// Extracted into its own view so only this chip re-renders on every timer tick, not the full grid.
+private struct FocusRunningChip: View {
+    @Environment(AppModel.self) private var app
+    @Environment(SuiteRouter.self) private var router
+
+    var body: some View {
+        Button {
+            router.push(ModuleRoute(id: "pomodoro"))
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: app.pomodoroTimer.phase == .focus ? "brain.head.profile" : "cup.and.saucer.fill")
+                    .font(.title3)
+                    .foregroundStyle(app.pomodoroTimer.phase == .focus ? SnappetColor.pomodoro : SnappetColor.habits)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.pomodoroTimer.phase == .focus ? "Focus running" : "Break running")
+                        .font(.subheadline.weight(.semibold))
+                    Text(app.pomodoroTimer.timeText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(SnappetColor.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SnappetColor.textSecondary)
+            }
+            .padding()
+            .snappetTile()
+        }
+        .buttonStyle(.plain)
     }
 }
 
