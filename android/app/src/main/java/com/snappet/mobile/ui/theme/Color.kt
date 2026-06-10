@@ -28,12 +28,17 @@ object PulseColors {
     val OutlineLight = Color(0xFFE7E5E1)
     val OutlineDark = Color(0xFF34343A)
 
-    // Status text — success/warning that pass 4.5:1 on the mode's surfaces (issue #96).
-    // The old hardcoded greens/ambers (#1E7E48 on #1E1E22 ≈ 2.6:1) were unreadable in dark.
-    val SuccessLight = Color(0xFF1B7A43)
+    // Status text — success/warning/neutral that pass 4.5:1 on the mode's surfaces AND
+    // on their own alpha-tinted chip washes (the harder case — computed, issue #96 review:
+    // SuccessLight on its 0.16 wash ≥5.6:1, WarningLight on its 0.18 wash ≥5.0:1, all
+    // ≥4.5:1 up to a 0.22 wash in both modes). The old hardcoded greens/ambers
+    // (#1E7E48 on #1E1E22 ≈ 2.6:1) were unreadable in dark.
+    val SuccessLight = Color(0xFF136134)
     val SuccessDark = Color(0xFF7DD8A4)
-    val WarningLight = Color(0xFFA15C00)
+    val WarningLight = Color(0xFF854C00)
     val WarningDark = Color(0xFFFFB85C)
+    val NeutralLight = Color(0xFF4F4F57)
+    val NeutralDark = Color(0xFFC2C2CA)
 
     // The Kilter board's schematic "wall" per mode — the fixed light paper was a glaring
     // rectangle in a dimly-lit gym (issue #96).
@@ -94,3 +99,8 @@ fun pulseSuccess(): Color =
 @androidx.compose.runtime.Composable
 fun pulseWarning(): Color =
     if (androidx.compose.foundation.isSystemInDarkTheme()) PulseColors.WarningDark else PulseColors.WarningLight
+
+/** Theme-aware neutral status color (attempt/in-progress chips; ≥4.5:1 in both modes). */
+@androidx.compose.runtime.Composable
+fun pulseNeutral(): Color =
+    if (androidx.compose.foundation.isSystemInDarkTheme()) PulseColors.NeutralDark else PulseColors.NeutralLight
