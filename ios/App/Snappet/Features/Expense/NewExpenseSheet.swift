@@ -143,6 +143,7 @@ struct NewExpenseSheet: View {
         core.log(module: "expense", action: "expense",
                  summary: "\(verb) \(amount.formatted(.currency(code: currencyCode))) expense",
                  metric: amount)
+        Haptics.success()
         dismiss()
     }
 }

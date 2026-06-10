@@ -55,6 +55,8 @@ struct KilterClimbDetailView: View {
     @State private var betaLinks: [String] = []
     @State private var selectedAngle: Int = 40
     @State private var logConfirmation: String?
+    /// Incremented on a first send of a grade — drives `.celebrates(on:)` (issue #80).
+    @State private var celebrationTrigger = 0
     @State private var showingShare = false
     @State private var showingMatchInfo = false
 
@@ -73,6 +75,7 @@ struct KilterClimbDetailView: View {
             }
         }
         .navigationTitle(climb?.name ?? "Climb")
+        .celebrates(on: celebrationTrigger)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -575,6 +578,8 @@ struct KilterClimbDetailView: View {
         guard let climb, let stat = currentStat else { return }
         let grade = catalog.gradeLabel(stat.difficulty)
         let now = Date()
+        // Counted BEFORE this log lands, so the entry being written can't shadow itself.
+        let priorSendsAtGrade = priorSendCount(atGrade: grade)
         // Re-arm the active climb (a prior send may have closed it) so timing + the HUD are correct.
         if sessions.isActive {
             sessions.beginClimb(uuid: climb.uuid, name: climb.name,
@@ -607,9 +612,25 @@ struct KilterClimbDetailView: View {
                  metric: stat.difficulty)
         // A send closes the climb so the next one's timing + rest start fresh.
         if status.isSend { sessions.closeActiveClimb() }
+        // Tactile commit cue — a first send of a grade gets the celebration burst, every
+        // other log a plain success haptic (issue #80; logging happens mid-climb with
+        // chalky hands, where the caption capsule alone is easy to miss).
+        if KilterMilestones.isFirstSend(status: status, priorSendCountAtGrade: priorSendsAtGrade) {
+            celebrationTrigger += 1
+        } else {
+            Haptics.success()
+        }
         withAnimation(.snappy) {
             logConfirmation = "Logged \(status.label.lowercased()) · \(grade)"
         }
+    }
+
+    /// One-off count of entries already logged as a send at this grade label (any climb).
+    private func priorSendCount(atGrade grade: String) -> Int {
+        let sendRaws = [KilterAscentStatus.sent.rawValue, KilterAscentStatus.flash.rawValue]
+        let descriptor = FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.gradeLabel == grade && sendRaws.contains($0.statusRaw) })
+        return (try? modelContext.fetchCount(descriptor)) ?? 0
     }
 
     /// The in-session entry for this climb (any status), if one exists — so repeated logs on the same
@@ -628,6 +649,7 @@ struct KilterClimbDetailView: View {
             modelContext.insert(KilterFavorite(climbUUID: currentUUID))
         }
         try? modelContext.save()
+        Haptics.tap()
     }
 
 }

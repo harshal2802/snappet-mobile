@@ -211,6 +211,8 @@ private struct ExportedView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showShare = false
     @State private var landed = false
+    /// Fires the celebration burst once per export landing (issue #80).
+    @State private var celebrationTrigger = 0
 
     var body: some View {
         VStack(spacing: 16) {
@@ -228,7 +230,11 @@ private struct ExportedView: View {
         }
         .padding()
         .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: landed)
-        .onAppear { landed = true }
+        .celebrates(on: celebrationTrigger)
+        .onAppear {
+            landed = true
+            celebrationTrigger += 1   // burst + success haptic (haptic-only under Reduce Motion)
+        }
         .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
     }
 }

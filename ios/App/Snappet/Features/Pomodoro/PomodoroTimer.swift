@@ -1,8 +1,5 @@
 import Foundation
 import Observation
-#if canImport(UIKit)
-import UIKit
-#endif
 
 /// The two phases of a Pomodoro cycle.
 enum PomodoroPhase {
@@ -173,9 +170,7 @@ final class PomodoroTimer {
     }
 
     private func playCompletionHaptic(success: Bool) {
-        #if canImport(UIKit)
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(success ? .success : .warning)
-        #endif
+        // Through the suite's shared helper (issue #80) — no bespoke generators remain.
+        if success { Haptics.success() } else { Haptics.warning() }
     }
 }
