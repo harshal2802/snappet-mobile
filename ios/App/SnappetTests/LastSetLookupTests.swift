@@ -124,6 +124,14 @@ final class LastSetLookupTests: XCTestCase {
                        "Last time: 40 kg")
     }
 
+    func testMixedRepsBearingAndWeightOnlySetsListPerSet() {
+        // A weight-only set among reps-bearing ones must not shrink the compact count
+        // ("2×8" for three sets) — the per-set list marks it with a placeholder instead.
+        let s = session([exercise("press", [set(8, 60), set(nil, 60), set(8, 60)])], daysAgo: 1)
+        XCTAssertEqual(LastSetLookup.lastTime(exerciseId: "press", history: [s])?.hint,
+                       "Last time: 8/–/8 @ 60 kg")
+    }
+
     func testHintUsesTheSetsStoredUnit() {
         let s = session([exercise("bench", [set(5, 135, unit: .lb), set(5, 135, unit: .lb)])],
                         daysAgo: 1)

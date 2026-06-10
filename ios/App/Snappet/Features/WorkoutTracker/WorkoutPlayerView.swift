@@ -35,6 +35,10 @@ struct WorkoutPlayerView: View {
     @State private var repsText = ""
     @State private var weightText = ""
     @State private var unit: WeightUnit = .kg
+    // The current exercise's cross-session "last time" (issue #73), cached by `prefillInputs()` /
+    // `prefillEditing()` — the body re-renders every live HR sample (~1 Hz), so the hint must not
+    // re-scan all history per render.
+    @State private var lastSetHint: LastSetLookup.LastTime?
 
     // Rest timer.
     @State private var restRemaining = 0
@@ -270,7 +274,7 @@ struct WorkoutPlayerView: View {
                             .font(.subheadline).foregroundStyle(.secondary)
                         // What the user actually lifted last session — shown right where they
                         // decide today's weight (issue #73).
-                        if let hint = lastTime(ex)?.hint {
+                        if let hint = lastSetHint?.hint {
                             Text(hint)
                                 .font(.footnote).foregroundStyle(.secondary)
                                 .accessibilityIdentifier("lastTimeHint")
@@ -541,20 +545,21 @@ struct WorkoutPlayerView: View {
 
     private func prefillInputs() {
         guard let ex = current else { return }
+        lastSetHint = lastTime(ex)
         // Prefer the previous logged set in this exercise; then what the user lifted last
         // session (issue #73); finally the routine target.
         let previous = ex.sets.prefix(setIndex).last(where: { $0.completedAt != nil })
         if let previous {
             repsText = previous.actualReps.map(String.init) ?? leadingNumber(ex.targetReps)
-            weightText = previous.actualWeight.map(Self.formatWeight) ?? ""
+            weightText = previous.actualWeight.map(SetMeasure.formatWeight) ?? ""
             unit = previous.weightUnit ?? unit
-        } else if let last = lastTime(ex) {
+        } else if let last = lastSetHint {
             repsText = last.reps.map(String.init) ?? leadingNumber(ex.targetReps)
-            weightText = last.weight.map(Self.formatWeight) ?? ""
+            weightText = last.weight.map(SetMeasure.formatWeight) ?? ""
             unit = last.unit ?? ex.targetWeightUnit ?? defaultUnit
         } else {
             repsText = leadingNumber(ex.targetReps)
-            weightText = ex.targetWeight.map(Self.formatWeight) ?? ""
+            weightText = ex.targetWeight.map(SetMeasure.formatWeight) ?? ""
             unit = ex.targetWeightUnit ?? defaultUnit
         }
     }
@@ -627,10 +632,12 @@ struct WorkoutPlayerView: View {
     /// back to the normal forward prefill.
     private func prefillEditing() {
         guard let ex = current, ex.sets.indices.contains(setIndex) else { prefillInputs(); return }
+        // Stepping back can land on another exercise — refresh the cached hint for it.
+        lastSetHint = lastTime(ex)
         let set = ex.sets[setIndex]
         if set.completedAt != nil {
             repsText = set.actualReps.map(String.init) ?? ""
-            weightText = set.actualWeight.map(Self.formatWeight) ?? ""
+            weightText = set.actualWeight.map(SetMeasure.formatWeight) ?? ""
             unit = set.weightUnit ?? unit
         } else {
             prefillInputs()
@@ -727,9 +734,6 @@ struct WorkoutPlayerView: View {
     private func leadingNumber(_ reps: String) -> String {
         let digits = reps.prefix { $0.isNumber }
         return digits.isEmpty ? "" : String(digits)
-    }
-    private static func formatWeight(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(value)
     }
     private func timeString(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)

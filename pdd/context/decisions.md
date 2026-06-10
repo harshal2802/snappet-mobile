@@ -3418,6 +3418,28 @@ store mid-test — `launchForRecreate()` pins the container after first launch.
   LogSetSheet keeps its own inline parsing (same rules; consolidating it is incidental churn);
   no "sort" control on History — search + chips cover the issue's acceptance criteria.
 
+**Pre-merge adversarial review round** (6 confirmed, all fixed): (1) sets completed *before* an
+exercise was skipped count in `WorkoutMath` volume/PRs but were invisible and uneditable — rule:
+skipped sets are **visible + editable + counted**; the detail view renders the completed tiles
+under the "Skipped" caption and `drafts(for:)` drops its `!skipped` guard. `LastSetLookup` keeps
+counting them too — consistent with `WorkoutMath`, and now fixable when wrong. (2) Edit mode was a
+unit trap: the tile shows the preferred-unit conversion but the field showed the raw stored
+value+unit, so "confirming" a kg-stored set while on lb relabeled kilos as pounds. Rule:
+**WYSIWYG** — drafts seed the weight converted to the preferred unit (the hint's one-decimal
+rounding) and Save writes the parsed weight **with** `weightUnit = preferred`; `apply` re-derives
+the seeded drafts and skips untouched ones wholesale, so conversion rounding can never drift a set
+the user didn't edit (bit-identical round trip locked by test). (3) Deleting the filtered routine's
+last session hid the chip row and left History stuck on empty — `HistorySearch.effectiveRoutine
+(filter:names:)` makes a stale filter inert, and the chip row stays visible while an effective
+filter is on so it can always be toggled off. (4) The player's inline `lastTime(ex)` hint re-scanned
+all history on every body render (~1 Hz under live HR) — now cached in `@State` by
+`prefillInputs()`/`prefillEditing()` (one scan per set transition). (5) `formatWeight`'s
+`Int(Double)` trapped past `Int.max` (a duplicate copy lived in the player) — `Int(exactly:)` with
+a `String(value)` fallback, duplicate deleted; `parseWeight` rejects non-finite and ≥100 000 inputs.
+(6) The compact "N×R" hint miscounted when reps-bearing and weight-only sets mixed ("2×8" for three
+sets) — compact only when *every* set carries equal reps, else a per-set list with "–" placeholders
+("8/–/8"); all-weight-only still omits reps.
+
 **Verified**: `xcodegen generate` clean. The simulator suite (new `LastSetLookupTests`,
 `SessionSetEditingTests`, `HistorySearchTests`, extended `SetMeasureTests` + the existing
 walkthroughs) is run by the orchestrator — not from this worktree.

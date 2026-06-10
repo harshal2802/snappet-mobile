@@ -83,6 +83,11 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.formatWeight(62.5), "62.5")
     }
 
+    func testWeightFormatDoesNotTrapOnHugeValues() {
+        // 1e19 > Int.max — Int(exactly:) falls back to the plain description instead of trapping.
+        XCTAssertEqual(SetMeasure.formatWeight(1e19), "1e+19")
+    }
+
     // MARK: - Input parsing (shared by the live player + the summary's edit mode, issue #73)
 
     func testParseRepsTrimsAndRejectsNonNumeric() {
@@ -97,5 +102,13 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.parseWeight(" 60 "), 60)
         XCTAssertNil(SetMeasure.parseWeight(""))
         XCTAssertNil(SetMeasure.parseWeight("heavy"))
+    }
+
+    func testParseWeightBoundsTheInput() {
+        XCTAssertEqual(SetMeasure.parseWeight("99999"), 99999)
+        XCTAssertNil(SetMeasure.parseWeight("100000"))
+        XCTAssertNil(SetMeasure.parseWeight("1e19"))
+        XCTAssertNil(SetMeasure.parseWeight("inf"))
+        XCTAssertNil(SetMeasure.parseWeight("nan"))
     }
 }

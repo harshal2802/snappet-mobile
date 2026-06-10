@@ -42,4 +42,12 @@ final class HistorySearchTests: XCTestCase {
         XCTAssertEqual(HistorySearch.routineNames(sessions),
                        ["Push Day", "Leg Day", "Quick session"])
     }
+
+    func testEffectiveRoutineDropsAFilterNoLongerInHistory() {
+        XCTAssertEqual(HistorySearch.effectiveRoutine(filter: "Push Day",
+                                                      names: ["Push Day", "Leg Day"]), "Push Day")
+        XCTAssertNil(HistorySearch.effectiveRoutine(filter: "Push Day", names: ["Leg Day"]),
+                     "deleting the filtered routine's last session must not stick History on empty")
+        XCTAssertNil(HistorySearch.effectiveRoutine(filter: nil, names: ["Leg Day"]))
+    }
 }

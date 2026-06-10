@@ -17,8 +17,13 @@ struct HistorySectionView: View {
     /// subtree's identity and the row Button's tap/navigation doesn't "stick".
     private struct MonthGroup: Identifiable { let id: String; let sessions: [WorkoutSession] }
 
+    /// The filter that actually applies — a chip whose routine left history (last such session
+    /// deleted) filters nothing instead of sticking the list on empty.
+    private var effectiveFilter: String? {
+        HistorySearch.effectiveRoutine(filter: routineFilter, names: routineNames)
+    }
     private var filtered: [WorkoutSession] {
-        HistorySearch.apply(history, query: query, routine: routineFilter)
+        HistorySearch.apply(history, query: query, routine: effectiveFilter)
     }
     private var routineNames: [String] { HistorySearch.routineNames(history) }
 
@@ -60,7 +65,8 @@ struct HistorySectionView: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic),
                     prompt: "Search by routine")
         .safeAreaInset(edge: .top, spacing: 0) {
-            if routineNames.count > 1 { routineChips }
+            // Also shown while a filter is active with one routine left, so it can be toggled off.
+            if routineNames.count > 1 || effectiveFilter != nil { routineChips }
         }
         .overlay {
             if history.isEmpty {
@@ -70,13 +76,13 @@ struct HistorySectionView: View {
                     Text("Finish a workout and it will appear here with your stats.")
                 }
             } else if filtered.isEmpty {
-                ContentUnavailableView.search(text: query.isEmpty ? (routineFilter ?? "—") : query)
+                ContentUnavailableView.search(text: query.isEmpty ? (effectiveFilter ?? "—") : query)
             }
         }
     }
 
     /// One chip per distinct routine name (most recent first); tap to filter, tap again to clear.
-    /// Shown only when history spans more than one routine — a single name has nothing to filter.
+    /// Shown when history spans more than one routine, or while a filter is active.
     private var routineChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -120,6 +126,12 @@ enum HistorySearch {
         var seen = Set<String>()
         return sessions.sorted { $0.startedAt > $1.startedAt }
             .compactMap { seen.insert($0.routineName).inserted ? $0.routineName : nil }
+    }
+
+    /// The filter that actually applies: a selection whose routine is no longer in history (e.g.
+    /// its last session was deleted) is inert, so the list can never get stuck on empty.
+    static func effectiveRoutine(filter: String?, names: [String]) -> String? {
+        filter.flatMap { names.contains($0) ? $0 : nil }
     }
 }
 

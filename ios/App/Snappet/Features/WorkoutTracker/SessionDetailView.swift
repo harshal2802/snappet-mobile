@@ -90,7 +90,7 @@ struct SessionDetailView: View {
                         .fontWeight(.semibold)
                         .accessibilityIdentifier("session.saveSets")
                 }
-            } else if !SessionSetEditing.drafts(for: session.exercises).isEmpty {
+            } else if !SessionSetEditing.drafts(for: session.exercises, unit: unit).isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Edit") { beginSetEdits() }
                         .accessibilityIdentifier("session.editSets")
@@ -118,7 +118,7 @@ struct SessionDetailView: View {
     // MARK: Edit sets (issue #73)
 
     private func beginSetEdits() {
-        setDrafts = SessionSetEditing.drafts(for: session.exercises)
+        setDrafts = SessionSetEditing.drafts(for: session.exercises, unit: unit)
         editingSets = true
     }
 
@@ -132,7 +132,7 @@ struct SessionDetailView: View {
     /// `@Observable`, so the tiles, header stats, and every history-derived stat re-render from the
     /// corrected values.
     private func saveSetEdits() {
-        session.exercises = SessionSetEditing.apply(drafts: setDrafts, to: session.exercises)
+        session.exercises = SessionSetEditing.apply(drafts: setDrafts, to: session.exercises, unit: unit)
         try? context.save()
         cancelSetEdits()
     }
@@ -430,6 +430,18 @@ private struct SessionMediaSection: View {
                 Section {
                     if ex.skipped {
                         Text("Skipped").foregroundStyle(.secondary).italic()
+                        // Sets completed before the skip still count in volume/PRs (WorkoutMath
+                        // ignores `skipped`), so they must stay visible — and editable — here.
+                        ForEach(Array(ex.sets.enumerated()).filter { $0.element.completedAt != nil },
+                                id: \.offset) { i, set in
+                            SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
+                                       bpm: bpm(forSetCompletedAt: set.completedAt),
+                                       effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
+                                       restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
+                                       maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR,
+                                       editDraft: draftBinding(exerciseID: ex.id, setIndex: i),
+                                       keypadFocus: keypadFocus)
+                        }
                     } else {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
                             SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
@@ -802,9 +814,7 @@ private struct SetTileRow: View {
                 Text("Set \(index)").font(.subheadline.weight(.medium))
                 Spacer()
                 if let editDraft, let keypadFocus {
-                    SetEditFields(draft: editDraft,
-                                  unitLabel: (set.weightUnit ?? unit).display,
-                                  focus: keypadFocus)
+                    SetEditFields(draft: editDraft, unitLabel: unit.display, focus: keypadFocus)
                 } else if set.completedAt != nil {
                     Text(detailText).font(.subheadline.monospacedDigit())
                 } else {
@@ -851,7 +861,7 @@ private struct SetTileRow: View {
 
 /// The reps × weight text fields a completed set tile swaps to in edit mode (issue #73). The text
 /// mirrors the live player's inputs and is parsed with the same rules on Save (`SetMeasure`);
-/// the unit is the set's stored unit and isn't editable here.
+/// the weight shows — and saves — in the preferred display unit (WYSIWYG with the read-only tile).
 private struct SetEditFields: View {
     @Binding var draft: SessionSetEditing.Draft
     let unitLabel: String

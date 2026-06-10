@@ -41,7 +41,8 @@ enum LastSetLookup {
     // MARK: - Hint formatting
 
     /// "Last time: 3×8 @ 60 kg" (uniform), "Last time: 8/8/6 @ 60 kg" (mixed reps),
-    /// "Last time: 3×8 @ 55–60 kg" (mixed weights), "Last time: 2×12" (bodyweight).
+    /// "Last time: 3×8 @ 55–60 kg" (mixed weights), "Last time: 2×12" (bodyweight),
+    /// "Last time: 8/–/8 @ 60 kg" (a weight-only set among reps-bearing ones).
     private static func hint(for sets: [SetLog]) -> String {
         switch (repsSummary(sets), weightSummary(sets)) {
         case let (reps?, weight?): return "Last time: \(reps) @ \(weight)"
@@ -53,10 +54,16 @@ enum LastSetLookup {
     }
 
     private static func repsSummary(_ sets: [SetLog]) -> String? {
-        let reps = sets.compactMap(\.actualReps)
-        guard let first = reps.first else { return nil }
-        if reps.allSatisfy({ $0 == first }) { return "\(reps.count)×\(first)" }
-        return reps.map(String.init).joined(separator: "/")
+        let reps = sets.map(\.actualReps)
+        let present = reps.compactMap { $0 }
+        guard let first = present.first else { return nil }
+        // Compact "N×R" only when EVERY set carries the same reps — a weight-only set in the mix
+        // would otherwise vanish from the count ("2×8" for three sets). Mixed sets list per set,
+        // with a placeholder where reps weren't logged ("8/–/8").
+        if present.count == sets.count, present.allSatisfy({ $0 == first }) {
+            return "\(present.count)×\(first)"
+        }
+        return reps.map { $0.map(String.init) ?? "–" }.joined(separator: "/")
     }
 
     private static func weightSummary(_ sets: [SetLog]) -> String? {
