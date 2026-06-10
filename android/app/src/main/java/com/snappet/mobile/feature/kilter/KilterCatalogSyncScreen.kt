@@ -122,22 +122,23 @@ fun KilterCatalogSyncScreen(onInstalled: () -> Unit, onExit: () -> Unit) {
                 InstallPhase.Idle -> {}
             }
 
+            // Issue #94: Download leads — it's the path that works on a phone. Importing a
+            // catalog file you already have is the secondary, power-user route.
             Button(
-                onClick = { picker.launch(arrayOf("*/*")) },
-                enabled = phase != InstallPhase.Working,
-                modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.import"),
-            ) { Text("Import catalog file…") }
-
-            // Phase 2 (HostedCatalogProvider): download + trim a hosted dataset on-device.
-            OutlinedButton(
                 onClick = { showDownload = true },
                 enabled = phase != InstallPhase.Working,
                 modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.sync"),
             ) { Text("Download from Kilter…") }
 
+            OutlinedButton(
+                onClick = { picker.launch(arrayOf("*/*")) },
+                enabled = phase != InstallPhase.Working,
+                modifier = Modifier.fillMaxWidth().testTag("kilter.catalog.import"),
+            ) { Text("Import catalog file…") }
+
             Text(
-                "Download fetches the catalog from a hosted dataset (filters trim it on-device). Or build " +
-                    "a file yourself with the boardlib tool — see tools/kilter.",
+                "Download fetches the catalog from a hosted dataset and trims it on-device with " +
+                    "your filters. Import installs a catalog file you already have.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

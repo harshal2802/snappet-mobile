@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -251,11 +252,6 @@ private fun KilterCatalogScreen(
                     Icon(Icons.Filled.MoreVert, contentDescription = "More")
                 }
                 DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
-                    DropdownMenuItem(text = { Text("Create climb") },
-                        leadingIcon = { Icon(Icons.Filled.Add, null) },
-                        modifier = Modifier.testTag("kilter.create"),
-                        onClick = { moreMenu = false; onOpenCreate() })
-                    HorizontalDivider()
                     if (sessions.currentSessionId != null) {
                         DropdownMenuItem(text = { Text("End session") },
                             leadingIcon = { Icon(Icons.Filled.StopCircle, null) },
@@ -281,6 +277,15 @@ private fun KilterCatalogScreen(
                         onClick = { moreMenu = false; onOpenSettings() })
                 }
             }
+        },
+        floatingActionButton = {
+            // Issue #94: climb authoring is a flagship feature — a visible FAB, not a kebab item.
+            ExtendedFloatingActionButton(
+                onClick = onOpenCreate,
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("Create climb") },
+                modifier = Modifier.testTag("kilter.create"),
+            )
         },
     ) { padding ->
         if (!catalog.isAvailable) {
@@ -389,12 +394,13 @@ private fun KilterCatalogScreen(
                     when { search.isNotBlank() -> "No matches"; mineOnly -> "No climbs yet"; savedOnly -> "No saved climbs"; else -> "No climbs match" },
                     when {
                         search.isNotBlank() -> "No climbs match “$search” with the current filters."
-                        mineOnly -> "Tap More ▸ Create climb to design your first one for this layout."
+                        mineOnly -> "Tap Create climb to design your first one for this layout."
                         savedOnly -> "Star climbs to find them here."
                         else -> "Try a wider grade range or fewer filters."
                     })
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                // Bottom padding keeps the Create-climb FAB clear of the last row.
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
                     cotd?.let { c ->
                         item(key = "cotd") {
                             Text("CLIMB OF THE DAY", style = MaterialTheme.typography.labelSmall,
