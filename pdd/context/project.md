@@ -281,6 +281,19 @@ on both platforms; no UI test touched the removed controls.
 with a **Clear** action when a search/Saved/extra filter is active — immediate feedback that makes
 searching friendlier. New `count` unit test on both platforms.
 
+🟢 **Flagship reel flow: recoverable dead ends + a real export payoff (2026-06-10, prompt 44,
+issue #72).** iOS. Every reel/workout dead end is now actionable, driven by the pure
+`ReelFlowPolicy` (copy + action selection, regenerate confirmations, export destination + sweep,
+activity icons — `ReelFlowPolicyTests`) rendered through one `RecoveryUnavailableView`: export
+failure → Retry with pins/removals/order intact (new `.exportFailed` state); Photos-denied →
+Open Settings (never the fetch-blind "Select clips"); the workout empty state is truthful about
+invisible HealthKit denial (Refresh + Open Settings). The success screen plays the exported reel
+as an auto-playing looped hero with add-only **Save to Photos** + Share; exports persist in
+`Application Support/Reels` (backup-excluded, keep-latest sweep) instead of tmp; highlight rows
+show `PHCachingImageManager` poster thumbnails and workout rows activity icons.
+**Device-pending**: the full flow on hardware (real export, Photos save, Settings round-trips,
+haptics).
+
 ## License
 
 TBD.

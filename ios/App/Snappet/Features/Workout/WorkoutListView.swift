@@ -11,8 +11,10 @@ struct WorkoutListView: View {
             case .onboarding, .loading:
                 ProgressView("Loading…")
             case .error(let msg):
-                ContentUnavailableView("Something went wrong", systemImage: "exclamationmark.triangle",
-                    description: Text(msg))
+                RecoveryUnavailableView(spec: ReelFlowPolicy.workoutsErrorSpec(message: msg),
+                                        identifierPrefix: "workout") { action in
+                    if action == .tryAgain { Task { await model.bootstrap() } }
+                }
             case .ready:
                 list
             }
@@ -23,11 +25,18 @@ struct WorkoutListView: View {
     private var list: some View {
         List(model.workouts) { wk in
             Button { router.push(wk) } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(wk.activity.rawValue.capitalized).font(.headline)
-                    Text(wk.start, format: .dateTime.month().day().hour().minute())
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Text(durationText(wk.duration)).font(.caption).foregroundStyle(.tertiary)
+                HStack(spacing: 12) {
+                    Image(systemName: ReelFlowPolicy.activityIcon(for: wk.activity))
+                        .font(.title3)
+                        .foregroundStyle(SnappetColor.workout)
+                        .frame(width: 40, height: 40)
+                        .background(SnappetColor.workout.opacity(0.12), in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(wk.activity.rawValue.capitalized).font(.headline)
+                        Text(wk.start, format: .dateTime.month().day().hour().minute())
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text(durationText(wk.duration)).font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -36,9 +45,13 @@ struct WorkoutListView: View {
         .navigationDestination(for: WorkoutSummary.self) { ReelView(summary: $0) }
         .overlay {
             if model.workouts.isEmpty {
-                ContentUnavailableView("No workouts yet",
-                    systemImage: "figure.run",
-                    description: Text("Track a workout on your Apple Watch, then pull to refresh."))
+                // Health read-denial is invisible (not queryable), so the copy acknowledges it
+                // and offers a working path out — an explicit Refresh (the overlay swallows
+                // pull-to-refresh) plus Open Settings (issue #72 §2).
+                RecoveryUnavailableView(spec: ReelFlowPolicy.workoutsEmptySpec(),
+                                        identifierPrefix: "workout") { action in
+                    if action == .refresh { Task { await model.refreshWorkouts() } }
+                }
             }
         }
     }

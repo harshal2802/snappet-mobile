@@ -1,0 +1,216 @@
+import Foundation
+import HighlightEngine
+
+/// The pure decision layer for the flagship reel flow's recovery + payoff surfaces (issue #72):
+/// which copy and actions each dead-end shows (empty / Photos-denied / export-failed / Health
+/// states), when a regenerate must be confirmed, where exported reels live on disk, and which old
+/// renders to sweep. Foundation + engine only — no PhotoKit / HealthKit / UIKit — so every choice
+/// here runs in `SnappetTests` with no simulator (the repo's "pure logic at a thin edge" rule).
+enum ReelFlowPolicy {
+
+    // MARK: - Inputs (platform-free mirrors, mapped at the view-model edge)
+
+    /// Photo-library read access, collapsed from `PHAuthorizationStatus` by the caller.
+    /// `.restricted` maps to `.denied` — the recovery (Settings) is the same surface.
+    enum PhotoAccess: Equatable {
+        case notDetermined, authorized, limited, denied
+    }
+
+    /// What a recovery surface can offer. Views map these to buttons; the policy decides which
+    /// exist and in what order (first = primary).
+    enum RecoveryAction: Hashable {
+        /// Present the manual PHPicker. Only offered under `.authorized`/`.limited`: the picker
+        /// itself presents without permission, but `media(forIdentifiers:)` resolves through
+        /// `PHAsset.fetchAssets`, which returns nothing under full denial — so offering it there
+        /// would be another dead end (issue #72 verifier caveat).
+        case selectClips
+        /// Trigger the Photos authorization request (first ask, `.notDetermined`).
+        case allowPhotoAccess
+        /// Deep-link to the app's page in Settings (Photos / Health toggles live there).
+        case openSettings
+        /// Re-run the failed load / generate.
+        case tryAgain
+        /// Re-run the export — curation (pins / removals / order) is still in the view model.
+        case retryExport
+        /// Return to the editable `.ready` list without re-generating.
+        case backToEdit
+        /// Re-query HealthKit for workouts.
+        case refresh
+    }
+
+    /// A fully-decided recovery surface: `ContentUnavailableView` copy + ordered actions.
+    struct RecoverySpec: Equatable {
+        let title: String
+        let systemImage: String
+        let message: String
+        let actions: [RecoveryAction]
+    }
+
+    // MARK: - Reel screen: empty / failed states
+
+    /// The reel's no-clips state, shaped by *why* there are no clips. Denial is the case the old
+    /// screen got wrong twice: it surfaced as an action-less `.error`, and the natural remedy
+    /// ("Select clips") cannot work without read access (see `RecoveryAction.selectClips`).
+    static func emptyReelSpec(access: PhotoAccess) -> RecoverySpec {
+        switch access {
+        case .authorized:
+            return RecoverySpec(
+                title: "No clips for this workout",
+                systemImage: "video.slash",
+                message: "Snappet found no photos or videos shot during this session. You can pick clips yourself instead.",
+                actions: [.selectClips])
+        case .limited:
+            return RecoverySpec(
+                title: "No clips for this workout",
+                systemImage: "video.slash",
+                message: "Snappet only has limited Photo access, so it can’t scan for the clips you shot. Select them manually, or allow full access in Settings.",
+                actions: [.selectClips, .openSettings])
+        case .denied:
+            return RecoverySpec(
+                title: "Photos access is off",
+                systemImage: "photo.badge.exclamationmark",
+                message: "Snappet can’t see the clips you shot because Photo access is denied. Allow access in Settings, then try again.",
+                actions: [.openSettings, .tryAgain])
+        case .notDetermined:
+            return RecoverySpec(
+                title: "Connect your Photos",
+                systemImage: "photo.on.rectangle.angled",
+                message: "Snappet needs Photo access to find the clips you shot during this session.",
+                actions: [.allowPhotoAccess])
+        }
+    }
+
+    /// A failed export is **recoverable**, not terminal: the curated edit is still in the view
+    /// model, so the primary action retries with it intact and the secondary returns to the list.
+    static func exportFailureSpec(message: String) -> RecoverySpec {
+        RecoverySpec(
+            title: "Export didn’t finish",
+            systemImage: "exclamationmark.triangle",
+            message: "\(message) Your pins, removals, and order are untouched.",
+            actions: [.retryExport, .backToEdit])
+    }
+
+    /// Generate (load HR + media, run the engine) failed — offer to run it again.
+    static func generateFailureSpec(message: String) -> RecoverySpec {
+        RecoverySpec(
+            title: "Couldn’t build the reel",
+            systemImage: "exclamationmark.triangle",
+            message: message,
+            actions: [.tryAgain])
+    }
+
+    // MARK: - Workout list: empty / error states
+
+    /// HealthKit **read** denial is invisible by design (the status isn't queryable), so an empty
+    /// list must acknowledge that possibility instead of promising "track a workout, then pull to
+    /// refresh" — advice that can never work for a denied user. Copy stays truthful: it names both
+    /// explanations and routes to the one place access can actually be fixed.
+    static func workoutsEmptySpec() -> RecoverySpec {
+        RecoverySpec(
+            title: "No workouts to show",
+            systemImage: "figure.run",
+            message: "If you’ve tracked workouts with your Apple Watch, Snappet may not have permission to read them — Health access can’t be checked from inside the app. Review it in Settings, or track a workout and refresh.",
+            actions: [.refresh, .openSettings])
+    }
+
+    /// The module-level failure (Health authorization / query threw).
+    static func workoutsErrorSpec(message: String) -> RecoverySpec {
+        RecoverySpec(
+            title: "Something went wrong",
+            systemImage: "exclamationmark.triangle",
+            message: message,
+            actions: [.tryAgain, .openSettings])
+    }
+
+    // MARK: - Regenerate confirmation
+
+    /// Regenerating rebuilds from scratch — it wipes pins / removals / custom order and replaces
+    /// the success screen. Returns the warning to confirm with, or `nil` when nothing of the
+    /// user's would be lost (then regenerate runs directly, keeping the one-tap feel).
+    /// `exportedUnsaved` = a rendered cut is on screen that hasn't been saved to Photos.
+    static func regenerateConfirmation(pinnedCount: Int, removedCount: Int,
+                                       hasCustomOrder: Bool, exportedUnsaved: Bool) -> String? {
+        let hasCuration = pinnedCount > 0 || removedCount > 0 || hasCustomOrder
+        switch (hasCuration, exportedUnsaved) {
+        case (true, true):
+            return "Regenerating rebuilds the reel from scratch — your pins, removals, and order are cleared, and this cut hasn’t been saved to Photos yet."
+        case (true, false):
+            return "Regenerating rebuilds the reel from scratch and clears your pins, removals, and custom order."
+        case (false, true):
+            return "This cut hasn’t been saved to Photos yet. Snappet keeps your last few exports on this device, but a new cut replaces this screen."
+        case (false, false):
+            return nil
+        }
+    }
+
+    // MARK: - Export destination (out of tmp, issue #72 §4)
+
+    /// Finished reels land in `Application Support/Reels` — not `tmp`, which the system purges
+    /// and which made backing out or "Make another cut" destroy the artifact.
+    static let exportsDirectoryName = "Reels"
+
+    /// How many previous renders survive a new export's sweep (the new file lands after the
+    /// sweep, so up to `keepLatestExports + 1` files exist between exports). Save to Photos is
+    /// the durable home; this is the on-device safety net.
+    static let keepLatestExports = 3
+
+    static func exportsDirectory(under applicationSupport: URL) -> URL {
+        applicationSupport.appendingPathComponent(exportsDirectoryName, isDirectory: true)
+    }
+
+    static func exportURL(in directory: URL, id: UUID) -> URL {
+        directory.appendingPathComponent("snappet-reel-\(id.uuidString).mp4")
+    }
+
+    /// Which existing renders to delete before a new export: everything beyond the newest
+    /// `keepLatest`, ordered by modification date (path as a deterministic tie-break).
+    static func sweepableExports(existing: [(url: URL, modifiedAt: Date)],
+                                 keepLatest: Int = keepLatestExports) -> [URL] {
+        guard existing.count > keepLatest else { return [] }
+        let newestFirst = existing.sorted {
+            $0.modifiedAt != $1.modifiedAt ? $0.modifiedAt > $1.modifiedAt : $0.url.path < $1.url.path
+        }
+        return newestFirst.dropFirst(keepLatest).map(\.url)
+    }
+
+    // MARK: - Workout-row activity icons (issue #72 §5)
+
+    /// SF Symbol for an engine `Activity`, so workout rows are scannable at a glance.
+    static func activityIcon(for activity: Activity) -> String {
+        switch activity {
+        case .climbing: return "figure.climbing"
+        case .running: return "figure.run"
+        case .dance: return "figure.dance"
+        case .strength: return "dumbbell.fill"
+        case .other: return "figure.mixed.cardio"
+        }
+    }
+}
+
+extension ReelFlowPolicy.RecoveryAction {
+    /// Button label — lives with the policy so the wording is test-asserted alongside the specs.
+    var buttonTitle: String {
+        switch self {
+        case .selectClips: return "Select clips"
+        case .allowPhotoAccess: return "Allow Photo access"
+        case .openSettings: return "Open Settings"
+        case .tryAgain: return "Try again"
+        case .retryExport: return "Retry export"
+        case .backToEdit: return "Back to my edit"
+        case .refresh: return "Refresh"
+        }
+    }
+
+    /// accessibilityIdentifier suffix; each surface prefixes it ("reel" → "reelOpenSettings").
+    var identifierSuffix: String {
+        switch self {
+        case .selectClips: return "SelectClips"
+        case .allowPhotoAccess: return "AllowPhotoAccess"
+        case .openSettings: return "OpenSettings"
+        case .tryAgain: return "TryAgain"
+        case .retryExport: return "RetryExport"
+        case .backToEdit: return "BackToEdit"
+        case .refresh: return "Refresh"
+        }
+    }
+}

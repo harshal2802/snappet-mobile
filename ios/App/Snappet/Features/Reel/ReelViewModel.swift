@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import AVFoundation
+import Photos
 import HighlightEngine
 
 /// What the reel flow needs from its source, generalized beyond a HealthKit `WorkoutSummary` so a
@@ -38,12 +39,20 @@ struct ReelSource {
 @MainActor
 @Observable
 final class ReelViewModel {
-    enum State: Equatable { case loading, ready, empty, error(String), exporting, exported(URL) }
+    /// `.exportFailed` is distinct from `.error` (a failed *build*): the curated edit is still
+    /// here, so the screen offers Retry / back-to-edit instead of a terminal wall (issue #72).
+    enum State: Equatable { case loading, ready, empty, error(String), exporting, exported(URL), exportFailed(String) }
+
+    /// Saving the exported file to Photos (add-only, `MediaLibraryService`) — separate from
+    /// `State` so a failed save doesn't knock the screen out of `.exported`.
+    enum SaveState: Equatable { case idle, saving, saved, failed(String) }
 
     let source: ReelSource
     private let model: AppModel
+    private let library = MediaLibraryService()
 
     var state: State = .loading
+    var saveState: SaveState = .idle
     var highlights: [Highlight] = []
     private(set) var workout: Workout?
     private(set) var result: HighlightEngine.Result?
@@ -83,10 +92,32 @@ final class ReelViewModel {
 
     func isPinned(_ h: Highlight) -> Bool { pinnedIds.contains(h.id) }
 
+    /// Current Photo access as the policy's platform-free mirror — read live (not cached at
+    /// bootstrap) so the empty state reflects a Settings change the moment the user returns.
+    var photoAccess: ReelFlowPolicy.PhotoAccess {
+        switch model.photos.currentStatus {
+        case .authorized: return .authorized
+        case .limited: return .limited
+        case .denied, .restricted: return .denied
+        case .notDetermined: return .notDetermined
+        @unknown default: return .denied
+        }
+    }
+
+    /// The warning to confirm a regenerate with, or `nil` when nothing of the user's is lost
+    /// (pure decision in `ReelFlowPolicy`). `exportedUnsaved` = called from the success screen
+    /// with a cut that hasn't been saved to Photos.
+    func regenerateConfirmation(exportedUnsaved: Bool) -> String? {
+        ReelFlowPolicy.regenerateConfirmation(
+            pinnedCount: pinnedIds.count, removedCount: removed.count,
+            hasCustomOrder: orderedIds != nil, exportedUnsaved: exportedUnsaved)
+    }
+
     /// Generate the reel. `manualMedia` (from the limited-access picker) overrides
     /// time-window auto-discovery when provided.
     func generate(manualMedia: [MediaItem]? = nil) async {
         state = .loading
+        saveState = .idle
         removed.removeAll()
         pinnedIds.removeAll()
         orderedIds = nil
@@ -103,9 +134,20 @@ final class ReelViewModel {
             model.engine.logShown(res, workoutId: source.id,
                                    activity: source.activity, now: Date().timeIntervalSince1970)
             state = res.highlights.isEmpty ? .empty : .ready
+        } catch PhotoLibraryService.PhotoError.denied {
+            // Denied is the no-clips case, not a wall: the `.empty` surface picks the
+            // denied-aware spec (Open Settings, no dead-end "Select clips") via `photoAccess`.
+            state = .empty
         } catch {
             state = .error(error.localizedDescription)
         }
+    }
+
+    /// First-ask path (`.notDetermined`): request Photos access, then build with whatever the
+    /// user granted (denied falls back into the denied-aware empty state).
+    func requestPhotoAccessAndGenerate() async {
+        model.photoAccess = await model.photos.requestAccess()
+        await generate()
     }
 
     /// Limited-access fallback: build the reel from hand-picked assets (#60 §C).
@@ -179,6 +221,7 @@ final class ReelViewModel {
     func export(using exporter: ReelExporter = ReelExporter()) async {
         guard let wk = workout, let res = result else { return }
         state = .exporting
+        saveState = .idle
         // Survivors are positive signal; log them as kept + exported.
         for h in keptHighlights { log(.kept, highlight: h) }
         let plan = model.reelPlan(for: keptHighlights, media: wk.media,
@@ -189,7 +232,29 @@ final class ReelViewModel {
             state = .exported(url)
             _ = res
         } catch {
-            state = .error(error.localizedDescription)
+            // NOT `.error`: pins/removals/order are intact, so the failure surface offers
+            // Retry (re-export with them) and back-to-edit instead of discarding the work.
+            state = .exportFailed(error.localizedDescription)
+        }
+    }
+
+    /// Leave the export-failed surface without re-exporting — the curated list is unchanged.
+    func backToEdit() {
+        guard !highlights.isEmpty else { return }
+        state = .ready
+    }
+
+    /// Save the exported reel into the user's Photos library (add-only — the payoff's durable
+    /// home; the on-disk copy in Application Support is just the safety net).
+    func saveToPhotos() async {
+        guard case .exported(let url) = state, saveState != .saving else { return }
+        saveState = .saving
+        do {
+            try await library.saveVideoToPhotos(url)
+            saveState = .saved
+        } catch {
+            saveState = .failed((error as? LocalizedError)?.errorDescription
+                                ?? "Couldn’t save to Photos.")
         }
     }
 

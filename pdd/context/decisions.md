@@ -3443,3 +3443,50 @@ sets) — compact only when *every* set carries equal reps, else a per-set list 
 **Verified**: `xcodegen generate` clean. The simulator suite (new `LastSetLookupTests`,
 `SessionSetEditingTests`, `HistorySearchTests`, extended `SetMeasureTests` + the existing
 walkthroughs) is run by the orchestrator — not from this worktree.
+
+## [2026-06-10] iOS — flagship reel flow: recoverable dead ends + a real export payoff (#72)
+
+**Decision**: every reel/workout dead end is now driven by a **pure policy layer**
+(`Features/Reel/ReelFlowPolicy.swift` — copy, action sets, confirmation messages, export paths,
+sweep selection, activity icons), rendered by one `RecoveryUnavailableView`. The views stay dumb;
+the *choices* are unit-tested in `ReelFlowPolicyTests` (prompt 44, first iOS Wave-2 item).
+
+- **`.exportFailed` is a new `ReelViewModel.State`, not `.error`.** A failed export leaves
+  pins/removals/order untouched in the VM, so the failure surface offers *Retry export* (re-runs
+  `export()` with the same curation) and *Back to my edit* (`.ready`). `.error` stays the
+  build-failure state and gained *Try again*.
+- **Denied-state remedy honors the verifier caveat.** `PHPickerViewController` presents without
+  permission, but `media(forIdentifiers:)` resolves through `PHAsset.fetchAssets`, which returns
+  nothing under full denial — so the denied empty state offers **Open Settings + Try again only**,
+  never "Select clips" (asserted in `testDeniedEmptyNeverOffersSelectClips`). `generate()` maps
+  `PhotoError.denied` → `.empty`; the spec is picked off a **live** `currentStatus` read so
+  returning from Settings is reflected immediately. `.restricted` maps to `.denied` (same surface).
+- **Health copy is truthful about invisibility.** HealthKit read denial isn't queryable, so the
+  empty workout list says permission *may* be the cause and offers Refresh (explicit button — the
+  overlay swallows pull-to-refresh) + Open Settings. The old "track a workout, then pull to
+  refresh" promise is gone; the module/list error states offer Try again (re-bootstrap) + Settings.
+- **Exports moved out of `tmp` → `Application Support/Reels`**, backup-excluded (regenerable,
+  potentially large full-length renders), swept to the newest `keepLatestExports = 3` before each
+  new render (pure `sweepableExports`, date-sorted with path tie-break). Backing out or "Make
+  another cut" no longer destroys the artifact. **Accepted residual**: there's no in-app browser
+  for past exports — Save to Photos is the durable home; the on-disk copies are a safety net.
+- **Regenerate confirms only when something is at stake** (pure
+  `regenerateConfirmation(pinned/removed/order/exportedUnsaved)` → message or nil): curation
+  and/or an exported-but-unsaved cut produce a destructive-role `confirmationDialog`; with nothing
+  to lose, regenerate stays one tap.
+- **The payoff screen plays the reel**: auto-playing looped hero (`AVQueuePlayer` +
+  `AVPlayerLooper`, paused on disappear; audio respects the silent switch — no audio-session
+  override), *Save to Photos* (add-only via the existing `MediaLibraryService`, with a Settings
+  hint on save-denied) + *Share*, and the success haptic **rides the existing `.celebrates(on:)`
+  landing** (issue #80) — deliberately not double-fired.
+- **Thumbnails**: `Highlight.mediaItemId` already names the source asset, so rows load a poster
+  frame via one shared `PHCachingImageManager` (static on the View struct — MainActor-isolated via
+  the `View` conformance, hence concurrency-safe), `.highQualityFormat` (single callback ⇒ safe
+  continuation), network-disallowed; the old kind icon is the fallback when the asset is
+  unreadable (e.g. ungranted under limited access). Workout rows gained pure-mapped activity icons.
+
+**Verified off-device**: all changed files parse; pure suite added (`ReelFlowPolicyTests`).
+**Device-pending (per repo pattern)**: the full flow on hardware — real export into
+`Application Support/Reels`, looped playback, Photos add-only permission sheet + save, Settings
+deep-link round-trips for Photos/Health, haptic feel. Simulator: full `SnappetTests` run by the
+orchestrator after merge into the test queue.

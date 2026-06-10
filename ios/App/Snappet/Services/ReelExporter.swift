@@ -13,7 +13,7 @@ private struct Box<T>: @unchecked Sendable {
 /// Turns a platform-free `ReelPlan` into an actual video using AVFoundation
 /// (#60 §5), entirely on-device. Resolves each segment's source `AVAsset` from its
 /// PHAsset id, stitches the trimmed ranges into an `AVMutableComposition`, and
-/// exports an .mp4 to a temp URL.
+/// exports an .mp4 to `Application Support/Reels` (see `exportDestination()`).
 ///
 /// Photos (still segments) are skipped in v1's video stitch — a follow-up can render
 /// a Ken-Burns still for `photoStill` seconds. Videos are the core of the reel.
@@ -90,11 +90,45 @@ final class ReelExporter: Sendable {
                                                  presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.exportFailed("could not create export session")
         }
-        let out = FileManager.default.temporaryDirectory
-            .appendingPathComponent("snappet-reel-\(UUID().uuidString).mp4")
+        let out: URL
+        do { out = try exportDestination() }
+        catch { throw ExportError.exportFailed(error.localizedDescription) }
         // Modern async export (iOS 18+): throws on failure, no continuation/data-race.
         try await session.export(to: out, as: .mp4)
         return out
+    }
+
+    /// Where a finished reel lands: `Application Support/Reels` — **not** `tmp`, which the system
+    /// purges and which made backing out / "Make another cut" destroy the artifact (issue #72 §4).
+    /// Excluded from backup (regenerable, potentially large full-length renders); renders beyond
+    /// the newest `ReelFlowPolicy.keepLatestExports` are swept before each new export, so the cut
+    /// on screen and the last few before it always survive navigation.
+    private func exportDestination() throws -> URL {
+        let fm = FileManager.default
+        let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                 appropriateFor: nil, create: true)
+        var dir = ReelFlowPolicy.exportsDirectory(under: support)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
+        sweepOldExports(in: dir)
+        return ReelFlowPolicy.exportURL(in: dir, id: UUID())
+    }
+
+    /// Best-effort cleanup; which files go is the pure `ReelFlowPolicy.sweepableExports` decision.
+    private func sweepOldExports(in dir: URL) {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let existing = contents.map { url in
+            (url: url,
+             modifiedAt: (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast)
+        }
+        for url in ReelFlowPolicy.sweepableExports(existing: existing) {
+            try? fm.removeItem(at: url)
+        }
     }
 
     private func avAsset(forLocalIdentifier id: String) async -> AVAsset? {
