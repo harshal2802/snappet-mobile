@@ -225,8 +225,14 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 }
             }
 
-            // Pop back to the section view for Settings.
-            app.navigationBars.buttons.element(boundBy: 0).tap()
+            // Pop back to the section view for Settings. The session detail's trailing toolbar now
+            // carries an Edit button (issue #73) that can enumerate before the back chevron in the
+            // element tree, so index 0 is no longer reliably Back — tap the leading-most button.
+            let navButtons = app.navigationBars.firstMatch.buttons
+            let leadingMost = (0..<navButtons.count)
+                .map { navButtons.element(boundBy: $0) }
+                .min { $0.frame.minX < $1.frame.minX }
+            leadingMost?.tap()
         } else {
             // History → detail is a value-based NavigationLink (a known XCUITest-tap limitation in
             // this app, decisions.md 2026-05-31). If it didn't push, snap the real History state so
