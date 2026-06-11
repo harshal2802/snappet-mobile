@@ -3783,3 +3783,66 @@ surface mentioned a video editor exists. Prompt 48.
   the empty state too, which is exactly where the misdirected after-a-watch-run tap lands — opens
   Workout Reels via `router.open(module: "workout")`; the Reels list gets a mirrored footer row to
   Gym Tracker (hidden while its empty-state recovery overlay is up, which would render over it).
+
+## [2026-06-11] iOS — Kilter's headline features un-buried: visible session/create, auto-start on log, Download-first gate, HR-profile doors, snappet:// registered (#75)
+
+**Decision** (prompt 49, iOS Wave 2; the iOS sibling of Android #94): the platform's differentiated
+Kilter features stop hiding behind the unlabeled ellipsis menu, and the two "silently worse" paths
+(idle logging, default HR ceiling) now say so and offer the fix inline.
+
+- **Session lifecycle is first-class, owned by the bars.** The slot between the filter chips and
+  the list belongs to the session: the green live bar when active (unchanged), a new
+  `idleSessionBar` when not — one-line value pitch + a prominent **Start session**
+  (`kilter.session.start`). Start/end left the More menu entirely (the bars own the lifecycle;
+  a menu copy would just be a second, staler door). **Create climb is a visible `+` toolbar
+  button** (id `kilter.create` preserved), the iOS equivalent of Android #94's extended FAB; More
+  keeps plan / surprise / scan / settings, and the Mine empty state points at `+`.
+- **First log with no session auto-starts one** (source `"auto"`, matching the BLE-connect
+  behavior) instead of silently inserting `sessionId: nil` — the climber was forfeiting live HR,
+  the Live Activity, per-climb timing, media tagging, the summary and the reel with no prompt.
+  Auto-start over an ask-first prompt: logging happens mid-climb with chalky hands, and the #54
+  policy makes it safe (the fold of `recover` into `start` adopts an open session rather than
+  forking). `start` now reports **created-fresh vs adopted** (`@discardableResult Bool`) and the
+  undoable "Session started" capsule is offered ONLY for a fresh creation — undoing an adopted
+  session would delete real history. `undoStart(in:)` keeps the logs (detached to `sessionId =
+  nil`, the exact pre-#75 idle shape), stops live metrics only if this start owned them, ends the
+  Live Activity, deletes the row. Covered by `KilterSessionAutoStartTests` (in-memory store,
+  unbound manager — the `KilterSessionStartRecoveryTests` harness).
+- **Reversal recorded — "file-import primary" (iOS first-run gate), mirroring Android #94.** The
+  [2026-06-10] Android entry's reasoning applies verbatim: Import-prominent buried the only path
+  most phone users can act on, and the caption's "boardlib tool — see tools/kilter" + the stale
+  "your account is optional" (the download is an accountless user-hosted static file) were
+  repo-artifact copy. Now **Download from Kilter leads** (filled, first), Import is the outlined
+  secondary, and the caption explains both paths in user terms. Everything carrying the legal
+  posture is unchanged: ToU notice + link before any fetch, user-controlled host, no Aurora API.
+- **The shared HR profile gets a Kilter front door.** `KilterSettingsView` links the same
+  app-global `UserHRProfileView` the workout tracker uses (one editor, one store — nothing moved),
+  and the session summary's HR card shows "Zones use a default 190 bpm ceiling — set up your
+  heart-rate profile" exactly while its ceiling falls through to the default. To make that
+  affordance honest, the summary's ceiling now resolves session snapshot → **live profile** →
+  `defaultMaxHR` (previously snapshot → default): filling the profile from the affordance
+  personalizes the visible card immediately, and a pre-profile session's zones re-score under the
+  better ceiling (its `maxHR == nil` snapshot meant "never knew", not "knew it was 190").
+- **The `snappet://` deferral (2026-06-05) is un-deferred** — the #71 SuiteRouter hoist it waited
+  on landed. `CFBundleURLTypes` lives in the checked-in `Resources/Info.plist` (what
+  `INFOPLIST_FILE` points at; `GENERATE_INFOPLIST_FILE: NO` — so "register via project.yml"
+  resolves to the plist file, never the .xcodeproj). `RootShell.onOpenURL` → pure `SnappetDeepLink`
+  route table → one-shot `SuiteRouter.pendingKilterClimb` + `open(module: "kilter")` (the
+  `pendingWorkoutResume` pattern): the shell can't push the climb itself because the push needs the
+  Kilter root's `navigationDestination` + catalog knowledge. The root consumes the intent with
+  `.onChange(initial: true)` (cold start: intent set before the root exists; warm: set while it's
+  up), runs `recover` first (#54), and routes through the pure
+  `KilterDeepLinkRouting.destination(for:climbInstalled:availableAngles:)` — angle adopted only
+  when this board offers it; an unresolvable climb gets a **graceful "not in your catalog" alert**
+  (reads correctly over the catalog gate too). The in-app scanner now routes through the same
+  decision, fixing its silent dead-end push for un-installed climbs. While here: the Info.plist
+  carried TWO `NSCameraUsageDescription` keys (receipts vs QR — a plist dict keeps one); merged
+  into a single description covering both uses.
+
+**Verified off-device**: `xcodegen generate` clean; all changed files parse; `plutil -lint` clean;
+graph data.js node/edge audit clean. **Simulator-pending (orchestrator)**: unit
+(`SnappetDeepLinkRouteTests`, `KilterSessionAutoStartTests`) + updated `KilterSessionLifecycleTests`
+(drives the visible Start control), and the deep-link acceptance check —
+`xcrun simctl openurl booted "snappet://kilter/climb/<uuid>?angle=40"` warm and after
+`simctl terminate` (cold), plus an unknown uuid for the graceful landing. **Device-pending**: a real
+Camera-app QR scan, BLE auto-start parity, live HR/Live Activity in an auto-started session.
