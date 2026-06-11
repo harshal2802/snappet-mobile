@@ -3529,3 +3529,95 @@ picker flows — the limited-library round-trip is the device-pending class.
 limited-library picker round-trip (extend grant → regenerate), Settings deep-link round-trips
 for Photos/Health, haptic feel. Simulator: full `SnappetTests` run by the orchestrator after
 merge into the test queue.
+
+---
+
+## 2026-06-10: iOS #71 — actionable Home: shell-hoisted SuiteRouter, TodayDigest render gates, flagship first-run CTA
+
+**Decision**: Make the Home tab actionable (prompt `46-ios-home-actionable.md`, issue #71) by
+hoisting `SuiteRouter` to the shell and deriving an "Up next" Today section from the modules' own
+SwiftData rows via a new pure `TodayDigest`. The non-obvious choices:
+
+- **The router hoist lands in `RootShell`, and the tab moved INTO the router.** `SuiteRouter` now
+  owns `tab: SuiteTab` + the Apps stack's `NavigationPath`, is created by `RootShell` (the `apps`
+  launch arg seeds the initial tab — the `--start-tab apps` QA hook is unchanged), and is injected
+  shell-wide. Anything that routes — Home today; `.onOpenURL` QR links (#75) and App Intents (#81)
+  tomorrow — needs to switch the tab *and* set the path as one operation, so splitting tab state
+  from path state would force every deep-link site to coordinate two objects. `ShellTabs` binds
+  `TabView(selection:)` to `router.tab`; `AppLibraryView` binds its `NavigationStack` to the hoisted
+  path, so Apps-tab navigation is byte-for-byte the old behavior (the Journal mid-compose tab-switch
+  test is the guard: switching tabs never touches the path).
+- **`open(module:)` REPLACES the path rather than appending.** A deep link should land on the
+  module root, not on top of wherever the user last was — repeated entries would otherwise pile a
+  stale stack. Deeper screens are typed pushes layered on the fresh root: Home's Kilter card does
+  `open(module: "kilter"); push(KilterPlanRoute())` — a two-level path set in one transaction,
+  relying on `KilterPlanRoute`'s `navigationDestination` registering when `KilterRootView` (level 1)
+  loads. Parse-verified only; the orchestrator's simulator run is the proof.
+- **`nil` IS the render gate.** Each `TodayDigest` derivation returns `nil` when its module has no
+  data (no habits / no active session / Pomodoro never used / no positive budget limit / no logged
+  climbs), and the card simply doesn't render — "cards render only when their data exists" without a
+  separate visibility flag that could drift from the data. Corollary: the focus card renders with
+  honest zeros once Pomodoro has *ever* logged a block (that's the "start focus" nudge), but an
+  untouched module never advertises on Home.
+- **Budget pace = month-to-date spend vs the `MonthScope`-prorated total budget**, counting only
+  transactions whose category still exists — orphans (deleted categories) are excluded to match the
+  Budget screens. Resume picks the newest-started open session (stable id tie-break) even though the
+  store invariant is "at most one active" — Home should never crash or mislead on drifted data. The
+  Kilter card's grade label comes from `KilterRecommender.workingDifficulty` over the user's own
+  logs, so the card and `KilterPlanView` can't disagree about the anchor.
+- **First-run = the flagship CTA, not a tutorial.** The fresh-install Home hero deep-links into the
+  `workout` module, which already phase-gates to `OnboardingView` on first entry — reusing the
+  value-first permission flow instead of inventing a global first-run state on `AppModel`. The App
+  Library gains a featured flagship hero card *above* the grid (the grid card stays — the smoke
+  test taps `moduleCard.workout` by id, and removing it would also break muscle memory); the hero
+  initially shipped without its own `matchedTransitionSource` — reversed in the pre-merge review
+  round below, which gave it a distinct source id (review fix 4). Home tab glyph:
+  `square.grid.2x2.fill` → `house.fill` (the grid glyph promised an app grid that lives on the
+  *other* tab).
+- **Feed rows guard on the registry**: a `UsageRecord` from a retired module id renders as a plain,
+  non-tappable row instead of a button into nothing.
+
+**Pre-merge adversarial review round** (5 confirmed, all fixed): (1 — major) the Home "Plan
+tonight's session" deep link landed in `KilterPlanView` without ever running
+`KilterRootView.onAppear`, so its "Start session" could start an **unbound, unrecovered** session —
+no live HR / Live Activity / media discovery, plus a possible duplicate open session (the exact
+stale-session class #54 fixed). Rule: **an AppModel-owned manager is bound to its sibling services
+in `AppModel.init`**, never in a view's `onAppear` — binding must not depend on appear order once
+deep links can skip the root — so `kilterSessions.bind(...)` moved into `init` (all four services
+are AppModel-owned siblings) and the root's now-redundant rebind was deleted (nothing else rebinds).
+Stale-session recovery folded into `KilterSessionManager.start` itself: a `recover(in:)` pass runs
+before creation (adopt-the-fresh / auto-close-the-abandoned-at-last-activity, replacing the blind
+`newestOpenSession` adopt — which would happily adopt a 2-day-old orphan), chosen over a
+`KilterPlanView.task` recover because the fold applies the #54 policy on EVERY path that can start
+a session: root entry, the plan deep link, a BLE connect, and the QR path (#75) tomorrow. New
+`KilterSessionStartRecoveryTests` (in-memory store, deliberately **unbound** manager) assert
+adopt-not-fork, abandoned-auto-close-then-fresh-start, duplicate-close-adopt-newest, and the
+already-current no-op. (2) the "Resume <routine>" card landed on the workout dashboard with the
+player **closed** — the player is a `fullScreenCover` on `WorkoutHomeView`'s local `@State`, which
+no pushed route can open — so `SuiteRouter` carries the intent: a one-shot `pendingWorkoutResume`
+flag the card sets before `open(module:)`, consumed in the view's `.task` through the **existing**
+`resume(_:)` path (cold-relaunch live-metrics + Live-Activity restart logic for free); the flag
+always self-clears and is a no-op when no active session exists. (3) Today cards froze across
+midnight ("Streak safe for today" survived into tomorrow): every derivation read `.now` inline at
+render time, so nothing invalidated at the day boundary — the clock now lives in `@State var now`,
+feeding `todayCards` AND `todayStart` (so the stat tiles / week chart / streak roll too), refreshed
+on `.NSCalendarDayChanged` (received on main — the OS posts it on a background thread) and on
+scenePhase `.active` (covers the suspended-overnight resume the notification can miss). (4) the
+flagship hero zoom-animated from the WRONG card: the destination's
+`.navigationTransition(.zoom(sourceID: route.id))` always claimed the grid card's source, so a hero
+tap zoomed out of the `moduleCard.workout` tile right below it. Chosen shape (not the plain-push
+fallback): `ModuleRoute` carries an optional `zoomSourceID` recording the `matchedTransitionSource`
+actually tapped — grid card = the module id (byte-for-byte the old pairing), hero = its own new
+`flagship-hero` source (reversing this entry's "no second source" stance: the conflict is two
+sources claiming one *id*, distinct ids coexist fine) — and `nil` (programmatic `open(module:)`
+deep links, the Pomodoro re-entry chip) gets a plain push, since zooming out of a card the user
+never tapped reads wrong (the chip had this same wrong-source bug latently). The per-route `if let`
+around `.navigationTransition` is stable for a pushed value's lifetime, so a destination's
+transition can't change identity mid-flight. (5) the hero's secondary "Or browse all 9 apps" action
+had no knowledge-graph edge — added `home → tab-apps` (navigate, "hero: browse all apps").
+
+**Verified off-device**: all changed files parse; `xcodegen generate` clean; `TodayDigestTests`
+added (in-memory `ModelContainer` held for the test's lifetime — the documented gotcha — with an
+injected fixed UTC clock so month-proration numbers are exact). **Simulator-pending (orchestrator)**:
+the two-level Kilter push, the three acceptance-criteria card routes, the fresh-install hero → reels
+onboarding, and the full XCUITest suite (smoke / journal tab-switch / kilter `apps` launches).

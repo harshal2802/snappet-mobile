@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-06-07
+**Last updated**: 2026-06-10
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -293,6 +293,18 @@ as an auto-playing looped hero with add-only **Save to Photos** + Share; exports
 show `PHCachingImageManager` poster thumbnails and workout rows activity icons.
 **Device-pending**: the full flow on hardware (real export, Photos save, Settings round-trips,
 haptics).
+
+🟡 **Home is an actionable daily home (2026-06-10, prompt 46, issue #71).** iOS. `SuiteRouter` is
+hoisted to the shell (`RootShell` owns tab + path; `open(module:)` is the deep-link entry —
+groundwork for QR #75 / App Intents #81), so Home can route: an "Up next" section of tappable
+Today cards (habits left, resume workout, focus minutes, budget month pace, plan a climb session)
+derived by the pure `TodayDigest` (`TodayDigestTests`) from the same SwiftData rows the modules
+query — each card renders only when its data exists; activity-feed rows deep-link into the module
+that logged them; a fresh install gets a flagship CTA hero that lands in Workout Reels onboarding
+(plus a featured flagship card atop the App Library, and the Home glyph moved off the app-grid
+symbol to `house.fill`). Apps-tab navigation and the `apps`/`-uiTest*`/`-screenshotModule` launch
+hooks unchanged. **Simulator-pending**: the card routes + first-run hero + full XCUITest suite
+(the orchestrator's verification pass).
 
 ## License
 

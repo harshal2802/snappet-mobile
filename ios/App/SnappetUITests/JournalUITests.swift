@@ -20,13 +20,13 @@ final class JournalUITests: XCTestCase {
         return XCTWaiter().wait(for: [gone], timeout: timeout) == .completed
     }
 
-    /// Open the Journal module from the App Library.
+    /// Open the Journal module from the App Library. The Journal card sits below the lazy grid's
+    /// realization viewport (the #71 flagship hero pushed it down), so scroll it into existence
+    /// first — see `XCUIApplication.scrollToModuleCard`.
     private func openJournal() {
         app.tabBars.buttons["Apps"].tap()
-        let card = app.buttons["moduleCard.journal"]
+        let card = app.scrollToModuleCard("journal")
         XCTAssertTrue(card.waitForExistence(timeout: 6), "App Library should have a Journal card")
-        var tries = 0
-        while !card.isHittable && tries < 8 { app.swipeUp(); tries += 1 }
         card.tap()
         XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 6), "Journal should open")
     }

@@ -6,16 +6,22 @@ import SwiftUI
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(AppModel.self) private var app
+    // The router is hoisted to the shell (#71) — this stack binds its path; Home shares it.
+    @Environment(SuiteRouter.self) private var router
     @Namespace private var zoom
-    @State private var router = SuiteRouter()
+    /// The flagship hero's own `matchedTransitionSource` id (#71 review fix) — distinct from the
+    /// grid card's `module.id`, so a hero tap zooms from the hero, not the grid card below it.
+    private static let flagshipZoomID = "flagship-hero"
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
     var body: some View {
+        @Bindable var router = router
         NavigationStack(path: $router.path) {
             ScrollView {
                 // Plain VStack layout — `Section` only renders inside List/Form/Table,
                 // not a ScrollView (that showed a blank Apps tab).
                 VStack(alignment: .leading, spacing: 28) {
+                    flagshipCard
                     ForEach(ModuleCategory.allCases) { category in
                         let modules = ModuleRegistry.modules(in: category)
                         if !modules.isEmpty {
@@ -27,7 +33,10 @@ struct AppLibraryView: View {
                                         // A Button (not a NavigationLink) so the card is a real,
                                         // UI-test-hittable control; it pushes onto the shared path.
                                         Button {
-                                            router.push(ModuleRoute(id: module.id))
+                                            // Carry this card's zoom source on the route so the
+                                            // destination zooms from the tile actually tapped.
+                                            router.push(ModuleRoute(id: module.id,
+                                                                    zoomSourceID: module.id))
                                         } label: {
                                             ModuleCard(module: module)
                                         }
@@ -47,8 +56,16 @@ struct AppLibraryView: View {
             .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
             .navigationTitle("Apps")
             .navigationDestination(for: ModuleRoute.self) { route in
-                moduleDestination(route)
-                    .navigationTransition(.zoom(sourceID: route.id, in: zoom))
+                // Zoom from the source the route names — the grid card or the hero (#71 review
+                // fix). Routes without one (programmatic `open(module:)` deep links, the Pomodoro
+                // chip) get a plain push: zooming from a card the user never tapped reads wrong.
+                // The branch is stable for a pushed route's lifetime (the value never mutates).
+                if let sourceID = route.zoomSourceID {
+                    moduleDestination(route)
+                        .navigationTransition(.zoom(sourceID: sourceID, in: zoom))
+                } else {
+                    moduleDestination(route)
+                }
             }
         }
         // The "focus running" re-entry chip (#70), on the NavigationStack itself — an
@@ -66,7 +83,47 @@ struct AppLibraryView: View {
         }
         .animation(.snappyNav, value: app.pomodoro.isRunning)
         .animation(.snappyNav, value: app.pomodoroScreenVisible)
-        .environment(router)
+    }
+
+    /// The flagship gets a featured hero above the category grid (#71): a first-time user lands
+    /// on Apps facing 9 equal cards with no signal which one is the pitch — this makes Workout
+    /// Reels unmissable. It pushes the same `ModuleRoute` the grid card does (so opening it logs
+    /// identically); the grid card stays, as the smoke test — and muscle memory — expect.
+    @ViewBuilder private var flagshipCard: some View {
+        if let flagship = ModuleRegistry.all.first(where: { $0.id == "workout" }) {
+            Button {
+                router.push(ModuleRoute(id: flagship.id, zoomSourceID: Self.flagshipZoomID))
+            } label: {
+                HStack(spacing: SnappetSpacing.md) {
+                    Image(systemName: flagship.systemImage)
+                        .font(.largeTitle)
+                        .foregroundStyle(flagship.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Featured")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(flagship.tint)
+                        Text(flagship.title).font(.title3.bold())
+                        Text(flagship.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(SnappetColor.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .snappetCard()
+            }
+            // The hero registers its OWN source id (#71 review fix): it used to ride the grid
+            // card's, which zoom-animated the push from the wrong tile (the workout grid card
+            // right below). The route carries which source initiated the push.
+            .buttonStyle(PressableCardStyle())
+            .matchedTransitionSource(id: Self.flagshipZoomID, in: zoom)
+            .accessibilityIdentifier("appLibrary.flagship")
+        }
     }
 
     /// The mini-app for a pushed `ModuleRoute`, logging an "open" event (as the old NavigationLink did).

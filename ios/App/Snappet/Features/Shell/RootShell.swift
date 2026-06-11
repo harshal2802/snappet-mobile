@@ -5,10 +5,17 @@ import SwiftData
 struct RootShell: View {
     @Environment(\.modelContext) private var context
     @State private var core: SnappetCore?
+    /// The suite router, hoisted to the shell (#71) so Home — and future deep-link entries that
+    /// arrive from outside any tab (QR #75, App Intents #81) — can route into a module. The
+    /// `apps` launch argument (`--start-tab apps` QA hook) seeds the initial tab.
+    @State private var router = SuiteRouter(
+        initialTab: CommandLine.arguments.contains("apps") ? .apps : .home)
 
     var body: some View {
         if let core {
-            content.environment(core)
+            content
+                .environment(core)
+                .environment(router)
         } else {
             LoadingView()
                 .task { core = SnappetCore(context: context) }
@@ -19,7 +26,8 @@ struct RootShell: View {
         // QA/screenshot hook: `-screenshotModule <id>` opens one module full-screen.
         if let id = Self.screenshotModuleID,
            let module = ModuleRegistry.all.first(where: { $0.id == id }) {
-            NavigationStack { module.destination() }.environment(SuiteRouter())
+            @Bindable var router = router
+            NavigationStack(path: $router.path) { module.destination() }
         } else {
             ShellTabs()
         }
@@ -52,23 +60,21 @@ private struct LoadingView: View {
     }
 }
 
-/// The suite's top-level navigation: Home dashboard + the App Library.
+/// The suite's top-level navigation: Home dashboard + the App Library. Selection is owned by the
+/// shell-hoisted `SuiteRouter` so Home cards / deep links can switch tabs programmatically (#71).
 struct ShellTabs: View {
-    enum Tab { case home, apps }
-    @State private var selection: Tab
-
-    init() {
-        // QA hook: launch with `--start-tab apps` to open straight to the App Library.
-        _selection = State(initialValue: CommandLine.arguments.contains("apps") ? .apps : .home)
-    }
+    @Environment(SuiteRouter.self) private var router
 
     var body: some View {
-        TabView(selection: $selection) {
+        @Bindable var router = router
+        TabView(selection: $router.tab) {
+            // `house.fill`, not the old `square.grid.2x2.fill` — the grid glyph reads as
+            // "app grid" and invited the wrong first tap (#71); the grid is the Apps tab.
             HomeDashboardView()
-                .tag(Tab.home)
-                .tabItem { Label("Home", systemImage: "square.grid.2x2.fill") }
+                .tag(SuiteTab.home)
+                .tabItem { Label("Home", systemImage: "house.fill") }
             AppLibraryView()
-                .tag(Tab.apps)
+                .tag(SuiteTab.apps)
                 .tabItem { Label("Apps", systemImage: "square.stack.3d.up.fill") }
         }
     }

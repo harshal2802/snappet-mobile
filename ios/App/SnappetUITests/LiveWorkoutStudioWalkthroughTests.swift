@@ -158,7 +158,21 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
             }
             if openedMenu {
                 snap("11b-reassign-menu")
-                app.tap()   // dismiss the context menu without changing anything
+                // Dismiss the context menu WITHOUT `app.tap()`: the menu anchors near the pressed
+                // thumb, so a centre-of-screen tap can land ON a menu item — observed expanding
+                // "Move to…" into its submenu, whose dimming overlay then swallowed every later
+                // step (the back-pop never fired and the section picker was unreachable). Tap the
+                // nav-bar title region instead — always above/outside the menu — and wait for the
+                // menu to actually close before moving on.
+                let menuItem = app.buttons["Move to…"]
+                var dismissTries = 0
+                while menuItem.exists && dismissTries < 3 {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.07)).tap()
+                    let gone = XCTNSPredicateExpectation(
+                        predicate: NSPredicate(format: "exists == false"), object: menuItem)
+                    _ = XCTWaiter().wait(for: [gone], timeout: 3)
+                    dismissTries += 1
+                }
             } else {
                 snap("11b-reassign-menu-NOTSHOWN")
             }

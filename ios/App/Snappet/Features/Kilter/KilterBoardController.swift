@@ -361,8 +361,9 @@ final class KilterSessionManager {
     /// Live Activity board label (no per-board name today).
     private let boardName = "Kilter Board"
 
-    // Services wired once by `KilterRootView` via `bind(...)`. Strong refs to AppModel-owned
-    // singletons, which outlive this manager — no retain cycle (AppModel doesn't hold the manager).
+    // Services wired once by `AppModel.init` via `bind(...)` — at construction, not on a view's
+    // appear, so a deep link that skips the root (Home → plan) can't start an unbound session
+    // (#71 review). Strong refs to AppModel-owned siblings; no cycle (none reference the manager).
     private var liveWorkout: LiveMetricsCoordinator?
     private var liveActivity: KilterLiveActivityController?
     private var media: SessionMediaService?
@@ -377,7 +378,9 @@ final class KilterSessionManager {
     private var didStartMetrics = false
 
     /// Inject the live-metrics + Live-Activity + media services so the manager can drive HR / the
-    /// Live Activity / media discovery. Idempotent; called from the root view on appear.
+    /// Live Activity / media discovery. Idempotent; called once from `AppModel.init` (all four are
+    /// AppModel-owned siblings), so the manager is bound before any view — or deep link — can start
+    /// a session.
     func bind(liveWorkout: LiveMetricsCoordinator,
               liveActivity: KilterLiveActivityController,
               media: SessionMediaService,
@@ -390,9 +393,14 @@ final class KilterSessionManager {
 
     func start(angle: Int, source: String, in context: ModelContext) {
         guard current == nil else { return }
-        // Single-open invariant: if a session is already open in the store — survived a manager reset,
-        // a relaunch, or was opened via the other start path — adopt it instead of forking a duplicate.
-        if let open = newestOpenSession(in: context) { adopt(open, in: context); return }
+        // Re-sync with the store BEFORE creating anything (#71 review): recovery adopts the newest
+        // still-fresh open session instead of forking a duplicate (single-open invariant) and
+        // auto-closes duplicate / long-abandoned opens at their last activity. Folding it here —
+        // not only on the root's appear — applies the #54 stale-session policy on EVERY path that
+        // can start a session: the root menu, a BLE connect, and deep links that skip
+        // `KilterRootView` (Home → plan today, QR → climb tomorrow).
+        recover(in: context)
+        if current != nil { return }   // recovery adopted the open session — nothing to create
         let session = KilterSession(angle: angle, source: source)
         context.insert(session)
         current = session
@@ -411,10 +419,11 @@ final class KilterSessionManager {
     }
 
     /// Re-sync the manager with the persisted store — the single source of truth for "what session is
-    /// open". Called on `KilterRootView` appear / after a relaunch: with no in-memory session, it adopts
-    /// the newest open `KilterSession`, **closes** any duplicate or long-abandoned opens (the pure
-    /// `KilterSessionRecovery`), and re-attaches HR ownership + the Live Activity. Idempotent and a
-    /// near-no-op once a session is already live, so it's safe to call on every appear.
+    /// open". Called on `KilterRootView` appear / after a relaunch, and by `start` before it creates a
+    /// session: with no in-memory session, it adopts the newest open `KilterSession`, **closes** any
+    /// duplicate or long-abandoned opens (the pure `KilterSessionRecovery`), and re-attaches HR
+    /// ownership + the Live Activity. Idempotent and a near-no-op once a session is already live, so
+    /// it's safe to call on every appear / every start.
     func recover(in context: ModelContext) {
         guard current == nil else { return }
         let openSessions = (try? context.fetch(FetchDescriptor<KilterSession>(
@@ -479,7 +488,7 @@ final class KilterSessionManager {
     }
 
     /// Make an already-persisted open session the live one, re-deriving live state from the store + the
-    /// shared coordinator. Used by `recover` and by `start` when a session is already open.
+    /// shared coordinator. Used by `recover` (which `start` also runs) when a session is already open.
     private func adopt(_ session: KilterSession, in context: ModelContext) {
         current = session
         resetActiveClimb()
@@ -493,14 +502,6 @@ final class KilterSessionManager {
             liveActivity.start(boardName: boardName, startedAt: session.startedAt, angle: session.angle,
                                maxHR: session.maxHR ?? userProfile?.profile.resolvedMaxHR)
         }
-    }
-
-    /// The newest still-open (`endedAt == nil`) session in the store, if any.
-    private func newestOpenSession(in context: ModelContext) -> KilterSession? {
-        var d = FetchDescriptor<KilterSession>(predicate: #Predicate { $0.endedAt == nil },
-                                               sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
-        d.fetchLimit = 1
-        return try? context.fetch(d).first
     }
 
     /// The last real activity in a session — newest log time, else the start — used to stamp an

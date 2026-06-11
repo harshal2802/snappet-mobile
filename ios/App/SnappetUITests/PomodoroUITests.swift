@@ -10,13 +10,12 @@ final class PomodoroUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Open the App Library and tap into the Pomodoro module.
+    /// Open the App Library and tap into the Pomodoro module (scrolling the lazy grid until the
+    /// card realizes — the #71 flagship hero pushes the Productivity row toward the fold).
     private func openPomodoro(_ app: XCUIApplication) {
         app.tabBars.buttons["Apps"].tap()
-        let card = app.buttons["moduleCard.pomodoro"]
+        let card = app.scrollToModuleCard("pomodoro")
         XCTAssertTrue(card.waitForExistence(timeout: 6), "App Library should have the Pomodoro card")
-        var tries = 0
-        while !card.isHittable && tries < 8 { app.swipeUp(); tries += 1 }
         card.tap()
     }
 
@@ -87,10 +86,8 @@ final class PomodoroUITests: XCTestCase {
         // The chip must also float over OTHER pushed modules — the overlay lives on the
         // NavigationStack, not the grid page (review fix).
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        let journalCard = app.buttons["moduleCard.journal"]
+        let journalCard = app.scrollToModuleCard("journal")
         XCTAssertTrue(journalCard.waitForExistence(timeout: 6), "back on the grid")
-        var tries = 0
-        while !journalCard.isHittable && tries < 8 { app.swipeUp(); tries += 1 }
         journalCard.tap()
         XCTAssertTrue(app.navigationBars["Journal"].waitForExistence(timeout: 6), "Journal should open")
         XCTAssertTrue(chip.waitForExistence(timeout: 4),
