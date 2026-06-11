@@ -7,6 +7,8 @@ import UIKit
 /// A single climb: the holds rendered on the board, an angle selector (difficulty is per-angle),
 /// grade / quality / ascents for that angle, logging (Flash / Sent / Project / Attempt), a Saved
 /// toggle, a beta-video link, and — when a board is connected over BLE — illumination (Phase 2).
+/// Logging with no session live **auto-starts** one (undoable, #75) so the rich-session layer —
+/// live HR, Live Activity, per-climb timing, media, summary, reel — is never silently forfeited.
 struct KilterClimbDetailView: View {
     /// The climb to open. Seeds `currentUUID`; swiping moves `currentUUID` through `siblings`.
     let uuid: String
@@ -55,6 +57,10 @@ struct KilterClimbDetailView: View {
     @State private var betaLinks: [String] = []
     @State private var selectedAngle: Int = 40
     @State private var logConfirmation: String?
+    /// Shown when a log **auto-started** a session (#75): an undoable "Session started" capsule.
+    /// Set only when `sessions.start` reports it created a fresh session — never when recovery
+    /// adopted an open one — so Undo can only ever remove a session this log created.
+    @State private var showingAutoStartUndo = false
     /// Incremented on a first send of a grade — drives `.celebrates(on:)` (issue #80).
     @State private var celebrationTrigger = 0
     @State private var showingShare = false
@@ -392,8 +398,44 @@ struct KilterClimbDetailView: View {
                     .transition(.scale.combined(with: .opacity))
                     .accessibilityIdentifier("kilter.logConfirmation")
             }
+            autoStartCapsule
         }
         .padding(.horizontal)
+    }
+
+    /// Undoable "Session started" confirmation, shown when a log auto-started a session (#75) —
+    /// the log is already attached; Undo keeps the log and removes the session. Auto-dismisses
+    /// (the session itself stays — the bar/HUD keep showing it; only the undo window closes).
+    @ViewBuilder private var autoStartCapsule: some View {
+        if showingAutoStartUndo, sessions.isActive {
+            HStack(spacing: 8) {
+                Image(systemName: "record.circle")
+                    .foregroundStyle(.green)
+                    .symbolEffect(.pulse, options: .repeating)
+                Text("Session started — this log is in it")
+                    .foregroundStyle(.secondary)
+                Button("Undo") {
+                    withAnimation(.snappy) {
+                        sessions.undoStart(in: modelContext)
+                        showingAutoStartUndo = false
+                    }
+                }
+                .fontWeight(.semibold)
+                .accessibilityIdentifier("kilter.autoSession.undo")
+            }
+            .font(.caption)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.green.opacity(0.14), in: Capsule())
+            .transition(.scale.combined(with: .opacity))
+            // The container gets a name WITHOUT clobbering the Undo button's id (the #68
+            // banner gotcha: a bare container identifier propagates onto every child element).
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("kilter.autoSession.banner")
+            .task {
+                try? await Task.sleep(for: .seconds(10))
+                withAnimation(.snappy) { showingAutoStartUndo = false }
+            }
+        }
     }
 
     private func logButton(_ status: KilterAscentStatus, _ image: String) -> some View {
@@ -580,6 +622,14 @@ struct KilterClimbDetailView: View {
         let now = Date()
         // Counted BEFORE this log lands, so the entry being written can't shadow itself.
         let priorSendsAtGrade = priorSendCount(atGrade: grade)
+        // Logging with no session live silently forfeited the whole rich-session layer (live HR,
+        // Live Activity, per-climb timing, media, summary, reel) — auto-start one, matching the
+        // BLE-connect behavior (#75). `start` folds recovery, so an open session in the store is
+        // adopted rather than forked; the undoable capsule is offered ONLY for a fresh creation.
+        if !sessions.isActive {
+            let createdFresh = sessions.start(angle: selectedAngle, source: "auto", in: modelContext)
+            withAnimation(.snappy) { showingAutoStartUndo = createdFresh }
+        }
         // Re-arm the active climb (a prior send may have closed it) so timing + the HUD are correct.
         if sessions.isActive {
             sessions.beginClimb(uuid: climb.uuid, name: climb.name,
