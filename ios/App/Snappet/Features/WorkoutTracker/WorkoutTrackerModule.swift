@@ -1,23 +1,27 @@
 import SwiftUI
 import SwiftData
 
-/// The Workout mini-app: a full gym/strength tracker — browse 870+ exercises, build
+/// The **Gym Tracker** mini-app: a full gym/strength tracker — browse 870+ exercises, build
 /// routines, run a guided session with set logging + a rest timer, and review history,
-/// PRs and progress. Ported from the web Snappet suite's `workout` app. (Distinct from
-/// the flagship "Workout Reels" module, which makes HR-driven highlight videos.)
+/// PRs, progress and the multi-clip Video Studio. Ported from the web Snappet suite's
+/// `workout` app. (Distinct from the flagship "Workout Reels" module, which cuts highlight
+/// videos from completed Apple Watch workouts — the dashboard cross-links there, #74.)
 ///
 /// Persists to Snappet Core (SwiftData) and logs meaningful actions so the Home dashboard
 /// aggregates workout activity across the suite. Fully offline — the exercise catalog is
 /// bundled.
 enum WorkoutTrackerModule {
+    /// Stable persisted id (`UsageRecord.module`, routes, accent mapping). The *display* title was
+    /// renamed "Workout" → "Gym Tracker" to disambiguate from "Workout Reels" (#74); the id must
+    /// never follow a display rename or historical usage records / deep links would orphan.
     static let id = "workout-log"
 
     @MainActor
     static var module: AppModule {
         AppModule(
             id: id,
-            title: "Workout",
-            subtitle: "Routines, set tracking & PRs",
+            title: "Gym Tracker",
+            subtitle: "Routines, sets, PRs & a video studio",
             systemImage: "dumbbell.fill",
             tint: SnappetColor.moduleAccent(id),
             category: .fitness
@@ -25,30 +29,30 @@ enum WorkoutTrackerModule {
     }
 }
 
-/// Which section of the workout app is showing. A top segmented control switches between
-/// them — a bottom tab bar would collide with the suite's own Home/Apps tab bar.
+/// Which section of the gym tracker is showing. A top segmented control switches between
+/// them — a bottom tab bar would collide with the suite's own Home/Apps tab bar. Segments are
+/// **text-labelled** (#74: the icon-only symbols made the module learnable only by trial-and-error);
+/// Settings is no longer a segment — it pushes from the toolbar gear (`WorkoutSettingsRoute`).
 enum WorkoutSection: String, CaseIterable, Identifiable {
-    case dashboard, browse, routines, history, settings
+    case dashboard, browse, routines, history
     var id: String { rawValue }
+    /// The navigation-bar title while the section is showing.
     var title: String {
         switch self {
-        case .dashboard: return "Workout"
+        case .dashboard: return "Gym Tracker"
         case .browse: return "Exercises"
         case .routines: return "Routines"
         case .history: return "History"
-        case .settings: return "Settings"
         }
     }
-    var symbol: String {
-        switch self {
-        case .dashboard: return "chart.bar.fill"
-        case .browse: return "figure.strengthtraining.traditional"
-        case .routines: return "list.bullet.rectangle.portrait"
-        case .history: return "clock.arrow.circlepath"
-        case .settings: return "gearshape"
-        }
-    }
+    /// The segmented-control label — same as `title` except the root section, whose nav title is
+    /// the module name (too wide for a segment).
+    var segmentTitle: String { self == .dashboard ? "Dashboard" : title }
 }
+
+/// Routing payload for the Settings screen, pushed from the toolbar gear (#74 — Settings used to
+/// be a fifth icon-only segment, which both hid it and crowded the section control).
+struct WorkoutSettingsRoute: Hashable {}
 
 /// Routing payload for pushing an exercise's progress screen (kept distinct from pushing
 /// the exercise detail, which routes on `Exercise` itself).
@@ -68,6 +72,10 @@ struct WorkoutHomeView: View {
     @Query(sort: \Routine.updatedAt, order: .reverse) private var routines: [Routine]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var sessions: [WorkoutSession]
     @Query private var customExercises: [CustomExercise]
+    /// All tagged session media — feeds the module-level Video Studio entry (#74): the dashboard's
+    /// "Open in Studio" candidates and the History rows' studio shortcut both derive from it via
+    /// the pure `StudioEntry`.
+    @Query private var sessionMedia: [SessionMedia]
 
     @AppStorage("workoutlog.preferredUnit") private var preferredUnitRaw = WeightUnit.kg.rawValue
     @AppStorage("workoutlog.dismissedStarters") private var dismissedStartersRaw = ""
@@ -77,6 +85,9 @@ struct WorkoutHomeView: View {
     @State private var showingNewExercise = false
     @State private var playing: WorkoutSession?
     @State private var startConflict: Routine?
+    /// The Video Studio opened from the module level (#74) — dashboard candidates or a History
+    /// row's swipe shortcut. Same find-or-create + full-screen presentation as the session detail.
+    @State private var studioProject: StudioProject?
     /// Drives the zoom transition between the live-workout banner and the full-screen player.
     @Namespace private var playerZoom
 
@@ -87,13 +98,15 @@ struct WorkoutHomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Text segments (#74): every section is identifiable without tapping. Staying on the
+            // native segmented style keeps the control under `segmentedControls` for the XCUITests.
             Picker("Section", selection: $section) {
                 ForEach(WorkoutSection.allCases) { s in
-                    Image(systemName: s.symbol).tag(s)
-                        .accessibilityLabel(s.title)
+                    Text(s.segmentTitle).tag(s)
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("workout.sectionPicker")
             .padding(.horizontal)
             .padding(.bottom, 8)
 
@@ -128,6 +141,14 @@ struct WorkoutHomeView: View {
             ExerciseProgressView(exerciseId: route.exerciseId, resolver: resolver,
                                  history: history, unit: unit)
         }
+        // Settings is pushed from the toolbar gear (#74) — it used to be a fifth segment.
+        .navigationDestination(for: WorkoutSettingsRoute.self) { _ in
+            WorkoutSettingsView(unitRaw: $preferredUnitRaw, customExercises: customExercises,
+                                history: history, open: { router.push($0) },
+                                deleteCustom: deleteCustomExercise)
+                .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
+        }
         .sheet(isPresented: $showingNewRoutine) {
             RoutineEditorView(routine: nil, resolver: resolver, defaultUnit: unit)
         }
@@ -150,6 +171,12 @@ struct WorkoutHomeView: View {
                 }
             }
             .navigationTransition(.zoom(sourceID: "workoutPlayer", in: playerZoom))
+        }
+        // The module-level Video Studio (#74): presented from the dashboard's "Open in Studio"
+        // rows / a History row's swipe shortcut, on this stable host (the session detail keeps
+        // its own identical cover for the in-detail entry).
+        .fullScreenCover(item: $studioProject) { project in
+            StudioEditorView(project: project, context: context)
         }
         .confirmationDialog("A workout is already in progress.",
                             isPresented: Binding(get: { startConflict != nil },
@@ -201,11 +228,19 @@ struct WorkoutHomeView: View {
         case .dashboard:
             WorkoutDashboardSection(history: history, routines: routines, resolver: resolver,
                                     unit: unit, activeSession: activeSession,
+                                    studioCandidates: StudioEntry.candidates(history: history,
+                                                                             media: sessionMedia),
                                     resume: { if let s = activeSession { resume(s) } },
                                     goToRoutines: { section = .routines },
                                     goToBrowse: { section = .browse },
                                     openRoutine: { router.push($0) },
-                                    openProgress: { router.push(ProgressRoute(exerciseId: $0)) })
+                                    openProgress: { router.push(ProgressRoute(exerciseId: $0)) },
+                                    openStudio: { id in
+                                        if let s = sessions.first(where: { $0.id == id }) {
+                                            openStudio(for: s)
+                                        }
+                                    },
+                                    openReels: { router.open(module: "workout") })
         case .browse:
             ExerciseBrowserView(resolver: resolver, open: { router.push($0) })
         case .routines:
@@ -216,11 +251,9 @@ struct WorkoutHomeView: View {
                                 newRoutine: { showingNewRoutine = true })
         case .history:
             HistorySectionView(history: history, resolver: resolver, unit: unit,
-                               deleteSession: deleteSession)
-        case .settings:
-            WorkoutSettingsView(unitRaw: $preferredUnitRaw, customExercises: customExercises,
-                                history: history, open: { router.push($0) },
-                                deleteCustom: deleteCustomExercise)
+                               videoSessionIDs: StudioEntry.videoSessionIDs(media: sessionMedia),
+                               deleteSession: deleteSession,
+                               openStudio: { openStudio(for: $0) })
         }
     }
 
@@ -240,6 +273,21 @@ struct WorkoutHomeView: View {
                     .accessibilityIdentifier("workout.quickStart")
             }
         }
+        // The Settings gear — always present (#74), replacing the old fifth segment.
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { router.push(WorkoutSettingsRoute()) } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .accessibilityIdentifier("workout.settings")
+        }
+    }
+
+    /// Find-or-create the session's `StudioProject` and present the full studio — the module-level
+    /// entry (#74). Shares `StudioEntry.findOrCreateProject` with the session detail's button so
+    /// both paths open the same project.
+    private func openStudio(for session: WorkoutSession) {
+        studioProject = StudioEntry.findOrCreateProject(for: session, media: sessionMedia,
+                                                        context: context)
     }
 
     // MARK: - Session lifecycle

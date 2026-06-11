@@ -2,18 +2,28 @@ import SwiftUI
 import Charts
 
 /// The Dashboard section: resume-in-progress banner, headline stats, an 8-week volume chart,
-/// personal records, and quick-start routines. The entry screen of the workout app.
+/// personal records, quick-start routines, the **Video Studio** card (#74 — the module-level
+/// entry into the multi-clip editor), and a cross-link to Workout Reels for anyone who came
+/// looking for their Apple Watch workouts. The entry screen of the gym tracker.
 struct WorkoutDashboardSection: View {
     let history: [WorkoutSession]
     let routines: [Routine]
     let resolver: ExerciseResolver
     let unit: WeightUnit
     let activeSession: WorkoutSession?
+    /// Recent media-bearing sessions the Video Studio card offers (#74); empty renders the card's
+    /// how-to hint instead, so the studio is still discoverable before any video exists.
+    let studioCandidates: [StudioEntry.Candidate]
     let resume: () -> Void
     let goToRoutines: () -> Void
     let goToBrowse: () -> Void
     let openRoutine: (Routine) -> Void
     let openProgress: (String) -> Void
+    /// Open the Video Studio over the given session id (#74).
+    let openStudio: (UUID) -> Void
+    /// Jump to the Workout Reels module (#74 cross-link — the misdirected "where are my watch
+    /// workouts?" tap lands here, especially on a fresh gym-tracker install).
+    let openReels: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Drives the weekly-volume bars' grow-in animation on appear.
@@ -41,6 +51,15 @@ struct WorkoutDashboardSection: View {
                 // The empty state already points to routines/exercises; don't also show the
                 // quick-start list under it (two ways to pick a routine on one screen).
                 if !quickStart.isEmpty && !isEmptyState { quickStartSection }
+
+                // Video Studio (#74): the module-level entry — recent sessions with video open
+                // straight into the multi-clip editor; without any it explains how to get there.
+                // Hidden on the empty state (nothing to cut and the screen already onboards).
+                if !isEmptyState { studioSection }
+
+                // Cross-link (#74): always last, including the empty state — a user who tapped
+                // the gym tracker after an Apple Watch run has zero history and wants Reels.
+                reelsCrossLink
             }
             .padding()
             .padding(.bottom, 24) // clear the suite's floating tab bar
@@ -161,6 +180,69 @@ struct WorkoutDashboardSection: View {
             }
         }
         .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// The Video Studio card (#74): "Open in Studio" rows for the most recent sessions carrying
+    /// tagged video, or a one-line how-to when none do yet — either way the editor is named on
+    /// the module's front page instead of hiding four levels deep.
+    private var studioSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "film.stack").foregroundStyle(.orange)
+                Text("Video Studio").font(.headline)
+            }
+            if studioCandidates.isEmpty {
+                Text("Film your sets, add the clips to a finished workout, and cut them into a shareable edit here.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(studioCandidates) { candidate in
+                    Button { openStudio(candidate.sessionID) } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(candidate.title).font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary).lineLimit(1)
+                                Text("\(candidate.startedAt.formatted(.dateTime.month().day())) · \(candidate.videoCount) clip\(candidate.videoCount == 1 ? "" : "s")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("Open in Studio").font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("workout.studioCandidate")
+                    if candidate.id != studioCandidates.last?.id { Divider() }
+                }
+            }
+        }
+        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// The "wrong module?" escape hatch (#74): the suite's other fitness card cuts highlight reels
+    /// from completed Apple Watch workouts — name it here so the misdirected tap costs one more.
+    private var reelsCrossLink: some View {
+        Button(action: openReels) {
+            HStack(spacing: 10) {
+                Image(systemName: "figure.run").foregroundStyle(SnappetColor.reels)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Looking for your Apple Watch workouts?")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text("Highlight reels from watch workouts live in Workout Reels.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("workout.openReels")
     }
 
     // MARK: - Derived data

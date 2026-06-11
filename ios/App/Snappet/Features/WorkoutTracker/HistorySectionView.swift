@@ -1,12 +1,17 @@
 import SwiftUI
 
 /// The History section: completed sessions, newest first, grouped by month. Searchable by routine
-/// name, with one-tap routine filter chips (issue #73). Tap for detail, swipe to delete.
+/// name, with one-tap routine filter chips (issue #73). Tap for detail, swipe right to delete;
+/// media-bearing rows show a Studio badge and swipe left to open the Video Studio directly (#74).
 struct HistorySectionView: View {
     let history: [WorkoutSession]
     let resolver: ExerciseResolver
     let unit: WeightUnit
+    /// Session ids with ≥ 1 tagged video (#74) — those rows get the Studio badge + swipe shortcut.
+    let videoSessionIDs: Set<UUID>
     let deleteSession: (WorkoutSession) -> Void
+    /// Open the Video Studio over a session (#74) — presented by `WorkoutHomeView`.
+    let openStudio: (WorkoutSession) -> Void
 
     @State private var query = ""
     /// The routine name the chip row is filtering to; nil = all routines.
@@ -50,12 +55,22 @@ struct HistorySectionView: View {
                         // on tap — a narrow SwiftUI/List quirk specific to this view — so we keep the
                         // known-good NavigationLink. Trade-off: this one row isn't XCUITest-tappable.
                         NavigationLink(value: SessionRoute(id: session.id)) {
-                            HistoryRow(session: session, unit: unit)
+                            HistoryRow(session: session, unit: unit,
+                                       hasVideo: videoSessionIDs.contains(session.id))
                         }
                         .accessibilityIdentifier("historyRow")
                         .swipeActions {
                             Button(role: .destructive) { deleteSession(session) } label: {
                                 Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .leading) {
+                            // Straight into the Video Studio for rows that have clips (#74).
+                            if videoSessionIDs.contains(session.id) {
+                                Button { openStudio(session) } label: {
+                                    Label("Studio", systemImage: "film.stack")
+                                }
+                                .tint(SnappetColor.workout)
                             }
                         }
                     }
@@ -138,6 +153,9 @@ enum HistorySearch {
 private struct HistoryRow: View {
     let session: WorkoutSession
     let unit: WeightUnit
+    /// Session has tagged video → show the Studio badge (#74), so media-bearing sessions are
+    /// findable from the list instead of only after opening each detail.
+    var hasVideo: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -150,6 +168,10 @@ private struct HistoryRow: View {
                 let vol = WorkoutMath.sessionVolumeKg(session)
                 if vol > 0 {
                     Label(WorkoutMath.formatVolume(kg: vol, unit: unit), systemImage: "scalemass")
+                }
+                if hasVideo {
+                    Label("Studio", systemImage: "film.stack")
+                        .foregroundStyle(SnappetColor.workout)
                 }
             }
             .font(.caption2).foregroundStyle(.tertiary)

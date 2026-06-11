@@ -546,8 +546,10 @@ private struct SessionMediaSection: View {
             .disabled(!hasVideo)
             .accessibilityIdentifier("generateHighlight")
 
+            // Named for what it is (#74): "Open studio (multi-clip)" undersold the CapCut-style
+            // editor. Still disabled until the session has video — there is nothing to cut.
             Button { openStudio() } label: {
-                Label("Open studio (multi-clip)", systemImage: "film.stack")
+                Label("Edit in Video Studio", systemImage: "film.stack")
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("openStudio")
@@ -762,25 +764,10 @@ private struct SessionMediaSection: View {
     }
 
     /// Find or create the session's `StudioProject` (seeded from its video clips, in capture order)
-    /// and present the multi-clip studio editor.
+    /// and present the multi-clip studio editor. Shares `StudioEntry.findOrCreateProject` with the
+    /// module-level entries (#74) so every path opens the same project.
     private func openStudio() {
-        let sid = session.id
-        if let existing = try? context.fetch(
-            FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
-            studioProject = existing
-        } else {
-            let clips = media.filter { $0.kind == .video }
-                .sorted { $0.offsetSec < $1.offsetSec }
-                .enumerated()
-                .map { i, m in
-                    TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
-                                 isPhoto: false, order: i, trimEnd: m.durationSec)
-                }
-            let project = StudioProject(sessionID: sid, title: session.routineName, clips: clips)
-            context.insert(project)
-            try? context.save()
-            studioProject = project
-        }
+        studioProject = StudioEntry.findOrCreateProject(for: session, media: media, context: context)
     }
 }
 

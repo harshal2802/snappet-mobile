@@ -23,24 +23,34 @@ struct WorkoutListView: View {
     }
 
     private var list: some View {
-        List(model.workouts) { wk in
-            Button { router.push(wk) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: ReelFlowPolicy.activityIcon(for: wk.activity))
-                        .font(.title3)
-                        .foregroundStyle(SnappetColor.workout)
-                        .frame(width: 40, height: 40)
-                        .background(SnappetColor.workout.opacity(0.12), in: Circle())
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(wk.activity.rawValue.capitalized).font(.headline)
-                        Text(wk.start, format: .dateTime.month().day().hour().minute())
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Text(durationText(wk.duration)).font(.caption).foregroundStyle(.tertiary)
+        List {
+            ForEach(model.workouts) { wk in
+                Button { router.push(wk) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: ReelFlowPolicy.activityIcon(for: wk.activity))
+                            .font(.title3)
+                            .foregroundStyle(SnappetColor.workout)
+                            .frame(width: 40, height: 40)
+                            .background(SnappetColor.workout.opacity(0.12), in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(wk.activity.rawValue.capitalized).font(.headline)
+                            Text(wk.start, format: .dateTime.month().day().hour().minute())
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Text(durationText(wk.duration)).font(.caption).foregroundStyle(.tertiary)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("workoutReelRow")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("workoutReelRow")
+
+            // Cross-link (#74): the suite's *other* fitness module. Reels cuts videos from
+            // completed Apple Watch workouts — anyone hunting for set logging / routines / PRs
+            // tapped the wrong card, so name the right one instead of letting them dead-end.
+            // Hidden while the list is empty: the recovery overlay renders over the list there.
+            if !model.workouts.isEmpty {
+                crossLinkSection
+            }
         }
         .navigationDestination(for: WorkoutSummary.self) { ReelView(summary: $0) }
         .overlay {
@@ -61,6 +71,27 @@ struct WorkoutListView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// The "wrong module?" row pointing at the Gym Tracker (#74) — the suite's two fitness cards
+    /// used to be near-identically named, so each module now names the other explicitly.
+    private var crossLinkSection: some View {
+        Section {
+            Button { router.open(module: WorkoutTrackerModule.id) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "dumbbell.fill")
+                        .foregroundStyle(SnappetColor.moduleAccent(WorkoutTrackerModule.id))
+                    Text("Looking for set logging & routines? Open Gym Tracker")
+                        .font(.subheadline)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("workout.openGymTracker")
+        } footer: {
+            Text("Reels are cut from your Apple Watch workouts. Gym sessions you log by hand live in Gym Tracker.")
         }
     }
 
