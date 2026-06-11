@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import HighlightEngine   // HighlightFeedbackEvent flows FeedbackStore → ModuleExports here
 
 /// The suite's backup / export / restore surface (issue #68), presented as a sheet from
 /// the App Library toolbar (and from `StoreHealthBanner` when the store fell back).
