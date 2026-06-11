@@ -195,7 +195,8 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
             // exercise the timeline + an edit (split) + undo. The preview render is device-only, so
             // on the sim the canvas shows its placeholder while the timeline + edits work on the
             // model. Best-effort (the editor is reachable only when the session has videos).
-            // The "Open studio" button is in the actions section (above the grouped clips); steps
+            // The "Edit in Video Studio" button (identifier "openStudio", relabelled by #74) is in
+            // the actions section (above the grouped clips); steps
             // 11/11b scrolled DOWN to General, so scroll back UP (swipeDown) to bring it into view.
             let openStudio = app.buttons["openStudio"]
             for _ in 0..<5 where !openStudio.exists { summary.swipeDown() }
