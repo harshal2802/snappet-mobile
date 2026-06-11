@@ -3737,3 +3737,49 @@ tests: seeded-coverage + recordCount-vs-store assertions in the round trip, dupl
 restore dedupe (first-wins across `Habit`/`KilterSession`/`KilterFavorite`), the
 detach-then-recover lifecycle, the CSV duplicate-id no-crash case, and the fallback UI test now
 asserts the export buttons are disabled while restore stays enabled.
+
+## [2026-06-11] iOS — fitness IA cleanup: Gym Tracker rename, text segments, module-level Video Studio entry (#74)
+
+**Context.** The App Library showed two near-identically named fitness cards — "Workout Reels" and
+"Workout" — side by side; after an Apple Watch run the natural tap was "Workout", which is the gym
+tracker. The tracker's five-section control was icon-only SF Symbols (titles existed only as
+accessibility labels), Settings hid *inside* the section control, and the CapCut-style multi-clip
+studio was reachable only via a "Open studio (multi-clip)" button four levels deep — no module
+surface mentioned a video editor exists. Prompt 48.
+
+**Decisions.**
+- **Rename the display title only, never the id.** `WorkoutTrackerModule.title` becomes
+  "Gym Tracker" (subtitle: "Routines, sets, PRs & a video studio") while `id` stays
+  `"workout-log"` — it keys persisted `UsageRecord.module` rows, `ModuleRoute` deep links, and
+  the accent mapping; renaming it would orphan history. A unit test pins both the id and the
+  title disambiguation (`StudioEntryTests.testFitnessModuleTitlesAreDistinctAndIdsStable`).
+  Home's activity-feed rows now caption with the **registry display title** (falling back to the
+  capitalized raw id for retired modules) so old `workout-log` records read "Gym Tracker", not
+  "Workout-Log".
+- **Text segments over a custom control.** SwiftUI's segmented style can't mix icon+text, so the
+  segments became `Text(segmentTitle)` — staying on the native `Picker(.segmented)` keeps the
+  control under `app.segmentedControls.buttons[<title>]`, which is exactly how the four
+  walkthrough/UI tests already address it, so "Exercises/Routines/History" taps needed no test
+  changes. A custom HStack control would have labeled segments too but silently broken every
+  `segmentedControls` query.
+- **Settings = toolbar gear → pushed route**, not a fifth segment. `WorkoutSettingsRoute` +
+  `navigationDestination` (a sheet would break `WorkoutSettingsView`'s pushes into
+  `UserHRProfileView` / custom-exercise detail). Known trade-off: the live-workout banner
+  (`safeAreaInset` on `WorkoutHomeView`) is not visible *on the pushed Settings screen* — it was
+  while Settings was a segment; the player remains one back-tap + banner-tap away and the Live
+  Activity still shows. Both walkthrough tests now tap `workout.settings` instead of a Settings
+  segment.
+- **Module-level studio entry via a pure core.** `StudioEntry` (new) owns candidates
+  (newest-first video-bearing sessions, default cap 3 — the dashboard is a summary, not a second
+  History), `videoSessionIDs` (History badge + leading-swipe shortcut), capture-ordered
+  `seedClips`, and the **single** `findOrCreateProject` SwiftData edge — extracted from
+  `SessionDetailView.openStudio` so the dashboard card, the History swipe, and the detail button
+  all resume the *same* `StudioProject`. Selection/seeding is unit-tested without a simulator;
+  photos never count (the studio's main track seeds from videos). The dashboard card renders a
+  how-to hint when no session has video yet, so the studio is discoverable before any clip
+  exists; the session-detail button is renamed "Edit in Video Studio" (identifier `openStudio`
+  kept for the walkthrough).
+- **Cross-links both ways, cheap rows not banners.** The tracker dashboard's last row — shown on
+  the empty state too, which is exactly where the misdirected after-a-watch-run tap lands — opens
+  Workout Reels via `router.open(module: "workout")`; the Reels list gets a mirrored footer row to
+  Gym Tracker (hidden while its empty-state recovery overlay is up, which would render over it).
