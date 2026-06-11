@@ -255,8 +255,10 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
             snap("11-media-and-highlight-NOTREACHED")
         }
 
-        // 12 — Settings.
-        section("Settings").tap(); sleep(1); snap("12-settings")
+        // 12 — Settings, pushed from the toolbar gear (#74 — it used to be a fifth segment).
+        let gear = app.buttons["workout.settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 6), "the Settings gear should be in the toolbar")
+        gear.tap(); sleep(1); snap("12-settings")
 
         // 13 — The A3 heart-rate source picker sheet (Apple Watch + BLE scan). The entry is a
         // `.buttonStyle(.plain)` row; tap it, and if the sheet doesn't present, fall back to the
