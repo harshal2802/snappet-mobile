@@ -9,6 +9,9 @@ struct AppLibraryView: View {
     // The router is hoisted to the shell (#71) — this stack binds its path; Home shares it.
     @Environment(SuiteRouter.self) private var router
     @Namespace private var zoom
+    /// The flagship hero's own `matchedTransitionSource` id (#71 review fix) — distinct from the
+    /// grid card's `module.id`, so a hero tap zooms from the hero, not the grid card below it.
+    private static let flagshipZoomID = "flagship-hero"
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
     var body: some View {
@@ -30,7 +33,10 @@ struct AppLibraryView: View {
                                         // A Button (not a NavigationLink) so the card is a real,
                                         // UI-test-hittable control; it pushes onto the shared path.
                                         Button {
-                                            router.push(ModuleRoute(id: module.id))
+                                            // Carry this card's zoom source on the route so the
+                                            // destination zooms from the tile actually tapped.
+                                            router.push(ModuleRoute(id: module.id,
+                                                                    zoomSourceID: module.id))
                                         } label: {
                                             ModuleCard(module: module)
                                         }
@@ -50,8 +56,16 @@ struct AppLibraryView: View {
             .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
             .navigationTitle("Apps")
             .navigationDestination(for: ModuleRoute.self) { route in
-                moduleDestination(route)
-                    .navigationTransition(.zoom(sourceID: route.id, in: zoom))
+                // Zoom from the source the route names — the grid card or the hero (#71 review
+                // fix). Routes without one (programmatic `open(module:)` deep links, the Pomodoro
+                // chip) get a plain push: zooming from a card the user never tapped reads wrong.
+                // The branch is stable for a pushed route's lifetime (the value never mutates).
+                if let sourceID = route.zoomSourceID {
+                    moduleDestination(route)
+                        .navigationTransition(.zoom(sourceID: sourceID, in: zoom))
+                } else {
+                    moduleDestination(route)
+                }
             }
         }
         // The "focus running" re-entry chip (#70), on the NavigationStack itself — an
@@ -78,7 +92,7 @@ struct AppLibraryView: View {
     @ViewBuilder private var flagshipCard: some View {
         if let flagship = ModuleRegistry.all.first(where: { $0.id == "workout" }) {
             Button {
-                router.push(ModuleRoute(id: flagship.id))
+                router.push(ModuleRoute(id: flagship.id, zoomSourceID: Self.flagshipZoomID))
             } label: {
                 HStack(spacing: SnappetSpacing.md) {
                     Image(systemName: flagship.systemImage)
@@ -103,9 +117,11 @@ struct AppLibraryView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .snappetCard()
             }
-            // No `matchedTransitionSource` here: the grid card already registers the module's
-            // zoom source id, and a second source for the same destination would conflict.
+            // The hero registers its OWN source id (#71 review fix): it used to ride the grid
+            // card's, which zoom-animated the push from the wrong tile (the workout grid card
+            // right below). The route carries which source initiated the push.
             .buttonStyle(PressableCardStyle())
+            .matchedTransitionSource(id: Self.flagshipZoomID, in: zoom)
             .accessibilityIdentifier("appLibrary.flagship")
         }
     }

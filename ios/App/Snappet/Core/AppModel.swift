@@ -64,7 +64,9 @@ final class AppModel {
     /// Owned here — not as `@State` on `KilterRootView` — so it survives navigating out of and back into
     /// the Kilter module (the root is a `navigationDestination` that SwiftUI destroys on pop); combined
     /// with `recover(in:)` on appear/relaunch, the persisted open session never goes stale. Bound to the
-    /// live services once, in `KilterRootView.onAppear`.
+    /// live services once, in `init` below — NOT in `KilterRootView.onAppear`, because deep links can
+    /// land past the root (Home's "Plan tonight's session" → `KilterPlanView`) and a session started
+    /// there must never run unbound (no live HR / Live Activity / media) (#71 pre-merge review).
     let kilterSessions = KilterSessionManager()
 
     /// Local notifications for a backgrounded / minimized workout (e.g. "rest complete"), so the
@@ -87,6 +89,15 @@ final class AppModel {
     var pomodoroScreenVisible = false
 
     init() {
+        // Wire the Kilter session manager to its sibling live services HERE, where all four are
+        // constructed — not in a view's `onAppear` — so binding can't depend on appear order:
+        // every path that can start a session (root entry, the Home plan deep link, future QR
+        // links) gets live HR + the Live Activity + media discovery (#71 pre-merge review).
+        kilterSessions.bind(liveWorkout: liveWorkout,
+                            liveActivity: kilterLiveActivity,
+                            media: sessionMedia,
+                            userProfile: userProfile)
+
         // Capture the services (not self), and the timer weakly — the closure is stored on
         // the timer itself, so a strong capture would be a retain cycle.
         pomodoro.onScheduleChanged = { [pomodoroNotifications, pomodoroLiveActivity, weak pomodoro] phase, endDate in

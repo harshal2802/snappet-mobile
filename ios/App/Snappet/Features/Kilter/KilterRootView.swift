@@ -201,15 +201,12 @@ struct KilterRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
             reloadCatalog()
         }
-        // Wire the session manager to the app's live-metrics / Live-Activity / media services so a
-        // session (started here or auto-opened on board connect) drives HR + the Live Activity.
+        // The session manager arrives already bound to the live-metrics / Live-Activity / media
+        // services (once, in `AppModel.init`) — binding here would reintroduce the appear-order
+        // dependency a plan deep link skips (#71 pre-merge review).
         .onAppear {
             // Keep the board-size selection valid for the current layout (seed the default when unset).
             syncBoardSize()
-            sessions.bind(liveWorkout: app.liveWorkout,
-                          liveActivity: app.kilterLiveActivity,
-                          media: app.sessionMedia,
-                          userProfile: app.userProfile)
             // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
             // (and auto-close any duplicate or long-abandoned ones) so the bar, HR, Live Activity, and
             // log-grouping never go stale after navigating away and back.

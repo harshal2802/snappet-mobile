@@ -24,8 +24,15 @@ struct HomeDashboardView: View {
 
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     /// Drives the 7-day chart's grow-up-from-baseline animation on appear.
     @State private var chartAppeared = false
+    /// The clock every "today" derivation reads (`todayCards`, `todayStart` → stat tiles, week
+    /// chart, streak). Held in **state** — not read inline as `.now` — so the dashboard re-renders
+    /// when the day rolls over instead of freezing yesterday's facts ("Streak safe for today"
+    /// surviving into tomorrow, #71 review fix). Refreshed on `.NSCalendarDayChanged` (app awake
+    /// across midnight) and on scenePhase `.active` (suspended-overnight resume).
+    @State private var now: Date = .now
 
     var body: some View {
         NavigationStack {
@@ -40,6 +47,15 @@ struct HomeDashboardView: View {
             }
             .snappetAnimation(SnappetMotion.standard, value: records.isEmpty)
             .navigationTitle("Today")
+            // The day rolled over while the app was awake (receive on main: the OS posts this
+            // notification on a background thread).
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
+                .receive(on: DispatchQueue.main)) { _ in now = .now }
+            // Returning from a suspension (the phone slept past midnight) — the notification may
+            // not have been delivered, so re-read the clock on every foregrounding.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { now = .now }
+            }
         }
     }
 
@@ -119,7 +135,7 @@ struct HomeDashboardView: View {
     /// when its `TodayDigest` derivation is non-nil (i.e. the module has data).
     private var todayCards: [TodayCard] {
         let cal = Calendar.current
-        let now = Date.now
+        // `now` is the state clock above — NOT `Date.now` — so cards roll at midnight.
         var cards: [TodayCard] = []
         if let h = TodayDigest.habitsToday(habits: habits, completions: habitCompletions,
                                            now: now, calendar: cal) {
@@ -137,7 +153,12 @@ struct HomeDashboardView: View {
                 title: "Resume \(r.routineName)",
                 detail: "Started \(r.startedAt.formatted(.relative(presentation: .named)))",
                 systemImage: "dumbbell.fill",
-                tint: SnappetColor.workout) { router.open(module: WorkoutTrackerModule.id) })
+                tint: SnappetColor.workout) {
+                    // Carry the intent: the player is a fullScreenCover on WorkoutHomeView's local
+                    // state, so the route alone would land on the dashboard with the player closed.
+                    router.pendingWorkoutResume = true
+                    router.open(module: WorkoutTrackerModule.id)
+                })
         }
         if let f = TodayDigest.focusToday(sessions: focusSessions, now: now, calendar: cal) {
             cards.append(TodayCard(
@@ -212,7 +233,7 @@ struct HomeDashboardView: View {
 
     // MARK: today
 
-    private var todayStart: Date { Calendar.current.startOfDay(for: .now) }
+    private var todayStart: Date { Calendar.current.startOfDay(for: now) }
     private var todayRecords: [UsageRecord] { records.filter { $0.timestamp >= todayStart } }
 
     private var todayRow: some View {

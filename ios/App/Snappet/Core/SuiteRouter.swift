@@ -20,6 +20,13 @@ final class SuiteRouter {
     var tab: SuiteTab
     var path = NavigationPath()
 
+    /// One-shot deep-link intent (#71 review fix): Home's "Resume <routine>" card sets this before
+    /// `open(module:)`, and `WorkoutHomeView` consumes it in `.task` — re-opening the full-screen
+    /// player via its existing `resume(_:)` path (the player is a `fullScreenCover` on the view's
+    /// local state, so a pushed route alone lands on the dashboard with the player closed).
+    /// Self-clearing on consume; a no-op when no active session exists.
+    var pendingWorkoutResume = false
+
     init(initialTab: SuiteTab = .home) {
         tab = initialTab
     }
@@ -39,4 +46,13 @@ final class SuiteRouter {
 
 /// Route value for entering a mini-app (push by module id) — from the App Library's cards, a Home
 /// feed row / Today card, or a future external deep link.
-struct ModuleRoute: Hashable { let id: String }
+///
+/// `zoomSourceID` names the `matchedTransitionSource` of the **card actually tapped** (the grid
+/// card's module id, or the flagship hero's own id), so the zoom animates from the right card —
+/// the hero used to borrow the grid card's source and zoomed from the wrong tile (#71 review fix).
+/// `nil` (the default — programmatic entries like `open(module:)` and the Pomodoro re-entry chip)
+/// means a plain push: an entry that wasn't a registered card must not claim one's source.
+struct ModuleRoute: Hashable {
+    let id: String
+    var zoomSourceID: String? = nil
+}

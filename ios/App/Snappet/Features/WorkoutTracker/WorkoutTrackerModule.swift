@@ -165,7 +165,20 @@ struct WorkoutHomeView: View {
             }
             Button("Cancel", role: .cancel) { startConflict = nil }
         }
-        .task { seedStarters() }
+        .task {
+            seedStarters()
+            consumePendingResume()
+        }
+    }
+
+    /// Consume the router's one-shot resume intent (#71 review fix): Home's "Resume <routine>" card
+    /// can't open this view's local `fullScreenCover`, so it flags the router and this view re-opens
+    /// the player through the existing `resume(_:)` path (live-metrics / Live-Activity restart logic
+    /// included). Always clears the flag (one-shot); a no-op when no session is actually active.
+    private func consumePendingResume() {
+        guard router.pendingWorkoutResume else { return }
+        router.pendingWorkoutResume = false
+        if let s = activeSession { resume(s) }
     }
 
     /// The live-workout banner — shown only while a workout is active *and* the player is

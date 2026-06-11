@@ -551,6 +551,7 @@ const links = [
   { source: "today-digest", target: "model-budget", type: "feeds", label: "month pace" },
   { source: "today-digest", target: "kilter-recommender", type: "uses", label: "working grade" },
   { source: "home", target: "m-workout", type: "navigate", label: "flagship CTA + feed row" },
+  { source: "home", target: "tab-apps", type: "navigate", label: "hero: browse all apps" },
   { source: "home", target: "m-habit", type: "navigate", label: "Today: habits left" },
   { source: "home", target: "m-workout-log", type: "navigate", label: "Today: resume workout" },
   { source: "home", target: "m-pomodoro", type: "navigate", label: "Today: start focus" },

@@ -3570,12 +3570,51 @@ SwiftData rows via a new pure `TodayDigest`. The non-obvious choices:
   value-first permission flow instead of inventing a global first-run state on `AppModel`. The App
   Library gains a featured flagship hero card *above* the grid (the grid card stays — the smoke
   test taps `moduleCard.workout` by id, and removing it would also break muscle memory); the hero
-  deliberately has no `matchedTransitionSource`, since the grid card already registers the module's
-  zoom source id and a second source for the same destination conflicts. Home tab glyph:
+  initially shipped without its own `matchedTransitionSource` — reversed in the pre-merge review
+  round below, which gave it a distinct source id (review fix 4). Home tab glyph:
   `square.grid.2x2.fill` → `house.fill` (the grid glyph promised an app grid that lives on the
   *other* tab).
 - **Feed rows guard on the registry**: a `UsageRecord` from a retired module id renders as a plain,
   non-tappable row instead of a button into nothing.
+
+**Pre-merge adversarial review round** (5 confirmed, all fixed): (1 — major) the Home "Plan
+tonight's session" deep link landed in `KilterPlanView` without ever running
+`KilterRootView.onAppear`, so its "Start session" could start an **unbound, unrecovered** session —
+no live HR / Live Activity / media discovery, plus a possible duplicate open session (the exact
+stale-session class #54 fixed). Rule: **an AppModel-owned manager is bound to its sibling services
+in `AppModel.init`**, never in a view's `onAppear` — binding must not depend on appear order once
+deep links can skip the root — so `kilterSessions.bind(...)` moved into `init` (all four services
+are AppModel-owned siblings) and the root's now-redundant rebind was deleted (nothing else rebinds).
+Stale-session recovery folded into `KilterSessionManager.start` itself: a `recover(in:)` pass runs
+before creation (adopt-the-fresh / auto-close-the-abandoned-at-last-activity, replacing the blind
+`newestOpenSession` adopt — which would happily adopt a 2-day-old orphan), chosen over a
+`KilterPlanView.task` recover because the fold applies the #54 policy on EVERY path that can start
+a session: root entry, the plan deep link, a BLE connect, and the QR path (#75) tomorrow. New
+`KilterSessionStartRecoveryTests` (in-memory store, deliberately **unbound** manager) assert
+adopt-not-fork, abandoned-auto-close-then-fresh-start, duplicate-close-adopt-newest, and the
+already-current no-op. (2) the "Resume <routine>" card landed on the workout dashboard with the
+player **closed** — the player is a `fullScreenCover` on `WorkoutHomeView`'s local `@State`, which
+no pushed route can open — so `SuiteRouter` carries the intent: a one-shot `pendingWorkoutResume`
+flag the card sets before `open(module:)`, consumed in the view's `.task` through the **existing**
+`resume(_:)` path (cold-relaunch live-metrics + Live-Activity restart logic for free); the flag
+always self-clears and is a no-op when no active session exists. (3) Today cards froze across
+midnight ("Streak safe for today" survived into tomorrow): every derivation read `.now` inline at
+render time, so nothing invalidated at the day boundary — the clock now lives in `@State var now`,
+feeding `todayCards` AND `todayStart` (so the stat tiles / week chart / streak roll too), refreshed
+on `.NSCalendarDayChanged` (received on main — the OS posts it on a background thread) and on
+scenePhase `.active` (covers the suspended-overnight resume the notification can miss). (4) the
+flagship hero zoom-animated from the WRONG card: the destination's
+`.navigationTransition(.zoom(sourceID: route.id))` always claimed the grid card's source, so a hero
+tap zoomed out of the `moduleCard.workout` tile right below it. Chosen shape (not the plain-push
+fallback): `ModuleRoute` carries an optional `zoomSourceID` recording the `matchedTransitionSource`
+actually tapped — grid card = the module id (byte-for-byte the old pairing), hero = its own new
+`flagship-hero` source (reversing this entry's "no second source" stance: the conflict is two
+sources claiming one *id*, distinct ids coexist fine) — and `nil` (programmatic `open(module:)`
+deep links, the Pomodoro re-entry chip) gets a plain push, since zooming out of a card the user
+never tapped reads wrong (the chip had this same wrong-source bug latently). The per-route `if let`
+around `.navigationTransition` is stable for a pushed value's lifetime, so a destination's
+transition can't change identity mid-flight. (5) the hero's secondary "Or browse all 9 apps" action
+had no knowledge-graph edge — added `home → tab-apps` (navigate, "hero: browse all apps").
 
 **Verified off-device**: all changed files parse; `xcodegen generate` clean; `TodayDigestTests`
 added (in-memory `ModelContainer` held for the test's lifetime — the documented gotcha — with an
