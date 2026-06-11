@@ -23,6 +23,10 @@ struct KilterSessionDetailView: View {
     @Query private var allMedia: [SessionMedia]
 
     @State private var importing = false
+    /// Presents the shared `UserHRProfileView` from the default-ceiling affordance (#75): when the
+    /// session's zones were scored against the fixed 190 bpm fallback and no profile exists yet,
+    /// the HR card offers setup inline instead of silently personalizing nothing.
+    @State private var showingHRProfile = false
     /// Multi-clip Studio project for this session — all clip editing (trim/speed/crop/text/HR overlay)
     /// happens here, with a full-screen preview; tapping a clip opens it scoped to that clip (with a
     /// Climb panel), a per-climb "Edit all" opens its clips together, and the bottom button opens the
@@ -55,10 +59,18 @@ struct KilterSessionDetailView: View {
                                        maxHR: session.maxHR, restHR: session.restHR)
     }
 
+    /// The zone ceiling for this session: its own snapshot (stamped on `end`), else the **live**
+    /// profile (so a live session — or a pre-profile one whose ceiling was never known — picks up
+    /// a freshly-filled profile immediately; that's what makes the inline setup affordance honest:
+    /// it shows exactly while this resolves to the 190 default, and fixing the profile fixes the
+    /// visible card), else the fixed `defaultMaxHR` fallback (#75).
+    private var zoneMaxHR: Double {
+        session?.maxHR ?? app.userProfile.profile.resolvedMaxHR ?? HeartRateZone.defaultMaxHR
+    }
+
     private var hrStats: WorkoutHRStats? {
         guard let session, !session.hrSeries.isEmpty else { return nil }
-        return WorkoutHRStats.make(from: session.hrSeries,
-                                   maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR)
+        return WorkoutHRStats.make(from: session.hrSeries, maxHR: zoneMaxHR)
     }
 
     var body: some View {
@@ -84,6 +96,19 @@ struct KilterSessionDetailView: View {
         // Opening the summary of a live session flushes HR so far onto it, so the HR chart + any clip
         // opened from here show heart rate during the session (not only after it ends). No-op once ended.
         .task(id: sessionID) { sessions.syncLiveHR(in: modelContext) }
+        // The shared app-global HR-profile editor, presented from the default-ceiling affordance
+        // (#75). Edits write through `AppModel.userProfile` live, so an open summary re-renders
+        // its zones immediately for a still-active session.
+        .sheet(isPresented: $showingHRProfile) {
+            NavigationStack {
+                UserHRProfileView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingHRProfile = false }
+                        }
+                    }
+            }
+        }
         // Reel: the shared auto-generate-then-edit flow (now full-length, uncapped).
         .sheet(isPresented: $showingReel) {
             if let session {
@@ -213,6 +238,20 @@ struct KilterSessionDetailView: View {
                     hrStat("\(Int(hr.edwardsTRIMP.rounded()))", "Strain")
                 }
                 .accessibilityIdentifier("kilter.hr.load")
+            }
+            // This card is being scored against the fixed `HeartRateZone.defaultMaxHR` (190) —
+            // no per-session snapshot AND no profile — so say so and offer the fix inline (#75).
+            // The gate mirrors `zoneMaxHR`'s fallback chain exactly: filling the profile both
+            // hides the affordance and personalizes this very card. Sessions that captured a
+            // ceiling at `end` never show it.
+            if session?.maxHR == nil, app.userProfile.profile.resolvedMaxHR == nil {
+                Button { showingHRProfile = true } label: {
+                    Label("Zones use a default 190 bpm ceiling — set up your heart-rate profile",
+                          systemImage: "person.crop.circle.badge.plus")
+                        .font(.caption)
+                        .multilineTextAlignment(.leading)
+                }
+                .accessibilityIdentifier("kilter.hr.setupProfile")
             }
         }
         .padding()
@@ -345,7 +384,7 @@ struct KilterSessionDetailView: View {
                         effort: ClimbEffort(peakBpm: item.peakBpm, peakHRR: item.peakHRR, hrRise: item.hrRise,
                                             timeToPeak: item.timeToPeak, hrRecovery60: item.hrRecovery60,
                                             hrRecovery30: item.hrRecovery30),
-                        maxHR: session?.maxHR ?? HeartRateZone.defaultMaxHR)
+                        maxHR: zoneMaxHR)
                         .accessibilityIdentifier("kilter.climb.effort")
                 }
                 HRVBadge(hrv: item.restHRV)

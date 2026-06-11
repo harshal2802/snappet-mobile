@@ -2,12 +2,16 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
-/// Kilter preferences: the default board + angle that seed browsing, how grades render, the installed
+/// Kilter preferences: the default board + angle that seed browsing, how grades render, the shared
+/// heart-rate profile (#75 — the same app-global editor the workout tracker links to), the installed
 /// climb catalog (status / refresh / remove — issue #42), and a destructive "clear logged history".
 /// Pushed onto the App Library's shared NavigationStack from the catalog's More menu.
 struct KilterSettingsView: View {
     let catalog: KilterCatalog
     @Environment(\.modelContext) private var modelContext
+    /// For the heart-rate profile row (#75) — the profile is app-global (`AppModel.userProfile`),
+    /// shared with the workout tracker, so this links to the same `UserHRProfileView` editor.
+    @Environment(AppModel.self) private var app
 
     @AppStorage("kilter.layout") private var layoutId: Int = 1
     @AppStorage("kilter.angle") private var angle: Int = 40
@@ -56,6 +60,25 @@ struct KilterSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("kilter.settings.gradeFormat")
+            }
+
+            // The shared HR profile was only findable inside the workout tracker's settings, so
+            // Kilter session summaries silently used the 190 bpm default ceiling (#75). Same
+            // editor, second front door — the profile itself stays app-global.
+            Section {
+                NavigationLink {
+                    UserHRProfileView()
+                } label: {
+                    LabeledContent("Heart-rate profile",
+                                   value: app.userProfile.profile.resolvedMaxHR
+                                       .map { "Max \(Int($0.rounded()))" } ?? "Not set")
+                }
+                .accessibilityIdentifier("kilter.settings.hrProfile")
+            } header: {
+                Text("Heart rate")
+            } footer: {
+                Text("Personalizes session heart-rate zones, % effort, and the calorie estimate. "
+                     + "One profile for the whole app — without it, zones use a default 190 bpm ceiling.")
             }
 
             Section {
