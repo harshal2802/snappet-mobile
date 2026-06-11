@@ -3621,3 +3621,56 @@ added (in-memory `ModelContainer` held for the test's lifetime — the documente
 injected fixed UTC clock so month-proration numbers are exact). **Simulator-pending (orchestrator)**:
 the two-level Kilter push, the three acceptance-criteria card routes, the fresh-install hero → reels
 onboarding, and the full XCUITest suite (smoke / journal tab-switch / kilter `apps` launches).
+
+## [2026-06-10] iOS — suite backup/restore as explicit versioned Rows; the corrupt-store fallback becomes visible (#68)
+
+**Decision** (prompt 47, the iOS mirror of Android #84): the suite backup is ONE versioned JSON
+file of **explicit per-model Rows**, not a storage-level dump — SwiftData hides its SQLite, so
+the Android schema-agnostic trick is unavailable. Each `SnappetSchema` model gets a
+`Codable & Hashable` mirror of its *stored* properties in `Core/SnappetBackup.swift`; the drift
+hazard that creates (a new `@Model` silently missing from backups) is fenced by a **tripwire
+test** — `SnappetBackup.coveredModels` must equal `SnappetSchema.models` or
+`SnappetBackupTests` fails — plus an integrator note on `SnappetSchema` itself.
+
+- **Rows restore raw, not through enums.** `make()` writes `sportRaw`/`statusRaw`/
+  `kindRaw`/… directly (and un-pins `ClipEdit`/`StudioProject.updatedAt`, which their inits
+  force to `createdAt`) so a stored value the current enum doesn't know survives a round trip
+  verbatim. The model inits launder; a backup must not.
+- **Dates ride `deferredToDate`** (Double seconds since reference date): the only encoding
+  that round-trips a `Date` bit-exactly. ISO-8601 is for the human-facing per-module exports
+  (`ModuleExports`), where sub-second loss is fine; the backup is held to exact equality in
+  tests.
+- **HR series at full fidelity, compact JSON** (the issue's iCloud-size caveat): downsampling
+  a backup corrupts the source of truth, so size is managed by *encoding* (`sortedKeys`, no
+  pretty-print, no escaping-slashes) — ~100 bytes/sample ⇒ a few hundred KB per hour-long
+  session; the backup-section footer says the file can be a few MB. Rows are sorted by stable
+  keys so the same store always encodes to the same bytes (diffable; re-export equality is a
+  test).
+- **Replace-everything in one save**: decode-validate the whole file first (strict `kind`
+  sentinel + same-`formatVersion` — the #84 shared decision; cross-version restore stays the
+  migrate-and-re-export pipeline's job), then delete-all + insert-all + a single
+  `context.save()`, `rollback()` on throw. One save keeps old/new unique-key overlap
+  (`KilterFavorite.climbUUID`, `KilterSession.id`) inside one transaction — covered by a
+  dedicated test.
+- **Reset ≠ container swap.** When the store fell back to in-memory, the banner's Reset
+  deletes `default.store(-shm,-wal)` so the **next** launch starts fresh, then tells the user
+  to quit and reopen. A live `ModelContainer` swap was rejected: `RootShell` builds
+  `SnappetCore` from the old container's context once (and #71 owns RootShell — its hoist
+  shouldn't collide with a re-wiring), so swapped-under views would keep writing into the dead
+  container. Restoring *while* in fallback works but is honestly footnoted as
+  lost-on-relaunch.
+- **Entry points stay out of the #71 blast radius**: one toolbar button on `AppLibraryView`
+  (sheet), and the banner mounts in `SnappetApp` via `safeAreaInset` — `RootShell` untouched.
+  `BackupView` logs usage by inserting `UsageRecord` directly (the banner path has no
+  `SnappetCore` in the environment).
+- `-uiTestCorruptStore` follows the `-uiTest*` hook pattern (the real `try?` failure can't be
+  forced from a test); `BackupUITests` asserts the banner + recovery actions. The UI test taps
+  Reset only up to its confirm dialog — confirming would delete the simulator's real store.
+
+**Accepted residuals**: strict same-version import means backups don't outlive a future format
+bump (migrate-on-import is the v2-era follow-up, as on Android); the Files-picker round trip
+itself is system UI (not XCUITest-automatable) — the codec contract is what's locked by tests.
+
+**Verified off-device**: `xcodegen generate` clean; all new/changed files parse. Simulator
+suite (`SnappetBackupTests`, `ModuleExportsTests`, `StoreRecoveryTests`, `BackupUITests`) is
+run by the orchestrator. Device-pending: a real Files/iCloud Drive export+restore round trip.

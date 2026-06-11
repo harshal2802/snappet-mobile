@@ -306,6 +306,19 @@ symbol to `house.fill`). Apps-tab navigation and the `apps`/`-uiTest*`/`-screens
 hooks unchanged. **Simulator-pending**: the card routes + first-run hero + full XCUITest suite
 (the orchestrator's verification pass).
 
+🟢 **Data safety: suite backup/export/restore + visible corrupt-store fallback (2026-06-10,
+prompt 47, issue #68).** iOS (mirrors Android #84). Apps → toolbar → **Back up & restore**:
+"Back up my data" serializes every `SnappetSchema` model into ONE versioned JSON file via the
+suite's first `.fileExporter` (`Core/SnappetBackup` — explicit Codable Rows with a tripwire
+test against schema drift; exact-Date encoding; HR series at full fidelity, compact JSON);
+"Restore from backup" decode-validates, confirms, then replace-everything in a single save.
+Per-module exports where format matters: Journal→Markdown, Budget/Split Expenses→CSV, workout
+history→JSON, and `FeedbackStore.exportAll()`→JSON (its first call site). And the silent
+corrupt-store fallback (`SnappetApp`'s `try?`→in-memory branch) is now captured in
+`StoreHealth` and rendered as a persistent banner ("changes made now won't be saved") offering
+restore-from-backup or a confirmed store reset — testable via `-uiTestCorruptStore`.
+**Device-pending**: a real Files/iCloud Drive export+restore round trip.
+
 ## License
 
 TBD.
