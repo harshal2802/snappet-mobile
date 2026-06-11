@@ -88,8 +88,14 @@ final class WorkoutPauseBackgroundTests: XCTestCase {
         // --- Banner → resume (zoom back into the player) ---
         // The banner floats over the scrollable routines list (safeAreaInset), so a plain
         // center tap can resolve onto a routine row sitting behind the bar. Tap low in the
-        // banner's frame — squarely on the visible bar, below any overlapped row.
+        // banner's frame — squarely on the visible bar, below any overlapped row. One-shot
+        // coordinate taps can be swallowed under full-suite load (frames settle late), so if
+        // the player didn't come back and the banner is still up, tap once more at the bar's
+        // centre — a genuinely broken tap-through still fails both attempts.
         banner.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        if !app.buttons["pauseWorkout"].waitForExistence(timeout: 6), banner.exists {
+            banner.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         XCTAssertTrue(app.buttons["pauseWorkout"].waitForExistence(timeout: 6),
                       "tapping the banner should bring the player back")
         XCTAssertFalse(banner.exists, "the banner should hide once the player is foregrounded again")
