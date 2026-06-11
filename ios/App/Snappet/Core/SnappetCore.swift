@@ -32,6 +32,9 @@ final class UsageRecord {
 /// The list of every persisted model in the shared store. Mini-apps that need their
 /// own history add their `@Model` types here (one central place so the container
 /// schema stays consistent). Keep `UsageRecord` first.
+///
+/// Adding a model? Also add its Row to `SnappetBackup` (Core/SnappetBackup.swift) so the
+/// suite backup keeps covering everything — `SnappetBackupTests` fails until you do.
 enum SnappetSchema {
     static let models: [any PersistentModel.Type] = [
         UsageRecord.self,
