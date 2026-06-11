@@ -27,7 +27,9 @@ final class SnappetBackupTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeContainer() throws -> ModelContainer {
+    // nonisolated: called from setUpWithError, whose XCTest override is nonisolated even in a
+    // @MainActor class — a MainActor-isolated helper there is a Swift 6 "sending self" error.
+    private nonisolated func makeContainer() throws -> ModelContainer {
         try ModelContainer(
             for: Schema(SnappetSchema.models),
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))

@@ -56,6 +56,11 @@ struct StoreHealthBanner: View {
         .overlay(alignment: .bottom) { Divider() }
         .foregroundStyle(.primary)
         .tint(.red)
+        // `.contain` makes the banner its own named container — a bare identifier on the
+        // VStack would propagate to every child element and CLOBBER the buttons'
+        // `store.health.restore` / `store.health.reset` identifiers (it did; BackupUITests
+        // saw both buttons as 'store.health.banner').
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("store.health.banner")
         .sheet(isPresented: $showingRestore) {
             BackupView(storeIsFallback: true)
@@ -85,6 +90,7 @@ struct StoreHealthBanner: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.green.opacity(0.14))
         .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)   // same child-clobbering guard as above
         .accessibilityIdentifier("store.health.resetDone")
     }
 

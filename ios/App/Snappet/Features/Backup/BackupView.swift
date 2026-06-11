@@ -126,7 +126,7 @@ struct BackupView: View {
             exportRow("Journal", detail: "Markdown", id: "journal", systemImage: "book") {
                 BackupExportDocument(
                     data: Data(ModuleExports.journalMarkdown(try fetchAll()).utf8),
-                    contentType: .markdownOrPlainText, filename: "snappet-journal-\(dateStamp)",
+                    contentType: BackupExportDocument.markdownOrPlainText, filename: "snappet-journal-\(dateStamp)",
                     successMessage: "Journal exported.")
             }
             exportRow("Budget", detail: "CSV", id: "budget", systemImage: "chart.pie") {

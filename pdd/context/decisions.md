@@ -3674,3 +3674,14 @@ itself is system UI (not XCUITest-automatable) — the codec contract is what's 
 **Verified off-device**: `xcodegen generate` clean; all new/changed files parse. Simulator
 suite (`SnappetBackupTests`, `ModuleExportsTests`, `StoreRecoveryTests`, `BackupUITests`) is
 run by the orchestrator. Device-pending: a real Files/iCloud Drive export+restore round trip.
+
+**Post-suite fix (same day)**: `BackupUITests`' banner assertions failed because a bare
+`.accessibilityIdentifier("store.health.banner")` on the banner's VStack **propagates to every
+child accessibility element**, clobbering the buttons' `store.health.restore`/`store.health.reset`
+ids (XCUITest saw both buttons as `store.health.banner`). Fix: `.accessibilityElement(children:
+.contain)` before the container identifier — the banner becomes its own named container and the
+children keep their ids. Rule of thumb: never put a bare `accessibilityIdentifier` on a container
+whose children also carry identifiers. (The same suite run's six "Test crashed with signal kill"
+failures were environmental — a second agent's `xcodebuild test` drove the SAME simulator UDID
+concurrently, and each run's app launch terminates the other's app instance; the tests pass in
+isolation. Reserve distinct simulator UDIDs per agent.)
