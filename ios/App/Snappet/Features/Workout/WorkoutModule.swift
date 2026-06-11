@@ -30,8 +30,12 @@ struct WorkoutModuleView: View {
             case .loading:
                 ProgressView("Loading…")
             case .error(let msg):
-                ContentUnavailableView("Something went wrong",
-                    systemImage: "exclamationmark.triangle", description: Text(msg))
+                // Actionable, not terminal: Try again re-runs bootstrap (auth + load); Open
+                // Settings covers the permission-shaped failures (issue #72 §2).
+                RecoveryUnavailableView(spec: ReelFlowPolicy.workoutsErrorSpec(message: msg),
+                                        identifierPrefix: "workout") { action in
+                    if action == .tryAgain { Task { await model.bootstrap() } }
+                }
             case .ready:
                 WorkoutListView()
             }

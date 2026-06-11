@@ -3443,3 +3443,89 @@ sets) — compact only when *every* set carries equal reps, else a per-set list 
 **Verified**: `xcodegen generate` clean. The simulator suite (new `LastSetLookupTests`,
 `SessionSetEditingTests`, `HistorySearchTests`, extended `SetMeasureTests` + the existing
 walkthroughs) is run by the orchestrator — not from this worktree.
+
+## [2026-06-10] iOS — flagship reel flow: recoverable dead ends + a real export payoff (#72)
+
+**Decision**: every reel/workout dead end is now driven by a **pure policy layer**
+(`Features/Reel/ReelFlowPolicy.swift` — copy, action sets, confirmation messages, export paths,
+sweep selection, activity icons), rendered by one `RecoveryUnavailableView`. The views stay dumb;
+the *choices* are unit-tested in `ReelFlowPolicyTests` (prompt 44, first iOS Wave-2 item).
+
+- **`.exportFailed` is a new `ReelViewModel.State`, not `.error`.** A failed export leaves
+  pins/removals/order untouched in the VM, so the failure surface offers *Retry export* (re-runs
+  `export()` with the same curation) and *Back to my edit* (`.ready`). `.error` stays the
+  build-failure state and gained *Try again*.
+- **Denied-state remedy honors the verifier caveat.** `PHPickerViewController` presents without
+  permission, but `media(forIdentifiers:)` resolves through `PHAsset.fetchAssets`, which returns
+  nothing under full denial — so the denied empty state offers **Open Settings + Try again only**,
+  never "Select clips" (asserted in `testDeniedEmptyNeverOffersSelectClips`). `generate()` maps
+  `PhotoError.denied` → `.empty`; the spec is picked off a **live** `currentStatus` read so
+  returning from Settings is reflected immediately. `.restricted` maps to `.denied` (same surface).
+- **Health copy is truthful about invisibility.** HealthKit read denial isn't queryable, so the
+  empty workout list says permission *may* be the cause and offers Refresh (explicit button — the
+  overlay swallows pull-to-refresh) + Open Settings. The old "track a workout, then pull to
+  refresh" promise is gone; the module/list error states offer Try again (re-bootstrap) + Settings.
+- **Exports moved out of `tmp` → `Application Support/Reels`**, backup-excluded (regenerable,
+  potentially large full-length renders), swept to the newest `keepLatestExports = 3` before each
+  new render (pure `sweepableExports`, date-sorted with path tie-break). Backing out or "Make
+  another cut" no longer destroys the artifact mid-flow. **Accepted residual**: there's no in-app
+  browser for past exports — the on-disk copies are an *internal* safety net (nothing in the UI
+  lists or reopens them), so user-facing copy promises only Save to Photos (see review fix 4).
+- **Regenerate confirms only when something is at stake** (pure
+  `regenerateConfirmation(pinned/removed/order/exportedUnsaved)` → message or nil): curation
+  and/or an exported-but-unsaved cut produce a destructive-role `confirmationDialog`; with nothing
+  to lose, regenerate stays one tap.
+- **The payoff screen plays the reel**: auto-playing looped hero (`AVQueuePlayer` +
+  `AVPlayerLooper`, paused on disappear; audio respects the silent switch — no audio-session
+  override), *Save to Photos* (add-only via the existing `MediaLibraryService`, with a Settings
+  hint on save-denied) + *Share*, and the success haptic **rides the existing `.celebrates(on:)`
+  landing** (issue #80) — deliberately not double-fired.
+- **Thumbnails**: `Highlight.mediaItemId` already names the source asset, so rows load a poster
+  frame via one shared `PHCachingImageManager` (static on the View struct — MainActor-isolated via
+  the `View` conformance, hence concurrency-safe), `.highQualityFormat` (single callback ⇒ safe
+  continuation), network-disallowed; the old kind icon is the fallback when the asset is
+  unreadable (e.g. ungranted under limited access). Workout rows gained pure-mapped activity icons.
+
+**Pre-merge adversarial review round** (8 confirmed, all fixed): (1) the limited-access toolbar
+add-clips button regenerated straight over pins/removals/order with no dialog while Regenerate
+and Make-another-cut both confirmed — it now runs through the same `regenerateConfirmation` gate
+(the `.empty`-state pick stays one-tap: curation is always empty there). (2) "Select clips" under
+`.limited` looped silently back to `.empty`: PHPicker browses the FULL library but never widens
+the grant, and `media(forIdentifiers:)` resolves only granted assets, so out-of-grant picks
+vanished with zero feedback — rule: under limited access every pick surface presents the system
+**limited-library picker** (`PHPhotoLibrary.presentLimitedLibraryPicker`, the one sheet that
+extends the grant; UIKit-presented from the view layer via the key window's top VC — the policy
+stays pure with a new `.extendLimitedSelection` action) and regenerates on return so the newly
+granted clips are auto-discovered; `usePickedMedia` runs picks through the pure
+`pickedMediaResolution` — all dropped → the explanatory `pickedClipsUnavailableSpec` (Open
+Settings + Try again) instead of the generic empty, partially dropped → build with what resolved
+plus an honest edit-list footnote naming the left-out count. (3) `bootstrap()` flipped `.ready`
+*before* awaiting `refreshWorkouts()`, so every cold load flashed the "may not have permission"
+overlay over the empty list and the overlay's Refresh gave no in-flight feedback — `.ready` now
+lands after the fetch (a failed refresh's `.error` is preserved), and an `AppModel.refreshing`
+flag swaps the overlay to a spinner while a fetch is in flight (`WorkoutModuleView`'s `.loading`
+spinner still covers the bootstrap window). (4) the keep-3 copy overpromised ("Snappet keeps your
+latest exports on this device") although no UI lists or reopens past renders — the payoff caption
+and the unsaved-cut confirmation now promise only what's real: Save to Photos, or a new cut
+replaces/discards this one; the sweep is documented as an internal safety net (comments in
+`ReelExporter`/`ReelFlowPolicy` corrected). (5) the Health-denied copy routed to the per-app
+Settings page, where no Health toggle exists — the copy now names Settings > Privacy & Security >
+Health > Snappet and Open Settings stays a best-effort shortcut (stale "Health toggles live
+there" comments corrected). (6) `.kept` feedback was logged before the export `try`, so every
+failed-then-retried export re-logged the survivors as training data — kept + exported both log
+once, after a successful export. (7) `generate()` didn't invalidate `previewPlayer`, so a
+confirmed Regenerate / Make-another-cut / new-pick rebuild could keep showing (and playing) the
+discarded cut — invalidated with the other per-cut resets. (8) `export()` had no reentrancy
+guard, so a double-tap could run two concurrent exports racing the sweep — it bails when already
+`.exporting`. New/changed pure tests: `pickedMediaResolution` (all/partial/none dropped + the
+empty-pick-is-cancel edge), `pickedClipsUnavailableSpec`, shortfall-note pluralization, the
+limited spec's `.extendLimitedSelection`-not-`.selectClips` shape, the Privacy & Security path
+assertion, and the no-overpromise assertions on the unsaved-cut message. No UI tests for the
+picker flows — the limited-library round-trip is the device-pending class.
+
+**Verified off-device**: all changed files parse; pure suite added (`ReelFlowPolicyTests`).
+**Device-pending (per repo pattern)**: the full flow on hardware — real export into
+`Application Support/Reels`, looped playback, Photos add-only permission sheet + save, the
+limited-library picker round-trip (extend grant → regenerate), Settings deep-link round-trips
+for Photos/Health, haptic feel. Simulator: full `SnappetTests` run by the orchestrator after
+merge into the test queue.

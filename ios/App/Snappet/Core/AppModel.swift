@@ -12,6 +12,10 @@ final class AppModel {
 
     var phase: Phase = .loading
     var workouts: [WorkoutSummary] = []
+    /// True while `refreshWorkouts()` is in flight — the workout list's empty overlay swaps its
+    /// "may not have permission" copy for a spinner during a fetch, so an in-flight load never
+    /// reads as a permission problem (issue #72 pre-merge review fix).
+    private(set) var refreshing = false
     /// Current Photo Library access. `.limited` means we can't auto-scan the library
     /// and must fall back to a manual picker (#60 §C).
     var photoAccess: PHAuthorizationStatus = .notDetermined
@@ -177,14 +181,19 @@ final class AppModel {
         do {
             try await health.requestAuthorization()
             photoAccess = photos.currentStatus
-            phase = .ready
+            // `.ready` only AFTER the first fetch lands — flipping early briefly rendered the
+            // empty list (and its "may not have permission" overlay) under every cold load
+            // (review fix). A failed refresh wins: it sets `.error`, which is preserved here.
             await refreshWorkouts()
+            if case .loading = phase { phase = .ready }
         } catch {
             phase = .error(error.localizedDescription)
         }
     }
 
     func refreshWorkouts() async {
+        refreshing = true
+        defer { refreshing = false }
         do { workouts = try await health.recentWorkouts(limit: 40) }
         catch { phase = .error(error.localizedDescription) }
     }
