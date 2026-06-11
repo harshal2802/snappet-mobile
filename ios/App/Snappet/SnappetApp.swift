@@ -5,10 +5,14 @@ import SwiftData
 struct SnappetApp: App {
     let container: ModelContainer
     @State private var appModel: AppModel
+    /// Whether the persistent store opened, or the in-memory fallback fired (issue #68) —
+    /// `StoreHealthBanner` makes the fallback visible instead of a silent blank app.
+    @State private var storeHealth: StoreHealth
 
     init() {
         // The shared on-device store for the whole suite (Snappet Core). A corrupt
-        // store should never brick the app → fall back to in-memory.
+        // store should never brick the app → fall back to in-memory, but the fallback
+        // is RECORDED in StoreHealth and surfaced by StoreHealthBanner (issue #68).
         let schema = Schema(SnappetSchema.models)
         // UI tests pass `-uiTestFreshStore` to get an isolated, empty in-memory store so
         // each run is deterministic (the on-disk store persists between launches on the sim,
@@ -45,15 +49,29 @@ struct SnappetApp: App {
             StudioDemoSeed.clearRememberedBandSeedIfStale()
         }
         _appModel = State(wrappedValue: AppModel())
-        if freshStore {
-            container = try! ModelContainer(
+        // `-uiTestCorruptStore` simulates an unopenable on-disk store (the `try?` else
+        // branch below can't be forced from a test) so the fallback banner is testable.
+        // Test-only, like the args above; a normal launch never hits it.
+        let corruptStore = args.contains("-uiTestCorruptStore")
+        func inMemory() -> ModelContainer {
+            try! ModelContainer(
                 for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        }
+        var health = StoreHealth.Mode.ok
+        if freshStore {
+            container = inMemory()   // requested, not a fallback — stays healthy
+        } else if corruptStore {
+            container = inMemory()
+            health = .fallbackInMemory
         } else if let c = try? ModelContainer(for: schema) {
             container = c
         } else {
-            container = try! ModelContainer(
-                for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+            // The previously-silent branch: an empty in-memory store, now flagged so the
+            // user is told their changes won't persist (issue #68).
+            container = inMemory()
+            health = .fallbackInMemory
         }
+        _storeHealth = State(wrappedValue: StoreHealth(mode: health))
         // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production
         // impact. Seeds into the fresh in-memory store before any UI appears.
         if seedStudioDemo {
@@ -64,7 +82,16 @@ struct SnappetApp: App {
     var body: some Scene {
         WindowGroup {
             RootShell()
+                // Mounted here (not in RootShell) so the corrupt-store warning rides above
+                // whatever the shell shows; renders nothing while the store is healthy.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    StoreHealthBanner(health: storeHealth)
+                }
                 .environment(appModel)
+                // In the environment too (not only the banner's direct param): the App
+                // Library's backup sheet must also know the store fell back, or its export
+                // paths would snapshot the EMPTY in-memory container as a "backup".
+                .environment(storeHealth)
                 .tint(SnappetColor.brand)
         }
         .modelContainer(container)

@@ -3621,3 +3621,119 @@ added (in-memory `ModelContainer` held for the test's lifetime — the documente
 injected fixed UTC clock so month-proration numbers are exact). **Simulator-pending (orchestrator)**:
 the two-level Kilter push, the three acceptance-criteria card routes, the fresh-install hero → reels
 onboarding, and the full XCUITest suite (smoke / journal tab-switch / kilter `apps` launches).
+
+## [2026-06-10] iOS — suite backup/restore as explicit versioned Rows; the corrupt-store fallback becomes visible (#68)
+
+**Decision** (prompt 47, the iOS mirror of Android #84): the suite backup is ONE versioned JSON
+file of **explicit per-model Rows**, not a storage-level dump — SwiftData hides its SQLite, so
+the Android schema-agnostic trick is unavailable. Each `SnappetSchema` model gets a
+`Codable & Hashable` mirror of its *stored* properties in `Core/SnappetBackup.swift`; the drift
+hazard that creates (a new `@Model` silently missing from backups) is fenced by a **tripwire
+test** — `SnappetBackup.coveredModels` must equal `SnappetSchema.models` or
+`SnappetBackupTests` fails — plus an integrator note on `SnappetSchema` itself.
+
+- **Rows restore raw, not through enums.** `make()` writes `sportRaw`/`statusRaw`/
+  `kindRaw`/… directly (and un-pins `ClipEdit`/`StudioProject.updatedAt`, which their inits
+  force to `createdAt`) so a stored value the current enum doesn't know survives a round trip
+  verbatim. The model inits launder; a backup must not.
+- **Dates ride `deferredToDate`** (Double seconds since reference date): the only encoding
+  that round-trips a `Date` bit-exactly. ISO-8601 is for the human-facing per-module exports
+  (`ModuleExports`), where sub-second loss is fine; the backup is held to exact equality in
+  tests.
+- **HR series at full fidelity, compact JSON** (the issue's iCloud-size caveat): downsampling
+  a backup corrupts the source of truth, so size is managed by *encoding* (`sortedKeys`, no
+  pretty-print, no escaping-slashes) — ~100 bytes/sample ⇒ a few hundred KB per hour-long
+  session; the backup-section footer says the file can be a few MB. Rows are sorted by stable
+  keys so the same store always encodes to the same bytes (diffable; re-export equality is a
+  test).
+- **Replace-everything in one save**: decode-validate the whole file first (strict `kind`
+  sentinel + same-`formatVersion` — the #84 shared decision; cross-version restore stays the
+  migrate-and-re-export pipeline's job), then delete-all + insert-all + a single
+  `context.save()`, `rollback()` on throw. One save keeps old/new unique-key overlap
+  (`KilterFavorite.climbUUID`, `KilterSession.id`) inside one transaction — covered by a
+  dedicated test.
+- **Reset ≠ container swap.** When the store fell back to in-memory, the banner's Reset
+  deletes `default.store(-shm,-wal)` so the **next** launch starts fresh, then tells the user
+  to quit and reopen. A live `ModelContainer` swap was rejected: `RootShell` builds
+  `SnappetCore` from the old container's context once (and #71 owns RootShell — its hoist
+  shouldn't collide with a re-wiring), so swapped-under views would keep writing into the dead
+  container. Restoring *while* in fallback works but is honestly footnoted as
+  lost-on-relaunch.
+- **Entry points stay out of the #71 blast radius**: one toolbar button on `AppLibraryView`
+  (sheet), and the banner mounts in `SnappetApp` via `safeAreaInset` — `RootShell` untouched.
+  `BackupView` logs usage by inserting `UsageRecord` directly (the banner path has no
+  `SnappetCore` in the environment).
+- `-uiTestCorruptStore` follows the `-uiTest*` hook pattern (the real `try?` failure can't be
+  forced from a test); `BackupUITests` asserts the banner + recovery actions. The UI test taps
+  Reset only up to its confirm dialog — confirming would delete the simulator's real store.
+
+**Accepted residuals**: strict same-version import means backups don't outlive a future format
+bump (migrate-on-import is the v2-era follow-up, as on Android); the Files-picker round trip
+itself is system UI (not XCUITest-automatable) — the codec contract is what's locked by tests;
+and the backup covers Snappet's **database** only — UserDefaults-resident settings
+(`UserHRProfile`, `expense.myName`, band pairing, Kilter prefs) and the highlight-feedback
+JSONL are outside the envelope (feedback has its own export row, and the backup footer scopes
+its claim to records accordingly — review fix 6 below).
+
+**Verified off-device**: `xcodegen generate` clean; all new/changed files parse. Simulator
+suite (`SnappetBackupTests`, `ModuleExportsTests`, `StoreRecoveryTests`, `BackupUITests`) is
+run by the orchestrator. Device-pending: a real Files/iCloud Drive export+restore round trip.
+
+**Post-suite fix (same day)**: `BackupUITests`' banner assertions failed because a bare
+`.accessibilityIdentifier("store.health.banner")` on the banner's VStack **propagates to every
+child accessibility element**, clobbering the buttons' `store.health.restore`/`store.health.reset`
+ids (XCUITest saw both buttons as `store.health.banner`). Fix: `.accessibilityElement(children:
+.contain)` before the container identifier — the banner becomes its own named container and the
+children keep their ids. Rule of thumb: never put a bare `accessibilityIdentifier` on a container
+whose children also carry identifiers. (The same suite run's six "Test crashed with signal kill"
+failures were environmental — a second agent's `xcodebuild test` drove the SAME simulator UDID
+concurrently, and each run's app launch terminates the other's app instance; the tests pass in
+isolation. Reserve distinct simulator UDIDs per agent.)
+
+**Pre-merge adversarial review round** (7 confirmed classes, all fixed): (1) backup-in-fallback
+exported the EMPTY in-memory store — a panicked user could "back up" 0 records, then reset their
+real store believing they were covered. Rule: **fallback gates every export path** — the suite
+button and all per-module rows disable (footers say a backup/export made now would not contain
+saved data; the feedback row gates uniformly even though its JSONL is disk-resident — one rule
+in that state), `backUpEverything()` belt-and-braces a `.failure` early-return, and the App
+Library entry point now derives `storeIsFallback` from `StoreHealth` (injected via the
+environment in `SnappetApp`) instead of defaulting to healthy — the banner wasn't the only door
+in. (2) restore deleted rows under the LIVE `KilterSession` held by the AppModel-owned manager —
+later writes would trap on the deleted `@Model` (or resurrect zombie rows) and the Live Activity
+kept counting. Rule: **detach before restore** — `KilterSessionManager.detachForStoreRestore()`
+nils `current` + active-climb state, stops live metrics only when this session owns them, ends
+the Live Activity, and deliberately writes NOTHING to the store (the rows are about to be
+deleted); `recover(in:)` re-adopts whatever open session the restored data carries on the next
+Kilter entry (the #54 semantics; locked by a unit test). Audit: the manager is the only
+AppModel-level `@Model` holder — the workout player's `playing` is view-local `@State` on
+`WorkoutHomeView`, unreachable while the backup sheet is presented (`LiveMetricsCoordinator`
+copies values, never the session). (3) restoring while in fallback restored into the in-memory
+store but reported an unqualified "Restored N records" — the data silently vanished on relaunch.
+The confirm dialog and the success message now say temporary/lost-on-close and spell out the
+real path (reset → relaunch → restore), and the banner leads with **Reset storage** (prominent)
+while demoting restore to "Preview a backup" — reset-then-restore is the recovery story the
+banner advertises. (4) `ModuleExports`' three `Dictionary(uniqueKeysWithValues:)` constructors
+trapped on duplicate FK ids, which a tampered/hand-duplicated backup can legally carry — all
+three are now first-wins (`uniquingKeysWith`), and **restore dedupes id-bearing rows first-wins**
+so duplicates never enter the store at all (rows with no natural identity — UsageRecord,
+JournalEntry, HabitCompletion, … — insert as-is; duplicates there are valid data). Restore-side
+dedupe was chosen over reject-at-decode: a duplicated file is still the user's data, and
+refusing the whole restore over one row punishes them. (5) the drift tripwire guarded only half
+the codec: a model added to the schema + `coveredModels` but not File/snapshot/restore passed
+the tests while restore DELETED its rows without re-inserting. Restore's deletes are now
+hand-listed per model beside their inserts (future drift fails SAFE — rows survive), and the
+round-trip test asserts every covered model has ≥1 seeded row AND that `File.recordCount`
+equals an independent `fetchCount`-over-`coveredModels` total, before and after restore. (6)
+the backup footer overclaimed "every module's data" while UserDefaults-resident settings and
+the highlight-feedback JSONL aren't in the envelope — copy now scopes the claim to Snappet's
+database and points at the separate feedback export (residual recorded above). (7) import
+parsed the whole file TWICE (`JSONDecoder` pays the full parse even for the two-key version
+probe) and ran read+decode synchronously on the main actor — a multi-MB HR-heavy backup froze
+the sheet. `decode` now full-parses ONCE in the happy path (the probe only classifies
+failures), and `handlePickedBackup` reads + decodes in a detached task (security-scoped access
+bracketing the read inside it, `File`/rows explicitly `Sendable`), storing the decoded `File`
+for both the preview and `runRestore`; the restore itself stays on the main context. New/changed
+tests: seeded-coverage + recordCount-vs-store assertions in the round trip, duplicate-id
+restore dedupe (first-wins across `Habit`/`KilterSession`/`KilterFavorite`), the
+detach-then-recover lifecycle, the CSV duplicate-id no-crash case, and the fallback UI test now
+asserts the export buttons are disabled while restore stays enabled.
