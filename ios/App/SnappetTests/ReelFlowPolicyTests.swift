@@ -17,12 +17,19 @@ final class ReelFlowPolicyTests: XCTestCase {
         XCTAssertFalse(spec.actions.contains(.openSettings))
     }
 
-    func testLimitedEmptyOffersPickAndSettings() {
+    func testLimitedEmptyExtendsTheGrantInsteadOfPicking() {
+        // PHPicker under .limited browses the FULL library but never widens the grant, and
+        // media(forIdentifiers:) resolves only granted assets — picks outside the selection
+        // silently vanish. The remedy is the system limited-library picker (the one surface
+        // that extends the grant), never .selectClips (pre-merge review fix).
         let spec = ReelFlowPolicy.emptyReelSpec(access: .limited)
-        XCTAssertEqual(spec.actions.first, .selectClips,
-                       "manual pick works under limited access and stays primary")
+        XCTAssertEqual(spec.actions.first, .extendLimitedSelection,
+                       "extending the limited selection is the remedy that actually works")
+        XCTAssertFalse(spec.actions.contains(.selectClips),
+                       "the full-library picker silently drops picks outside the grant")
         XCTAssertTrue(spec.actions.contains(.openSettings))
-        XCTAssertTrue(spec.message.contains("limited"))
+        XCTAssertTrue(spec.message.contains("selected"),
+                      "the copy explains Snappet reads only the selected photos")
     }
 
     func testDeniedEmptyNeverOffersSelectClips() {
@@ -38,6 +45,44 @@ final class ReelFlowPolicyTests: XCTestCase {
     func testNotDeterminedEmptyAsksForAccess() {
         let spec = ReelFlowPolicy.emptyReelSpec(access: .notDetermined)
         XCTAssertEqual(spec.actions, [.allowPhotoAccess])
+    }
+
+    // MARK: - Manual pick resolution (PHAsset.fetchAssets drops unreadable picks)
+
+    func testAllPicksDroppedIsAllDropped() {
+        XCTAssertEqual(ReelFlowPolicy.pickedMediaResolution(pickedCount: 3, resolvedCount: 0),
+                       .allDropped,
+                       "every pick outside the grant must not silently land back in .empty")
+    }
+
+    func testPartialDropProceedsAndCountsTheShortfall() {
+        XCTAssertEqual(ReelFlowPolicy.pickedMediaResolution(pickedCount: 5, resolvedCount: 3),
+                       .proceed(droppedCount: 2))
+    }
+
+    func testFullResolutionProceedsClean() {
+        XCTAssertEqual(ReelFlowPolicy.pickedMediaResolution(pickedCount: 4, resolvedCount: 4),
+                       .proceed(droppedCount: 0))
+        XCTAssertEqual(ReelFlowPolicy.pickedMediaResolution(pickedCount: 0, resolvedCount: 0),
+                       .proceed(droppedCount: 0), "an empty pick is a cancel, not a failure")
+    }
+
+    func testPickedClipsUnavailableSpecNamesTheCauseAndRemedies() {
+        let spec = ReelFlowPolicy.pickedClipsUnavailableSpec()
+        XCTAssertEqual(spec.actions, [.openSettings, .tryAgain])
+        XCTAssertTrue(spec.message.contains("selection"),
+                      "explains the picks aren't in Snappet's allowed Photos selection")
+        XCTAssertFalse(spec.actions.contains(.selectClips),
+                       "re-offering the picker that just failed would be a loop")
+    }
+
+    func testShortfallNoteOnlyForActualDrops() {
+        XCTAssertNil(ReelFlowPolicy.pickedMediaShortfallNote(droppedCount: 0),
+                     "the common everything-resolved case stays clean")
+        let one = ReelFlowPolicy.pickedMediaShortfallNote(droppedCount: 1)
+        XCTAssertTrue(one!.contains("1 picked clip "), "singular form")
+        let three = ReelFlowPolicy.pickedMediaShortfallNote(droppedCount: 3)
+        XCTAssertTrue(three!.contains("3 picked clips"), "plural form names the count")
     }
 
     // MARK: - Export failure is recoverable
@@ -64,7 +109,8 @@ final class ReelFlowPolicyTests: XCTestCase {
         XCTAssertEqual(spec.actions, [.refresh, .openSettings])
         XCTAssertTrue(spec.message.contains("permission"),
                       "must acknowledge that HealthKit read denial is possible")
-        XCTAssertTrue(spec.message.contains("Settings"))
+        XCTAssertTrue(spec.message.contains("Privacy & Security > Health"),
+                      "names the REAL path — the per-app Settings page has no Health row")
         XCTAssertFalse(spec.message.contains("pull to refresh"),
                        "the old copy promised a remedy that can't work under denial")
     }
@@ -96,6 +142,10 @@ final class ReelFlowPolicyTests: XCTestCase {
             pinnedCount: 0, removedCount: 0, hasCustomOrder: false, exportedUnsaved: true)
         XCTAssertNotNil(message)
         XCTAssertTrue(message!.contains("Photos"), "names what's at stake")
+        XCTAssertTrue(message!.contains("discards"),
+                      "honest stakes: nothing implies the replaced cut is retrievable on-device")
+        XCTAssertFalse(message!.contains("keeps your last few exports"),
+                       "the keep-3 sweep is an internal safety net, not a user-facing promise")
     }
 
     func testCurationPlusUnsavedExportNamesBoth() {
@@ -176,7 +226,7 @@ final class ReelFlowPolicyTests: XCTestCase {
 
     func testActionTitlesAndIdentifierSuffixesAreUnique() {
         let all: [ReelFlowPolicy.RecoveryAction] = [
-            .selectClips, .allowPhotoAccess, .openSettings, .tryAgain,
+            .selectClips, .extendLimitedSelection, .allowPhotoAccess, .openSettings, .tryAgain,
             .retryExport, .backToEdit, .refresh,
         ]
         XCTAssertEqual(Set(all.map(\.buttonTitle)).count, all.count)

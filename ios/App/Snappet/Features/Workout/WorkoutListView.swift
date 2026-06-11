@@ -45,12 +45,20 @@ struct WorkoutListView: View {
         .navigationDestination(for: WorkoutSummary.self) { ReelView(summary: $0) }
         .overlay {
             if model.workouts.isEmpty {
-                // Health read-denial is invisible (not queryable), so the copy acknowledges it
-                // and offers a working path out — an explicit Refresh (the overlay swallows
-                // pull-to-refresh) plus Open Settings (issue #72 §2).
-                RecoveryUnavailableView(spec: ReelFlowPolicy.workoutsEmptySpec(),
-                                        identifierPrefix: "workout") { action in
-                    if action == .refresh { Task { await model.refreshWorkouts() } }
+                if model.refreshing {
+                    // An in-flight fetch (cold load or the Refresh button) must not read as a
+                    // permission problem — spinner until the result is actually known (review fix).
+                    ProgressView()
+                } else {
+                    // Health read-denial is invisible (not queryable), so the copy acknowledges it
+                    // and offers a working path out — an explicit Refresh (the overlay swallows
+                    // pull-to-refresh) plus Open Settings as a best-effort shortcut; the real
+                    // Health toggle lives under Privacy & Security, which the copy names
+                    // (issue #72 §2 + review fix).
+                    RecoveryUnavailableView(spec: ReelFlowPolicy.workoutsEmptySpec(),
+                                            identifierPrefix: "workout") { action in
+                        if action == .refresh { Task { await model.refreshWorkouts() } }
+                    }
                 }
             }
         }

@@ -99,10 +99,12 @@ final class ReelExporter: Sendable {
     }
 
     /// Where a finished reel lands: `Application Support/Reels` — **not** `tmp`, which the system
-    /// purges and which made backing out / "Make another cut" destroy the artifact (issue #72 §4).
-    /// Excluded from backup (regenerable, potentially large full-length renders); renders beyond
-    /// the newest `ReelFlowPolicy.keepLatestExports` are swept before each new export, so the cut
-    /// on screen and the last few before it always survive navigation.
+    /// purges and which made backing out / "Make another cut" destroy the artifact mid-flow
+    /// (issue #72 §4). Excluded from backup (regenerable, potentially large full-length renders);
+    /// renders beyond the newest `ReelFlowPolicy.keepLatestExports` are swept before each new
+    /// export. The kept files are an internal safety net only — nothing in the UI lists or
+    /// reopens them — so Save to Photos stays the one durable home the user-facing copy promises
+    /// (review fix: no copy may imply a replaced cut is retrievable here).
     private func exportDestination() throws -> URL {
         let fm = FileManager.default
         let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,

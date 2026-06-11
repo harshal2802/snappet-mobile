@@ -19,14 +19,25 @@ enum ReelFlowPolicy {
     /// What a recovery surface can offer. Views map these to buttons; the policy decides which
     /// exist and in what order (first = primary).
     enum RecoveryAction: Hashable {
-        /// Present the manual PHPicker. Only offered under `.authorized`/`.limited`: the picker
-        /// itself presents without permission, but `media(forIdentifiers:)` resolves through
-        /// `PHAsset.fetchAssets`, which returns nothing under full denial — so offering it there
-        /// would be another dead end (issue #72 verifier caveat).
+        /// Present the manual PHPicker (full-library browse). Only offered under `.authorized`:
+        /// the picker itself presents without permission, but `media(forIdentifiers:)` resolves
+        /// through `PHAsset.fetchAssets`, which returns nothing under full denial and only
+        /// *granted* assets under `.limited` — picks outside a limited grant silently vanish, so
+        /// limited surfaces offer `.extendLimitedSelection` instead (issue #72 verifier caveat +
+        /// pre-merge review fix).
         case selectClips
+        /// Present the system limited-library management sheet
+        /// (`PHPhotoLibrary.presentLimitedLibraryPicker`) — the only surface that EXTENDS a
+        /// `.limited` grant — then regenerate so the newly granted clips are auto-discovered by
+        /// the session window. UIKit presentation stays in the view layer; the policy only
+        /// decides *that* this is the limited remedy.
+        case extendLimitedSelection
         /// Trigger the Photos authorization request (first ask, `.notDetermined`).
         case allowPhotoAccess
-        /// Deep-link to the app's page in Settings (Photos / Health toggles live there).
+        /// Deep-link to the app's page in Settings. Photos toggles live there; Health read
+        /// access does NOT (it's under Settings > Privacy & Security > Health > Snappet, or
+        /// Health app > Profile > Apps) — Health surfaces keep this as a best-effort shortcut
+        /// and their copy names the real path (pre-merge review fix).
         case openSettings
         /// Re-run the failed load / generate.
         case tryAgain
@@ -60,11 +71,15 @@ enum ReelFlowPolicy {
                 message: "Snappet found no photos or videos shot during this session. You can pick clips yourself instead.",
                 actions: [.selectClips])
         case .limited:
+            // NOT `.selectClips`: PHPicker browses the full library but never widens the grant,
+            // and `media(forIdentifiers:)` resolves only granted assets — picks outside the
+            // selection would silently vanish and loop right back here. The limited-library
+            // picker is the one surface that extends what Snappet can read.
             return RecoverySpec(
                 title: "No clips for this workout",
                 systemImage: "video.slash",
-                message: "Snappet only has limited Photo access, so it can’t scan for the clips you shot. Select them manually, or allow full access in Settings.",
-                actions: [.selectClips, .openSettings])
+                message: "Snappet can only read the photos you’ve selected for it, and none were shot during this session. Select more clips for Snappet, or allow full access in Settings.",
+                actions: [.extendLimitedSelection, .openSettings])
         case .denied:
             return RecoverySpec(
                 title: "Photos access is off",
@@ -78,6 +93,43 @@ enum ReelFlowPolicy {
                 message: "Snappet needs Photo access to find the clips you shot during this session.",
                 actions: [.allowPhotoAccess])
         }
+    }
+
+    // MARK: - Manual pick resolution (review fix — limited grants silently drop picks)
+
+    /// What to do with a manual pick after identifier resolution. `PHAsset.fetchAssets` resolves
+    /// only assets the app may read, so under a limited grant picks can vanish: silently building
+    /// with fewer (or zero) clips looked like a no-op loop back to the same `.empty` screen.
+    enum PickedMediaResolution: Equatable {
+        /// Build with what resolved; `droppedCount > 0` ⇒ surface `pickedMediaShortfallNote`.
+        case proceed(droppedCount: Int)
+        /// Nothing resolved — show `pickedClipsUnavailableSpec()` instead of the generic empty.
+        case allDropped
+    }
+
+    static func pickedMediaResolution(pickedCount: Int, resolvedCount: Int) -> PickedMediaResolution {
+        if pickedCount > 0 && resolvedCount <= 0 { return .allDropped }
+        return .proceed(droppedCount: max(0, pickedCount - resolvedCount))
+    }
+
+    /// The `.empty` surface when every picked clip failed to resolve: names the actual cause —
+    /// the picks aren't in the Photos selection Snappet is allowed to read — instead of the
+    /// generic no-clips copy, and routes to where it can be fixed.
+    static func pickedClipsUnavailableSpec() -> RecoverySpec {
+        RecoverySpec(
+            title: "Snappet can’t read those clips",
+            systemImage: "photo.badge.exclamationmark",
+            message: "The clips you picked aren’t in the Photos selection Snappet is allowed to read, so none of them could be used. Allow more in Settings, then try again.",
+            actions: [.openSettings, .tryAgain])
+    }
+
+    /// Footnote for a PARTIAL drop — the reel built, but not with everything the user picked.
+    /// `nil` when nothing was dropped (the overwhelmingly common case stays clean).
+    static func pickedMediaShortfallNote(droppedCount: Int) -> String? {
+        guard droppedCount > 0 else { return nil }
+        return droppedCount == 1
+            ? "1 picked clip isn’t in the Photos selection Snappet can read, so the reel was built without it."
+            : "\(droppedCount) picked clips aren’t in the Photos selection Snappet can read, so the reel was built without them."
     }
 
     /// A failed export is **recoverable**, not terminal: the curated edit is still in the view
@@ -104,12 +156,14 @@ enum ReelFlowPolicy {
     /// HealthKit **read** denial is invisible by design (the status isn't queryable), so an empty
     /// list must acknowledge that possibility instead of promising "track a workout, then pull to
     /// refresh" — advice that can never work for a denied user. Copy stays truthful: it names both
-    /// explanations and routes to the one place access can actually be fixed.
+    /// explanations and the real fix path — Settings > Privacy & Security > Health > Snappet; the
+    /// per-app Settings page that Open Settings deep-links to has NO Health row, so the button is
+    /// a best-effort shortcut, not the destination (pre-merge review fix).
     static func workoutsEmptySpec() -> RecoverySpec {
         RecoverySpec(
             title: "No workouts to show",
             systemImage: "figure.run",
-            message: "If you’ve tracked workouts with your Apple Watch, Snappet may not have permission to read them — Health access can’t be checked from inside the app. Review it in Settings, or track a workout and refresh.",
+            message: "If you’ve tracked workouts with your Apple Watch, Snappet may not have permission to read them — Health access can’t be checked from inside the app. Allow it under Settings > Privacy & Security > Health > Snappet, or track a workout and refresh.",
             actions: [.refresh, .openSettings])
     }
 
@@ -137,7 +191,7 @@ enum ReelFlowPolicy {
         case (true, false):
             return "Regenerating rebuilds the reel from scratch and clears your pins, removals, and custom order."
         case (false, true):
-            return "This cut hasn’t been saved to Photos yet. Snappet keeps your last few exports on this device, but a new cut replaces this screen."
+            return "This cut hasn’t been saved to Photos yet — making a new cut discards it. Save to Photos first to keep it."
         case (false, false):
             return nil
         }
@@ -150,8 +204,10 @@ enum ReelFlowPolicy {
     static let exportsDirectoryName = "Reels"
 
     /// How many previous renders survive a new export's sweep (the new file lands after the
-    /// sweep, so up to `keepLatestExports + 1` files exist between exports). Save to Photos is
-    /// the durable home; this is the on-device safety net.
+    /// sweep, so up to `keepLatestExports + 1` files exist between exports). The kept files are
+    /// an INTERNAL safety net only — nothing in the UI lists or reopens them — so user-facing
+    /// copy must never imply a swept-but-kept export is retrievable; Save to Photos is the one
+    /// durable home the copy promises (pre-merge review fix).
     static let keepLatestExports = 3
 
     static func exportsDirectory(under applicationSupport: URL) -> URL {
@@ -192,6 +248,7 @@ extension ReelFlowPolicy.RecoveryAction {
     var buttonTitle: String {
         switch self {
         case .selectClips: return "Select clips"
+        case .extendLimitedSelection: return "Select more clips"
         case .allowPhotoAccess: return "Allow Photo access"
         case .openSettings: return "Open Settings"
         case .tryAgain: return "Try again"
@@ -205,6 +262,7 @@ extension ReelFlowPolicy.RecoveryAction {
     var identifierSuffix: String {
         switch self {
         case .selectClips: return "SelectClips"
+        case .extendLimitedSelection: return "ExtendSelection"
         case .allowPhotoAccess: return "AllowPhotoAccess"
         case .openSettings: return "OpenSettings"
         case .tryAgain: return "TryAgain"

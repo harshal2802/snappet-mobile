@@ -69,6 +69,15 @@ final class ReelViewModel {
     var previewPlayer: AVPlayer?
     var previewError: String?
 
+    /// Set when a manual pick resolved to NOTHING (the picks aren't in the Photos selection
+    /// Snappet may read): `emptySpec` then explains the cause instead of showing the generic
+    /// no-clips copy, so the pick doesn't look like a silent no-op (review fix). Cleared by
+    /// the next `generate()`.
+    private(set) var pickedClipsUnresolved = false
+    /// Honest footnote when SOME picked clips couldn't be resolved — the reel built with the
+    /// rest, and the edit list says so. `nil` when the last build dropped nothing.
+    private(set) var pickShortfallNote: String?
+
     init(source: ReelSource, model: AppModel) {
         self.source = source
         self.model = model
@@ -104,6 +113,13 @@ final class ReelViewModel {
         }
     }
 
+    /// The `.empty` surface's spec: the access-shaped policy pick, or the picked-clips
+    /// explanation when the last manual pick resolved to nothing (review fix).
+    var emptySpec: ReelFlowPolicy.RecoverySpec {
+        pickedClipsUnresolved ? ReelFlowPolicy.pickedClipsUnavailableSpec()
+                              : ReelFlowPolicy.emptyReelSpec(access: photoAccess)
+    }
+
     /// The warning to confirm a regenerate with, or `nil` when nothing of the user's is lost
     /// (pure decision in `ReelFlowPolicy`). `exportedUnsaved` = called from the success screen
     /// with a cut that hasn't been saved to Photos.
@@ -118,6 +134,11 @@ final class ReelViewModel {
     func generate(manualMedia: [MediaItem]? = nil) async {
         state = .loading
         saveState = .idle
+        // A rebuilt cut must not keep showing the discarded cut's player (review fix) or a
+        // stale pick footnote/explanation — these reset with the rest of the per-cut state.
+        invalidatePreview()
+        pickedClipsUnresolved = false
+        pickShortfallNote = nil
         removed.removeAll()
         pinnedIds.removeAll()
         orderedIds = nil
@@ -150,10 +171,21 @@ final class ReelViewModel {
         await generate()
     }
 
-    /// Limited-access fallback: build the reel from hand-picked assets (#60 §C).
+    /// Manual-pick fallback: build the reel from hand-picked assets (#60 §C). Resolution runs
+    /// through the pure `pickedMediaResolution` because `PHAsset.fetchAssets` silently drops
+    /// picks the app can't read (e.g. outside a limited grant): all dropped → an explanatory
+    /// spec instead of a silent loop back to `.empty`; partially dropped → build with what
+    /// resolved and record an honest footnote (review fix).
     func usePickedMedia(identifiers ids: [String]) async {
         let media = model.media(forIdentifiers: ids, workoutStart: source.start)
-        await generate(manualMedia: media)
+        switch ReelFlowPolicy.pickedMediaResolution(pickedCount: ids.count, resolvedCount: media.count) {
+        case .allDropped:
+            pickedClipsUnresolved = true
+            state = .empty
+        case .proceed(let droppedCount):
+            await generate(manualMedia: media)   // clears the note; re-set it for THIS cut below
+            pickShortfallNote = ReelFlowPolicy.pickedMediaShortfallNote(droppedCount: droppedCount)
+        }
     }
 
     func regenerate() async {
@@ -220,14 +252,19 @@ final class ReelViewModel {
 
     func export(using exporter: ReelExporter = ReelExporter()) async {
         guard let wk = workout, let res = result else { return }
+        // Reentrancy guard: a double-tap on Share must not run two exports concurrently
+        // (both racing the sweep + the `.exported` landing) — review fix.
+        guard state != .exporting else { return }
         state = .exporting
         saveState = .idle
-        // Survivors are positive signal; log them as kept + exported.
-        for h in keptHighlights { log(.kept, highlight: h) }
         let plan = model.reelPlan(for: keptHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
             let url = try await exporter.export(plan)
+            // Survivors are positive signal — kept + exported are logged HERE, after success,
+            // so a failed attempt doesn't re-log `.kept` on every retry (review fix): both
+            // land exactly once per successful export.
+            for h in keptHighlights { log(.kept, highlight: h) }
             for h in keptHighlights { log(.exported, highlight: h) }
             state = .exported(url)
             _ = res

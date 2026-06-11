@@ -13,6 +13,8 @@ struct ReelView: View {
     @State private var showPicker = false
     @State private var showRegenerateConfirm = false
     @State private var regenerateWarning = ""
+    @State private var showLimitedPickConfirm = false
+    @State private var limitedPickWarning = ""
 
     init(source: ReelSource) { self.source = source }
     /// Back-compat for the workout path (`WorkoutListView`).
@@ -24,13 +26,17 @@ struct ReelView: View {
             case .none, .loading:
                 ProgressView("Building your reel…")
             case .empty:
-                // Denied-aware: the spec (copy + actions) is the pure policy's pick, so a
-                // denied user gets Open Settings — never the dead-end "Select clips".
+                // Denied-aware: the spec (copy + actions) is the pure policy's pick via the VM,
+                // so a denied user gets Open Settings — never the dead-end "Select clips" — a
+                // limited user gets the grant-extending picker (the full-library PHPicker can't
+                // widen what Snappet may read), and a pick that resolved to nothing explains
+                // itself instead of looping back here silently.
                 if let vm {
-                    RecoveryUnavailableView(spec: ReelFlowPolicy.emptyReelSpec(access: vm.photoAccess),
+                    RecoveryUnavailableView(spec: vm.emptySpec,
                                             identifierPrefix: "reel") { action in
                         switch action {
                         case .selectClips: showPicker = true
+                        case .extendLimitedSelection: presentLimitedLibraryPicker()
                         case .allowPhotoAccess: Task { await vm.requestPhotoAccessAndGenerate() }
                         case .tryAgain: Task { await vm.generate() }
                         default: break
@@ -68,9 +74,25 @@ struct ReelView: View {
             if vm?.state == .ready {
                 EditButton()   // enables drag-to-reorder
                 if model.photosLimited {
-                    Button { showPicker = true } label: { Image(systemName: "photo.badge.plus") }
+                    Button {
+                        // Picking new clips regenerates — wiping pins/removals/order — so it
+                        // runs through the same confirmation gate as Regenerate (review fix).
+                        // The `.empty`-state pick stays one-tap: curation is always empty there.
+                        if let warning = vm?.regenerateConfirmation(exportedUnsaved: false) {
+                            limitedPickWarning = warning
+                            showLimitedPickConfirm = true
+                        } else {
+                            presentLimitedLibraryPicker()
+                        }
+                    } label: { Image(systemName: "photo.badge.plus") }
                 }
             }
+        }
+        .confirmationDialog("Start a new cut?", isPresented: $showLimitedPickConfirm,
+                            titleVisibility: .visible) {
+            Button("Select more clips", role: .destructive) { presentLimitedLibraryPicker() }
+        } message: {
+            Text(limitedPickWarning)
         }
         .sheet(isPresented: $showPicker) {
             MediaPicker { ids in
@@ -86,6 +108,30 @@ struct ReelView: View {
                 await v.generate()
             }
         }
+    }
+
+    /// The system limited-library management sheet — the ONLY surface that can EXTEND a
+    /// `.limited` grant (PHPicker browses the full library but never widens what
+    /// `PHAsset.fetchAssets` may resolve, so its picks outside the grant silently vanish —
+    /// review fix). PhotoKit has no SwiftUI wrapper for it, so it's presented from the key
+    /// window's top view controller; the completion regenerates so newly granted clips are
+    /// auto-discovered by the session window.
+    @MainActor private func presentLimitedLibraryPicker() {
+        guard let presenter = Self.topViewController() else { return }
+        let vm = vm
+        PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: presenter) { _ in
+            Task { @MainActor in await vm?.generate() }
+        }
+    }
+
+    @MainActor private static func topViewController() -> UIViewController? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        guard var top = (windows.first(where: \.isKeyWindow) ?? windows.first)?.rootViewController
+        else { return nil }
+        while let presented = top.presentedViewController { top = presented }
+        return top
     }
 
     @ViewBuilder private var content: some View {
@@ -148,7 +194,13 @@ struct ReelView: View {
                 } header: {
                     Text("Highlights (\(vm.keptHighlights.count))")
                 } footer: {
-                    Text("Auto-selected from your heart rate. Swipe ▸ to remove, ◂ to pin (pinned clips always stay in). Tap Edit to reorder.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Honest shortfall: some picked clips weren't readable (review fix).
+                        if let note = vm.pickShortfallNote {
+                            Text(note)
+                        }
+                        Text("Auto-selected from your heart rate. Swipe ▸ to remove, ◂ to pin (pinned clips always stay in). Tap Edit to reorder.")
+                    }
                 }
 
                 if !vm.removedHighlights.isEmpty {
@@ -305,7 +357,9 @@ private struct HighlightThumbnail: View {
 /// The export payoff (issue #72 §3): the reel itself plays as the hero — auto-playing and
 /// looped — with Save to Photos (add-only) and Share beneath it. The success haptic rides the
 /// existing `.celebrates(on:)` landing (issue #80), so it isn't double-fired here. The file
-/// now lives in `Application Support/Reels` (not tmp), so backing out keeps the artifact.
+/// lives in `Application Support/Reels` (not tmp) so backing out mid-flow doesn't destroy it,
+/// but that copy is an internal safety net — no UI lists past renders, so the caption below
+/// promises only what's real: Save to Photos, or a new cut replaces this one (review fix).
 private struct ExportedView: View {
     let url: URL
     let vm: ReelViewModel
@@ -374,7 +428,7 @@ private struct ExportedView: View {
             }
             .accessibilityIdentifier("reelMakeAnotherCut")
 
-            Text("Snappet keeps your latest exports on this device — save to Photos to keep this reel for good.")
+            Text("Save to Photos to keep this reel — making a new cut replaces it.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
