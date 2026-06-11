@@ -487,6 +487,25 @@ final class KilterSessionManager {
         discoverMedia(for: session, in: context)
     }
 
+    /// Drop every reference into the store WITHOUT writing to it — the suite restore
+    /// (`SnappetBackup.restore`) is about to DELETE every row, including the live `KilterSession`
+    /// this manager may hold; a later write through `current` would trap on the deleted `@Model`
+    /// (or resurrect a zombie row via the context), and the Live Activity would keep counting a
+    /// session that no longer exists. Called by `BackupView.runRestore()` immediately before the
+    /// restore. Deliberately persists nothing (no `endedAt`, no `save()`): the rows are seconds
+    /// from deletion, and the restored data carries its own truth — `recover(in:)` re-adopts any
+    /// open session from it on the next Kilter entry (the #54 recovery semantics). Stops live
+    /// metrics only when this manager started them (never a running workout's source).
+    func detachForStoreRestore() {
+        if didStartMetrics {
+            liveWorkout?.stop()
+            didStartMetrics = false
+        }
+        liveActivity?.end()
+        current = nil
+        resetActiveClimb()
+    }
+
     /// Make an already-persisted open session the live one, re-deriving live state from the store + the
     /// shared coordinator. Used by `recover` (which `start` also runs) when a session is already open.
     private func adopt(_ session: KilterSession, in context: ModelContext) {

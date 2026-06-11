@@ -22,6 +22,12 @@ final class BackupUITests: XCTestCase {
         // Restore-from-backup leads straight to the backup surface.
         restore.tap()
         XCTAssertTrue(app.buttons["backup.restore"].waitForExistence(timeout: 6))
+        // In fallback every EXPORT path is gated off (the in-memory store is empty — a
+        // "backup" of it would cover the user with 0 records); restore stays available.
+        XCTAssertFalse(app.buttons["backup.export"].isEnabled)
+        XCTAssertFalse(app.buttons["backup.export.journal"].isEnabled)
+        XCTAssertFalse(app.buttons["backup.export.feedback"].isEnabled)
+        XCTAssertTrue(app.buttons["backup.restore"].isEnabled)
         app.buttons["backup.done"].tap()
 
         // Reset asks before destroying anything.

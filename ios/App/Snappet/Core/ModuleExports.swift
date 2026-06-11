@@ -36,8 +36,11 @@ enum ModuleExports {
     /// One row per transaction, oldest first, with the category resolved by FK (a
     /// transaction whose category was deleted still exports, labeled as such).
     static func budgetCSV(categories: [BudgetCategory], transactions: [BudgetTransaction]) -> String {
-        let names = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
-        let limits = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.monthlyLimit) })
+        // First-wins uniquing, NOT `uniqueKeysWithValues` (which traps): duplicate ids are
+        // legal data a tampered/duplicated backup can restore — an export must never crash
+        // on them (#68 review fix 4; restore also dedupes, this is the belt-and-braces).
+        let names = Dictionary(categories.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        let limits = Dictionary(categories.map { ($0.id, $0.monthlyLimit) }, uniquingKeysWith: { a, _ in a })
         var out = "date,category,note,amount,category_monthly_limit\n"
         for tx in transactions.sorted(by: { $0.date < $1.date }) {
             let fields = [
@@ -58,7 +61,8 @@ enum ModuleExports {
     /// `ExpenseRecord` model, so a `type` column keeps the three shapes distinguishable;
     /// receipt line items flatten into one readable cell.
     static func expenseCSV(groups: [ExpenseGroup], records: [ExpenseRecord]) -> String {
-        let names = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0.name) })
+        // First-wins uniquing — same duplicate-id tolerance as `budgetCSV` above.
+        let names = Dictionary(groups.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         var out = "date,group,title,type,payer,participants,amount,tax,discount,items\n"
         for record in records.sorted(by: { $0.date < $1.date }) {
             let type = record.isSettlement ? "settlement" : (record.isReceipt ? "receipt" : "expense")

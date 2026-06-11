@@ -88,6 +88,10 @@ struct SnappetApp: App {
                     StoreHealthBanner(health: storeHealth)
                 }
                 .environment(appModel)
+                // In the environment too (not only the banner's direct param): the App
+                // Library's backup sheet must also know the store fell back, or its export
+                // paths would snapshot the EMPTY in-memory container as a "backup".
+                .environment(storeHealth)
                 .tint(SnappetColor.brand)
         }
         .modelContainer(container)

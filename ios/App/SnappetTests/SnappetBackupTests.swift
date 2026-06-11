@@ -47,6 +47,25 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertEqual(SnappetBackup.coveredModels.count, SnappetSchema.models.count)
     }
 
+    /// Store-side row count for one covered model (generic so the `coveredModels`
+    /// existential opens implicitly).
+    private func count<M: PersistentModel>(of type: M.Type, in context: ModelContext) throws -> Int {
+        try context.fetchCount(FetchDescriptor<M>())
+    }
+
+    /// Total rows across every covered model, counted straight off the store — the
+    /// independent twin of `File.recordCount` (which hand-sums the per-model arrays).
+    /// A model wired into the schema + `coveredModels` but NOT into the File/snapshot/
+    /// restore plumbing makes the two disagree, so the half-covered drift the tripwire
+    /// above can't see fails here instead of silently dropping data.
+    private func storeRecordCount(in context: ModelContext) throws -> Int {
+        var total = 0
+        for model in SnappetBackup.coveredModels {
+            total += try count(of: model, in: context)
+        }
+        return total
+    }
+
     // MARK: - Full round trip
 
     /// Seed one richly-populated instance of every model, export, restore onto a FRESH
@@ -57,8 +76,19 @@ final class SnappetBackupTests: XCTestCase {
         seedEveryModel(into: context)
         try context.save()
 
+        // Every covered model must be EXERCISED here: a covered model seeded with zero
+        // rows would let one missing from File/snapshot/restore pass this round trip
+        // while a real restore wiped its rows without re-inserting (#68 review fix 5).
+        for model in SnappetBackup.coveredModels {
+            XCTAssertGreaterThanOrEqual(try count(of: model, in: context), 1,
+                                        "seedEveryModel must seed at least one \(model)")
+        }
+
         let exported = try SnappetBackup.snapshot(of: context)
         XCTAssertEqual(exported.recordCount, 21, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
+                       "File.recordCount must match the store's fetchCount total — a "
+                       + "half-wired model makes these disagree")
         let data = try SnappetBackup.encode(exported)
 
         let decoded = try SnappetBackup.decode(data)
@@ -66,6 +96,8 @@ final class SnappetBackupTests: XCTestCase {
 
         let target = targetContainer.mainContext
         try SnappetBackup.restore(decoded, into: target)
+        XCTAssertEqual(try storeRecordCount(in: target), exported.recordCount,
+                       "restore re-inserts every covered model's rows")
         var reSnapshot = try SnappetBackup.snapshot(of: target)
         // exportedAt is provenance, not data — align it before comparing the payload.
         reSnapshot.exportedAt = exported.exportedAt
@@ -138,6 +170,76 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertEqual(try target.fetch(FetchDescriptor<JournalEntry>()).count, 0)
         let sessions = try target.fetch(FetchDescriptor<KilterSession>())
         XCTAssertEqual(sessions.map(\.angle), [40])
+    }
+
+    // MARK: - Duplicate-id rows (a tampered/duplicated file is legal JSON)
+
+    /// Duplicate-id rows decode fine (nothing in the JSON forbids them) but must never
+    /// enter the store, where they'd corrupt FK joins and crash id-keyed lookups —
+    /// restore dedupes FIRST-WINS per identity key (#68 review fix 4).
+    func testRestoreDeduplicatesDuplicateIDRowsFirstWins() throws {
+        var file = SnappetBackup.File()
+        let habitID = UUID()
+        file.habits = [
+            SnappetBackup.HabitRow(Habit(id: habitID, name: "First wins", symbol: "drop",
+                                         createdAt: Date(timeIntervalSince1970: 1))),
+            SnappetBackup.HabitRow(Habit(id: habitID, name: "Duplicate", symbol: "flame",
+                                         createdAt: Date(timeIntervalSince1970: 2))),
+        ]
+        let sessionID = UUID()
+        file.kilterSessions = [
+            SnappetBackup.KilterSessionRow(KilterSession(id: sessionID, angle: 40, source: "manual")),
+            SnappetBackup.KilterSessionRow(KilterSession(id: sessionID, angle: 70, source: "ble")),
+        ]
+        file.kilterFavorites = [
+            SnappetBackup.KilterFavoriteRow(KilterFavorite(climbUUID: "dup-climb",
+                                                           addedAt: Date(timeIntervalSince1970: 100))),
+            SnappetBackup.KilterFavoriteRow(KilterFavorite(climbUUID: "dup-climb",
+                                                           addedAt: Date(timeIntervalSince1970: 999))),
+        ]
+        XCTAssertEqual(file.recordCount, 6, "the duplicates are legal file contents")
+
+        let target = targetContainer.mainContext
+        try SnappetBackup.restore(file, into: target)
+
+        let habits = try target.fetch(FetchDescriptor<Habit>())
+        XCTAssertEqual(habits.map(\.name), ["First wins"], "one row per id, first occurrence wins")
+        let sessions = try target.fetch(FetchDescriptor<KilterSession>())
+        XCTAssertEqual(sessions.map(\.angle), [40])
+        let favorites = try target.fetch(FetchDescriptor<KilterFavorite>())
+        XCTAssertEqual(favorites.map(\.addedAt), [Date(timeIntervalSince1970: 100)])
+    }
+
+    // MARK: - Live @Model holders detach before restore
+
+    /// `KilterSessionManager.detachForStoreRestore()` (the AppModel-owned holder of a live
+    /// `KilterSession`) drops the in-memory session WITHOUT writing to the store — the
+    /// restore deletes the rows anyway — and `recover(in:)` re-adopts whatever open
+    /// session the restored data carries (#68 review fix 2, the #54 recovery semantics).
+    func testDetachForStoreRestoreDropsLiveSessionWithoutWritingThenRecoverReAdopts() throws {
+        let context = sourceContainer.mainContext
+        let manager = KilterSessionManager()
+        manager.start(angle: 40, source: "manual", in: context)
+        let liveID = try XCTUnwrap(manager.currentId)
+        manager.beginClimb(uuid: "c1", name: "Crimpy", grade: "6a/V3")
+
+        manager.detachForStoreRestore()
+        XCTAssertFalse(manager.isActive, "the live reference is dropped")
+        XCTAssertNil(manager.activeClimbUUID, "active-climb state is cleared")
+        let stored = try XCTUnwrap(context.fetch(FetchDescriptor<KilterSession>()).first)
+        XCTAssertEqual(stored.id, liveID)
+        XCTAssertNil(stored.endedAt, "detach writes NOTHING — the row stays open for deletion")
+
+        // The backup being restored carries its own open session; restore + recover adopt it.
+        let restoredOpenID = UUID()
+        var file = SnappetBackup.File()
+        file.kilterSessions = [
+            SnappetBackup.KilterSessionRow(KilterSession(id: restoredOpenID, angle: 45, source: "ble")),
+        ]
+        try SnappetBackup.restore(file, into: context)
+        manager.recover(in: context)
+        XCTAssertEqual(manager.currentId, restoredOpenID,
+                       "recover re-adopts the restored open session, not the deleted one")
     }
 
     // MARK: - Rejection (strict, validate-before-touch)

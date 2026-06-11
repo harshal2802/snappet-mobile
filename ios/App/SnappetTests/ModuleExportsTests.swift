@@ -78,6 +78,32 @@ final class ModuleExportsTests: XCTestCase {
         XCTAssertTrue(lines[1].contains("Ana; Bo"), "participants stay one readable cell")
     }
 
+    // MARK: - Duplicate FK ids (a tampered/duplicated backup can restore them)
+
+    /// Duplicate category/group ids must not crash the CSV builders — the old
+    /// `Dictionary(uniqueKeysWithValues:)` trapped on them; now first-wins (#68 review
+    /// fix 4; `SnappetBackup.restore` also dedupes, this is the belt-and-braces).
+    func testCSVBuildersSurviveDuplicateIDsFirstWins() {
+        let categoryID = UUID()
+        let first = BudgetCategory(id: categoryID, name: "First", monthlyLimit: 100)
+        let dupe = BudgetCategory(id: categoryID, name: "Shadow", monthlyLimit: 999)
+        let tx = BudgetTransaction(categoryID: categoryID, amount: 5, note: "ok", date: day)
+        let budget = ModuleExports.budgetCSV(categories: [first, dupe], transactions: [tx])
+        XCTAssertTrue(budget.contains(",First,"), "the first occurrence's name wins")
+        XCTAssertTrue(budget.contains("100.00"), "…and its limit")
+        XCTAssertFalse(budget.contains("Shadow"))
+        XCTAssertFalse(budget.contains("999.00"))
+
+        let groupID = UUID()
+        let tripA = ExpenseGroup(id: groupID, name: "Trip A", participants: ["Ana"])
+        let tripB = ExpenseGroup(id: groupID, name: "Trip B", participants: ["Bo"])
+        let record = ExpenseRecord(groupID: groupID, title: "Dinner", amount: 10,
+                                   payer: "Ana", participants: ["Ana"], date: day)
+        let expenses = ModuleExports.expenseCSV(groups: [tripA, tripB], records: [record])
+        XCTAssertTrue(expenses.contains(",Trip A,"))
+        XCTAssertFalse(expenses.contains("Trip B"))
+    }
+
     // MARK: - Workout history → JSON
 
     func testWorkoutHistoryJSONIsReadableAndCarriesTheFullHRSeries() throws {

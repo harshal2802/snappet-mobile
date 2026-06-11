@@ -66,8 +66,9 @@ enum SnappetBackup {
 
     /// The whole store as one Codable value. One array per `@Model`; arrays are sorted by a
     /// stable per-row key so the same store always encodes to the same bytes (diffable, and
-    /// re-export-equality is testable).
-    struct File: Codable, Hashable {
+    /// re-export-equality is testable). `Sendable` (explicitly, with the rows) because
+    /// `BackupView` decodes a picked file OFF the main actor and hands the result back.
+    struct File: Codable, Hashable, Sendable {
         var kind: String = SnappetBackup.kind
         var formatVersion: Int = SnappetBackup.formatVersion
         var exportedAt: Date = .now
@@ -114,9 +115,20 @@ enum SnappetBackup {
     }
 
     /// Strict same-version decode (#84 shared decision): a wrong-version file is rejected with
-    /// a clear error — never best-effort-restored. Validates the sentinel/version BEFORE the
-    /// full decode so garbage and foreign JSON get the friendly `.notABackup`.
+    /// a clear error — never best-effort-restored. ONE full-document parse in the happy path:
+    /// the old sentinel-probe-then-decode paid the whole JSON parse TWICE (`JSONDecoder` parses
+    /// the entire document even for a two-key probe), which a multi-MB HR-heavy backup turned
+    /// into a visible stall (#68 review fix 7). The cheap probe now runs only to *classify a
+    /// failure* — garbage/foreign JSON still gets the friendly `.notABackup`, a wrong version
+    /// `.unsupportedVersion`, and a shape-broken same-version file `.damaged`.
     static func decode(_ data: Data) throws -> File {
+        if let file = try? JSONDecoder().decode(File.self, from: data) {
+            guard file.kind == kind else { throw SnappetBackupError.notABackup }
+            guard file.formatVersion == formatVersion else {
+                throw SnappetBackupError.unsupportedVersion(file.formatVersion)
+            }
+            return file
+        }
         struct Probe: Decodable {
             var kind: String?
             var formatVersion: Int?
@@ -126,11 +138,7 @@ enum SnappetBackup {
             throw SnappetBackupError.notABackup
         }
         guard version == formatVersion else { throw SnappetBackupError.unsupportedVersion(version) }
-        do {
-            return try JSONDecoder().decode(File.self, from: data)
-        } catch {
-            throw SnappetBackupError.damaged
-        }
+        throw SnappetBackupError.damaged
     }
 
     // MARK: - The SwiftData edge
@@ -172,32 +180,71 @@ enum SnappetBackup {
     /// Delete-all + insert-all + ONE `save()` keeps the swap a single transaction — unique-key
     /// overlap between old and new rows (e.g. the same `KilterFavorite.climbUUID`) resolves
     /// inside that save; a throw rolls the context back with the old data intact.
+    ///
+    /// ⚠️ Live `@Model` references: callers holding a row of any covered model (the
+    /// AppModel-owned `KilterSessionManager.current`) must detach them BEFORE calling this —
+    /// every existing row is deleted, and a later write through a stale reference traps.
+    /// `BackupView.runRestore()` does (`detachForStoreRestore()`).
     static func restore(_ file: File, into context: ModelContext) throws {
         func deleteAll<M: PersistentModel>(_ type: M.Type) throws {
             for row in try context.fetch(FetchDescriptor<M>()) { context.delete(row) }
         }
+        /// First-wins dedupe by a row's identity key. Duplicate ids are *legal JSON* a
+        /// tampered/hand-duplicated backup can carry — they must never enter the store, where
+        /// they'd corrupt FK joins and id-keyed lookups (`ModuleExports`' CSV dictionaries
+        /// assume id uniqueness). Rows with no natural identity (UsageRecord, JournalEntry,
+        /// HabitCompletion, …) insert as-is: duplicates there are valid data. Chosen over
+        /// reject-at-decode — see decisions.md 2026-06-10 (#68 review fix 4).
+        func uniqued<R, ID: Hashable>(_ rows: [R], by id: (R) -> ID) -> [R] {
+            var seen = Set<ID>()
+            return rows.filter { seen.insert(id($0)).inserted }
+        }
         do {
-            for model in coveredModels { try deleteAll(model) }
+            // Deletes are HAND-LISTED per model, beside their inserts — deliberately NOT a
+            // loop over `coveredModels`. A future model wired into the schema + the tripwire
+            // list but not into File/snapshot/restore then fails SAFE: its rows survive a
+            // restore (and the recordCount tests catch the drift) instead of being silently
+            // wiped with nothing re-inserted (#68 review fix 5).
+            try deleteAll(UsageRecord.self)
             file.usageRecords.forEach { context.insert($0.make()) }
+            try deleteAll(PomodoroSession.self)
             file.pomodoroSessions.forEach { context.insert($0.make()) }
-            file.habits.forEach { context.insert($0.make()) }
+            try deleteAll(Habit.self)
+            uniqued(file.habits, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(HabitCompletion.self)
             file.habitCompletions.forEach { context.insert($0.make()) }
+            try deleteAll(JournalEntry.self)
             file.journalEntries.forEach { context.insert($0.make()) }
-            file.expenseGroups.forEach { context.insert($0.make()) }
+            try deleteAll(ExpenseGroup.self)
+            uniqued(file.expenseGroups, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(ExpenseRecord.self)
             file.expenseRecords.forEach { context.insert($0.make()) }
-            file.budgetCategories.forEach { context.insert($0.make()) }
+            try deleteAll(BudgetCategory.self)
+            uniqued(file.budgetCategories, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(BudgetTransaction.self)
             file.budgetTransactions.forEach { context.insert($0.make()) }
-            file.routines.forEach { context.insert($0.make()) }
-            file.workoutSessions.forEach { context.insert($0.make()) }
-            file.customExercises.forEach { context.insert($0.make()) }
-            file.sessionMedia.forEach { context.insert($0.make()) }
-            file.clipEdits.forEach { context.insert($0.make()) }
-            file.studioProjects.forEach { context.insert($0.make()) }
+            try deleteAll(Routine.self)
+            uniqued(file.routines, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(WorkoutSession.self)
+            uniqued(file.workoutSessions, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(CustomExercise.self)
+            uniqued(file.customExercises, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(SessionMedia.self)
+            uniqued(file.sessionMedia, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(ClipEdit.self)
+            uniqued(file.clipEdits, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(StudioProject.self)
+            uniqued(file.studioProjects, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(TipCalculation.self)
             file.tipCalculations.forEach { context.insert($0.make()) }
+            try deleteAll(KilterLogEntry.self)
             file.kilterLogEntries.forEach { context.insert($0.make()) }
-            file.kilterSessions.forEach { context.insert($0.make()) }
-            file.kilterFavorites.forEach { context.insert($0.make()) }
-            file.kilterCreatedClimbs.forEach { context.insert($0.make()) }
+            try deleteAll(KilterSession.self)
+            uniqued(file.kilterSessions, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(KilterFavorite.self)
+            uniqued(file.kilterFavorites, by: \.climbUUID).forEach { context.insert($0.make()) }
+            try deleteAll(KilterCreatedClimb.self)
+            uniqued(file.kilterCreatedClimbs, by: \.uuid).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -206,8 +253,10 @@ enum SnappetBackup {
     }
 }
 
-/// A snapshot row: Codable both ways + a stable in-file ordering key.
-protocol BackupRow: Codable, Hashable {
+/// A snapshot row: Codable both ways + a stable in-file ordering key. `Sendable` so a
+/// decoded `File` can cross from the off-main decode task back to the UI (every row is a
+/// pure value mirror — stored properties only).
+protocol BackupRow: Codable, Hashable, Sendable {
     var sortKey: String { get }
 }
 

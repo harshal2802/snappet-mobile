@@ -3669,7 +3669,11 @@ test** — `SnappetBackup.coveredModels` must equal `SnappetSchema.models` or
 
 **Accepted residuals**: strict same-version import means backups don't outlive a future format
 bump (migrate-on-import is the v2-era follow-up, as on Android); the Files-picker round trip
-itself is system UI (not XCUITest-automatable) — the codec contract is what's locked by tests.
+itself is system UI (not XCUITest-automatable) — the codec contract is what's locked by tests;
+and the backup covers Snappet's **database** only — UserDefaults-resident settings
+(`UserHRProfile`, `expense.myName`, band pairing, Kilter prefs) and the highlight-feedback
+JSONL are outside the envelope (feedback has its own export row, and the backup footer scopes
+its claim to records accordingly — review fix 6 below).
 
 **Verified off-device**: `xcodegen generate` clean; all new/changed files parse. Simulator
 suite (`SnappetBackupTests`, `ModuleExportsTests`, `StoreRecoveryTests`, `BackupUITests`) is
@@ -3685,3 +3689,51 @@ whose children also carry identifiers. (The same suite run's six "Test crashed w
 failures were environmental — a second agent's `xcodebuild test` drove the SAME simulator UDID
 concurrently, and each run's app launch terminates the other's app instance; the tests pass in
 isolation. Reserve distinct simulator UDIDs per agent.)
+
+**Pre-merge adversarial review round** (7 confirmed classes, all fixed): (1) backup-in-fallback
+exported the EMPTY in-memory store — a panicked user could "back up" 0 records, then reset their
+real store believing they were covered. Rule: **fallback gates every export path** — the suite
+button and all per-module rows disable (footers say a backup/export made now would not contain
+saved data; the feedback row gates uniformly even though its JSONL is disk-resident — one rule
+in that state), `backUpEverything()` belt-and-braces a `.failure` early-return, and the App
+Library entry point now derives `storeIsFallback` from `StoreHealth` (injected via the
+environment in `SnappetApp`) instead of defaulting to healthy — the banner wasn't the only door
+in. (2) restore deleted rows under the LIVE `KilterSession` held by the AppModel-owned manager —
+later writes would trap on the deleted `@Model` (or resurrect zombie rows) and the Live Activity
+kept counting. Rule: **detach before restore** — `KilterSessionManager.detachForStoreRestore()`
+nils `current` + active-climb state, stops live metrics only when this session owns them, ends
+the Live Activity, and deliberately writes NOTHING to the store (the rows are about to be
+deleted); `recover(in:)` re-adopts whatever open session the restored data carries on the next
+Kilter entry (the #54 semantics; locked by a unit test). Audit: the manager is the only
+AppModel-level `@Model` holder — the workout player's `playing` is view-local `@State` on
+`WorkoutHomeView`, unreachable while the backup sheet is presented (`LiveMetricsCoordinator`
+copies values, never the session). (3) restoring while in fallback restored into the in-memory
+store but reported an unqualified "Restored N records" — the data silently vanished on relaunch.
+The confirm dialog and the success message now say temporary/lost-on-close and spell out the
+real path (reset → relaunch → restore), and the banner leads with **Reset storage** (prominent)
+while demoting restore to "Preview a backup" — reset-then-restore is the recovery story the
+banner advertises. (4) `ModuleExports`' three `Dictionary(uniqueKeysWithValues:)` constructors
+trapped on duplicate FK ids, which a tampered/hand-duplicated backup can legally carry — all
+three are now first-wins (`uniquingKeysWith`), and **restore dedupes id-bearing rows first-wins**
+so duplicates never enter the store at all (rows with no natural identity — UsageRecord,
+JournalEntry, HabitCompletion, … — insert as-is; duplicates there are valid data). Restore-side
+dedupe was chosen over reject-at-decode: a duplicated file is still the user's data, and
+refusing the whole restore over one row punishes them. (5) the drift tripwire guarded only half
+the codec: a model added to the schema + `coveredModels` but not File/snapshot/restore passed
+the tests while restore DELETED its rows without re-inserting. Restore's deletes are now
+hand-listed per model beside their inserts (future drift fails SAFE — rows survive), and the
+round-trip test asserts every covered model has ≥1 seeded row AND that `File.recordCount`
+equals an independent `fetchCount`-over-`coveredModels` total, before and after restore. (6)
+the backup footer overclaimed "every module's data" while UserDefaults-resident settings and
+the highlight-feedback JSONL aren't in the envelope — copy now scopes the claim to Snappet's
+database and points at the separate feedback export (residual recorded above). (7) import
+parsed the whole file TWICE (`JSONDecoder` pays the full parse even for the two-key version
+probe) and ran read+decode synchronously on the main actor — a multi-MB HR-heavy backup froze
+the sheet. `decode` now full-parses ONCE in the happy path (the probe only classifies
+failures), and `handlePickedBackup` reads + decodes in a detached task (security-scoped access
+bracketing the read inside it, `File`/rows explicitly `Sendable`), storing the decoded `File`
+for both the preview and `runRestore`; the restore itself stays on the main context. New/changed
+tests: seeded-coverage + recordCount-vs-store assertions in the round trip, duplicate-id
+restore dedupe (first-wins across `Habit`/`KilterSession`/`KilterFavorite`), the
+detach-then-recover lifecycle, the CSV duplicate-id no-crash case, and the fallback UI test now
+asserts the export buttons are disabled while restore stays enabled.

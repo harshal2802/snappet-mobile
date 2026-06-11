@@ -8,6 +8,10 @@ struct AppLibraryView: View {
     @Environment(AppModel.self) private var app
     // The router is hoisted to the shell (#71) — this stack binds its path; Home shares it.
     @Environment(SuiteRouter.self) private var router
+    /// Whether the live container is the in-memory fallback — this entry point must tell
+    /// `BackupView` too (not only the banner's), or its exports would snapshot the EMPTY
+    /// fallback store as a "backup". `.resetDone` still runs on the fallback until relaunch.
+    @Environment(StoreHealth.self) private var storeHealth
     @Namespace private var zoom
     /// The flagship hero's own `matchedTransitionSource` id (#71 review fix) — distinct from the
     /// grid card's `module.id`, so a hero tap zooms from the hero, not the grid card below it.
@@ -68,7 +72,9 @@ struct AppLibraryView: View {
                     .accessibilityIdentifier("suite.backup.open")
                 }
             }
-            .sheet(isPresented: $showingBackup) { BackupView() }
+            .sheet(isPresented: $showingBackup) {
+                BackupView(storeIsFallback: storeHealth.mode != .ok)
+            }
             .navigationDestination(for: ModuleRoute.self) { route in
                 // Zoom from the source the route names — the grid card or the hero (#71 review
                 // fix). Routes without one (programmatic `open(module:)` deep links, the Pomodoro

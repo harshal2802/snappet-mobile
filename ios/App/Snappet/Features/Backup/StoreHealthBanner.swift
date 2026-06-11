@@ -41,12 +41,16 @@ struct StoreHealthBanner: View {
                     .foregroundStyle(.red)
             }
             HStack(spacing: SnappetSpacing.md) {
-                Button("Restore from backup") { showingRestore = true }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("store.health.restore")
+                // Reset → relaunch → restore is the REAL recovery path: anything restored
+                // onto the in-memory fallback is lost on close, so the banner leads with
+                // Reset and the backup sheet is advertised as a preview (it gates exports
+                // off and footnotes the ephemerality — #68 review fixes 1+3).
                 Button("Reset storage…", role: .destructive) { confirmingReset = true }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("store.health.reset")
+                Button("Preview a backup") { showingRestore = true }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("store.health.restore")
             }
             .font(.footnote.bold())
         }

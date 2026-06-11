@@ -15,8 +15,11 @@ import HighlightEngine   // HighlightFeedbackEvent flows FeedbackStore → Modul
 ///
 /// Nothing leaves the device except through these user-initiated Files writes.
 struct BackupView: View {
-    /// `true` when presented from the corrupt-store banner: the live container is
-    /// in-memory, so a restore is previewable but won't survive a relaunch — say so.
+    /// `true` when the live container is the in-memory fallback (presented from the
+    /// corrupt-store banner, or from the App Library while `StoreHealth` is degraded):
+    /// the store the codec would snapshot is EMPTY, so **every export path is gated
+    /// off** (a "backup" made now would cover the user with 0 records), and a restore
+    /// is previewable but won't survive a relaunch — both say so (#68 review fixes 1+3).
     var storeIsFallback = false
 
     @Environment(\.modelContext) private var context
@@ -74,9 +77,16 @@ struct BackupView: View {
                     .accessibilityIdentifier("backup.confirmRestore")
                 Button("Cancel", role: .cancel) { pendingRestore = nil }
             } message: { file in
-                Text("This replaces everything in Snappet on this device with the backup's "
-                     + "\(file.recordCount) records (made \(file.exportedAt.formatted(date: .abbreviated, time: .shortened))). "
-                     + "This can't be undone.")
+                if storeIsFallback {
+                    Text("Storage is in a temporary state, so this only previews the backup's "
+                         + "\(file.recordCount) records (made \(file.exportedAt.formatted(date: .abbreviated, time: .shortened))) — "
+                         + "everything restored now is lost when the app closes. To restore for "
+                         + "good: reset storage from the banner, quit and reopen Snappet, then restore.")
+                } else {
+                    Text("This replaces everything in Snappet on this device with the backup's "
+                         + "\(file.recordCount) records (made \(file.exportedAt.formatted(date: .abbreviated, time: .shortened))). "
+                         + "This can't be undone.")
+                }
             }
         }
     }
@@ -90,14 +100,25 @@ struct BackupView: View {
             } label: {
                 Label("Back up my data", systemImage: "externaldrive.badge.checkmark")
             }
+            .disabled(storeIsFallback)
             .accessibilityIdentifier("backup.export")
             statusRow
         } header: {
             Text("Backup")
         } footer: {
-            Text("One file with every module's data — workouts (full heart-rate series), "
-                 + "climbing, journal, habits, finance, studio projects. It only goes where "
-                 + "you save it in Files; nothing is uploaded by Snappet.")
+            if storeIsFallback {
+                Text("Storage is in a temporary state — a backup made now would not contain "
+                     + "your saved data. Reset storage from the banner, quit and reopen "
+                     + "Snappet, then back up.")
+            } else {
+                // Scoped to *records*: UserDefaults-resident settings (HR profile, expense
+                // "me", band pairing) and the highlight-feedback log are NOT in the envelope.
+                Text("Everything in Snappet's database in one file — workouts (full "
+                     + "heart-rate series), climbing, journal, habits, finance, studio "
+                     + "projects. Settings and the highlight-feedback log aren't included; "
+                     + "export feedback separately below. It only goes where you save it in "
+                     + "Files; nothing is uploaded by Snappet.")
+            }
         }
     }
 
@@ -159,10 +180,19 @@ struct BackupView: View {
         } header: {
             Text("Export one module")
         } footer: {
-            Text("Readable single-module files — for spreadsheets, notes apps, or your own "
-                 + "tools. The workout export includes each session's full heart-rate series, "
-                 + "so it can be a few MB.")
+            if storeIsFallback {
+                Text("Storage is in a temporary state — an export made now would not contain "
+                     + "your saved data.")
+            } else {
+                Text("Readable single-module files — for spreadsheets, notes apps, or your own "
+                     + "tools. The workout export includes each session's full heart-rate series, "
+                     + "so it can be a few MB.")
+            }
         }
+        // The whole section gates on fallback with the suite button: every row reads the
+        // (empty) live store — including the feedback row, kept uniform so the one rule in
+        // this state is "reset first, then export" (its JSONL is disk-resident and intact).
+        .disabled(storeIsFallback)
     }
 
     @ViewBuilder private var statusRow: some View {
@@ -204,6 +234,14 @@ struct BackupView: View {
     // MARK: - Actions
 
     private func backUpEverything() {
+        // Belt-and-braces behind the disabled button: the fallback container is EMPTY — a
+        // "backup" snapshotted from it would cover the user with 0 records right before
+        // they reset their real store believing they're safe (#68 review fix 1).
+        guard !storeIsFallback else {
+            finish(.failure("Storage is in a temporary state — a backup made now would not "
+                            + "contain your saved data."))
+            return
+        }
         do {
             let file = try SnappetBackup.snapshot(of: context)
             exportDocument = BackupExportDocument(
@@ -217,23 +255,52 @@ struct BackupView: View {
         }
     }
 
+    /// Read + decode the picked file OFF the main actor — an HR-heavy backup is multi-MB
+    /// and a synchronous decode here froze the sheet (#68 review fix 7). The decoded
+    /// `File` comes back once and backs BOTH the confirmation preview and `runRestore`;
+    /// the security-scoped access brackets the read inside the task, where the read runs.
     private func handlePickedBackup(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            pendingRestore = try SnappetBackup.decode(try Data(contentsOf: url))
+            Task {
+                do {
+                    pendingRestore = try await Task.detached(priority: .userInitiated) {
+                        let scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                        return try SnappetBackup.decode(try Data(contentsOf: url))
+                    }.value
+                } catch {
+                    finish(.failure(error.localizedDescription))
+                }
+            }
         } catch {
             finish(.failure(error.localizedDescription))
         }
     }
 
+    /// Restore stays ON the main context — it has to coordinate with the live UI.
     private func runRestore() {
         guard let file = pendingRestore else { return }
         pendingRestore = nil
+        // Restore deletes every row — including the live KilterSession the AppModel-owned
+        // manager may hold. Detach it FIRST (no store writes; the rows are about to go) so
+        // later manager writes can't trap on a deleted @Model or resurrect zombie rows, and
+        // the Live Activity ends; `recover(in:)` re-adopts any open session from the
+        // restored data on the next Kilter entry (#68 review fix 2). The manager is the only
+        // AppModel-level @Model holder; the workout player's `playing` is view-local @State
+        // on WorkoutHomeView, unreachable while this sheet is presented.
+        app.kilterSessions.detachForStoreRestore()
         do {
             try SnappetBackup.restore(file, into: context)
-            finish(.success("Restored \(file.recordCount) records."))
+            if storeIsFallback {
+                // Honest about ephemerality: the in-memory preview vanishes on relaunch.
+                finish(.success("Restored \(file.recordCount) records into temporary storage "
+                                + "— they're lost when the app closes. To keep them: reset "
+                                + "storage from the banner, quit and reopen Snappet, then "
+                                + "restore again."))
+            } else {
+                finish(.success("Restored \(file.recordCount) records."))
+            }
         } catch {
             finish(.failure("Restore failed: \(error.localizedDescription)"))
         }
