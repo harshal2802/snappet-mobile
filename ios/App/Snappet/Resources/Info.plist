@@ -20,16 +20,32 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- snappet:// deep links (#75): a shared climb's QR code (snappet://kilter/climb/<uuid>)
+	     scanned with the iOS Camera — or opened from Safari/another app — launches Snappet on
+	     that climb. Parsed by SnappetDeepLink (KilterDeepLink.swift) via RootShell.onOpenURL.
+	     Registered HERE (the checked-in plist project.yml points INFOPLIST_FILE at) — never in
+	     the generated .xcodeproj. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.snappet.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>snappet</string>
+			</array>
+		</dict>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>Snappet uses the camera to scan a receipt so it can pull out the line items and split them between people. The photo is processed on your device and not stored.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Snappet connects over Bluetooth to your heart-rate band (chest straps, Polar, Garmin, and similar) for live heart rate during a workout, and to a Kilter Board to light up climbs. Everything stays on your device.</string>
+	<!-- ONE camera key covering both uses — this dict briefly carried two
+	     NSCameraUsageDescription entries (receipts + QR), and a plist dict keeps only one. -->
 	<key>NSCameraUsageDescription</key>
-	<string>Snappet uses the camera to scan a Kilter climb's QR code so you can open a climb a friend shared. Nothing leaves your device.</string>
+	<string>Snappet uses the camera to scan a receipt (to pull out the line items and split them) and to scan a Kilter climb's QR code a friend shared. Everything is processed on your device; nothing is stored or uploaded.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Snappet reads your workout heart rate to find your most intense moments and build a highlight reel.</string>
 	<key>NSHealthUpdateUsageDescription</key>

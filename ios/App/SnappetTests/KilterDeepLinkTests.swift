@@ -40,3 +40,75 @@ final class KilterDeepLinkTests: XCTestCase {
         }
     }
 }
+
+/// The `onOpenURL` half of #75 — the registered `snappet://` scheme's pure route table
+/// (`SnappetDeepLink`) and the climb-landing decision (`KilterDeepLinkRouting`) the URL path and
+/// the in-app scanner both route through. The simulator/Camera halves stay device/sim-pending
+/// (`xcrun simctl openurl` drives them); these lock the decisions they execute.
+final class SnappetDeepLinkRouteTests: XCTestCase {
+
+    // MARK: - URL → route
+
+    func testClimbURLRoutesToKilter() throws {
+        let url = try XCTUnwrap(URL(string: "snappet://kilter/climb/abc123?angle=40"))
+        XCTAssertEqual(SnappetDeepLink.route(for: url),
+                       .kilterClimb(KilterClimbLink(uuid: "abc123", angle: 40)))
+    }
+
+    func testClimbURLWithoutAngleRoutes() throws {
+        let url = try XCTUnwrap(URL(string: "snappet://kilter/climb/deadbeef"))
+        XCTAssertEqual(SnappetDeepLink.route(for: url),
+                       .kilterClimb(KilterClimbLink(uuid: "deadbeef")))
+    }
+
+    func testForeignURLsDoNotRoute() throws {
+        for bad in [
+            "https://kilterboardapp.com/climbs/abc",   // not our scheme
+            "snappet://workout/session/1",             // our scheme, no route (yet)
+            "snappet://kilter/history",                // kilter, not a climb
+        ] {
+            let url = try XCTUnwrap(URL(string: bad))
+            XCTAssertNil(SnappetDeepLink.route(for: url), "should not route \(bad)")
+        }
+    }
+
+    // MARK: - Climb link → landing
+
+    func testInstalledClimbOpensAndAdoptsAnOfferedAngle() {
+        let d = KilterDeepLinkRouting.destination(
+            for: KilterClimbLink(uuid: "abc", angle: 40),
+            climbInstalled: true, availableAngles: [20, 40, 70])
+        XCTAssertEqual(d, .openClimb(uuid: "abc", adoptAngle: 40))
+    }
+
+    func testInstalledClimbKeepsUserAngleWhenSharersIsNotOffered() {
+        // The sharer climbed at 42° but this board only offers the standard angles — don't
+        // force an angle the local picker can't represent (the scanner's longstanding rule).
+        let d = KilterDeepLinkRouting.destination(
+            for: KilterClimbLink(uuid: "abc", angle: 42),
+            climbInstalled: true, availableAngles: [20, 40, 70])
+        XCTAssertEqual(d, .openClimb(uuid: "abc", adoptAngle: nil))
+    }
+
+    func testInstalledClimbWithNoSharedAngleAdoptsNothing() {
+        let d = KilterDeepLinkRouting.destination(
+            for: KilterClimbLink(uuid: "abc"),
+            climbInstalled: true, availableAngles: [20, 40, 70])
+        XCTAssertEqual(d, .openClimb(uuid: "abc", adoptAngle: nil))
+    }
+
+    func testMissingClimbLandsGracefully() {
+        let d = KilterDeepLinkRouting.destination(
+            for: KilterClimbLink(uuid: "not-here", angle: 40),
+            climbInstalled: false, availableAngles: [20, 40, 70])
+        XCTAssertEqual(d, .explainMissing(uuid: "not-here"))
+    }
+
+    func testNoCatalogAtAllIsJustTheMissingCase() {
+        // Fresh install, catalog gate showing: same graceful landing, empty angle list.
+        let d = KilterDeepLinkRouting.destination(
+            for: KilterClimbLink(uuid: "abc", angle: 40),
+            climbInstalled: false, availableAngles: [])
+        XCTAssertEqual(d, .explainMissing(uuid: "abc"))
+    }
+}
