@@ -6,16 +6,19 @@ import SwiftUI
 struct AppLibraryView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(AppModel.self) private var app
+    // The router is hoisted to the shell (#71) — this stack binds its path; Home shares it.
+    @Environment(SuiteRouter.self) private var router
     @Namespace private var zoom
-    @State private var router = SuiteRouter()
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
     var body: some View {
+        @Bindable var router = router
         NavigationStack(path: $router.path) {
             ScrollView {
                 // Plain VStack layout — `Section` only renders inside List/Form/Table,
                 // not a ScrollView (that showed a blank Apps tab).
                 VStack(alignment: .leading, spacing: 28) {
+                    flagshipCard
                     ForEach(ModuleCategory.allCases) { category in
                         let modules = ModuleRegistry.modules(in: category)
                         if !modules.isEmpty {
@@ -66,7 +69,45 @@ struct AppLibraryView: View {
         }
         .animation(.snappyNav, value: app.pomodoro.isRunning)
         .animation(.snappyNav, value: app.pomodoroScreenVisible)
-        .environment(router)
+    }
+
+    /// The flagship gets a featured hero above the category grid (#71): a first-time user lands
+    /// on Apps facing 9 equal cards with no signal which one is the pitch — this makes Workout
+    /// Reels unmissable. It pushes the same `ModuleRoute` the grid card does (so opening it logs
+    /// identically); the grid card stays, as the smoke test — and muscle memory — expect.
+    @ViewBuilder private var flagshipCard: some View {
+        if let flagship = ModuleRegistry.all.first(where: { $0.id == "workout" }) {
+            Button {
+                router.push(ModuleRoute(id: flagship.id))
+            } label: {
+                HStack(spacing: SnappetSpacing.md) {
+                    Image(systemName: flagship.systemImage)
+                        .font(.largeTitle)
+                        .foregroundStyle(flagship.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Featured")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
+                            .foregroundStyle(flagship.tint)
+                        Text(flagship.title).font(.title3.bold())
+                        Text(flagship.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(SnappetColor.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .snappetCard()
+            }
+            // No `matchedTransitionSource` here: the grid card already registers the module's
+            // zoom source id, and a second source for the same destination would conflict.
+            .buttonStyle(PressableCardStyle())
+            .accessibilityIdentifier("appLibrary.flagship")
+        }
     }
 
     /// The mini-app for a pushed `ModuleRoute`, logging an "open" event (as the old NavigationLink did).
