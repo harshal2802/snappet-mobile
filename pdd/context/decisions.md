@@ -4176,3 +4176,28 @@ Invisible on the simulator (no real footage), which is exactly why P1 device val
 - **Signing note (not committed)**: device build needs `project.yml` team → `NFUS5W8QC6` (the working
   paid team; old notes' `8TRC99V9PN`/`HXU7999BJS` are stale) + the time-sensitive entitlement stripped
   locally. Committed `project.yml` is unchanged.
+
+## 2026-06-15 — Feedback-replay scoring ported into HighlightEngine (#83 Step 2, prompt 59, PR A)
+
+The "using the app improves the app" loop dead-ended in a file: `highlight-feedback.jsonl` was only
+replayable by the off-device Python harness, and `FeedbackStore.exportAll()` had zero callers. Ported
+the replay scoring into `HighlightEngine` as pure Swift (`FeedbackReplay`), mirroring
+`experiments/feedback-replay/replay.py` field-for-field.
+
+- **Decision**: parity is enforced by test, not eyeballed. Bundled the harness's seeded output
+  (`synth_feedback.generate(Random(42))`, 277 events) as a test resource
+  (`Fixtures/synthetic-feedback.jsonl`), decoded through the engine's OWN `HighlightFeedbackEvent`
+  Codable, replayed in Swift, and asserted against replay.py's golden numbers (e.g.
+  `sm9_lag6_l60_s40_g20`: satisfaction 0.877778, effort_mix 0.681818) + recommendation text. If the two
+  ever drift, the suite fails. Re-derive the golden with `python3 run.py` if replay.py changes.
+- **Decision**: the data-driven re-weighting is `FeedbackReplay.tunedWeighting(from:)` — HR-vs-scene
+  split where HR weight tracks the best config's empirical `effort_mix`, both clamped to `[0.2, 0.8]`
+  (the blend never collapses to a single signal — honors "don't hardwire HR-only"). Returns `nil` until
+  ≥5 endorsements, so **weights change ONLY from replayed feedback** (project.md invariant); no data ⇒
+  callers keep gated defaults.
+- **Decision**: `AppModel.recomputeFeedbackTuning()` is the on-device edge — reads
+  `feedback.exportAll()` (its first caller) on `bootstrap`, replays, stores `feedbackTuning`, and
+  `os_log`s the recommendation. **No engine behavior change in this PR**: the scene signal is still 0
+  until #83 Step 1 (PR B) wires the Vision scorer, so scaling HR by a constant weight leaves ranking
+  identical — gated by design. PR B consumes `feedbackTuning` to weight the now-real scene term.
+- **Engine stays platform-free** — `FeedbackReplay` is pure; `swift test` 55 green off-device.
