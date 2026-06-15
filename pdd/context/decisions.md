@@ -3846,3 +3846,35 @@ graph data.js node/edge audit clean. **Simulator-pending (orchestrator)**: unit
 `xcrun simctl openurl booted "snappet://kilter/climb/<uuid>?angle=40"` warm and after
 `simctl terminate` (cold), plus an unknown uuid for the graceful landing. **Device-pending**: a real
 Camera-app QR scan, BLE auto-start parity, live HR/Live Activity in an auto-started session.
+
+## [2026-06-15] iOS — create-a-climb lifecycle: edit / rename / delete + live grade estimate (#76)
+
+**Decision** (prompt 50): close the authoring loop and feed setters a grade while they build.
+
+- **Live manual grade estimate.** Pure `KilterClimbGenerator.holdTokens` (maps each placed
+  `(placementId, role)` through the model vocab `HOLD_<placementId>_<roleId>`, dropping out-of-vocab
+  holds) + `estimateManualGrade` (nil when nothing resolves). The chip loads **only the generator
+  meta** and only when already installed — authoring never triggers the 9 MB model download. Labeled a
+  model estimate; reactive to hold placement.
+- **Edit = re-derive identity.** The content uuid (`KilterClimbIdentity`) is unchanged, so editing holds
+  is by construction a *new* climb. `CreateClimbView` gains `editing:`; on save, unchanged holds update
+  the row in place (rename / angle / no-match / re-grade), changed holds **migrate** the climb's logged
+  ascents (and its favorite, respecting the unique `climbUUID`) to the new uuid and delete the old row.
+  The duplicate check excludes the climb being edited so re-saving its own holds isn't a self-duplicate.
+  Seeding the editor guards the `layoutId`-change hold-clear with a one-shot flag.
+- **Delete keeps the ascents.** `KilterLogEntry.climbName` is a stored snapshot, so a deleted climb's
+  logged sends stay readable in History as orphans — delete the climb row + a stale favorite, keep the
+  logs, confirm with the kept-ascents count. **Accepted residual:** an orphaned log's detail-by-uuid no
+  longer resolves to a climb; History (which reads the snapshot) is unaffected, and Mine no longer lists
+  it. One shared `KilterCreatedClimb.delete(_:in:)` backs both the detail screen and the Mine swipe so
+  the policy can't drift. Removing the row also frees the duplicate checker from trapping users against a
+  climb they deleted (the AC's third bullet falls out for free).
+
+**`#Predicate` gotcha (re-)recorded.** A `#Predicate` can't capture a model **property access**
+(`climb.uuid`) — the macro reads it as another model keypath and fails to type-check. Hoist to a local
+`let uuid = climb.uuid` first. (Same class as the SwiftData container-retain gotcha — silent at
+`swiftc -parse`, only a real build catches it.)
+
+**Verified**: full simulator suite green incl. new `KilterGradeEstimateTests` (pure estimator + frames
+round-trip) and the unchanged `KilterCreateClimbTests` golden UUIDv5 vector (cross-platform dedup with
+Android preserved). Reviewed in the main loop (the multi-agent review workflow was rate-limited).

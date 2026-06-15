@@ -19,6 +19,7 @@ struct KilterRootView: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
+    @Environment(SnappetCore.self) private var core
     @Query private var favorites: [KilterFavorite]
     @Query private var allEntries: [KilterLogEntry]
     /// Climbs the user authored on this device (manual editor / generator) — the "Mine" filter's source.
@@ -48,6 +49,9 @@ struct KilterRootView: View {
     @State private var mineOnly = false
     @State private var showingCreate = false
     @State private var items: [KilterListItem] = []
+    // Created-climb lifecycle from the Mine list (#76): edit re-opens authoring; delete confirms first.
+    @State private var editingCreated: KilterCreatedClimb?
+    @State private var deletingCreated: KilterCreatedClimb?
     /// True number of climbs matching the current filter + search (not capped by the list's limit) —
     /// shown live as "N climbs" so the user sees how their search/filters narrow the catalog.
     @State private var count = 0
@@ -103,6 +107,10 @@ struct KilterRootView: View {
     private var availableAngles: [Int] { catalog.angles() }
     private var gradeScale: [(difficulty: Int, label: String)] { catalog.gradeScale() }
     private var favoriteUUIDs: Set<String> { Set(favorites.map(\.climbUUID)) }
+    /// Bool binding for the Mine-list delete dialog, derived from the `presenting` optional (#76).
+    private var deletingDialogBinding: Binding<Bool> {
+        Binding(get: { deletingCreated != nil }, set: { if !$0 { deletingCreated = nil } })
+    }
 
     var body: some View {
         Group {
@@ -170,6 +178,27 @@ struct KilterRootView: View {
                 // Open the freshly-created climb in the normal detail screen.
                 router.push(KilterClimbRoute(uuid: uuid))
             }, board: board)
+        }
+        // Re-open an authored climb in the editor from a Mine swipe (#76).
+        .sheet(item: $editingCreated) { climb in
+            CreateClimbView(onCreated: { _ in }, board: board, editing: climb)
+        }
+        // Confirm before removing an authored climb; its logged ascents stay in History.
+        .confirmationDialog("Delete this climb?", isPresented: deletingDialogBinding,
+                            titleVisibility: .visible, presenting: deletingCreated) { climb in
+            Button("Delete climb", role: .destructive) {
+                core.log(module: "kilter", action: "deleted", summary: "Deleted \(climb.name)")
+                KilterCreatedClimb.delete(climb, in: modelContext)
+            }
+            .accessibilityIdentifier("kilter.created.swipeDeleteConfirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { climb in
+            // `#Predicate` can't capture `climb.uuid` (a model property access) — hoist to a local.
+            let uuid = climb.uuid
+            let n = (try? modelContext.fetchCount(FetchDescriptor<KilterLogEntry>(
+                predicate: #Predicate { $0.climbUUID == uuid }))) ?? 0
+            Text(n == 0 ? "“\(climb.name)” is removed from Mine. It can't be undone."
+                 : "“\(climb.name)” is removed from Mine. Its \(n) logged ascent\(n == 1 ? "" : "s") stay in History.")
         }
         .sheet(isPresented: $showingScanner) {
             // Same routing decision as the URL-scheme path (`open(link:)`) — the scanner used to
@@ -327,6 +356,18 @@ struct KilterRootView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("kilter.climbRow")
+                        // Edit / delete a climb the user authored, right from the Mine list (#76).
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if let created = createdClimbs.first(where: { $0.uuid == item.uuid }) {
+                                Button(role: .destructive) { deletingCreated = created } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .accessibilityIdentifier("kilter.created.swipeDelete")
+                                Button { editingCreated = created } label: { Label("Edit", systemImage: "pencil") }
+                                    .tint(.blue)
+                                    .accessibilityIdentifier("kilter.created.swipeEdit")
+                            }
+                        }
                     }
                 }
             }

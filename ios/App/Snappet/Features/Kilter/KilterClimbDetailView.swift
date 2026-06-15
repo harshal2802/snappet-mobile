@@ -646,11 +646,8 @@ struct KilterClimbDetailView: View {
     /// back to browse. Because the row leaves `Mine`, the duplicate checker no longer traps against it.
     private func deleteCreated() {
         guard let created = createdClimb(currentUUID) else { return }
-        let uuid = created.uuid
-        if let fav = favorites.first(where: { $0.climbUUID == uuid }) { modelContext.delete(fav) }
         core.log(module: "kilter", action: "deleted", summary: "Deleted \(created.name)")
-        modelContext.delete(created)
-        try? modelContext.save()
+        KilterCreatedClimb.delete(created, in: modelContext)
         dismiss()
     }
 

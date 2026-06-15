@@ -145,4 +145,16 @@ final class KilterCreatedClimb {
                     edgeLeft: edgeLeft, edgeRight: edgeRight, edgeBottom: edgeBottom, edgeTop: edgeTop,
                     frames: frames, description: "", isNoMatch: isNoMatch)
     }
+
+    /// Delete an authored climb, **keeping** its logged ascents (a real send stays in History via the
+    /// log's own name snapshot) and dropping a now-stale favorite. Shared by the detail screen and the
+    /// Mine list so the policy can't drift (#76). Because the row leaves the store, the duplicate checker
+    /// stops trapping users against a climb they removed.
+    static func delete(_ climb: KilterCreatedClimb, in context: ModelContext) {
+        let uuid = climb.uuid
+        if let fav = try? context.fetch(FetchDescriptor<KilterFavorite>(
+            predicate: #Predicate { $0.climbUUID == uuid })).first { context.delete(fav) }
+        context.delete(climb)
+        try? context.save()
+    }
 }
