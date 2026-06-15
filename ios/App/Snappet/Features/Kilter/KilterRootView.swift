@@ -366,7 +366,10 @@ struct KilterRootView: View {
                 .lineLimit(2)
             Spacer()
             Button {
-                withAnimation(.snappy) { sessions.start(angle: angle, source: "manual", in: modelContext) }
+                // Discard the created-fresh flag: the explicit Start button needs no undo capsule
+                // (that's the auto-log path only), and the non-Void return would otherwise conflict
+                // with this Void action closure.
+                withAnimation(.snappy) { _ = sessions.start(angle: angle, source: "manual", in: modelContext) }
             } label: {
                 Label("Start session", systemImage: "play.fill")
                     .font(.subheadline.weight(.semibold))
