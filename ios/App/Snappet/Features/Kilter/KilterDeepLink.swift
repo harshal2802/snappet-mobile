@@ -53,12 +53,25 @@ enum SnappetDeepLink: Equatable, Sendable {
     /// `snappet://pomodoro/start` — open Pomodoro and start a focus timer (the #81 Today widget's
     /// Start-focus button). The shell routes to the module + a one-shot `pendingPomodoroStart`.
     case startFocus
+    /// `snappet://exercise/<id>` — open a catalog exercise's detail (the #81 Phase-4 Spotlight tap).
+    case exercise(id: String)
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
         if let link = KilterClimbLink(decoding: url.absoluteString) { return .kilterClimb(link) }
         if isStartFocus(url) { return .startFocus }
+        if let id = exerciseID(url) { return .exercise(id: id) }
         return nil
+    }
+
+    /// `snappet://exercise/<id>` → the exercise id (scheme + host checked case-insensitively). Pure.
+    private static func exerciseID(_ url: URL) -> String? {
+        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              c.scheme?.lowercased() == "snappet",
+              c.host?.lowercased() == "exercise" else { return nil }
+        let parts = c.path.split(separator: "/").map(String.init)
+        guard parts.count == 1, !parts[0].isEmpty else { return nil }
+        return parts[0]
     }
 
     /// `snappet://pomodoro/start` (scheme + host + path checked, case-insensitively). Pure, so the

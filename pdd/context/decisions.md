@@ -4109,3 +4109,40 @@ per case incl. `startRoutine`/`startPomodoro`, ModuleChoice→id map, HabitEntit
 donation are confirmable only on a device — the sim verifies the serialisable contracts, the
 inbox/outbox round-trips, and the pure action→route dispatch mapping (the in-app navigation glue that
 applies it is the thin untested edge, mirroring the `onOpenURL` one-shots).
+
+## [2026-06-15] iOS — OS integration Phase 4: Spotlight indexing + deep-link routing (#81, FINAL phase)
+
+**Decision** (prompt 57, PR "Fixes #81"): index the suite's content in Spotlight, reusing the
+`snappet://` routing so a result tap lands on the right screen with no new routing brain — closing #81.
+
+- **The Spotlight identifier IS the deep-link URL.** Each `CSSearchableItem`'s `uniqueIdentifier` is its
+  `snappet://` URL; a tap arrives via `.onContinueUserActivity(CSSearchableItemActionType)` carrying
+  that identifier, which `RootShell` turns back into a `URL` and routes through the SAME `handle(_:)` as
+  `onOpenURL`. So QR / widget / Siri / Spotlight all share one router. `RootShell`'s `onOpenURL` switch
+  was extracted into `handle(_:)` for this reuse.
+- **What's indexed (the AC = "an exercise or climb name"):** the 873-exercise catalog
+  (`snappet://exercise/<id>` → resolve from `ExerciseCatalog.all` → open `workout-log` + push the
+  `Exercise` detail, the two-level deep-link pattern) and the user's **created climbs**
+  (`KilterCreatedClimb`) — which reuse the EXISTING `snappet://kilter/climb/<uuid>` route entirely (it
+  already resolves user-created climbs), so they need NO new routing.
+- **Pure spec, thin edge.** `SpotlightCatalog` (pure) builds `SpotlightItemSpec`s (identifier/domain/
+  title/description/keywords) — unit-tested incl. that each identifier round-trips back to its route;
+  `SpotlightIndexer` is the CoreSpotlight edge (`CSSearchableIndex.indexSearchableItems`), run once on
+  launch (the index dedupes by identifier) and gated off under `-uiTest*`.
+- **Deleted created climbs are de-indexed** (review fix): `indexSearchableItems` is additive (it never
+  evicts), and the fixed catalog self-heals on re-index but a deleted *user* climb wouldn't — so
+  `KilterCreatedClimb.delete` calls `SpotlightIndexer.deindexCreatedClimb(uuid:angle:)`
+  (`deleteSearchableItems` by the same identifier `SpotlightCatalog.createdClimbIdentifier` builds, one
+  source of truth). Without it a deleted climb stayed permanently searchable (a tap landed gracefully on
+  the "not in your catalog" alert, but a stale result is a UX wart). Caught by the adversarial review.
+- **Accepted residual**: **journal entries are not indexed** — `JournalEntry` has no stable id, so it
+  would need a schema migration (+ a `SnappetBackup` row + the tripwire test). The AC is exercise/climb;
+  journal Spotlight is a small, clean follow-up once `JournalEntry` gains a `uuid`. (Custom exercises —
+  `CustomExercise` — are likewise a follow-up; the built-in catalog covers the AC.)
+
+**Verified**: clean build (app + watch + widget); `SpotlightIndexTests` (exercise + created-climb spec
+ids/fields, identifier→route round-trip, the `snappet://exercise/<id>` parse + malformed rejection) +
+full `SnappetTests` 680 green; UI suite green. **Device-pending**: real Spotlight index visibility +
+a Spotlight-result tap → `onContinueUserActivity` (the sim verifies the specs, the route parse, the
+index call, and `simctl openurl` delivery). With this, **#81 is complete** (4 stacked PRs:
+App Group → widgets → App Intents → Spotlight); the #100 iOS tracker box is checked.

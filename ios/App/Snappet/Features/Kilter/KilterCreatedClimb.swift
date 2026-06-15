@@ -152,9 +152,13 @@ final class KilterCreatedClimb {
     /// stops trapping users against a climb they removed.
     static func delete(_ climb: KilterCreatedClimb, in context: ModelContext) {
         let uuid = climb.uuid
+        let angle = climb.angle
         if let fav = try? context.fetch(FetchDescriptor<KilterFavorite>(
             predicate: #Predicate { $0.climbUUID == uuid })).first { context.delete(fav) }
         context.delete(climb)
         try? context.save()
+        // Remove its Spotlight entry (#81 Phase 4): indexing is additive, so a re-index never evicts a
+        // deleted climb — deindex it explicitly by the same identifier the indexer used.
+        SpotlightIndexer.deindexCreatedClimb(uuid: uuid, angle: angle)
     }
 }
