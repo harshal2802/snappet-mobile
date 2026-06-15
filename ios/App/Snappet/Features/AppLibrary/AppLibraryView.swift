@@ -12,6 +12,7 @@ struct AppLibraryView: View {
     /// `BackupView` too (not only the banner's), or its exports would snapshot the EMPTY
     /// fallback store as a "backup". `.resetDone` still runs on the fallback until relaunch.
     @Environment(StoreHealth.self) private var storeHealth
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var zoom
     /// The flagship hero's own `matchedTransitionSource` id (#71 review fix) — distinct from the
     /// grid card's `module.id`, so a hero tap zooms from the hero, not the grid card below it.
@@ -98,11 +99,11 @@ struct AppLibraryView: View {
                     router.push(ModuleRoute(id: "pomodoro"))
                 }
                 .padding(.bottom, SnappetSpacing.lg)
-                .transition(.liveBanner)
+                .transition(.liveBanner(reduceMotion: reduceMotion))
             }
         }
-        .animation(.snappyNav, value: app.pomodoro.isRunning)
-        .animation(.snappyNav, value: app.pomodoroScreenVisible)
+        .snappetAnimation(SnappetMotion.standard, value: app.pomodoro.isRunning)
+        .snappetAnimation(SnappetMotion.standard, value: app.pomodoroScreenVisible)
     }
 
     /// The flagship gets a featured hero above the category grid (#71): a first-time user lands

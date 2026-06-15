@@ -68,6 +68,7 @@ struct WorkoutHomeView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(SuiteRouter.self) private var router
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query(sort: \Routine.updatedAt, order: .reverse) private var routines: [Routine]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var sessions: [WorkoutSession]
@@ -112,8 +113,8 @@ struct WorkoutHomeView: View {
 
             sectionContent
                 .id(section)
-                .transition(.sectionSwap)
-                .animation(.snappyNav, value: section)
+                .transition(.sectionSwap(reduceMotion: reduceMotion))
+                .snappetAnimation(SnappetMotion.standard, value: section)
         }
         // While a workout runs but the player is minimized, keep a live banner pinned to the
         // bottom (live metrics in-app + a one-tap way back in — the background-workout ask).
@@ -219,7 +220,7 @@ struct WorkoutHomeView: View {
                 paused: app.liveWorkout.isPaused,
                 resume: { resume(active) })
                 .matchedTransitionSource(id: "workoutPlayer", in: playerZoom)
-                .transition(.liveBanner)
+                .transition(.liveBanner(reduceMotion: reduceMotion))
         }
     }
 
@@ -356,7 +357,7 @@ struct WorkoutHomeView: View {
             // would needlessly end+recreate the activity already on the Lock Screen.
             startLiveActivity(for: session)
         }
-        withAnimation(.snappyNav) { playing = session }
+        withAnimation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion)) { playing = session }
     }
 
     /// Ask the watch to start an `HKWorkoutSession` of the type that matches the
@@ -409,7 +410,7 @@ struct WorkoutHomeView: View {
     /// session stays `isActive`, the watch keeps recording, and the Live Activity + the in-app
     /// banner keep showing live metrics. Re-opened by tapping the banner. (Background-workout ask.)
     private func minimizeWorkout() {
-        withAnimation(.snappyNav) { playing = nil }
+        withAnimation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion)) { playing = nil }
     }
 
     /// Called when the player closes. `saved == false` means "discard": delete the session.

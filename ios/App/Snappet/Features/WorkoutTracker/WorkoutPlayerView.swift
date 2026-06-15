@@ -69,12 +69,12 @@ struct WorkoutPlayerView: View {
         NavigationStack {
             Group {
                 switch phase {
-                case .exercise: exerciseScreen.transition(.workoutPhase)
-                case .rest: restScreen.transition(.workoutPhase)
-                case .done: doneScreen.transition(.workoutPhase)
+                case .exercise: exerciseScreen.transition(.workoutPhase(reduceMotion: reduceMotion))
+                case .rest: restScreen.transition(.workoutPhase(reduceMotion: reduceMotion))
+                case .done: doneScreen.transition(.workoutPhase(reduceMotion: reduceMotion))
                 }
             }
-            .animation(Motion.content, value: phase)
+            .snappetAnimation(SnappetMotion.standard, value: phase)
             .safeAreaInset(edge: .top) { overallTimerHeader }
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
@@ -186,7 +186,7 @@ struct WorkoutPlayerView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
         .background(.bar)
-        .animation(.snappyNav, value: isPaused)
+        .snappetAnimation(SnappetMotion.standard, value: isPaused)
         .accessibilityIdentifier("overallWorkoutTimer")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Total workout time")
