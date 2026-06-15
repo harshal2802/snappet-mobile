@@ -4,6 +4,7 @@ import SwiftData
 /// Builds `SnappetCore` from the shared model context, then shows the suite shell.
 struct RootShell: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @State private var core: SnappetCore?
     /// The suite router, hoisted to the shell (#71) so Home — and deep-link entries that arrive
     /// from outside any tab (the `snappet://` QR scheme below, #75; App Intents #81 next) — can
@@ -20,7 +21,22 @@ struct RootShell: View {
                     .environment(router)
             } else {
                 LoadingView()
-                    .task { core = SnappetCore(context: context) }
+                    .task {
+                        core = SnappetCore(context: context)
+                        // Publish the first Today snapshot for the home-screen widgets (#81 Phase 1)
+                        // as soon as the store is up, so a widget added before the app is reopened
+                        // has data. Subsequent refreshes ride scenePhase below.
+                        WidgetSnapshotService.refresh(context: context)
+                    }
+            }
+        }
+        // Keep the home-screen widgets' Today snapshot current (#81 Phase 1): rebuild + republish
+        // whenever the app foregrounds (it may have changed elsewhere) or backgrounds (capture the
+        // latest before we lose the foreground). Per-mutation refreshes (habit toggle, focus done)
+        // land with the widget UI in Phase 2; scenePhase covers the read path now.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active || phase == .background {
+                WidgetSnapshotService.refresh(context: context)
             }
         }
         // `snappet://` entry (#75): the Camera's QR scan / Safari / another app, cold or warm.

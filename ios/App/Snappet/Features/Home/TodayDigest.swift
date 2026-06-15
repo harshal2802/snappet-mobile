@@ -125,4 +125,23 @@ enum TodayDigest {
         }?.gradeLabel
         return ClimbPlan(loggedClimbs: history.count, workingGradeLabel: label)
     }
+
+    // MARK: - Activity streak
+
+    /// Consecutive days **ending today** with at least one logged action — the suite-engagement
+    /// "day streak" the Home dashboard's `StatTile` shows. Counts strictly back from today: a day
+    /// with no `UsageRecord` ends it (so today with none ⇒ 0; it does NOT stay alive until a full
+    /// day is missed, unlike per-habit `HabitMilestones.streak`). Both `HomeDashboardView.streakText`
+    /// and the home-screen widget snapshot (#81) read this, so the number can't diverge between them.
+    static func activityStreak(records: [UsageRecord], now: Date, calendar: Calendar) -> Int {
+        let days = Set(records.map { calendar.startOfDay(for: $0.timestamp) })
+        var streak = 0
+        var cursor = calendar.startOfDay(for: now)
+        while days.contains(cursor) {
+            streak += 1
+            guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = previous
+        }
+        return streak
+    }
 }
