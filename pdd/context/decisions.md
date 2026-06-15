@@ -4066,3 +4066,46 @@ completions), all fixed above.
 **Device-pending**: the widget actually rendering on the springboard + a real check-off tap firing the
 AppIntent are best confirmed on hardware (the sim verifies the snapshot read, outbox round-trip,
 reconciliation, staleness handling, and the deep link).
+
+## [2026-06-15] iOS — OS integration Phase 3: Siri / Shortcuts App Shortcuts (#81)
+
+**Decision** (prompt 56, PR "Part of #81"): give the suite a voice + Shortcuts presence with App
+Shortcuts — **reusing Phase 2's two cross-process channels, not inventing a third**.
+
+- **Two intent shapes, mapped to the two existing channels.** `CheckOffHabitIntent` is `openAppWhenRun
+  = false` and writes the Phase-2 **outbox** (`WidgetOutbox`, `desired: true`) + optimistic snapshot —
+  so "check off Read" persists with the app closed, and the app's foreground reconcile (which now also
+  logs the streak `UsageRecord`) credits it. The "open-app-and-act" intents (`StartPomodoroIntent`,
+  `OpenModuleIntent`, `QuickJournalIntent`, `StartRoutineIntent`) are `openAppWhenRun = true` and
+  enqueue a typed `PendingAppAction` to a new App-Group **inbox** (`AppActionInbox`, the same race-free
+  directory-of-one-file-per-record pattern as the outbox); `RootShell` drains it on first build +
+  scenePhase `.active` and dispatches through the **existing `SuiteRouter`** deep-link plumbing (the
+  `pendingPomodoroStart` / `open(module:)` paths the `snappet://` URLs use). The drain is gated off
+  under `-uiTest*` so a stale inbox file can't navigate a test run.
+- **Habits are a `HabitEntity` read from the snapshot.** `CheckOffHabitIntent`'s `@Parameter` is a
+  `HabitEntity` whose `EntityStringQuery` reads `WidgetSnapshotStore.read()?.habits` — so Siri/Shortcuts
+  resolves a habit by name OFF-PROCESS, no SwiftData, consistent with the rest of the widget surface.
+- **`AppShortcutsProvider` lives in the app target** (the system discovers it in the main bundle); the
+  intents + entity live in `Shared/` (compiled into app + widget) so the provider can reference them.
+- **QuickJournal** opens a prefilled new entry via a `SuiteRouter.pendingJournalCompose` one-shot
+  consumed by `JournalRootView` (the `pendingPomodoroStart` pattern); a dictated note has a non-empty
+  body so it survives the abandoned-blank sweep (the capture persists even if the user backs out).
+- **Accepted residual**: `StartRoutineIntent` opens the gym tracker (`workout-log`) rather than
+  auto-launching a *named* routine — resolving a `RoutineEntity` and driving the full-screen player's
+  start path from a cold deep-link is a larger lift, deferred (recorded here, not silently dropped).
+
+- **Dispatch is a pure, tested mapping** (review fix): the action→navigation decision (which module to
+  open + the one-shot flags, incl. the `startRoutine → "workout-log"` literal) lives in the pure
+  `AppActionRouter.route(for:)`, unit-tested per case; `RootShell.dispatch` is just glue that applies
+  it via `SuiteRouter`. So the module-id literals aren't re-hardcoded untested in the view (the review
+  caught that the earlier inline switch was unguarded, and that an earlier draft of this entry
+  overclaimed the dispatch was sim-verified).
+
+**Verified**: clean build (app + watch + widget; the intents/`AppEntity`/`AppEnum`/`AppShortcutsProvider`
+all compile + register); `AppActionInboxTests` (PendingAppAction codec per case, `AppActionRouter` route
+per case incl. `startRoutine`/`startPomodoro`, ModuleChoice→id map, HabitEntity mapping) + full
+`SnappetTests` green; UI suite green.
+**Device-pending**: actual Siri-phrase invocation, the Shortcuts-app gallery listing, and shortcut
+donation are confirmable only on a device — the sim verifies the serialisable contracts, the
+inbox/outbox round-trips, and the pure action→route dispatch mapping (the in-app navigation glue that
+applies it is the thin untested edge, mirroring the `onOpenURL` one-shots).
