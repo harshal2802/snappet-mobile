@@ -395,6 +395,13 @@ const nodes = [
     file: "ios/App/Shared/AppActionInbox.swift", desc: "The App-Group inbox for 'open app and act' Siri intents (#81 Phase 3): a directory of one-file-per-PendingAppAction (startPomodoro / openModule(id) / quickJournal(text?) / startRoutine) — the same race-free pattern as WidgetOutbox. RootShell drains it on first build + scenePhase .active (gated off under -uiTest*) and dispatches each through the existing SuiteRouter deep-link paths. PendingAppAction codec unit-tested.", tags: ["app-group","inbox","siri","tested"] },
   { id: "habit-entity", label: "HabitEntity", type: "model", group: "core", category: "core", platform: "ios",
     file: "ios/App/Shared/HabitEntity.swift", desc: "An AppEntity (#81 Phase 3) so CheckOffHabitIntent resolves a habit by name in Siri/Shortcuts. Its EntityStringQuery reads the App-Group snapshot (SnappetWidgetSnapshot.habits) — by id, by name fragment, and the full suggestion list — OFF-PROCESS, no SwiftData.", tags: ["appentity","siri","snapshot"] },
+  // OS integration (#81 Phase 4): Spotlight indexing + deep-link routing.
+  { id: "spotlight-catalog", label: "SpotlightCatalog + ItemSpec", type: "core", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Spotlight/SpotlightItemSpec.swift", desc: "Pure builders (#81 Phase 4) for Spotlight entries: a SpotlightItemSpec whose identifier IS the snappet:// deep-link URL (so it doubles as the CSSearchableItem uniqueIdentifier AND the routing target — one brain). exerciseSpec(Exercise) → snappet://exercise/<id>; createdClimbSpec(...) → the existing snappet://kilter/climb/<uuid> (KilterClimbLink). Unit-tested incl. that each identifier round-trips back to its route. No CoreSpotlight, no device.", tags: ["pure","spotlight","deep-link","tested"] },
+  { id: "spotlight-indexer", label: "SpotlightIndexer", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Spotlight/SpotlightIndexer.swift", desc: "The CoreSpotlight edge (#81 Phase 4): builds CSSearchableItems from the SpotlightCatalog specs for the 873-exercise catalog + the user's created climbs (KilterCreatedClimb) and CSSearchableIndex.indexSearchableItems. Run once per launch from RootShell (the index dedupes by identifier), gated off under -uiTest*. Device-pending: real index visibility + a result tap.", tags: ["service","spotlight","corespotlight","device-pending"] },
+  { id: "ext-corespotlight", label: "CoreSpotlight", type: "external", group: "platform", category: "platform", platform: "external",
+    file: "—", desc: "On-device Spotlight search index (CSSearchableItem / CSSearchableIndex) + the CSSearchableItemActionType continuation a result tap delivers.", tags: ["apple","spotlight"] },
 
   // ═════════════════ Data models (SwiftData @Model) ═════════════════
   { id: "model-usage", label: "UsageRecord", type: "model", group: "core", category: "core", platform: "ios+android",
@@ -866,6 +873,12 @@ const links = [
   { source: "snappet-app-intents", target: "app-action-inbox", type: "persists", label: "open-app actions" },
   { source: "habit-entity", target: "widget-snapshot-store", type: "uses", label: "reads habits" },
   { source: "rootshell", target: "app-action-inbox", type: "uses", label: "drain + dispatch" },
+  // OS integration (#81 Phase 4): Spotlight.
+  { source: "rootshell", target: "spotlight-indexer", type: "uses", label: "index on launch" },
+  { source: "rootshell", target: "kilter-deeplink", type: "uses", label: "Spotlight tap → handle(url) (onContinueUserActivity)" },
+  { source: "spotlight-indexer", target: "spotlight-catalog", type: "uses", label: "specs" },
+  { source: "spotlight-indexer", target: "ext-corespotlight", type: "persists", label: "indexSearchableItems" },
+  { source: "spotlight-catalog", target: "kilter-deeplink", type: "uses", label: "KilterClimbLink URL" },
   { source: "applibrary", target: "pomodoro-live-chip", type: "contains" },
   { source: "applibrary", target: "android-backup", type: "navigate", label: "top-bar action" },
   { source: "android-backup", target: "snappetcore", type: "persists", label: "export/import all tables" },

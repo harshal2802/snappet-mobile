@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CoreSpotlight
 
 /// Builds `SnappetCore` from the shared model context, then shows the suite shell.
 struct RootShell: View {
@@ -28,6 +29,7 @@ struct RootShell: View {
                         // has data. Subsequent refreshes ride scenePhase below.
                         WidgetSnapshotService.refresh(context: context)
                         drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
+                        SpotlightIndexer.reindex(context: context)   // #81 Phase 4
                     }
             }
         }
@@ -46,19 +48,35 @@ struct RootShell: View {
         // LoadingView is still up isn't dropped. Parsing is the pure `SnappetDeepLink`; the climb
         // intent rides the router one-shot (consumed by `KilterRootView`, which owns the
         // destination + catalog knowledge for the graceful missing-climb landing).
-        .onOpenURL { url in
-            switch SnappetDeepLink.route(for: url) {
-            case .kilterClimb(let link):
-                router.pendingKilterClimb = link
-                router.open(module: "kilter")
-            case .startFocus:
-                // Today widget Start-focus (#81 Phase 2): open Pomodoro; the one-shot makes the
-                // module start the app-owned timer on appear.
-                router.pendingPomodoroStart = true
-                router.open(module: "pomodoro")
-            case nil:
-                break   // not ours — ignore
-            }
+        .onOpenURL { url in handle(url) }
+        // Spotlight tap (#81 Phase 4): the CSSearchableItem's uniqueIdentifier IS its snappet:// URL,
+        // so route it through the same handler as onOpenURL — one routing brain.
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            if let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+               let url = URL(string: id) { handle(url) }
+        }
+    }
+
+    /// The one routing brain for an incoming `snappet://` URL — used by both `onOpenURL` (QR / Siri
+    /// start-focus / another app) and a Spotlight result tap (#81 Phase 4). The pure `SnappetDeepLink`
+    /// parses; the climb/focus intents ride `SuiteRouter` one-shots (the destinations own the catalog /
+    /// timer); an exercise resolves from the catalog and pushes after opening the gym tracker.
+    private func handle(_ url: URL) {
+        switch SnappetDeepLink.route(for: url) {
+        case .kilterClimb(let link):
+            router.pendingKilterClimb = link
+            router.open(module: "kilter")
+        case .startFocus:
+            router.pendingPomodoroStart = true
+            router.open(module: "pomodoro")
+        case .exercise(let id):
+            // Two-level deep link: open the gym tracker, then push the exercise's detail (the
+            // navigationDestination(for: Exercise.self) the tracker root registers).
+            guard let exercise = ExerciseCatalog.all.first(where: { $0.id == id }) else { return }
+            router.open(module: "workout-log")
+            router.push(exercise)
+        case nil:
+            break   // not ours — ignore
         }
     }
 

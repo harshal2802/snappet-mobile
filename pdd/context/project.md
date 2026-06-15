@@ -403,6 +403,20 @@ provider compile + register); `AppActionInboxTests` (codec + module-id map + Hab
 than auto-launching a named routine (deferred). **Device-pending**: real Siri phrases, the Shortcuts-app
 gallery listing, donation. **Next**: Phase 4 (Spotlight indexing + deep-link routing) — the last phase.
 
+🟢 **OS integration — Phase 4: Spotlight + deep-link routing (2026-06-15, prompt 57, issue #81 — COMPLETE).**
+iOS. The suite's content is findable in Spotlight: `SpotlightIndexer` (CoreSpotlight edge) indexes the
+873-exercise catalog + the user's created climbs as `CSSearchableItem`s whose `uniqueIdentifier` IS the
+`snappet://` deep-link URL — so a result tap (via `.onContinueUserActivity(CSSearchableItemActionType)`)
+routes through the SAME `RootShell.handle(_:)` as `onOpenURL`: `snappet://exercise/<id>` opens the gym
+tracker's exercise detail; created climbs reuse the existing `snappet://kilter/climb/<uuid>` route. The
+spec building is the pure, tested `SpotlightCatalog`. **Verified**: app+watch+widget build;
+`SpotlightIndexTests` (spec ids/fields + identifier→route round-trip + parse) + full `SnappetTests` 680
+green; UI suite green. **Accepted residual**: journal entries aren't indexed (no stable id — a follow-up
+once `JournalEntry` gains a `uuid`); custom exercises likewise. **Device-pending**: real Spotlight
+visibility + a result tap. **This completes issue #81** — the suite now has home-screen widgets
+(streak + interactive habit check-off + Start focus), Siri/Shortcuts App Shortcuts, and Spotlight, all
+on a shared App Group, entirely on-device. The #100 iOS tracker is now 16/16.
+
 ## License
 
 TBD.
