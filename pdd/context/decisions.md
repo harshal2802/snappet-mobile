@@ -4201,3 +4201,41 @@ the replay scoring into `HighlightEngine` as pure Swift (`FeedbackReplay`), mirr
   until #83 Step 1 (PR B) wires the Vision scorer, so scaling HR by a constant weight leaves ranking
   identical — gated by design. PR B consumes `feedbackTuning` to weight the now-real scene term.
 - **Engine stays platform-free** — `FeedbackReplay` is pure; `swift test` 55 green off-device.
+
+## 2026-06-15 — Vision scene scorer wired into the fusion (#83 Step 1, prompt 60, PR B — closes #83)
+
+`SceneHighlightSelector` returned 0 ("until a real vision pipeline is wired"), so reels were
+effectively HR-only and could pick a blurry pocket-shot over the crux. Added a real on-device Vision
+scorer; #83's two stacked PRs (Step 2 replay = #141, Step 1 vision = this) complete the moat loop.
+
+- **Decision**: `Services/SceneScorer.swift` is the platform edge — samples video frames
+  (`AVAssetImageGenerator`, ≤480 px) and scores each via Vision saliency
+  (`VNGenerateAttentionBasedSaliencyImageRequest`) + Core Image sharpness (variance-of-Laplacian) +
+  face/human presence. Signals relative-normalized across frames, combined by the PURE `SceneScoring`.
+  Only the scalar crosses into the engine via `SceneHighlightSelector.visualScore` — `HighlightEngine`
+  stays platform-free (verified: only `import Foundation`; `swift test` 55 green off-device).
+- **Decision (scoring model, caught by a failing test)**: sharpness is a **multiplicative gate**
+  (`score = sharpness * (0.5 + 0.3·saliency + 0.2·presence)`), not an additive term. The first cut was
+  additive and let a salient-but-blurry frame outscore a sharp one — contradicting "penalize blurry."
+  Multiplicative makes blur kill the score; content is a `[0.5, 1.0]` multiplier so emptiness is
+  penalized too but a sharp subjectless frame isn't zeroed. BOTH blurry and empty are penalized; only
+  sharp-AND-has-something wins. Off-device proof: `SceneScorerTests` synthesizes a sharp checkerboard vs
+  a flat frame and asserts the real Vision/CI metrics rank them correctly, plus pure-combiner cases.
+- **Decision (the invariant)**: the scene term is added to the fusion by `engine(boosting:scene:)`
+  **only when `feedbackTuning != nil`** (PR A's replay-derived weighting). No replayed feedback ⇒ no
+  scene weight ⇒ blend is exactly today's HR + effort. So visual content changes selection ONLY once the
+  user's own feedback earns it (project.md invariant), and the existing effortAligned/achievement-window
+  selection can't regress without data. `sceneSelector(for:)` also skips the Vision cost when untuned.
+- **Device-pending residual**: real-footage selection *quality* (do the scene picks look right?) is a
+  device-verified judgment, not unit-assertable; the fixture proves the scorer penalizes blur/empty.
+
+### Adversarial review of #83 (3-lens + skeptic) — one minor finding, fixed
+The parallel review (engine-layering / invariant-regression / correctness lenses + per-finding skeptics)
+confirmed the four invariants hold (engine platform-free; replay formulas match Python; scene term gated
+behind replayed-feedback tuning; no regression without data). It surfaced ONE minor parity gap:
+`FeedbackReplay.ranked()` tie-breaks by `key` while replay.py relied on dict-insertion order, so an
+equal-satisfaction tie could pick a different best config — and the parity test never pinned the tie.
+Fix: aligned the Python oracle (replay.py + run.py) to the deterministic `(-satisfaction, key)` tie-break
+(a Swift Dictionary can't reproduce insertion order, so the key tie-break is canonical) and added
+`testRankingTieBreaksByKeyMatchingPython` to pin it (verified Z-before-A → "S | Afp" wins on both sides).
+Measure-zero for the shipped fixture (distinct satisfactions), but parity is now drift-proof on ties.

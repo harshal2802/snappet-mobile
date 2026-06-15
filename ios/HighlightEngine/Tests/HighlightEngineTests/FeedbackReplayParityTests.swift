@@ -67,6 +67,27 @@ final class FeedbackReplayParityTests: XCTestCase {
         XCTAssertTrue(rec.contains("effort_mix ≈ 0.68 → users endorse mostly EFFORT moments"), rec)
     }
 
+    /// Tie-break parity: on EQUAL satisfaction, both Swift `ranked()` and the Python oracle
+    /// (replay.py, sorted by `(-satisfaction, key)`) pick the alphabetically-first key — deterministic
+    /// on both sides (a Swift Dictionary can't reproduce Python's old dict-insertion order). Verified
+    /// against `python3` for the same input: "S | Afp" wins over "S | Zfp". Pins the tie the shipped
+    /// fixture never exercises (its satisfactions are distinct).
+    func testRankingTieBreaksByKeyMatchingPython() {
+        func events(fp: String) -> [HighlightFeedbackEvent] {
+            (0..<6).map { _ in .init(workoutId: "w", activity: .dance, action: .shown, atOffset: 1,
+                score: 0.5, highlightKind: .high, selectorName: "S", configFingerprint: fp, timestamp: 1) }
+            + (0..<4).map { _ in .init(workoutId: "w", activity: .dance, action: .kept, atOffset: 1,
+                score: 0.5, highlightKind: .high, selectorName: "S", configFingerprint: fp, timestamp: 1) }
+        }
+        // Insert Z before A — the old insertion-order behavior would pick Z; the key tie-break picks A.
+        let stats = FeedbackReplay.replay(events(fp: "Zfp") + events(fp: "Afp"))
+        let ranked = FeedbackReplay.ranked(stats)
+        XCTAssertEqual(ranked.map(\.satisfaction), ranked.map(\.satisfaction).sorted(by: >))
+        XCTAssertEqual(ranked.first?.satisfaction, ranked.last?.satisfaction, "the two configs must tie")
+        XCTAssertEqual(ranked.first?.key, "S | Afp", "tie breaks alphabetically by key, matching replay.py")
+        XCTAssertTrue(FeedbackReplay.recommend(stats).contains("**S | Afp**"))
+    }
+
     // MARK: - Re-weighting (the data-driven path; weights change ONLY from replayed feedback)
 
     func testTunedWeightingDerivesFromEffortMix() throws {

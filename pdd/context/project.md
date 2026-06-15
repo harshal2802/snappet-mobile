@@ -133,8 +133,18 @@ quirk, noted in the test).
   clips interleaved into the reel (was: silently dropped). Builds on the sim; visual needs a device.
 - ⚠️ **±90 s media↔HR padding**: P5's *model* says it's sound for skew+drift, but the real fix is TZ
   normalization (gross TZ errors → missing media); unconfirmed until measured on a device.
-- 🟡 **Phase-0a verdict is NEEDS-REAL-DATA** (synthetic). P6 added Fusion + a tolerance sweep (Fusion
-  overtakes Scene at ±12–15 s), strengthening the fusion case — but real sessions still decide.
+- ✅ **Flagship intelligence wired (#83, 2026-06-15, prompts 59+60).** The half-built moat is closed in
+  two stacked PRs: **Step 2** ported the feedback-replay tuner into `HighlightEngine` as pure Swift
+  (`FeedbackReplay`, parity-tested vs the Python harness) + an on-device read of the local JSONL
+  (`AppModel.recomputeFeedbackTuning`, `exportAll`'s first caller) → a replay-derived HR-vs-scene
+  weighting; **Step 1** added the real Vision scene scorer (`Services/SceneScorer`: saliency + sharpness
+  + face/body presence) feeding `FusionSelector` via the `visualScore` seam. The scene term enters the
+  blend ONLY when replayed feedback has tuned in a weight (gated — no change from intuition). Engine
+  stays platform-free.
+- 🟡 **Phase-0a verdict is NEEDS-REAL-DATA → now collecting.** The first real on-device
+  `highlight-feedback.jsonl` exists (P1 validation); the on-device `FeedbackReplay` ranks real configs.
+  Enough real sessions still decide the final HR-vs-content weighting — but the loop now runs on-device,
+  not just in the Python spike.
 - App-icon **art** + **TestFlight upload** deferred (need signing/art).
 
 ## Roadmap
@@ -424,6 +434,14 @@ visibility + a result tap. **This completes issue #81** — the suite now has ho
 (streak + interactive habit check-off + Start focus), Siri/Shortcuts App Shortcuts, and Spotlight, all
 on a shared App Group, entirely on-device. With #81 done the #100 iOS tracker is **15/16** — only
 #83 (flagship intelligence, P3/L) remains.
+
+**#83 flagship intelligence (2026-06-15, prompts 59+60, two stacked PRs).** Prerequisite cleared first:
+the flagship reel flow was device-validated (P1) and a real export bug fixed (#139/#140). Then **Step 2**
+(`FeedbackReplay` in the engine, parity-tested vs the Python harness; on-device replay of the local
+JSONL → replay-derived weighting) and **Step 1** (`SceneScorer` — real Vision saliency/sharpness/presence
+→ `FusionSelector.visualScore`, gated behind replayed-feedback tuning). Engine stays platform-free
+(`swift test` green); scene fixture penalizes blurry/empty frames. **This completes #83** — with it the
+#100 iOS tracker is **16/16**.
 
 ## License
 

@@ -43,7 +43,7 @@ def main():
 
     print("| selector | config | shown | keep | pin | remove | export | regen/shown | effort_mix | satisfaction |")
     print("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
-    for st in sorted(stats.values(), key=lambda s: s.satisfaction, reverse=True):
+    for st in sorted(stats.values(), key=lambda s: (-s.satisfaction, s.key)):  # deterministic; matches Swift
         sel, fp = st.key.split(" | ", 1)
         print(f"| {sel} | {fp} | {st.shown} | {st.keep_rate:.2f} | {st.pin_rate:.2f} | "
               f"{st.removal_rate:.2f} | {st.export_survivorship:.2f} | {st.regen_per_shown:.2f} | "
