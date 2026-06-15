@@ -4228,3 +4228,14 @@ scorer; #83's two stacked PRs (Step 2 replay = #141, Step 1 vision = this) compl
   selection can't regress without data. `sceneSelector(for:)` also skips the Vision cost when untuned.
 - **Device-pending residual**: real-footage selection *quality* (do the scene picks look right?) is a
   device-verified judgment, not unit-assertable; the fixture proves the scorer penalizes blur/empty.
+
+### Adversarial review of #83 (3-lens + skeptic) — one minor finding, fixed
+The parallel review (engine-layering / invariant-regression / correctness lenses + per-finding skeptics)
+confirmed the four invariants hold (engine platform-free; replay formulas match Python; scene term gated
+behind replayed-feedback tuning; no regression without data). It surfaced ONE minor parity gap:
+`FeedbackReplay.ranked()` tie-breaks by `key` while replay.py relied on dict-insertion order, so an
+equal-satisfaction tie could pick a different best config — and the parity test never pinned the tie.
+Fix: aligned the Python oracle (replay.py + run.py) to the deterministic `(-satisfaction, key)` tie-break
+(a Swift Dictionary can't reproduce insertion order, so the key tie-break is canonical) and added
+`testRankingTieBreaksByKeyMatchingPython` to pin it (verified Z-before-A → "S | Afp" wins on both sides).
+Measure-zero for the shipped fixture (distinct satisfactions), but parity is now drift-proof on ties.

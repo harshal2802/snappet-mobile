@@ -104,7 +104,10 @@ def _endorse(st: ConfigStats, e: Event) -> None:
 def recommend(stats: Dict[str, ConfigStats]) -> str:
     if not stats:
         return "No data — use the app to generate feedback first."
-    ranked = sorted(stats.values(), key=lambda s: s.satisfaction, reverse=True)
+    # Tie-break alphabetically by key so the order is deterministic and matches the Swift port
+    # (FeedbackReplay.ranked). A bare satisfaction sort falls back to dict-insertion order, which a
+    # Swift Dictionary can't reproduce — so the key tie-break is the canonical, parity-safe choice.
+    ranked = sorted(stats.values(), key=lambda s: (-s.satisfaction, s.key))
     best = ranked[0]
     lines = [f"Best config so far: **{best.key}** (satisfaction {best.satisfaction:.2f})."]
     mix = best.effort_mix
