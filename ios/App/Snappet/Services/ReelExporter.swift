@@ -143,15 +143,15 @@ final class ReelExporter: Sendable {
     }
 
     /// Size of a track's frame after its `preferredTransform` (rotation) is applied.
-    private func orientedSize(_ natural: CGSize, transform: CGAffineTransform) -> CGSize {
+    func orientedSize(_ natural: CGSize, transform: CGAffineTransform) -> CGSize {
         let r = CGRect(origin: .zero, size: natural).applying(transform)
         return CGSize(width: abs(r.width), height: abs(r.height))
     }
 
     /// Orient (preferredTransform) → uniform-scale to fit the canvas → center. Aspect-preserving, so
     /// a differently-oriented clip letterboxes rather than distorting.
-    private func fitTransform(orientedSize o: CGSize, preferred: CGAffineTransform,
-                              renderSize r: CGSize) -> CGAffineTransform {
+    func fitTransform(orientedSize o: CGSize, preferred: CGAffineTransform,
+                      renderSize r: CGSize) -> CGAffineTransform {
         guard o.width > 0, o.height > 0 else { return preferred }
         let scale = min(r.width / o.width, r.height / o.height)
         let tx = (r.width - o.width * scale) / 2
