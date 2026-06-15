@@ -3878,3 +3878,25 @@ Camera-app QR scan, BLE auto-start parity, live HR/Live Activity in an auto-star
 **Verified**: full simulator suite green incl. new `KilterGradeEstimateTests` (pure estimator + frames
 round-trip) and the unchanged `KilterCreateClimbTests` golden UUIDv5 vector (cross-platform dedup with
 Android preserved). Reviewed in the main loop (the multi-agent review workflow was rate-limited).
+
+## [2026-06-15] iOS — shared HR chart/zone bar across both session summaries + an in-UI colour legend (#78)
+
+**Decision** (prompt 51): one definition of the heart-rate summary, and make the badge colours legible.
+
+- **Extracted shared components.** `HeartRateChart` + `ZoneBar` move from private structs inside
+  `SessionDetailView` to `Features/WorkoutTracker/HeartRateComponents.swift` (internal). Both summaries
+  already share `WorkoutHRStats` and `HRPoint` (`KilterSession.hrSeries` is `[HRPoint]`), so no adapter
+  was needed — the Kilter summary's raw `.pink`/hidden-axis chart and its hand-rolled `zoneBar` +
+  `redlineMinutesLabel` are deleted, and `import Charts` drops from `SessionDetailView` (the grade
+  pyramid keeps it in the Kilter file). The engine's resample/smooth is reused — `HighlightEngine` stays
+  platform-free.
+- **In-UI colour legend.** New `HRMetricsInfoButton` (ⓘ → popover) explains the HRV and recovery-dot
+  red/orange/green with the "within-session trend, not a clinical reading" caveat. Its swatch colours
+  call `HRVBadge.recoveryColor` / `HREffortBadge.recoveryColor` directly, so the legend can't drift from
+  the badge thresholds. Rendered once per summary's Heart-rate header (one legend covers all the
+  per-set/per-climb badge instances on that screen) — satisfies "explained at both call sites" for the
+  two summary screens.
+
+**Verified**: full simulator suite green; reviewed in the main loop (review workflows rate-limited).
+**Accepted residual**: the redline tile label is now "3 min"/"15s" (the shared `ZoneBar.minutesLabel`)
+rather than the Kilter file's old "3m"/"15s" — minor, and now consistent with the zone-bar legend.

@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
 import Photos
-import Charts
 import HighlightEngine
 
 /// Detail for a completed session: summary stats, the **live HR chart + band stats** (B2 —
@@ -198,8 +197,9 @@ private struct HeartRateSummarySection: View {
                 .frame(maxWidth: .infinity)
             }
         } header: {
-            HStack {
+            HStack(spacing: 6) {
                 Text("Heart rate")
+                HRMetricsInfoButton()   // explains the HRV / recovery-dot colour codes (#78)
                 if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
                     Spacer()
                     Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
@@ -250,96 +250,6 @@ private struct HeartRateSummarySection: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("hrStrainStat")
-    }
-}
-
-/// A Swift Charts line of bpm over session time. The raw `hrSeries` is resampled + smoothed
-/// via `HighlightEngine.HeartRateSeries` (reused, not reimplemented — the engine stays
-/// platform-free) so the line is clean rather than jagged. The x-axis is elapsed minutes.
-private struct HeartRateChart: View {
-    let series: [HRPoint]
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Drives the line draw-in: the plotted bpm animates from 0 → actual on first appear.
-    @State private var drawn = false
-
-    /// The smoothed (bpm, t-seconds) points the chart draws.
-    private var smoothed: [(t: Double, bpm: Double)] {
-        let samples = series.map { HRSample(t: $0.t, bpm: $0.bpm) }
-        let duration = max(1, series.map(\.t).max() ?? 0)
-        // Reuse the engine's resample→smooth (5 s window is gentle for a chart line).
-        let hr = HeartRateSeries.make(from: samples, duration: duration, dt: 1.0,
-                                      smoothingWindowSec: 5, restBpm: nil, maxBpm: nil)
-        return hr.bpm.enumerated().map { (t: Double($0.offset) * hr.dt, bpm: $0.element) }
-    }
-
-    var body: some View {
-        Chart(smoothed, id: \.t) { point in
-            LineMark(
-                x: .value("Time", point.t / 60),
-                // The line rises from the baseline on appear (issue #30 §5.7); Reduce Motion
-                // shows it fully drawn immediately.
-                y: .value("BPM", drawn || reduceMotion ? point.bpm : 0)
-            )
-            // Semantic HR colour — the zone ramp's hot end (kept as the HR scale).
-            .foregroundStyle(HeartRateZone.max.color)
-            .interpolationMethod(.catmullRom)
-        }
-        .chartXAxisLabel("min")
-        .chartYAxisLabel("bpm")
-        .animation(Snappet.snappetAnimation(SnappetMotion.expressive, reduceMotion: reduceMotion), value: drawn)
-        .onAppear { drawn = true }
-        .onDisappear { drawn = false }
-    }
-}
-
-/// A horizontal time-in-zone bar (proportional segments per zone, zone-tinted) + a legend
-/// listing each used zone with its minutes. Reuses `HeartRateZone` for colors/labels.
-private struct ZoneBar: View {
-    let stats: WorkoutHRStats
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Drives the segment width grow-in on appear.
-    @State private var drawn = false
-
-    private var used: [(zone: HeartRateZone, seconds: Double)] {
-        stats.orderedZoneSeconds.filter { $0.seconds > 0 }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GeometryReader { geo in
-                HStack(spacing: 1) {
-                    ForEach(used, id: \.zone.rawValue) { item in
-                        let fraction = drawn || reduceMotion ? item.seconds / stats.totalSeconds : 0
-                        item.zone.color
-                            .frame(width: max(1, geo.size.width * fraction))
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .animation(Snappet.snappetAnimation(SnappetMotion.standard, reduceMotion: reduceMotion), value: drawn)
-            }
-            .frame(height: 12)
-            .accessibilityIdentifier("hrZoneBar")
-            .onAppear { drawn = true }
-            .onDisappear { drawn = false }
-
-            ForEach(used, id: \.zone.rawValue) { item in
-                HStack(spacing: 6) {
-                    Circle().fill(item.zone.color).frame(width: 8, height: 8)
-                    Text(item.zone.pillLabel).font(.caption)
-                    Spacer()
-                    Text(Self.minutesLabel(item.seconds))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    static func minutesLabel(_ seconds: Double) -> String {
-        let mins = seconds / 60
-        return mins >= 1 ? "\(Int(mins.rounded())) min" : "\(Int(seconds.rounded()))s"
     }
 }
 
