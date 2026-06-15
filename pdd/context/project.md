@@ -418,6 +418,24 @@ visibility + a result tap. **This completes issue #81** — the suite now has ho
 on a shared App Group, entirely on-device. With #81 done the #100 iOS tracker is **15/16** — only
 #83 (flagship intelligence, P3/L) remains.
 
+🟢 **Android Continuous-polish batch (2026-06-15, prompts 65/66/67, issues #97/#98/#93).** Android.
+Three polish issues in one PR. **#97 (design tokens + motion):** one page gutter (`Spacing.pageGutter`,
+16dp) + one card radius across the module roots, a single `Color.kilterAccent()` (no raw amber hex left
+in Kilter), and one structural-transition spec (`Motion.snappetSurfaceTransition`, slide+fade, instant
+under reduce-motion) shared by the tab switch, the workout EXERCISE→REST→DONE change, Kilter's
+sub-screen swaps, and the library NavHost (no more 700ms crossfade); Kilter's count rolls, list rows
+animate, and the session banner springs — all reduce-motion-gated. **#98 (accessibility):** pure
+`ChartAccessibility` summaries give every silent Canvas (Home/Pomodoro bars, Budget donut, KilterBoard)
+a `contentDescription`; the habit DayCell is now a `Role.Checkbox` with Done/Not-done state + ≥48dp
+targets; the bar charts gained weekday labels, a today-highlight, and value annotations. **#93 (Kilter
+delight):** a live "≈ V5 at 40°" manual-editor grade chip (pure linear model, meta-only — no ONNX) that
+persists into `predictedGrade`; sibling swipe in detail (`HorizontalPager` over the browsed list);
+**Plan a session** (pure ported `KilterRecommender` + `KilterPlanScreen`); and distinct log icons
+(Attempt → Replay, Project → Flag) with long-press status tooltips. **Verified**: `:app:assembleDebug`
++ full `:app:testDebugUnitTest` green (new `KilterRecommenderTest`, `KilterManualGradeTest`,
+`ChartAccessibilityTest`). **Device-pending**: real TalkBack verification (#98); swipe/estimate/Plan
+end-to-end need a real catalog (#42) + installed generator meta on the emulator (#93).
+
 ## License
 
 TBD.

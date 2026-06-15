@@ -4146,3 +4146,63 @@ full `SnappetTests` 680 green; UI suite green. **Device-pending**: real Spotligh
 a Spotlight-result tap → `onContinueUserActivity` (the sim verifies the specs, the route parse, the
 index call, and `simctl openurl` delivery). With this, **#81 is complete** (4 stacked PRs:
 App Group → widgets → App Intents → Spotlight); the #100 iOS tracker box is checked.
+
+## 2026-06-15 — Android Continuous-polish batch (#97 design tokens/motion, #98 a11y, #93 Kilter delight)
+
+Three issues shipped together in one PR (branch `claude/android-continuous`), all JVM-verified
+(`:app:testDebugUnitTest` + `:app:assembleDebug` green; no instrumented runs — one shared emulator,
+parallel waves).
+
+### #97 — design tokens + motion (NN 65)
+- **One page gutter, one card radius.** Added `Spacing.pageGutter` (16dp, the home-dashboard value) +
+  `Spacing.minTouchTarget` (48dp) as derived props on the existing `Spacing` (additive — parallel waves
+  touch the same files). Routed the four scrolling module roots (Home/Reel/Pomodoro/Tip 16/20/24dp) +
+  the App Library grid (12dp) through `pageGutter`; the module-card icon tile through
+  `MaterialTheme.shapes.small`.
+- **Single Kilter accent token.** Added theme-aware `kilterAccent()` (amber, lit brighter in dark) in
+  `Color.kt`; replaced the remaining raw hex (saved-star `0xFFE8A800`, GradeChart highlight) and routed
+  the LogButton send/attempt colors through `SnappetAccents.Leaf`/`Ember` instead of re-hardcoded hex.
+  (#96 had already converted most ad-hoc Kilter status colors to `pulse*` tokens.)
+- **One structural-transition spec.** `Motion.snappetSurfaceTransition(reduceMotion, forward)` returns a
+  slide+fade `ContentTransform` (220/160ms), built via the `ContentTransform(...)` constructor — the
+  fully-qualified `androidx.compose.animation.togetherWith(...)` does NOT resolve (it's an
+  `EnterTransition.togetherWith` extension, not a top-level fun). Used for the tab switch (`RootShell`),
+  the workout phase change, and Kilter's sub-screen swaps; the library `NavHost` got matching
+  enter/exit/pop transitions. All collapse to an instant fade under reduce-motion.
+- **Gotcha:** wrapping `KilterRoot`'s `when (screen)` in `AnimatedContent` shadows the outer `var
+  screen` — the lambda param was renamed to `target` so the `onOpen*` callbacks still reassign the
+  state, not the immutable param.
+
+### #98 — accessibility (NN 66)
+- **Pure spoken-summary builders** in new `ui/ChartAccessibility.kt` (`weekBarSummary`, `boardSummary`,
+  `roleCountsOf`) — no Compose/Android, so the exact TalkBack wording is unit-tested
+  (`ChartAccessibilityTest`). Every silent Canvas (Home WeekChart, PomodoroFocusChart, Budget donut,
+  KilterBoard) now carries a `contentDescription` from these.
+- **Habit DayCell**: `Role.Checkbox` + `stateDescription` + `onClickLabel`, one merged node via
+  `clearAndSetSemantics` (it used to announce just "M 9" from two stray Texts), and `sizeIn(48dp)` on
+  the cell and the edit IconButton (was explicitly `.size(36.dp)`). The visible 28dp circle is unchanged.
+- **Bar charts made legible**: weekday initials under each bar, today's bar full-accent vs muted
+  others, and a value annotation on today/the max bar (reserved 12% headroom so it isn't clipped).
+- **Device-pending:** real TalkBack verification (day-cell role/state toggle + chart summaries) on the
+  shared emulator — deferred (instrumented runs collide with parallel waves).
+
+### #93 — Kilter delight (NN 67)
+- **Live manual grade estimate**: pure `KilterClimbGenerator.holdTokens` + `estimateManualGrade`
+  (mirrors iOS), run over the linear grade model in `meta.json`. Loaded meta-only via new
+  `KilterGeneratorAssets.installedMeta()` (no download, no ONNX). The "≈ V5 at 40°" chip updates per
+  hold tap, gated on assets installed; manual save now persists the estimate into `predictedGrade`
+  (was always null) so authored climbs read like generated ones in detail/browse.
+- **Sibling swipe**: the browsed list's uuids plumb from `KilterRoot` (a saveable `browseSiblings`)
+  into the detail screen, which hosts the existing detail body in a `HorizontalPager` with an
+  "n / total" pill. The existing function was renamed `KilterClimbDetail` (private, per-page) and a thin
+  `KilterDetailScreen` wraps it; `settledPage` syncs the host's selected uuid (the back target).
+  Empty siblings (Create / Surprise me) → single page, no pager.
+- **Plan a session**: ported `KilterRecommender` as a pure, unit-tested core (faithful Kotlin port of
+  the iOS recommender — working-grade detection, warm-up→send→project bands, `candidateWindow`) + a
+  simple `KilterPlanScreen`; new "Plan a session" More-menu entry. The screen does the I/O (reads logs,
+  queries the catalog over the recommender's window with the SAME anchor so every band is populated).
+- **Distinct log icons + tooltips**: Attempt → Replay, Project → Flag (no shared glyph; Project's flag
+  no longer clashes with the top-bar Saved star). Each log button is a long-press `RichTooltip`
+  explaining the climbing status, with a one-line "What do these mean?" affordance teaching the gesture.
+- **Device-pending:** swipe-through, the estimate chip, and Plan-a-session end-to-end need a real
+  catalog (#42 — the app ships none) + the installed generator meta on the emulator.

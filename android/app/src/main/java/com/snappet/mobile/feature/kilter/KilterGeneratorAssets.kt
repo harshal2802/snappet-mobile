@@ -40,6 +40,16 @@ class KilterGeneratorAssets(context: Context, private val baseUrl: String = KILT
 
     val isInstalled: Boolean get() = modelFile.exists() && metaFile.exists()
 
+    /**
+     * Decode just the installed `meta.json` (the vocab + linear grade model) **without** downloading or
+     * touching the ONNX binary — enough for the manual editor's live grade estimate (issue #93). Null
+     * when the meta isn't installed or fails to parse, so the caller hides the estimate gracefully.
+     */
+    suspend fun installedMeta(): KilterGeneratorModel? = withContext(Dispatchers.IO) {
+        if (!metaFile.exists()) return@withContext null
+        runCatching { KilterGeneratorModel.parse(metaFile.readText()) }.getOrNull()
+    }
+
     /** Ensure the model + meta are cached, downloading on first use; returns the decoded model. [progress] 0→1. */
     suspend fun ensureInstalled(progress: (Float) -> Unit = {}): KilterGeneratorModel = withContext(Dispatchers.IO) {
         if (isInstalled) {
