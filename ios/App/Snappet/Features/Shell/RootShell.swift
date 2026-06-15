@@ -49,6 +49,11 @@ struct RootShell: View {
             case .kilterClimb(let link):
                 router.pendingKilterClimb = link
                 router.open(module: "kilter")
+            case .startFocus:
+                // Today widget Start-focus (#81 Phase 2): open Pomodoro; the one-shot makes the
+                // module start the app-owned timer on appear.
+                router.pendingPomodoroStart = true
+                router.open(module: "pomodoro")
             case nil:
                 break   // not ours — ignore
             }

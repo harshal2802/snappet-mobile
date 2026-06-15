@@ -4006,3 +4006,63 @@ args promise; caught by the review). What is genuinely **device-pending**: the g
 under the signing team in the portal for a **device/TestFlight** build, and the **home-screen widget
 actually rendering** the snapshot (Phase 2) — that pair lands verifiable with the Phase-2 widget UI on
 hardware. The builder, codec, and streak/derivation parity — the logic — are sim-verified.
+
+## [2026-06-15] iOS — OS integration Phase 2: Today widget + interactive check-off (#81)
+
+**Decision** (prompt 55, PR "Part of #81"): build the home-screen **Today** widget on Phase 1's read
+path — and the interactive habit check-off, the trickiest part of the whole issue.
+
+- **Widget-originated writes go through an App-Group OUTBOX, not SwiftData.** An interactive widget
+  `AppIntent` runs OUTSIDE the app process and can't touch the SwiftData store. So `ToggleHabitIntent`
+  (in `Shared/`, `openAppWhenRun = false`) records the desired check-off state to the App Group and
+  optimistically rewrites the snapshot (the widget reflects the tap instantly); the **app is the sole
+  writer of the canonical store**, draining + reconciling the outbox on its next foreground. This keeps
+  the write path as schema-isolated as the read path (the extension never compiles/migrates `@Model`s).
+- **Outbox = a DIRECTORY of one-file-per-toggle**, not a single mutated file. Appending is writing a
+  new uniquely-named file (`<toggleID>.json`), so the widget process and the app process never do a
+  cross-process read-modify-write on one file (no lost-update race) — the lock-free outbox pattern.
+  `WidgetOutbox.pending()` reads (sorted by request time), `remove(ids:)` deletes only what was
+  applied.
+- **Reconciliation is pure + idempotent + order-tolerant.** `HabitCheckoffReconciler.plan(toggles:
+  existing:)` records the ABSOLUTE desired state per toggle and folds to the **last desired state per
+  (habitID, day)** (a toggle-on-then-off nets to off), emitting inserts only when desired-and-absent
+  and deletes only when not-desired-and-present (a state already in sync is a no-op). `WidgetSnapshot
+  Service.refresh` applies the plan, saves, and removes the outbox files **only after a successful
+  save** — so a save failure loses nothing and the idempotent plan safely retries next foreground.
+  Still gated off under `-uiTest*`.
+- **"Start focus" reuses the deep-link plumbing**, not a bespoke intent: the widget's button is a
+  `Link(snappet://pomodoro/start)`; `SnappetDeepLink.startFocus` (pure, unit-tested route) →
+  `RootShell.onOpenURL` → `SuiteRouter.pendingPomodoroStart` (the `pendingKilterClimb` one-shot
+  pattern) → `PomodoroRootView` starts the app-owned `AppModel.pomodoro` engine on appear/change. The
+  Siri `StartPomodoro` AppShortcut comes in Phase 3.
+- **Widget uses plain SwiftUI colours**, not `SnappetColor` — the design-token files aren't compiled
+  into the extension (only `Shared/` is, like the Live Activity widgets). Gotcha recorded.
+- **Day-staleness is resolved at the read edge** (adversarial-review fix): the widget is read-only and
+  only the app rewrites the snapshot file, so after midnight a snapshot still says "all done" /
+  yesterday's streak. `SnappetWidgetSnapshot.resolvedForDisplay(now:)` (pure, tested) neutralises a
+  snapshot whose `dayStart != today` (habits read not-done, focus 0, streak 0, dayStart stamped today);
+  `TodayProvider` and `ToggleHabitIntent` both apply it — so the widget never shows yesterday's checks,
+  and a first tap after midnight can't compute a stale `desired` and silently no-op.
+- **Widget check-off mirrors the in-app activity log** (review fix): the in-app toggle logs a
+  `UsageRecord` on check-ON, and that — not `HabitCompletion` — is what `TodayDigest.activityStreak`
+  (the streak the widget headlines) counts. So `reconcileOutbox` inserts the `UsageRecord` too
+  (`action: "done"`, stamped at the toggle's tap time so it credits the right day), only for inserts
+  (check-ON), matching the in-app rule.
+- **Orphan guard** (review fix): the pure planner takes `liveHabitIDs` and drops a check-ON for a habit
+  that no longer exists (a stale snapshot the user tapped), so reconciliation can't leave a dangling
+  `HabitCompletion` for a deleted habit.
+- **Widget uses plain SwiftUI colours**, not `SnappetColor` — the design-token files aren't compiled
+  into the extension (only `Shared/` is, like the Live Activity widgets). Gotcha recorded.
+- Swift-6 gotcha: an `AppIntent`'s `static title/description/openAppWhenRun` must be `static let` (not
+  `var`) or strict concurrency rejects them as nonisolated mutable global state.
+
+**Verified**: clean build; app + watch + widget build/sign/embed; `WidgetOutboxTests` (HabitToggle
+codec + the reconciler truth table — insert/delete/no-op/last-write-wins/order-independence/day-
+normalisation/orphan-drop/loggedAt) + `WidgetSnapshotTests` (resolvedForDisplay staleness) + the
+extended `SnappetDeepLink` route tests green; full `SnappetTests` 665 passing; UI suite green;
+`xcrun simctl openurl snappet://pomodoro/start` routes to Snappet. **3-lens adversarial review** caught
+4 real findings (the day-staleness silent-no-op, the missing UsageRecord streak credit, the orphan
+completions), all fixed above.
+**Device-pending**: the widget actually rendering on the springboard + a real check-off tap firing the
+AppIntent are best confirmed on hardware (the sim verifies the snapshot read, outbox round-trip,
+reconciliation, staleness handling, and the deep link).

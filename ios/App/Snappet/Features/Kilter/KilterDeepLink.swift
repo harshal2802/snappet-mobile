@@ -50,11 +50,24 @@ struct KilterClimbLink: Equatable, Sendable {
 enum SnappetDeepLink: Equatable, Sendable {
     /// `snappet://kilter/climb/<uuid>?angle=<n>` — a shared climb (the QR payload).
     case kilterClimb(KilterClimbLink)
+    /// `snappet://pomodoro/start` — open Pomodoro and start a focus timer (the #81 Today widget's
+    /// Start-focus button). The shell routes to the module + a one-shot `pendingPomodoroStart`.
+    case startFocus
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
         if let link = KilterClimbLink(decoding: url.absoluteString) { return .kilterClimb(link) }
+        if isStartFocus(url) { return .startFocus }
         return nil
+    }
+
+    /// `snappet://pomodoro/start` (scheme + host + path checked, case-insensitively). Pure, so the
+    /// route table stays unit-testable without the shell.
+    private static func isStartFocus(_ url: URL) -> Bool {
+        guard let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              c.scheme?.lowercased() == "snappet",
+              c.host?.lowercased() == "pomodoro" else { return false }
+        return c.path.split(separator: "/").map(String.init) == ["start"]
     }
 }
 

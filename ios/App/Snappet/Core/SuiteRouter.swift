@@ -35,6 +35,13 @@ final class SuiteRouter {
     /// cold-start window where the root hasn't been built yet.
     var pendingKilterClimb: KilterClimbLink?
 
+    /// One-shot "start a focus timer" intent (#81 Phase 2): the Today widget's Start-focus button
+    /// (`snappet://pomodoro/start`) and the shell's `onOpenURL` set this before `open(module:
+    /// "pomodoro")`, and `PomodoroRootView` consumes it on appear/change to call `timer.start()` —
+    /// the engine is app-owned (`AppModel.pomodoro`), so the start has to happen inside the module.
+    /// Self-clearing on consume; survives the cold-start window before the view is built.
+    var pendingPomodoroStart = false
+
     init(initialTab: SuiteTab = .home) {
         tab = initialTab
     }

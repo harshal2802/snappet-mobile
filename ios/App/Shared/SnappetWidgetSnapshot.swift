@@ -92,4 +92,21 @@ struct SnappetWidgetSnapshot: Codable, Sendable, Equatable {
         SnappetWidgetSnapshot(generatedAt: now, dayStart: calendar.startOfDay(for: now),
                               habits: [], dayStreak: 0, focusMinutesToday: 0)
     }
+
+    /// A copy safe to DISPLAY (and to base an interactive toggle on) for `now`'s day. If this snapshot
+    /// was built on an EARLIER day — the app hasn't refreshed since midnight, and the widget is the
+    /// only reader; only the app rewrites the file — then yesterday's per-day facts don't apply to
+    /// today, so neutralise them: habits read not-done, focus 0, streak 0, and stamp today's
+    /// `dayStart`. This honours the `dayStart` contract (above) so the widget never shows yesterday's
+    /// "all done" after midnight, and `ToggleHabitIntent` never computes a stale `desired` state.
+    func resolvedForDisplay(now: Date = Date(), calendar: Calendar = .current) -> SnappetWidgetSnapshot {
+        let today = calendar.startOfDay(for: now)
+        guard dayStart != today else { return self }
+        var copy = self
+        copy.dayStart = today
+        copy.habits = habits.map { var item = $0; item.doneToday = false; return item }
+        copy.focusMinutesToday = 0
+        copy.dayStreak = 0
+        return copy
+    }
 }

@@ -61,11 +61,24 @@ final class SnappetDeepLinkRouteTests: XCTestCase {
                        .kilterClimb(KilterClimbLink(uuid: "deadbeef")))
     }
 
+    func testPomodoroStartRoutesToFocus() throws {
+        let url = try XCTUnwrap(URL(string: "snappet://pomodoro/start"))
+        XCTAssertEqual(SnappetDeepLink.route(for: url), .startFocus)
+    }
+
+    func testPomodoroStartIsSchemeAndHostCaseInsensitive() throws {
+        let url = try XCTUnwrap(URL(string: "SNAPPET://Pomodoro/start"))
+        XCTAssertEqual(SnappetDeepLink.route(for: url), .startFocus)
+    }
+
     func testForeignURLsDoNotRoute() throws {
         for bad in [
             "https://kilterboardapp.com/climbs/abc",   // not our scheme
             "snappet://workout/session/1",             // our scheme, no route (yet)
             "snappet://kilter/history",                // kilter, not a climb
+            "snappet://pomodoro",                      // pomodoro, but not /start
+            "snappet://pomodoro/history",              // pomodoro, wrong path
+            "snappet://pomodoro/start/extra",          // pomodoro/start with trailing junk
         ] {
             let url = try XCTUnwrap(URL(string: bad))
             XCTAssertNil(SnappetDeepLink.route(for: url), "should not route \(bad)")
