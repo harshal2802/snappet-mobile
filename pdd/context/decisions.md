@@ -4239,3 +4239,27 @@ Fix: aligned the Python oracle (replay.py + run.py) to the deterministic `(-sati
 (a Swift Dictionary can't reproduce insertion order, so the key tie-break is canonical) and added
 `testRankingTieBreaksByKeyMatchingPython` to pin it (verified Z-before-A → "S | Afp" wins on both sides).
 Measure-zero for the shipped fixture (distinct satisfactions), but parity is now drift-proof on ties.
+
+## 2026-06-15 — App Store / TestFlight publishing (prompt 61)
+
+First distribution build shipped to **TestFlight** (internal) under the paid team **`NFUS5W8QC6`**.
+The App Store Connect record **"SnappetAI" (App 6779420682)** was pre-created under bundle id
+**`com.snappet.app.alpha`** — so the alpha ships under `.alpha`, but the repo's **canonical identity
+stays `com.snappet.app`** (user's call). The `.alpha` retarget is a **local overlay**, applied by
+`scripts/alpha-build-overlay.sh <build>` and **never committed**.
+
+- **Decision**: commit the genuine, production-correct bundle-validity fixes Apple's first upload
+  rejected — `UISupportedInterfaceOrientations~ipad` (all 4, for iPad multitasking) and a watchOS
+  `AppIcon` (asset catalog + `ASSETCATALOG_COMPILER_APPICON_NAME` + `CFBundleIconName`); these block any
+  App Store build, not just the alpha. Plus release tooling: `ExportOptions.plist`, fastlane `beta`
+  lane (archive → TestFlight via an ASC API key from env), and `DEVELOPMENT_TEAM → NFUS5W8QC6` (the old
+  free `8TRC99V9PN` is dead; ends the perpetual local team override).
+- **Gotcha recorded**: the watch's `WKCompanionAppBundleIdentifier` is a STATIC literal in
+  `SnappetWatch/Info.plist`; with `GENERATE_INFOPLIST_FILE: NO` the `INFOPLIST_KEY_…` build setting is
+  inert, so the overlay edits the plist directly to match the `.alpha` phone id.
+- **Upload pipeline**: `fastlane beta` (build_app → upload_to_testflight) with the API key in env
+  (`ASC_KEY_ID`/`ASC_ISSUER_ID`/`ASC_KEY_PATH`); the `.p8` lives in `~/.appstoreconnect/private_keys/`,
+  never committed. `altool --upload-app` is the fallback for an already-built `.ipa`.
+- **Not done (needs the user / Apple web)**: App Store *review* submission — metadata, screenshots,
+  privacy policy URL (mandatory for HealthKit), App Privacy labels, age rating. TestFlight internal
+  testing needs none of these.
