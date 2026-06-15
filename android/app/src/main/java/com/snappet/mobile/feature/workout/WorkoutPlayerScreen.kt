@@ -69,6 +69,7 @@ fun WorkoutPlayerScreen(
     session: WorkoutSession,
     resolver: WorkoutResolver,
     defaultUnit: WorkoutWeightUnit,
+    history: List<WorkoutSession> = emptyList(),
     persist: (WorkoutSession) -> Unit,
     onFinish: (WorkoutSession, Boolean) -> Unit,
 ) {
@@ -123,15 +124,29 @@ fun WorkoutPlayerScreen(
 
     val current = exercises.getOrNull(exerciseIndex)
 
-    // Prefill the rep target whenever we land on a new set. The saveable key skips the re-prefill
-    // after recreation so restored mid-edit reps/weight text isn't clobbered (issue #86).
+    // Prefill the reps/weight fields whenever we land on a new set. The saveable key skips the
+    // re-prefill after recreation so restored mid-edit text isn't clobbered (issue #86).
+    //
+    // Issue #95: carry the value forward instead of discarding it. Priority, most→least specific:
+    //   1. the previous *completed* set of this exercise (what the user just lifted 30s ago),
+    //   2. the routine's target weight / target reps,
+    //   3. the most recent finished session's logged value for this exercise (last-time).
+    // Empty targets no longer wipe a typed value the way the old null-target prefill did.
     var prefilledSetKey by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(exerciseIndex, setIndex, phase) {
         if (phase == PlayerPhase.EXERCISE && prefilledSetKey != "$exerciseIndex:$setIndex") {
             prefilledSetKey = "$exerciseIndex:$setIndex"
             val ex = exercises.getOrNull(exerciseIndex)
-            repsText = ex?.targetReps?.takeWhile { it.isDigit() }?.ifEmpty { "" } ?: ""
-            weightText = ex?.targetWeight?.let { formatWeight(it) } ?: ""
+            val prevSet = ex?.sets?.getOrNull(setIndex - 1)?.takeIf { it.isCompleted }
+            val lastTime = ex?.let { WorkoutAnalytics.lastSetFor(history, it.exerciseId) }
+            val reps = prevSet?.actualReps
+                ?: ex?.targetReps?.takeWhile { c -> c.isDigit() }?.toIntOrNull()
+                ?: lastTime?.actualReps
+            val weight = prevSet?.actualWeight
+                ?: ex?.targetWeight
+                ?: lastTime?.actualWeight
+            repsText = reps?.toString() ?: ""
+            weightText = weight?.let { formatWeight(it) } ?: ""
         }
     }
 
@@ -227,6 +242,7 @@ fun WorkoutPlayerScreen(
                 playedSoFar = exercises.take(exerciseIndex).count { !it.skipped } + 1,
                 exercise = current, setIndex = setIndex,
                 name = current?.let { resolver.name(it.exerciseId, it.displayName) } ?: "",
+                lastTimeHint = current?.let { lastTimeHint(history, it.exerciseId, unit) },
                 repsText = repsText, onReps = { repsText = it },
                 weightText = weightText, onWeight = { weightText = it },
                 unit = unit,
@@ -287,6 +303,7 @@ private fun ExercisePhase(
     padding: PaddingValues,
     index: Int, total: Int, playedSoFar: Int,
     exercise: WorkoutSessionExercise?, setIndex: Int, name: String,
+    lastTimeHint: String?,
     repsText: String, onReps: (String) -> Unit,
     weightText: String, onWeight: (String) -> Unit,
     unit: WorkoutWeightUnit,
@@ -310,9 +327,17 @@ private fun ExercisePhase(
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
             "Target: ${exercise.targetReps} reps" +
+                (exercise.targetWeight?.let { " @ ${formatWeight(it)} ${unit.display}" } ?: "") +
                 if (exercise.targetRestSeconds > 0) " · ${restText(exercise.targetRestSeconds)} rest" else "",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (lastTimeHint != null) {
+            Text(
+                lastTimeHint,
+                style = MaterialTheme.typography.bodySmall, color = Orange, fontWeight = FontWeight.Medium,
+                modifier = Modifier.testTag("workout.lastTime"),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             OutlinedTextField(
                 value = repsText, onValueChange = onReps,
@@ -426,5 +451,24 @@ private fun firstIncomplete(exercises: List<WorkoutSessionExercise>): Pair<Int, 
 
 private fun formatWeight(value: Double): String =
     if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+
+/**
+ * "Last time: 60 kg × 8" from the most recent finished session that logged this exercise, or null
+ * when there's no history for it (issue #95). Pure-ish (reads only the passed history).
+ */
+internal fun lastTimeHint(
+    history: List<WorkoutSession>, exerciseId: String, fallbackUnit: WorkoutWeightUnit,
+): String? {
+    val last = WorkoutAnalytics.lastSetFor(history, exerciseId) ?: return null
+    val reps = last.actualReps
+    val weight = last.actualWeight
+    val unit = last.weightUnit ?: fallbackUnit
+    return when {
+        weight != null && reps != null -> "Last time: ${formatWeight(weight)} ${unit.display} × $reps"
+        reps != null -> "Last time: $reps reps"
+        weight != null -> "Last time: ${formatWeight(weight)} ${unit.display}"
+        else -> null
+    }
+}
 
 private fun timeString(seconds: Int): String = "%d:%02d".format(seconds / 60, seconds % 60)

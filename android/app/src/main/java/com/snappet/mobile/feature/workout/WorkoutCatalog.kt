@@ -1,14 +1,49 @@
 package com.snappet.mobile.feature.workout
 
+import android.content.Context
+
 /**
- * A small built-in exercise catalog (a curated subset of the iOS bundled `exercises.json` / Free
- * Exercise DB). Shipped as a Kotlin `object` so the app works fully offline with no asset files —
- * the on-device-only constraint. Ids match the ones referenced by [WorkoutStarters] so seeded
- * routines resolve to real exercises. Mirrors iOS `ExerciseCatalog`.
+ * The exercise catalog. The full set — ~873 exercises — is the public-domain Free Exercise DB
+ * bundled at `assets/workout/exercises.json` (the same file the iOS app ships), parsed once at app
+ * start via [load]. Until that load completes (or if the asset is somehow unreadable) the API falls
+ * back to [curated]: a 20-entry hand-written subset whose ids match the ones [WorkoutStarters]
+ * references, so seeded routines always resolve even before the asset is read. Mirrors iOS
+ * `ExerciseCatalog`. The on-device-only constraint is honoured — the catalog is a bundled asset, no
+ * network.
  */
 object WorkoutCatalog {
 
-    val all: List<WorkoutExercise> = listOf(
+    /** The loaded full catalog (null until [load] succeeds). */
+    @Volatile
+    private var loaded: List<WorkoutExercise>? = null
+
+    /** The active catalog: the full bundled DB once loaded, else the curated offline subset. */
+    val all: List<WorkoutExercise> get() = loaded ?: curated
+
+    private val byId: Map<String, WorkoutExercise> get() = all.associateBy { it.id }
+
+    fun byId(id: String): WorkoutExercise? = byId[id]
+
+    /** Whether the full bundled catalog has been parsed in (vs. the curated fallback). */
+    val isFullyLoaded: Boolean get() = loaded != null
+
+    /**
+     * Parse the bundled `exercises.json` asset into the full catalog. Idempotent and cheap to call
+     * on every Workout-module open — re-reads only on the first call. Reads + parses off the asset
+     * stream; the parse itself is the pure, unit-tested [WorkoutExerciseParser].
+     */
+    suspend fun load(context: Context) {
+        if (loaded != null) return
+        val parsed = runCatching {
+            context.assets.open("workout/exercises.json").bufferedReader().use { it.readText() }
+        }.mapCatching { WorkoutExerciseParser.parse(it) }.getOrDefault(emptyList())
+        if (parsed.isNotEmpty()) {
+            loaded = parsed.sortedBy { it.name.lowercase() }
+        }
+    }
+
+    /** The offline curated subset (ids referenced by [WorkoutStarters]). */
+    val curated: List<WorkoutExercise> = listOf(
         ex("Bodyweight_Squat", "Bodyweight Squat", WorkoutCategory.STRENGTH, WorkoutLevel.BEGINNER,
             WorkoutEquipment.BODY_ONLY, listOf("quadriceps"), listOf("glutes", "hamstrings"),
             listOf("Stand with feet shoulder-width apart.",
@@ -110,10 +145,6 @@ object WorkoutCatalog {
                 "Make small circles, gradually growing larger.",
                 "Reverse direction.")),
     ).sortedBy { it.name.lowercase() }
-
-    private val byId: Map<String, WorkoutExercise> = all.associateBy { it.id }
-
-    fun byId(id: String): WorkoutExercise? = byId[id]
 
     private fun ex(
         id: String, name: String, category: WorkoutCategory, level: WorkoutLevel,
