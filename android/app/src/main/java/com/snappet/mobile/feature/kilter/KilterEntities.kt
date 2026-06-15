@@ -56,6 +56,17 @@ data class KilterSession(
     val angle: Int,
     /** `"ble"` when auto-captured from a connected board, `"manual"` otherwise. */
     val source: String,
+    // ── HR enrichment (issue #92, schema v4→v5). All NULLABLE so the bump is a pure additive
+    //    AutoMigration (no SQL, no data touched). Populated when a BLE heart-rate strap is captured
+    //    during the session; null for sessions logged without a strap or before this version.
+    //    NOTE FOR REVIEWER: Wave 2 also bumps to v5 (workout columns) in a separate worktree — at
+    //    merge time renumber ONE migration to v5→v6. This column-set is self-contained.
+    /** Average bpm over the session, when an HR strap was captured. */
+    val avgHr: Int? = null,
+    /** Peak bpm over the session, when an HR strap was captured. */
+    val maxHr: Int? = null,
+    /** Number of HR samples captured (0/null when no strap). */
+    val hrSampleCount: Int? = null,
 )
 
 /** A climb the user starred. Its own table so the "Saved" filter is a fast membership check. */
@@ -125,6 +136,15 @@ interface KilterDao {
 
     @Query("UPDATE kilter_session SET endedAt = :endedAt WHERE id = :id")
     suspend fun endSession(id: String, endedAt: Long)
+
+    /** Issue #92: persist the captured HR summary onto the session on end (additive v5 columns). */
+    @Query("UPDATE kilter_session SET avgHr = :avgHr, maxHr = :maxHr, hrSampleCount = :count WHERE id = :id")
+    suspend fun setSessionHr(id: String, avgHr: Int?, maxHr: Int?, count: Int?)
+
+    /** Issue #92: retroactively group an existing ad-hoc log into a session (e.g. first-log-of-day
+     *  auto-session adopts logs that landed before the session opened). */
+    @Query("UPDATE kilter_log SET sessionId = :sessionId WHERE id = :logId")
+    suspend fun setLogSession(logId: Long, sessionId: String)
 
     @Query("SELECT * FROM kilter_session ORDER BY startedAt DESC")
     fun sessionsFlow(): Flow<List<KilterSession>>

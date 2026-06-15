@@ -1,6 +1,7 @@
 package com.snappet.mobile.core
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -53,8 +54,14 @@ import com.snappet.mobile.feature.workout.WorkoutSession
         WorkoutRoutine::class, WorkoutSession::class, WorkoutCustomExercise::class,
         KilterLogEntry::class, KilterSession::class, KilterFavorite::class, KilterCreatedClimb::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
+    // ── v4 → v5 (issue #92): three NULLABLE HR columns added to `kilter_session`
+    //    (avgHr, maxHr, hrSampleCount). Purely additive → a no-SQL Room AutoMigration; no existing
+    //    row is touched and nothing can be lost. This is ONE self-contained column-set so the
+    //    reviewer can trivially renumber it to v5→v6 when reconciling with Wave 2's independent v5
+    //    bump (workout columns) at merge time — see the comment on KilterSession.
+    autoMigrations = [AutoMigration(from = 4, to = 5)],
 )
 abstract class SnappetDatabase : RoomDatabase() {
     abstract fun usageDao(): UsageDao

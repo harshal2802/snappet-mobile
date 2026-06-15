@@ -45,7 +45,7 @@ import java.util.Locale
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
+fun KilterHistoryScreen(dao: KilterDao, onOpenSession: (String) -> Unit = {}, onExit: () -> Unit) {
     val entries by dao.logsFlow().collectAsState(initial = emptyList())
     val allSessions by dao.sessionsFlow().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
@@ -161,7 +161,13 @@ fun KilterHistoryScreen(dao: KilterDao, onExit: () -> Unit) {
                 item { SectionHeader("Sessions") }
                 items(sessions, key = { it.id }) { session ->
                     val logs = entries.filter { it.sessionId == session.id }
-                    Column(Modifier.fillMaxWidth().testTag("kilter.sessionRow"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            // Issue #92: a session row opens its detail screen (grade breakdown + timeline + HR).
+                            .combinedClickable(onClick = { onOpenSession(session.id) }, onLongClick = {})
+                            .testTag("kilter.sessionRow"),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(dateFmt.format(Date(session.startedAt)), style = MaterialTheme.typography.titleSmall)
                             Text(" · ${session.angle}°", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
