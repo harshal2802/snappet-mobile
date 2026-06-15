@@ -3900,3 +3900,32 @@ Android preserved). Reviewed in the main loop (the multi-agent review workflow w
 **Verified**: full simulator suite green; reviewed in the main loop (review workflows rate-limited).
 **Accepted residual**: the redline tile label is now "3 min"/"15s" (the shared `ZoneBar.minutesLabel`)
 rather than the Kilter file's old "3m"/"15s" — minor, and now consistent with the zone-bar legend.
+
+## [2026-06-15] iOS — accessibility pass: VoiceOver Studio + create-climb board, Dynamic Type, Reduce Motion (#79)
+
+**Decision** (prompt 52): make the two creative features non-visually operable, scale text, and gate
+all WorkoutTracker motion.
+
+- **One motion vocabulary.** `Transitions.swift`'s `Motion` now aliases `SnappetMotion`, and the
+  `workoutPhase`/`sectionSwap`/`liveBanner` transitions are `reduceMotion:` factories that return
+  `.opacity` under Reduce Motion. WorkoutTracker (section swap, player phase, live banner) and the App
+  Library focus chip route through the gated helpers. Gotcha recorded: the global
+  `snappetAnimation(_:reduceMotion:)` collides by name with the `View.snappetAnimation(_:value:)`
+  modifier inside a View body — qualify the global as `Snappet.snappetAnimation(...)`.
+- **Dynamic Type** via `@ScaledMetric(relativeTo: .largeTitle)` for the big fixed sizes (countdown 56,
+  rest timer 44, done seal 72, brand mark 44); Studio timeline 8/9pt chrome → scaled `.caption2`/`.caption`.
+- **Studio VoiceOver.** `diamond.fill` (keyframe) and the undo/redo arrows carry no default labels —
+  explicit labels added, plus close/play-pause/title and the timecode. The centre playhead is now an
+  `accessibilityAdjustableAction` scrubber (±1 s); the selected clip exposes trim rotor actions
+  (`ClipTrimActions`, ±0.5 s per edge) because the 7pt drag handles are invisible to VoiceOver.
+- **Create-climb board.** `KilterEditableBoardView` gains a **VoiceOver-gated** per-hole overlay — one
+  44pt hittable element per placeable hole, labelled by coarse position (top/middle/bottom × left/centre/
+  right) + current role, double-tap cycles the role through the shared `cycle(_:)` (same as the sighted
+  near-hit tap). Gated on `accessibilityVoiceOverEnabled` so it never interferes with sighted tapping.
+
+**Accepted residuals / device-pending.** VoiceOver navigation, the adjustable scrubber, the rotor trim
+actions, and per-hole board authoring are structurally implemented but can only be verified with
+VoiceOver **on a device** (repo's device-pending class). The 7pt timeline trim handles keep their visual
+size (enlarging to 44pt would wreck the dense timeline) — VoiceOver trims via the rotor actions instead.
+
+**Verified**: full simulator suite green; reviewed in the main loop (review workflows rate-limited).
