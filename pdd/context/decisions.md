@@ -3980,20 +3980,29 @@ widgets → intents → Spotlight). This first PR builds only the foundation eve
   and `WidgetSnapshotStore` (the one place that knows the group id `group.com.snappet.app` + file name;
   a **pure** `encode`/`decode` that **rejects a higher `version`** than this binary understands, plus a
   thin file edge over the container that degrades to `nil`/no-op when unprovisioned).
-- **Builder reuses the app's pure derivations.** `WidgetSnapshotBuilder` (pure, in the app target)
-  builds the snapshot from the same rows Home/Habit query via `TodayDigest.focusToday` +
-  `HabitMilestones.streak` (best current per-habit streak = the flame value users already see), so the
-  widget can't drift from the app. `WidgetSnapshotService` (the device edge) fetches + writes +
-  `WidgetCenter.reloadAllTimelines()`, wired in `RootShell` on `scenePhase` (per-mutation refreshes
-  land with the widget UI in Phase 2). No home-screen widget UI ships yet — `reloadAllTimelines()` is a
-  no-op until Phase 2 adds one.
+- **Builder reuses the app's pure derivations — same numbers as the app's screens.** `WidgetSnapshotBuilder`
+  (pure, app target) builds the snapshot from the same rows the app queries. `dayStreak` is the Home
+  dashboard's **suite-engagement** "day streak" (consecutive days ending today with any logged
+  `UsageRecord`) — extracted into the shared pure `TodayDigest.activityStreak` that `HomeDashboardView`
+  now also routes through, so the widget and Home can't diverge (the issue points the widget's streak at
+  HomeDashboardView's logic; it is NOT a per-habit `HabitMilestones` streak). Focus minutes via
+  `TodayDigest.focusToday`; "habits remaining" via the same start-of-day "done today" rule as
+  `TodayDigest.habitsToday`. `WidgetSnapshotService` (the device edge) fetches + writes +
+  `WidgetCenter.reloadAllTimelines()`, wired in `RootShell` on `scenePhase` (per-mutation refreshes land
+  with the widget UI in Phase 2), and **no-ops under the `-uiTest*` launch args** so a test run can't
+  leak a real snapshot file (see the residual below). No home-screen widget UI ships yet —
+  `reloadAllTimelines()` is a no-op until Phase 2 adds one.
 
 **Verified**: `xcodegen generate` clean; the app **and** the watch + widget extension build, code-sign
 (simulator), and embed with the new App-Group entitlement (no provisioning failure). Unit suite green
 (`WidgetSnapshotTests` ×7: codec round-trip, corrupt/missing-key/future-version back-compat, builder
 parity with `TodayDigest`/`HabitMilestones`); full `SnappetTests` 647 passing; UI suite green.
-**Accepted residual / device-pending**: the App-Group **container** only fully provisions on a real
-device (the group id must be registered under the signing team in the developer portal); the simulator
-doesn't enforce it, so `WidgetSnapshotStore.read/write` (the file edge) and the widget actually reading
-the snapshot are device-pending (they land verifiable with the Phase-2 widget UI). The builder + codec —
-the logic — are sim-verified.
+**Accepted residual / device-pending**: the iOS **Simulator DOES provide** the App-Group container (it
+just doesn't validate the group against the developer portal), so the `WidgetSnapshotStore` file edge
+actually runs on the sim — which is exactly why `WidgetSnapshotService.refresh` is gated off under the
+`-uiTest*` args (an unguarded write would persist a real `today-widget-snapshot.json`, leaking across
+runs and into the production app on the same sim/device — defeating the in-memory-store isolation those
+args promise; caught by the review). What is genuinely **device-pending**: the group must be registered
+under the signing team in the portal for a **device/TestFlight** build, and the **home-screen widget
+actually rendering** the snapshot (Phase 2) — that pair lands verifiable with the Phase-2 widget UI on
+hardware. The builder, codec, and streak/derivation parity — the logic — are sim-verified.

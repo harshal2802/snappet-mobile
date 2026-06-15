@@ -52,8 +52,10 @@ struct SnappetWidgetSnapshot: Codable, Sendable, Equatable {
     }
 
     var habits: [HabitItem]
-    /// Best CURRENT streak across the user's habits (consecutive days ending today/yesterday) — the
-    /// flame value the Habit screen already shows. 0 when there is no live streak.
+    /// The suite-engagement "day streak" the Home dashboard shows: consecutive days ending today
+    /// with at least one logged action. Built via `TodayDigest.activityStreak` — the same derivation
+    /// `HomeDashboardView` reads — so the widget and Home can't show different numbers. 0 when today
+    /// has no activity (the strict "ending today" rule).
     var dayStreak: Int
     /// Completed focus minutes today (`TodayDigest.focusToday`). 0 when none yet.
     var focusMinutesToday: Int

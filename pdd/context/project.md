@@ -358,11 +358,15 @@ this first PR is the foundation. An **App Group** (`group.com.snappet.app`) now 
 live SwiftData store into the App Group (decisions.md: isolates the widget from `SnappetSchema` churn,
 no store-location migration, no cross-process locking, fully unit-testable). The snapshot is built by
 the pure `WidgetSnapshotBuilder` (reusing `TodayDigest` + `HabitMilestones.streak`) and published by
-`WidgetSnapshotService` on `scenePhase` from `RootShell`. **Verified**: app + watch + widget build,
-sign, embed with the new entitlement on the sim; `WidgetSnapshotTests` (codec round-trip,
-missing-key/future-version back-compat, builder parity) + full unit suite green; UI suite green.
-**Device-pending**: the App-Group container only fully provisions on a device — the file edge + the
-widget reading the snapshot land verifiable with the Phase-2 widget UI. **Next**: Phase 2 (Today
+`WidgetSnapshotService` on `scenePhase` from `RootShell` (no-op under the `-uiTest*` args so test runs
+can't leak a snapshot file). `dayStreak` is the Home dashboard's suite-engagement streak via the shared
+pure `TodayDigest.activityStreak` Home itself now uses — not a per-habit streak — so the widget can't
+diverge from Home. **Verified**: app + watch + widget build, sign, embed with the new entitlement on the
+sim; `WidgetSnapshotTests` (codec round-trip, missing-key/future-version back-compat, builder + streak
+parity) + full unit suite green; UI suite green. **Device-pending**: the group must be registered under
+the signing team in the portal for a device/TestFlight build, and the home-screen widget actually
+rendering the snapshot (the Simulator does provide the container, so the file edge runs on the sim) —
+both land verifiable with the Phase-2 widget UI. **Next**: Phase 2 (Today
 widget + interactive check-off AppIntent via an App-Group outbox), Phase 3 (App Shortcuts), Phase 4
 (Spotlight).
 

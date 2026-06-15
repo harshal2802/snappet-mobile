@@ -1,33 +1,30 @@
 import Foundation
 
-/// Builds the home-screen widgets' Today snapshot from the same SwiftData rows Home/Habit query
-/// (#81 Phase 1). **Pure** — no SwiftData fetches, no clock/calendar reads (the caller injects
-/// `now` + `calendar`) — so it's deterministic and unit-tested in `SnappetTests` with no device.
-/// Reuses `TodayDigest` + `HabitMilestones.streak` so the widget can't drift from what the app shows.
+/// Builds the home-screen widgets' Today snapshot from the same SwiftData rows the app's own
+/// screens query (#81 Phase 1). **Pure** — no SwiftData fetches, no clock/calendar reads (the caller
+/// injects `now` + `calendar`) — so it's deterministic and unit-tested in `SnappetTests` with no
+/// device. Every fact routes through a shared pure derivation so the widget can't show a number that
+/// disagrees with the app: `dayStreak` via `TodayDigest.activityStreak` (the exact suite-engagement
+/// streak the Home dashboard's StatTile shows), focus minutes via `TodayDigest.focusToday`, and
+/// "habits remaining" via the same start-of-day "done today" rule as `TodayDigest.habitsToday`.
 enum WidgetSnapshotBuilder {
-    static func build(habits: [Habit], completions: [HabitCompletion],
+    static func build(records: [UsageRecord], habits: [Habit], completions: [HabitCompletion],
                       focusSessions: [PomodoroSession],
                       now: Date = Date(), calendar: Calendar = .current) -> SnappetWidgetSnapshot {
         let dayStart = calendar.startOfDay(for: now)
 
-        // Completion day-sets per habit, normalised to start-of-day, built once and reused for both
-        // the per-item "done today" flag and the streak math (mirrors TodayDigest/HabitMilestones).
-        var daysByHabit: [UUID: Set<Date>] = [:]
-        for c in completions {
-            daysByHabit[c.habitID, default: []].insert(calendar.startOfDay(for: c.day))
-        }
-
+        // "Done today" by the same start-of-day rule as TodayDigest.habitsToday.
+        let doneToday = Set(completions.lazy
+            .filter { calendar.startOfDay(for: $0.day) == dayStart }
+            .map(\.habitID))
         let items = habits.map { h in
             SnappetWidgetSnapshot.HabitItem(
-                id: h.id, name: h.name, symbol: h.symbol,
-                doneToday: daysByHabit[h.id]?.contains(dayStart) ?? false)
+                id: h.id, name: h.name, symbol: h.symbol, doneToday: doneToday.contains(h.id))
         }
 
-        // Best CURRENT streak across habits — the flame value the Habit screen already shows.
-        let dayStreak = habits.reduce(0) { best, h in
-            max(best, HabitMilestones.streak(days: daysByHabit[h.id] ?? [],
-                                             today: now, calendar: calendar))
-        }
+        // The Home dashboard's "day streak": consecutive days ending today with any logged action —
+        // shared with HomeDashboardView via TodayDigest.activityStreak so the two can't diverge.
+        let dayStreak = TodayDigest.activityStreak(records: records, now: now, calendar: calendar)
 
         let focus = TodayDigest.focusToday(sessions: focusSessions, now: now, calendar: calendar)?
             .minutesToday ?? 0

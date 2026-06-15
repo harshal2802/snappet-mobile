@@ -322,17 +322,10 @@ struct HomeDashboardView: View {
         .snappetAnimation(SnappetMotion.standard, value: records.count)
     }
 
-    /// Consecutive days (ending today) with at least one logged action.
+    /// Consecutive days (ending today) with at least one logged action — via the pure
+    /// `TodayDigest.activityStreak` so Home and the home-screen widget (#81) share one definition.
     private var streakText: String {
-        let cal = Calendar.current
-        let days = Set(records.map { cal.startOfDay(for: $0.timestamp) })
-        var streak = 0
-        var cursor = todayStart
-        while days.contains(cursor) {
-            streak += 1
-            cursor = cal.date(byAdding: .day, value: -1, to: cursor)!
-        }
-        return "\(streak)"
+        "\(TodayDigest.activityStreak(records: records, now: now, calendar: Calendar.current))"
     }
 }
 

@@ -64,9 +64,14 @@ on next app open — is acceptable and is handled in Phase 2 via an App-Group ou
    (`group.com.snappet.app`) and the file name. A **pure** `encode`/`decode` pair (unit-tested) plus a
    thin file edge (`containerURL` → atomic write/read of the JSON). Returns `nil` cleanly when the
    container is unavailable (e.g. entitlement not provisioned) or the file is absent/corrupt.
-4. **`Snappet/Widgets/WidgetSnapshotBuilder.swift`** — **pure** `build(habits:completions:focusSessions:
-   now:calendar:) -> SnappetWidgetSnapshot`, reusing `TodayDigest.focusToday` + `HabitMilestones.streak`
-   (best current per-habit streak = the flame value users already see). Unit-tested in `SnappetTests`.
+4. **`Snappet/Widgets/WidgetSnapshotBuilder.swift`** — **pure** `build(records:habits:completions:
+   focusSessions:now:calendar:) -> SnappetWidgetSnapshot`. Every fact routes through a shared pure
+   derivation so the widget can't show a number the app doesn't: `dayStreak` = the Home dashboard's
+   suite-engagement streak via a new shared `TodayDigest.activityStreak` (consecutive days ending today
+   with any logged `UsageRecord` — the issue points the widget's streak at HomeDashboardView's logic, so
+   extract it and have `HomeDashboardView.streakText` route through it too; NOT a per-habit streak),
+   focus via `TodayDigest.focusToday`, habits-remaining via `TodayDigest.habitsToday`'s rule.
+   Unit-tested in `SnappetTests`.
 5. **`Snappet/Widgets/WidgetSnapshotService.swift`** — `@MainActor` thin service: fetch the three row
    types from a `ModelContext`, call the builder, `WidgetSnapshotStore.write`, then
    `WidgetCenter.shared.reloadAllTimelines()`. Device-dependent edge → not unit-tested.
@@ -107,9 +112,11 @@ on next app open — is acceptable and is handled in Phase 2 via an App-Group ou
 - Keep `HighlightEngine` platform-free. The snapshot contract + store live in `Shared/`; the only
   platform I/O (the App-Group container URL + file write) sits behind `WidgetSnapshotStore` /
   `WidgetSnapshotService` so the builder + codec stay pure and testable.
-- Verify honestly: the App-Group container fully provisions only on a **device** (the group id must be
-  registered under the signing team in the portal). The simulator doesn't enforce it, so unit tests +
-  target builds verify what's verifiable now; record App-Group-on-device as device-pending.
+- Verify honestly: the iOS Simulator DOES provide the App-Group container (it just doesn't validate the
+  group against the portal), so the file edge runs on the sim — `WidgetSnapshotService.refresh` must
+  no-op under the `-uiTest*` args or a test run leaks a real snapshot file. What's device/TestFlight-
+  pending: portal registration of the group under the signing team, and the home-screen widget actually
+  rendering the snapshot (Phase 2).
 
 ## Test plan
 

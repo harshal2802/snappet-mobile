@@ -89,30 +89,42 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(WidgetSnapshotStore.decode(future))
     }
 
+    func testEmptyFactoryIsNeverAllDone() {
+        // The "no data yet" state a fresh widget shows — and the non-obvious allHabitsDone guard:
+        // zero habits must NOT read as "all done".
+        let s = SnappetWidgetSnapshot.empty(now: now, calendar: cal)
+        XCTAssertEqual(s.habits, [])
+        XCTAssertEqual(s.habitsTotal, 0)
+        XCTAssertEqual(s.habitsRemaining, 0)
+        XCTAssertFalse(s.allHabitsDone)        // guard: !habits.isEmpty
+        XCTAssertEqual(s.dayStreak, 0)
+        XCTAssertEqual(s.dayStart, todayStart)
+    }
+
     // MARK: - Builder
 
     func testBuilderEmptyWithNoRows() {
-        let s = WidgetSnapshotBuilder.build(habits: [], completions: [], focusSessions: [],
-                                            now: now, calendar: cal)
+        let s = WidgetSnapshotBuilder.build(records: [], habits: [], completions: [],
+                                            focusSessions: [], now: now, calendar: cal)
         XCTAssertEqual(s.habits, [])
+        XCTAssertEqual(s.habitsTotal, 0)
+        XCTAssertFalse(s.allHabitsDone)        // no habits ⇒ not "all done"
         XCTAssertEqual(s.dayStreak, 0)
         XCTAssertEqual(s.focusMinutesToday, 0)
         XCTAssertEqual(s.dayStart, todayStart)
         XCTAssertEqual(s.version, SnappetWidgetSnapshot.currentVersion)
     }
 
-    func testBuilderReproducesTodayFactsAndBestStreak() {
+    func testBuilderReproducesTodayFacts() {
         let read = Habit(name: "Read", symbol: "book")
         let run = Habit(name: "Run", symbol: "figure.run")
         for row in [read, run] { context.insert(row) }
 
-        // Read: today + yesterday + 2 days ago → current streak 3, done today.
-        // Run: today only → current streak 1, done today.
-        var completions: [HabitCompletion] = []
-        for d in [0, 1, 2] {
-            completions.append(HabitCompletion(habitID: read.id, day: cal.startOfDay(for: daysAgo(d))))
-        }
-        completions.append(HabitCompletion(habitID: run.id, day: todayStart))
+        // Both habits done today.
+        let completions = [
+            HabitCompletion(habitID: read.id, day: todayStart),
+            HabitCompletion(habitID: run.id, day: todayStart),
+        ]
         for row in completions { context.insert(row) }
 
         let focus = [
@@ -122,8 +134,9 @@ final class WidgetSnapshotTests: XCTestCase {
         ]
         for row in focus { context.insert(row) }
 
-        let s = WidgetSnapshotBuilder.build(habits: [read, run], completions: completions,
-                                            focusSessions: focus, now: now, calendar: cal)
+        let s = WidgetSnapshotBuilder.build(records: [], habits: [read, run],
+                                            completions: completions, focusSessions: focus,
+                                            now: now, calendar: cal)
 
         // Parity with TodayDigest.habitsToday: both done today → 0 remaining.
         XCTAssertEqual(s.habitsTotal, 2)
@@ -132,11 +145,33 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(Set(s.habits.map(\.name)), ["Read", "Run"])
         XCTAssertTrue(s.habits.allSatisfy(\.doneToday))
         XCTAssertEqual(s.habits.first { $0.name == "Read" }?.symbol, "book")
-
-        // Best current streak across habits (Read's 3 beats Run's 1).
-        XCTAssertEqual(s.dayStreak, 3)
         // TodayDigest.focusToday parity: only today's blocks (25 + 15).
         XCTAssertEqual(s.focusMinutesToday, 40)
+    }
+
+    /// The widget's `dayStreak` is the SAME suite-engagement streak Home shows: consecutive days
+    /// ending today with a logged action — derived from UsageRecords via `TodayDigest.activityStreak`
+    /// (not a habit streak), so the widget can't diverge from the Home dashboard.
+    func testBuilderDayStreakMatchesActivityStreak() {
+        let records = [
+            UsageRecord(module: "habit", action: "done", summary: "a",
+                        timestamp: todayStart.addingTimeInterval(9 * 3600)),
+            UsageRecord(module: "pomodoro", action: "session", summary: "b",
+                        timestamp: cal.startOfDay(for: daysAgo(1))),
+            UsageRecord(module: "budget", action: "entry", summary: "c",
+                        timestamp: cal.startOfDay(for: daysAgo(2))),
+            // gap at day 3 — the streak must stop here…
+            UsageRecord(module: "journal", action: "entry", summary: "d",
+                        timestamp: cal.startOfDay(for: daysAgo(4))),   // …so this doesn't count
+        ]
+        for row in records { context.insert(row) }
+
+        let s = WidgetSnapshotBuilder.build(records: records, habits: [], completions: [],
+                                            focusSessions: [], now: now, calendar: cal)
+        XCTAssertEqual(s.dayStreak, 3)
+        // Exact parity with the shared pure function Home routes through.
+        XCTAssertEqual(s.dayStreak,
+                       TodayDigest.activityStreak(records: records, now: now, calendar: cal))
     }
 
     func testBuilderHabitsRemainingMatchesTodayDigest() {
@@ -146,13 +181,29 @@ final class WidgetSnapshotTests: XCTestCase {
         let doneYesterday = HabitCompletion(habitID: stretch.id, day: cal.startOfDay(for: daysAgo(1)))
         context.insert(doneYesterday)
 
-        let s = WidgetSnapshotBuilder.build(habits: [stretch], completions: [doneYesterday],
+        let s = WidgetSnapshotBuilder.build(records: [], habits: [stretch],
+                                            completions: [doneYesterday],
                                             focusSessions: [], now: now, calendar: cal)
         let digest = TodayDigest.habitsToday(habits: [stretch], completions: [doneYesterday],
                                              now: now, calendar: cal)
         XCTAssertEqual(s.habitsRemaining, digest?.remaining)   // 1 == 1
         XCTAssertFalse(s.habits.first?.doneToday ?? true)
-        // The streak stays alive (yesterday) even though it's not done today.
-        XCTAssertEqual(s.dayStreak, 1)
+        // No activity records → no engagement streak (independent of habit completions).
+        XCTAssertEqual(s.dayStreak, 0)
+    }
+
+    /// Today has no logged action → the engagement streak is 0 even if earlier days had activity
+    /// (the strict "ending today" rule, matching HomeDashboardView).
+    func testBuilderDayStreakZeroWhenNothingToday() {
+        let records = [
+            UsageRecord(module: "habit", action: "done", summary: "a",
+                        timestamp: cal.startOfDay(for: daysAgo(1))),
+            UsageRecord(module: "habit", action: "done", summary: "b",
+                        timestamp: cal.startOfDay(for: daysAgo(2))),
+        ]
+        for row in records { context.insert(row) }
+        let s = WidgetSnapshotBuilder.build(records: records, habits: [], completions: [],
+                                            focusSessions: [], now: now, calendar: cal)
+        XCTAssertEqual(s.dayStreak, 0)
     }
 }
