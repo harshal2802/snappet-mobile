@@ -4146,3 +4146,45 @@ full `SnappetTests` 680 green; UI suite green. **Device-pending**: real Spotligh
 a Spotlight-result tap → `onContinueUserActivity` (the sim verifies the specs, the route parse, the
 index call, and `simctl openurl` delivery). With this, **#81 is complete** (4 stacked PRs:
 App Group → widgets → App Intents → Spotlight); the #100 iOS tracker box is checked.
+
+## 2026-06-15 — Android Wave 2: workout authoring + workout loop + feedback/undo (#87 #95 #89)
+
+Three stacked Android issues shipped in one PR (Wave 2). Non-obvious choices:
+
+- **No Room schema bump — DB stays at v4.** #87/#95 add target weights, custom exercises, and per-set
+  actuals, but every one of those already lives in an *existing* JSON `String` column
+  (`WorkoutRoutine.exercisesJson`, `WorkoutSession.exercisesJson`) or an existing entity
+  (`WorkoutCustomExercise`). No `@Entity` field changed, so there is **no v4→v5 migration** and the
+  `MigrationBaselineTest` is untouched. (Wave 3 / #92 BLE HR may independently produce its own v5 — no
+  conflict here, since this batch contributes no schema change at all.) The data layer was fully built
+  and unused; #87 is purely its missing UI.
+- **Bundled catalog uses `kotlinx.serialization`, not `org.json`.** The 873-exercise Free Exercise DB
+  (copied from the iOS resource to `assets/workout/exercises.json`) is parsed by `WorkoutExerciseParser`
+  with `kotlinx.serialization` *specifically* so the parse + search run in `:app:testDebugUnitTest` —
+  Android's `org.json` is stubbed-to-throw in JVM unit tests, and `--offline` blocks adding the
+  `org.json:json` test artifact. `WorkoutCatalog` keeps the 20-entry curated list as an offline
+  fallback (its ids all exist in the full DB) and swaps to the full list once `load(context)` reads the
+  asset.
+- **Analytics run on a JSON-free `SessionView`.** `WorkoutAnalytics` public functions take
+  `WorkoutSession`, but the math runs on a decoded `SessionView` value type, so tests build the view
+  directly and never touch `WorkoutSession.exercises` (which decodes via `org.json`). Weight is
+  normalised to kg for volume/PR comparison so kg/lb-mixed history still aggregates; the PR is reported
+  in the unit it was logged in.
+- **Set prefill carries forward, most→least specific:** previous *completed* set's actuals → routine
+  target → most-recent finished session's logged value. Empty targets no longer wipe a typed value.
+- **One app-level `SnackbarHost` with a built-in undo primitive.** `SnackbarController.showUndo` runs
+  the destructive `commit` only when the snackbar times out *without* Undo. Journal's delete is
+  optimistic (row hidden immediately via `pendingDeleteId`, DAO delete deferred, Undo = clear the id),
+  and Kilter's log defers the *insert* (so Undo is a clean no-op). Designed at `RootShell` so future
+  delete flows reuse it.
+- **OCR failure is now typed.** `ReceiptScanResult` (Success/Empty/Failure) replaces the
+  resume-`""`-on-everything contract, so a failed or blank photo shows an inline error instead of a
+  silent no-op. (Empty and Failure show the same message — "try better lighting, or use Paste" — but
+  stay distinct types for future tuning.)
+
+**Verified**: `:app:testDebugUnitTest` 113 tests green (22 new: `WorkoutAnalyticsTest`,
+`WorkoutExerciseParserTest`); `:app:assembleDebug` BUILD SUCCESSFUL. **Device-pending** (one shared
+emulator, parallel agents — instrumented run deferred): the 873-row catalog scroll/search + routine
+authoring on-device; set prefill + charts + last-time hint across two real sessions; and all the #89
+feedback paths (snackbar/haptic/undo, Kilter pill timing + BLE-denial Settings deep link, receipt OCR
+failure/empty banner) which are observable only on a device/emulator.
