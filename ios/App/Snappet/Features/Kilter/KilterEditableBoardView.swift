@@ -14,12 +14,22 @@ struct KilterEditableBoardView: View {
     let placeable: [KilterPlaceableHold]
     @Binding var assignments: [Int: KilterAuthorRole]
 
+    /// When VoiceOver is running, a per-hole accessible overlay makes non-visual authoring possible —
+    /// the Canvas itself is one opaque element a VoiceOver user can't author in (#79). The overlay is
+    /// only built under VoiceOver, so sighted tap (the near-hit `SpatialTapGesture`) is untouched.
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            Canvas { ctx, _ in draw(ctx, size) }
-                .contentShape(Rectangle())
-                .gesture(SpatialTapGesture().onEnded { handleTap($0.location, in: size) })
+            ZStack {
+                Canvas { ctx, _ in draw(ctx, size) }
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { handleTap($0.location, in: size) })
+                if voiceOver {
+                    accessibilityOverlay(size)
+                }
+            }
         }
         .aspectRatio(geometry.aspect > 0 ? geometry.aspect : 1, contentMode: .fit)
         .background(
@@ -29,8 +39,34 @@ struct KilterEditableBoardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
-        .accessibilityElement()
-        .accessibilityLabel("Editable board, \(assignments.count) holds placed. Tap a hole to cycle its role.")
+        // Under VoiceOver the per-hole children carry the interaction; otherwise it's one element.
+        .accessibilityElement(children: voiceOver ? .contain : .ignore)
+        .accessibilityLabel(voiceOver
+            ? "Editable board, \(assignments.count) holds placed. Each hole is an element — double-tap to cycle its role."
+            : "Editable board, \(assignments.count) holds placed. Tap a hole to cycle its role.")
+    }
+
+    /// One accessible, hittable element per placeable hole — labelled with its rough board position and
+    /// current role, with a double-tap (default action) that cycles the role exactly like a sighted tap.
+    private func accessibilityOverlay(_ size: CGSize) -> some View {
+        let holdD = holdDiameter(size)
+        return ForEach(placeable, id: \.placementId) { h in
+            let c = point(h.x, h.y, size, holdD)
+            Button { cycle(h.placementId) } label: { Color.clear }
+                .frame(width: 44, height: 44)   // ≥44pt VoiceOver target (#79)
+                .position(c)
+                .accessibilityLabel("\(positionLabel(x: h.x, y: h.y)) hole")
+                .accessibilityValue(assignments[h.placementId]?.roleName ?? "unset")
+                .accessibilityHint("Cycles unset, start, middle, finish, foot")
+        }
+    }
+
+    /// A coarse spoken position (left/centre/right × top/middle/bottom) so a VoiceOver user can tell the
+    /// holes apart. `y` is top-down (0 = top), so it's inverted for "top/bottom".
+    private func positionLabel(x: Double, y: Double) -> String {
+        let col = x < 0.34 ? "left" : x < 0.67 ? "centre" : "right"
+        let row = y < 0.34 ? "top" : y < 0.67 ? "middle" : "bottom"
+        return "\(row) \(col)"
     }
 
     // Same point transform as KilterBoardView, so targets and the render agree.
@@ -99,8 +135,13 @@ struct KilterEditableBoardView: View {
             if best == nil || dist < best!.dist { best = (h.placementId, dist) }
         }
         guard let best, best.dist <= holdD else { return }   // tap must be near a hole
-        let current = assignments[best.pid]
-        let next = current?.next ?? (current == nil ? .start : nil)
-        if let next { assignments[best.pid] = next } else { assignments[best.pid] = nil }
+        cycle(best.pid)
+    }
+
+    /// Cycle one hole's role: unset → start → middle → finish → foot → unset. Shared by the sighted
+    /// near-hit tap and the per-hole VoiceOver action so both behave identically (#79).
+    private func cycle(_ pid: Int) {
+        let current = assignments[pid]
+        assignments[pid] = current?.next ?? (current == nil ? .start : nil)
     }
 }

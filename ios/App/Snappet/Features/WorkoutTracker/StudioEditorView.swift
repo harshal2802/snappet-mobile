@@ -109,6 +109,7 @@ struct StudioEditorView: View {
         HStack(spacing: 12) {
             Button { dismiss() } label: { Image(systemName: "xmark").font(.headline) }
                 .accessibilityIdentifier("studioClose")
+                .accessibilityLabel("Close studio")
             Button { titleDraft = vm.title; renaming = true } label: {
                 HStack(spacing: 4) {
                     Text(vm.title).lineLimit(1).font(.subheadline.weight(.semibold))
@@ -116,6 +117,8 @@ struct StudioEditorView: View {
                 }
             }
             .foregroundStyle(.white)
+            .accessibilityLabel("Project name, \(vm.title)")
+            .accessibilityHint("Rename the project")
             Spacer()
             Menu {
                 Picker("Quality", selection: Binding(get: { vm.exportQuality }, set: { vm.exportQuality = $0 })) {
@@ -210,19 +213,26 @@ struct StudioEditorView: View {
                 Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill").font(.title3)
             }
             .accessibilityIdentifier("studioPlayPause")
+            .accessibilityLabel(vm.isPlaying ? "Pause" : "Play")
             .disabled(vm.previewPlayer == nil)
             Button { vm.addOverlayKeyframeAtPlayhead() } label: { Image(systemName: "diamond.fill").font(.caption) }
                 .accessibilityIdentifier("studioKeyframe")
+                // diamond.fill carries no default label — without this VoiceOver reads nothing (#79).
+                .accessibilityLabel("Add opacity keyframe")
+                .accessibilityHint("Keyframes the selected overlay's opacity at the playhead")
                 .disabled(vm.selectedOverlay == nil)
                 .help("Add an opacity keyframe for the selected overlay at the playhead")
             Spacer()
             Text("\(timecode(vm.currentTime)) / \(timecode(vm.totalDuration))")
                 .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.85))
+                .accessibilityLabel("Playhead \(timecode(vm.currentTime)) of \(timecode(vm.totalDuration))")
             Spacer()
             Button { vm.undoEdit() } label: { Image(systemName: "arrow.uturn.backward") }
                 .disabled(!vm.canUndo).accessibilityIdentifier("studioUndo")
+                .accessibilityLabel("Undo")
             Button { vm.redoEdit() } label: { Image(systemName: "arrow.uturn.forward") }
                 .disabled(!vm.canRedo).accessibilityIdentifier("studioRedo")
+                .accessibilityLabel("Redo")
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16).padding(.vertical, 8)

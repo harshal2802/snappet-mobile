@@ -62,13 +62,15 @@ struct RootShell: View {
 /// gently pulses while loading (no-op under Reduce Motion).
 private struct LoadingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The brand mark scales with Dynamic Type rather than a fixed 44pt (#79).
+    @ScaledMetric(relativeTo: .largeTitle) private var markSize: CGFloat = 44
 
     var body: some View {
         ZStack {
             SnappetColor.paper.ignoresSafeArea()
             VStack(spacing: SnappetSpacing.lg) {
                 Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 44, weight: .semibold))
+                    .font(.system(size: markSize, weight: .semibold))
                     .foregroundStyle(SnappetColor.brand)
                     .symbolEffect(.pulse, isActive: !reduceMotion)
                 ProgressView()
