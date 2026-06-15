@@ -415,7 +415,8 @@ green; UI suite green. **Accepted residual**: journal entries aren't indexed (no
 once `JournalEntry` gains a `uuid`); custom exercises likewise. **Device-pending**: real Spotlight
 visibility + a result tap. **This completes issue #81** — the suite now has home-screen widgets
 (streak + interactive habit check-off + Start focus), Siri/Shortcuts App Shortcuts, and Spotlight, all
-on a shared App Group, entirely on-device. The #100 iOS tracker is now 16/16.
+on a shared App Group, entirely on-device. With #81 done the #100 iOS tracker is **15/16** — only
+#83 (flagship intelligence, P3/L) remains.
 
 ## License
 
