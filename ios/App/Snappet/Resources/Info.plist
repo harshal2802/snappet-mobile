@@ -18,13 +18,6 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<!-- snappet:// deep links (#75): a shared climb's QR code (snappet://kilter/climb/<uuid>)
-	     scanned with the iOS Camera — or opened from Safari/another app — launches Snappet on
-	     that climb. Parsed by SnappetDeepLink (KilterDeepLink.swift) via RootShell.onOpenURL.
-	     Registered HERE (the checked-in plist project.yml points INFOPLIST_FILE at) — never in
-	     the generated .xcodeproj. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -36,14 +29,14 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Snappet connects over Bluetooth to your heart-rate band (chest straps, Polar, Garmin, and similar) for live heart rate during a workout, and to a Kilter Board to light up climbs. Everything stays on your device.</string>
-	<!-- ONE camera key covering both uses — this dict briefly carried two
-	     NSCameraUsageDescription entries (receipts + QR), and a plist dict keeps only one. -->
 	<key>NSCameraUsageDescription</key>
 	<string>Snappet uses the camera to scan a receipt (to pull out the line items and split them) and to scan a Kilter climb's QR code a friend shared. Everything is processed on your device; nothing is stored or uploaded.</string>
 	<key>NSHealthShareUsageDescription</key>
@@ -61,6 +54,13 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

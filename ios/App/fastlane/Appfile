@@ -1,0 +1,3 @@
+# Production bundle id by default; alpha/beta builds override via APP_BUNDLE_ID (see
+# scripts/alpha-build-overlay.sh). Apple ID / team come from the App Store Connect API key at runtime.
+app_identifier(ENV["APP_BUNDLE_ID"] || "com.snappet.app")
