@@ -200,8 +200,9 @@ struct KilterSessionDetailView: View {
 
     @ViewBuilder private func hrSection(_ hr: WorkoutHRStats) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 6) {
                 sectionTitle("Heart rate", systemImage: "heart.fill")
+                HRMetricsInfoButton()   // same in-UI colour legend as the gym summary (#78)
                 if let kind = session?.metricsSourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
                     Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -219,19 +220,16 @@ struct KilterSessionDetailView: View {
                     hrStat("\(Int(kcal.rounded()))", "kcal est.")
                 }
             }
+            // The same smoothed, zone-coloured, axis-labelled chart the gym summary uses (#78) —
+            // not the old raw pink line with a hidden axis.
             if let session, session.hrSeries.count > 1 {
-                Chart(session.hrSeries, id: \.t) { p in
-                    LineMark(x: .value("t", p.t), y: .value("bpm", p.bpm))
-                        .foregroundStyle(.pink)
-                        .interpolationMethod(.catmullRom)
-                }
-                .chartXAxis(.hidden)
-                .frame(height: 120)
+                HeartRateChart(series: session.hrSeries)
+                    .frame(height: 140)
             }
-            zoneBar(hr)
+            ZoneBar(stats: hr)
             if hr.totalSeconds > 0 {
                 HStack {
-                    hrStat(Self.redlineMinutesLabel(hr.redlineSeconds), "Redline")
+                    hrStat(ZoneBar.minutesLabel(hr.redlineSeconds), "Redline")
                     Divider().frame(height: 28)
                     hrStat("\(Int((hr.redlineFraction * 100).rounded()))%", "At Z4+")
                     Divider().frame(height: 28)
@@ -259,45 +257,11 @@ struct KilterSessionDetailView: View {
         .padding(.horizontal)
     }
 
-    /// Compact minutes/seconds label for the redline tile (mirrors the WorkoutTracker ZoneBar).
-    private static func redlineMinutesLabel(_ seconds: Double) -> String {
-        let mins = seconds / 60
-        return mins >= 1 ? "\(Int(mins.rounded()))m" : "\(Int(seconds.rounded()))s"
-    }
-
     private func hrStat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.title3.weight(.semibold)).monospacedDigit()
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity)
-    }
-
-    /// A stacked time-in-zone bar (recovery → max), each segment proportional to dwell time.
-    @ViewBuilder private func zoneBar(_ hr: WorkoutHRStats) -> some View {
-        let total = max(hr.totalSeconds, 1)
-        let segments = hr.orderedZoneSeconds.filter { $0.seconds > 0 }
-        if !segments.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                GeometryReader { geo in
-                    HStack(spacing: 1) {
-                        ForEach(segments, id: \.zone) { seg in
-                            seg.zone.color
-                                .frame(width: max(2, geo.size.width * seg.seconds / total))
-                        }
-                    }
-                    .clipShape(Capsule())
-                }
-                .frame(height: 10)
-                HStack(spacing: 10) {
-                    ForEach(segments, id: \.zone) { seg in
-                        HStack(spacing: 3) {
-                            Circle().fill(seg.zone.color).frame(width: 7, height: 7)
-                            Text(seg.zone.label).font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // MARK: - Grade pyramid
