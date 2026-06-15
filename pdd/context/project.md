@@ -378,11 +378,16 @@ checklist** + a **Start focus** button. Check-off works **without opening the ap
 one-file-per-toggle, race-free) + optimistically updates the snapshot; the app drains + reconciles into
 SwiftData on foreground via the pure, idempotent `HabitCheckoffReconciler` (removing outbox files only
 after a successful save). Start-focus is `Link(snappet://pomodoro/start)` → new `SnappetDeepLink.startFocus`
-→ `SuiteRouter.pendingPomodoroStart` → `PomodoroRootView` starts the app-owned timer. **Verified**:
-app+watch+widget build/sign/embed; `WidgetOutboxTests` (codec + reconciler truth table) + extended
-deep-link route tests + full `SnappetTests` 662 green; UI suite green; `xcrun simctl openurl
-snappet://pomodoro/start` starts the timer. **Device-pending**: the widget rendering on the springboard +
-a real check-off tap firing the AppIntent. **Next**: Phase 3 (Siri AppShortcuts), Phase 4 (Spotlight).
+→ `SuiteRouter.pendingPomodoroStart` → `PomodoroRootView` starts the app-owned timer. The 3-lens
+adversarial review caught + fixed 3 real issues: day-staleness (a snapshot built before midnight showed
+yesterday's checks as today's, and a first tap silently no-op'd — fixed with the pure
+`SnappetWidgetSnapshot.resolvedForDisplay`), the widget check-off not logging the `UsageRecord` that
+drives the headline streak (now mirrored), and orphan completions for deleted habits (planner orphan
+guard). **Verified**: app+watch+widget build/sign/embed; `WidgetOutboxTests` + `WidgetSnapshotTests`
+(reconciler truth table incl. orphan/loggedAt + resolvedForDisplay staleness) + extended deep-link route
+tests + full `SnappetTests` 665 green; UI suite green; `xcrun simctl openurl snappet://pomodoro/start`
+routes to Snappet. **Device-pending**: the widget rendering on the springboard + a real check-off tap
+firing the AppIntent. **Next**: Phase 3 (Siri AppShortcuts), Phase 4 (Spotlight).
 
 ## License
 

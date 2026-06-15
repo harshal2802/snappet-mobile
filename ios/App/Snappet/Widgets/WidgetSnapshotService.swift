@@ -40,19 +40,29 @@ enum WidgetSnapshotService {
     private static func reconcileOutbox(context: ModelContext, calendar: Calendar) {
         let toggles = WidgetOutbox.pending()
         guard !toggles.isEmpty else { return }
+
+        let habits = (try? context.fetch(FetchDescriptor<Habit>())) ?? []
+        let liveHabitIDs = Set(habits.map(\.id))
+        let nameByID = Dictionary(habits.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         let completions = (try? context.fetch(FetchDescriptor<HabitCompletion>())) ?? []
         let existing = Set(completions.map {
             HabitCheckoffReconciler.CompletionKey(habitID: $0.habitID,
                                                   day: calendar.startOfDay(for: $0.day))
         })
-        let plan = HabitCheckoffReconciler.plan(toggles: toggles, existing: existing, calendar: calendar)
-        guard !plan.inserts.isEmpty || !plan.deletes.isEmpty else {
-            // Nothing to change (already in sync) — still clear the applied intents.
-            WidgetOutbox.remove(ids: toggles.map(\.id))
-            return
-        }
-        for key in plan.inserts {
-            context.insert(HabitCompletion(habitID: key.habitID, day: key.day))
+        let plan = HabitCheckoffReconciler.plan(toggles: toggles, existing: existing,
+                                                liveHabitIDs: liveHabitIDs, calendar: calendar)
+
+        var didMutate = false
+        for insert in plan.inserts {
+            context.insert(HabitCompletion(habitID: insert.key.habitID, day: insert.key.day))
+            // Mirror the in-app check-ON side effect (HabitRootView.toggle): an activity-log
+            // UsageRecord, stamped when the user tapped — so the day streak the widget headlines
+            // (TodayDigest.activityStreak, UsageRecord-based) actually advances. In-app logs on
+            // check-ON only, never on check-OFF, so we log only for inserts.
+            context.insert(UsageRecord(module: "habit", action: "done",
+                                       summary: "Did: \(nameByID[insert.key.habitID] ?? "habit")",
+                                       timestamp: insert.loggedAt))
+            didMutate = true
         }
         if !plan.deletes.isEmpty {
             let toDelete = Set(plan.deletes)
@@ -60,14 +70,15 @@ enum WidgetSnapshotService {
                 HabitCheckoffReconciler.CompletionKey(habitID: c.habitID,
                                                       day: calendar.startOfDay(for: c.day))) {
                 context.delete(c)
+                didMutate = true
             }
         }
-        do {
-            try context.save()
-            WidgetOutbox.remove(ids: toggles.map(\.id))   // clear only after a durable save
-        } catch {
-            // Keep the outbox files; the idempotent plan retries on the next foreground.
+        if didMutate {
+            do { try context.save() }
+            catch { return }   // keep the outbox files; the idempotent plan retries next foreground
         }
+        // All toggles processed (applied, already-in-sync, or dropped as orphans) — clear them.
+        WidgetOutbox.remove(ids: toggles.map(\.id))
     }
 
     /// True under the suite's UI-test launch args (the same set `SnappetApp` keys on for its

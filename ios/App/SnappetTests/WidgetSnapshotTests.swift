@@ -101,6 +101,36 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(s.dayStart, todayStart)
     }
 
+    // MARK: - Staleness (resolvedForDisplay)
+
+    func testResolvedForDisplayIsIdentityWhenBuiltToday() {
+        let s = SnappetWidgetSnapshot(
+            generatedAt: now, dayStart: todayStart,
+            habits: [.init(id: UUID(), name: "Read", symbol: "book", doneToday: true)],
+            dayStreak: 5, focusMinutesToday: 30)
+        XCTAssertEqual(s.resolvedForDisplay(now: now, calendar: cal), s)
+    }
+
+    func testResolvedForDisplayNeutralisesAStaleSnapshot() {
+        // Built yesterday: "all done", a streak, focus minutes — none of which apply to today.
+        let stale = SnappetWidgetSnapshot(
+            generatedAt: daysAgo(1), dayStart: cal.startOfDay(for: daysAgo(1)),
+            habits: [
+                .init(id: UUID(), name: "Read", symbol: "book", doneToday: true),
+                .init(id: UUID(), name: "Run", symbol: "figure.run", doneToday: true),
+            ],
+            dayStreak: 5, focusMinutesToday: 30)
+
+        let shown = stale.resolvedForDisplay(now: now, calendar: cal)
+        XCTAssertEqual(shown.dayStart, todayStart)
+        XCTAssertTrue(shown.habits.allSatisfy { !$0.doneToday })   // no yesterday checkmarks today
+        XCTAssertEqual(shown.habitsRemaining, 2)
+        XCTAssertFalse(shown.allHabitsDone)                        // not "all done" after midnight
+        XCTAssertEqual(shown.dayStreak, 0)
+        XCTAssertEqual(shown.focusMinutesToday, 0)
+        XCTAssertEqual(shown.habits.map(\.name), ["Read", "Run"])  // identities preserved
+    }
+
     // MARK: - Builder
 
     func testBuilderEmptyWithNoRows() {

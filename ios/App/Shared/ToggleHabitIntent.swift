@@ -26,16 +26,19 @@ struct ToggleHabitIntent: AppIntent {
         let now = Date()
         let day = Calendar.current.startOfDay(for: now)
 
-        // Flip the current state the snapshot reports for this habit.
-        let snapshot = WidgetSnapshotStore.read()
-        let current = snapshot?.habits.first { $0.id == uuid }?.doneToday ?? false
+        // Resolve the snapshot to TODAY first: if the app built it before midnight, yesterday's
+        // doneToday must not seed `current` (else a tap meant to check ON computes desired=false and
+        // silently no-ops). resolvedForDisplay stamps today's dayStart, so the optimistic write below
+        // is a fresh today-snapshot (#81 Phase 2 review fix).
+        let resolved = WidgetSnapshotStore.read()?.resolvedForDisplay(now: now)
+        let current = resolved?.habits.first { $0.id == uuid }?.doneToday ?? false
         let desired = !current
 
         // Durable intent for the app to reconcile into SwiftData on next foreground.
         WidgetOutbox.append(HabitToggle(habitID: uuid, day: day, desired: desired, requestedAt: now))
 
         // Optimistic snapshot update so the widget shows the new state before the app reconciles.
-        if var snap = snapshot {
+        if var snap = resolved {
             snap.habits = snap.habits.map { item in
                 guard item.id == uuid else { return item }
                 var updated = item

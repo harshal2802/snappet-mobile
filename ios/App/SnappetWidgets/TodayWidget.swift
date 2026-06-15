@@ -34,11 +34,17 @@ struct TodayProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
-        completion(TodayEntry(date: Date(), snapshot: WidgetSnapshotStore.read() ?? .empty()))
+        let now = Date()
+        // resolvedForDisplay neutralises a snapshot the app built before midnight, so the widget
+        // never shows yesterday's completions/streak as today's (#81 Phase 2 review fix).
+        let snapshot = (WidgetSnapshotStore.read() ?? .empty()).resolvedForDisplay(now: now)
+        completion(TodayEntry(date: now, snapshot: snapshot))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
-        let entry = TodayEntry(date: Date(), snapshot: WidgetSnapshotStore.read() ?? .empty())
+        let now = Date()
+        let snapshot = (WidgetSnapshotStore.read() ?? .empty()).resolvedForDisplay(now: now)
+        let entry = TodayEntry(date: now, snapshot: snapshot)
         let cal = Calendar.current
         let nextMidnight = cal.nextDate(after: Date(),
                                         matching: DateComponents(hour: 0, minute: 0, second: 0),

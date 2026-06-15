@@ -18,6 +18,9 @@ final class WidgetOutboxTests: XCTestCase {
     private func key(_ habit: UUID) -> HabitCheckoffReconciler.CompletionKey {
         .init(habitID: habit, day: cal.startOfDay(for: day))
     }
+    private func insert(_ habit: UUID, at secs: TimeInterval) -> HabitCheckoffReconciler.Insert {
+        .init(key: key(habit), loggedAt: at(secs))
+    }
 
     // MARK: - HabitToggle codec
 
@@ -34,8 +37,8 @@ final class WidgetOutboxTests: XCTestCase {
         let h = UUID()
         let plan = HabitCheckoffReconciler.plan(
             toggles: [HabitToggle(habitID: h, day: day, desired: true, requestedAt: at(1))],
-            existing: [], calendar: cal)
-        XCTAssertEqual(plan.inserts, [key(h)])
+            existing: [], liveHabitIDs: [h], calendar: cal)
+        XCTAssertEqual(plan.inserts, [insert(h, at: 1)])   // loggedAt = the tap time
         XCTAssertEqual(plan.deletes, [])
     }
 
@@ -43,7 +46,7 @@ final class WidgetOutboxTests: XCTestCase {
         let h = UUID()
         let plan = HabitCheckoffReconciler.plan(
             toggles: [HabitToggle(habitID: h, day: day, desired: false, requestedAt: at(1))],
-            existing: [key(h)], calendar: cal)
+            existing: [key(h)], liveHabitIDs: [h], calendar: cal)
         XCTAssertEqual(plan.inserts, [])
         XCTAssertEqual(plan.deletes, [key(h)])
     }
@@ -56,7 +59,7 @@ final class WidgetOutboxTests: XCTestCase {
                 HabitToggle(habitID: h1, day: day, desired: true, requestedAt: at(1)),
                 HabitToggle(habitID: h2, day: day, desired: false, requestedAt: at(2)),
             ],
-            existing: [key(h1)], calendar: cal)
+            existing: [key(h1)], liveHabitIDs: [h1, h2], calendar: cal)
         XCTAssertEqual(plan.inserts, [])
         XCTAssertEqual(plan.deletes, [])
     }
@@ -69,31 +72,47 @@ final class WidgetOutboxTests: XCTestCase {
                 HabitToggle(habitID: h, day: day, desired: true, requestedAt: at(1)),
                 HabitToggle(habitID: h, day: day, desired: false, requestedAt: at(2)),
             ],
-            existing: [], calendar: cal)
+            existing: [], liveHabitIDs: [h], calendar: cal)
         XCTAssertEqual(plan.inserts, [])
         XCTAssertEqual(plan.deletes, [])
     }
 
     func testLastWriteWinsIsOrderIndependent() {
         let h = UUID()
-        // Same two toggles, supplied newest-first — the requestedAt sort still makes "on" win last.
+        // Same two toggles, supplied newest-first — the requestedAt sort still makes "on" win last,
+        // and loggedAt is that final desired-DONE request's time (at(2)).
         let plan = HabitCheckoffReconciler.plan(
             toggles: [
                 HabitToggle(habitID: h, day: day, desired: false, requestedAt: at(1)),
                 HabitToggle(habitID: h, day: day, desired: true, requestedAt: at(2)),
             ].shuffled(),
-            existing: [], calendar: cal)
-        XCTAssertEqual(plan.inserts, [key(h)])   // final desired = true (the at(2) request)
+            existing: [], liveHabitIDs: [h], calendar: cal)
+        XCTAssertEqual(plan.inserts, [insert(h, at: 2)])
         XCTAssertEqual(plan.deletes, [])
     }
 
     func testDayIsNormalisedToStartOfDay() {
         let h = UUID()
-        // A toggle stamped mid-afternoon still keys to that day's start-of-day.
+        // A toggle stamped mid-afternoon still keys to that day's start-of-day (but loggedAt keeps
+        // the precise tap time for the activity log).
         let plan = HabitCheckoffReconciler.plan(
-            toggles: [HabitToggle(habitID: h, day: at(9 * 3600), desired: true, requestedAt: at(1))],
-            existing: [], calendar: cal)
-        XCTAssertEqual(plan.inserts, [key(h)])
+            toggles: [HabitToggle(habitID: h, day: at(9 * 3600), desired: true, requestedAt: at(9 * 3600))],
+            existing: [], liveHabitIDs: [h], calendar: cal)
+        XCTAssertEqual(plan.inserts, [insert(h, at: 9 * 3600)])
+    }
+
+    /// Orphan guard: a check-ON for a habit that no longer exists (stale snapshot) is dropped, so
+    /// reconciliation can't leave a dangling HabitCompletion behind.
+    func testOrphanInsertForDeletedHabitIsDropped() {
+        let gone = UUID(), live = UUID()
+        let plan = HabitCheckoffReconciler.plan(
+            toggles: [
+                HabitToggle(habitID: gone, day: day, desired: true, requestedAt: at(1)),
+                HabitToggle(habitID: live, day: day, desired: true, requestedAt: at(2)),
+            ],
+            existing: [], liveHabitIDs: [live], calendar: cal)   // `gone` not live
+        XCTAssertEqual(plan.inserts, [insert(live, at: 2)])
+        XCTAssertEqual(plan.deletes, [])
     }
 
     func testMixedInsertsAndDeletesAcrossHabits() {
@@ -104,8 +123,8 @@ final class WidgetOutboxTests: XCTestCase {
                 HabitToggle(habitID: remove, day: day, desired: false, requestedAt: at(2)),
                 HabitToggle(habitID: keep, day: day, desired: true, requestedAt: at(3)),
             ],
-            existing: [key(remove), key(keep)], calendar: cal)
-        XCTAssertEqual(plan.inserts, [key(add)])
+            existing: [key(remove), key(keep)], liveHabitIDs: [add, remove, keep], calendar: cal)
+        XCTAssertEqual(plan.inserts, [insert(add, at: 1)])
         XCTAssertEqual(plan.deletes, [key(remove)])
     }
 }
