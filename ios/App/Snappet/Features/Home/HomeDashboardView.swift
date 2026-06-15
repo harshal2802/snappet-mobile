@@ -284,27 +284,32 @@ struct HomeDashboardView: View {
 
     // MARK: activity feed
 
-    /// Module ids the registry still vends — a feed row deep-links only when its module exists
-    /// (a record from a removed module renders as a plain, non-tappable row).
-    private var knownModuleIDs: Set<String> { Set(ModuleRegistry.all.map(\.id)) }
+    /// Module id → display title for the modules the registry still vends. Doubles as the
+    /// known-id set (a feed row deep-links only when its module exists; a record from a removed
+    /// module renders as a plain, non-tappable row) and as the row caption source — captions show
+    /// the module's *display* title, not the raw persisted id, so a renamed module (e.g.
+    /// `workout-log` → "Gym Tracker", #74) reads right while historical ids stay untouched.
+    private var moduleTitles: [String: String] {
+        Dictionary(uniqueKeysWithValues: ModuleRegistry.all.map { ($0.id, $0.title) })
+    }
 
     private var activityFeed: some View {
-        let known = knownModuleIDs
+        let titles = moduleTitles
         return VStack(alignment: .leading, spacing: SnappetSpacing.sm) {
             Text("Recent activity").font(.headline)
             ForEach(records.prefix(12)) { r in
                 VStack(spacing: 0) {
-                    if known.contains(r.module) {
+                    if let title = titles[r.module] {
                         // Feed rows deep-link into their module (#71).
                         Button {
                             router.open(module: r.module)
                         } label: {
-                            FeedRow(record: r, tappable: true)
+                            FeedRow(record: r, moduleTitle: title, tappable: true)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("home.feedRow.\(r.module)")
                     } else {
-                        FeedRow(record: r, tappable: false)
+                        FeedRow(record: r, moduleTitle: nil, tappable: false)
                     }
                     Divider()
                 }
@@ -332,6 +337,9 @@ struct HomeDashboardView: View {
 /// One activity-feed line. Tappable rows get a trailing chevron so the affordance is visible.
 private struct FeedRow: View {
     let record: UsageRecord
+    /// The module's display title (from the registry); `nil` (retired/unknown id) falls back to
+    /// the capitalized raw id — ids are persisted and never renamed (#74), titles are.
+    let moduleTitle: String?
     let tappable: Bool
 
     var body: some View {
@@ -339,7 +347,7 @@ private struct FeedRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.summary).font(.subheadline)
                     .foregroundStyle(SnappetColor.ink)
-                Text(record.module.capitalized).font(.caption)
+                Text(moduleTitle ?? record.module.capitalized).font(.caption)
                     .foregroundStyle(SnappetColor.textSecondary)
             }
             Spacer()

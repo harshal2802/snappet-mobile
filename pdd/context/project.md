@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-06-10
+**Last updated**: 2026-06-11
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -318,6 +318,21 @@ corrupt-store fallback (`SnappetApp`'s `try?`→in-memory branch) is now capture
 `StoreHealth` and rendered as a persistent banner ("changes made now won't be saved") offering
 restore-from-backup or a confirmed store reset — testable via `-uiTestCorruptStore`.
 **Device-pending**: a real Files/iCloud Drive export+restore round trip.
+
+🟡 **Fitness IA cleanup (2026-06-11, prompt 48, issue #74).** iOS. The two near-identically named
+fitness cards are disambiguated: the gym tracker's display title is now **"Gym Tracker"**
+(persisted id stays `workout-log` — `UsageRecord`s and routes key on it; Home feed rows now
+caption with registry display titles), its subtitle advertises the video studio, and the two
+modules cross-link ("Looking for your Apple Watch workouts?" on the tracker dashboard — empty
+state included — and a Gym Tracker footer row in the Reels list). The tracker's section control
+is **text-labelled** (Dashboard / Exercises / Routines / History; native segmented style kept so
+XCUITest `segmentedControls` queries still resolve) with Settings moved to a toolbar gear that
+pushes `WorkoutSettingsRoute`. The multi-clip studio is surfaced at module level: a dashboard
+**Video Studio** card (Open-in-Studio rows for recent video-bearing sessions, a how-to hint
+before any exist), a Studio badge + leading-swipe shortcut on media-bearing History rows, and the
+session-detail button renamed "Edit in Video Studio" — all opening the same project through the
+pure-cored `StudioEntry` (`StudioEntryTests`). **Simulator-pending**: the updated
+walkthrough/UI-test suite (orchestrator's verification pass).
 
 ## License
 

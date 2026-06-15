@@ -38,8 +38,9 @@ final class WorkoutWalkthroughTests: XCTestCase {
         app.buttons["moduleCard.workout-log"].tap()
         sleep(1); snap("03-dashboard")
 
-        // Sections. (History intentionally NOT visited here while empty — see DIAG below.)
-        for s in ["Exercises", "Routines", "History", "Settings"] {
+        // Sections — text-labelled segments (#74). Settings is no longer a segment; it pushes
+        // from the toolbar gear and is visited at the end (snap 11).
+        for s in ["Exercises", "Routines", "History"] {
             if section(s).waitForExistence(timeout: 4) { section(s).tap(); sleep(1); snap("04-\(s)") }
         }
 
@@ -86,7 +87,13 @@ final class WorkoutWalkthroughTests: XCTestCase {
             || app.cells.firstMatch.waitForExistence(timeout: 2),
             "the finished workout should appear in History")
 
-        section("Settings").tap(); sleep(1); snap("11-settings")
+        // Settings now pushes from the toolbar gear (#74) — it used to be a fifth segment.
+        let gear = app.buttons["workout.settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 4), "the Settings gear should be in the toolbar")
+        gear.tap(); sleep(1); snap("11-settings")
+        XCTAssertTrue(app.staticTexts["Heart-rate source"].waitForExistence(timeout: 4)
+            || app.navigationBars["Settings"].waitForExistence(timeout: 2),
+            "the gear should push the Settings screen")
     }
 
     private func drivePlayerToDone() {
