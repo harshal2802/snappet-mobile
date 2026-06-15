@@ -1,22 +1,11 @@
-# AppIcon
+# AppIcon — Snappet "Pulse"
 
-`AppIcon.png` — **Snappet "S" monogram**: bold rounded glyph (SF Rounded Black,
-white) on a full-bleed coral→magenta diagonal gradient, with a soft drop shadow.
+The app icon is the `waveform.path.ecg` brand mark (the same glyph the in-app loading view shows),
+in the three iOS 18 appearance slots:
 
-- 1024×1024 px, sRGB, **no alpha channel** (App Store requirement).
-- Full-bleed — no rounded corners baked in; Xcode/`actool` applies the corner
-  mask and generates every required size from this single source.
+- `AppIcon.png` — light: white pulse on a coral→ember gradient (opaque, App-Store-compliant).
+- `AppIcon-Dark.png` — dark: coral pulse on near-black.
+- `AppIcon-Tinted.png` — tinted: grayscale pulse; iOS composites the user's home-screen tint.
 
-## Regenerating / trying other palettes
-
-The icon is rendered natively (CoreGraphics + SF Rounded, no external deps) by
-[`generate-icon.swift`](generate-icon.swift), which emits four palette variants:
-
-```sh
-swift generate-icon.swift /tmp/snappet-icons
-# variants: A-orange-pink · B-coral-magenta (current) · C-sunset · D-violet-pink
-cp /tmp/snappet-icons/snappet-B-coral-magenta.png AppIcon.png
-```
-
-Edit the `palettes` array in the script to tweak colors, or `roundedFont` /
-shadow for the glyph treatment.
+Regenerate all three with `swift generate-pulse-icon.swift .` (macOS; renders the SF Symbol).
+`generate-icon.swift` is the retired "S monogram" generator, kept for reference (#77 replaced it).
