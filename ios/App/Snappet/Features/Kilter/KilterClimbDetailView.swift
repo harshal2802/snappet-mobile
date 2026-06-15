@@ -280,7 +280,7 @@ struct KilterClimbDetailView: View {
         } label: {
             Label("\(selectedAngle)°", systemImage: "angle")
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(Color(.secondarySystemBackground), in: Capsule())
+                .background(SnappetColor.surfaceMuted, in: Capsule())
         }
         .accessibilityIdentifier("kilter.angle")
     }
@@ -597,7 +597,7 @@ struct KilterClimbDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .accessibilityIdentifier("kilter.board.connecting")
     }
 

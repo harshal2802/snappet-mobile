@@ -3929,3 +3929,29 @@ VoiceOver **on a device** (repo's device-pending class). The 7pt timeline trim h
 size (enlarging to 44pt would wreck the dense timeline) — VoiceOver trims via the rotor actions instead.
 
 **Verified**: full simulator suite green; reviewed in the main loop (review workflows rate-limited).
+
+## [2026-06-15] iOS — design-consistency sweep + Pulse app icon (#77)
+
+**Decision** (prompt 53): make the suite read as one product past the shell.
+
+- **Module accent one tap deep.** `AppLibraryView.moduleDestination` now applies `.tint(module.tint)`, so
+  a module's controls inherit its wayfinding accent inside the module (previously only the library card
+  used it). Stray module-chrome system colours were hardcoded as the accent — `.tint(.blue)` in
+  Habit/Budget/Expense and `.orange` in `WorkoutDashboardSection` → the module token. Genuinely-semantic
+  colours kept (Kilter no-match amber, live-record green).
+- **Token card sweep.** The cited hand-rolled `Color(.secondarySystemBackground)` + drifting radii
+  (10/12/14/16) become `SnappetColor.surfaceMuted` + `SnappetRadius.md`. **Chose the token+radius swap
+  over `.snappetTile()`** deliberately: `snappetTile` applies `SnappetSpacing.lg` (24) padding vs the
+  existing `.padding()` (16), which would shift every card's layout and risk the screenshot/UI tests;
+  the token swap satisfies the AC (no `secondarySystemBackground`, unified radius) with zero layout shift.
+- **Paper canvas** (`SnappetColor.paper.ignoresSafeArea()`) on the Home + App Library shell screens, not
+  just the cold-start loading view.
+- **Pulse app icon.** Replaced the "S" gradient (the loudest prototype signal) with the
+  `waveform.path.ecg` brand mark — the exact glyph the loading view shows — in the three iOS 18
+  luminosity slots (light: white on coral→ember, opaque; dark: coral on near-black; tinted: grayscale).
+  `generate-pulse-icon.swift` renders the SF Symbol; `Contents.json` declares the appearance slots; the
+  asset catalog compiles clean (light icon opaque per App Store).
+
+**Verified**: full simulator suite green; the asset catalog compiles the new appearance slots. Reviewed
+in the main loop (review workflows rate-limited). Visual polish verified by eye on the generated icons +
+the build; the suite is the regression net for the token/layout changes (no structural change).

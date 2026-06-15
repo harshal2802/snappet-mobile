@@ -164,7 +164,7 @@ struct KilterSessionDetailView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .padding(.horizontal)
     }
 
@@ -193,7 +193,7 @@ struct KilterSessionDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     // MARK: - Heart rate
@@ -253,7 +253,7 @@ struct KilterSessionDetailView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .padding(.horizontal)
     }
 
@@ -280,7 +280,7 @@ struct KilterSessionDetailView: View {
             .frame(height: CGFloat(s.pyramid.count) * 30 + 20)
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .padding(.horizontal)
     }
 
@@ -333,7 +333,7 @@ struct KilterSessionDetailView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .padding(.horizontal)
     }
 
@@ -443,7 +443,7 @@ struct KilterSessionDetailView: View {
             }
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .padding(.horizontal)
     }
 

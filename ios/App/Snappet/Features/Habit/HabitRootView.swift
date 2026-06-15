@@ -292,7 +292,7 @@ private struct HabitRow: View {
             Button(action: edit) {
                 Label("Edit", systemImage: "pencil")
             }
-            .tint(.blue)
+            .tint(SnappetColor.habits)
         }
         .contextMenu {
             Button { edit() } label: { Label("Edit", systemImage: "pencil") }
@@ -325,7 +325,7 @@ private struct HabitRow: View {
                     .frame(width: 28, height: 36)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.blue)
+            .foregroundStyle(SnappetColor.habits)
             .accessibilityLabel("Edit habit")
             .accessibilityIdentifier("habit.edit")
 

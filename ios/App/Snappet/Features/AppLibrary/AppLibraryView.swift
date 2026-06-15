@@ -60,6 +60,8 @@ struct AppLibraryView: View {
             }
             // Clear the suite's floating tab bar so the last Finance card isn't covered.
             .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
+            // The warm "paper" canvas on the shell screen, not just at cold start (#77).
+            .background(SnappetColor.paper.ignoresSafeArea())
             .navigationTitle("Apps")
             // Suite-level backup/export/restore (issue #68) — the one suite surface, so it
             // lives on the library's top bar (mirrors the Android BackupScreen entry).
@@ -151,6 +153,9 @@ struct AppLibraryView: View {
     @ViewBuilder private func moduleDestination(_ route: ModuleRoute) -> some View {
         if let module = ModuleRegistry.all.first(where: { $0.id == route.id }) {
             module.destination()
+                // The module's accent carries one tap deep (#77): controls inside the module pick up
+                // its wayfinding colour instead of the global brand tint, so it reads as one product.
+                .tint(module.tint)
                 .onAppear {
                     core.log(module: module.id, action: "open", summary: "Opened \(module.title)")
                 }

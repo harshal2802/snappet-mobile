@@ -71,14 +71,14 @@ struct WorkoutDashboardSection: View {
     private func resumeBanner(_ session: WorkoutSession) -> some View {
         Button(action: resume) {
             HStack(spacing: 14) {
-                Image(systemName: "figure.run.circle.fill").font(.largeTitle).foregroundStyle(.orange)
+                Image(systemName: "figure.run.circle.fill").font(.largeTitle).foregroundStyle(SnappetColor.workout)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Workout in progress").font(.headline)
                     Text("\(session.routineName) · \(session.completedSetCount) sets logged")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("Resume").fontWeight(.semibold).foregroundStyle(.orange)
+                Text("Resume").fontWeight(.semibold).foregroundStyle(SnappetColor.workout)
             }
             .padding()
             .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
@@ -88,13 +88,13 @@ struct WorkoutDashboardSection: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "dumbbell.fill").font(.system(size: 48)).foregroundStyle(.orange)
+            Image(systemName: "dumbbell.fill").font(.system(size: 48)).foregroundStyle(SnappetColor.workout)
             Text("Let's get moving").font(.title3.bold())
             Text("Pick a starter routine or browse 870+ exercises to build your own.")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             HStack {
-                Button("Browse routines", action: goToRoutines).buttonStyle(.borderedProminent).tint(.orange)
-                Button("Exercises", action: goToBrowse).buttonStyle(.bordered).tint(.orange)
+                Button("Browse routines", action: goToRoutines).buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                Button("Exercises", action: goToBrowse).buttonStyle(.bordered).tint(SnappetColor.workout)
             }
         }
         .frame(maxWidth: .infinity).padding(.vertical, 24)
@@ -121,7 +121,7 @@ struct WorkoutDashboardSection: View {
                     // Bars grow up from the baseline on appear (issue #30 §5.6).
                     y: .value("Volume", chartDrawn || reduceMotion ? WorkoutMath.kgToUnit(point.volumeKg, unit) : 0)
                 )
-                .foregroundStyle(.orange)
+                .foregroundStyle(SnappetColor.workout)
             }
             .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear)) { _ in AxisGridLine(); AxisTick() } }
             .frame(height: 160)
@@ -129,7 +129,7 @@ struct WorkoutDashboardSection: View {
             .onAppear { chartDrawn = true }
             .onDisappear { chartDrawn = false }
         }
-        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     private var recordsSection: some View {
@@ -146,7 +146,7 @@ struct WorkoutDashboardSection: View {
                         }
                         Spacer()
                         Text(prText(pr.top)).font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(SnappetColor.workout)
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 6)
@@ -155,7 +155,7 @@ struct WorkoutDashboardSection: View {
                 if pr.exerciseId != personalRecords.last?.exerciseId { Divider() }
             }
         }
-        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     private var quickStartSection: some View {
@@ -164,7 +164,7 @@ struct WorkoutDashboardSection: View {
             ForEach(quickStart) { routine in
                 Button { openRoutine(routine) } label: {
                     HStack {
-                        Image(systemName: routine.sport?.symbol ?? "list.bullet").foregroundStyle(.orange)
+                        Image(systemName: routine.sport?.symbol ?? "list.bullet").foregroundStyle(SnappetColor.workout)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(routine.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                                 .lineLimit(1)
@@ -179,7 +179,7 @@ struct WorkoutDashboardSection: View {
                 if routine.id != quickStart.last?.id { Divider() }
             }
         }
-        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     /// The Video Studio card (#74): "Open in Studio" rows for the most recent sessions carrying
@@ -188,7 +188,7 @@ struct WorkoutDashboardSection: View {
     private var studioSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "film.stack").foregroundStyle(.orange)
+                Image(systemName: "film.stack").foregroundStyle(SnappetColor.workout)
                 Text("Video Studio").font(.headline)
             }
             if studioCandidates.isEmpty {
@@ -206,7 +206,7 @@ struct WorkoutDashboardSection: View {
                             }
                             Spacer()
                             Text("Open in Studio").font(.caption.weight(.semibold))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(SnappetColor.workout)
                             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, 6)
@@ -218,7 +218,7 @@ struct WorkoutDashboardSection: View {
                 }
             }
         }
-        .padding().background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     /// The "wrong module?" escape hatch (#74): the suite's other fitness card cuts highlight reels
@@ -238,7 +238,7 @@ struct WorkoutDashboardSection: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -317,7 +317,7 @@ struct WorkoutStatCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: systemImage).foregroundStyle(.orange)
+            Image(systemName: systemImage).foregroundStyle(SnappetColor.workout)
             Text(value).font(.title2.bold()).minimumScaleFactor(0.6).lineLimit(1)
                 .monospacedDigit()
                 .contentTransition(.numericText())
@@ -326,6 +326,6 @@ struct WorkoutStatCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 }
