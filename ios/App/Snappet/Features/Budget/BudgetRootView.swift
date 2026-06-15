@@ -165,7 +165,7 @@ struct BudgetRootView: View {
                         } label: {
                             Label("Edit", systemImage: "pencil")
                         }
-                        .tint(.blue)
+                        .tint(SnappetColor.budget)
                     }
                 }
                 .onDelete(perform: deleteCategories)

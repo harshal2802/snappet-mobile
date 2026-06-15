@@ -62,6 +62,6 @@ struct PomodoroFocusChart: View {
             .accessibilityLabel("Focus minutes for the last 7 days, \(total) minutes total")
         }
         .padding()
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 }

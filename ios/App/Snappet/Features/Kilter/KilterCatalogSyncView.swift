@@ -107,7 +107,7 @@ struct KilterCatalogSyncView: View {
         }
         .padding()
         .frame(maxWidth: .infinity)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
     }
 
     @ViewBuilder private var statusView: some View {

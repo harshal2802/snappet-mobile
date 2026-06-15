@@ -46,6 +46,8 @@ struct HomeDashboardView: View {
                 }
             }
             .snappetAnimation(SnappetMotion.standard, value: records.isEmpty)
+            // The warm "paper" canvas on the shell screen, not just at cold start (#77).
+            .background(SnappetColor.paper.ignoresSafeArea())
             .navigationTitle("Today")
             // The day rolled over while the app was awake (receive on main: the OS posts this
             // notification on a background thread).

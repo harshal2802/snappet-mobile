@@ -214,7 +214,7 @@ struct ExpenseGroupView: View {
                                 Label(expense.isReceipt ? "View" : "Edit",
                                       systemImage: expense.isReceipt ? "list.bullet.rectangle" : "pencil")
                             }
-                            .tint(.blue)
+                            .tint(SnappetColor.expenses)
                             .accessibilityIdentifier("expense.editExpense")
                         }
                     }
