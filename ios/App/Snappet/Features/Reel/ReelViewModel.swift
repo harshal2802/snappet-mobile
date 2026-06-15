@@ -235,8 +235,10 @@ final class ReelViewModel {
         let plan = model.reelPlan(for: keptHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
-            let composition = try await exporter.makeComposition(for: plan)
-            previewPlayer = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+            let (composition, videoComposition) = try await exporter.makeComposition(for: plan)
+            let item = AVPlayerItem(asset: composition)
+            item.videoComposition = videoComposition
+            previewPlayer = AVPlayer(playerItem: item)
         } catch {
             previewPlayer = nil
             previewError = (error as? LocalizedError)?.errorDescription

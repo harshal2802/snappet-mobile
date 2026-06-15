@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-15] ReelExporter mixed-orientation normalisation: piecewise setTransform into a fixed canvas (issue #139)
+
+**Decision** (prompt 58): `ReelExporter.makeComposition` now also builds an `AVMutableVideoComposition`
+with `renderSize` = first segment's oriented size (the canvas) and one
+`AVMutableVideoCompositionLayerInstruction` whose per-segment `setTransform(prefT.concatenating(fit), at: start)`
+calls orient (via `preferredTransform`) + letterbox/pillarbox (via `ClipEditGeometry.fitTransform`)
+each clip into the canvas. The same `AVVideoComposition` is applied to both the export session
+(`AVAssetExportSession.videoComposition`) and the preview (`AVPlayerItem.videoComposition`).
+
+**Why**: Without an explicit `AVVideoComposition`, VideoToolbox can't resolve one output format when
+a composition track contains segments of differing `naturalSize`/`preferredTransform`, causing
+`AVFoundationErrorDomain -11800` / `NSOSStatusErrorDomain -12902` on device. `VideoStudio` (the
+clip editor) already had the normalization for its single-clip case (decisions.md 2026-05-31, B3);
+the flagship reel exporter deferred it. This closes that deferred gap.
+
+**Rules out**: (1) Forcing every user to capture only one orientation — not viable UX.
+(2) Separating the "video composition" from `makeComposition` — keeping them together ensures
+preview and export can never disagree. (3) Using the largest/smallest clip as the canvas anchor —
+first segment is the natural anchor (it sets the "opening frame" the user sees); later clips always
+letterbox in, which is a predictable behaviour.
+
+**Canvas choice**: First inserted segment's oriented size. Simple, deterministic, requires no
+heuristics. A Dance reel starting with a portrait clip produces a portrait canvas; a run reel
+starting landscape stays landscape. This defers "user-chosen output aspect" to a later feature
+(which would follow the `ClipEditGeometry.OutputAspect` → `renderSize` pattern from `VideoStudio`).
+
 ## [2026-06-10] Android CRUD sweep: one confirm component, long-press as the secondary-action idiom (issue #88)
 
 **Decision** (prompt 41): every destructive flow goes through **one** `ConfirmDeleteDialog`

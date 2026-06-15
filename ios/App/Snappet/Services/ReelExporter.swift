@@ -1,7 +1,10 @@
 import Foundation
 import AVFoundation
 import Photos
+import os
 import HighlightEngine
+
+private let logger = Logger(subsystem: "com.snappet", category: "ReelExporter")
 
 /// Wraps a non-Sendable value so it can cross an async continuation boundary.
 /// Safe here because each boxed value is produced and consumed exactly once, serially.
@@ -30,11 +33,16 @@ final class ReelExporter: Sendable {
         }
     }
 
-    /// Build the playable composition for a plan. An `AVMutableComposition` is an
-    /// `AVAsset`, so this is reused for BOTH in-app preview (wrap in an `AVPlayer`,
-    /// no export) and export. `sending` lets the freshly-built, otherwise-unreferenced
-    /// composition cross to the `@MainActor` view model under Swift 6 isolation.
-    func makeComposition(for plan: ReelPlan) async throws -> sending AVMutableComposition {
+    /// Build the playable composition and a normalising `AVVideoComposition` for a plan.
+    /// The composition is an `AVAsset` reused for BOTH in-app preview (wrap in an `AVPlayer`)
+    /// and export. The `AVVideoComposition` orients and letterboxes mixed-orientation clips
+    /// into a single canvas (first segment's oriented size), fixing VideoToolbox -12902 that
+    /// fires when segments of differing `naturalSize`/`preferredTransform` are exported with
+    /// no explicit composition (#139). `sending` lets the freshly-built values cross to the
+    /// `@MainActor` view model under Swift 6 isolation.
+    func makeComposition(for plan: ReelPlan) async throws
+        -> sending (AVMutableComposition, AVVideoComposition) {
+
         let renderable = plan.segments.filter {
             ($0.kind == .video && $0.duration > 0.1) || $0.kind == .photo
         }
@@ -48,6 +56,8 @@ final class ReelExporter: Sendable {
         let photoRenderer = PhotoClipRenderer()
         var cursor = CMTime.zero
         var inserted = 0
+        // Per-segment orientation data used below to build the normalising AVVideoComposition.
+        var segmentInfos: [(prefT: CGAffineTransform, natSize: CGSize, start: CMTime)] = []
 
         // Iterate segments IN ORDER so photos interleave with videos correctly.
         for seg in renderable {
@@ -59,8 +69,12 @@ final class ReelExporter: Sendable {
                 guard let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
                 let dur = try await asset.load(.duration)
                 let range = CMTimeRange(start: .zero, duration: dur)
+                let natSize = (try? await src.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
+                let prefT = (try? await src.load(.preferredTransform)) ?? .identity
+                let segStart = cursor
                 do {
                     try vTrack?.insertTimeRange(range, of: src, at: cursor)
+                    segmentInfos.append((prefT: prefT, natSize: natSize, start: segStart))
                     cursor = cursor + dur
                     inserted += 1
                 } catch { continue }   // skip a bad photo clip, keep the reel
@@ -71,30 +85,76 @@ final class ReelExporter: Sendable {
                     duration: CMTime(seconds: seg.duration, preferredTimescale: 600)
                 )
                 guard let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
+                let natSize = (try? await src.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
+                let prefT = (try? await src.load(.preferredTransform)) ?? .identity
+                let segStart = cursor
                 do { try vTrack?.insertTimeRange(range, of: src, at: cursor) }
                 catch { continue }
                 if let srcA = try? await asset.loadTracks(withMediaType: .audio).first {
                     try? aTrack?.insertTimeRange(range, of: srcA, at: cursor)
                 }
+                segmentInfos.append((prefT: prefT, natSize: natSize, start: segStart))
                 cursor = cursor + range.duration
                 inserted += 1
             }
         }
         guard inserted > 0 else { throw ExportError.noVideoSegments }
-        return composition
+
+        // Build a normalising AVVideoComposition so VideoToolbox sees a consistent output format
+        // regardless of how many different clip orientations and sizes are in the reel (#139).
+        // Canvas = first segment's oriented size; later clips are letterboxed/pillarboxed in.
+        let canvas: CGSize
+        if let first = segmentInfos.first {
+            canvas = Self.orientedSize(first.natSize, transform: first.prefT)
+        } else {
+            canvas = CGSize(width: 1920, height: 1080)
+        }
+
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = canvas
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+
+        let fullInstruction = AVMutableVideoCompositionInstruction()
+        fullInstruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+
+        if let track = vTrack {
+            let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+            let canvasRect = CGRect(origin: .zero, size: canvas)
+            for info in segmentInfos {
+                let oriented = Self.orientedSize(info.natSize, transform: info.prefT)
+                let fit = ClipEditGeometry.fitTransform(sourceSize: oriented, into: canvasRect)
+                // preferredTransform orients the raw naturalSize frame; fit aspect-fits (letterboxes)
+                // the oriented result into the canvas. Step-constant across each segment's time range.
+                layerInstruction.setTransform(info.prefT.concatenating(fit), at: info.start)
+            }
+            fullInstruction.layerInstructions = [layerInstruction]
+        }
+
+        videoComposition.instructions = [fullInstruction]
+        return (composition, videoComposition)
     }
 
     func export(_ plan: ReelPlan) async throws -> URL {
-        let composition = try await makeComposition(for: plan)
+        let (composition, videoComposition) = try await makeComposition(for: plan)
         guard let session = AVAssetExportSession(asset: composition,
                                                  presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.exportFailed("could not create export session")
         }
+        session.videoComposition = videoComposition
         let out: URL
         do { out = try exportDestination() }
         catch { throw ExportError.exportFailed(error.localizedDescription) }
         // Modern async export (iOS 18+): throws on failure, no continuation/data-race.
-        try await session.export(to: out, as: .mp4)
+        do {
+            try await session.export(to: out, as: .mp4)
+        } catch {
+            let nsErr = error as NSError
+            let under = nsErr.userInfo[NSUnderlyingErrorKey] as? NSError
+            logger.error(
+                "reel export failed — domain: \(nsErr.domain, privacy: .public) code: \(nsErr.code) underlying: \(under?.domain ?? "-", privacy: .public) \(under?.code ?? 0)"
+            )
+            throw ExportError.exportFailed(error.localizedDescription)
+        }
         return out
     }
 
@@ -145,5 +205,12 @@ final class ReelExporter: Sendable {
             }
         }
         return boxed.value
+    }
+
+    /// Apply a track's `preferredTransform` to its natural size to get the display size
+    /// (swaps width/height for 90°/270° rotations). Mirrors `VideoStudio.orientedSize`.
+    private static func orientedSize(_ size: CGSize, transform: CGAffineTransform) -> CGSize {
+        let rect = CGRect(origin: .zero, size: size).applying(transform)
+        return CGSize(width: abs(rect.width), height: abs(rect.height))
     }
 }
