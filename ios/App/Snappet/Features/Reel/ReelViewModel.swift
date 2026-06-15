@@ -235,8 +235,12 @@ final class ReelViewModel {
         let plan = model.reelPlan(for: keptHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
-            let composition = try await exporter.makeComposition(for: plan)
-            previewPlayer = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+            let (composition, videoComposition) = try await exporter.makeComposition(for: plan)
+            let item = AVPlayerItem(asset: composition)
+            // Same orientation/fit normalization the export uses, so preview matches the saved reel
+            // (and mixed-orientation clips render upright instead of sideways).
+            item.videoComposition = videoComposition
+            previewPlayer = AVPlayer(playerItem: item)
         } catch {
             previewPlayer = nil
             previewError = (error as? LocalizedError)?.errorDescription

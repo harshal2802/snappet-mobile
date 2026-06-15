@@ -118,12 +118,19 @@ quirk, noted in the test).
 
 ### Not yet done / known gaps
 
-- ⏳ **No on-device run yet (P1, the user's step).** Follow `ios/App/RUNBOOK-device.md` on a Mac with a
-  paired Apple Watch + physical iPhone to validate runtime, permission flows, and reel export, and to
-  produce the first `highlight-feedback.jsonl`. This is the one unproven layer.
+- ✅ **Flagship validated on a real device (P1, 2026-06-15).** Ran `RUNBOOK-device.md` on a physical
+  iPhone (MrRobot): onboarding → Health + Photos permissions → workout load → media auto-discovery →
+  HR/Fusion-ranked reel → preview → **export** all work, and it produced the **first real
+  `highlight-feedback.jsonl`** (73 events; the `feedback-replay` tuner ranks 3 real configs end-to-end).
+  Validation surfaced + fixed one P1 bug — see next bullet. 681/681 on-device unit tests green.
+- ✅ **Reel export normalizes mixed orientation (2026-06-15, prompt 58, issue #139).** The flagship
+  `ReelExporter` exported with no `AVVideoComposition`, so any reel mixing clip dimensions/orientations
+  failed on device (`AVFoundationErrorDomain -11800` / `OSStatus -12902`) — invisible on the sim (no real
+  footage). Now `makeComposition` returns a normalizing `AVVideoComposition` (render canvas + per-segment
+  orient-then-aspect-fit), used by export AND preview. Closes the "mixed-orientation normalization
+  deferred" gap. Device-verified on a Dance reel.
 - ✅ **Photo highlights render (P8, 2026-05-31)** — `PhotoClipRenderer` turns photos into Ken-Burns
   clips interleaved into the reel (was: silently dropped). Builds on the sim; visual needs a device.
-  Mixed-orientation normalization (a unifying `AVVideoComposition`) still deferred.
 - ⚠️ **±90 s media↔HR padding**: P5's *model* says it's sound for skew+drift, but the real fix is TZ
   normalization (gross TZ errors → missing media); unconfirmed until measured on a device.
 - 🟡 **Phase-0a verdict is NEEDS-REAL-DATA** (synthetic). P6 added Fusion + a tolerance sweep (Fusion
