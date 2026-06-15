@@ -277,6 +277,15 @@ fun CreateClimbScreen(
                     validation = validation,
                     board = board, holds = manualHolds,
                     onCopyFrames = { copyFrames(context, kilterFrames(assignments)) },
+                    // Issue #91: paste a shared hold string and resolve it against the current layout.
+                    onPasteFrames = {
+                        val pasted = readClipboardText(context)
+                        if (!pasted.isNullOrBlank()) {
+                            val valid = placeable.map { it.placementId }.toSet()
+                            val parsed = parseFramesToAssignments(pasted, validPlacements = valid)
+                            if (parsed.isNotEmpty()) assignments = parsed
+                        }
+                    },
                     onSave = {
                         if (validation == null) attemptSave(
                             SavePayload(kilterFrames(assignments), layoutId, productSizeId, angle, isNoMatch, null, "manual", null), false)
@@ -341,6 +350,14 @@ private fun copyFrames(context: Context, frames: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("frames", KilterClimbIdentity.canonicalFrames(frames)))
 }
 
+/** Issue #91: read the clipboard's primary text (a pasted hold string), or null if empty. */
+private fun readClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = clipboard.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0).coerceToText(context)?.toString()
+}
+
 internal fun shareFrames(context: Context, frames: String) {
     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, frames) }
     context.startActivity(Intent.createChooser(send, "Share frames"))
@@ -356,7 +373,7 @@ private fun ManualSection(
     geometry: KilterBoardGeometry, placeable: List<KilterPlaceableHold>, assignments: Map<Int, KilterAuthorRole>,
     onCycle: (Int) -> Unit, onClear: () -> Unit, validation: KilterClimbValidationError?,
     board: KilterBoardController, holds: List<KilterHold>,
-    onCopyFrames: () -> Unit, onSave: () -> Unit,
+    onCopyFrames: () -> Unit, onPasteFrames: () -> Unit, onSave: () -> Unit,
 ) {
     PickerRow("Layout", layouts.firstOrNull { it.id == layoutId }?.name ?: "—", layouts.map { it.id to it.name }, onLayout)
     if (sizes.size > 1) PickerRow("Board size", sizes.firstOrNull { it.id == productSizeId }?.name ?: "—", sizes.map { it.id to it.label }, onSize)
@@ -379,9 +396,15 @@ private fun ManualSection(
             Text("Light ${holds.size} holds on board")
         }
     }
+    // Issue #91: import a shared hold string from the clipboard into the editor.
+    OutlinedButton(onClick = onPasteFrames, modifier = Modifier.fillMaxWidth().testTag("kilter.create.paste")) {
+        Text("Paste hold string")
+    }
+    Text("Paste a copied hold string to load someone else's climb onto this board.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (assignments.isNotEmpty()) {
-            OutlinedButton(onClick = onCopyFrames) { Text("Copy frames") }
+            OutlinedButton(onClick = onCopyFrames) { Text("Copy holds") }
             OutlinedButton(onClick = onClear, modifier = Modifier.testTag("kilter.create.clear")) { Text("Clear") }
         }
         Button(onClick = onSave, enabled = validation == null,
