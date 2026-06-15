@@ -400,8 +400,14 @@ struct CreateClimbView: View {
 
     private func saveManual() {
         guard validation == nil else { return }
+        // Persist the model's grade estimate when available (meta installed) so a hand-authored climb
+        // is no longer saved ungraded — its detail screen reads a grade like a generated one (#76).
+        let estimate = gradeModel.flatMap {
+            KilterClimbGenerator.estimateManualGrade(assignments: assignments, angle: angle,
+                                                     nomatch: isNoMatch, model: $0)
+        }
         attemptSave(SavePayload(frames: manualFrames, layoutId: layoutId, sizeId: productSizeId,
-                                angle: angle, isNoMatch: isNoMatch, predictedGrade: nil, source: "manual"))
+                                angle: angle, isNoMatch: isNoMatch, predictedGrade: estimate, source: "manual"))
     }
 
     // MARK: - Actions: generate
