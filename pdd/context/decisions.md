@@ -4176,3 +4176,30 @@ Invisible on the simulator (no real footage), which is exactly why P1 device val
 - **Signing note (not committed)**: device build needs `project.yml` team → `NFUS5W8QC6` (the working
   paid team; old notes' `8TRC99V9PN`/`HXU7999BJS` are stale) + the time-sensitive entitlement stripped
   locally. Committed `project.yml` is unchanged.
+
+## 2026-06-15 — Workout-with-timer PR 1: a shared, wall-clock stopwatch primitive (prompt 59)
+
+Kicked off the Gym Tracker "Workout with timer" initiative (timed sets · a one-tap repeat-set loop ·
+free-flow climb sessions · a tracking-type search facet). Two upcoming features need the *same* live
+Start/Stop timer — timed sets (`SetKind.duration`, PR 2) and per-climb attempts (PR 5) — so the timer
+is built and unit-tested **once, as a primitive with no callers**, to de-risk both.
+
+- **Decision**: split it the repo's usual way — a PURE core (`StopwatchTiming`, no SwiftUI/SwiftData)
+  computes the only tricky parts (elapsed-with-pause, count-down clamp, reached-zero) and is unit-tested
+  on the Mac (`StopwatchTimingTests`); the SwiftUI `StopwatchView` + `@Observable StopwatchViewModel` is a
+  thin shell over it. Mirrors `SetMeasure` / `LastSetLookup` (pure logic at a thin edge).
+- **Decision**: the displayed time is ALWAYS recomputed from `Date` (`elapsed = accumulated + (now −
+  startedAt)`), never summed from a tick counter — the exact anti-drift rule the rest timer and the
+  overall timer already use, so it's correct across backgrounding (reconciled on `scenePhase == .active`).
+  The ~200 ms task only refreshes the digits and fires the at-zero haptic. Count-up's no-pause common case
+  renders `Text(timerInterval:)` for a zero-background-CPU self-update; a resumed (accumulated > 0) run
+  falls back to the recomputed reading so the total stays correct.
+- **Decision**: reuse `SetMeasure.formatDuration` for every duration string (no second formatter) and the
+  rest timer's 220 pt `Circle().trim` arc + Reduce-Motion snap for the count-down dial — consistency by
+  reuse, not re-implementation.
+- **Decision**: `Haptics.success()` at 0 is the ONLY device-only line; the core + its tests need no
+  device. No model change, no callers — `WorkoutModels` / `WorkoutPlayerView` / `FreeformPlayerView` are
+  untouched; PRs 2 and 5 wire it in (and add the knowledge-graph caller edges then).
+- **Verification (honest)**: authored on Linux — type-check / `xcodebuild test` / the `#Preview` sim
+  render are owed on a Mac at the merge gate (per CLAUDE.md this target can't build here).
+  `StopwatchTimingTests` is the device-free proof of the timing math.
