@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.snappet.mobile.ui.theme.PulseColors
 import kotlin.math.min
 
@@ -37,7 +39,12 @@ fun KilterBoard(
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     val paper = if (dark) PulseColors.BoardPaperDark else PulseColors.BoardPaperLight
     val paperGrid = if (dark) Color.White.copy(alpha = 0.14f) else Color.Gray.copy(alpha = 0.28f)
-    Canvas(modifier.aspectRatio(aspect)) {
+    // Issue #98: the board is a raw Canvas, invisible to TalkBack — summarise the lit holds by role
+    // ("Climb with 8 holds: 2 starts, 4 hands, 1 finish, 1 foot.") via the pure ChartAccessibility.
+    val boardDescription = com.snappet.mobile.ui.ChartAccessibility.boardSummary(
+        com.snappet.mobile.ui.ChartAccessibility.roleCountsOf(holds.map { it.role })
+    )
+    Canvas(modifier.aspectRatio(aspect).semantics { contentDescription = boardDescription }) {
         val w = size.width
         val h = size.height
         val unit = min(w, h)
