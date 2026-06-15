@@ -118,8 +118,10 @@ final class SessionHighlightViewModel {
 
         // 4. Render a previewable reel by REUSING ReelExporter (no reel-stitch reimplementation).
         do {
-            let composition = try await exporter.makeComposition(for: plan)
-            previewPlayer = AVPlayer(playerItem: AVPlayerItem(asset: composition))
+            let (composition, videoComposition) = try await exporter.makeComposition(for: plan)
+            let item = AVPlayerItem(asset: composition)
+            item.videoComposition = videoComposition   // orient + fit, matching the exported reel
+            previewPlayer = AVPlayer(playerItem: item)
             lastPlan = plan   // keep it so B5 Export can render the same reel to a file URL
             state = .ready
         } catch {

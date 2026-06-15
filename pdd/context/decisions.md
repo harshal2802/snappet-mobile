@@ -4146,3 +4146,33 @@ full `SnappetTests` 680 green; UI suite green. **Device-pending**: real Spotligh
 a Spotlight-result tap → `onContinueUserActivity` (the sim verifies the specs, the route parse, the
 index call, and `simctl openurl` delivery). With this, **#81 is complete** (4 stacked PRs:
 App Group → widgets → App Intents → Spotlight); the #100 iOS tracker box is checked.
+
+## 2026-06-15 — Flagship P1 device validation + reel-export mixed-orientation fix (prompt 58, #139)
+
+Ran the long-deferred P1 on a physical iPhone (the flagship's first real-device run). Outcome: the
+whole reel flow works — permissions, workout load, media auto-discovery, HR/Fusion reel, preview,
+**export** — and produced the **first real `highlight-feedback.jsonl`** (73 events; `feedback-replay`
+ranks 3 real configs). This satisfies the "do NOT start #83 before flagship device validation"
+prerequisite.
+
+**Bug found + fixed:** `ReelExporter` exported an `AVMutableComposition` with **no `AVVideoComposition`**.
+A reel mixing clip dimensions/orientations failed on device with `AVFoundationErrorDomain -11800` /
+underlying `NSOSStatusErrorDomain -12902` — the exporter can't resolve one output format across segments.
+Invisible on the simulator (no real footage), which is exactly why P1 device validation existed.
+
+- **Decision**: build a normalizing `AVMutableVideoComposition` in `ReelExporter.makeComposition`
+  (now returns `(AVMutableComposition, AVVideoComposition?)`): render canvas = the first segment's
+  oriented size (even dims); one instruction with a **piecewise `setTransform` per segment** that orients
+  (`preferredTransform`) then aspect-fits/centers (letterbox) into the canvas. Applied to **both** export
+  (`session.videoComposition`) and preview (`AVPlayerItem.videoComposition`) so they match. Mirrors what
+  `VideoStudio` already did for the single-clip editor; the flagship exporter never got it. Engine
+  untouched (platform edge stays in Services/).
+- **Decision**: export failures now `os_log` the AVFoundation domain/code/underlying (developer/Console
+  only); the user-facing message stays the clean `localizedDescription`. The bare "operation could not be
+  completed" was undiagnosable — the logged `-12902` is what pinned the cause.
+- **Device-pending residual**: render-canvas choice = first segment's orientation. A reel whose first clip
+  is landscape pillarboxes portrait clips (and vice-versa); acceptable (no distortion). A smarter
+  majority-orientation or fixed-portrait canvas is a future tuning call, not a correctness issue.
+- **Signing note (not committed)**: device build needs `project.yml` team → `NFUS5W8QC6` (the working
+  paid team; old notes' `8TRC99V9PN`/`HXU7999BJS` are stale) + the time-sensitive entitlement stripped
+  locally. Committed `project.yml` is unchanged.
