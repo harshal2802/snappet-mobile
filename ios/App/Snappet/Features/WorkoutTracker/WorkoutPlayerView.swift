@@ -25,6 +25,10 @@ struct WorkoutPlayerView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppModel.self) private var app
+    /// Rest-timer digits and the completion seal scale with Dynamic Type (relative to largeTitle)
+    /// instead of fixed 44/72pt, so enlarged-text users can read the timer and the finish state (#79).
+    @ScaledMetric(relativeTo: .largeTitle) private var restTimerSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var doneSealSize: CGFloat = 72
 
     enum Phase { case exercise, rest, done }
     @State private var phase: Phase = .exercise
@@ -442,7 +446,7 @@ struct WorkoutPlayerView: View {
                     // The countdown sweep is a quiet linear tick; under Reduce Motion it snaps.
                     .animation(reduceMotion ? nil : .linear(duration: 0.25), value: restRemaining)
                 Text(timeString(restRemaining))
-                    .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: restTimerSize, weight: .bold, design: .rounded).monospacedDigit())
                     .contentTransition(.numericText())
             }
             .frame(width: 220, height: 220)
@@ -468,7 +472,7 @@ struct WorkoutPlayerView: View {
         let volumeKg = WorkoutMath.sessionVolumeKg(session)
         return VStack(spacing: 24) {
             Spacer()
-            Image(systemName: "checkmark.seal.fill").font(.system(size: 72)).foregroundStyle(SnappetColor.workout)
+            Image(systemName: "checkmark.seal.fill").font(.system(size: doneSealSize)).foregroundStyle(SnappetColor.workout)
                 // Celebratory bounce on the completion seal; the trigger value is held constant
                 // under Reduce Motion so the effect never fires.
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : doneBounce)

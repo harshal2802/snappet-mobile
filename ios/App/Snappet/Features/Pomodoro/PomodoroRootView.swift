@@ -173,6 +173,9 @@ private struct TimerRing: View {
     let timeText: String
     let tint: Color
     let reduceMotion: Bool
+    /// The countdown digits scale with Dynamic Type (relative to largeTitle) instead of a fixed 56pt,
+    /// so a user who enlarges text can read the timer they stare at for 25 minutes (#79).
+    @ScaledMetric(relativeTo: .largeTitle) private var countdownSize: CGFloat = 56
 
     var body: some View {
         ZStack {
@@ -185,7 +188,7 @@ private struct TimerRing: View {
                 // Smooth, continuous ring progress; instant under Reduce Motion.
                 .animation(reduceMotion ? nil : .linear(duration: 0.3), value: progress)
             Text(timeText)
-                .font(.system(size: 56, weight: .semibold, design: .rounded))
+                .font(.system(size: countdownSize, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .contentTransition(.numericText())
         }

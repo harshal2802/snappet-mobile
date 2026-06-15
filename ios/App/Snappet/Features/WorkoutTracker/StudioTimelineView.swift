@@ -32,11 +32,17 @@ struct StudioTimelineView: View {
             ZStack(alignment: .topLeading) {
                 Color(white: 0.08)
                 content(offsetX: offsetX)
-                // Centre playhead.
+                // Centre playhead — doubles as the VoiceOver scrubber: swipe up/down seeks ±1 s,
+                // since the drag-to-scrub gesture is invisible to VoiceOver (#79).
                 Rectangle().fill(.white).frame(width: 2)
                     .shadow(color: .black.opacity(0.6), radius: 1)
                     .position(x: w / 2, y: geo.size.height / 2)
-                    .allowsHitTesting(false)
+                    .accessibilityElement()
+                    .accessibilityLabel("Playhead")
+                    .accessibilityValue("\(timecodeLabel(vm.currentTime)) of \(timecodeLabel(vm.totalDuration))")
+                    .accessibilityAdjustableAction { direction in
+                        vm.seek(to: vm.currentTime + (direction == .increment ? 1 : -1))
+                    }
             }
             .contentShape(Rectangle())
             .gesture(scrub(width: w))
@@ -90,7 +96,7 @@ struct StudioTimelineView: View {
                     Rectangle().fill(.white.opacity(0.3))
                         .frame(width: 1, height: s % 5 == 0 ? 8 : 4)
                     if s % 5 == 0 {
-                        Text("\(s)s").font(.system(size: 8)).foregroundStyle(.white.opacity(0.5))
+                        Text("\(s)s").font(.caption2).foregroundStyle(.white.opacity(0.5))
                     }
                 }
                 .offset(x: CGFloat(s) * pps)
@@ -110,7 +116,7 @@ struct StudioTimelineView: View {
                 HStack(spacing: 4) {
                     Image(systemName: p.clip.isPhoto ? "photo" : "video").font(.caption2)
                     if p.clip.filter != .none {
-                        Text(p.clip.filter.display).font(.system(size: 8, weight: .bold))
+                        Text(p.clip.filter.display).font(.caption2.weight(.bold))
                     }
                 }
                 .foregroundStyle(.white.opacity(0.8)).padding(.leading, 8)
@@ -122,6 +128,11 @@ struct StudioTimelineView: View {
         .overlay(alignment: .leading) { if selected && !p.clip.isPhoto { handle(p, edge: .leading) } }
         .overlay(alignment: .trailing) { if selected && !p.clip.isPhoto { handle(p, edge: .trailing) } }
         .accessibilityIdentifier("timelineClip")
+        // Meaningful label + (when selected & trimmable) trim actions in the rotor, so a VoiceOver
+        // user who can't drag the handles can still trim (#79).
+        .accessibilityLabel("\(p.clip.isPhoto ? "Photo" : "Video") clip, \(String(format: "%.1f", p.durationSec)) seconds\(selected ? ", selected" : "")")
+        .accessibilityHint(selected ? "" : "Double-tap to select")
+        .modifier(ClipTrimActions(enabled: selected && !p.clip.isPhoto, clip: p, vm: vm))
     }
 
     private enum Edge { case leading, trailing }
@@ -136,6 +147,12 @@ struct StudioTimelineView: View {
             case .trailing: vm.trimSelected(startSeconds: nil, endSeconds: end + deltaSec)
             }
         }
+    }
+
+    /// "m:ss" for the VoiceOver playhead value (#79).
+    private func timecodeLabel(_ seconds: Double) -> String {
+        let s = max(0, Int(seconds.rounded()))
+        return "\(s / 60):" + String(format: "%02d", s % 60)
     }
 
     // MARK: Scrub (drag the timeline → seek)
@@ -173,8 +190,8 @@ private struct OverlayBar: View {
             RoundedRectangle(cornerRadius: 5)
                 .fill(barColor.opacity(selected ? 0.9 : 0.6))
             HStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 9))
-                Text(label).font(.system(size: 9, weight: .medium)).lineLimit(1)
+                Image(systemName: icon).font(.caption)
+                Text(label).font(.caption.weight(.medium)).lineLimit(1)
             }
             .foregroundStyle(.white).padding(.horizontal, 6)
         }
@@ -263,4 +280,38 @@ private struct TrimHandle: View {
             )
             .accessibilityIdentifier(edge == .leading ? "timelineTrimLeading" : "timelineTrimTrailing")
     }
+}
+
+/// VoiceOver trim actions for the selected clip (#79): drag-to-trim handles are invisible to
+/// VoiceOver, so the same trims are offered as rotor actions (±0.5 s on each edge). No-op when the
+/// clip isn't a trimmable selection. `trimSelected` clamps the result.
+private struct ClipTrimActions: ViewModifier {
+    let enabled: Bool
+    let clip: StudioGeometry.PlacedClip
+    let vm: StudioEditorViewModel
+    private let step = 0.5
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .accessibilityAction(named: "Trim end \(stepLabel) later") {
+                    let end = clip.clip.trimEnd ?? vm.sourceDuration(of: clip.clip)
+                    vm.trimSelected(startSeconds: nil, endSeconds: end + step)
+                }
+                .accessibilityAction(named: "Trim end \(stepLabel) earlier") {
+                    let end = clip.clip.trimEnd ?? vm.sourceDuration(of: clip.clip)
+                    vm.trimSelected(startSeconds: nil, endSeconds: end - step)
+                }
+                .accessibilityAction(named: "Trim start \(stepLabel) later") {
+                    vm.trimSelected(startSeconds: clip.clip.trimStart + step, endSeconds: nil)
+                }
+                .accessibilityAction(named: "Trim start \(stepLabel) earlier") {
+                    vm.trimSelected(startSeconds: clip.clip.trimStart - step, endSeconds: nil)
+                }
+        } else {
+            content
+        }
+    }
+
+    private var stepLabel: String { "half a second" }
 }
