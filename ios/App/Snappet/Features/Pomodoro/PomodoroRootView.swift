@@ -6,6 +6,7 @@ import SwiftData
 struct PomodoroRootView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(AppModel.self) private var app
+    @Environment(SuiteRouter.self) private var router
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -82,7 +83,10 @@ struct PomodoroRootView: View {
             // Start — scheduling alone would race the permission dialog on first use.
             app.pomodoroNotifications.requestAuthorization()
             core.log(module: "pomodoro", action: "open", summary: "Opened Pomodoro")
+            consumePendingStart()   // cold deep-link: Today widget's Start-focus (#81 Phase 2)
         }
+        // Warm deep-link: the module is already on screen when the one-shot arrives.
+        .onChange(of: router.pendingPomodoroStart) { _, _ in consumePendingStart() }
         .onDisappear {
             app.pomodoroScreenVisible = false
         }
@@ -146,6 +150,14 @@ struct PomodoroRootView: View {
     /// the new focus length shows immediately at the top of a phase.
     private func handleSettingsChange() {
         timer.applyDurations(focusMinutes: focusSetting, breakMinutes: breakSetting)
+    }
+
+    /// Consume the one-shot Start-focus intent (#81 Phase 2): start the app-owned timer if it isn't
+    /// already running. Self-clearing so it fires exactly once per deep-link.
+    private func consumePendingStart() {
+        guard router.pendingPomodoroStart else { return }
+        router.pendingPomodoroStart = false
+        if !timer.isRunning { timer.start() }
     }
 }
 
