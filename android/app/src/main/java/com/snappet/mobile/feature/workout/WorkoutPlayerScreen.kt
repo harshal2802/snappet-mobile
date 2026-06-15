@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +77,7 @@ fun WorkoutPlayerScreen(
     // Local working copy: list of exercises with their set logs, mutated as the user trains.
     // Deliberately plain remember (issue #86): every completed set is persisted via [persist], so
     // a recreated composition re-derives it from the Room session, not the size-limited Bundle.
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
     var exercises by remember { mutableStateOf(session.exercises) }
     // Fresh entry (no Bundle — e.g. a banner resume of an interrupted session) starts at the first
     // incomplete set, never back over already-logged sets: completeSet() replaces the set at the
@@ -171,6 +173,7 @@ fun WorkoutPlayerScreen(
 
     fun completeSet() {
         val ex = exercises.getOrNull(exerciseIndex) ?: return
+        haptics.commit() // tactile confirmation on set complete (issue #89)
         val reps = repsText.trim().toIntOrNull()
         val weight = weightText.trim().replace(',', '.').toDoubleOrNull()
         val updatedSets = ex.sets.toMutableList()
@@ -405,12 +408,24 @@ private fun DonePhase(
     padding: PaddingValues, routineName: String, sets: Int, exercisesDone: Int,
     onFinish: () -> Unit,
 ) {
+    // Reduce-motion-gated celebration entrance (issue #89): the check springs in, snaps when the
+    // user has minimised animations.
+    val reduceMotion = LocalReduceMotion.current
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
+    var entered by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.4f,
+        animationSpec = gated(reduceMotion, SnappetMotion.standard()),
+        label = "workoutDoneEntrance",
+    )
+    LaunchedEffect(Unit) { haptics.commit(); entered = true }
     Column(
         Modifier.fillMaxSize().padding(padding).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Orange, modifier = Modifier.size(72.dp))
+        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Orange,
+            modifier = Modifier.size(72.dp).graphicsLayer { scaleX = scale; scaleY = scale })
         Spacer(Modifier.height(16.dp))
         Text("Workout Complete", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(routineName, color = MaterialTheme.colorScheme.onSurfaceVariant)

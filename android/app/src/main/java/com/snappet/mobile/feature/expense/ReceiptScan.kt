@@ -26,30 +26,49 @@ import kotlin.coroutines.resume
  * edge; the recognized text is handed to the pure, unit-tested [ReceiptParser]. Device-only
  * (needs a camera and the bundled ML Kit model), so it isn't exercised in the JVM unit suite.
  */
+/**
+ * The outcome of an OCR pass (issue #89). Distinguishes a genuine read [Success] from a recognition
+ * [Failure] (couldn't open/process the image) and an [Empty] photo (processed fine but no text) so
+ * the caller can show an actionable error instead of silently doing nothing.
+ */
+sealed interface ReceiptScanResult {
+    data class Success(val text: String) : ReceiptScanResult
+    /** Processed, but no usable text found (e.g. a blank/blurry photo). */
+    object Empty : ReceiptScanResult
+    /** The recognizer or image load failed outright. */
+    object Failure : ReceiptScanResult
+}
+
 object ReceiptTextRecognizer {
-    /** Recognize the text in the image at [uri]. Returns "" on failure (caller treats as a no-op). */
-    suspend fun recognize(context: Context, uri: Uri): String =
+    /** Recognize the text in the image at [uri], reporting failure / empty distinctly (issue #89). */
+    suspend fun recognize(context: Context, uri: Uri): ReceiptScanResult =
         suspendCancellableCoroutine { cont ->
             val image = try {
                 InputImage.fromFilePath(context, uri)
             } catch (e: Exception) {
-                cont.resume("")
+                cont.resume(ReceiptScanResult.Failure)
                 return@suspendCancellableCoroutine
             }
             val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             recognizer.process(image)
-                .addOnSuccessListener { result -> cont.resume(result.text) }
-                .addOnFailureListener { cont.resume("") }
+                .addOnSuccessListener { result ->
+                    cont.resume(
+                        if (result.text.isBlank()) ReceiptScanResult.Empty
+                        else ReceiptScanResult.Success(result.text),
+                    )
+                }
+                .addOnFailureListener { cont.resume(ReceiptScanResult.Failure) }
         }
 }
 
 /**
  * Returns a launch lambda that opens the system camera to photograph a receipt, then OCRs it and
- * calls [onText] with the recognized text. Uses ACTION_IMAGE_CAPTURE via a FileProvider temp file,
- * so no CAMERA permission is required. The text flows into [ReceiptParser] at the call site.
+ * reports the [ReceiptScanResult] via [onResult]. Uses ACTION_IMAGE_CAPTURE via a FileProvider temp
+ * file, so no CAMERA permission is required. The text flows into [ReceiptParser] at the call site;
+ * failure/empty outcomes let the caller surface an actionable error (issue #89).
  */
 @Composable
-fun rememberReceiptScanner(onText: (String) -> Unit): () -> Unit {
+fun rememberReceiptScanner(onResult: (ReceiptScanResult) -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // rememberSaveable (Uri is Parcelable) so the pending capture survives a config change or
@@ -60,7 +79,7 @@ fun rememberReceiptScanner(onText: (String) -> Unit): () -> Unit {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val uri = pendingUri
         if (success && uri != null) {
-            scope.launch { onText(ReceiptTextRecognizer.recognize(context, uri)) }
+            scope.launch { onResult(ReceiptTextRecognizer.recognize(context, uri)) }
         }
     }
 

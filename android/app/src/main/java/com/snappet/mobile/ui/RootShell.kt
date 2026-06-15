@@ -10,11 +10,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -36,7 +40,13 @@ import com.snappet.mobile.ui.library.AppLibraryScreen
 fun RootShell() {
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabStateHolder = rememberSaveableStateHolder()
+    // App-level snackbar surface (issue #89): hosted once here and provided to every mini-app so
+    // commit confirmations, errors, and undoable deletes share one host instead of per-module ones.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val snackbarController = remember { SnackbarController(snackbarHostState, scope) }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.testTag("app.snackbar")) },
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
@@ -56,12 +66,14 @@ fun RootShell() {
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            val key = if (tab == 0) "today" else "apps"
-            tabStateHolder.SaveableStateProvider(key) {
-                when (tab) {
-                    0 -> HomeDashboardScreen()
-                    else -> AppLibraryScreen()
+        CompositionLocalProvider(LocalSnackbarController provides snackbarController) {
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                val key = if (tab == 0) "today" else "apps"
+                tabStateHolder.SaveableStateProvider(key) {
+                    when (tab) {
+                        0 -> HomeDashboardScreen()
+                        else -> AppLibraryScreen()
+                    }
                 }
             }
         }

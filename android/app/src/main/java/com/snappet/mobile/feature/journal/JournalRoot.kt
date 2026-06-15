@@ -39,7 +39,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.LocalAppContainer
+import com.snappet.mobile.ui.LocalSnackbarController
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.rememberSnappetHaptics
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,6 +57,13 @@ fun JournalRoot(onExit: () -> Unit) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     val dao = container.database.journalDao()
+    val snackbar = LocalSnackbarController.current
+    val haptics = rememberSnappetHaptics()
+
+    // Issue #89: optimistic undoable delete. The row is hidden the moment X is tapped (Flow-driven
+    // list filters out pendingDeleteId), the DAO delete is deferred until the snackbar times out, and
+    // an Undo tap just clears the pending id — the entry was never actually deleted, so it survives.
+    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
 
     // Issue #86: navigation state as saveable primitives (a sealed screen carrying the full
     // JournalEntry is not Bundle-able). editorOpen with a null editingEntryId means a new entry.
@@ -64,7 +73,9 @@ fun JournalRoot(onExit: () -> Unit) {
     // Null until Room's first emission, so a restored editor doesn't flash the list while the
     // flow loads (same gate as workout/budget — issue #86 review).
     val entriesOrNull by dao.allFlow().collectAsState(initial = null)
-    val entries = entriesOrNull ?: emptyList()
+    val allEntries = entriesOrNull ?: emptyList()
+    // Optimistically hide the entry pending an undoable delete.
+    val entries = remember(allEntries, pendingDeleteId) { allEntries.filter { it.id != pendingDeleteId } }
     val editingEntry = entries.firstOrNull { it.id == editingEntryId }
 
     fun closeEditor() {
@@ -122,7 +133,18 @@ fun JournalRoot(onExit: () -> Unit) {
                     editingEntryId = it.id
                     editorOpen = true
                 },
-                onDelete = { entry -> scope.launch { dao.delete(entry) } },
+                onDelete = { entry ->
+                    haptics.tick()
+                    pendingDeleteId = entry.id
+                    snackbar.showUndo(
+                        message = "Deleted entry",
+                        onUndo = { pendingDeleteId = null },
+                        commit = {
+                            scope.launch { dao.delete(entry) }
+                            pendingDeleteId = null
+                        },
+                    )
+                },
                 padding = padding,
             )
         }

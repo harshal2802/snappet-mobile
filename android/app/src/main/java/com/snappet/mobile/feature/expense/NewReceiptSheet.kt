@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.expense
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -114,6 +116,9 @@ fun NewReceiptSheet(
         detectedItemCount = parsed.itemCount
     }
 
+    // Issue #89: a failed/blank scan used to be a silent no-op — surface an actionable error.
+    var ocrError by remember { mutableStateOf<String?>(null) }
+
     // Parse with the selected type's profile; AUTO classifies the text and snaps the picker to it.
     fun parseAndApply(text: String) {
         if (text.isBlank()) return
@@ -122,7 +127,15 @@ fun NewReceiptSheet(
         applyParsed(ReceiptParser.parse(text, resolved.profile))
     }
 
-    val scan = rememberReceiptScanner { text -> parseAndApply(text) }
+    val scan = rememberReceiptScanner { result ->
+        when (result) {
+            is ReceiptScanResult.Success -> { ocrError = null; parseAndApply(result.text) }
+            ReceiptScanResult.Empty ->
+                ocrError = "Couldn't read that photo — try better lighting, or use Paste."
+            ReceiptScanResult.Failure ->
+                ocrError = "Couldn't read that photo — try better lighting, or use Paste."
+        }
+    }
 
     val canSave = title.trim().isNotEmpty() && payer.isNotEmpty() &&
         cleaned.any { it.assignees.isNotEmpty() }
@@ -156,13 +169,28 @@ fun NewReceiptSheet(
         ReceiptTypePicker(selected = receiptType, onSelect = { receiptType = it })
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = scan, modifier = Modifier.weight(1f).testTag("expense.receipt.scan")) {
+            OutlinedButton(onClick = { ocrError = null; scan() }, modifier = Modifier.weight(1f).testTag("expense.receipt.scan")) {
                 Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.width(18.dp))
                 Text(" Scan")
             }
             OutlinedButton(onClick = { showPaste = true }, modifier = Modifier.weight(1f).testTag("expense.receipt.paste")) {
                 Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.width(18.dp))
                 Text(" Paste")
+            }
+        }
+
+        ocrError?.let { message ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+                    .testTag("expense.receipt.ocrError"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Filled.ErrorOutline,
+                    contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.width(20.dp))
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
             }
         }
 
