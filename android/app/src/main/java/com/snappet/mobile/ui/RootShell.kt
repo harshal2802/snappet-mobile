@@ -1,5 +1,6 @@
 package com.snappet.mobile.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.snappet.mobile.ui.home.HomeDashboardScreen
 import com.snappet.mobile.ui.library.AppLibraryScreen
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.snappetSurfaceTransition
 
 /**
  * The suite shell: a two-tab bottom bar over the Home dashboard and the App Library, mirroring
@@ -56,12 +59,24 @@ fun RootShell() {
             }
         },
     ) { padding ->
+        val reduceMotion = LocalReduceMotion.current
         Box(Modifier.fillMaxSize().padding(padding)) {
-            val key = if (tab == 0) "today" else "apps"
-            tabStateHolder.SaveableStateProvider(key) {
-                when (tab) {
-                    0 -> HomeDashboardScreen()
-                    else -> AppLibraryScreen()
+            // Issue #97: tab swaps slide+fade (forward when moving right, back when moving left)
+            // instead of a hard cut; collapses to an instant change under reduce-motion. Each tab's
+            // subtree is still retained via the SaveableStateHolder so state survives the switch.
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    snappetSurfaceTransition(reduceMotion, forward = targetState >= initialState)
+                },
+                label = "rootShellTab",
+            ) { current ->
+                val key = if (current == 0) "today" else "apps"
+                tabStateHolder.SaveableStateProvider(key) {
+                    when (current) {
+                        0 -> HomeDashboardScreen()
+                        else -> AppLibraryScreen()
+                    }
                 }
             }
         }

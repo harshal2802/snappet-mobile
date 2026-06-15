@@ -50,6 +50,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.launch
@@ -179,7 +180,7 @@ private fun TipBody(
     onCommit: () -> Unit,
 ) {
     Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
+        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(LocalSpacing.current.pageGutter),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("Bill", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
