@@ -386,6 +386,15 @@ const nodes = [
     file: "ios/App/Shared/WidgetOutbox.swift", desc: "The App-Group outbox for widget-originated habit check-offs (#81 Phase 2): a DIRECTORY of one-file-per-toggle (HabitToggle: habitID, day, absolute desired state, requestedAt) so the widget process and the app process never do a cross-process read-modify-write on one file (lock-free, no lost updates). The app reads pending() (sorted by request time), applies, and removes only the ids it persisted. HabitToggle codec is unit-tested; the directory I/O is the thin App-Group edge.", tags: ["app-group","outbox","lock-free","tested"] },
   { id: "habit-checkoff-reconciler", label: "HabitCheckoffReconciler", type: "core", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Widgets/HabitCheckoffReconciler.swift", desc: "Pure planning (#81 Phase 2) that turns drained outbox toggles + the existing (habitID,day) completion keys + the set of LIVE habit ids into HabitCompletion inserts/deletes. Idempotent + order-tolerant: the LAST desired state per (habitID,day) wins (toggle-on-then-off nets to off), inserts only when desired-and-absent, deletes only when not-desired-and-present, no-op when already in sync (safe to re-apply after a save failure), and a check-ON for a deleted habit is DROPPED (orphan guard — review fix). Each insert carries loggedAt (the tap time) so WidgetSnapshotService can also write the activity-log UsageRecord that advances the day streak, stamped on the right day (review fix). Unit-tested truth table, no SwiftData.", tags: ["pure","reconcile","idempotent","orphan-guard","tested"] },
+  // OS integration (#81 Phase 3): Siri / Shortcuts App Shortcuts.
+  { id: "app-shortcuts", label: "SnappetShortcuts", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Widgets/SnappetShortcuts.swift", desc: "AppShortcutsProvider (#81 Phase 3) in the app target (the system discovers it in the main bundle). Vends 5 App Shortcuts — StartPomodoro, CheckOffHabit, QuickJournal, StartRoutine, OpenModule — with natural-language Siri phrases, so they appear in the Shortcuts app and are sayable. Device-pending: actual Siri invocation + the gallery listing.", tags: ["appintents","siri","shortcuts","device-pending"] },
+  { id: "snappet-app-intents", label: "Snappet App Intents", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Shared/SnappetAppIntents.swift", desc: "The Siri/Shortcuts AppIntents (#81 Phase 3, in Shared/ so the app's provider + the widget can reference them). Reuse Phase 2's channels, not a new path: CheckOffHabitIntent (openAppWhenRun=false) writes the WidgetOutbox (desired=true) + optimistic snapshot — checks off with the app closed; the open-app intents (StartPomodoro/OpenModule/QuickJournal/StartRoutine, openAppWhenRun=true) enqueue a typed PendingAppAction to AppActionInbox, drained + dispatched by RootShell via SuiteRouter. ModuleChoice (AppEnum) maps a picker choice to a module id. Swift-6: static metadata is `let`.", tags: ["appintents","siri","outbox","inbox"] },
+  { id: "app-action-inbox", label: "AppActionInbox", type: "core", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Shared/AppActionInbox.swift", desc: "The App-Group inbox for 'open app and act' Siri intents (#81 Phase 3): a directory of one-file-per-PendingAppAction (startPomodoro / openModule(id) / quickJournal(text?) / startRoutine) — the same race-free pattern as WidgetOutbox. RootShell drains it on first build + scenePhase .active (gated off under -uiTest*) and dispatches each through the existing SuiteRouter deep-link paths. PendingAppAction codec unit-tested.", tags: ["app-group","inbox","siri","tested"] },
+  { id: "habit-entity", label: "HabitEntity", type: "model", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Shared/HabitEntity.swift", desc: "An AppEntity (#81 Phase 3) so CheckOffHabitIntent resolves a habit by name in Siri/Shortcuts. Its EntityStringQuery reads the App-Group snapshot (SnappetWidgetSnapshot.habits) — by id, by name fragment, and the full suggestion list — OFF-PROCESS, no SwiftData.", tags: ["appentity","siri","snapshot"] },
 
   // ═════════════════ Data models (SwiftData @Model) ═════════════════
   { id: "model-usage", label: "UsageRecord", type: "model", group: "core", category: "core", platform: "ios+android",
@@ -850,6 +859,13 @@ const links = [
   { source: "widget-snapshot-service", target: "habit-checkoff-reconciler", type: "uses", label: "plan" },
   { source: "habit-checkoff-reconciler", target: "model-habit", type: "feeds", label: "completions" },
   { source: "rootshell", target: "m-pomodoro", type: "navigate", label: "startFocus one-shot" },
+  // OS integration (#81 Phase 3): App Shortcuts.
+  { source: "app-shortcuts", target: "snappet-app-intents", type: "contains", label: "vends" },
+  { source: "snappet-app-intents", target: "habit-entity", type: "uses", label: "CheckOffHabit param" },
+  { source: "snappet-app-intents", target: "widget-outbox", type: "persists", label: "check-off" },
+  { source: "snappet-app-intents", target: "app-action-inbox", type: "persists", label: "open-app actions" },
+  { source: "habit-entity", target: "widget-snapshot-store", type: "uses", label: "reads habits" },
+  { source: "rootshell", target: "app-action-inbox", type: "uses", label: "drain + dispatch" },
   { source: "applibrary", target: "pomodoro-live-chip", type: "contains" },
   { source: "applibrary", target: "android-backup", type: "navigate", label: "top-bar action" },
   { source: "android-backup", target: "snappetcore", type: "persists", label: "export/import all tables" },

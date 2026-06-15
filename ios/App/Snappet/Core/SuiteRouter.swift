@@ -42,6 +42,12 @@ final class SuiteRouter {
     /// Self-clearing on consume; survives the cold-start window before the view is built.
     var pendingPomodoroStart = false
 
+    /// One-shot Quick-Journal intent (#81 Phase 3): the Siri `QuickJournalIntent` (via the App-Group
+    /// action inbox + `RootShell` dispatch) sets this before `open(module: "journal")`, and
+    /// `JournalRootView` consumes it to open a new entry — prefilled with `text` when dictated.
+    /// `nil` = nothing pending; a non-nil request with `text == nil` = a blank new entry.
+    var pendingJournalCompose: JournalComposeRequest?
+
     init(initialTab: SuiteTab = .home) {
         tab = initialTab
     }
@@ -70,4 +76,10 @@ final class SuiteRouter {
 struct ModuleRoute: Hashable {
     let id: String
     var zoomSourceID: String? = nil
+}
+
+/// A pending Quick-Journal compose request carried by `SuiteRouter.pendingJournalCompose` (#81
+/// Phase 3). `text` is the dictated/typed note when the Siri intent supplied one (nil = blank entry).
+struct JournalComposeRequest: Equatable {
+    var text: String?
 }

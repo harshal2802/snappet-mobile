@@ -27,6 +27,7 @@ struct RootShell: View {
                         // as soon as the store is up, so a widget added before the app is reopened
                         // has data. Subsequent refreshes ride scenePhase below.
                         WidgetSnapshotService.refresh(context: context)
+                        drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
                     }
             }
         }
@@ -38,6 +39,7 @@ struct RootShell: View {
             if phase == .active || phase == .background {
                 WidgetSnapshotService.refresh(context: context)
             }
+            if phase == .active { drainAppActions() }
         }
         // `snappet://` entry (#75): the Camera's QR scan / Safari / another app, cold or warm.
         // Attached to the Group — not `content` — so a cold-start URL delivered while the
@@ -75,6 +77,30 @@ struct RootShell: View {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "-screenshotModule"), i + 1 < args.count else { return nil }
         return args[i + 1]
+    }
+
+    /// Drain the App-Group action inbox (Siri/Shortcuts "open app and act" intents, #81 Phase 3) and
+    /// dispatch each through the existing `SuiteRouter` deep-link plumbing — the same routing the
+    /// `snappet://` URLs use. Skipped under UI-test launches so a stale inbox file can't navigate a
+    /// test run.
+    private func drainAppActions() {
+        guard !Self.isUITestLaunch else { return }
+        for action in AppActionInbox.drain() { dispatch(action) }
+    }
+
+    private func dispatch(_ action: PendingAppAction) {
+        // The action→navigation decision is the pure, unit-tested AppActionRouter; this is just glue.
+        let route = AppActionRouter.route(for: action)
+        if route.startPomodoro { router.pendingPomodoroStart = true }
+        if let compose = route.journalCompose { router.pendingJournalCompose = compose }
+        router.open(module: route.moduleID)
+    }
+
+    private static var isUITestLaunch: Bool {
+        let args = CommandLine.arguments
+        return args.contains("-uiTestFreshStore")
+            || args.contains("-uiTestCorruptStore")
+            || args.contains("-uiTestSeedStudioDemo")
     }
 }
 

@@ -64,7 +64,12 @@ struct JournalRootView: View {
             guard newValue == nil, let abandoned = oldValue else { return }
             discardIfAbandonedBlank(abandoned)
         }
-        .onAppear { sweepAbandonedBlanks() }
+        .onAppear {
+            sweepAbandonedBlanks()
+            consumePendingCompose()   // Siri Quick-Journal (#81 Phase 3): cold deep-link
+        }
+        // Warm deep-link: already on screen when the one-shot arrives.
+        .onChange(of: router.pendingJournalCompose) { _, _ in consumePendingCompose() }
         // Static title + `presenting:` keeps the dialog copy stable through the dismiss
         // animation (no nil-fallback flash) — the same immunity the Habit dialog has.
         .confirmationDialog(
@@ -105,6 +110,19 @@ struct JournalRootView: View {
         // init's two independent `.now` defaults would differ by microseconds.
         let now = Date.now
         let entry = JournalEntry(title: "", body: "", createdAt: now, updatedAt: now)
+        modelContext.insert(entry)
+        newEntry = entry
+    }
+
+    /// Consume the one-shot Siri Quick-Journal request (#81 Phase 3): open a new entry, prefilled
+    /// with the dictated text when present. A prefilled entry has a non-empty body, so it survives the
+    /// abandoned-blank sweep (the capture persists even if the user backs out); a blank request
+    /// behaves exactly like the `+` button. Self-clearing so it fires once per intent.
+    private func consumePendingCompose() {
+        guard let request = router.pendingJournalCompose else { return }
+        router.pendingJournalCompose = nil
+        let now = Date.now
+        let entry = JournalEntry(title: "", body: request.text ?? "", createdAt: now, updatedAt: now)
         modelContext.insert(entry)
         newEntry = entry
     }

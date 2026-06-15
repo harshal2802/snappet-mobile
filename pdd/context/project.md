@@ -389,6 +389,20 @@ tests + full `SnappetTests` 665 green; UI suite green; `xcrun simctl openurl sna
 routes to Snappet. **Device-pending**: the widget rendering on the springboard + a real check-off tap
 firing the AppIntent. **Next**: Phase 3 (Siri AppShortcuts), Phase 4 (Spotlight).
 
+🟡 **OS integration — Phase 3: Siri / Shortcuts App Shortcuts (2026-06-15, prompt 56, issue #81).**
+iOS. The suite is now sayable + scriptable. A `SnappetShortcuts: AppShortcutsProvider` (app target)
+vends 5 App Shortcuts over intents in `Shared/`: **StartPomodoro** ("start a focus timer" — the #81 AC),
+**CheckOffHabit** (resolves a habit by name via a snapshot-backed `HabitEntity`, persists via the
+Phase-2 outbox WITHOUT opening the app), **QuickJournal** (dictated note → prefilled new entry),
+**StartRoutine** (opens the gym tracker), **OpenModule** (jump to any mini-app). Reuses Phase 2's two
+cross-process channels rather than adding a third: check-off → the `WidgetOutbox`; the open-app intents
+→ a new typed App-Group `AppActionInbox` the `RootShell` drains on foreground and dispatches through the
+existing `SuiteRouter` deep-link paths. **Verified**: app+watch+widget build (intents/AppEntity/AppEnum/
+provider compile + register); `AppActionInboxTests` (codec + module-id map + HabitEntity mapping) + full
+`SnappetTests` 670 green; UI suite green. **Accepted residual**: StartRoutine opens the tracker rather
+than auto-launching a named routine (deferred). **Device-pending**: real Siri phrases, the Shortcuts-app
+gallery listing, donation. **Next**: Phase 4 (Spotlight indexing + deep-link routing) — the last phase.
+
 ## License
 
 TBD.
