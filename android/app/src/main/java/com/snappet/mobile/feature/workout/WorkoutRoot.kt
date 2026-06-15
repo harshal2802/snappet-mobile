@@ -217,7 +217,7 @@ fun WorkoutRoot(onExit: () -> Unit) {
             }
         }
 
-        WorkoutScreen.ROOT -> ModuleScaffold(title = "Workout", onExit = onExit) { padding ->
+        WorkoutScreen.ROOT -> ModuleScaffold(title = "Workout Tracker", onExit = onExit) { padding ->
             RootContent(
                 padding = padding,
                 section = section,

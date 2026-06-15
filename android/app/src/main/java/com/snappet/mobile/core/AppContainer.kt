@@ -23,6 +23,8 @@ class AppContainer private constructor(
     val core: SnappetCore by lazy { SnappetCore(database.usageDao()) }
     /** Export/import of the whole store as one SAF file (issue #84). */
     val backup: SnappetBackupManager by lazy { SnappetBackupManager(database) }
+    /** Pending deep-link / shortcut / widget navigation (issues #91, #99). Mirrors iOS SuiteRouter. */
+    val router: SuiteRouter by lazy { SuiteRouter() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static launcher shortcuts (issue #99). Each opens a module via the snappet://module/<id> deep
+     link, routed by MainActivity → SuiteRouter. Long-press the launcher icon to reach them. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="start_focus"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_focus_short"
+        android:shortcutLongLabel="@string/shortcut_focus_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="snappet://module/pomodoro"
+            android:targetPackage="com.snappet.mobile"
+            android:targetClass="com.snappet.mobile.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="log_habit"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_habit_short"
+        android:shortcutLongLabel="@string/shortcut_habit_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="snappet://module/habit"
+            android:targetPackage="com.snappet.mobile"
+            android:targetClass="com.snappet.mobile.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_journal"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_journal_short"
+        android:shortcutLongLabel="@string/shortcut_journal_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="snappet://module/journal"
+            android:targetPackage="com.snappet.mobile"
+            android:targetClass="com.snappet.mobile.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="add_expense"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_expense_short"
+        android:shortcutLongLabel="@string/shortcut_expense_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="snappet://module/expense"
+            android:targetPackage="com.snappet.mobile"
+            android:targetClass="com.snappet.mobile.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -12,6 +12,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.snappet.mobile.core.SuiteRouter
 import com.snappet.mobile.ui.home.HomeDashboardScreen
 import com.snappet.mobile.ui.library.AppLibraryScreen
 
@@ -31,11 +33,22 @@ import com.snappet.mobile.ui.library.AppLibraryScreen
  * Each tab renders inside a [rememberSaveableStateHolder] entry so switching tabs keeps the other
  * tab's `rememberSaveable` state (NavHost back stack, module position, drafts) instead of
  * disposing it (issue #86).
+ *
+ * Issue #99/#91: a pending [SuiteRouter] route (deep link, launcher shortcut, widget tap, or a Home
+ * card) forces the Apps tab and is consumed by the [AppLibraryScreen] NavHost, which owns module
+ * navigation. Home cards open modules through the same router so there's one navigation path.
  */
 @Composable
 fun RootShell() {
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabStateHolder = rememberSaveableStateHolder()
+    val router = LocalAppContainer.current.router
+
+    // A queued route lives on the Apps tab — flip to it so the NavHost can honor it.
+    LaunchedEffect(router.pendingRoute) {
+        if (router.pendingRoute != null) tab = 1
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -60,7 +73,7 @@ fun RootShell() {
             val key = if (tab == 0) "today" else "apps"
             tabStateHolder.SaveableStateProvider(key) {
                 when (tab) {
-                    0 -> HomeDashboardScreen()
+                    0 -> HomeDashboardScreen(onOpenModule = { router.openModule(it) })
                     else -> AppLibraryScreen()
                 }
             }

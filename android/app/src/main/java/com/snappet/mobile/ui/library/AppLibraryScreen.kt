@@ -65,6 +65,26 @@ fun AppLibraryScreen() {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
 
+    // Issue #91/#99: honor a queued deep-link / shortcut / widget / Home-card route. A KilterClimb
+    // route parks the climb on the KilterRoot deep-link bus, then routes into the Kilter module.
+    val pending = container.router.pendingRoute
+    androidx.compose.runtime.LaunchedEffect(pending) {
+        when (val route = pending) {
+            is com.snappet.mobile.core.SuiteRouter.Route.Module -> {
+                container.core.log(route.moduleId, "open", "Opened ${com.snappet.mobile.core.ModuleRegistry.byId(route.moduleId)?.title ?: route.moduleId}")
+                nav.navigate("module/${route.moduleId}")
+                container.router.consume()
+            }
+            is com.snappet.mobile.core.SuiteRouter.Route.KilterClimb -> {
+                com.snappet.mobile.feature.kilter.KilterDeepLinkBus.request(route.uuid, route.angle)
+                container.core.log("kilter", "open", "Opened Kilter Board")
+                nav.navigate("module/kilter")
+                container.router.consume()
+            }
+            null -> Unit
+        }
+    }
+
     NavHost(navController = nav, startDestination = "library") {
         composable("library") {
             Scaffold(topBar = {
