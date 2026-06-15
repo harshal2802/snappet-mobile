@@ -18,6 +18,10 @@ struct CreateClimbView: View {
     /// The shared board controller, so the climb being authored / generated can be previewed on a
     /// physically-connected board over BLE. `nil` (e.g. previews) simply disables the live-light affordance.
     var board: KilterBoardController? = nil
+    /// Non-nil to **re-open an existing created climb in the editor** (#76): its holds/name/conditions seed
+    /// the manual tab. Saving re-derives the content uuid — unchanged holds update it in place, changed
+    /// holds migrate its logged ascents to the new identity and remove the old row.
+    var editing: KilterCreatedClimb? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -56,6 +60,14 @@ struct CreateClimbView: View {
     @State private var pendingSave: SavePayload?
     @State private var showingDuplicate = false
 
+    /// The generator meta (just `meta.json`, no ONNX runtime) for the manual tab's live grade estimate —
+    /// loaded only when already installed, never downloaded here (#76). `nil` ⇒ no estimate shown.
+    @State private var gradeModel: KilterGeneratorModel?
+    /// Guards the one-time seed of the manual editor when re-opening an existing climb (`editing`).
+    @State private var didSeedEdit = false
+    /// Set while seeding so the `layoutId` change that seeding triggers doesn't wipe the seeded holds.
+    @State private var skipNextLayoutClear = false
+
     enum GenPhase: Equatable {
         case needsModel, preparing, idle, generating, ready, error(String)
     }
@@ -90,7 +102,7 @@ struct CreateClimbView: View {
                     generateSection
                 }
             }
-            .navigationTitle("Create climb")
+            .navigationTitle(editing == nil ? "Create climb" : "Edit climb")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -104,8 +116,14 @@ struct CreateClimbView: View {
                     }
                 }
             }
-            .onAppear { syncBoardSize(); reloadBoard() }
-            .onChange(of: layoutId) { syncBoardSize(); assignments = [:]; reloadBoard() }
+            .onAppear { seedFromEditingIfNeeded(); syncBoardSize(); reloadBoard(); loadGradeModelIfInstalled() }
+            .onChange(of: layoutId) {
+                syncBoardSize()
+                // A layout change normally invalidates placed holds — except the one triggered by
+                // seeding the editor with an existing climb, whose holds belong to that layout (#76).
+                if skipNextLayoutClear { skipNextLayoutClear = false } else { assignments = [:] }
+                reloadBoard()
+            }
             .onChange(of: productSizeId) { reloadBoard(); liveLight(manualLitHolds) }
             // Light the draft on a connected board as holds are placed/cleared.
             .onChange(of: assignments) { liveLight(manualLitHolds) }
@@ -156,6 +174,11 @@ struct CreateClimbView: View {
                 Label("Ready to save · \(assignments.count) holds", systemImage: "checkmark.circle.fill")
                     .font(.caption).foregroundStyle(.green)
                     .accessibilityIdentifier("kilter.create.valid")
+            }
+            if let estimate = manualGradeLabel {
+                Label("Estimated grade ≈ \(estimate)", systemImage: "chart.bar")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("kilter.create.gradeEstimate")
             }
             if !assignments.isEmpty {
                 copyFramesButton(manualFrames, enabled: true)
@@ -324,6 +347,46 @@ struct CreateClimbView: View {
 
     // MARK: - Actions: manual
 
+    /// The live grade estimate label for the current manual draft (#76) — `nil` (chip hidden) when the
+    /// generator meta isn't installed or no placed hold maps to the model vocab.
+    private var manualGradeLabel: String? {
+        guard mode == .manual, let model = gradeModel,
+              let grade = KilterClimbGenerator.estimateManualGrade(
+                assignments: assignments, angle: angle, nomatch: isNoMatch, model: model)
+        else { return nil }
+        return model.gradeLabel(Int(grade.rounded()))
+    }
+
+    /// Load just the generator meta (no ONNX runtime, no download) for the manual grade estimate —
+    /// only when the model is already installed, so authoring never triggers a 9 MB fetch (#76).
+    private func loadGradeModelIfInstalled() {
+        guard gradeModel == nil, KilterGeneratorAssets.shared.isInstalled else { return }
+        gradeModel = try? KilterGeneratorModel.load(metaURL: KilterGeneratorAssets.shared.metaURL)
+    }
+
+    /// Seed the manual editor from the climb being edited (#76), once. Sets `skipNextLayoutClear` so the
+    /// `layoutId` assignment below doesn't wipe the holds we're about to restore.
+    private func seedFromEditingIfNeeded() {
+        guard let e = editing, !didSeedEdit else { return }
+        didSeedEdit = true
+        mode = .manual
+        name = e.name
+        isNoMatch = e.isNoMatch
+        angle = e.angle
+        if layoutId != e.layoutId { skipNextLayoutClear = true; layoutId = e.layoutId }
+        productSizeId = e.sizeId
+        assignments = Self.assignments(fromFrames: e.frames)
+    }
+
+    /// Parse a climb's `p<placement>r<role>` frames back into the editor's `placementId → role` map.
+    static func assignments(fromFrames frames: String) -> [Int: KilterAuthorRole] {
+        var out: [Int: KilterAuthorRole] = [:]
+        for (placementId, roleId) in KilterCatalog.parseFrames(frames) {
+            if let role = KilterAuthorRole(roleId: roleId) { out[placementId] = role }
+        }
+        return out
+    }
+
     private func syncBoardSize() {
         if !sizes.contains(where: { $0.id == productSizeId }) {
             productSizeId = catalog.defaultSizeId(forLayout: layoutId)
@@ -406,10 +469,12 @@ struct CreateClimbView: View {
 
     // MARK: - Save (shared)
 
-    /// Run the duplicate check, then persist (or surface the duplicate alert).
+    /// Run the duplicate check, then persist (or surface the duplicate alert). When editing, the climb
+    /// being edited is excluded from the check — re-saving its own holds isn't a self-duplicate (#76).
     private func attemptSave(_ payload: SavePayload) {
         let canonical = KilterClimbIdentity.canonicalFrames(payload.frames)
-        let checker = KilterDuplicateChecker.build(layoutId: payload.layoutId, created: created)
+        let pool = editing.map { e in created.filter { $0.uuid != e.uuid } } ?? created
+        let checker = KilterDuplicateChecker.build(layoutId: payload.layoutId, created: pool)
         if let dup = checker.find(layoutId: payload.layoutId, frames: canonical) {
             duplicate = dup
             pendingSave = payload
@@ -420,17 +485,37 @@ struct CreateClimbView: View {
     }
 
     /// Assign the deterministic uuid and write the climb (opening an existing row if the same holds were
-    /// already saved, since the uuid is content-derived).
+    /// already saved, since the uuid is content-derived). When editing (#76): unchanged holds update the
+    /// existing row in place; changed holds re-derive the identity, migrate the climb's logged ascents to
+    /// the new uuid, and remove the old row.
     private func commit(_ payload: SavePayload) {
         let canonical = KilterClimbIdentity.canonicalFrames(payload.frames)
         let uuid = KilterClimbIdentity.uuid(forLayout: payload.layoutId, frames: canonical)
-        if let existing = created.first(where: { $0.uuid == uuid }) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmed.isEmpty ? "Untitled climb" : trimmed
+
+        if let editing {
+            if uuid == editing.uuid {
+                // Same holds — a rename / angle / no-match / re-grade edit in place.
+                editing.name = finalName
+                editing.angle = payload.angle
+                editing.isNoMatch = payload.isNoMatch
+                if let g = payload.predictedGrade { editing.predictedGrade = g }
+                try? modelContext.save()
+                onCreated(editing.uuid); dismiss(); return
+            }
+            // Holds changed → new identity. Carry the climb's logged ascents + favorite over, then drop
+            // the old row, and fall through to create the new one.
+            migrateReferences(from: editing.uuid, to: uuid, name: finalName)
+            modelContext.delete(editing)
+        }
+
+        if let existing = created.first(where: { $0.uuid == uuid && $0 !== editing }) {
             onCreated(existing.uuid); dismiss(); return
         }
         let box = catalog.boardBounds(forPlacementIds: KilterCatalog.parseFrames(canonical).map(\.0))
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let climb = KilterCreatedClimb(
-            uuid: uuid, name: trimmed.isEmpty ? "Untitled climb" : trimmed,
+            uuid: uuid, name: finalName,
             setterUsername: "You", layoutId: payload.layoutId, sizeId: payload.sizeId, angle: payload.angle,
             frames: canonical,
             edgeLeft: box?.left ?? 0, edgeRight: box?.right ?? 0,
@@ -438,9 +523,25 @@ struct CreateClimbView: View {
             isNoMatch: payload.isNoMatch, predictedGrade: payload.predictedGrade, source: payload.source)
         modelContext.insert(climb)
         try? modelContext.save()
-        core.log(module: "kilter", action: "created",
-                 summary: "\(payload.source == "generated" ? "Generated" : "Created") \(climb.name)")
+        core.log(module: "kilter", action: editing == nil ? "created" : "edited",
+                 summary: "\(editing != nil ? "Edited" : payload.source == "generated" ? "Generated" : "Created") \(climb.name)")
         onCreated(uuid)
         dismiss()
+    }
+
+    /// Re-point a climb's logged ascents (and its favorite, if any) from `oldUUID` to `newUUID` when an
+    /// edit changes the holds — a logged send should follow the climb across an identity change (#76).
+    private func migrateReferences(from oldUUID: String, to newUUID: String, name: String) {
+        let logs = (try? modelContext.fetch(FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.climbUUID == oldUUID }))) ?? []
+        for log in logs { log.climbUUID = newUUID; log.climbName = name }
+        // KilterFavorite.climbUUID is unique: move it only if the new uuid isn't already favorited,
+        // else drop the now-stale old favorite.
+        if let fav = (try? modelContext.fetch(FetchDescriptor<KilterFavorite>(
+            predicate: #Predicate { $0.climbUUID == oldUUID })))?.first {
+            let alreadyFav = (try? modelContext.fetch(FetchDescriptor<KilterFavorite>(
+                predicate: #Predicate { $0.climbUUID == newUUID })))?.isEmpty == false
+            if alreadyFav { modelContext.delete(fav) } else { fav.climbUUID = newUUID }
+        }
     }
 }

@@ -33,6 +33,7 @@ struct KilterClimbDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     @Query private var favorites: [KilterFavorite]
 
     private let catalog = KilterCatalog.shared
@@ -65,6 +66,11 @@ struct KilterClimbDetailView: View {
     @State private var celebrationTrigger = 0
     @State private var showingShare = false
     @State private var showingMatchInfo = false
+    // Created-climb lifecycle (#76): edit re-opens the authoring sheet; rename + delete act in place.
+    @State private var showingEdit = false
+    @State private var showingRename = false
+    @State private var renameText = ""
+    @State private var showingDeleteCreated = false
 
     private var currentStat: KilterClimbStat? { stats.first { $0.angle == selectedAngle } }
     private var isFavorite: Bool { favorites.contains { $0.climbUUID == currentUUID } }
@@ -97,6 +103,21 @@ struct KilterClimbDetailView: View {
                 .accessibilityIdentifier("kilter.favorite")
                 .accessibilityLabel(isFavorite ? "Remove from saved" : "Save climb")
             }
+            // Edit / rename / delete — only for climbs the user authored (#76).
+            if let created = createdClimb(currentUUID) {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { showingEdit = true } label: { Label("Edit holds", systemImage: "pencil") }
+                        Button { renameText = created.name; showingRename = true } label: {
+                            Label("Rename", systemImage: "character.cursor.ibeam")
+                        }
+                        Button(role: .destructive) { showingDeleteCreated = true } label: {
+                            Label("Delete climb", systemImage: "trash")
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityIdentifier("kilter.created.menu")
+                }
+            }
         }
         .sheet(isPresented: $showingShare) {
             if let climb {
@@ -104,6 +125,28 @@ struct KilterClimbDetailView: View {
                                 gradeLabel: currentStat.map { catalog.gradeLabel($0.difficulty) } ?? "—",
                                 angle: selectedAngle)
             }
+        }
+        // Re-open the authoring sheet on the climb (#76). Re-derived identity (changed holds) ⇒ follow it.
+        .sheet(isPresented: $showingEdit) {
+            if let created = createdClimb(currentUUID) {
+                CreateClimbView(onCreated: { newUUID in currentUUID = newUUID; load() },
+                                board: board, editing: created)
+                    .environment(core)
+            }
+        }
+        .alert("Rename climb", isPresented: $showingRename) {
+            TextField("Name", text: $renameText).accessibilityIdentifier("kilter.created.renameField")
+            Button("Save") { renameCreated() }.accessibilityIdentifier("kilter.created.renameSave")
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Delete this climb?", isPresented: $showingDeleteCreated, titleVisibility: .visible) {
+            Button("Delete climb", role: .destructive) { deleteCreated() }
+                .accessibilityIdentifier("kilter.created.deleteConfirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let n = logCount(for: currentUUID)
+            Text(n == 0 ? "This removes the climb from Mine. It can't be undone."
+                 : "This removes the climb from Mine. Its \(n) logged ascent\(n == 1 ? "" : "s") stay in History.")
         }
         // Reload whenever the shown climb changes (initial open + each swipe).
         .task(id: currentUUID) { load() }
@@ -580,6 +623,35 @@ struct KilterClimbDetailView: View {
     private func createdClimb(_ uuid: String) -> KilterCreatedClimb? {
         let d = FetchDescriptor<KilterCreatedClimb>(predicate: #Predicate { $0.uuid == uuid })
         return try? modelContext.fetch(d).first
+    }
+
+    /// Logged ascents pointing at a climb — surfaced before delete so the user knows what stays (#76).
+    private func logCount(for uuid: String) -> Int {
+        let d = FetchDescriptor<KilterLogEntry>(predicate: #Predicate { $0.climbUUID == uuid })
+        return (try? modelContext.fetchCount(d)) ?? 0
+    }
+
+    /// In-place rename of the authored climb (same holds ⇒ same content uuid, so nothing else moves).
+    private func renameCreated() {
+        guard let created = createdClimb(currentUUID) else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        created.name = trimmed
+        try? modelContext.save()
+        load()
+    }
+
+    /// Delete the authored climb (#76). Its logged ascents are **kept** — a real send shouldn't vanish;
+    /// they carry their own name snapshot, so History stays readable. A stale favorite is dropped. Pops
+    /// back to browse. Because the row leaves `Mine`, the duplicate checker no longer traps against it.
+    private func deleteCreated() {
+        guard let created = createdClimb(currentUUID) else { return }
+        let uuid = created.uuid
+        if let fav = favorites.first(where: { $0.climbUUID == uuid }) { modelContext.delete(fav) }
+        core.log(module: "kilter", action: "deleted", summary: "Deleted \(created.name)")
+        modelContext.delete(created)
+        try? modelContext.save()
+        dismiss()
     }
 
     private func load() {

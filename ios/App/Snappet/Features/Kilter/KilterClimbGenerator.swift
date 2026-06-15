@@ -156,4 +156,25 @@ struct KilterClimbGenerator {
         for t in holds where t < gm.w_hold.count { v += gm.w_hold[t] }
         return v + gm.y_mean
     }
+
+    /// Hold-token indices for a *manually* authored climb's `(placementId → role)` assignments, mapped
+    /// through the model vocab (`HOLD_<placementId>_<roleId>`). A placement/role the model never saw for
+    /// this board is out-of-vocab and dropped, so the estimate degrades gracefully instead of failing.
+    /// Pure (#76).
+    static func holdTokens(forAssignments assignments: [Int: KilterAuthorRole],
+                           model: KilterGeneratorModel) -> [Int] {
+        assignments.compactMap { placementId, role in
+            model.stoi["HOLD_\(placementId)_\(role.roleId)"]
+        }
+    }
+
+    /// A live grade estimate for the manual editor — the same linear model the Generate tab shows,
+    /// run over the authored holds. `nil` when no hold resolves to the model vocab (nothing to
+    /// estimate), so the caller can simply hide the chip. Pure → unit-tested (#76).
+    static func estimateManualGrade(assignments: [Int: KilterAuthorRole], angle: Int, nomatch: Bool,
+                                    model: KilterGeneratorModel) -> Double? {
+        let tokens = holdTokens(forAssignments: assignments, model: model)
+        guard !tokens.isEmpty else { return nil }
+        return predictGrade(model: model, holds: tokens, angle: angle, nomatch: nomatch)
+    }
 }
