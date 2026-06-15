@@ -342,8 +342,9 @@ extension KilterBoardController: CBPeripheralDelegate {
 /// the app's live-metrics + Live-Activity + media services — drives **live heart rate**, a **Lock
 /// Screen / Dynamic Island Live Activity**, **per-climb timing**, and **post-session media
 /// discovery** for the session (workout-grade parity, decisions.md 2026-06-06). Created at the module
-/// root and shared via the environment. A session opens when a board connects (source `"ble"`) or
-/// when the user starts one manually, and closes on disconnect / when the user ends it.
+/// root and shared via the environment. A session opens when a board connects (source `"ble"`),
+/// when the user starts one manually, or — undoably — on the first climb logged with no session
+/// live (source `"auto"`, #75); it closes when the user ends it (never on a mere BLE disconnect).
 @MainActor
 @Observable
 final class KilterSessionManager {
@@ -391,16 +392,21 @@ final class KilterSessionManager {
         self.userProfile = userProfile
     }
 
-    func start(angle: Int, source: String, in context: ModelContext) {
-        guard current == nil else { return }
+    /// Returns `true` only when this call **created a fresh session** — `false` when a session was
+    /// already current or recovery adopted an open one. The auto-start-on-log path (#75) keys its
+    /// "Session started · Undo" confirmation on this: undoing must only ever delete a session the
+    /// log itself created, never one adopted from the store.
+    @discardableResult
+    func start(angle: Int, source: String, in context: ModelContext) -> Bool {
+        guard current == nil else { return false }
         // Re-sync with the store BEFORE creating anything (#71 review): recovery adopts the newest
         // still-fresh open session instead of forking a duplicate (single-open invariant) and
         // auto-closes duplicate / long-abandoned opens at their last activity. Folding it here —
         // not only on the root's appear — applies the #54 stale-session policy on EVERY path that
-        // can start a session: the root menu, a BLE connect, and deep links that skip
-        // `KilterRootView` (Home → plan today, QR → climb tomorrow).
+        // can start a session: the root menu, a BLE connect, the first log of an idle climber
+        // (source "auto", #75), and deep links that skip `KilterRootView` (Home → plan, QR → climb).
         recover(in: context)
-        if current != nil { return }   // recovery adopted the open session — nothing to create
+        if current != nil { return false }   // recovery adopted the open session — nothing to create
         let session = KilterSession(angle: angle, source: source)
         context.insert(session)
         current = session
@@ -416,6 +422,29 @@ final class KilterSessionManager {
         try? context.save()
         // Lock Screen / Dynamic Island live session widget (no-op if unavailable/unauthorized).
         liveActivity?.start(boardName: boardName, startedAt: session.startedAt, angle: angle, maxHR: maxHR)
+        return true
+    }
+
+    /// Undo a just-created session (the auto-start-on-log confirmation, #75): **keep the logs,
+    /// drop the session** — entries logged into it detach (`sessionId = nil`, exactly the pre-#75
+    /// idle-log shape), live metrics stop only if this start owned them (never a running workout's
+    /// source), the Live Activity ends, and the row is deleted. Only called for a session `start`
+    /// reported as freshly created — an adopted/recovered session must never be deleted by an undo.
+    func undoStart(in context: ModelContext) {
+        guard let session = current else { return }
+        let sid = session.id
+        let attached = (try? context.fetch(FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.sessionId == sid }))) ?? []
+        for entry in attached { entry.sessionId = nil }
+        if didStartMetrics {
+            liveWorkout?.stop()
+            didStartMetrics = false
+        }
+        liveActivity?.end()
+        context.delete(session)
+        try? context.save()
+        current = nil
+        resetActiveClimb()
     }
 
     /// Re-sync the manager with the persisted store — the single source of truth for "what session is

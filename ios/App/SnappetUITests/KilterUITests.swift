@@ -30,11 +30,14 @@ final class KilterUITests: XCTestCase {
     }
 
     /// With no catalog installed, the module shows the opt-in sync screen (not a crash, not an empty
-    /// list) — the `KilterCatalog.isAvailable == false` path.
+    /// list) — the `KilterCatalog.isAvailable == false` path, offering BOTH install paths
+    /// (Download leads since #75, mirroring Android #94's assertion of both buttons).
     func testEmptyStateShowsCatalogSyncScreen() {
         let app = openKilter(installCatalog: false)
-        XCTAssertTrue(app.buttons["kilter.catalog.import"].waitForExistence(timeout: 8),
-                      "Without a catalog, the opt-in import screen should appear")
+        XCTAssertTrue(app.buttons["kilter.catalog.sync"].waitForExistence(timeout: 8),
+                      "Without a catalog, the opt-in screen should lead with Download")
+        XCTAssertTrue(app.buttons["kilter.catalog.import"].exists,
+                      "…with file import as the secondary path")
         // No climbs are listed in the empty state.
         XCTAssertFalse(app.buttons["kilter.climbRow"].firstMatch.exists)
     }

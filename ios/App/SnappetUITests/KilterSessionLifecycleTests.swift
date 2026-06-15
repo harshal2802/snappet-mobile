@@ -34,10 +34,11 @@ final class KilterSessionLifecycleTests: XCTestCase {
         enterKilter()
         snap("01-kilter-root")
 
-        // Start a manual session from the More menu.
-        app.buttons["kilter.more"].tap()
-        XCTAssertTrue(app.buttons["Start session"].waitForExistence(timeout: 4))
-        app.buttons["Start session"].tap()
+        // Start a manual session from the first-class idle-bar control (#75 — Start no longer
+        // hides in the More menu).
+        XCTAssertTrue(app.buttons["kilter.session.start"].waitForExistence(timeout: 4),
+                      "the idle bar should offer a visible Start session control")
+        app.buttons["kilter.session.start"].tap()
         XCTAssertTrue(app.buttons["kilter.session.end"].waitForExistence(timeout: 4),
                       "the session bar should appear after Start")
         snap("02-session-started")
@@ -50,20 +51,18 @@ final class KilterSessionLifecycleTests: XCTestCase {
         XCTAssertTrue(app.buttons["kilter.more"].waitForExistence(timeout: 8))
         snap("04-reentered")
 
-        // THE FIX: the session bar is still there after re-entry (it used to vanish).
+        // THE FIX: the session bar is still there after re-entry (it used to vanish) — and the
+        // idle Start control is NOT (no stale/duplicate session on offer).
         XCTAssertTrue(app.buttons["kilter.session.end"].waitForExistence(timeout: 5),
                       "the session bar must persist after navigating out and back")
+        XCTAssertFalse(app.buttons["kilter.session.start"].exists,
+                       "the live bar owns the slot — no duplicate Start after re-entry")
+        snap("05-live-bar-after-reentry")
 
-        // And the More menu reflects the live session (offers End, not a duplicate Start).
-        app.buttons["kilter.more"].tap()
-        XCTAssertTrue(app.buttons["End session"].waitForExistence(timeout: 4),
-                      "More should offer End after re-entry, not Start (no stale/duplicate session)")
-        snap("05-more-shows-end")
-
-        // End it from the menu; the bar goes away.
-        app.buttons["End session"].tap()
-        XCTAssertFalse(app.buttons["kilter.session.end"].waitForExistence(timeout: 3),
-                       "ending the session should remove the bar")
+        // End it from the bar; the idle Start control takes the slot back.
+        app.buttons["kilter.session.end"].tap()
+        XCTAssertTrue(app.buttons["kilter.session.start"].waitForExistence(timeout: 4),
+                      "ending the session should swap the live bar back to the idle Start control")
         snap("06-ended")
     }
 
@@ -71,9 +70,8 @@ final class KilterSessionLifecycleTests: XCTestCase {
     /// id now, not via the in-memory pointer).
     func testEndFromSummaryWorks() {
         enterKilter()
-        app.buttons["kilter.more"].tap()
-        XCTAssertTrue(app.buttons["Start session"].waitForExistence(timeout: 4))
-        app.buttons["Start session"].tap()
+        XCTAssertTrue(app.buttons["kilter.session.start"].waitForExistence(timeout: 4))
+        app.buttons["kilter.session.start"].tap()
         XCTAssertTrue(app.buttons["kilter.session.open"].waitForExistence(timeout: 4))
         // Open the live summary and end from there.
         app.buttons["kilter.session.open"].tap()

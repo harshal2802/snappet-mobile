@@ -27,6 +27,14 @@ final class SuiteRouter {
     /// Self-clearing on consume; a no-op when no active session exists.
     var pendingWorkoutResume = false
 
+    /// One-shot QR/URL deep-link intent (#75, the `pendingWorkoutResume` pattern): the shell's
+    /// `onOpenURL` sets this before `open(module: "kilter")`, and `KilterRootView` consumes it on
+    /// appear/change — the shell can't push `KilterClimbRoute` itself because the climb push needs
+    /// the root's `navigationDestination` + catalog lookup (installed? which angles?) to land
+    /// gracefully when the climb isn't on this device. Self-clearing on consume; survives the
+    /// cold-start window where the root hasn't been built yet.
+    var pendingKilterClimb: KilterClimbLink?
+
     init(initialTab: SuiteTab = .home) {
         tab = initialTab
     }

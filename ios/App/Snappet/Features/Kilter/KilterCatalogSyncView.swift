@@ -2,8 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The opt-in empty state shown when no catalog is installed (issue #42). Snappet ships no Aurora data;
-/// the user brings the climb catalog onto this device once — by importing a `.sqlite3` they built
-/// themselves (Phase 1) — and from then on everything browse/detail/log/illuminate works offline.
+/// the user brings the climb catalog onto this device once — **Download from Kilter** leads (pick your
+/// board + size; issue #75, mirroring Android #94), with importing a `.sqlite3` file as the power-user
+/// secondary — and from then on everything browse/detail/log/illuminate works offline.
 ///
 /// Surfaces Aurora's Terms of Use + a link before any fetch, and makes clear the data stays on-device.
 struct KilterCatalogSyncView: View {
@@ -38,28 +39,30 @@ struct KilterCatalogSyncView: View {
                 statusView
 
                 VStack(spacing: 12) {
-                    Button { showingImporter = true } label: {
-                        Label("Import catalog file…", systemImage: "folder")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isWorking)
-                    .accessibilityIdentifier("kilter.catalog.import")
-
-                    // Phase 2 (AuroraSyncProvider): download straight from Aurora's servers. Opens a
-                    // sheet for the board + optional account credentials. Personal/sideload use only —
-                    // see KilterAuroraSync.swift for the legal posture.
+                    // Download leads (issue #75, mirroring Android #94): it's the only path most
+                    // phone users can act on. The sheet picks your board + size; the dataset is a
+                    // user-hosted static file — see KilterAuroraSync.swift for the legal posture
+                    // (ToU notice + user-controlled host, unchanged by this emphasis reversal).
                     Button { showingSync = true } label: {
                         Label("Download from Kilter…", systemImage: "arrow.triangle.2.circlepath")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                     .disabled(isWorking)
                     .accessibilityIdentifier("kilter.catalog.sync")
+
+                    // Power-user path: install a catalog .sqlite3 you already have (Files).
+                    Button { showingImporter = true } label: {
+                        Label("Import catalog file…", systemImage: "folder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isWorking)
+                    .accessibilityIdentifier("kilter.catalog.import")
                 }
 
-                Text("Download fetches the catalog from the board's servers (your account is optional). "
-                     + "Or build a file yourself with the boardlib tool — see tools/kilter.")
+                Text("Download fetches the catalog for your board from a hosted dataset and trims it "
+                     + "on this device. Import installs a catalog file you already have.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)

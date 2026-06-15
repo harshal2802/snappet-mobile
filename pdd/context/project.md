@@ -334,6 +334,22 @@ session-detail button renamed "Edit in Video Studio" — all opening the same pr
 pure-cored `StudioEntry` (`StudioEntryTests`). **Simulator-pending**: the updated
 walkthrough/UI-test suite (orchestrator's verification pass).
 
+🟡 **Kilter un-buried (2026-06-11, prompt 49, issue #75).** iOS (the sibling of Android #94).
+Sessions and create-a-climb leave the ellipsis menu: a visible **`+` Create climb** toolbar button
+and an **idle Start-session bar** in the slot the green live bar takes over when active (start/end
+left the menu — the bars own the lifecycle). Logging with no session live **auto-starts one**
+(source `"auto"`, the BLE-connect parity; `start` folds recovery so an open session is adopted,
+never forked) with an undoable "Session started" capsule — Undo keeps the log, detached. The
+first-run catalog gate now **leads with Download** (Import secondary; boardlib/stale-account copy
+replaced with user-terms captions — ToU posture unchanged). The shared HR profile gets a Kilter
+Settings row + an inline "set up your heart-rate profile" affordance on default-ceiling summaries
+(the summary ceiling resolves snapshot → live profile → 190). And `snappet://` is **registered**
+(`CFBundleURLTypes`): a shared climb's QR scanned with the iOS Camera opens Snappet on the climb —
+`RootShell.onOpenURL` → pure `SnappetDeepLink`/`KilterDeepLinkRouting` → one-shot
+`SuiteRouter.pendingKilterClimb`, with a graceful "not in your catalog" landing (the in-app scanner
+routes the same way now). **Simulator-pending**: unit + UI suites, `xcrun simctl openurl` cold/warm.
+**Device-pending**: real Camera QR scan, BLE auto-start parity.
+
 ## License
 
 TBD.

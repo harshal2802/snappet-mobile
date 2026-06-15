@@ -52,6 +52,10 @@ struct KilterRootView: View {
     /// shown live as "N climbs" so the user sees how their search/filters narrow the catalog.
     @State private var count = 0
     @State private var showingScanner = false
+    /// A shared climb that arrived (QR scan or `snappet://` URL, #75) but isn't on this device —
+    /// drives the graceful "not in your catalog" alert instead of a dead detail screen. Works over
+    /// the catalog gate too (no catalog installed yet is just the empty-catalog case of "missing").
+    @State private var missingSharedClimb: KilterClimbLink?
 
     // Search + advanced filters.
     @State private var search = ""
@@ -127,22 +131,16 @@ struct KilterRootView: View {
                 }
                 .accessibilityIdentifier("kilter.history")
             }
+            // Create climb is a headline differentiator — a visible `+`, not a menu item (#75,
+            // the iOS mirror of Android #94's extended FAB).
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingCreate = true } label: {
+                    Label("Create climb", systemImage: "plus")
+                }
+                .accessibilityIdentifier("kilter.create")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button { showingCreate = true } label: {
-                        Label("Create climb", systemImage: "plus")
-                    }
-                    .accessibilityIdentifier("kilter.create")
-                    Divider()
-                    if sessions.isActive {
-                        Button(role: .destructive) { sessions.end(in: modelContext) } label: {
-                            Label("End session", systemImage: "stop.circle")
-                        }
-                    } else {
-                        Button { sessions.start(angle: angle, source: "manual", in: modelContext) } label: {
-                            Label("Start session", systemImage: "play.circle")
-                        }
-                    }
                     Button { router.push(KilterPlanRoute()) } label: {
                         Label("Plan a session", systemImage: "wand.and.stars")
                     }
@@ -174,11 +172,21 @@ struct KilterRootView: View {
             }, board: board)
         }
         .sheet(isPresented: $showingScanner) {
-            KilterScannerView { link in
-                // Open at the shared angle the sharer used, when it's one this board offers.
-                if let a = link.angle, availableAngles.contains(a) { angle = a }
-                router.push(KilterClimbRoute(uuid: link.uuid))
-            }
+            // Same routing decision as the URL-scheme path (`open(link:)`) — the scanner used to
+            // push blindly, dead-ending on a climb the local catalog doesn't have (#75).
+            KilterScannerView { link in open(link: link) }
+        }
+        // Graceful landing for a shared climb this device can't resolve (#75): explain instead of
+        // a dead detail screen. Reads right over the catalog gate too (install first, then rescan).
+        .alert("Climb not in your catalog",
+               isPresented: Binding(get: { missingSharedClimb != nil },
+                                    set: { if !$0 { missingSharedClimb = nil } }),
+               presenting: missingSharedClimb) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { link in
+            Text("This shared climb isn't in the catalog on this device. Get a catalog that "
+                 + "includes it — the sharer's board, or a bigger download — then open the link "
+                 + "or scan the code again. (Climb id \(link.uuid).)")
         }
         .navigationDestination(for: KilterClimbRoute.self) { route in
             KilterClimbDetailView(uuid: route.uuid, siblings: browseUUIDs, board: board, sessions: sessions)
@@ -229,6 +237,34 @@ struct KilterRootView: View {
         .onChange(of: app.liveWorkout.latestHR) { pushLiveActivity() }
         .onChange(of: sessions.activeClimbName) { pushLiveActivity() }
         .onChange(of: currentClimbCount) { pushLiveActivity() }
+        // Consume the one-shot `snappet://` climb intent (#75): `initial: true` covers the
+        // cold-start case (the intent was set before this view existed), the change closure the
+        // warm case (the shell replaced the path with this root, then set a new intent). Clearing
+        // before routing makes it one-shot even if routing pushes/alerts re-render us.
+        .onChange(of: router.pendingKilterClimb, initial: true) { _, pending in
+            guard let pending else { return }
+            router.pendingKilterClimb = nil
+            // Same store re-sync the normal appear path runs — a deep link must not strand a
+            // recoverable open session any more than a manual entry would (#54/#71 semantics).
+            sessions.recover(in: modelContext)
+            open(link: pending)
+        }
+    }
+
+    /// Route an arriving shared climb (QR scan or URL open) through the pure routing decision:
+    /// installed → adopt the shared angle when this board offers it and push the climb; missing →
+    /// the graceful alert. One path for both entries so they can't drift (#75).
+    private func open(link: KilterClimbLink) {
+        let installed = catalog.climb(link.uuid) != nil
+            || createdClimbs.contains { $0.uuid == link.uuid }
+        switch KilterDeepLinkRouting.destination(for: link, climbInstalled: installed,
+                                                 availableAngles: availableAngles) {
+        case .openClimb(let uuid, let adoptAngle):
+            if let adoptAngle { angle = adoptAngle }
+            router.push(KilterClimbRoute(uuid: uuid))
+        case .explainMissing:
+            missingSharedClimb = link
+        }
     }
 
     /// Climbs logged so far in the active session (the count shown in the banner + Live Activity).
@@ -267,7 +303,10 @@ struct KilterRootView: View {
     private var content: some View {
         VStack(spacing: 0) {
             filterBar
-            if sessions.isActive { sessionBar }
+            // The slot between the filters and the list belongs to the session: the green live
+            // bar when one is active, a first-class **Start session** control when idle (#75 —
+            // start/end no longer hide in the More menu; the bars own the lifecycle).
+            if sessions.isActive { sessionBar } else { idleSessionBar }
             countBar
             List {
                 if showDiscovery, let cotd {
@@ -298,7 +337,7 @@ struct KilterRootView: View {
                     if mineOnly && !searching {
                         ContentUnavailableView(
                             "No climbs yet", systemImage: "hammer",
-                            description: Text("Tap More ▸ Create climb to design your first one for this layout."))
+                            description: Text("Tap + to design your first climb for this layout."))
                     } else {
                         ContentUnavailableView(
                             searching ? "No matches" : (savedOnly ? "No saved climbs" : "No climbs match"),
@@ -310,6 +349,36 @@ struct KilterRootView: View {
                 }
             }
         }
+    }
+
+    /// The idle counterpart of `sessionBar` (#75): one visible **Start session** button + the
+    /// one-line pitch for what a session buys (the rich layer a menu-buried Start silently cost).
+    /// Same start path as everything else — `start` folds recovery, so a stale open session is
+    /// adopted/closed per the #54 policy, never forked.
+    private var idleSessionBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "figure.climbing")
+                .font(.subheadline)
+                .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+            Text("Live HR, per-climb timing & a highlight reel")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer()
+            Button {
+                // Discard the created-fresh flag: the explicit Start button needs no undo capsule
+                // (that's the auto-log path only), and the non-Void return would otherwise conflict
+                // with this Void action closure.
+                withAnimation(.snappy) { _ = sessions.start(angle: angle, source: "manual", in: modelContext) }
+            } label: {
+                Label("Start session", systemImage: "play.fill")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .accessibilityIdentifier("kilter.session.start")
+        }
+        .padding(.horizontal).padding(.vertical, 6)
     }
 
     /// Active-session banner: a live timer, climb count, live HR (when a source is connected), and
