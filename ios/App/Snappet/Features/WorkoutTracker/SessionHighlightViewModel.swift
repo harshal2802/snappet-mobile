@@ -102,8 +102,10 @@ final class SessionHighlightViewModel {
         guard !workout.media.isEmpty else { state = .empty; return }
 
         // 2. Run the selector pipeline → highlights. The effort-aligned selector boosts peak-effort
-        // set windows (Phase 4); empty windows ⇒ HR-only ranking (gated, unchanged).
-        let highlights = app.engine(boosting: boostWindows).selector.select(
+        // set windows (Phase 4); empty windows ⇒ HR-only ranking (gated, unchanged). The Vision scene
+        // term (#83 Step 1) only enters once replayed feedback has tuned in a scene weight.
+        let scene = await app.sceneSelector(for: workout)
+        let highlights = app.engine(boosting: boostWindows, scene: scene).selector.select(
             workout: workout, config: .preset(for: workout.activity))
         guard !highlights.isEmpty else { state = .empty; return }
 

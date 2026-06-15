@@ -35,6 +35,10 @@ final class AppModel {
     /// Reuses `ReelExporter`'s composition-sharing + PHAsset-resolve patterns.
     let videoStudio = VideoStudio()
     let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
+    /// On-device Vision scene scorer (#83 Step 1): saliency + sharpness + face/body presence per sampled
+    /// frame → a scalar `visualScore` for the fusion's scene term. Platform I/O lives here; only the
+    /// scalar crosses into the engine.
+    let sceneScorer = SceneScorer()
 
     /// The user's on-device HR profile (age / resting / max / weight / sex), shared by **both** apps
     /// (WorkoutTracker + Kilter) so personalized zones, `%HRR`, effort, and the HR-based calorie
@@ -179,12 +183,34 @@ final class AppModel {
     /// windows (Kilter) / peak-effort set windows (WorkoutTracker), in seconds from session start, so
     /// the auto-reel features the achievement, not just the raw HR peak. Empty `windows` ⇒ the
     /// effort term is 0 everywhere ⇒ identical to `engine` (HR-only) — the gated, no-change default.
-    func engine(boosting windows: [ClosedRange<Double>]) -> HighlightEngine {
-        HighlightEngine(
-            selector: FusionSelector.effortAligned(windows: windows),
+    /// `scene` carries the real Vision visual scores (#83 Step 1). The scene term is added to the fusion
+    /// ONLY when `feedbackTuning` exists — i.e. once the user's replayed feedback justifies a weighting
+    /// (project.md: weights change only from replayed feedback). Without tuning the blend is exactly
+    /// today's HR + effort, so adding the seam is a no-op until the data earns it.
+    func engine(boosting windows: [ClosedRange<Double>],
+                scene: SceneHighlightSelector = SceneHighlightSelector()) -> HighlightEngine {
+        var parts: [(any HighlightSelector, Double)] = [
+            (HRHighlightSelector(), feedbackTuning?.hrWeight ?? 0.6),
+            (EffortAlignedSelector(windows: windows), 0.4),
+        ]
+        if let tuning = feedbackTuning {
+            parts.append((scene, tuning.sceneWeight))
+        }
+        return HighlightEngine(
+            selector: FusionSelector(parts),
             planner: ReelPlanner(targetDuration: nil),
             feedback: feedback
         )
+    }
+
+    /// Build the scene selector for a workout's media. Runs the Vision scorer ONLY when a replay-derived
+    /// weighting exists (else the scene term wouldn't be added anyway — skip the cost). The resulting
+    /// scalar `visualScore` is the only thing that crosses into the platform-free engine.
+    func sceneSelector(for workout: Workout) async -> SceneHighlightSelector {
+        guard feedbackTuning != nil else { return SceneHighlightSelector() }
+        let scores = await sceneScorer.sceneScores(for: workout.media)
+        guard !scores.isEmpty else { return SceneHighlightSelector() }
+        return SceneHighlightSelector(visualScore: SceneScorer.visualScore(from: scores))
     }
 
     /// Launch entry point. First-time users see value-first onboarding; returning
