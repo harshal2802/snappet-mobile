@@ -70,6 +70,10 @@ targets:
         # Phase-end alerts (Pomodoro) keep .timeSensitive through a user's focus mode —
         # without this the system silently downgrades the interruption level (#70).
         com.apple.developer.usernotifications.time-sensitive: true
+        # App Group: home-screen widgets + interactive AppIntents (#81) read a small shared
+        # Today snapshot (and, from Phase 2, the check-off outbox) the widget extension also
+        # reaches. The app AND SnappetWidgets must carry the SAME id (group.com.snappet.app).
+        com.apple.security.application-groups: [group.com.snappet.app]
   # watchOS companion: runs HKWorkoutSession + HKLiveWorkoutBuilder and relays live HR /
   # energy to the phone over WCSession (live-workout-studio A1).
   SnappetWatch:
@@ -119,6 +123,13 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
+    entitlements:
+      path: SnappetWidgets/SnappetWidgets.entitlements
+      properties:
+        # Same App Group as the app target — the widget reads the shared Today snapshot
+        # (#81 Phase 1) and, from Phase 2, writes the interactive-check-off outbox the app
+        # reconciles into SwiftData on next foreground.
+        com.apple.security.application-groups: [group.com.snappet.app]
   # App unit tests for the PURE pieces (no device): WorkoutActivityMapping +
   # the LiveWorkoutService HR-buffer offset math. Distinct from HighlightEngineTests,
   # which must stay platform-free.

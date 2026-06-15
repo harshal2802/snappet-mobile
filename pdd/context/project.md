@@ -350,6 +350,22 @@ Settings row + an inline "set up your heart-rate profile" affordance on default-
 routes the same way now). **Simulator-pending**: unit + UI suites, `xcrun simctl openurl` cold/warm.
 **Device-pending**: real Camera QR scan, BLE auto-start parity.
 
+🟡 **OS integration — Phase 1: App Group + widget Today snapshot (2026-06-15, prompt 54, issue #81).**
+iOS. Opening the suite to the OS (home-screen widgets → App Intents → Spotlight) in four stacked PRs;
+this first PR is the foundation. An **App Group** (`group.com.snappet.app`) now sits on the app + the
+`SnappetWidgets` extension, and the app publishes a small versioned **read-only snapshot**
+(`Shared/SnappetWidgetSnapshot` + `WidgetSnapshotStore`) the widget will read — chosen over moving the
+live SwiftData store into the App Group (decisions.md: isolates the widget from `SnappetSchema` churn,
+no store-location migration, no cross-process locking, fully unit-testable). The snapshot is built by
+the pure `WidgetSnapshotBuilder` (reusing `TodayDigest` + `HabitMilestones.streak`) and published by
+`WidgetSnapshotService` on `scenePhase` from `RootShell`. **Verified**: app + watch + widget build,
+sign, embed with the new entitlement on the sim; `WidgetSnapshotTests` (codec round-trip,
+missing-key/future-version back-compat, builder parity) + full unit suite green; UI suite green.
+**Device-pending**: the App-Group container only fully provisions on a device — the file edge + the
+widget reading the snapshot land verifiable with the Phase-2 widget UI. **Next**: Phase 2 (Today
+widget + interactive check-off AppIntent via an App-Group outbox), Phase 3 (App Shortcuts), Phase 4
+(Spotlight).
+
 ## License
 
 TBD.

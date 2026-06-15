@@ -3955,3 +3955,45 @@ size (enlarging to 44pt would wreck the dense timeline) — VoiceOver trims via 
 **Verified**: full simulator suite green; the asset catalog compiles the new appearance slots. Reviewed
 in the main loop (review workflows rate-limited). Visual polish verified by eye on the generated icons +
 the build; the suite is the regression net for the token/layout changes (no structural change).
+
+## [2026-06-15] iOS — OS integration Phase 1: App Group + widget Today snapshot (read path) (#81)
+
+**Decision** (prompt 54, PR "Part of #81"): open the suite to the OS in four stacked PRs (App Group →
+widgets → intents → Spotlight). This first PR builds only the foundation every later phase needs — an
+**App Group** and a **read-only snapshot** the `SnappetWidgets` extension can read.
+
+- **Snapshot, NOT the live SwiftData store, in the App Group.** The hard requirement (a home-screen
+  widget reading live-ish data, and — Phase 2 — an interactive check-off `AppIntent` writing without
+  the app open) needs a place both processes share. Two options were weighed (recorded so it isn't
+  re-litigated): **(A)** move the live store into the App Group; **(B)** publish a small versioned
+  snapshot the widget reads. **Chose B.** Rationale: it keeps the widget completely isolated from
+  `SnappetSchema` (22 `@Model` types, bumped almost every PR — the extension never compiles or
+  migrates the model graph); needs **no irreversible store-location migration** (the existing on-disk
+  store stays where it is); has **no cross-process SQLite locking**; and is **fully unit-testable
+  without a device**. Cost: the widget reflects data as of the last write, and a widget-originated
+  mutation reconciles into the canonical store on next app open — handled in Phase 2 via an App-Group
+  **outbox** (append-in-widget → drain-into-SwiftData-on-foreground), so the write path stays equally
+  schema-isolated.
+- **Contract + store live in `Shared/`** (compiled into both targets, the `PomodoroActivityAttributes`
+  pattern): `SnappetWidgetSnapshot` (versioned `Codable`, with a **defaulting decoder** so a widget
+  reading a snapshot written by an older app build can't crash — the OverlayItem migration discipline)
+  and `WidgetSnapshotStore` (the one place that knows the group id `group.com.snappet.app` + file name;
+  a **pure** `encode`/`decode` that **rejects a higher `version`** than this binary understands, plus a
+  thin file edge over the container that degrades to `nil`/no-op when unprovisioned).
+- **Builder reuses the app's pure derivations.** `WidgetSnapshotBuilder` (pure, in the app target)
+  builds the snapshot from the same rows Home/Habit query via `TodayDigest.focusToday` +
+  `HabitMilestones.streak` (best current per-habit streak = the flame value users already see), so the
+  widget can't drift from the app. `WidgetSnapshotService` (the device edge) fetches + writes +
+  `WidgetCenter.reloadAllTimelines()`, wired in `RootShell` on `scenePhase` (per-mutation refreshes
+  land with the widget UI in Phase 2). No home-screen widget UI ships yet — `reloadAllTimelines()` is a
+  no-op until Phase 2 adds one.
+
+**Verified**: `xcodegen generate` clean; the app **and** the watch + widget extension build, code-sign
+(simulator), and embed with the new App-Group entitlement (no provisioning failure). Unit suite green
+(`WidgetSnapshotTests` ×7: codec round-trip, corrupt/missing-key/future-version back-compat, builder
+parity with `TodayDigest`/`HabitMilestones`); full `SnappetTests` 647 passing; UI suite green.
+**Accepted residual / device-pending**: the App-Group **container** only fully provisions on a real
+device (the group id must be registered under the signing team in the developer portal); the simulator
+doesn't enforce it, so `WidgetSnapshotStore.read/write` (the file edge) and the widget actually reading
+the snapshot are device-pending (they land verifiable with the Phase-2 widget UI). The builder + codec —
+the logic — are sim-verified.
