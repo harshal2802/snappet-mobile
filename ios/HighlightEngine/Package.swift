@@ -13,6 +13,7 @@ let package = Package(
         // it can run on iOS, watchOS, in tests, and later be reused on Android via
         // a port or shared spec. Keep platform I/O OUT of this target.
         .target(name: "HighlightEngine"),
-        .testTarget(name: "HighlightEngineTests", dependencies: ["HighlightEngine"]),
+        .testTarget(name: "HighlightEngineTests", dependencies: ["HighlightEngine"],
+                    resources: [.copy("Fixtures/synthetic-feedback.jsonl")]),
     ]
 )
