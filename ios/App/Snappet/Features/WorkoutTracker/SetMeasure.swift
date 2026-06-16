@@ -51,6 +51,18 @@ enum SetMeasure {
         set.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:))?.isSend ?? false
     }
 
+    /// A copy of `set` with a **fresh `completedAt`**, for the freeform player's one-tap "Repeat set":
+    /// every kind-specific field (reps/weight/unit · durationSec · climb grade/status/attempts) carries
+    /// over verbatim — only the completion stamp is replaced with `now` — so tapping logs a quick loop of
+    /// identical sets without reopening the sheet. Pure and `SetLog`-shaped (no view/SwiftData), so it's
+    /// unit-tested without a device and stays the one definition of "duplicate a set". `now` is injected
+    /// for deterministic tests; the player passes `.now`. (workout-with-timer PR 3)
+    static func duplicate(_ set: SetLog, now: Date) -> SetLog {
+        var copy = set
+        copy.completedAt = now
+        return copy
+    }
+
     // MARK: - Input parsing (shared by the live player and the summary's edit mode, issue #73)
 
     /// Reps text → `Int`, whitespace-trimmed; empty/non-numeric → `nil` (the player's exact rule).

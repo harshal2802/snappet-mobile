@@ -117,6 +117,47 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertFalse(SetMeasure.isSend(SetLog()))
     }
 
+    // MARK: - duplicate (one-tap repeat-set loop — PR 3)
+
+    func testDuplicateReplacesOnlyTheCompletedAtStamp() {
+        // The repeat loop logs a NEW set identical to the last — same fields, a fresh stamp.
+        let old = Date(timeIntervalSince1970: 0)
+        let fresh = Date(timeIntervalSince1970: 1_000)
+        let original = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg, completedAt: old)
+        let copy = SetMeasure.duplicate(original, now: fresh)
+        XCTAssertEqual(copy.completedAt, fresh, "the copy is stamped now, not the original time")
+        // Everything else round-trips verbatim — easiest proof: realign the stamp and compare wholesale.
+        var expected = original
+        expected.completedAt = fresh
+        XCTAssertEqual(copy, expected)
+    }
+
+    func testDuplicateCarriesEveryRepsWeightField() {
+        let copy = SetMeasure.duplicate(
+            SetLog(actualReps: 5, actualWeight: 62.5, weightUnit: .lb, completedAt: .now), now: .now)
+        XCTAssertEqual(copy.actualReps, 5)
+        XCTAssertEqual(copy.actualWeight, 62.5)
+        XCTAssertEqual(copy.weightUnit, .lb)
+        // The summary of the copy reads identically to the original's — a logged loop of the same set.
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .repsWeight, unit: .kg), "5 × 62.5 lb")
+    }
+
+    func testDuplicateCarriesDurationField() {
+        let copy = SetMeasure.duplicate(SetLog(completedAt: .now, durationSec: 45), now: .now)
+        XCTAssertEqual(copy.durationSec, 45)
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .duration, unit: .kg), "0:45")
+    }
+
+    func testDuplicateCarriesEveryClimbField() {
+        let original = SetLog(completedAt: .now, climbGradeLabel: "7a",
+                              climbStatusRaw: KilterAscentStatus.project.rawValue, climbAttempts: 4)
+        let copy = SetMeasure.duplicate(original, now: .now)
+        XCTAssertEqual(copy.climbGradeLabel, "7a")
+        XCTAssertEqual(copy.climbStatusRaw, KilterAscentStatus.project.rawValue)
+        XCTAssertEqual(copy.climbAttempts, 4)
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .climbAttempt, unit: .kg), "7a · Project · 4 tries")
+    }
+
     func testWeightFormatTrimsTrailingZero() {
         XCTAssertEqual(SetMeasure.formatWeight(60), "60")
         XCTAssertEqual(SetMeasure.formatWeight(62.5), "62.5")

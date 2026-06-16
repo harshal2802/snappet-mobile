@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Repeat set: one-tap identical-set loop via a pure `SetMeasure.duplicate` through the one append path
+
+**Decision** (workout-with-timer PR 3/6, prompt 69): the freeform player gains a one-tap **"Repeat set"**
+control on every exercise that already has ≥1 logged set. It appends a copy of that exercise's most
+recent set — every kind-specific field (reps/weight/unit · `durationSec` · climb grade/status/attempts)
+carried over verbatim, only `completedAt` replaced with `now` — and **does not open `LogSetSheet`**. The
+copy is built by a new pure `SetMeasure.duplicate(_:now:)` (next to `summary`/`hasInput`/`isSend`) and
+then handed to the **existing** `appendLog(_:toExerciseID:)`, so the append + `persist()` +
+`pushLiveActivity()` + `Haptics.success()` path is reused unchanged — Repeat is just another producer of
+a `SetLog`, not a second save site. The control is a **sibling leaf `Button`** beside `freeform.addSet`
+(`accessibilityIdentifier("freeform.repeatSet")`), gated by `if !ex.sets.isEmpty` so it's absent with
+nothing to repeat.
+
+**Why**: the slow part of straight sets / a bouldering burn of the same problem is re-typing identical
+numbers; one tap removes it for the common case while the sheet stays the path for a *different* set.
+Putting the copy in the pure `SetMeasure` keeps "duplicate a set" as one tested definition (a `SetLog`
+struct copy carries every additive-optional kind field for free); `now` is injected so the duplicate is
+unit-tested deterministically without a device. Note `appendLog` re-stamps `completedAt = .now` itself,
+so the duplicate's stamp is authoritative-by-the-append — `duplicate` still owns the field-copy + stamp
+semantics that the tests pin. The control is a leaf `Button` (never a wrapped composite) because on
+iOS 26 an identifier on a composite collapses its subtree and hides children from XCUITest (PR 2 lesson).
+
+**Rules out**: a second save/persist site for Repeat; inlining the `SetLog` copy in the view; opening a
+prefilled `LogSetSheet` for a repeat; changing `LogSetSheet`/`build()`/`SetLog` or any `SetKind`'s
+behavior; an identifier on a composite Repeat view.
+
 ## [2026-06-16] Timed sets: live-time a duration with the shared stopwatch; Timer/Manual toggle over one save path
 
 **Decision** (workout-with-timer PR 2/6, prompt 68): the freeform `LogSetSheet`'s `.duration` case
