@@ -99,12 +99,15 @@ final class ClimbAttemptTimerTests: XCTestCase {
         // is off by default (no stopwatch yet), then enable it.
         XCTAssertFalse(app.buttons["stopwatch.toggle"].exists,
                        "the per-attempt timer should be OFF by default (stopwatch hidden)")
-        // A SwiftUI `Toggle` surfaces as a `.switch`; query type-agnostically by id so the test doesn't
-        // hinge on the exact element type the Form row reports it as.
-        let timerToggle = app.descendants(matching: .any).matching(identifier: "logset.climbTimerToggle").firstMatch
+        // The "Time the attempt" Toggle surfaces as a Switch. A plain `.tap()` on the element can land on
+        // the row's label and NOT flip the control on iOS 26 (the symptom: the stopwatch never appeared),
+        // so tap the trailing edge where the switch thumb sits — and only if it's still off.
+        let timerToggle = app.switches["logset.climbTimerToggle"]
         XCTAssertTrue(timerToggle.waitForExistence(timeout: 4),
                       "the climb sheet should offer a 'Time the attempt' toggle")
-        timerToggle.tap()
+        if (timerToggle.value as? String) != "1" {
+            timerToggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        }
         snap("03-timer-enabled")
 
         // Enabling the toggle reveals the count-up stopwatch.
