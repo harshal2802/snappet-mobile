@@ -4,6 +4,43 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Named free-flow climb: custom climb name via the existing `displayName` (no model change); prompt-on-tap
+
+**Decision** (workout-with-timer PR 5/6, prompt 71): in the freeform player a **climbing** exercise can
+carry a **custom climb name** (e.g. "Cave Project", "Blue V4") so per-attempt logging groups under the
+named climb instead of the fixed "Climbing". Tapping "Climbing" in the add-exercise menu no longer adds
+immediately — it presents a small **`.alert("Name this climb", …)`** with a leaf `TextField`
+(`accessibilityIdentifier("freeform.climbName")`) + Add/Cancel; "Add" calls the **existing**
+`addExercise(kind: .climbAttempt, name: SetMeasure.climbName(draft))`. The typed name is stored on the
+**existing** `SessionExercise.displayName` and rendered by the **existing**
+`resolver.name(for:override:)` (which already returns a non-empty override as the header) — so there is
+**NO model change** and the name rides every existing path (persist · Live Activity label · backup) for
+free. A new pure `SetMeasure.climbName(_:)` trims `.whitespacesAndNewlines` and falls back to "Climbing"
+on a blank entry, so naming is **optional** and the prior behavior is the default. The trim/fallback is
+the one tested definition (unit-tested in `SetMeasureTests`, no simulator) rather than inline in the
+view. Chose the **prompt-on-tap** option over add-then-rename: it puts naming where the intent is, keeps
+the per-exercise header `Menu` simple (still just "Remove exercise"), and reuses the repo's existing
+alert-with-`TextField` pattern (`StudioEditorView`'s "Add text"/"Rename"). Attempt logging, the PR-4
+per-attempt timer, summaries, and Repeat set are untouched; only the name the attempts group under
+changes. The text field is a **leaf** with its own id and is queried via `app.alerts.textFields` (an id
+on a composite collapses the a11y subtree on iOS 26 — the PR 2/3/4 lesson).
+
+**Why**: a bouldering/route session wants attempts grouped by the *specific* problem ("Cave Project"),
+not all lumped under "Climbing"; storing that in the already-rendered `displayName` is the smallest
+change that achieves it (zero migration risk on the `Codable` blob). Putting the trim/fallback in pure
+`SetMeasure` keeps "what name to store" as one tested rule and leaves room to reuse it from a future
+rename surface.
+
+**Deferred (device-pending)**: **photo attachment to a free-flow climb** (a reference shot of the
+boulder/route) is intentionally **not** in this PR — it needs PHPicker/Photos, which is **device-only and
+unverifiable in this CI-only environment** (a clean type-check ≠ a device run for Photos), so it is split
+into a separate follow-up to be done where a device run is available.
+
+**Rules out**: a new `SessionExercise`/`SetLog`/`WorkoutModels` field for the climb name (reuse
+`displayName`); a second add-exercise site or inlining the trim/fallback in the view; changing attempt
+logging / the per-attempt timer / summaries / Repeat set / the guided `WorkoutPlayerView`; implementing
+photo attachment in this PR; an identifier on a composite alert view.
+
 ## [2026-06-16] Climb attempts: optional per-attempt timer reusing `durationSec` (no model change), off by default
 
 **Decision** (workout-with-timer PR 4/6, prompt 70): the freeform `LogSetSheet`'s `.climbAttempt` case

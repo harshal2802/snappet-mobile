@@ -127,6 +127,20 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.summary(zero, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries")
     }
 
+    // MARK: - climbName (named free-flow climb session — PR 5)
+
+    func testClimbNameTrimsSurroundingWhitespace() {
+        XCTAssertEqual(SetMeasure.climbName("  Cave Project  "), "Cave Project")
+        XCTAssertEqual(SetMeasure.climbName("Blue V4"), "Blue V4")
+    }
+
+    func testClimbNameFallsBackToClimbingWhenBlank() {
+        // Empty/whitespace-only entries must never log under a blank header → the generic "Climbing".
+        XCTAssertEqual(SetMeasure.climbName(""), "Climbing")
+        XCTAssertEqual(SetMeasure.climbName("   "), "Climbing")
+        XCTAssertEqual(SetMeasure.climbName("\n\t "), "Climbing")
+    }
+
     // MARK: - hasInput / isSend
 
     func testHasInput() {
