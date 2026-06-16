@@ -89,6 +89,12 @@ fun AppLibraryScreen() {
                 nav.navigate("module/kilter")
                 container.router.consume()
             }
+            is com.snappet.mobile.core.SuiteRouter.Route.KilterPlan -> {
+                com.snappet.mobile.feature.kilter.KilterDeepLinkBus.requestPlan()
+                container.core.log("kilter", "open", "Resumed Kilter session")
+                nav.navigate("module/kilter")
+                container.router.consume()
+            }
             null -> Unit
         }
     }

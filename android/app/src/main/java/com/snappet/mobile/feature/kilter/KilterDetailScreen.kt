@@ -100,12 +100,15 @@ fun KilterDetailScreen(
     onExit: () -> Unit,
     siblings: List<String> = emptyList(),
     onSelectSibling: (String) -> Unit = {},
+    onBackToPlan: () -> Unit = {},
+    onNextPick: (String) -> Unit = {},
 ) {
     val pages = remember(siblings, uuid) {
         if (siblings.contains(uuid)) siblings else listOf(uuid)
     }
     if (pages.size <= 1) {
-        KilterClimbDetail(uuid = uuid, catalog = catalog, board = board, sessions = sessions, onExit = onExit)
+        KilterClimbDetail(uuid = uuid, catalog = catalog, board = board, sessions = sessions,
+            onExit = onExit, onBackToPlan = onBackToPlan, onNextPick = onNextPick)
         return
     }
     val startIndex = remember(pages, uuid) { pages.indexOf(uuid).coerceAtLeast(0) }
@@ -116,6 +119,14 @@ fun KilterDetailScreen(
     androidx.compose.runtime.LaunchedEffect(pagerState.settledPage) {
         pages.getOrNull(pagerState.settledPage)?.let { if (it != uuid) onSelectSibling(it) }
     }
+    // Host → pager: when the host changes the selected climb (e.g. "Next pick" sets selectedUuid), move
+    // the pager to it — rememberPagerState ignores a changed initialPage on recomposition, so the page
+    // must be scrolled explicitly or the advance is a silent no-op. The settledPage effect above is the
+    // reverse direction (swipe → host); together they stay consistent without looping (idempotent).
+    androidx.compose.runtime.LaunchedEffect(uuid, pages) {
+        val target = pages.indexOf(uuid)
+        if (target >= 0 && target != pagerState.currentPage) pagerState.animateScrollToPage(target)
+    }
     androidx.compose.foundation.pager.HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize().testTag("kilter.detail.pager"),
@@ -125,6 +136,7 @@ fun KilterDetailScreen(
         KilterClimbDetail(
             uuid = pages[page], catalog = catalog, board = board, sessions = sessions, onExit = onExit,
             positionLabel = "${page + 1} / ${pages.size}",
+            onBackToPlan = onBackToPlan, onNextPick = onNextPick,
         )
     }
 }
@@ -138,6 +150,8 @@ private fun KilterClimbDetail(
     sessions: KilterSessionManager,
     onExit: () -> Unit,
     positionLabel: String? = null,
+    onBackToPlan: () -> Unit = {},
+    onNextPick: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
@@ -260,6 +274,9 @@ private fun KilterClimbDetail(
                             createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
                         )
                     )
+                    // Tick the active planned session, if this run came from "Plan a session": flips the
+                    // matching plan item to sent/attempted. No-op for an ad-hoc session or off-plan climb.
+                    sessions.applyLogToPlan(c.uuid, status, System.currentTimeMillis())
                     container.core.log("kilter", "log-${status.name.lowercase()}",
                         "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
                 }
@@ -298,6 +315,30 @@ private fun KilterClimbDetail(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Plan-backed run: this climb is a station in the plan — jump back to the list or advance to
+            // the next pending pick (a forward loop, not a back-button hunt). iOS-parity climb strip.
+            if (sessions.currentPlanId != null) {
+                val nextPick = sessions.nextPlanClimb(uuid)
+                Row(
+                    Modifier.fillMaxWidth().testTag("kilter.climb.planStrip"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    androidx.compose.material3.TextButton(onClick = onBackToPlan,
+                        modifier = Modifier.testTag("kilter.climb.backToPlan")) { Text("‹ Back to plan") }
+                    sessions.planProgress?.let { (d, t) ->
+                        Text("$d/$t", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (nextPick != null) {
+                        androidx.compose.material3.TextButton(onClick = { onNextPick(nextPick) },
+                            modifier = Modifier.testTag("kilter.climb.nextPick")) { Text("Next pick ›") }
+                    } else {
+                        Text("Plan done", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             // Issue #93: position pill when paging through siblings ("3 / 24"). Swipe left/right moves.
             positionLabel?.let { pos ->
                 Box(

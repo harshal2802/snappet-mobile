@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Kilter planned-session Android port: faithful mirror with Android-specific divergences (kilter-planned-session A-PR1..4)
+
+**Decision**: the iOS planned-session feature is ported to Android (Kotlin/Compose/Room) mirroring the
+iOS semantics + the invariants above. Branch `claude/android-kilter-planned-session`. Five layers:
+`KilterPlanProgress.kt` (pure logic, port of `KilterPlanLogic.swift`), `KilterPlanEntity` (Room),
+session-manager plan ownership + recover, `KilterPlanScreen` (generate/session-home + config sheet),
+and cross-screen re-entry (Home resume card + climb-detail strip).
+
+**Android-specific divergences (intentional)**: (1) plan items ride as a **JSON `String` column**
+(`itemsJson`, kotlinx.serialization via `KilterPlanItemsCodec`) on `KilterPlanEntity` — this codebase
+has **no Room `@TypeConverter`** and iOS's embedded `[KilterPlanItem]` array has no Room equivalent.
+(2) The Android **backup is schema-agnostic** (reads every table at the SQLite level), so the new
+`kilter_plan` table is covered automatically — no per-model row like iOS's `KilterPlanRow`
+(`BackupRoundTripTest` seeds one row to keep its "every exported table was seeded" invariant honest).
+(3) DB **v5→v6 AutoMigration** (additive table, no SQL). (4) `KilterSessionManager` is `remember`-scoped
+in `KilterRoot` (not AppContainer like iOS's AppModel-owned manager), so **`recover()` runs on entry**
+to re-hydrate the open session + pinned plan from the store — the store is the source of truth, which
+survives nav-out/in + relaunch and sidesteps an AppContainer/HR-source hoist. Outside-Kilter re-entry
+surfaces (Home card) are **store-derived** (Flows), not manager-derived. (5) Plan RMW is serialized
+through a **Mutex** (iOS is @MainActor-atomic). (6) `start()` folds `recover()` and `startPlan()`
+re-enters an existing open plan — the same single-open-session / one-open-plan invariants as iOS.
+(7) The Home "Resume" card deep-links via a new `SuiteRouter.Route.KilterPlan` parked on
+`KilterDeepLinkBus` (mirrors the existing `KilterClimb` deep-link), consumed by `KilterRoot` to open the
+plan-home. Goal-grouped reel + a floating shell-wide chip (iOS App-Library chip) remain deferred on both
+platforms; the Home card + in-Kilter strip cover re-entry.
+
 ## [2026-06-16] Kilter plan customization: named strategies over Options + a weighted allocation (kilter-planned-session PR 07)
 
 **Decision**: "Plan a session" gains an **Adjust** sheet leading with climber-language **strategies**

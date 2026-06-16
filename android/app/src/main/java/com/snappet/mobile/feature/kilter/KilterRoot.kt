@@ -95,6 +95,9 @@ fun KilterRoot(onExit: () -> Unit) {
     // edge; live capture is device-pending. The session manager flushes its avg/max summary on end.
     val heartRate = remember { com.snappet.mobile.feature.kilter.hr.BleHeartRateSource(context) }
     val sessions = remember { KilterSessionManager(dao, heartRate) }
+    // Re-hydrate the open session + its pinned plan from the store on entry (the manager is
+    // remember-scoped, so this survives navigating out of and back into Kilter, and a relaunch).
+    androidx.compose.runtime.LaunchedEffect(Unit) { sessions.recover() }
     // Seed the board's payload dialect from the persisted preference (Standard/Legacy).
     androidx.compose.runtime.LaunchedEffect(Unit) { board.setApiLevel(KilterSettings.apiLevel(context)) }
 
@@ -124,6 +127,9 @@ fun KilterRoot(onExit: () -> Unit) {
 
     // No catalog on this device yet → the opt-in import screen instead of an empty browse list.
     if (!cat.isAvailable) {
+        // Clear any pending "resume to plan" intent here so it can't leak past this terminal gate and
+        // hijack a later normal Kilter entry (the plan-home is unreachable without a catalog anyway).
+        androidx.compose.runtime.LaunchedEffect(Unit) { KilterDeepLinkBus.consumePlan() }
         KilterCatalogSyncScreen(onInstalled = { reloadToken++ }, onExit = onExit)
         return
     }
@@ -147,6 +153,13 @@ fun KilterRoot(onExit: () -> Unit) {
         KilterDeepLinkBus.consume()
     }
 
+    // The Home "Resume climbing session" card opens Kilter straight to the plan-home (which renders
+    // session-home for the active plan once recover() has re-pinned it on entry).
+    val pendingPlan = KilterDeepLinkBus.pendingPlan
+    androidx.compose.runtime.LaunchedEffect(pendingPlan) {
+        if (pendingPlan) { screen = KilterScreen.PLAN; KilterDeepLinkBus.consumePlan() }
+    }
+
     // Issue #86: system back pops one level, mirroring each sub-screen's onExit (all of them —
     // including DETAIL when entered from CREATE — return to ROOT). At ROOT the handler is disabled
     // so back falls through to the app-level NavHost (→ app grid).
@@ -165,8 +178,9 @@ fun KilterRoot(onExit: () -> Unit) {
     ) { target ->
     when (target) {
         KilterScreen.PLAN -> KilterPlanScreen(
-            catalog = cat, dao = dao,
+            catalog = cat, dao = dao, sessions = sessions,
             onOpenClimb = { uuid, siblings -> selectedUuid = uuid; browseSiblings = siblings; screen = KilterScreen.DETAIL },
+            onFinish = { id -> selectedSessionId = id; screen = KilterScreen.SESSION },
             onExit = { screen = KilterScreen.ROOT },
         )
         KilterScreen.HISTORY -> KilterHistoryScreen(
@@ -195,6 +209,8 @@ fun KilterRoot(onExit: () -> Unit) {
                 onSelectSibling = { selectedUuid = it },
                 catalog = cat, board = board, sessions = sessions,
                 onExit = { screen = KilterScreen.ROOT },
+                onBackToPlan = { screen = KilterScreen.PLAN },
+                onNextPick = { selectedUuid = it },
             )
         }
         KilterScreen.CREATE -> CreateClimbScreen(
