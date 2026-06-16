@@ -1,0 +1,74 @@
+name: CI
+
+# PR verification gate: builds the app and runs the unit + UI test suites on the iOS simulator
+# (no signing required) plus the pure HighlightEngine SwiftPM tests. Runs on every pull request
+# (any base branch, so stacked feature PRs are gated too) and on pushes to main.
+# NOTE: release-ipa.yml / testflight.yml only run on a published release or manual dispatch — this
+# is the only workflow that verifies a PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build & test (engine + app on the simulator)
+    runs-on: macos-15        # Sequoia → Xcode 16 / the iOS 18 SDK + simulators
+    timeout-minutes: 60
+    env:
+      SCHEME: Snappet
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: HighlightEngine unit tests (pure SwiftPM, no Xcode project)
+        working-directory: ios/HighlightEngine
+        run: swift test
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: ios/App
+        run: xcodegen generate
+
+      - name: Resolve an available iOS simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].udid')
+          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+            echo "::error::No iPhone simulator available on the runner" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build & run the test suite on the simulator
+        working-directory: ios/App
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme "$SCHEME" \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath "$RUNNER_TEMP/Snappet.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload xcresult bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snappet.xcresult
+          path: ${{ runner.temp }}/Snappet.xcresult
+          if-no-files-found: ignore
