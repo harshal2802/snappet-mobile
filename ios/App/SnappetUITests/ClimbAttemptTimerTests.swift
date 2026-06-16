@@ -131,14 +131,14 @@ final class ClimbAttemptTimerTests: XCTestCase {
         sleep(1); snap("06-logged")
         let row = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 6), "a logged climb set row should appear")
-        XCTAssertTrue(row.label.contains("V4"),
-                      "the climb row should show the grade (V4); row label = \(row.label)")
-        let showsDuration = row.label.contains(captured)
-            || row.staticTexts[captured].exists
-            || app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "V4 · Sent · \(captured)"))
-                .firstMatch.waitForExistence(timeout: 2)
-        XCTAssertTrue(showsDuration,
-                      "the climb row should show the captured attempt time (\(captured)); row label = \(row.label)")
+        // The row's summary is a single Text ("V4 · Sent · M:SS"), so assert ONE leaf static text carries
+        // BOTH the grade and the captured time. Query the static text directly — the row HStack's combined
+        // container label is unreliable on iOS 26 (the repo's UI-test lesson) — so this can't pass
+        // spuriously and proves the live capture was persisted into durationSec.
+        let summary = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "V4", captured)).firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 6),
+                      "the climb row should show the grade (V4) and the captured attempt time (\(captured))")
     }
 
     /// Wait until `el`'s accessibility label equals `expected` (the Start↔Stop flip).
