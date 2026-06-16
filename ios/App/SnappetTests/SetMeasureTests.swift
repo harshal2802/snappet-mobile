@@ -117,6 +117,49 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertFalse(SetMeasure.isSend(SetLog()))
     }
 
+    // MARK: - duplicate (one-tap repeat-set loop — PR 3)
+
+    func testDuplicateClearsOnlyTheCompletedAtStamp() {
+        // The repeat loop logs a NEW set identical to the last — same fields, no stamp (appendLog owns it).
+        let original = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg,
+                              completedAt: Date(timeIntervalSince1970: 1_000))
+        let copy = SetMeasure.duplicate(original)
+        XCTAssertNil(copy.completedAt, "the copy carries no stamp — appendLog stamps it on append")
+        // Everything else round-trips verbatim — easiest proof: clear the stamp and compare wholesale.
+        var expected = original
+        expected.completedAt = nil
+        XCTAssertEqual(copy, expected)
+    }
+
+    func testDuplicateCarriesEveryRepsWeightField() {
+        let copy = SetMeasure.duplicate(
+            SetLog(actualReps: 5, actualWeight: 62.5, weightUnit: .lb, completedAt: .now))
+        XCTAssertEqual(copy.actualReps, 5)
+        XCTAssertEqual(copy.actualWeight, 62.5)
+        XCTAssertEqual(copy.weightUnit, .lb)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
+        // The summary of the copy reads identically to the original's — a logged loop of the same set.
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .repsWeight, unit: .kg), "5 × 62.5 lb")
+    }
+
+    func testDuplicateCarriesDurationField() {
+        let copy = SetMeasure.duplicate(SetLog(completedAt: .now, durationSec: 45))
+        XCTAssertEqual(copy.durationSec, 45)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .duration, unit: .kg), "0:45")
+    }
+
+    func testDuplicateCarriesEveryClimbField() {
+        let original = SetLog(completedAt: .now, climbGradeLabel: "7a",
+                              climbStatusRaw: KilterAscentStatus.project.rawValue, climbAttempts: 4)
+        let copy = SetMeasure.duplicate(original)
+        XCTAssertEqual(copy.climbGradeLabel, "7a")
+        XCTAssertEqual(copy.climbStatusRaw, KilterAscentStatus.project.rawValue)
+        XCTAssertEqual(copy.climbAttempts, 4)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .climbAttempt, unit: .kg), "7a · Project · 4 tries")
+    }
+
     func testWeightFormatTrimsTrailingZero() {
         XCTAssertEqual(SetMeasure.formatWeight(60), "60")
         XCTAssertEqual(SetMeasure.formatWeight(62.5), "62.5")

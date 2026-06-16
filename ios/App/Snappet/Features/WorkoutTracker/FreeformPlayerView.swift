@@ -123,6 +123,18 @@ struct FreeformPlayerView: View {
                 Label(ex.kind.addLabel, systemImage: "plus.circle.fill")
             }
             .accessibilityIdentifier("freeform.addSet")
+
+            // One-tap repeat of the most recent set — duplicates it (all kind-specific fields, fresh
+            // completedAt) without opening the sheet. Only shown once there's a set to repeat. A sibling
+            // leaf Button (NOT wrapped in a composite) so its accessibilityIdentifier stays queryable.
+            if !ex.sets.isEmpty {
+                Button {
+                    repeatLastSet(ex)
+                } label: {
+                    Label("Repeat set", systemImage: "arrow.clockwise")
+                }
+                .accessibilityIdentifier("freeform.repeatSet")
+            }
         } header: {
             HStack {
                 Label(resolver.name(for: ex.exerciseId, override: ex.displayName), systemImage: ex.kind.symbol)
@@ -202,6 +214,15 @@ struct FreeformPlayerView: View {
         persist()
         pushLiveActivity()
         Haptics.success()
+    }
+
+    /// One-tap "Repeat set": append a copy of `ex`'s most recent set (all kind-specific fields via the
+    /// pure `SetMeasure.duplicate`) WITHOUT opening `LogSetSheet`, then reuse the same append+persist+haptic
+    /// path the sheet commits through — `appendLog` stamps the fresh `completedAt`. No-op when the exercise
+    /// has no sets (the control is hidden in that case). (workout-with-timer PR 3)
+    private func repeatLastSet(_ ex: SessionExercise) {
+        guard let last = ex.sets.last else { return }
+        appendLog(SetMeasure.duplicate(last), toExerciseID: ex.id)
     }
 
     private func deleteSets(_ ex: SessionExercise, at offsets: IndexSet) {
