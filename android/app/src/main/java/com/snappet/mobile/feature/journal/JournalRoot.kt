@@ -61,9 +61,14 @@ fun JournalRoot(onExit: () -> Unit) {
     val haptics = rememberSnappetHaptics()
 
     // Issue #89: optimistic undoable delete. The row is hidden the moment X is tapped (Flow-driven
-    // list filters out pendingDeleteId), the DAO delete is deferred until the snackbar times out, and
-    // an Undo tap just clears the pending id — the entry was never actually deleted, so it survives.
-    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    // list filters out the pending ids), the DAO delete is deferred until the snackbar times out, and
+    // an Undo tap just drops the pending id — the entry was never actually deleted, so it survives.
+    //
+    // Review fix: this is a SET, not a single id. `showUndo` dismisses any visible snackbar before
+    // showing the next, which fires the previous one's `commit`. With a single id that commit would
+    // clear the *new* still-pending row too, un-hiding a row mid-delete. As a set, each commit/undo
+    // touches only its own id, so back-to-back deletes don't clobber each other.
+    var pendingDeleteIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
 
     // Issue #86: navigation state as saveable primitives (a sealed screen carrying the full
     // JournalEntry is not Bundle-able). editorOpen with a null editingEntryId means a new entry.
@@ -74,8 +79,8 @@ fun JournalRoot(onExit: () -> Unit) {
     // flow loads (same gate as workout/budget — issue #86 review).
     val entriesOrNull by dao.allFlow().collectAsState(initial = null)
     val allEntries = entriesOrNull ?: emptyList()
-    // Optimistically hide the entry pending an undoable delete.
-    val entries = remember(allEntries, pendingDeleteId) { allEntries.filter { it.id != pendingDeleteId } }
+    // Optimistically hide every entry pending an undoable delete.
+    val entries = remember(allEntries, pendingDeleteIds) { allEntries.filter { it.id !in pendingDeleteIds } }
     val editingEntry = entries.firstOrNull { it.id == editingEntryId }
 
     fun closeEditor() {
@@ -135,13 +140,16 @@ fun JournalRoot(onExit: () -> Unit) {
                 },
                 onDelete = { entry ->
                     haptics.tick()
-                    pendingDeleteId = entry.id
+                    val id = entry.id
+                    pendingDeleteIds = PendingDeletes.stage(pendingDeleteIds, id)
                     snackbar.showUndo(
                         message = "Deleted entry",
-                        onUndo = { pendingDeleteId = null },
+                        onUndo = { pendingDeleteIds = PendingDeletes.unstage(pendingDeleteIds, id) },
                         commit = {
                             scope.launch { dao.delete(entry) }
-                            pendingDeleteId = null
+                            // Remove only THIS id: a fast second delete dismisses this snackbar and
+                            // fires this commit, but the second row's id must stay hidden.
+                            pendingDeleteIds = PendingDeletes.commit(pendingDeleteIds, id)
                         },
                     )
                 },
@@ -149,6 +157,19 @@ fun JournalRoot(onExit: () -> Unit) {
             )
         }
     }
+}
+
+/**
+ * Pure set-algebra for the staged (undoable) deletes (issue #89, review fix). Models the three
+ * transitions a row id goes through so the "back-to-back deletes don't clobber each other" guarantee
+ * is unit-tested without Compose: [stage] hides a row, [unstage] (Undo) reveals it, [commit] drops
+ * it once the real delete fires. The key property: [commit]/[unstage] only ever remove THEIR OWN id,
+ * so a second still-pending id survives the first's snackbar dismissal.
+ */
+internal object PendingDeletes {
+    fun stage(set: Set<Long>, id: Long): Set<Long> = set + id
+    fun unstage(set: Set<Long>, id: Long): Set<Long> = set - id
+    fun commit(set: Set<Long>, id: Long): Set<Long> = set - id
 }
 
 private fun JournalEntry.matches(query: String): Boolean {

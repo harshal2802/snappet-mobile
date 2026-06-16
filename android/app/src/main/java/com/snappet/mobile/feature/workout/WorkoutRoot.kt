@@ -307,9 +307,13 @@ fun WorkoutRoot(onExit: () -> Unit) {
 
         WorkoutScreen.ROUTINE_EDITOR -> RoutineEditorScreen(
             titleText = if (editingRoutineRow != null) "Edit routine" else "New routine",
-            initialName = editorName,
-            initialExercises = editorLines,
+            name = editorName,
+            exercises = editorLines,
             unit = unit,
+            // Hoist the FULL working state (name + every per-line edit) into the host on each change,
+            // so a round-trip into the exercise picker preserves it (review fix).
+            onNameChange = { editorName = it },
+            onLinesChange = { editorLines = it },
             onAddExercise = { screen = WorkoutScreen.EXERCISE_PICKER },
             onSave = { name, lines -> saveRoutine(name, lines) },
             onExit = { screen = WorkoutScreen.ROOT },
@@ -1100,8 +1104,6 @@ private fun SessionDetailScreen(
 
 // MARK: - Dashboard derived stats
 
-private const val DAY_MILLIS = 24L * 60 * 60 * 1000
-
 private fun startOfDay(millis: Long): Long {
     val cal = java.util.Calendar.getInstance()
     cal.timeInMillis = millis
@@ -1112,22 +1114,34 @@ private fun startOfDay(millis: Long): Long {
     return cal.timeInMillis
 }
 
-private fun currentStreak(history: List<WorkoutSession>): Int {
+internal fun currentStreak(history: List<WorkoutSession>): Int =
+    currentStreakAt(history, System.currentTimeMillis())
+
+/**
+ * Day-streak ending at [now]. Steps the cursor back one *calendar* day at a time
+ * (`WorkoutAnalytics.addDays`) instead of subtracting a fixed 24h, so a 23h/25h DST day never
+ * skips or double-counts a day (DST fix). [now]-injectable for unit tests.
+ */
+internal fun currentStreakAt(history: List<WorkoutSession>, now: Long): Int {
     if (history.isEmpty()) return 0
     val days = history.map { startOfDay(it.startedAt) }.toSet()
-    val today = startOfDay(System.currentTimeMillis())
-    var cursor = if (days.contains(today)) today else today - DAY_MILLIS
+    val today = startOfDay(now)
+    var cursor = if (days.contains(today)) today else startOfDay(WorkoutAnalytics.addDays(today, -1))
     if (!days.contains(cursor)) return 0
     var count = 0
     while (days.contains(cursor)) {
         count++
-        cursor -= DAY_MILLIS
+        cursor = startOfDay(WorkoutAnalytics.addDays(cursor, -1))
     }
     return count
 }
 
-private fun thisWeekCount(history: List<WorkoutSession>): Int {
-    val weekStart = startOfDay(System.currentTimeMillis()) - 6 * DAY_MILLIS
+internal fun thisWeekCount(history: List<WorkoutSession>): Int =
+    thisWeekCountAt(history, System.currentTimeMillis())
+
+/** Count of sessions in the trailing 7 calendar days ending at [now] (DST-correct day step). */
+internal fun thisWeekCountAt(history: List<WorkoutSession>, now: Long): Int {
+    val weekStart = startOfDay(WorkoutAnalytics.addDays(startOfDay(now), -6))
     return history.count { it.startedAt >= weekStart }
 }
 

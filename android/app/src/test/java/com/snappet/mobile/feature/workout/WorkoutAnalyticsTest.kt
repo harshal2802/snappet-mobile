@@ -1,11 +1,14 @@
 package com.snappet.mobile.feature.workout
 
 import com.snappet.mobile.feature.workout.WorkoutAnalytics.SessionView
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
+import java.util.TimeZone
 
 /**
  * Pure-logic tests for the issue #95 workout analytics — volume, PRs, per-exercise progress, and the
@@ -98,5 +101,77 @@ class WorkoutAnalyticsTest {
         val active = SessionView(0L, null, "r", "Live", listOf(ex("a", set(10, 100.0))))
         assertEquals(0.0, WorkoutAnalytics.weeklyVolumeView(listOf(active), DAY).sumOf { it.volumeKg }, 0.001)
         assertTrue(WorkoutAnalytics.personalRecordsView(listOf(active)).isEmpty())
+    }
+
+    // --- DST day-math (review fix) -----------------------------------------
+    //
+    // Day distances used to divide a midnight-to-midnight ms delta by a fixed 24h, which is wrong on
+    // a 23h/25h DST day. These pin a US-Eastern spring-forward boundary (clocks jump 02:00 -> 03:00
+    // on 2021-03-14, making that local day only 23h long) and assert the calendar-correct day count.
+
+    private var savedTz: TimeZone? = null
+
+    private fun useEastern() {
+        savedTz = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
+    }
+
+    @After fun restoreTz() {
+        savedTz?.let { TimeZone.setDefault(it) }
+        savedTz = null
+    }
+
+    /** Epoch millis for a local wall-clock time in the (already-set) default zone. */
+    private fun localMillis(year: Int, month0: Int, day: Int, hour: Int = 12): Long {
+        val cal = Calendar.getInstance()
+        cal.clear()
+        cal.set(year, month0, day, hour, 0, 0)
+        return cal.timeInMillis
+    }
+
+    @Test fun daysBetween_isOneAcrossSpringForward() {
+        useEastern()
+        // 2021-03-13 noon -> 2021-03-14 noon spans the 23h spring-forward day. Fixed-ms math would
+        // give (24h+1h?) ... actually a 23h gap / 24h = 0 -> off by one. Calendar math => 1.
+        val from = localMillis(2021, Calendar.MARCH, 13)
+        val to = localMillis(2021, Calendar.MARCH, 14)
+        assertEquals(1, WorkoutAnalytics.daysBetween(from, to))
+        assertEquals(-1, WorkoutAnalytics.daysBetween(to, from))
+    }
+
+    @Test fun daysBetween_isOneAcrossFallBack() {
+        useEastern()
+        // 2021-11-07 is the 25h fall-back day (clocks 02:00 -> 01:00). A 25h gap / 24h = 1 here, but
+        // multi-day spans accumulate the error; assert the single step stays exactly 1.
+        val from = localMillis(2021, Calendar.NOVEMBER, 6)
+        val to = localMillis(2021, Calendar.NOVEMBER, 7)
+        assertEquals(1, WorkoutAnalytics.daysBetween(from, to))
+    }
+
+    @Test fun daysBetween_sameDayIsZero() {
+        useEastern()
+        val a = localMillis(2021, Calendar.MARCH, 14, hour = 4)
+        val b = localMillis(2021, Calendar.MARCH, 14, hour = 22)
+        assertEquals(0, WorkoutAnalytics.daysBetween(a, b))
+    }
+
+    @Test fun addDays_steppingBackOverDstLandsOnSameWallClockDay() {
+        useEastern()
+        val day14 = localMillis(2021, Calendar.MARCH, 14)
+        val back = WorkoutAnalytics.addDays(day14, -1)
+        // -1 calendar day lands on the 13th regardless of the 23h DST day length.
+        val cal = Calendar.getInstance().apply { timeInMillis = back }
+        assertEquals(13, cal.get(Calendar.DAY_OF_MONTH))
+    }
+
+    @Test fun weeklyVolume_bucketsCorrectlyAcrossDstBoundary() {
+        useEastern()
+        // A session the day before "now", with the DST boundary in between, must land in the most
+        // recent week's bucket (daysAgo == 1, weekIdx 0), not slip a bucket from ms rounding.
+        val now = localMillis(2021, Calendar.MARCH, 14, hour = 12)
+        val yesterday = localMillis(2021, Calendar.MARCH, 13, hour = 12)
+        val s = SessionView(yesterday, yesterday + 1000, "r", "R", listOf(ex("a", set(10, 50.0))))
+        val weeks = WorkoutAnalytics.weeklyVolumeView(listOf(s), now, weeks = 8)
+        assertEquals(500.0, weeks.last().volumeKg, 0.001)
     }
 }

@@ -20,9 +20,19 @@ object WorkoutCatalog {
     /** The active catalog: the full bundled DB once loaded, else the curated offline subset. */
     val all: List<WorkoutExercise> get() = loaded ?: curated
 
-    private val byId: Map<String, WorkoutExercise> get() = all.associateBy { it.id }
+    /**
+     * Memoized id → exercise index over [all] (review fix). Built lazily on first lookup and
+     * rebuilt only when the underlying catalog changes (the curated→loaded swap in [load]); it is
+     * NOT rebuilt per call. `WorkoutResolver.name()` calls [byId] once per row in scrollable lists,
+     * so re-`associateBy`-ing the 873-entry catalog every lookup was an O(n) cost per row.
+     */
+    @Volatile
+    private var idIndex: Map<String, WorkoutExercise>? = null
 
-    fun byId(id: String): WorkoutExercise? = byId[id]
+    private fun index(): Map<String, WorkoutExercise> =
+        idIndex ?: all.associateBy { it.id }.also { idIndex = it }
+
+    fun byId(id: String): WorkoutExercise? = index()[id]
 
     /** Whether the full bundled catalog has been parsed in (vs. the curated fallback). */
     val isFullyLoaded: Boolean get() = loaded != null
@@ -39,6 +49,7 @@ object WorkoutCatalog {
         }.mapCatching { WorkoutExerciseParser.parse(it) }.getOrDefault(emptyList())
         if (parsed.isNotEmpty()) {
             loaded = parsed.sortedBy { it.name.lowercase() }
+            idIndex = null // force a rebuild over the now-full catalog on next lookup
         }
     }
 

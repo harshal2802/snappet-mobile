@@ -13,8 +13,6 @@ import java.util.Calendar
  */
 object WorkoutAnalytics {
 
-    private const val DAY_MILLIS = 24L * 60 * 60 * 1000
-    private const val WEEK_MILLIS = 7 * DAY_MILLIS
     /** 1 lb in kg — used to normalise mixed-unit history into one comparison number. */
     private const val LB_TO_KG = 0.45359237
 
@@ -73,13 +71,17 @@ object WorkoutAnalytics {
         val buckets = DoubleArray(weeks)
         for (s in history) {
             if (s.isActive) continue
-            val daysAgo = ((todayStart - startOfDay(s.startedAt)) / DAY_MILLIS).toInt()
+            // Count whole calendar days between the two midnights via Calendar field math, not a
+            // fixed-ms division: a 23h/25h DST day would make `delta / DAY_MILLIS` off by one (DST
+            // fix). `daysBetween(from, to)` is positive when `to` is more recent than `from`.
+            val daysAgo = daysBetween(startOfDay(s.startedAt), todayStart)
             if (daysAgo < 0) continue
             val weekIdx = daysAgo / 7
             if (weekIdx in 0 until weeks) buckets[weeks - 1 - weekIdx] += sessionVolumeKgView(s)
         }
         return (0 until weeks).map { i ->
-            val weekStart = todayStart - (weeks - 1 - i).toLong() * WEEK_MILLIS
+            // Step back N*7 calendar days from today's midnight so the bar's label survives DST too.
+            val weekStart = startOfDay(addDays(todayStart, -(weeks - 1 - i) * 7))
             WeeklyVolume(weekStart, buckets[i])
         }
     }
@@ -164,5 +166,34 @@ object WorkoutAnalytics {
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
         return cal.timeInMillis
+    }
+
+    /** [base] shifted by [days] calendar days (negative steps back), DST-correct. */
+    internal fun addDays(base: Long, days: Int): Long {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = base
+        cal.add(Calendar.DAY_OF_YEAR, days)
+        return cal.timeInMillis
+    }
+
+    /**
+     * Whole calendar days from [from] to [to] (positive when [to] is later), counted by stepping a
+     * [Calendar] day-by-day rather than dividing a millisecond delta by a fixed 24h — so a 23h/25h
+     * DST day still counts as exactly one day (DST fix). Inputs are expected to be day-aligned
+     * (midnights); the loop compares against a small epsilon-free midnight target.
+     */
+    internal fun daysBetween(from: Long, to: Long): Int {
+        if (from == to) return 0
+        val backward = to < from
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = if (backward) to else from
+        val targetDay = startOfDay(if (backward) from else to)
+        var count = 0
+        // Guard against runaway loops on absurd inputs (~10 years of days).
+        while (startOfDay(cal.timeInMillis) < targetDay && count < 4000) {
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+            count++
+        }
+        return if (backward) -count else count
     }
 }

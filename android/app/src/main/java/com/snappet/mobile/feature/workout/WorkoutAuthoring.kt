@@ -168,27 +168,33 @@ internal fun ExercisePickerScreen(
 
 /**
  * Create or edit a routine: a name + an ordered list of exercise lines (sets × reps, rest, optional
- * target weight), with add / remove. [initial] is null for a new routine, or the existing rows when
- * editing. On Save, [onSave] receives the assembled name + lines; the host persists.
+ * target weight), with add / remove.
+ *
+ * Review fix: the editor's **entire** working state — the [name] AND the full [lines] list including
+ * per-line field edits (sets/reps/rest/weight) — is hoisted into the host ([WorkoutRoot]) and
+ * mirrored on every change via [onNameChange] / [onLinesChange]. Previously only the picked line was
+ * pushed up while the typed name and in-place line edits lived in this screen's local state, so
+ * navigating to the "Add exercise" picker and back (which swaps the `when(screen)` branch and tears
+ * this composable down) discarded them. The host now owns the draft, this screen is a pure view +
+ * change-emitter over it, and the round-trip into the picker preserves everything.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RoutineEditorScreen(
     titleText: String,
-    initialName: String,
-    initialExercises: List<RoutineDraftExercise>,
+    name: String,
+    exercises: List<RoutineDraftExercise>,
     unit: WorkoutWeightUnit,
+    onNameChange: (String) -> Unit,
+    onLinesChange: (List<RoutineDraftExercise>) -> Unit,
     onAddExercise: () -> Unit,
     onSave: (String, List<RoutineDraftExercise>) -> Unit,
     onExit: () -> Unit,
 ) {
-    var name by rememberSaveable { mutableStateOf(initialName) }
-    // The draft lines are held by the host (they need to survive a round-trip into the picker), so
-    // this screen receives them as [initialExercises] and edits in place via [onSave] on commit.
-    var lines by remember { mutableStateOf(initialExercises) }
+    val lines = exercises
 
     fun update(index: Int, transform: (RoutineDraftExercise) -> RoutineDraftExercise) {
-        lines = lines.toMutableList().also { it[index] = transform(it[index]) }
+        onLinesChange(lines.toMutableList().also { it[index] = transform(it[index]) })
     }
 
     ModuleScaffold(
@@ -210,7 +216,7 @@ internal fun RoutineEditorScreen(
             item {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = onNameChange,
                     label = { Text("Routine name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("workout.editor.name"),
@@ -241,7 +247,7 @@ internal fun RoutineEditorScreen(
                         Text(line.displayName, style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.weight(1f))
                         IconButton(
-                            onClick = { lines = lines.toMutableList().also { it.removeAt(index) } },
+                            onClick = { onLinesChange(lines.toMutableList().also { it.removeAt(index) }) },
                             modifier = Modifier.testTag("workout.editor.removeLine"),
                         ) { Icon(Icons.Filled.Delete, contentDescription = "Remove ${line.displayName}") }
                     }
