@@ -83,6 +83,16 @@ fun HomeDashboardScreen(onOpenModule: (String) -> Unit = {}) {
     val habits by container.database.habitDao().habitsFlow().collectAsState(initial = emptyList())
     val completions by container.database.habitDao().completionsFlow().collectAsState(initial = emptyList())
     val pomodoros by container.database.pomodoroDao().allFlow().collectAsState(initial = emptyList())
+    // Kilter "Resume climbing session" — store-derived: an open plan pinned to a still-open session.
+    val kPlans by container.database.kilterDao().plansFlow().collectAsState(initial = emptyList())
+    val kSessions by container.database.kilterDao().sessionsFlow().collectAsState(initial = emptyList())
+    val kilterResume = run {
+        val openSids = kSessions.filter { it.endedAt == null }.map { it.id }.toSet()
+        kPlans.filter { it.completedAt == null && it.sessionId != null && it.sessionId in openSids }
+            .maxByOrNull { it.createdAt }
+            ?.let { com.snappet.mobile.feature.kilter.KilterPlanProgress.progress(
+                com.snappet.mobile.feature.kilter.KilterPlanItemsCodec.decode(it.itemsJson)) }
+    }
     val scope = rememberCoroutineScope()
 
     val reduceMotion = LocalReduceMotion.current
@@ -113,6 +123,15 @@ fun HomeDashboardScreen(onOpenModule: (String) -> Unit = {}) {
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     TodayRow(records)
+                    kilterResume?.let { (kDone, kTotal) ->
+                        ActionCard(
+                            tint = com.snappet.mobile.ui.theme.kilterAccent(),
+                            title = "Resume climbing session",
+                            subtitle = "$kDone of $kTotal done",
+                            onOpen = { container.router.request(com.snappet.mobile.core.SuiteRouter.Route.KilterPlan) },
+                            trailing = {},
+                        )
+                    }
                     ActionCards(
                         habits = habits, completions = completions, pomodoros = pomodoros,
                         onOpenModule = onOpenModule,

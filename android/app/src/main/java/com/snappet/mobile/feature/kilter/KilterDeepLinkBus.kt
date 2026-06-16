@@ -17,4 +17,11 @@ object KilterDeepLinkBus {
 
     fun request(uuid: String, angle: Int?) { pending = uuid to angle }
     fun consume() { pending = null }
+
+    /** Pending "open the plan-home" intent (the Home "Resume climbing session" card). */
+    var pendingPlan by mutableStateOf(false)
+        private set
+
+    fun requestPlan() { pendingPlan = true }
+    fun consumePlan() { pendingPlan = false }
 }

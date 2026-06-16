@@ -19,6 +19,8 @@ class SuiteRouter {
     sealed interface Route {
         data class Module(val moduleId: String) : Route
         data class KilterClimb(val uuid: String, val angle: Int?) : Route
+        /** Open Kilter directly on its plan-home (the Home "Resume climbing session" card). */
+        data object KilterPlan : Route
     }
 
     var pendingRoute by mutableStateOf<Route?>(null)

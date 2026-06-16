@@ -150,6 +150,13 @@ fun KilterRoot(onExit: () -> Unit) {
         KilterDeepLinkBus.consume()
     }
 
+    // The Home "Resume climbing session" card opens Kilter straight to the plan-home (which renders
+    // session-home for the active plan once recover() has re-pinned it on entry).
+    val pendingPlan = KilterDeepLinkBus.pendingPlan
+    androidx.compose.runtime.LaunchedEffect(pendingPlan) {
+        if (pendingPlan) { screen = KilterScreen.PLAN; KilterDeepLinkBus.consumePlan() }
+    }
+
     // Issue #86: system back pops one level, mirroring each sub-screen's onExit (all of them —
     // including DETAIL when entered from CREATE — return to ROOT). At ROOT the handler is disabled
     // so back falls through to the app-level NavHost (→ app grid).
@@ -199,6 +206,8 @@ fun KilterRoot(onExit: () -> Unit) {
                 onSelectSibling = { selectedUuid = it },
                 catalog = cat, board = board, sessions = sessions,
                 onExit = { screen = KilterScreen.ROOT },
+                onBackToPlan = { screen = KilterScreen.PLAN },
+                onNextPick = { selectedUuid = it },
             )
         }
         KilterScreen.CREATE -> CreateClimbScreen(
