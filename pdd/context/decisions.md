@@ -4,6 +4,50 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] History tracking-type facet: a pure derivation over `SessionExercise.kind` (no model change), composed in `HistorySearch`
+
+**Decision** (workout-with-timer PR 6/6 — the final slice, prompt 72): the workout **History** gains a
+**tracking-type facet** — a second chip row, alongside the routine-name chips (issue #73), of the three
+`SetKind`s (Reps & weight / Time / Climb) — that keeps a session when **any** of its exercises tracks a
+selected kind. A session's tracking types are **derived** from the set of `ex.kind` across its
+`exercises` (`SessionExercise.kind`, which already reads `kindRaw` and defaults `.repsWeight`), so this
+is a **pure derivation over existing data with NO model change** (`SetKind` + `SessionExercise.kindRaw`
+already exist). The semantics are **union, not intersection** (selecting Time + Climb keeps a session
+tracking *either*) and **empty selection = inert** (all sessions through), so the prior behavior is the
+default. Filtering stays in the **pure, unit-tested `HistorySearch`** (no SwiftUI in the logic): a new
+composable `filterByTrackingTypes(_:kinds:)` carries the one-line "any selected kind" rule, and
+`apply(_:query:routine:kinds: Set<SetKind> = [])` calls it in the funnel **routine chip → tracking-type
+facet → text query**. The defaulted `kinds:` keeps the existing `apply` call site and the existing
+`HistorySearchTests` untouched. The chip row **mirrors `routineChips`** exactly (horizontal `ScrollView`
+of plain pill `Button`s, active = `SnappetColor.workout.opacity(0.2)` fill + `SnappetColor.workout`
+foreground, `.snappetAnimation(SnappetMotion.quick, value:)`, `.accessibilityAddTraits(.isSelected)`),
+uses `SetKind.allCases` with each chip's `.display` label + `.symbol` icon, and is shown once
+`!history.isEmpty` so a kind can always be toggled. Selection lives in a `@State private var kindFilter:
+Set<SetKind>` (the `ExerciseFilters` `Set`-per-facet precedent). Chose **(both, layered)** over either a
+bare `kinds:` param or a standalone helper: the helper is directly testable and composable, the param
+threads it through the one funnel, and the default preserves the old surface.
+
+**Why**: a bouldering/route session, a stretch/hold session, and a lifting session should each be
+findable by *what they tracked*, not only by routine name. Deriving from `SessionExercise.kind` is the
+smallest change (zero migration — nothing new persisted), and keeping the rule in pure `HistorySearch`
+means it's covered without a simulator and composes cleanly with the routine + text layers already there.
+
+**UI-test approach**: the real flow is drivable end-to-end (Quick Start → log a Timed set via the
+`LogSetSheet` Manual mode → `freeform.finish` commits a saved finish with **no** confirm dialog → the
+`segmentedControls["History"]` segment → toggle `history.kindChip.duration`), so `TrackingTypeFilterTests`
+drives it: with a fresh store the timed session is the only `historyRow`, so toggling **Time** keeps it,
+adding **Reps & weight** keeps it (union), and turning **Time** back off (leaving only Reps & weight)
+**hides** it — the distinctive narrow/widen. A chip-render + toggle fallback was the documented
+contingency but wasn't needed. Each chip is a **leaf** with id `history.kindChip.<rawValue>` (e.g.
+`history.kindChip.duration`); rows are queried **type-agnostically**
+(`descendants(matching: .any).matching(identifier: "historyRow")`, not `app.cells`) — the PR 2–5 lesson
+that an id on a composite collapses the a11y subtree on iOS 26.
+
+**Rules out**: a stored "tracking types" field on `WorkoutSession`/`SessionExercise` (derive from
+`kind`); a second/parallel filter funnel (extend `HistorySearch`); intersection semantics or a
+non-inert empty selection; an `accessibilityIdentifier` on the composite chip row; touching the
+guided `WorkoutPlayerView`, the watch/widget, or `HighlightEngine`.
+
 ## [2026-06-16] Named free-flow climb: custom climb name via the existing `displayName` (no model change); prompt-on-tap
 
 **Decision** (workout-with-timer PR 5/6, prompt 71): in the freeform player a **climbing** exercise can
