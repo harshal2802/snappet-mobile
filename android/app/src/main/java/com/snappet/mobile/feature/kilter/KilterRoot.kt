@@ -95,6 +95,9 @@ fun KilterRoot(onExit: () -> Unit) {
     // edge; live capture is device-pending. The session manager flushes its avg/max summary on end.
     val heartRate = remember { com.snappet.mobile.feature.kilter.hr.BleHeartRateSource(context) }
     val sessions = remember { KilterSessionManager(dao, heartRate) }
+    // Re-hydrate the open session + its pinned plan from the store on entry (the manager is
+    // remember-scoped, so this survives navigating out of and back into Kilter, and a relaunch).
+    androidx.compose.runtime.LaunchedEffect(Unit) { sessions.recover() }
     // Seed the board's payload dialect from the persisted preference (Standard/Legacy).
     androidx.compose.runtime.LaunchedEffect(Unit) { board.setApiLevel(KilterSettings.apiLevel(context)) }
 

@@ -176,6 +176,10 @@ interface KilterDao {
     @Query("SELECT * FROM kilter_session ORDER BY startedAt DESC")
     fun sessionsFlow(): Flow<List<KilterSession>>
 
+    /** Open (un-ended) sessions, newest first — for the manager's recover-on-entry re-adoption. */
+    @Query("SELECT * FROM kilter_session WHERE endedAt IS NULL ORDER BY startedAt DESC")
+    suspend fun openSessions(): List<KilterSession>
+
     @Query("DELETE FROM kilter_session") suspend fun clearSessions()
 
     @Query("SELECT * FROM kilter_favorite ORDER BY addedAt DESC")

@@ -260,6 +260,9 @@ private fun KilterClimbDetail(
                             createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
                         )
                     )
+                    // Tick the active planned session, if this run came from "Plan a session": flips the
+                    // matching plan item to sent/attempted. No-op for an ad-hoc session or off-plan climb.
+                    sessions.applyLogToPlan(c.uuid, status, System.currentTimeMillis())
                     container.core.log("kilter", "log-${status.name.lowercase()}",
                         "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
                 }
