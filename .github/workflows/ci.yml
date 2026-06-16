@@ -26,9 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pin Xcode 16 (iOS 18 SDK) — the toolchain this app is developed and shipped on. The macos-15
+      # runner's `latest-stable` has drifted to Xcode 26.x, whose Swift type-checker times out
+      # ("unable to type-check this expression in reasonable time") on several of the app's complex
+      # expressions that compile fine on Xcode 16. Pin to the real target toolchain instead.
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '16'
 
       - name: HighlightEngine unit tests (pure SwiftPM, no Xcode project)
         working-directory: ios/HighlightEngine
