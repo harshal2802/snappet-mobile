@@ -99,6 +99,21 @@ fun PomodoroRoot(onExit: () -> Unit) {
     val timer = container.pomodoro
     LaunchedEffect(Unit) { timer.applyDurations(focus, brk) }
 
+    // Celebrate a completed focus block (issue #89): a focus session is persisted whenever a FOCUS
+    // phase finishes, so a growing sessions count is the completion signal. Skip the first emission
+    // (initial load) so re-entering the screen doesn't fire spuriously.
+    val snackbar = com.snappet.mobile.ui.LocalSnackbarController.current
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
+    var lastSessionCount by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(sessions.size) {
+        val prev = lastSessionCount
+        if (prev != null && sessions.size > prev) {
+            haptics.commit()
+            snackbar.show("Focus complete — nice work!")
+        }
+        lastSessionCount = sessions.size
+    }
+
     // Phase-end alerts need POST_NOTIFICATIONS on API 33+ — ask in context, before the
     // first start, like the iOS screen does for UNUserNotifications (#70).
     val notifPermission = rememberLauncherForActivityResult(

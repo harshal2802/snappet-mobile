@@ -95,6 +95,11 @@ fun KilterDetailScreen(
     val dao = container.database.kilterDao()
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
+    val snackbar = com.snappet.mobile.ui.LocalSnackbarController.current
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
+    // Issue #89: BLE permission denial used to be a silent no-op — track it to show a rationale +
+    // Settings deep link so Connect is never a dead control.
+    var permissionDenied by remember { mutableStateOf(false) }
 
     val favorites by dao.favoritesFlow().collectAsState(initial = emptyList())
     val isFavorite = remember(favorites, uuid) { favorites.any { it.climbUuid == uuid } }
@@ -153,9 +158,25 @@ fun KilterDetailScreen(
         }
     }
 
+    // Auto-dismiss the inline log pill after ~3s (issue #89: it was set and never cleared).
+    androidx.compose.runtime.LaunchedEffect(logConfirmation) {
+        if (logConfirmation != null) {
+            kotlinx.coroutines.delay(3000)
+            logConfirmation = null
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted -> if (granted.values.all { it }) board.connect() }
+    ) { granted ->
+        if (granted.values.all { it }) {
+            permissionDenied = false
+            board.connect()
+        } else {
+            // Denial is no longer silent — surface a rationale + Settings link instead (issue #89).
+            permissionDenied = true
+        }
+    }
 
     fun requestConnect() {
         val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
@@ -168,18 +189,27 @@ fun KilterDetailScreen(
         val c = climb ?: return
         val stat = stats.firstOrNull { it.angle == selectedAngle } ?: return
         val grade = catalog.gradeLabel(stat.difficulty)
-        scope.launch {
-            dao.insertLog(
-                KilterLogEntry(
-                    climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
-                    difficulty = stat.difficulty, gradeLabel = grade, status = status.name,
-                    createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
-                )
-            )
-            container.core.log("kilter", "log-${status.name.lowercase()}",
-                "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
-        }
+        haptics.commit()
+        // Optimistic inline pill (auto-dismisses below). The actual write is deferred to the snackbar
+        // so Undo is a clean no-op — nothing was persisted yet (issue #89).
         logConfirmation = "Logged ${status.label.lowercase()} · $grade"
+        snackbar.showUndo(
+            message = "Logged ${status.label.lowercase()} · $grade",
+            onUndo = { logConfirmation = null },
+            commit = {
+                scope.launch {
+                    dao.insertLog(
+                        KilterLogEntry(
+                            climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
+                            difficulty = stat.difficulty, gradeLabel = grade, status = status.name,
+                            createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
+                        )
+                    )
+                    container.core.log("kilter", "log-${status.name.lowercase()}",
+                        "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
+                }
+            },
+        )
     }
 
     fun toggleFavorite() {
@@ -316,6 +346,17 @@ fun KilterDetailScreen(
 
             // Illuminate (Phase 2). Simulators / devices with no BLE radio never show the section.
             if (board.state != KilterBoardController.State.UNSUPPORTED) {
+                if (permissionDenied) {
+                    PermissionRationale(
+                        onOpenSettings = {
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.fromParts("package", context.packageName, null),
+                            )
+                            runCatching { context.startActivity(intent) }
+                        },
+                    )
+                }
                 when (board.state) {
                     KilterBoardController.State.CONNECTED -> {
                         OutlinedButton(
@@ -444,6 +485,31 @@ fun KilterDetailScreen(
                 }
             }
             climb?.let { Text("Set by ${it.setter}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+/**
+ * Shown when Nearby-devices (BLE) permission was denied (issue #89): explains why the board needs it
+ * and deep-links to app Settings, so the Connect button is never a silently dead control.
+ */
+@Composable
+private fun PermissionRationale(onOpenSettings: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f))
+            .padding(12.dp)
+            .testTag("kilter.permissionRationale"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            "Snappet needs Nearby devices permission to find your board.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        OutlinedButton(onClick = onOpenSettings, modifier = Modifier.testTag("kilter.openSettings")) {
+            Text("Open Settings")
         }
     }
 }

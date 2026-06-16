@@ -74,6 +74,8 @@ fun HabitRoot(onExit: () -> Unit) {
     val dao = container.database.habitDao()
     val core = container.core
     val scope = rememberCoroutineScope()
+    val snackbar = com.snappet.mobile.ui.LocalSnackbarController.current
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
 
     val habits by dao.habitsFlow().collectAsState(initial = emptyList())
     val completions by dao.completionsFlow().collectAsState(initial = emptyList())
@@ -101,7 +103,13 @@ fun HabitRoot(onExit: () -> Unit) {
                 padding = padding,
                 habits = habits,
                 completions = completions,
-                onToggleDay = { habit, dayStart -> toggle(scope, dao, core, completions, habit, dayStart) },
+                onToggleDay = { habit, dayStart ->
+                    haptics.commit() // tactile confirmation on toggle (issue #89)
+                    toggle(scope, dao, core, completions, habit, dayStart) { milestone ->
+                        // 7/30-day streak celebration (issue #89).
+                        snackbar.show("$milestone-day streak — keep it up!")
+                    }
+                },
                 onEdit = { editingId = it.habitId },
             )
         }
@@ -151,7 +159,11 @@ fun HabitRoot(onExit: () -> Unit) {
     }
 }
 
-/** Insert or remove a completion for [dayStart] (already start-of-day). Logs done/backfill on insert. */
+/**
+ * Insert or remove a completion for [dayStart] (already start-of-day). Logs done/backfill on insert.
+ * On a completion that lands the streak on a milestone (7 or 30 days), invokes [onMilestone] with the
+ * milestone count so the caller can celebrate (issue #89).
+ */
 private fun toggle(
     scope: kotlinx.coroutines.CoroutineScope,
     dao: HabitDao,
@@ -159,6 +171,7 @@ private fun toggle(
     completions: List<HabitCompletion>,
     habit: Habit,
     dayStart: Long,
+    onMilestone: (Int) -> Unit = {},
 ) {
     val existing = completions.firstOrNull { it.habitId == habit.habitId && it.day == dayStart }
     scope.launch {
@@ -172,6 +185,10 @@ private fun toggle(
                 if (isToday) "done" else "backfill",
                 if (isToday) "Did: ${habit.name}" else "Backfilled: ${habit.name}",
             )
+            // Recompute the streak with this just-added day and celebrate 7/30-day milestones.
+            val days = completions.filter { it.habitId == habit.habitId }.map { it.day }.toSet() + dayStart
+            val streak = HabitStats.streak(days)
+            if (streak == 7 || streak == 30) onMilestone(streak)
         }
     }
 }
