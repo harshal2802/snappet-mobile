@@ -119,42 +119,44 @@ final class SetMeasureTests: XCTestCase {
 
     // MARK: - duplicate (one-tap repeat-set loop — PR 3)
 
-    func testDuplicateReplacesOnlyTheCompletedAtStamp() {
-        // The repeat loop logs a NEW set identical to the last — same fields, a fresh stamp.
-        let old = Date(timeIntervalSince1970: 0)
-        let fresh = Date(timeIntervalSince1970: 1_000)
-        let original = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg, completedAt: old)
-        let copy = SetMeasure.duplicate(original, now: fresh)
-        XCTAssertEqual(copy.completedAt, fresh, "the copy is stamped now, not the original time")
-        // Everything else round-trips verbatim — easiest proof: realign the stamp and compare wholesale.
+    func testDuplicateClearsOnlyTheCompletedAtStamp() {
+        // The repeat loop logs a NEW set identical to the last — same fields, no stamp (appendLog owns it).
+        let original = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg,
+                              completedAt: Date(timeIntervalSince1970: 1_000))
+        let copy = SetMeasure.duplicate(original)
+        XCTAssertNil(copy.completedAt, "the copy carries no stamp — appendLog stamps it on append")
+        // Everything else round-trips verbatim — easiest proof: clear the stamp and compare wholesale.
         var expected = original
-        expected.completedAt = fresh
+        expected.completedAt = nil
         XCTAssertEqual(copy, expected)
     }
 
     func testDuplicateCarriesEveryRepsWeightField() {
         let copy = SetMeasure.duplicate(
-            SetLog(actualReps: 5, actualWeight: 62.5, weightUnit: .lb, completedAt: .now), now: .now)
+            SetLog(actualReps: 5, actualWeight: 62.5, weightUnit: .lb, completedAt: .now))
         XCTAssertEqual(copy.actualReps, 5)
         XCTAssertEqual(copy.actualWeight, 62.5)
         XCTAssertEqual(copy.weightUnit, .lb)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
         // The summary of the copy reads identically to the original's — a logged loop of the same set.
         XCTAssertEqual(SetMeasure.summary(copy, kind: .repsWeight, unit: .kg), "5 × 62.5 lb")
     }
 
     func testDuplicateCarriesDurationField() {
-        let copy = SetMeasure.duplicate(SetLog(completedAt: .now, durationSec: 45), now: .now)
+        let copy = SetMeasure.duplicate(SetLog(completedAt: .now, durationSec: 45))
         XCTAssertEqual(copy.durationSec, 45)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
         XCTAssertEqual(SetMeasure.summary(copy, kind: .duration, unit: .kg), "0:45")
     }
 
     func testDuplicateCarriesEveryClimbField() {
         let original = SetLog(completedAt: .now, climbGradeLabel: "7a",
                               climbStatusRaw: KilterAscentStatus.project.rawValue, climbAttempts: 4)
-        let copy = SetMeasure.duplicate(original, now: .now)
+        let copy = SetMeasure.duplicate(original)
         XCTAssertEqual(copy.climbGradeLabel, "7a")
         XCTAssertEqual(copy.climbStatusRaw, KilterAscentStatus.project.rawValue)
         XCTAssertEqual(copy.climbAttempts, 4)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
         XCTAssertEqual(SetMeasure.summary(copy, kind: .climbAttempt, unit: .kg), "7a · Project · 4 tries")
     }
 

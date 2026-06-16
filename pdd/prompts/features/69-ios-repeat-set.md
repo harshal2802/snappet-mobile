@@ -26,8 +26,8 @@ existing flow is re-typing the same numbers; this removes it for the common case
   Repeat must funnel through this exact path — it is just another producer of a `SetLog`, not a second
   save site.
 - **The duplicate is pure.** Copying a `SetLog` with a fresh stamp is `SetLog`-shaped logic with no view
-  or SwiftData — it belongs in the pure `SetMeasure` (next to `summary`/`hasInput`/`duplicate`'s
-  siblings), so it is the one definition of "duplicate a set" and is unit-tested without a device (the
+  or SwiftData — it belongs in the pure `SetMeasure` (next to `summary`/`hasInput`/`isSend`), so it is
+  the one definition of "duplicate a set" and is unit-tested without a device (the
   repo's pure-logic-at-a-thin-edge rule). `SetLog` is a `Codable` value with all-optional additive
   fields, so a struct copy carries every kind's fields verbatim.
 - **One sheet, untouched.** `LogSetSheet` and the `freeform.addSet` path (and every `SetKind`'s existing

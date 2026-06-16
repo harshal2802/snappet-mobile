@@ -216,13 +216,13 @@ struct FreeformPlayerView: View {
         Haptics.success()
     }
 
-    /// One-tap "Repeat set": append a copy of `ex`'s most recent set (all kind-specific fields, fresh
-    /// `completedAt` via the pure `SetMeasure.duplicate`) WITHOUT opening `LogSetSheet`, then reuse the
-    /// same append+persist+haptic path the sheet commits through. No-op when the exercise has no sets
-    /// (the control is hidden in that case). (workout-with-timer PR 3)
+    /// One-tap "Repeat set": append a copy of `ex`'s most recent set (all kind-specific fields via the
+    /// pure `SetMeasure.duplicate`) WITHOUT opening `LogSetSheet`, then reuse the same append+persist+haptic
+    /// path the sheet commits through — `appendLog` stamps the fresh `completedAt`. No-op when the exercise
+    /// has no sets (the control is hidden in that case). (workout-with-timer PR 3)
     private func repeatLastSet(_ ex: SessionExercise) {
         guard let last = ex.sets.last else { return }
-        appendLog(SetMeasure.duplicate(last, now: .now), toExerciseID: ex.id)
+        appendLog(SetMeasure.duplicate(last), toExerciseID: ex.id)
     }
 
     private func deleteSets(_ ex: SessionExercise, at offsets: IndexSet) {

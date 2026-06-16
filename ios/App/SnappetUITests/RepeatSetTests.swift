@@ -4,7 +4,8 @@ import XCTest
 /// each exercise with ≥1 logged set shows a "Repeat set" control (`freeform.repeatSet`) that appends a
 /// COPY of the most recent set — same fields, fresh `completedAt` — WITHOUT opening `LogSetSheet`.
 /// Drives the real path — Quick Start → add a Lifting exercise → log one set (reps+weight via the sheet)
-/// → tap Repeat set once → assert a SECOND `freeform.setRow` with the same values appears (count 1→2).
+/// → tap Repeat set once → assert the logged value's static text ("8 × 60 kg" via `SetMeasure.summary`)
+/// appears exactly twice (count 1→2), with a `freeform.setRow` present throughout.
 ///
 /// Same fresh-store launch as the rest of SnappetUITests so the run never inherits a leftover active
 /// session. Extract shots with `xcrun xcresulttool export attachments`.
@@ -78,12 +79,6 @@ final class RepeatSetTests: XCTestCase {
         addLift.tap()
     }
 
-    /// Count freeform set rows TYPE-AGNOSTICALLY: these rows are content HStacks (a static-text /
-    /// container element), NOT List cells — `app.cells[...]` would miss them (PR 2 lesson).
-    private func setRowCount() -> Int {
-        app.descendants(matching: .any).matching(identifier: "freeform.setRow").count
-    }
-
     func testRepeatSetDuplicatesTheLastSetWithOneTap() {
         openFreeformPlayer()
         snap("01-freeform")
@@ -98,12 +93,17 @@ final class RepeatSetTests: XCTestCase {
         app.buttons["logset.add"].tap()
         sleep(1); snap("04-one-set")
 
-        // Exactly one set row so far, reading its reps×weight via SetMeasure.summary ("8 × 60 kg").
-        let firstRow = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
-        XCTAssertTrue(firstRow.waitForExistence(timeout: 6), "the logged set row should appear")
-        XCTAssertEqual(setRowCount(), 1, "exactly one set logged before Repeat")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'kg'")).firstMatch
-            .waitForExistence(timeout: 4), "the lifting row should read its weight (8 × 60 kg)")
+        // PRIMARY assertion: gate on the distinctive logged value's static text, not the row
+        // element COUNT. `SetMeasure.summary` renders reps×weight as "8 × 60 kg"; that string is the
+        // reliable per-set witness (an .accessibilityIdentifier on a non-leaf row HStack may not surface
+        // as exactly one queryable element per row). Exactly one such value before Repeat.
+        let loggedValue = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '8 × 60 kg'"))
+        XCTAssertTrue(loggedValue.firstMatch.waitForExistence(timeout: 6),
+                      "the logged set's value (8 × 60 kg) should appear")
+        XCTAssertEqual(loggedValue.count, 1, "exactly one set logged before Repeat")
+        // The row container exists too (count is unreliable, so just assert presence).
+        let setRows = app.descendants(matching: .any).matching(identifier: "freeform.setRow")
+        XCTAssertTrue(setRows.firstMatch.exists, "a freeform set row should exist")
 
         // The one-tap Repeat control is present (the exercise has a set). Tapping it once duplicates the
         // last set — NO sheet — so the row count goes 1 → 2 with the same value.
@@ -113,20 +113,22 @@ final class RepeatSetTests: XCTestCase {
         repeatBtn.tap()
         snap("05-repeated")
 
-        // Two identical set rows now. Wait on the count rising to 2 (the append + persist is async).
-        let twoRows = expectation(for: NSPredicate(format: "count == 2"),
-                                  evaluatedWith: app.descendants(matching: .any)
-                                    .matching(identifier: "freeform.setRow"))
-        XCTAssertEqual(XCTWaiter().wait(for: [twoRows], timeout: 6), .completed,
-                       "Repeat set should append a second set row (count 1 → 2)")
+        // PRIMARY assertion: two identical sets now. Wait on the distinctive value's static-text COUNT
+        // rising to 2 (the append + persist is async) — the reliable witness that a second identical set
+        // was logged, not on the row element count.
+        let twoValues = expectation(for: NSPredicate(format: "count == 2"), evaluatedWith: loggedValue)
+        XCTAssertEqual(XCTWaiter().wait(for: [twoValues], timeout: 6), .completed,
+                       "Repeat set should append a second identical set (8 × 60 kg appears twice)")
         sleep(1); snap("06-two-sets")
+
+        // The row containers exist too (count unreliable, so assert presence — at least one row).
+        XCTAssertTrue(setRows.firstMatch.exists, "freeform set rows should still exist after Repeat")
 
         // No LogSetSheet was opened by Repeat: its Add commit button must not be present.
         XCTAssertFalse(app.buttons["logset.add"].exists,
                        "Repeat set must NOT open the log sheet")
 
-        // Both rows read the same value — the repeat logged an identical set, not a blank one.
-        let kgRows = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '60 kg'"))
-        XCTAssertEqual(kgRows.count, 2, "both set rows should read the same '8 × 60 kg'")
+        // Both reads are the same value — the repeat logged an identical set, not a blank one.
+        XCTAssertEqual(loggedValue.count, 2, "both set rows should read the same '8 × 60 kg'")
     }
 }
