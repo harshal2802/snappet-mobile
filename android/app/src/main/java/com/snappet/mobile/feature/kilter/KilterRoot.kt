@@ -127,6 +127,9 @@ fun KilterRoot(onExit: () -> Unit) {
 
     // No catalog on this device yet → the opt-in import screen instead of an empty browse list.
     if (!cat.isAvailable) {
+        // Clear any pending "resume to plan" intent here so it can't leak past this terminal gate and
+        // hijack a later normal Kilter entry (the plan-home is unreachable without a catalog anyway).
+        androidx.compose.runtime.LaunchedEffect(Unit) { KilterDeepLinkBus.consumePlan() }
         KilterCatalogSyncScreen(onInstalled = { reloadToken++ }, onExit = onExit)
         return
     }

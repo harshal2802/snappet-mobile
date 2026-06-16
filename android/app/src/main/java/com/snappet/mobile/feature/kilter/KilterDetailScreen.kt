@@ -119,6 +119,14 @@ fun KilterDetailScreen(
     androidx.compose.runtime.LaunchedEffect(pagerState.settledPage) {
         pages.getOrNull(pagerState.settledPage)?.let { if (it != uuid) onSelectSibling(it) }
     }
+    // Host → pager: when the host changes the selected climb (e.g. "Next pick" sets selectedUuid), move
+    // the pager to it — rememberPagerState ignores a changed initialPage on recomposition, so the page
+    // must be scrolled explicitly or the advance is a silent no-op. The settledPage effect above is the
+    // reverse direction (swipe → host); together they stay consistent without looping (idempotent).
+    androidx.compose.runtime.LaunchedEffect(uuid, pages) {
+        val target = pages.indexOf(uuid)
+        if (target >= 0 && target != pagerState.currentPage) pagerState.animateScrollToPage(target)
+    }
     androidx.compose.foundation.pager.HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize().testTag("kilter.detail.pager"),
