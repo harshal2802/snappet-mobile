@@ -4,6 +4,31 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Kilter plan-home reads stored status; one open plan per session; plan closed with the session (kilter-planned-session PR 02)
+
+**Decision**: `KilterPlanView` has two modes off one screen — **generate** (recommender preview,
+recomputed) and **session-home** (the live session has a pinned `KilterPlan` → read the **stored,
+frozen** plan; per-pick ticks come from `KilterPlanItem.status`, order never reshuffles). On Start,
+`startPlan` snapshots the preview into a `KilterPlan`, and `KilterSessionManager.attachPlan(_:in:)`
+pins it (`sessionId`) and freezes it. The log path calls `applyLogToPlan` to tick the matching item.
+
+**Invariants (from the PR-02 adversarial review)**: (1) **one open plan per session** —
+`attachPlan` closes any other open plan already pinned to the session, and `startPlan` re-enters an
+existing open plan instead of forking a second (with `recover` on appear + before Start so the
+view matches the store on a deep-link race). Without this, a `start` that adopts a stale open session
+which already had a plan could leave two open plans, and both readers use an unordered `.first` →
+non-deterministic tick/order. (2) **a plan never outlives its session** — `end(sessionID:in:)` stamps
+the attached plan's `completedAt` in lockstep with `session.endedAt` (no orphaned open `KilterPlan`
+rows accumulating; an ended session's plan can't resurface as active), and `undoStart` deletes the
+plan attached to the torn-down session. Pinned in `KilterPlanSessionTests` (store-level, unbound
+manager).
+
+**Rules out / non-obvious**: `KilterSessionManager.currentPlanId` is written here but first **read**
+by the PR-03 cross-screen live chip — kept (not removed) because PR 03 is the immediate next step; the
+one-open-plan invariant guarantees `currentPlanId` (keyed by plan.id) and `activePlan` (keyed by
+sessionId) resolve to the same plan, so they can't diverge. The user-facing "Finish plan" (a later PR)
+routes through `end`, which already closes the plan.
+
 ## [2026-06-16] Kilter planned session becomes a persisted, frozen-on-Start entity (kilter-planned-session PR 01)
 
 **Decision**: the "Plan a session" plan stops being ephemeral `@State` recomputed from

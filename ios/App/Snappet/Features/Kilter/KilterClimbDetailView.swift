@@ -732,6 +732,10 @@ struct KilterClimbDetailView: View {
                 attemptTimestamps: status == .attempt ? [now] : []))
         }
         try? modelContext.save()
+        // Tick the active planned session, if this run came from "Plan a session": flips the matching
+        // KilterPlanItem to sent/attempted so the plan-home shows it done. No-op for an ad-hoc session
+        // or an off-plan climb. Read off the plan, never re-derived from logs + the recommender.
+        sessions.applyLogToPlan(climbUUID: climb.uuid, ascent: status, at: now, in: modelContext)
         // Flush live HR onto the session as climbs are logged, so a clip recorded on this climb already
         // has heart rate to overlay when reviewed mid-session (no need to end the session first).
         sessions.syncLiveHR(in: modelContext)

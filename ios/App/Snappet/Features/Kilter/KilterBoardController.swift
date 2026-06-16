@@ -359,6 +359,12 @@ final class KilterSessionManager {
     private(set) var activeClimbGrade: String = ""
     private(set) var activeClimbStartedAt: Date?
 
+    /// The planned session pinned to the live `KilterSession` (`KilterPlan.id`), when the run was
+    /// started from "Plan a session" — so the plan-home and the cross-screen live chip can find the
+    /// frozen plan, and the log path can tick its items. `nil` for an ad-hoc session (started from the
+    /// catalog, a BLE connect, or the first idle log) until a plan is attached.
+    private(set) var currentPlanId: UUID?
+
     /// Live Activity board label (no per-board name today).
     private let boardName = "Kilter Board"
 
@@ -436,6 +442,9 @@ final class KilterSessionManager {
         let attached = (try? context.fetch(FetchDescriptor<KilterLogEntry>(
             predicate: #Predicate { $0.sessionId == sid }))) ?? []
         for entry in attached { entry.sessionId = nil }
+        // A plan only exists on the Plan-view start path (not the auto-start path this undo serves),
+        // but a plan must never outlive the session it was pinned to — drop it with the session.
+        if let plan = openPlan(forSession: sid, in: context) { context.delete(plan) }
         if didStartMetrics {
             liveWorkout?.stop()
             didStartMetrics = false
@@ -444,6 +453,7 @@ final class KilterSessionManager {
         context.delete(session)
         try? context.save()
         current = nil
+        currentPlanId = nil
         resetActiveClimb()
     }
 
@@ -485,10 +495,14 @@ final class KilterSessionManager {
             : (try? context.fetch(FetchDescriptor<KilterSession>(
                 predicate: #Predicate { $0.id == sessionID })))?.first
         guard let session, session.endedAt == nil else {
-            if isCurrent { current = nil; resetActiveClimb() }
+            if isCurrent { current = nil; currentPlanId = nil; resetActiveClimb() }
             return
         }
         session.endedAt = .now
+        // Close the plan pinned to this session in lockstep, so it stops being "open" — no orphaned
+        // KilterPlan rows accumulating across sessions, and an ended session's plan can never resurface
+        // as the active one. (PR's user-facing "Finish plan" later routes through here.)
+        openPlan(forSession: sessionID, in: context)?.completedAt = .now
         // Flush the live HR buffer onto the session BEFORE stopping the source (mirrors
         // WorkoutTracker.finishWorkout) — only when this session owns the source. Stamp the source
         // label from the actually-captured data, so it's never a misleading default.
@@ -510,10 +524,51 @@ final class KilterSessionManager {
         }
         try? context.save()
         liveActivity?.end()
-        if isCurrent { current = nil; resetActiveClimb() }
+        if isCurrent { current = nil; currentPlanId = nil; resetActiveClimb() }
         // Auto-discover photos/videos shot during the session window and tag them to the session + the
         // climb they fall within. Best-effort; only runs with full Photos access.
         discoverMedia(for: session, in: context)
+    }
+
+    // MARK: - Planned session (KilterPlan)
+
+    /// Pin a freshly-created `KilterPlan` to the live session and freeze it — the recommender never
+    /// rebuilds it again; the plan-home and live chip read it back by `sessionId`, and the log path
+    /// ticks its items. Called by `KilterPlanView` right after `start`. No-op with no live session.
+    ///
+    /// Enforces **one open plan per session**: any *other* open plan already pinned to this session is
+    /// closed first, so a deep-link race (a `start` that adopts a stale open session which already had
+    /// a plan) can't leave two open plans fighting over one session — which would make the tick and the
+    /// rendered order non-deterministic (both readers use an unordered `.first`).
+    func attachPlan(_ plan: KilterPlan, in context: ModelContext) {
+        guard let id = current?.id else { return }
+        if let existing = openPlan(forSession: id, in: context), existing.id != plan.id {
+            existing.completedAt = .now
+        }
+        plan.sessionId = id
+        currentPlanId = plan.id
+    }
+
+    /// Tick the active plan when a climb is logged: flip the lowest-order matching `pending`
+    /// `KilterPlanItem` to sent/attempted (a later send upgrades an attempted one). Done-state is read
+    /// straight off the plan — never re-derived from logs + the recommender — so a completed
+    /// send/project pick can no longer be filtered out and reshuffled. No-op for an ad-hoc session
+    /// (no pinned plan) or an off-plan climb.
+    func applyLogToPlan(climbUUID: String, ascent: KilterAscentStatus, at date: Date,
+                        in context: ModelContext) {
+        guard let sid = current?.id, let plan = openPlan(forSession: sid, in: context) else { return }
+        let updated = KilterPlanProgress.applyingLog(climbUUID: climbUUID, ascent: ascent,
+                                                     at: date, to: plan.items)
+        guard updated != plan.items else { return }
+        plan.items = updated
+        currentPlanId = plan.id
+        try? context.save()
+    }
+
+    /// The open (un-finished) plan pinned to a session, if any.
+    func openPlan(forSession sid: UUID, in context: ModelContext) -> KilterPlan? {
+        (try? context.fetch(FetchDescriptor<KilterPlan>(
+            predicate: #Predicate { $0.sessionId == sid && $0.completedAt == nil })))?.first
     }
 
     /// Drop every reference into the store WITHOUT writing to it — the suite restore
@@ -532,6 +587,7 @@ final class KilterSessionManager {
         }
         liveActivity?.end()
         current = nil
+        currentPlanId = nil
         resetActiveClimb()
     }
 
@@ -540,6 +596,9 @@ final class KilterSessionManager {
     private func adopt(_ session: KilterSession, in context: ModelContext) {
         current = session
         resetActiveClimb()
+        // Re-establish the pinned plan (if this session was started from "Plan a session") so the
+        // plan-home + live chip recover it after a relaunch / navigating back into Kilter.
+        currentPlanId = openPlan(forSession: session.id, in: context)?.id
         // The shared metrics coordinator outlives the manager. If it's still streaming, this recovered
         // session owns it (so `end` flushes + stops HR); otherwise we don't resurrect HR for a session
         // recovered after a relaunch (the early buffer is gone — same stance as WorkoutTracker).
