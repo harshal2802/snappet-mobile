@@ -115,10 +115,16 @@ struct StopwatchView: View {
 
     /// Called with the captured elapsed seconds when the user taps Stop.
     private let onStop: (TimeInterval) -> Void
+    /// Optional: notified when the run state flips (Start → true, Stop → false) so a host can gate
+    /// actions that would tear down the timer mid-run (e.g. disable a mode toggle while running).
+    private let onRunningChange: ((Bool) -> Void)?
 
-    init(mode: StopwatchTiming.Mode = .countUp, onStop: @escaping (TimeInterval) -> Void = { _ in }) {
+    init(mode: StopwatchTiming.Mode = .countUp,
+         onStop: @escaping (TimeInterval) -> Void = { _ in },
+         onRunningChange: ((Bool) -> Void)? = nil) {
         _vm = State(initialValue: StopwatchViewModel(mode: mode))
         self.onStop = onStop
+        self.onRunningChange = onRunningChange
     }
 
     var body: some View {
@@ -127,6 +133,7 @@ struct StopwatchView: View {
             controlButton
         }
         .onDisappear { vm.endTicking() }
+        .onChange(of: vm.isRunning) { _, running in onRunningChange?(running) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { vm.syncToWallClock() }
         }

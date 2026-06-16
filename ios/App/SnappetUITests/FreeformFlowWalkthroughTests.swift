@@ -109,10 +109,14 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'kg'")).firstMatch
             .waitForExistence(timeout: 4), "the lifting row should read its weight (8 × 60 kg)")
 
-        // 5 — Timed → log 0:45.
+        // 5 — Timed → log 0:45. The duration sheet defaults to the live timer (Timer mode); switch to
+        // Manual to type an exact value (the live-timer path is covered by TimedSetTimerTests).
         addExerciseMenu("Timed exercise")
         sleep(1); snap("10-timed-added")
         tapAddSetForLastExercise()
+        let manual = app.segmentedControls.buttons["Manual"]
+        XCTAssertTrue(manual.waitForExistence(timeout: 4), "the duration sheet should offer a Manual mode")
+        manual.tap()
         typeIn(app.textFields["Min"], "0")
         typeIn(app.textFields["Sec"], "45")
         snap("11-timed-sheet")
