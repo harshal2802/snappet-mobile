@@ -168,8 +168,9 @@ fun KilterRoot(onExit: () -> Unit) {
     ) { target ->
     when (target) {
         KilterScreen.PLAN -> KilterPlanScreen(
-            catalog = cat, dao = dao,
+            catalog = cat, dao = dao, sessions = sessions,
             onOpenClimb = { uuid, siblings -> selectedUuid = uuid; browseSiblings = siblings; screen = KilterScreen.DETAIL },
+            onFinish = { id -> selectedSessionId = id; screen = KilterScreen.SESSION },
             onExit = { screen = KilterScreen.ROOT },
         )
         KilterScreen.HISTORY -> KilterHistoryScreen(

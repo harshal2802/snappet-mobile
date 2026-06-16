@@ -46,4 +46,15 @@ object KilterSettings {
         KilterProtocol.ApiLevel.from(prefs(context).getString("apiLevel", null))
     fun setApiLevel(context: Context, value: KilterProtocol.ApiLevel) =
         prefs(context).edit().putString("apiLevel", value.name).apply()
+
+    // Plan-config (bug #4): last-used selection strategy + the knobs it seeds. Defaults reproduce the
+    // original behaviour (balanced / 6 climbs / at-grade / prefer-unsent).
+    fun planStrategy(context: Context): String = prefs(context).getString("plan.strategy", "BALANCED") ?: "BALANCED"
+    fun setPlanStrategy(context: Context, value: String) = prefs(context).edit().putString("plan.strategy", value).apply()
+    fun planTargetCount(context: Context): Int = prefs(context).getInt("plan.targetCount", 6)
+    fun setPlanTargetCount(context: Context, value: Int) = prefs(context).edit().putInt("plan.targetCount", value).apply()
+    fun planGradeOffset(context: Context): Int = prefs(context).getInt("plan.gradeOffset", 0)
+    fun setPlanGradeOffset(context: Context, value: Int) = prefs(context).edit().putInt("plan.gradeOffset", value).apply()
+    fun planPreferUnsent(context: Context): Boolean = prefs(context).getBoolean("plan.preferUnsent", true)
+    fun setPlanPreferUnsent(context: Context, value: Boolean) = prefs(context).edit().putBoolean("plan.preferUnsent", value).apply()
 }
