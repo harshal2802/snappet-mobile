@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
@@ -57,6 +60,7 @@ import com.snappet.mobile.feature.habit.HabitCompletion
 import com.snappet.mobile.feature.habit.HabitStats
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
@@ -105,7 +109,7 @@ fun HomeDashboardScreen(onOpenModule: (String) -> Unit = {}) {
                 }
             } else {
                 Column(
-                    Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+                    Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(LocalSpacing.current.pageGutter),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     TodayRow(records)
@@ -175,6 +179,8 @@ private fun StatTile(value: Int, label: String, tint: Color, modifier: Modifier 
     }
 }
 
+private val weekdayInitialFmt = java.text.SimpleDateFormat("EEEEE", java.util.Locale.getDefault())
+
 @Composable
 private fun WeekChart(records: List<UsageRecord>) {
     val todayStart = startOfToday()
@@ -183,8 +189,13 @@ private fun WeekChart(records: List<UsageRecord>) {
         val start = todayStart - offset * dayMs
         records.count { it.timestamp >= start && it.timestamp < start + dayMs }
     }
+    // Weekday initials oldest→newest under each bar (mirrors the habit strip's labeling).
+    val dayLabels = (6 downTo 0).map { offset -> weekdayInitialFmt.format(java.util.Date(todayStart - offset * dayMs)) }
     val maxCount = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
-    val barColor = MaterialTheme.colorScheme.primary
+    val todayIdx = counts.lastIndex
+    // Issue #98: today's bar reads in full accent, the rest muted, so "more on Tue or Wed?" is answerable.
+    val accent = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
     val reduceMotion = LocalReduceMotion.current
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
@@ -193,20 +204,53 @@ private fun WeekChart(records: List<UsageRecord>) {
         animationSpec = gated(reduceMotion, SnappetMotion.standard()),
         label = "weekChartGrow",
     )
+    // Issue #98: a Canvas is invisible to TalkBack — attach a spoken summary of the whole chart.
+    val a11y = com.snappet.mobile.ui.ChartAccessibility.weekBarSummary("Last 7 days actions", counts, "action", dayLabels)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Last 7 days", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-            val n = counts.size
-            val gap = size.width * 0.03f
-            val barW = (size.width - gap * (n + 1)) / n
-            counts.forEachIndexed { i, c ->
-                val h = size.height * (c.toFloat() / maxCount) * grow
-                val x = gap + i * (barW + gap)
-                drawRoundRect(
-                    color = barColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(x, size.height - h),
-                    size = androidx.compose.ui.geometry.Size(barW, h),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f),
+        Box(
+            Modifier.fillMaxWidth().testTag("home.weekChart")
+                .semantics { contentDescription = a11y },
+        ) {
+            Canvas(Modifier.fillMaxWidth().height(160.dp)) {
+                val n = counts.size
+                val gap = size.width * 0.03f
+                val barW = (size.width - gap * (n + 1)) / n
+                // Reserve a little headroom so a value annotation on the tallest bar isn't clipped.
+                val plotH = size.height * 0.88f
+                counts.forEachIndexed { i, c ->
+                    val h = plotH * (c.toFloat() / maxCount) * grow
+                    val x = gap + i * (barW + gap)
+                    drawRoundRect(
+                        color = if (i == todayIdx) accent else muted,
+                        topLeft = androidx.compose.ui.geometry.Offset(x, size.height - h),
+                        size = androidx.compose.ui.geometry.Size(barW, h),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f),
+                    )
+                }
+            }
+            // Value annotation on today's bar (or the max if today is empty) — a readable number on the chart.
+            val annIdx = if (counts[todayIdx] > 0) todayIdx else counts.indices.maxByOrNull { counts[it] } ?: todayIdx
+            if (counts[annIdx] > 0) {
+                Text(
+                    "${counts[annIdx]}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent,
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 2.dp),
+                )
+            }
+        }
+        // Weekday initials under each bar.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            dayLabels.forEachIndexed { i, lbl ->
+                Text(
+                    lbl,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (i == todayIdx) FontWeight.Bold else FontWeight.Normal,
+                    color = if (i == todayIdx) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
             }
         }

@@ -39,11 +39,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.scale
@@ -51,6 +57,7 @@ import com.snappet.mobile.core.SnappetCore
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
@@ -322,7 +329,13 @@ private fun StreakLabel(streak: Int) {
 @Composable
 private fun WeekStripRow(weekDays: List<WeekDay>, onToggleDay: (Long) -> Unit, onEdit: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        IconButton(onClick = onEdit, modifier = Modifier.size(36.dp).testTag("habit.edit")) {
+        // Issue #98: the edit button was explicitly .size(36.dp), defeating M3's 48dp minimum target.
+        // Float the visible glyph at 18dp but give the touch target the accessibility minimum.
+        IconButton(
+            onClick = onEdit,
+            modifier = Modifier.sizeIn(minWidth = LocalSpacing.current.minTouchTarget, minHeight = LocalSpacing.current.minTouchTarget)
+                .testTag("habit.edit"),
+        ) {
             Icon(Icons.Filled.Edit, contentDescription = "Edit habit", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         }
         weekDays.forEach { day -> DayCell(day = day, onToggle = { onToggleDay(day.dayStart) }) }
@@ -331,6 +344,7 @@ private fun WeekStripRow(weekDays: List<WeekDay>, onToggleDay: (Long) -> Unit, o
 
 private val weekdayFmt = SimpleDateFormat("EEEEE", Locale.getDefault())
 private val dayNumberFmt = SimpleDateFormat("d", Locale.getDefault())
+private val a11yDateFmt = SimpleDateFormat("EEEE d MMMM", Locale.getDefault())
 
 @Composable
 private fun DayCell(day: WeekDay, onToggle: () -> Unit) {
@@ -346,12 +360,27 @@ private fun DayCell(day: WeekDay, onToggle: () -> Unit) {
         animationSpec = gated(reduceMotion, SnappetMotion.expressive()),
         label = "habitDayScale",
     )
+    // Issue #98: TalkBack now reads the cell as a checkbox with its done/not-done state (it used to
+    // announce just the day number), and the touch target reaches the 48dp minimum (the visible
+    // circle stays 28dp). One merged semantics node per day instead of two stray text reads.
+    val minTarget = LocalSpacing.current.minTouchTarget
+    val dateLabel = a11yDateFmt.format(date)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onToggle)
+            .sizeIn(minWidth = minTarget, minHeight = minTarget)
+            .clickable(
+                onClick = onToggle,
+                onClickLabel = if (day.isDone) "mark not done" else "mark done",
+                role = Role.Checkbox,
+            )
+            .clearAndSetSemantics {
+                role = Role.Checkbox
+                contentDescription = dateLabel
+                stateDescription = if (day.isDone) "Done" else "Not done"
+            }
             .testTag("habit.day.${day.offset}")
             .padding(2.dp),
     ) {

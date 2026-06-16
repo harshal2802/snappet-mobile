@@ -104,3 +104,12 @@ fun pulseWarning(): Color =
 @androidx.compose.runtime.Composable
 fun pulseNeutral(): Color =
     if (androidx.compose.foundation.isSystemInDarkTheme()) PulseColors.NeutralDark else PulseColors.NeutralLight
+
+/**
+ * The Kilter module accent (amber/sandstone) — the single source the Kilter screens read instead of
+ * re-hardcoding the raw `0xFFD97706` hex (issue #97). Lit a touch brighter in dark mode so it keeps a
+ * readable contrast on the dark Kilter surfaces, mirroring the per-mode status tokens.
+ */
+@androidx.compose.runtime.Composable
+fun kilterAccent(): Color =
+    if (androidx.compose.foundation.isSystemInDarkTheme()) Color(0xFFF0A23B) else SnappetAccents.Kilter

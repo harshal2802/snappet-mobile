@@ -37,7 +37,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
 import androidx.compose.ui.semantics.contentDescription
@@ -64,6 +71,7 @@ fun AppLibraryScreen() {
     val nav = rememberNavController()
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
+    val reduceMotion = LocalReduceMotion.current
 
     // Issue #91/#99: honor a queued deep-link / shortcut / widget / Home-card route. A KilterClimb
     // route parks the climb on the KilterRoot deep-link bus, then routes into the Kilter module.
@@ -85,7 +93,32 @@ fun AppLibraryScreen() {
         }
     }
 
-    NavHost(navController = nav, startDestination = "library") {
+    // Issue #97: module entry/exit slides + fades (~220/180ms) instead of the NavHost default 700ms
+    // crossfade. A "deeper" navigation enters from the trailing edge; a back pop reverses it. All
+    // collapse to an instant cut under reduce-motion.
+    val enterMs = if (reduceMotion) 0 else 220
+    val exitMs = if (reduceMotion) 0 else 180
+    val slideEnter: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.EnterTransition = {
+        slideInHorizontally(tween(enterMs)) { it / 12 } + fadeIn(tween(enterMs))
+    }
+    val slideExit: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.ExitTransition = {
+        slideOutHorizontally(tween(exitMs)) { -it / 12 } + fadeOut(tween(exitMs))
+    }
+    val popEnter: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.EnterTransition = {
+        slideInHorizontally(tween(enterMs)) { -it / 12 } + fadeIn(tween(enterMs))
+    }
+    val popExit: AnimatedContentTransitionScope<*>.() -> androidx.compose.animation.ExitTransition = {
+        slideOutHorizontally(tween(exitMs)) { it / 12 } + fadeOut(tween(exitMs))
+    }
+
+    NavHost(
+        navController = nav,
+        startDestination = "library",
+        enterTransition = slideEnter,
+        exitTransition = slideExit,
+        popEnterTransition = popEnter,
+        popExitTransition = popExit,
+    ) {
         composable("library") {
             Scaffold(topBar = {
                 TopAppBar(
@@ -103,7 +136,8 @@ fun AppLibraryScreen() {
             }) { padding ->
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp)
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                        .padding(horizontal = LocalSpacing.current.pageGutter)
                         .testTag("appLibraryGrid"),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -169,7 +203,7 @@ private fun ModuleCard(module: AppModule, onClick: () -> Unit) {
             Box(
                 Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(module.tint.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center,
             ) {

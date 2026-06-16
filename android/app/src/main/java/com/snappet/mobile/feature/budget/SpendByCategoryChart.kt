@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.theme.LocalReduceMotion
@@ -65,7 +67,16 @@ fun SpendByCategoryChart(slices: List<CategorySpend>, periodLabel: String, modif
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+        // Issue #98: the donut Canvas is invisible to TalkBack — summarise the total + top categories
+        // (the per-row values stay reachable via the legend below).
+        val topCats = slices.sortedByDescending { it.amount }.take(3)
+            .joinToString(", ") { "${it.name} ${it.amount.asCurrency()}" }
+        val a11y = if (slices.isEmpty()) "No spending in $periodLabel."
+        else "Spent ${total.asCurrency()} in $periodLabel across ${slices.size} categories. Top: $topCats."
+        Box(
+            Modifier.fillMaxWidth().height(200.dp).semantics { contentDescription = a11y },
+            contentAlignment = Alignment.Center,
+        ) {
             Canvas(Modifier.size(200.dp)) {
                 val stroke = 36f
                 val inset = stroke / 2

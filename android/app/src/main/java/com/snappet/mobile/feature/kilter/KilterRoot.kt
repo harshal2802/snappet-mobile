@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.History
@@ -70,10 +71,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
+import com.snappet.mobile.ui.theme.snappetSurfaceTransition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS, CREATE, SESSION, SCAN }
+private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS, CREATE, SESSION, SCAN, PLAN }
 
 /**
  * Root entry for the Kilter Board mini-app. Browse the user-installed read-only catalog (filtered by
@@ -127,6 +131,9 @@ fun KilterRoot(onExit: () -> Unit) {
     var screen by rememberSaveable { mutableStateOf(KilterScreen.ROOT) }
     var selectedUuid by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Issue #93: the browsed list's uuids, plumbed into detail so it can swipe through siblings without
+    // backing out to the catalog each time (iOS parity). Empty for a single-climb open (e.g. from Create).
+    var browseSiblings by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
 
     // Issue #91: a queued `snappet://kilter/climb/...` deep link opens its climb at the encoded angle.
     val pendingLink = KilterDeepLinkBus.pending
@@ -145,7 +152,23 @@ fun KilterRoot(onExit: () -> Unit) {
     // so back falls through to the app-level NavHost (→ app grid).
     BackHandler(enabled = screen != KilterScreen.ROOT) { screen = KilterScreen.ROOT }
 
-    when (screen) {
+    // Issue #97: Kilter's sub-screen swaps (ROOT ↔ detail/history/settings/create) slide+fade like the
+    // rest of the suite instead of hard-cutting; ROOT is the "home" so any move off it reads forward and
+    // a move back to it reads backward. Gated on reduce-motion.
+    val reduceMotion = LocalReduceMotion.current
+    androidx.compose.animation.AnimatedContent(
+        targetState = screen,
+        transitionSpec = {
+            snappetSurfaceTransition(reduceMotion, forward = targetState != KilterScreen.ROOT)
+        },
+        label = "kilterScreen",
+    ) { target ->
+    when (target) {
+        KilterScreen.PLAN -> KilterPlanScreen(
+            catalog = cat, dao = dao,
+            onOpenClimb = { uuid, siblings -> selectedUuid = uuid; browseSiblings = siblings; screen = KilterScreen.DETAIL },
+            onExit = { screen = KilterScreen.ROOT },
+        )
         KilterScreen.HISTORY -> KilterHistoryScreen(
             dao = dao,
             onOpenSession = { id -> selectedSessionId = id; screen = KilterScreen.SESSION },
@@ -167,26 +190,31 @@ fun KilterRoot(onExit: () -> Unit) {
             onExit = { screen = KilterScreen.ROOT })
         KilterScreen.DETAIL -> selectedUuid?.let { uuid ->
             KilterDetailScreen(
-                uuid = uuid, catalog = cat, board = board, sessions = sessions,
+                uuid = uuid,
+                siblings = browseSiblings,
+                onSelectSibling = { selectedUuid = it },
+                catalog = cat, board = board, sessions = sessions,
                 onExit = { screen = KilterScreen.ROOT },
             )
         }
         KilterScreen.CREATE -> CreateClimbScreen(
             catalog = cat, dao = dao, board = board,
-            onCreated = { selectedUuid = it; screen = KilterScreen.DETAIL },
+            onCreated = { selectedUuid = it; browseSiblings = emptyList(); screen = KilterScreen.DETAIL },
             onExit = { screen = KilterScreen.ROOT },
         )
         KilterScreen.ROOT -> KilterCatalogScreen(
             catalog = cat,
             dao = dao,
             sessions = sessions,
-            onOpenClimb = { selectedUuid = it; screen = KilterScreen.DETAIL },
+            onOpenClimb = { uuid, siblings -> selectedUuid = uuid; browseSiblings = siblings; screen = KilterScreen.DETAIL },
             onOpenHistory = { screen = KilterScreen.HISTORY },
             onOpenSettings = { screen = KilterScreen.SETTINGS },
             onOpenCreate = { screen = KilterScreen.CREATE },
             onOpenScan = { screen = KilterScreen.SCAN },
+            onOpenPlan = { screen = KilterScreen.PLAN },
             onExit = onExit,
         )
+    }
     }
 }
 
@@ -196,11 +224,12 @@ private fun KilterCatalogScreen(
     catalog: KilterCatalog,
     dao: KilterDao,
     sessions: KilterSessionManager,
-    onOpenClimb: (String) -> Unit,
+    onOpenClimb: (String, List<String>) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCreate: () -> Unit,
     onOpenScan: () -> Unit,
+    onOpenPlan: () -> Unit,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -301,6 +330,11 @@ private fun KilterCatalogScreen(
                             leadingIcon = { Icon(Icons.Filled.PlayCircle, null) },
                             onClick = { moreMenu = false; scope.launch { sessions.start(angle, "manual") } })
                     }
+                    // Issue #93: the guided "what should I climb today" entry point (iOS parity).
+                    DropdownMenuItem(text = { Text("Plan a session") },
+                        leadingIcon = { Icon(Icons.Filled.EventNote, null) },
+                        modifier = Modifier.testTag("kilter.plan"),
+                        onClick = { moreMenu = false; onOpenPlan() })
                     DropdownMenuItem(text = { Text("Surprise me") },
                         leadingIcon = { Icon(Icons.Filled.Casino, null) },
                         modifier = Modifier.testTag("kilter.surprise"),
@@ -308,7 +342,7 @@ private fun KilterCatalogScreen(
                             moreMenu = false
                             scope.launch {
                                 val pick = withContext(Dispatchers.IO) { catalog.randomClimb(filter) }
-                                pick?.let { onOpenClimb(it.uuid) }
+                                pick?.let { onOpenClimb(it.uuid, emptyList()) }
                             }
                         })
                     // Issue #91: scan a shared QR (from iOS or Android) to open the climb.
@@ -397,7 +431,19 @@ private fun KilterCatalogScreen(
                 )
             }
 
-            sessions.currentSessionId?.let { sid ->
+            // Issue #97: the live-session banner springs in/out (slide-from-top + fade) rather than
+            // popping, gated on reduce-motion.
+            val reduceMotionBanner = LocalReduceMotion.current
+            val sid = sessions.currentSessionId
+            androidx.compose.animation.AnimatedVisibility(
+                visible = sid != null,
+                enter = androidx.compose.animation.expandVertically(
+                    com.snappet.mobile.ui.theme.gated(reduceMotionBanner, com.snappet.mobile.ui.theme.SnappetMotion.standard())) +
+                    androidx.compose.animation.fadeIn(com.snappet.mobile.ui.theme.gated(reduceMotionBanner, com.snappet.mobile.ui.theme.SnappetMotion.quick())),
+                exit = androidx.compose.animation.shrinkVertically(
+                    com.snappet.mobile.ui.theme.gated(reduceMotionBanner, com.snappet.mobile.ui.theme.SnappetMotion.quick())) +
+                    androidx.compose.animation.fadeOut(com.snappet.mobile.ui.theme.gated(reduceMotionBanner, com.snappet.mobile.ui.theme.SnappetMotion.quick())),
+            ) {
                 val count = logs.count { it.sessionId == sid }
                 val live = com.snappet.mobile.ui.theme.pulseSuccess()
                 Row(
@@ -427,7 +473,14 @@ private fun KilterCatalogScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(if (resultCount == 0) "No climbs" else "$resultCount climb${if (resultCount == 1) "" else "s"}",
+                // Issue #97: the count rolls to its new value as filters/search change, gated on reduce-motion.
+                val reduceMotion = LocalReduceMotion.current
+                val animatedCount by androidx.compose.animation.core.animateIntAsState(
+                    targetValue = resultCount,
+                    animationSpec = com.snappet.mobile.ui.theme.gated(reduceMotion, com.snappet.mobile.ui.theme.SnappetMotion.standard()),
+                    label = "kilter.count",
+                )
+                Text(if (animatedCount == 0) "No climbs" else "$animatedCount climb${if (animatedCount == 1) "" else "s"}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("kilter.count"))
@@ -450,6 +503,12 @@ private fun KilterCatalogScreen(
                         else -> "Try a wider grade range or fewer filters."
                     })
             } else {
+                // Issue #93: the swipe-able sibling list is exactly what's on screen, in order — the
+                // Climb-of-the-day first (when shown) then the filtered rows. Opening any climb hands
+                // detail this list so left/right swipes move through the same set.
+                val browseUuids = remember(cotd, climbs) {
+                    (listOfNotNull(cotd?.uuid) + climbs.map { it.uuid })
+                }
                 // Bottom padding keeps the Create-climb FAB clear of the last row.
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
                     cotd?.let { c ->
@@ -458,12 +517,16 @@ private fun KilterCatalogScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = 16.dp, top = 8.dp))
                             KilterClimbRow(c, favoriteUuids.contains(c.uuid), gradeFormat, featured = true,
-                                modifier = Modifier.testTag("kilter.cotd")) { onOpenClimb(c.uuid) }
+                                modifier = Modifier.testTag("kilter.cotd")) { onOpenClimb(c.uuid, browseUuids) }
                             HorizontalDivider()
                         }
                     }
                     items(climbs, key = { it.uuid }) { item ->
-                        KilterClimbRow(item, favoriteUuids.contains(item.uuid), gradeFormat) { onOpenClimb(item.uuid) }
+                        // Issue #97: rows fade/slide into place as the filtered list changes (Compose's
+                        // built-in item placement animation; it no-ops visually under reduce-motion since
+                        // the list is rebuilt rather than reordered in that case).
+                        KilterClimbRow(item, favoriteUuids.contains(item.uuid), gradeFormat,
+                            modifier = Modifier.animateItem()) { onOpenClimb(item.uuid, browseUuids) }
                     }
                 }
             }
@@ -581,7 +644,8 @@ private fun KilterClimbRow(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(item.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                if (isFavorite) Icon(Icons.Filled.Star, contentDescription = "Saved", tint = Color(0xFFE8A800), modifier = Modifier.padding(start = 2.dp))
+                // Issue #97: the saved star reads in the Kilter module accent token (was raw 0xFFE8A800).
+                if (isFavorite) Icon(Icons.Filled.Star, contentDescription = "Saved", tint = com.snappet.mobile.ui.theme.kilterAccent(), modifier = Modifier.padding(start = 2.dp))
             }
             Text("by ${item.setter}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }

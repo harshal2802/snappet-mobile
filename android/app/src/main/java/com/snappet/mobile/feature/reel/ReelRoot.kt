@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetAccents
 
 /**
@@ -53,7 +54,7 @@ fun ReelRoot(onExit: () -> Unit) {
     var interested by remember { mutableStateOf(false) }
     ModuleScaffold(title = "Workout Reels", onExit = onExit) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(LocalSpacing.current.pageGutter),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Card(

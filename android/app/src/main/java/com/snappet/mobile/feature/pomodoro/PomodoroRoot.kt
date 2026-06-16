@@ -67,6 +67,7 @@ import com.snappet.mobile.core.UsageRecord
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
@@ -187,7 +188,7 @@ private fun PomodoroBody(timer: PomodoroTimerState, sessions: List<PomodoroSessi
     val todayStart = PomodoroStats.startOfDay(System.currentTimeMillis())
     val today = sessions.filter { it.completedAt >= todayStart }
     Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
+        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(LocalSpacing.current.pageGutter),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {

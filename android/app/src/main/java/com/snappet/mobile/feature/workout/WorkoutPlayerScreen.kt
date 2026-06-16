@@ -1,6 +1,7 @@
 package com.snappet.mobile.feature.workout
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +53,7 @@ import com.snappet.mobile.ui.theme.LocalReduceMotion
 import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
+import com.snappet.mobile.ui.theme.snappetSurfaceTransition
 import kotlinx.coroutines.delay
 
 private val Orange = SnappetAccents.Ember
@@ -238,6 +240,17 @@ fun WorkoutPlayerScreen(
             }
         },
     ) { padding ->
+        // Issue #97: the EXERCISE → REST → DONE phase change slides+fades instead of hard-cutting
+        // mid-workout; the slide direction follows the phase ordinal (advancing forward, skipping
+        // back), and collapses to an instant change under reduce-motion.
+        val reduceMotionPlayer = LocalReduceMotion.current
+        AnimatedContent(
+            targetState = phase,
+            transitionSpec = {
+                snappetSurfaceTransition(reduceMotionPlayer, forward = targetState.ordinal >= initialState.ordinal)
+            },
+            label = "workoutPhase",
+        ) { phase ->
         when (phase) {
             PlayerPhase.EXERCISE -> ExercisePhase(
                 padding = padding,
@@ -265,6 +278,7 @@ fun WorkoutPlayerScreen(
                 exercisesDone = exercises.count { !it.skipped && it.sets.any { s -> s.isCompleted } },
                 onFinish = { onFinish(session.withExercises(exercises), true) },
             )
+        }
         }
     }
 
