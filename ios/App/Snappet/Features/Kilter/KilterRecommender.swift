@@ -67,11 +67,17 @@ enum KilterRecommender {
         var preferUnsent: Bool = true
         /// Goal emphasis; `nil` → the balanced default allocation.
         var mix: Mix? = nil
-        init(targetCount: Int = 6, sendThreshold: Int = 2, preferUnsent: Bool = true, mix: Mix? = nil) {
+        /// Shuffle/re-roll seed: `0` (default) keeps the deterministic best-ranked picks; a non-zero
+        /// seed rotates each band's ranked candidate pool so "Shuffle" surfaces different — still
+        /// well-ranked — climbs, deterministically per seed.
+        var rerollSeed: Int = 0
+        init(targetCount: Int = 6, sendThreshold: Int = 2, preferUnsent: Bool = true,
+             mix: Mix? = nil, rerollSeed: Int = 0) {
             self.targetCount = targetCount
             self.sendThreshold = sendThreshold
             self.preferUnsent = preferUnsent
             self.mix = mix
+            self.rerollSeed = rerollSeed
         }
     }
 
@@ -189,11 +195,17 @@ enum KilterRecommender {
         func take(bands: [Set<Int>], count: Int, goal: Goal, allowSent: Bool) {
             var remaining = count
             for band in bands where remaining > 0 {
-                let pool = rank(candidates.filter {
+                var pool = rank(candidates.filter {
                     !chosen.contains($0.uuid)
                         && band.contains(bucket($0.difficulty))
                         && (allowSent || !sentUUIDs.contains($0.uuid))
                 })
+                // Shuffle: rotate the ranked pool by the seed so a re-roll picks different, still
+                // well-ranked climbs (deterministic per seed). seed 0 → no rotation (best picks).
+                if options.rerollSeed != 0, !pool.isEmpty {
+                    let k = ((options.rerollSeed % pool.count) + pool.count) % pool.count
+                    pool = Array(pool[k...] + pool[..<k])
+                }
                 for item in pool where remaining > 0 {
                     picks.append(Pick(item: item, goal: goal))
                     chosen.insert(item.uuid)

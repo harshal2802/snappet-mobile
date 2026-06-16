@@ -132,6 +132,22 @@ final class KilterPlanLogicTests: XCTestCase {
         }
     }
 
+    func testRerollSeedChangesPicksButKeepsCountAndGoals() {
+        let pool = candidatePool()
+        let base = KilterRecommender.recommend(history: [], candidates: pool, anchor: 18,
+                                               options: .init(rerollSeed: 0))
+        let shuffled = KilterRecommender.recommend(history: [], candidates: pool, anchor: 18,
+                                                   options: .init(rerollSeed: 3))
+        XCTAssertEqual(base.picks.count, shuffled.picks.count, "shuffle keeps the session size")
+        XCTAssertEqual(base.picks.map(\.goal), shuffled.picks.map(\.goal), "goal arc is unchanged")
+        XCTAssertNotEqual(base.picks.map(\.id), shuffled.picks.map(\.id),
+                          "a non-zero seed surfaces different climbs (dense pool)")
+        // Determinism: same seed → same plan.
+        let again = KilterRecommender.recommend(history: [], candidates: pool, anchor: 18,
+                                                options: .init(rerollSeed: 3))
+        XCTAssertEqual(shuffled.picks.map(\.id), again.picks.map(\.id))
+    }
+
     func testEveryStrategyConfigIsCoherent() {
         for s in KilterRecommender.Strategy.allCases {
             let c = KilterRecommender.config(for: s)

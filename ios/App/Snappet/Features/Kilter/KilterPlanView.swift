@@ -50,6 +50,9 @@ struct KilterPlanView: View {
     @State private var preview: KilterRecommender.Plan = .empty
     @State private var built = false
     @State private var showingConfig = false
+    /// Ephemeral "Shuffle" re-roll counter (not persisted — variety is per-visit). Feeds the
+    /// recommender's `rerollSeed` and `planKey` so each tap regenerates a different preview.
+    @State private var rerollSeed = 0
 
     /// The frozen plan pinned to the live session, when this run was started from a plan. Its presence
     /// switches the screen to session-home (read stored items; never regenerate).
@@ -248,6 +251,12 @@ struct KilterPlanView: View {
                     Text("Suggested from your last \(entries.count) logged climb\(entries.count == 1 ? "" : "s").")
                         .font(.subheadline)
                     Spacer()
+                    if !preview.isEmpty {
+                        Button { rerollSeed += 1 } label: { Image(systemName: "shuffle") }
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .accessibilityIdentifier("kilter.plan.shuffle")
+                            .accessibilityLabel("Shuffle the suggested climbs")
+                    }
                     Button { showingConfig = true } label: {
                         Label(strategy.label, systemImage: "slider.horizontal.3")
                             .font(.caption).lineLimit(1)
@@ -319,7 +328,7 @@ struct KilterPlanView: View {
     /// Recompute the preview when the history, angle, layout, or any plan-config knob changes
     /// (generate-mode only).
     private var planKey: String {
-        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planPreferUnsent)"
+        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planPreferUnsent)|\(rerollSeed)"
     }
 
     private func rebuild() {
@@ -340,7 +349,7 @@ struct KilterPlanView: View {
 
         let options = KilterRecommender.Options(
             targetCount: planTargetCount, sendThreshold: 2, preferUnsent: planPreferUnsent,
-            mix: KilterRecommender.config(for: strategy).mix)
+            mix: KilterRecommender.config(for: strategy).mix, rerollSeed: rerollSeed)
         preview = KilterRecommender.recommend(history: history, candidates: candidates,
                                               anchor: anchor, options: options)
         built = true

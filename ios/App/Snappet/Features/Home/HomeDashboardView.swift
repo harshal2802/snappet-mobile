@@ -21,6 +21,8 @@ struct HomeDashboardView: View {
     @Query private var budgetCategories: [BudgetCategory]
     @Query private var budgetTransactions: [BudgetTransaction]
     @Query private var kilterEntries: [KilterLogEntry]
+    @Query private var kilterSessionsQ: [KilterSession]
+    @Query private var kilterPlansQ: [KilterPlan]
 
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -181,7 +183,19 @@ struct HomeDashboardView: View {
                 systemImage: "chart.pie.fill",
                 tint: SnappetColor.budget) { router.open(module: "budget") })
         }
-        if let k = TodayDigest.climbPlan(history: kilterEntries.map(KilterClimbLog.from)) {
+        if let resume = activeKilterResume {
+            // A plan-backed session is live → resume it, mirroring "Resume <routine>" for Workout.
+            // Takes the slot the history-based "Plan tonight's session" card would otherwise fill.
+            cards.append(TodayCard(
+                id: "resumeKilter",
+                title: "Resume climbing session",
+                detail: "\(resume.done) of \(resume.total) done",
+                systemImage: "figure.climbing",
+                tint: SnappetColor.kilter) {
+                    router.open(module: "kilter")
+                    router.push(KilterPlanRoute())
+                })
+        } else if let k = TodayDigest.climbPlan(history: kilterEntries.map(KilterClimbLog.from)) {
             cards.append(TodayCard(
                 id: "climbPlan",
                 title: "Plan tonight's session",
@@ -195,6 +209,18 @@ struct HomeDashboardView: View {
                 })
         }
         return cards
+    }
+
+    /// `(done, total)` of an open plan whose session is still live — drives the "Resume climbing
+    /// session" card. `nil` when no plan-backed session is running. Store-derived (reactive via
+    /// `@Query`), so it doesn't depend on the live in-memory session manager.
+    private var activeKilterResume: (done: Int, total: Int)? {
+        let openSessionIds = Set(kilterSessionsQ.filter { $0.endedAt == nil }.map(\.id))
+        guard let plan = kilterPlansQ.first(where: { p in
+            p.completedAt == nil && (p.sessionId.map(openSessionIds.contains) ?? false)
+        }) else { return nil }
+        let p = KilterPlanProgress.progress(plan.items)
+        return (p.done, p.total)
     }
 
     @ViewBuilder private var upNext: some View {
