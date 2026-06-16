@@ -16,7 +16,9 @@ jobs:
   testflight:
     runs-on: macos-26        # Tahoe runner — Xcode 26.5, the shipping toolchain
     env:
-      TEAM_ID: P6U6C88W9J
+      # Paid Developer Program team (the one holding the Apple Distribution cert) — must match
+      # project.yml DEVELOPMENT_TEAM + ExportOptions.plist + the App Store profile/record.
+      TEAM_ID: NFUS5W8QC6
       BUNDLE_ID: com.snappet.app
       SCHEME: Snappet
     steps:
