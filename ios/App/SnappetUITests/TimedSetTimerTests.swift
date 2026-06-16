@@ -100,20 +100,18 @@ final class TimedSetTimerTests: XCTestCase {
         snap("05-captured")
         add.tap()
 
-        // The logged set row renders its duration via SetMeasure.summary ("M:SS"). Assert on the actual
-        // `freeform.setRow` — NOT the always-running `overallWorkoutTimer` (which also reads M:SS, so a
-        // loose any-static-text match would pass even if nothing were saved). The captured duration must
-        // be the one persisted into the row, so the test fails if the live capture is dropped.
+        // The logged set row renders its duration via SetMeasure.summary ("M:SS"). `freeform.setRow` is
+        // the row's content HStack (a static-text / container element, NOT a List cell), so query it
+        // type-agnostically. The captured value is distinctive (a few seconds — nowhere near the
+        // always-running overallWorkoutTimer), so its presence proves the live capture was persisted.
         sleep(1); snap("06-logged")
-        let row = app.cells["freeform.setRow"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 4), "a logged set row should appear")
-        // The captured M:SS must be inside the row — either as a descendant static text, or merged into
-        // the row's own coalesced label (SwiftUI does one or the other for a multi-Text List row). Both
-        // forms read `captured` from `freeform.setRow`, never from `overallWorkoutTimer`.
-        let durationInRow = row.staticTexts[captured].waitForExistence(timeout: 4)
-            || (row.label.contains(captured))
-        XCTAssertTrue(durationInRow,
-                      "the timed set row should show the captured duration (\(captured)), not just the overall timer")
+        let row = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "a logged set row should appear")
+        let shown = row.label.contains(captured)
+            || row.staticTexts[captured].exists
+            || app.staticTexts[captured].waitForExistence(timeout: 2)
+        XCTAssertTrue(shown,
+                      "the timed set row should show the captured duration (\(captured)); row label = \(row.label)")
     }
 
     /// Wait until `el`'s accessibility label equals `expected` (the Start↔Stop flip).

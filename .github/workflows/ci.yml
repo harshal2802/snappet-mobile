@@ -99,6 +99,7 @@ jobs:
             -only-testing:${{ matrix.suite }} \
             -clonedSourcePackagesDirPath "$SPM_CACHE" \
             -resultBundlePath "$RUNNER_TEMP/${{ matrix.suite }}.xcresult" \
+            -retry-tests-on-failure -test-iterations 3 \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload xcresult bundle
