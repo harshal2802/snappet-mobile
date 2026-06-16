@@ -385,6 +385,11 @@ final class KilterPlan {
     var optionsTargetCount: Int
     var optionsSendThreshold: Int
     var optionsPreferUnsent: Bool
+    /// The grade offset applied to the anchor when this plan was generated (the config sheet's
+    /// "Target grade" stepper). Snapshotted so History/diagnostics faithfully describe how the plan was
+    /// built even when the climber hand-tuned the offset away from the strategy's seed. Additive with a
+    /// default → lightweight migration.
+    var optionsGradeOffset: Int = 0
     /// The named selection strategy chosen (e.g. "volume", "project"), when one was; `nil` = defaults.
     var strategyRaw: String?
 
@@ -396,7 +401,7 @@ final class KilterPlan {
          workingDifficulty: Double? = nil, workingGradeLabel: String? = nil, title: String? = nil,
          sessionId: UUID? = nil, completedAt: Date? = nil,
          optionsTargetCount: Int = 6, optionsSendThreshold: Int = 2, optionsPreferUnsent: Bool = true,
-         strategyRaw: String? = nil, items: [KilterPlanItem] = []) {
+         optionsGradeOffset: Int = 0, strategyRaw: String? = nil, items: [KilterPlanItem] = []) {
         self.id = id
         self.createdAt = createdAt
         self.angle = angle
@@ -409,6 +414,7 @@ final class KilterPlan {
         self.optionsTargetCount = optionsTargetCount
         self.optionsSendThreshold = optionsSendThreshold
         self.optionsPreferUnsent = optionsPreferUnsent
+        self.optionsGradeOffset = optionsGradeOffset
         self.strategyRaw = strategyRaw
         self.items = items
     }

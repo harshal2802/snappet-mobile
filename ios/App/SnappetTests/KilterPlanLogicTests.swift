@@ -13,6 +13,12 @@ final class KilterPlanLogicTests: XCTestCase {
                        gradeLabel: grade, quality: 2.5, ascents: 100)
     }
 
+    /// A dense candidate pool spanning the bands around the working grade (≈18), so `recommend`
+    /// always has climbs to draw on for every goal.
+    private func candidatePool() -> [KilterListItem] {
+        (14...22).flatMap { d in (0..<4).map { i in item("c\(d)-\(i)", Double(d)) } }
+    }
+
     private func plan(_ picks: [(String, KilterRecommender.Goal)]) -> KilterRecommender.Plan {
         KilterRecommender.Plan(
             picks: picks.map { KilterRecommender.Pick(item: item($0.0), goal: $0.1) },
@@ -91,6 +97,65 @@ final class KilterPlanLogicTests: XCTestCase {
         XCTAssertEqual(items.first { $0.climbUUID == "w1" }?.status, .skipped)
         XCTAssertEqual(KilterPlanProgress.nextPending(items)?.climbUUID, "s1")
         XCTAssertEqual(KilterPlanProgress.progress(items).done, 0)
+    }
+
+    // MARK: - Selection strategy (PR 07)
+
+    func testWeightedAllocationLeansAndSumsToTarget() {
+        // Project-heavy mix on 5 climbs leans toward project, still sums to 5, ≥1 per weighted goal.
+        let a = KilterRecommender.allocation(target: 5, mix: .init(warmup: 2, send: 1, project: 2))
+        XCTAssertEqual(a.warmup + a.send + a.project, 5)
+        XCTAssertGreaterThanOrEqual(a.warmup, 1)
+        XCTAssertGreaterThanOrEqual(a.send, 1)
+        XCTAssertGreaterThanOrEqual(a.project, 1)
+        XCTAssertGreaterThanOrEqual(a.project, a.send, "project-leaning mix gives project ≥ send")
+    }
+
+    func testZeroWeightGoalIsDropped() {
+        // Flash practice: no project. The project slot must be empty and the rest sum to target.
+        let a = KilterRecommender.allocation(target: 6, mix: .init(warmup: 2, send: 4, project: 0))
+        XCTAssertEqual(a.project, 0)
+        XCTAssertEqual(a.warmup + a.send, 6)
+        XCTAssertGreaterThan(a.send, a.warmup)
+    }
+
+    func testBalancedDefaultUnchangedByOptionalMix() {
+        // A nil mix must reproduce the original allocation exactly (no behaviour drift).
+        for t in 1...12 {
+            let viaOptions = KilterRecommender.recommend(
+                history: [], candidates: candidatePool(), anchor: 18,
+                options: .init(targetCount: t, mix: nil))
+            let viaDefault = KilterRecommender.recommend(
+                history: [], candidates: candidatePool(), anchor: 18,
+                options: .init(targetCount: t))
+            XCTAssertEqual(viaOptions.picks.map(\.id), viaDefault.picks.map(\.id))
+        }
+    }
+
+    func testEveryStrategyConfigIsCoherent() {
+        for s in KilterRecommender.Strategy.allCases {
+            let c = KilterRecommender.config(for: s)
+            XCTAssertGreaterThanOrEqual(c.targetCount, 3)
+            if s == .balanced { XCTAssertNil(c.mix) } else { XCTAssertNotNil(c.mix) }
+        }
+    }
+
+    /// Property test (PR-07 review nicety): every real strategy mix, at every reachable session length,
+    /// allocates exactly `targetCount` climbs with ≥1 per positive-weight goal and no negatives.
+    func testEveryStrategyMixAllocatesCleanlyAcrossLengths() {
+        for s in KilterRecommender.Strategy.allCases {
+            guard let mix = KilterRecommender.config(for: s).mix else { continue }
+            for t in 3...12 {
+                let a = KilterRecommender.allocation(target: t, mix: mix)
+                XCTAssertEqual(a.warmup + a.send + a.project, t, "\(s) @\(t) must sum to target")
+                XCTAssertGreaterThanOrEqual(a.warmup, 0)
+                XCTAssertGreaterThanOrEqual(a.send, 0)
+                XCTAssertGreaterThanOrEqual(a.project, 0)
+                if mix.warmup > 0 { XCTAssertGreaterThanOrEqual(a.warmup, 1, "\(s) @\(t) warmup ≥1") }
+                if mix.send > 0 { XCTAssertGreaterThanOrEqual(a.send, 1, "\(s) @\(t) send ≥1") }
+                if mix.project > 0 { XCTAssertGreaterThanOrEqual(a.project, 1, "\(s) @\(t) project ≥1") }
+            }
+        }
     }
 
     func testAllResolvedWhenNoPendingRemain() {

@@ -715,6 +715,7 @@ extension SnappetBackup {
         var optionsTargetCount: Int
         var optionsSendThreshold: Int
         var optionsPreferUnsent: Bool
+        var optionsGradeOffset: Int
         var strategyRaw: String?
         var items: [KilterPlanItem]
 
@@ -723,7 +724,8 @@ extension SnappetBackup {
             workingDifficulty = m.workingDifficulty; workingGradeLabel = m.workingGradeLabel
             title = m.title; sessionId = m.sessionId; completedAt = m.completedAt
             optionsTargetCount = m.optionsTargetCount; optionsSendThreshold = m.optionsSendThreshold
-            optionsPreferUnsent = m.optionsPreferUnsent; strategyRaw = m.strategyRaw
+            optionsPreferUnsent = m.optionsPreferUnsent; optionsGradeOffset = m.optionsGradeOffset
+            strategyRaw = m.strategyRaw
             items = m.items
         }
         func make() -> KilterPlan {
@@ -731,7 +733,8 @@ extension SnappetBackup {
                        workingDifficulty: workingDifficulty, workingGradeLabel: workingGradeLabel,
                        title: title, sessionId: sessionId, completedAt: completedAt,
                        optionsTargetCount: optionsTargetCount, optionsSendThreshold: optionsSendThreshold,
-                       optionsPreferUnsent: optionsPreferUnsent, strategyRaw: strategyRaw, items: items)
+                       optionsPreferUnsent: optionsPreferUnsent, optionsGradeOffset: optionsGradeOffset,
+                       strategyRaw: strategyRaw, items: items)
         }
         var sortKey: String { id.uuidString }
     }

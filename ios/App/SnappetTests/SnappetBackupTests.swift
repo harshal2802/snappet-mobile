@@ -409,7 +409,7 @@ final class SnappetBackupTests: XCTestCase {
             workingDifficulty: 18, workingGradeLabel: "6a/V3", title: "Volume night",
             sessionId: kilterSession.id, completedAt: Date(timeIntervalSince1970: 1_700_013_000),
             optionsTargetCount: 6, optionsSendThreshold: 2, optionsPreferUnsent: false,
-            strategyRaw: "volume",
+            optionsGradeOffset: 1, strategyRaw: "volume",
             items: [
                 KilterPlanItem(order: 0, goal: .warmup, climbUUID: "w-1", climbName: "Slab",
                                setter: "Tonde", gradeLabel: "5+/V2", difficulty: 16,

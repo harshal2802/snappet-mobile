@@ -4,6 +4,24 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Kilter plan customization: named strategies over Options + a weighted allocation (kilter-planned-session PR 07)
+
+**Decision**: "Plan a session" gains an **Adjust** sheet leading with climber-language **strategies**
+(`KilterRecommender.Strategy`: balanced / volume / project / power / flash / recovery) that seed three
+knobs — session length, grade offset, prefer-unsent — plus a goal **mix**. Picking a strategy seeds the
+knobs; the climber can then fine-tune them while the strategy's mix stays applied. Persisted in
+`@AppStorage`; snapshotted onto `KilterPlan` (incl. `optionsGradeOffset`) on Start.
+
+**Non-obvious choices**: (1) `Options.mix` is **Optional** — `nil` keeps the original balanced
+`allocation(target:)` byte-for-byte (pinned by `testBalancedDefaultUnchangedByOptionalMix`), so the
+existing `KilterRecommenderTests` and default behaviour don't drift; non-nil routes through a new
+**largest-remainder** `allocation(target:mix:)` (sum==target, ≥1 per positive-weight goal for reachable
+counts ≥3, drops zero-weight goals). (2) The **grade offset is applied to the anchor in the view**
+(`KilterPlanView.rebuild`), NOT inside `Options`/`recommend` — the recommender's contract requires the
+candidate-query window and the bands to share one anchor, so offsetting anywhere but the shared anchor
+would point the deep bands at unfetched climbs. (3) `planKey` includes every knob so the preview
+regenerates live; a started plan stays frozen (session-home never rebuilds).
+
 ## [2026-06-16] Kilter climb screen = a station in the plan: advance-by-order + reset-to-plan nav (kilter-planned-session PR 05)
 
 **Decision**: the climb screen's session strip gains a forward loop for plan-backed runs — "Next pick →"

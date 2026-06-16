@@ -38,9 +38,18 @@ struct KilterPlanView: View {
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     private var gradeFormat: KilterGradeFormat { KilterGradeFormat(rawValue: gradeFormatRaw) ?? .both }
 
+    // Plan customization (bug #4) — last-used selection strategy + the knobs it seeds; persisted so the
+    // plan stays the way the climber likes it. Defaults reproduce the original behaviour (balanced/6).
+    @AppStorage("kilter.plan.strategy") private var strategyRaw = KilterRecommender.Strategy.balanced.rawValue
+    @AppStorage("kilter.plan.targetCount") private var planTargetCount = 6
+    @AppStorage("kilter.plan.gradeOffset") private var planGradeOffset = 0
+    @AppStorage("kilter.plan.preferUnsent") private var planPreferUnsent = true
+    private var strategy: KilterRecommender.Strategy { .init(rawValue: strategyRaw) ?? .balanced }
+
     /// The recommender preview shown in generate-mode (ephemeral; never the source of truth once Started).
     @State private var preview: KilterRecommender.Plan = .empty
     @State private var built = false
+    @State private var showingConfig = false
 
     /// The frozen plan pinned to the live session, when this run was started from a plan. Its presence
     /// switches the screen to session-home (read stored items; never regenerate).
@@ -64,6 +73,11 @@ struct KilterPlanView: View {
         .navigationTitle(isSessionHome ? "Session plan" : "Plan a session")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .primaryAction) { startButton } }
+        .sheet(isPresented: $showingConfig) {
+            KilterPlanConfigSheet(strategyRaw: $strategyRaw, targetCount: $planTargetCount,
+                                  gradeOffset: $planGradeOffset, preferUnsent: $planPreferUnsent)
+                .presentationDetents([.medium, .large])
+        }
         // Resolve the live session from the store on appear, so a deep-link entry (Home → plan, which
         // can skip the root's recover) renders session-home immediately when a plan is already running.
         .onAppear { sessions.recover(in: modelContext) }
@@ -112,6 +126,10 @@ struct KilterPlanView: View {
             angle: angle, layoutId: layoutId,
             workingDifficulty: preview.workingDifficulty,
             workingGradeLabel: preview.workingGradeLabel,
+            title: strategy == .balanced ? nil : strategy.label,
+            optionsTargetCount: planTargetCount, optionsSendThreshold: 2,
+            optionsPreferUnsent: planPreferUnsent, optionsGradeOffset: planGradeOffset,
+            strategyRaw: strategyRaw,
             items: KilterPlanProgress.items(from: preview))
         modelContext.insert(plan)
         if !sessions.isActive {
@@ -226,8 +244,17 @@ struct KilterPlanView: View {
     private var previewHeader: some View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Suggested from your last \(entries.count) logged climb\(entries.count == 1 ? "" : "s").")
-                    .font(.subheadline)
+                HStack(alignment: .top) {
+                    Text("Suggested from your last \(entries.count) logged climb\(entries.count == 1 ? "" : "s").")
+                        .font(.subheadline)
+                    Spacer()
+                    Button { showingConfig = true } label: {
+                        Label(strategy.label, systemImage: "slider.horizontal.3")
+                            .font(.caption).lineLimit(1)
+                    }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .accessibilityIdentifier("kilter.plan.adjust")
+                }
                 if let grade = preview.workingGradeLabel {
                     Label("Working grade ~ \(kilterDisplayGrade(grade, gradeFormat)) · \(angle)°",
                           systemImage: "target")
@@ -289,26 +316,33 @@ struct KilterPlanView: View {
         return allMedia.lazy.filter { $0.assignedClimbUUID == uuid && $0.sessionID == sid }.count
     }
 
-    /// Recompute the preview when the history, angle, or layout changes (generate-mode only).
-    private var planKey: String { "\(entries.count)|\(angle)|\(layoutId)" }
+    /// Recompute the preview when the history, angle, layout, or any plan-config knob changes
+    /// (generate-mode only).
+    private var planKey: String {
+        "\(entries.count)|\(angle)|\(layoutId)|\(strategyRaw)|\(planTargetCount)|\(planGradeOffset)|\(planPreferUnsent)"
+    }
 
     private func rebuild() {
         guard catalog.isAvailable else { preview = .empty; built = true; return }
         let history = entries.map(KilterClimbLog.from)
         let working = KilterRecommender.workingDifficulty(history: history)
 
-        // Anchor the candidate query: the working grade, or the catalog's median grade on a cold start.
+        // Anchor the candidate query: the working grade (or the catalog's median grade on a cold
+        // start), shifted by the chosen grade offset. Applying the offset HERE — not inside the
+        // recommender — keeps the candidate-query window and the recommender's bands sharing one
+        // centre (the recommender's contract; otherwise the deep bands point at unfetched climbs).
         let scale = catalog.gradeScale()
         let median = scale.isEmpty ? 18.0 : Double(scale[scale.count / 2].difficulty)
-        let anchor = working ?? median
-        // Fetch over the window the recommender's bands actually reach, and hand it the **same**
-        // anchor — so the query window and the band centre agree (no silently-dropped goal, and the
-        // deep warm-up fallbacks have candidates to draw on).
+        let anchor = (working ?? median) + Double(planGradeOffset)
         let window = KilterRecommender.candidateWindow(anchor: anchor)
         let candidates = catalog.list(layoutId: layoutId, angle: angle,
                                       minDifficulty: window.min, maxDifficulty: window.max, limit: 200)
 
-        preview = KilterRecommender.recommend(history: history, candidates: candidates, anchor: anchor)
+        let options = KilterRecommender.Options(
+            targetCount: planTargetCount, sendThreshold: 2, preferUnsent: planPreferUnsent,
+            mix: KilterRecommender.config(for: strategy).mix)
+        preview = KilterRecommender.recommend(history: history, candidates: candidates,
+                                              anchor: anchor, options: options)
         built = true
     }
 }
