@@ -102,7 +102,7 @@ fun KilterPlanScreen(
             val working = KilterRecommender.workingDifficulty(logs)
             val base = working ?: run {
                 val keys = gradeScale.map { it.first.toDouble() }.sorted()
-                if (keys.isEmpty()) 0.0 else keys[keys.size / 2]
+                if (keys.isEmpty()) 18.0 else keys[keys.size / 2]   // match iOS median fallback
             }
             // Apply the grade offset to the anchor HERE so the candidate window + recommender bands stay
             // aligned (the recommender's contract).
@@ -133,8 +133,11 @@ fun KilterPlanScreen(
         )
         scope.launch {
             if (sessions.currentSessionId == null) sessions.start(angle, "manual")
-            sessions.startPlan(plan, items)
-            items.firstOrNull()?.let { first -> onOpenClimb(first.climbUuid, items.map { it.climbUuid }) }
+            sessions.startPlan(plan, items)   // re-enters an existing open plan or pins the new one
+            // Open the next pick of whatever plan is now active (startPlan seeds the pending cache).
+            val pending = sessions.planPendingUuids
+            val target = pending.firstOrNull() ?: items.firstOrNull()?.climbUuid
+            if (target != null) onOpenClimb(target, pending.ifEmpty { items.map { it.climbUuid } })
         }
     }
 

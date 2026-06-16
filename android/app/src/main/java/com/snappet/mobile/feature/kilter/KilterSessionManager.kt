@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.snappet.mobile.feature.kilter.hr.BleHeartRateSource
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 /**
@@ -45,7 +47,14 @@ class KilterSessionManager(
     var planPendingUuids by mutableStateOf<List<String>>(emptyList())
         private set
 
+    /** Serializes plan read-modify-write so interleaved logs can't lose a tick (iOS is @MainActor-atomic). */
+    private val planMutex = Mutex()
+
     suspend fun start(angle: Int, source: String) {
+        if (currentSessionId != null) return
+        // Re-sync with the store first so a start can't fork a duplicate open session (iOS folds
+        // recover into start). If recovery adopts an open session, don't create another.
+        recover()
         if (currentSessionId != null) return
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -79,13 +88,20 @@ class KilterSessionManager(
      * session (closes any prior open plan first), persists the new one pinned to the session, and seeds
      * the caches. No-op with no live session.
      */
-    suspend fun startPlan(plan: KilterPlanEntity, items: List<KilterPlanItem>) {
-        val sid = currentSessionId ?: return
-        dao.closePlanForSession(sid, System.currentTimeMillis())   // supersede any prior open plan
-        dao.upsertPlan(plan.copy(sessionId = sid, completedAt = null))
-        currentPlanId = plan.id
-        planProgress = KilterPlanProgress.progress(items)
-        planPendingUuids = KilterPlanProgress.pendingClimbUuids(items)
+    suspend fun startPlan(plan: KilterPlanEntity, items: List<KilterPlanItem>) = planMutex.withLock {
+        val sid = currentSessionId ?: return@withLock
+        // Re-enter an existing open plan instead of forking/discarding it (the iOS short-circuit; guards
+        // the plansFlow-lag window where the screen still shows generate-mode). Otherwise create + pin.
+        val existing = dao.openPlanForSession(sid)
+        val active = if (existing != null) {
+            existing.id to KilterPlanItemsCodec.decode(existing.itemsJson)
+        } else {
+            dao.upsertPlan(plan.copy(sessionId = sid, completedAt = null))
+            plan.id to items
+        }
+        currentPlanId = active.first
+        planProgress = KilterPlanProgress.progress(active.second)
+        planPendingUuids = KilterPlanProgress.pendingClimbUuids(active.second)
     }
 
     /**
@@ -93,12 +109,12 @@ class KilterSessionManager(
      * sent/attempted (a later send upgrades an attempted one). Read off the plan, never re-derived —
      * so a completed send/project pick can't be filtered out. No-op for an ad-hoc/off-plan log.
      */
-    suspend fun applyLogToPlan(climbUuid: String, ascent: KilterAscentStatus, atMillis: Long) {
-        val sid = currentSessionId ?: return
-        val plan = dao.openPlanForSession(sid) ?: return
+    suspend fun applyLogToPlan(climbUuid: String, ascent: KilterAscentStatus, atMillis: Long) = planMutex.withLock {
+        val sid = currentSessionId ?: return@withLock
+        val plan = dao.openPlanForSession(sid) ?: return@withLock
         val items = KilterPlanItemsCodec.decode(plan.itemsJson)
         val updated = KilterPlanProgress.applyingLog(climbUuid, ascent, atMillis, items)
-        if (updated == items) return
+        if (updated == items) return@withLock
         dao.upsertPlan(plan.copy(itemsJson = KilterPlanItemsCodec.encode(updated)))
         currentPlanId = plan.id
         planProgress = KilterPlanProgress.progress(updated)
@@ -106,12 +122,12 @@ class KilterSessionManager(
     }
 
     /** Skip a pending pick (leaves the "next up" rotation, not counted as done). */
-    suspend fun skipPlanItem(id: String) {
-        val sid = currentSessionId ?: return
-        val plan = dao.openPlanForSession(sid) ?: return
+    suspend fun skipPlanItem(id: String) = planMutex.withLock {
+        val sid = currentSessionId ?: return@withLock
+        val plan = dao.openPlanForSession(sid) ?: return@withLock
         val items = KilterPlanItemsCodec.decode(plan.itemsJson)
         val updated = KilterPlanProgress.skipping(id, items)
-        if (updated == items) return
+        if (updated == items) return@withLock
         dao.upsertPlan(plan.copy(itemsJson = KilterPlanItemsCodec.encode(updated)))
         planProgress = KilterPlanProgress.progress(updated)
         planPendingUuids = KilterPlanProgress.pendingClimbUuids(updated)

@@ -30,7 +30,7 @@ class BackupRoundTripTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = SnappetDatabase.buildInMemory(context)
         try {
-            // Seed EVERY entity (all 17 — the AC says all module flows render identical
+            // Seed EVERY entity (all 18 — the AC says all module flows render identical
             // data), spanning the storage classes: text, ints, reals, bools, nulls.
             db.usageDao().insert(UsageRecord(module = "tip", action = "calc",
                 summary = "Tipped", metric = 12.5, timestamp = 111))
@@ -68,6 +68,16 @@ class BackupRoundTripTest {
                 sizeId = 7, angle = 40, frames = "p1r12p2r13", edgeLeft = 0, edgeRight = 10,
                 edgeBottom = 0, edgeTop = 12, isNoMatch = false, predictedGrade = null,
                 source = "manual", modelId = null, createdAt = 21))
+            db.kilterDao().upsertPlan(com.snappet.mobile.feature.kilter.KilterPlanEntity(
+                id = "plan-1", createdAt = 22, angle = 40, layoutId = 1, sessionId = "s-1",
+                workingDifficulty = 20.5, workingGradeLabel = "V5", title = "Volume night",
+                optionsTargetCount = 6, optionsPreferUnsent = false, optionsGradeOffset = 1,
+                strategyRaw = "VOLUME",
+                // Also exercises the JSON-in-a-TEXT-column itemsJson across the export→wipe→import leg.
+                itemsJson = com.snappet.mobile.feature.kilter.KilterPlanItemsCodec.encode(listOf(
+                    com.snappet.mobile.feature.kilter.KilterPlanItem(
+                        id = "i-1", order = 0, goalRaw = "SEND", climbUuid = "k-1", climbName = "Crimp city",
+                        setter = "me", gradeLabel = "V5", difficulty = 20.5, statusRaw = "SENT", completedAtMillis = 22)))))
 
             val manager = SnappetBackupManager(db)
             val exported = manager.exportPayload(nowMillis = 999)
