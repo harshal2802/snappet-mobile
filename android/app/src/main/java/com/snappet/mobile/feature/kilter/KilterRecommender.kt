@@ -40,7 +40,7 @@ object KilterRecommender {
         }
     }
 
-    /** Tunables (sensible defaults; surfaced so tests pin behaviour and a settings screen could tune). */
+    /** Tunables (sensible defaults; surfaced so tests pin behaviour and the plan-config sheet tunes). */
     data class Options(
         /** Total climbs to suggest. */
         val targetCount: Int = 6,
@@ -48,7 +48,48 @@ object KilterRecommender {
         val sendThreshold: Int = 2,
         /** For send/project goals, prefer climbs the user hasn't already sent (chase the new). */
         val preferUnsent: Boolean = true,
+        /** Goal emphasis; null → the balanced default allocation. */
+        val mix: Mix? = null,
+        /** Shuffle/re-roll seed: 0 keeps the best-ranked picks; non-zero rotates each band's pool. */
+        val rerollSeed: Int = 0,
     )
+
+    /**
+     * Relative emphasis across the three goals — how [Options.targetCount] splits. null keeps the
+     * balanced ⅓ warm-up / bulk send / ~1 project; a preset leans it. Weights are relative; a zero
+     * weight drops that goal. Mirrors iOS `KilterRecommender.Mix`.
+     */
+    data class Mix(val warmup: Double, val send: Double, val project: Double)
+
+    /**
+     * A climber-language selection strategy the config sheet leads with — each maps to [Options]
+     * (count / prefer-unsent / mix) plus a grade offset the screen applies to the anchor. Mirrors iOS.
+     */
+    enum class Strategy(val label: String, val subtitle: String) {
+        BALANCED("Balanced", "A bit of everything"),
+        VOLUME("Volume / Endurance", "More climbs, at grade, revisit favourites"),
+        PROJECT("Project push", "Fewer, harder, project-leaning"),
+        POWER("Limit / Power", "Short, hard, limit moves"),
+        FLASH("Flash practice", "Fresh sends at your grade"),
+        RECOVERY("Easy flush", "Easy, warm-up heavy");
+    }
+
+    /** The default count / prefer-unsent / grade-offset / mix a strategy seeds the config sheet with. */
+    data class StrategyConfig(
+        val targetCount: Int,
+        val preferUnsent: Boolean,
+        val gradeOffset: Int,
+        val mix: Mix?,
+    )
+
+    fun config(strategy: Strategy): StrategyConfig = when (strategy) {
+        Strategy.BALANCED -> StrategyConfig(6, true, 0, null)
+        Strategy.VOLUME -> StrategyConfig(9, false, 0, Mix(2.0, 5.0, 1.0))
+        Strategy.PROJECT -> StrategyConfig(5, true, 1, Mix(2.0, 1.0, 2.0))
+        Strategy.POWER -> StrategyConfig(4, true, 2, Mix(1.0, 1.0, 2.0))
+        Strategy.FLASH -> StrategyConfig(6, true, 0, Mix(2.0, 4.0, 0.0))
+        Strategy.RECOVERY -> StrategyConfig(5, false, -2, Mix(3.0, 2.0, 0.0))
+    }
 
     // MARK: - Public API
 
@@ -94,21 +135,30 @@ object KilterRecommender {
         }
 
         val w = bucket(resolvedAnchor)
-        val alloc = allocation(options.targetCount)
+        val alloc = options.mix?.let { allocation(options.targetCount, it) } ?: allocation(options.targetCount)
         val sentUuids = history.filter { KilterAscentStatus.from(it.status).isSend }.map { it.climbUuid }.toSet()
 
         val chosen = HashSet<String>()
         val picks = ArrayList<Pick>()
 
         fun take(bands: List<Set<Int>>, count: Int, goal: Goal, allowSent: Boolean) {
+            // On a re-roll, merge the goal's bands into one pool so the shuffle reaches beyond a tight
+            // primary band (e.g. only a few climbs at the working grade) into its fallbacks.
+            val effectiveBands = if (options.rerollSeed == 0) bands else listOf(bands.flatten().toSet())
             var remaining = count
-            for (band in bands) {
+            for (band in effectiveBands) {
                 if (remaining <= 0) break
-                val pool = rank(candidates.filter {
+                var pool = rank(candidates.filter {
                     !chosen.contains(it.uuid) &&
                         band.contains(bucket(it.difficulty)) &&
                         (allowSent || !sentUuids.contains(it.uuid))
                 })
+                // Rotate the ranked pool by the seed so a re-roll surfaces different, still well-ranked
+                // climbs (deterministic per seed). Seed 0 → no rotation (best picks).
+                if (options.rerollSeed != 0 && pool.isNotEmpty()) {
+                    val k = ((options.rerollSeed % pool.size) + pool.size) % pool.size
+                    pool = pool.drop(k) + pool.take(k)
+                }
                 for (item in pool) {
                     if (remaining <= 0) break
                     picks.add(Pick(item, goal))
@@ -131,7 +181,9 @@ object KilterRecommender {
             compareBy({ order.indexOf(it.goal) }, { it.item.difficulty }, { it.item.uuid })
         )
 
-        val label = if (working == null) null else gradeLabel(w, history, candidates)
+        // Label the DETECTED working grade, not the (possibly grade-offset) anchor bucket `w` — a
+        // "Project push" (+2 offset) must still read "Working grade ~V5", not the offset target.
+        val label = working?.let { gradeLabel(bucket(it), history, candidates) }
         return Plan(sorted, working, label)
     }
 
@@ -147,6 +199,32 @@ object KilterRecommender {
         val warmup = maxOf(1, (t.toDouble() / 3.0).roundToInt())
         val send = maxOf(1, t - warmup - project)
         return Allocation(warmup, send, project)
+    }
+
+    /**
+     * Weighted split for a non-default [Mix]: largest-remainder apportionment of [target] across the
+     * three goals by relative weight, guaranteeing ≥1 for any positive-weight goal (when the count
+     * allows) and a sum of exactly [target] (for target ≥ 1). A zero weight drops that goal; all-zero
+     * falls back to the balanced [allocation]. Mirrors iOS allocation(target:mix:).
+     */
+    fun allocation(target: Int, mix: Mix): Allocation {
+        val t = maxOf(1, target)
+        val weights = doubleArrayOf(maxOf(0.0, mix.warmup), maxOf(0.0, mix.send), maxOf(0.0, mix.project))
+        val total = weights.sum()
+        if (total <= 0.0) return allocation(target)
+        val raw = DoubleArray(3) { t * weights[it] / total }
+        val counts = IntArray(3) { raw[it].toInt() }   // floor
+        var remainder = t - counts.sum()
+        val byFrac = (0..2).sortedByDescending { raw[it] - raw[it].toInt() }
+        var k = 0
+        while (remainder > 0) { counts[byFrac[k % 3]]++; remainder--; k++ }
+        for (i in 0..2) {
+            if (weights[i] > 0.0 && counts[i] == 0) {
+                val donor = (0..2).filter { counts[it] > 1 }.maxByOrNull { counts[it] }
+                if (donor != null) { counts[donor]--; counts[i]++ }
+            }
+        }
+        return Allocation(counts[0], counts[1], counts[2])
     }
 
     data class Allocation(val warmup: Int, val send: Int, val project: Int)
