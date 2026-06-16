@@ -20,6 +20,7 @@ import com.snappet.mobile.feature.kilter.KilterCreatedClimb
 import com.snappet.mobile.feature.kilter.KilterDao
 import com.snappet.mobile.feature.kilter.KilterFavorite
 import com.snappet.mobile.feature.kilter.KilterLogEntry
+import com.snappet.mobile.feature.kilter.KilterPlanEntity
 import com.snappet.mobile.feature.kilter.KilterSession
 import com.snappet.mobile.feature.pomodoro.PomodoroDao
 import com.snappet.mobile.feature.pomodoro.PomodoroSession
@@ -53,15 +54,18 @@ import com.snappet.mobile.feature.workout.WorkoutSession
         BudgetCategory::class, BudgetTransaction::class,
         WorkoutRoutine::class, WorkoutSession::class, WorkoutCustomExercise::class,
         KilterLogEntry::class, KilterSession::class, KilterFavorite::class, KilterCreatedClimb::class,
+        KilterPlanEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
     // ── v4 → v5 (issue #92): three NULLABLE HR columns added to `kilter_session`
     //    (avgHr, maxHr, hrSampleCount). Purely additive → a no-SQL Room AutoMigration; no existing
     //    row is touched and nothing can be lost. This is ONE self-contained column-set so the
     //    reviewer can trivially renumber it to v5→v6 when reconciling with Wave 2's independent v5
     //    bump (workout columns) at merge time — see the comment on KilterSession.
-    autoMigrations = [AutoMigration(from = 4, to = 5)],
+    // v5 → v6 (Kilter planned-session): one additive table `kilter_plan` (KilterPlanEntity) — a no-SQL
+    // Room AutoMigration; no existing row is touched and nothing can be lost.
+    autoMigrations = [AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6)],
 )
 abstract class SnappetDatabase : RoomDatabase() {
     abstract fun usageDao(): UsageDao

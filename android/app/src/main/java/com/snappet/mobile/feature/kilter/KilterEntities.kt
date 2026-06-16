@@ -117,6 +117,38 @@ data class KilterCreatedClimb(
     )
 }
 
+/**
+ * A **persisted planned session** — a [KilterRecommender.Plan] snapshotted on Start, with per-pick
+ * completion that survives any recommender re-run. Decoupling the plan from the live recommender is what
+ * fixes the "completed send/project pick vanishes" defect and gives the run a re-enterable home.
+ * [sessionId] pins it to its [KilterSession] once started (and freezes it); done-state is read from each
+ * item's status, never re-derived. Items ride as a JSON column ([itemsJson], via [KilterPlanItemsCodec])
+ * — there is no Room `@TypeConverter` in this codebase. Mirrors iOS `KilterPlan`. Additive table → a
+ * pure v5→v6 AutoMigration.
+ */
+@Entity(tableName = "kilter_plan")
+data class KilterPlanEntity(
+    @PrimaryKey val id: String,
+    val createdAt: Long,
+    val angle: Int,
+    val layoutId: Int,
+    val workingDifficulty: Double? = null,
+    val workingGradeLabel: String? = null,
+    val title: String? = null,
+    /** [KilterSession.id] once Started — pins + freezes the plan; null while in Plan-ready. */
+    val sessionId: String? = null,
+    /** Set by Finish (or recover auto-close); null while in progress. */
+    val completedAt: Long? = null,
+    // Options snapshot (the strategy the plan was generated with; mirrors KilterRecommender.Options).
+    val optionsTargetCount: Int = 6,
+    val optionsSendThreshold: Int = 2,
+    val optionsPreferUnsent: Boolean = true,
+    val optionsGradeOffset: Int = 0,
+    val strategyRaw: String? = null,
+    /** Ordered picks with per-item status, JSON-encoded (kotlinx.serialization). */
+    val itemsJson: String = "[]",
+)
+
 @Dao
 interface KilterDao {
     @Insert suspend fun insertLog(entry: KilterLogEntry)
@@ -163,4 +195,22 @@ interface KilterDao {
 
     @Query("SELECT * FROM kilter_created WHERE uuid = :uuid LIMIT 1")
     suspend fun createdByUuid(uuid: String): KilterCreatedClimb?
+
+    // Planned sessions (KilterPlan).
+    @androidx.room.Upsert suspend fun upsertPlan(plan: KilterPlanEntity)
+
+    /** The open (un-finished) plan pinned to a session, if any. Mirrors iOS openPlan(forSession:). */
+    @Query("SELECT * FROM kilter_plan WHERE sessionId = :sid AND completedAt IS NULL LIMIT 1")
+    suspend fun openPlanForSession(sid: String): KilterPlanEntity?
+
+    /** Close (in lockstep with the session ending / recovery auto-close) any open plan for a session. */
+    @Query("UPDATE kilter_plan SET completedAt = :completedAt WHERE sessionId = :sid AND completedAt IS NULL")
+    suspend fun closePlanForSession(sid: String, completedAt: Long)
+
+    @Query("SELECT * FROM kilter_plan ORDER BY createdAt DESC")
+    fun plansFlow(): Flow<List<KilterPlanEntity>>
+
+    @Delete suspend fun deletePlan(plan: KilterPlanEntity)
+
+    @Query("DELETE FROM kilter_plan") suspend fun clearPlans()
 }
