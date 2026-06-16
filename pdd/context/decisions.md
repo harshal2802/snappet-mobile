@@ -4,6 +4,31 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Kilter planned session becomes a persisted, frozen-on-Start entity (kilter-planned-session PR 01)
+
+**Decision**: the "Plan a session" plan stops being ephemeral `@State` recomputed from
+`KilterRecommender` on every render and becomes a persisted **`KilterPlan` `@Model`** with ordered
+**`KilterPlanItem`** value structs (embedded Codable array, like `KilterSession.hrSeries` — so it's
+**one** new `@Model` + a trivial lightweight migration, not a SwiftData relationship). On **Start** the
+recommender `Plan` is **snapshotted** into the items and the plan is **frozen** (pinned to its
+`KilterSession` via `KilterPlan.sessionId`); the recommender never rebuilds it again.
+
+**Why**: all four reported defects trace to the plan being a pure function of volatile inputs with
+completion re-derived live. The headline bug — logging a Send/Project pick didn't tick it while warm-ups
+did — was the recommender dropping the now-sent UUID (`allowSent: !preferUnsent`) and reshuffling on the
+`entries.count`-keyed rebuild. Storing per-pick state on `KilterPlanItem.status`
+(`pending`/`sent`/`attempted`/`skipped`) and reading done-ness from it (never from `logs ∩ recommend()`)
+makes the defect structurally impossible and gives the run a re-enterable home.
+
+**Rules out / non-obvious**: (1) completion is keyed by **`climbUUID`**, not a log id —
+`KilterLogEntry` has no stable UUID, and `climbUUID` is also `SessionMedia.assignedClimbUUID`, so a plan
+row inherits its session clips by a pure join (no plan→media FK; no `SessionMedia` schema change for
+v1). (2) A later *send* upgrades an `attempted` item to `sent`; an off-plan/ad-hoc climb leaves the plan
+untouched. (3) `skipped` counts toward neither done nor pending (surfaced as "N skipped" in the
+summary). (4) Pure logic (`KilterPlanProgress`) is SwiftData-free so it unit-tests without a device;
+the `@Model` lives in `KilterModels.swift`, registered in `SnappetSchema.models` and covered by
+`SnappetBackup` (`KilterPlanRow`) — the backup tripwire + round-trip count (now 22) enforce it.
+
 ## [2026-06-10] Android CRUD sweep: one confirm component, long-press as the secondary-action idiom (issue #88)
 
 **Decision** (prompt 41): every destructive flow goes through **one** `ConfirmDeleteDialog`

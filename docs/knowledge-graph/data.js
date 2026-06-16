@@ -567,6 +567,8 @@ const nodes = [
     file: "ios/App/Snappet/Features/Kilter/KilterRecommender.swift", desc: "Pure, device-free recommender: turns logged history (KilterClimbLog / KilterLogEntry) + a catalog candidate pool (KilterListItem) into a suggested session — warm-ups below the working grade, sends at it, a project above. Detects the working grade from the send pyramid; deterministic + unit-tested (KilterRecommenderTests). Android (#93): faithful Kotlin port in feature/kilter/KilterRecommender.kt with the same working-grade/allocation/candidateWindow API, unit-tested in KilterRecommenderTest.", tags: ["pure","recommender","tested"] },
   { id: "kilter-plan", label: "KilterPlanView / KilterPlanScreen", type: "screen", group: "kilter", category: "fitness", platform: "ios+android",
     file: "ios/App/Snappet/Features/Kilter/KilterPlanView.swift", desc: "\"Plan a session\": reads the ascent log, queries the catalog for a difficulty window around the working grade (same anchor as the recommender so every band is populated), runs KilterRecommender, and shows the picks grouped Warm up / Send / Project. iOS: Start session begins a manual KilterSession and taps through. Android (#93): KilterPlanScreen reached from the More menu's 'Plan a session'; tapping a pick opens it in detail within the same browsed set so sibling swipe still works.", tags: ["plan","recommend","session"] },
+  { id: "kilter-planned-session", label: "KilterPlan / KilterPlanItem", type: "model", group: "kilter", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Kilter/KilterPlanLogic.swift", desc: "Persisted planned session — the keystone that decouples a plan from KilterRecommender's volatile output. On Start, the recommender Plan is snapshotted into a durable KilterPlan (@Model, KilterModels.swift) + ordered KilterPlanItem value structs (goal / climbUUID / status pending·sent·attempted·skipped), pinned to its KilterSession via sessionId and FROZEN — the recommender never rebuilds it again. Done-state is read from KilterPlanItem.status (not re-derived from logs ∩ recommend()), which fixes the 'completed send/project pick vanishes and reshuffles' defect. Pure progress logic (KilterPlanProgress: items(from:), applyingLog, progress, nextPending, skipping, allResolved) is unit-tested in KilterPlanLogicTests; backed up via KilterPlanRow in SnappetBackup. climbUUID is the same key SessionMedia.assignedClimbUUID uses, so a plan row inherits its session clips by a pure join.", tags: ["plan","persisted","session","tested"] },
 
   // --- Android Continuous-polish batch (#97 tokens/motion, #98 a11y, #93 Kilter delight) ---
   { id: "android-design-tokens", label: "Design tokens + motion sweep", type: "core", group: "shell", category: "core", platform: "android",
@@ -1077,6 +1079,9 @@ const links = [
   { source: "kilter-plan", target: "kilter-models", type: "uses", label: "history" },
   { source: "kilter-plan", target: "kilter-detail", type: "navigate", label: "KilterClimbRoute" },
   { source: "kilter-plan", target: "kilter-session-mgr", type: "uses", label: "start session" },
+  { source: "kilter-plan", target: "kilter-planned-session", type: "uses", label: "snapshot on Start" },
+  { source: "kilter-planned-session", target: "kilter-session-mgr", type: "uses", label: "pinned by sessionId" },
+  { source: "kilter-planned-session", target: "kilter-recommender", type: "uses", label: "freezes recommender Plan" },
   { source: "kilter-recommender", target: "kilter-stats", type: "uses", label: "KilterClimbLog" },
   // Android Continuous-polish batch (#97/#98/#93)
   { source: "android-nav", target: "android-design-tokens", type: "uses", label: "snappetSurfaceTransition (tab switch)" },
