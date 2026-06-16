@@ -68,6 +68,17 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.splitDuration(.infinity).seconds, "0")
     }
 
+    func testSplitDurationCarriesAtTheMinuteBoundary() {
+        // Rounding up to a full minute must carry into minutes, never emit seconds == "60".
+        XCTAssertEqual(SetMeasure.splitDuration(59.6).minutes, "1")
+        XCTAssertEqual(SetMeasure.splitDuration(59.6).seconds, "0")
+        // …and the carry still round-trips through the save path's min*60 + sec.
+        for secs in [59.6, 119.5, 3599.7] {
+            let (min, sec) = SetMeasure.splitDuration(secs)
+            XCTAssertEqual(Double(min)! * 60 + Double(sec)!, secs.rounded(), "carry round trip for \(secs)s")
+        }
+    }
+
     // MARK: - climbAttempt
 
     func testClimbFlashSummary() {

@@ -81,6 +81,12 @@ final class TimedSetTimerTests: XCTestCase {
         snap("04-timer-running")
         toggle.tap()
         XCTAssertTrue(waitForLabel(toggle, "Start"), "tapping Stop should flip the control back to 'Start'")
+        // Read the FROZEN readout after Stop: it renders the captured elapsed through the same
+        // SetMeasure rounding the set row will use, so the two must match exactly (reading mid-run could
+        // roll to the next second between the read and the tap). This exact M:SS must land in the row.
+        let captured = app.staticTexts["stopwatch.elapsed"].label
+        XCTAssertTrue(captured.range(of: "^[0-9]+:[0-9]{2}$", options: .regularExpression) != nil,
+                      "the stopwatch should read a captured M:SS duration after Stop (got \(captured))")
 
         // The capture filled the underlying state → the Add commit is now enabled. Save.
         let add = app.buttons["logset.add"]
@@ -89,12 +95,20 @@ final class TimedSetTimerTests: XCTestCase {
         snap("05-captured")
         add.tap()
 
-        // The logged set row renders its duration via SetMeasure.summary ("M:SS").
+        // The logged set row renders its duration via SetMeasure.summary ("M:SS"). Assert on the actual
+        // `freeform.setRow` — NOT the always-running `overallWorkoutTimer` (which also reads M:SS, so a
+        // loose any-static-text match would pass even if nothing were saved). The captured duration must
+        // be the one persisted into the row, so the test fails if the live capture is dropped.
         sleep(1); snap("06-logged")
-        let durationRow = app.staticTexts.matching(
-            NSPredicate(format: "label MATCHES %@", "[0-9]+:[0-9]{2}")).firstMatch
-        XCTAssertTrue(durationRow.waitForExistence(timeout: 4),
-                      "the timed set row should show a captured duration (M:SS)")
+        let row = app.cells["freeform.setRow"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 4), "a logged set row should appear")
+        // The captured M:SS must be inside the row — either as a descendant static text, or merged into
+        // the row's own coalesced label (SwiftUI does one or the other for a multi-Text List row). Both
+        // forms read `captured` from `freeform.setRow`, never from `overallWorkoutTimer`.
+        let durationInRow = row.staticTexts[captured].waitForExistence(timeout: 4)
+            || (row.label.contains(captured))
+        XCTAssertTrue(durationInRow,
+                      "the timed set row should show the captured duration (\(captured)), not just the overall timer")
     }
 
     /// Wait until `el`'s accessibility label equals `expected` (the Start↔Stop flip).

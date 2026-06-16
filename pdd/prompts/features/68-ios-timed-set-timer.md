@@ -13,8 +13,8 @@
 Let a `.duration` set be **timed live** instead of only typed. In the freeform set-logging sheet
 (`LogSetSheet`), a timed set today offers two text fields ("Min" / "Sec"); this PR adds a **Timer**
 mode (the default) that embeds PR 1's `StopwatchView` — press Start, do the hold, press Stop and the
-captured elapsed seconds fill the set's `durationSec` — with **Manual** mode keeping the typed fields as
-an override. This is the first real caller of the stopwatch primitive (PR 1 shipped it tested, with "no
+captured elapsed seconds fill the Min/Sec the save path reads (there's no separate `durationSec` state)
+— with **Manual** mode keeping the typed fields as an override. This is the first real caller of the stopwatch primitive (PR 1 shipped it tested, with "no
 callers yet"); it proves the primitive in a shipping flow and is the small, low-risk consumer to wire
 first before the per-climb-attempt timer (PR 5).
 

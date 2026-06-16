@@ -284,6 +284,7 @@ private struct LogSetSheet: View {
     // duration — Timer (live `StopwatchView`) or Manual (Min/Sec fields); a Stop capture fills the same
     // `minutes`/`seconds` the Manual fields write, so `build()` stays one expression. (workout-with-timer PR 2)
     @State private var durationMode: DurationInputMode = .timer
+    @State private var timerRunning = false
     @State private var minutes = ""
     @State private var seconds = ""
     // climb
@@ -322,6 +323,10 @@ private struct LogSetSheet: View {
                         ForEach(DurationInputMode.allCases) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented).labelsHidden()
+                    // Lock the mode while the stopwatch runs: switching to Manual would remove the
+                    // StopwatchView, whose onDisappear cancels the ticker without a Stop — silently
+                    // dropping the capture. The user must Stop first (onStop fills Min/Sec).
+                    .disabled(timerRunning)
                     .accessibilityIdentifier("logset.durationMode")
                     switch durationMode {
                     case .timer:
@@ -331,7 +336,7 @@ private struct LogSetSheet: View {
                             let split = SetMeasure.splitDuration(elapsed)
                             minutes = split.minutes
                             seconds = split.seconds
-                        }
+                        } onRunningChange: { timerRunning = $0 }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
                         .accessibilityIdentifier("logset.durationTimer")
