@@ -128,6 +128,12 @@ enum KilterPlanProgress {
         items.filter { $0.status == .pending }.min { $0.order < $1.order }
     }
 
+    /// The still-`pending` picks' climb UUIDs, in plan order — for the climb screen's "Next pick →"
+    /// loop (kept on the session manager so the climb screen needn't re-fetch the plan each render).
+    static func pendingClimbUUIDs(_ items: [KilterPlanItem]) -> [String] {
+        items.filter { $0.status == .pending }.sorted { $0.order < $1.order }.map(\.climbUUID)
+    }
+
     /// Whether every pick has resolved one way or another (sent / attempted / skipped) — the natural
     /// "you've worked the whole list" cue the plan-home uses to nudge **Finish plan**.
     static func allResolved(_ items: [KilterPlanItem]) -> Bool {

@@ -4,6 +4,24 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Kilter climb screen = a station in the plan: advance-by-order + reset-to-plan nav (kilter-planned-session PR 05)
+
+**Decision**: the climb screen's session strip gains a forward loop for plan-backed runs — "Next pick →"
+swaps `currentUUID` **in place** (like `goToSibling`, no stack growth) to `nextPlanClimb(excluding:)`,
+and "Back to plan" does `router.open(module:"kilter") + push(KilterPlanRoute())`.
+
+**Two anti-regression subtleties (from the PR-05 review)**: (1) `nextPlanClimb(excluding:)` advances by
+**plan order** — the pending pick immediately after the current one in the ordered `planPendingUUIDs`,
+falling back to the earliest pending when the current climb isn't pending. A naive "first pending that
+isn't me" **oscillates** (w↔s, never reaching p) when the user taps Next pick without logging — pinned
+by `testNextPlanClimbAdvancesByOrderWithoutLogging`. (2) "Back to plan" must **reset** the path
+(`open(module:)`) before pushing, not bare-`push(KilterPlanRoute())`: the dominant flow is already
+`[kilter, KilterPlanRoute, KilterClimbRoute]`, and a bare push appends a *second* plan route, accreting
+a stale Plan/Climb pair every loop (NavigationPath has no dedup). `open()` replaces the path, so it
+reaches the plan-home cleanly from any entry (plan flow or an off-plan catalog climb) — the same pattern
+the live chip and Home card use. `planPendingUUIDs` is cached on the manager (lockstep with
+`planProgress`) so the strip needn't fetch on every HR-tick re-render.
+
 ## [2026-06-16] Kilter plan-home reads stored status; one open plan per session; plan closed with the session (kilter-planned-session PR 02)
 
 **Decision**: `KilterPlanView` has two modes off one screen — **generate** (recommender preview,

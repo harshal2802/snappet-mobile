@@ -105,6 +105,32 @@ final class KilterPlanSessionTests: XCTestCase {
         XCTAssertNil(m.planProgress, "progress clears when the session ends (chip hides)")
     }
 
+    func testNextPlanClimbFollowsTheForwardFlow() throws {
+        let m = KilterSessionManager()
+        m.start(angle: 40, source: "manual", in: context)
+        let plan = makePlan([("w", .warmup), ("s", .send), ("p", .project)]); context.insert(plan)
+        m.attachPlan(plan, in: context)
+        XCTAssertEqual(m.nextPlanClimb(excluding: "w"), "s")
+        m.applyLogToPlan(climbUUID: "w", ascent: .sent, at: .now, in: context)
+        XCTAssertEqual(m.nextPlanClimb(excluding: "s"), "p")
+        m.applyLogToPlan(climbUUID: "s", ascent: .sent, at: .now, in: context)
+        XCTAssertNil(m.nextPlanClimb(excluding: "p"))
+    }
+
+    /// Regression for the PR-05 review HIGH finding: tapping "Next pick" WITHOUT logging must keep
+    /// advancing by plan order (w → s → p → done), not oscillate between the first two pending picks.
+    func testNextPlanClimbAdvancesByOrderWithoutLogging() throws {
+        let m = KilterSessionManager()
+        m.start(angle: 40, source: "manual", in: context)
+        let plan = makePlan([("w", .warmup), ("s", .send), ("p", .project)]); context.insert(plan)
+        m.attachPlan(plan, in: context)
+        XCTAssertEqual(m.nextPlanClimb(excluding: "w"), "s")
+        XCTAssertEqual(m.nextPlanClimb(excluding: "s"), "p", "must advance forward, not back to w")
+        XCTAssertNil(m.nextPlanClimb(excluding: "p"), "last pending → Plan done")
+        // An off-plan / already-resolved current climb falls back to the earliest pending pick.
+        XCTAssertEqual(m.nextPlanClimb(excluding: "off-plan"), "w")
+    }
+
     func testOpenPlanIgnoresClosedPlans() throws {
         let m = KilterSessionManager()
         m.start(angle: 40, source: "manual", in: context)

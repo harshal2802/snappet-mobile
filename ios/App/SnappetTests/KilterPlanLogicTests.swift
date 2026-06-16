@@ -77,6 +77,13 @@ final class KilterPlanLogicTests: XCTestCase {
         XCTAssertEqual(KilterPlanProgress.nextPending(items)?.climbUUID, "s1")
     }
 
+    func testPendingClimbUUIDsAreOrderedAndDropResolved() {
+        var items = KilterPlanProgress.items(from: plan([("w1", .warmup), ("s1", .send), ("pr1", .project)]))
+        XCTAssertEqual(KilterPlanProgress.pendingClimbUUIDs(items), ["w1", "s1", "pr1"])
+        items = KilterPlanProgress.applyingLog(climbUUID: "s1", ascent: .sent, at: .now, to: items)
+        XCTAssertEqual(KilterPlanProgress.pendingClimbUUIDs(items), ["w1", "pr1"])
+    }
+
     func testSkippingDropsFromNextPendingButNotDone() {
         var items = KilterPlanProgress.items(from: plan([("w1", .warmup), ("s1", .send)]))
         let id = items.first { $0.climbUUID == "w1" }!.id
