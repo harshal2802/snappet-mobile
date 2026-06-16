@@ -40,6 +40,34 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.summary(SetLog(durationSec: 0), kind: .duration, unit: .kg), "—")
     }
 
+    // MARK: - splitDuration (timed-set capture → Min/Sec, the inverse of min*60+sec — PR 2)
+
+    func testSplitDurationRoundTripsThroughTheSavePath() {
+        // What the live timer captures must rebuild to the same seconds the Manual fields would,
+        // since `build()` does (Double(min) ?? 0)*60 + (Double(sec) ?? 0).
+        for secs in [0.0, 5, 45, 60, 90, 599, 600, 3661] {
+            let (m, s) = SetMeasure.splitDuration(secs)
+            let rebuilt = (Double(m) ?? 0) * 60 + (Double(s) ?? 0)
+            XCTAssertEqual(rebuilt, secs.rounded(), "round trip for \(secs)s")
+        }
+    }
+
+    func testSplitDurationCountsTotalMinutesNoHourWrap() {
+        // Two minute/second fields → minutes is the full total (3661s = 61:01), not 1:01:01.
+        let (m, s) = SetMeasure.splitDuration(3661)
+        XCTAssertEqual(m, "61")
+        XCTAssertEqual(s, "1")
+    }
+
+    func testSplitDurationRoundsAndClampsBadInput() {
+        XCTAssertEqual(SetMeasure.splitDuration(44.6).minutes, "0")
+        XCTAssertEqual(SetMeasure.splitDuration(44.6).seconds, "45")   // rounds, like formatDuration
+        XCTAssertEqual(SetMeasure.splitDuration(0).minutes, "0")
+        XCTAssertEqual(SetMeasure.splitDuration(0).seconds, "0")
+        XCTAssertEqual(SetMeasure.splitDuration(-10).seconds, "0")     // clamps negatives
+        XCTAssertEqual(SetMeasure.splitDuration(.infinity).seconds, "0")
+    }
+
     // MARK: - climbAttempt
 
     func testClimbFlashSummary() {

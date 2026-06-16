@@ -4,6 +4,30 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Timed sets: live-time a duration with the shared stopwatch; Timer/Manual toggle over one save path
+
+**Decision** (workout-with-timer PR 2/6, prompt 68): the freeform `LogSetSheet`'s `.duration` case
+gains a **Timer | Manual** segmented toggle, **Timer the default**. Timer mode embeds PR 1's
+`StopwatchView(mode: .countUp)` — its `onStop` writes the captured elapsed back into the **same**
+`minutes`/`seconds` `@State` the Manual fields use (mapped by a new pure `SetMeasure.splitDuration`,
+the inverse of the build path's `min*60 + sec`), so `build()` and the `SetMeasure.hasInput` Add-gate
+are **byte-for-byte unchanged** — the timer is just a third way to fill two fields, not a second save
+path. This makes the freeform timed-set sheet the **first real consumer** of the stopwatch primitive
+that PR 1 deliberately shipped with "no callers yet" (de-risking it before the heavier per-climb-attempt
+timer, PR 5).
+
+**Why**: typing minutes/seconds for a plank/hang is the wrong affordance — you want to press Start,
+do the hold, press Stop. Routing the capture through the existing `minutes`/`seconds` state (rather than
+a parallel `durationSec` state) keeps the one tested save expression and the Add-enablement gate intact,
+so the only new logic is a pure, unit-tested mapping. `splitDuration` lives next to `formatDuration` /
+`parseReps` / `parseWeight` because the repo funnels every duration string through one place — no second
+formatter. Manual stays as an exact-value override (and the path `FreeformFlowWalkthroughTests` already
+drives, after it first taps Manual).
+
+**Rules out**: a separate `durationSec` state or a forked `.duration` save branch; inlining the
+seconds→Min/Sec split in the view; a second duration formatter; changing `SetLog`/`build()`,
+`.repsWeight`/`.climbAttempt`, or the sheet's `.medium` detent.
+
 ## [2026-06-16] CI + release builds pin Xcode 26.5 on `macos-26` (match the shipping toolchain)
 
 **Decision** (workout-with-timer PR 1/6, wiring the PR CI gate): every GitHub Actions workflow that

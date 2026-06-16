@@ -255,6 +255,19 @@ private struct LogTarget: Identifiable {
     var id: UUID { exerciseID }
 }
 
+/// How a `.duration` set's seconds are entered: time it live with the stopwatch (default), or type
+/// minutes/seconds. Both write the same `minutes`/`seconds` state the save path reads. (workout-with-timer PR 2)
+private enum DurationInputMode: String, CaseIterable, Identifiable {
+    case timer, manual
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .timer: return "Timer"
+        case .manual: return "Manual"
+        }
+    }
+}
+
 /// A focused sheet to log one set/attempt, with fields that adapt to the exercise's `SetKind`. Builds a
 /// `SetLog` and hands it back; the player stamps `completedAt` and appends it.
 private struct LogSetSheet: View {
@@ -268,7 +281,9 @@ private struct LogSetSheet: View {
     @State private var reps = ""
     @State private var weight = ""
     @State private var unitSel: WeightUnit
-    // duration
+    // duration — Timer (live `StopwatchView`) or Manual (Min/Sec fields); a Stop capture fills the same
+    // `minutes`/`seconds` the Manual fields write, so `build()` stays one expression. (workout-with-timer PR 2)
+    @State private var durationMode: DurationInputMode = .timer
     @State private var minutes = ""
     @State private var seconds = ""
     // climb
@@ -303,14 +318,33 @@ private struct LogSetSheet: View {
                         .pickerStyle(.segmented).frame(width: 110).labelsHidden()
                     }
                 case .duration:
-                    HStack {
-                        TextField("Min", text: $minutes).keyboardType(.numberPad)
-                            .focused($keypadFocused)
-                        Text(":").foregroundStyle(.secondary)
-                        TextField("Sec", text: $seconds).keyboardType(.numberPad)
-                            .focused($keypadFocused)
+                    Picker("Input", selection: $durationMode) {
+                        ForEach(DurationInputMode.allCases) { Text($0.label).tag($0) }
                     }
-                    .accessibilityIdentifier("logset.duration")
+                    .pickerStyle(.segmented).labelsHidden()
+                    .accessibilityIdentifier("logset.durationMode")
+                    switch durationMode {
+                    case .timer:
+                        // Press Start → do the hold → Stop captures the elapsed seconds into the same
+                        // minutes/seconds the save path reads (PR 1's StopwatchView, first real consumer).
+                        StopwatchView(mode: .countUp) { elapsed in
+                            let split = SetMeasure.splitDuration(elapsed)
+                            minutes = split.minutes
+                            seconds = split.seconds
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .accessibilityIdentifier("logset.durationTimer")
+                    case .manual:
+                        HStack {
+                            TextField("Min", text: $minutes).keyboardType(.numberPad)
+                                .focused($keypadFocused)
+                            Text(":").foregroundStyle(.secondary)
+                            TextField("Sec", text: $seconds).keyboardType(.numberPad)
+                                .focused($keypadFocused)
+                        }
+                        .accessibilityIdentifier("logset.duration")
+                    }
                 case .climbAttempt:
                     TextField("Grade (e.g. V4, 6c)", text: $grade)
                         .accessibilityIdentifier("logset.grade")

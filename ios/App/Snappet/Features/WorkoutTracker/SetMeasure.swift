@@ -85,4 +85,14 @@ enum SetMeasure {
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
+
+    /// Seconds → the `(minutes, seconds)` strings the timed-set sheet's Min/Sec fields hold — the inverse
+    /// of the build path's `min*60 + sec`, so a live-timed capture (`StopwatchView` PR 2) fills the SAME
+    /// state the Manual fields write and the save path stays one expression. Total minutes (no hour wrap,
+    /// matching the two minute/second fields); negatives/non-finite clamp to "0"/"0". (workout-with-timer PR 2)
+    static func splitDuration(_ seconds: Double) -> (minutes: String, seconds: String) {
+        guard seconds.isFinite, seconds > 0 else { return ("0", "0") }
+        let total = Int(seconds.rounded())
+        return (String(total / 60), String(total % 60))
+    }
 }
