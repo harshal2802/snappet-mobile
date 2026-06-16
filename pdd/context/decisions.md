@@ -4,6 +4,33 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] CI + release builds pin Xcode 26.5 on `macos-26` (match the shipping toolchain)
+
+**Decision** (workout-with-timer PR 1/6, wiring the PR CI gate): every GitHub Actions workflow that
+compiles the app — `ci.yml`, `release-ipa.yml`, `testflight.yml` — pins **`runs-on: macos-26` +
+Xcode 26.5** (`maxim-lobanov/setup-xcode@v1`, `xcode-version: '26.5'`): the exact toolchain this repo
+is developed and verified on (see the "Xcode/SDK 26.5" entries below). NOT `latest-stable`, NOT
+`macos-15`.
+
+**Why**: the new PR CI proved the app build is **toolchain-version-fragile**, and the GitHub runners
+had drifted off our toolchain. `latest-stable` on `macos-15` → **Xcode 26.3**, whose Swift
+type-checker times out ("unable to type-check this expression in reasonable time") on complex SwiftUI
+expressions (`WorkoutDashboardSection`, `WorkoutTrackerModule`) that 26.5 compiles fine. Pinning
+"Xcode 16" → **16.4**, whose older Swift 6.0 rules make `View`-conformance actor isolation a hard
+*error* (`KilterBoardView.holdPath`) where 26.5 only warns. `macos-15` also has no Xcode ≥26.4 and
+only iOS 18.5/18.6/26.x sim runtimes (so Xcode 16.0–16.3 can't build for iOS there at all). Only
+`macos-26` carries 26.5.
+
+**Two pre-existing Swift 6 build breaks fixed forward** (real defects on `main`, masked by the
+timeouts + by never doing a clean CI module-emit — NOT toolchain hacks): (1) `SnappetBackup.recordCount`
+→ an **imperative running total**; both a 20-term `+` chain (times out on 26.3) and a 20-element
+array-literal `+ reduce` (times out on 26.5) overflow the expression type-checker, but `n += …` is
+trivial everywhere. (2) `SceneScorer` → **`@unchecked Sendable`** (an explicitly-`Sendable` class
+whose only stored property is a thread-safe `CIContext`, which Apple doesn't mark `Sendable`).
+
+**Rules out**: `latest-stable` / `macos-15` for any app-compiling workflow; folding `recordCount`
+back into one expression; plain `: Sendable` on `SceneScorer`.
+
 ## [2026-06-10] Android CRUD sweep: one confirm component, long-press as the secondary-action idiom (issue #88)
 
 **Decision** (prompt 41): every destructive flow goes through **one** `ConfirmDeleteDialog`
