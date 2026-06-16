@@ -69,9 +69,9 @@ final class ClimbAttemptTimerTests: XCTestCase {
 
     /// Tapping "Climbing" first presents the "Name this climb" alert (PR 5). On iOS 26 a SwiftUI
     /// `.alert` TextField is NOT exposed under `app.alerts.textFields`, so query it UNSCOPED via
-    /// `app.textFields["freeform.climbName"]`; the alert's "Add" button is likewise reached unscoped.
+    /// `app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch`; the alert's "Add" button is likewise reached unscoped.
     private func nameThisClimb(_ name: String) {
-        let nameField = app.textFields["freeform.climbName"]
+        let nameField = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5),
                       "tapping Climbing should present a 'Name this climb' prompt with a name field")
         nameField.tap()

@@ -79,7 +79,7 @@ final class NamedClimbTests: XCTestCase {
         // On iOS 26 a SwiftUI `.alert` TextField is NOT exposed under `app.alerts.textFields`; the leaf
         // TextField carrying `freeform.climbName` is reachable via the UNSCOPED query (the repo's
         // UI-test lesson). The alert's "Add" button is likewise reached unscoped.
-        let nameField = app.textFields["freeform.climbName"]
+        let nameField = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5),
                       "tapping Climbing should present a 'Name this climb' prompt with a name field")
         nameField.tap()
