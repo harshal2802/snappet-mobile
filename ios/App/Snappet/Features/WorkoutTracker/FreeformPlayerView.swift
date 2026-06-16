@@ -26,6 +26,11 @@ struct FreeformPlayerView: View {
     @State private var pickingLift = false
     @State private var logging: LogTarget?
     @State private var showingEnd = false
+    // Naming a free-flow climb (workout-with-timer PR 5): tapping "Climbing" in the add menu first asks
+    // for a custom climb name (e.g. "Cave Project", "Blue V4") so per-attempt logging groups under the
+    // named climb instead of a fixed "Climbing". Empty/whitespace falls back to "Climbing".
+    @State private var namingClimb = false
+    @State private var climbNameDraft = ""
 
     private var unit: WeightUnit { defaultUnit }
 
@@ -67,6 +72,18 @@ struct FreeformPlayerView: View {
             Button("Save & exit") { finish(saved: true) }
             Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
             Button("Keep going", role: .cancel) {}
+        }
+        // Name this climb (workout-with-timer PR 5): the typed name is the section header + persists on the
+        // SessionExercise's `displayName`; a blank/whitespace entry falls back to "Climbing" via the pure
+        // `SetMeasure.climbName`. The TextField is a leaf control with its own id so XCUITest can fill it
+        // (`app.alerts.textFields`) — no identifier on a composite (the PR 2/3/4 a11y lesson).
+        .alert("Name this climb", isPresented: $namingClimb) {
+            TextField("Climb name (e.g. Cave Project)", text: $climbNameDraft)
+                .accessibilityIdentifier("freeform.climbName")
+            Button("Add") { addExercise(kind: .climbAttempt, name: SetMeasure.climbName(climbNameDraft)) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Group every attempt under a name, or leave blank for \"Climbing\".")
         }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
@@ -152,7 +169,7 @@ struct FreeformPlayerView: View {
         Section {
             Menu {
                 Button { pickingLift = true } label: { Label("Lifting exercise", systemImage: "dumbbell.fill") }
-                Button { addExercise(kind: .climbAttempt, name: "Climbing") } label: {
+                Button { climbNameDraft = ""; namingClimb = true } label: {
                     Label("Climbing", systemImage: "figure.climbing")
                 }
                 Button { addExercise(kind: .duration, name: "Timed exercise") } label: {

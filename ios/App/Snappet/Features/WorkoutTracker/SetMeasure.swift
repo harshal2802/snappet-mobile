@@ -68,6 +68,15 @@ enum SetMeasure {
         return copy
     }
 
+    /// A user-typed climb name → the `displayName` to store, whitespace-trimmed. An empty/whitespace-only
+    /// entry falls back to the generic `"Climbing"` so a named free-flow climb session never logs under a
+    /// blank header. Pure (no view), so the trim/fallback rule is the one tested definition the freeform
+    /// player's "Name this climb" prompt routes through. (workout-with-timer PR 5)
+    static func climbName(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Climbing" : trimmed
+    }
+
     // MARK: - Input parsing (shared by the live player and the summary's edit mode, issue #73)
 
     /// Reps text → `Int`, whitespace-trimmed; empty/non-numeric → `nil` (the player's exact rule).
