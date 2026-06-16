@@ -1,6 +1,6 @@
 # Prompt: Shared workout stopwatch primitive (count-up / count-down target)
 
-**File**: pdd/prompts/features/59-ios-stopwatch-core.md
+**File**: pdd/prompts/features/62-ios-stopwatch-core.md
 **Created**: 2026-06-15
 **Project type**: Native iOS feature (Swift / SwiftUI) — code lands in this repo.
 **Chain**: Workout-with-timer initiative — **PR 1 of 6** (the shared stopwatch that the timed-set PR and the climb-attempt PR both consume). Ideated + architected 2026-06-15 on this branch.

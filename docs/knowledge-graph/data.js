@@ -290,6 +290,8 @@ const nodes = [
     file: "ios/App/Snappet/Services/ReelExporter.swift", desc: "On-device reel export with AVFoundation (AVMutableComposition + AVAssetExportSession), shared makeComposition. Builds a normalizing AVVideoComposition (render canvas + per-segment orient-then-aspect-fit) so mixed-orientation reels export instead of failing with OSStatus -12902 (prompt 58 / #139, found in P1 device validation); the same composition drives the preview so it matches the saved file. Exports land in Application Support/Reels — not tmp (issue #72) — backup-excluded and swept to the newest few renders (the pure ReelFlowPolicy decides destination + sweep), so the artifact survives backing out / regenerating.", tags: ["avfoundation","export","persistent"] },
   { id: "photoclciprenderer", label: "PhotoClipRenderer", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/PhotoClipRenderer.swift", desc: "Turns photos into Ken-Burns clips interleaved into the reel.", tags: ["kenburns","photos"] },
+  { id: "scenescorer", label: "SceneScorer", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Services/SceneScorer.swift", desc: "The real Vision scene scorer (#83 Step 1): samples a workout's video frames (AVAssetImageGenerator, downscaled) and scores each with Vision saliency + Core Image sharpness (variance-of-Laplacian) + face/body presence, combined by the PURE SceneScoring so a blurry/empty frame can't win. Only the resulting scalar crosses into HighlightEngine via SceneHighlightSelector.visualScore — the engine stays platform-free. AppModel.sceneSelector(for:) runs it ONLY when FeedbackReplay tuning exists, and engine(boosting:scene:) adds the scene term weighted by the replay-derived hr/scene split — so visual content enters the blend only once the user's feedback earns it. Off-device proof: synthesized sharp-vs-blurry fixture test; real-footage quality is device-verified.", tags: ["vision","saliency","sharpness","scene","fusion","moat","device-only"] },
   { id: "liveactivitycontroller", label: "LiveActivityController", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/LiveActivityController.swift", desc: "Drives the Lock Screen / Dynamic Island Live Activity: overall timer, live HR, current exercise, and the paused state (renders a Paused badge that freezes the timer). Throttles HR-only pushes (≥2 s) so it never exhausts the ActivityKit update budget.", tags: ["live-activity","pause"] },
   { id: "workoutactivitymapping", label: "WorkoutActivityMapping", type: "service", group: "core", category: "core", platform: "ios",
@@ -350,6 +352,8 @@ const nodes = [
     file: "ios/HighlightEngine/Sources/HighlightEngine/HighlightSelector.swift", desc: "Protocol with HRHighlightSelector + SceneHighlightSelector stub + FusionSelector. Pluggable so HR-only → fusion is a one-line swap.", tags: ["selector","pluggable"] },
   { id: "highlightconfig", label: "HighlightConfig", type: "engine", group: "engine", category: "core", platform: "engine",
     file: "ios/HighlightEngine/Sources/HighlightEngine/HighlightConfig.swift", desc: "Per-activity presets and tunable knobs (changed only from replayed feedback, never intuition).", tags: ["config","tuning"] },
+  { id: "feedback-replay", label: "FeedbackReplay", type: "engine", group: "engine", category: "core", platform: "engine",
+    file: "ios/HighlightEngine/Sources/HighlightEngine/FeedbackReplay.swift", desc: "Pure on-device port of the offline feedback tuner (experiments/feedback-replay/replay.py): replays logged HighlightFeedbackEvents into per-(selector, configFingerprint) stats (keep/pin/removal/export/regen rates, effort_mix, a satisfaction score) + a recommendation, and derives tunedWeighting — the HR-vs-scene fusion split (HR weight tracks effort_mix, clamped [0.2,0.8] so the blend never collapses to one signal), nil until ≥5 endorsed so weights change ONLY from replayed feedback. PARITY-tested against the Python harness's golden output (#83 Step 2). AppModel.recomputeFeedbackTuning() runs it on bootstrap over FeedbackStore.exportAll() — the local JSONL's first reader. Platform-free, swift-test'd.", tags: ["feedback","replay","tuning","parity","pure","tested","moat"] },
   { id: "reelplanner", label: "ReelPlanner", type: "engine", group: "engine", category: "core", platform: "engine",
     file: "ios/HighlightEngine/Sources/HighlightEngine/ReelPlan.swift", desc: "Builds the final clip plan: pin budget-exemption + manual order.", tags: ["planner"] },
   { id: "engine-feedback", label: "HighlightFeedback", type: "engine", group: "engine", category: "core", platform: "engine",
@@ -630,6 +634,10 @@ const links = [
 
   // AppModel = the one place the engine meets the app
   { source: "appmodel", target: "highlightengine", type: "uses" },
+  { source: "appmodel", target: "feedback-replay", type: "uses", label: "on-device replay → tuned weights" },
+  { source: "appmodel", target: "scenescorer", type: "uses", label: "scene scores (gated by tuning)" },
+  { source: "scenescorer", target: "highlightselector", type: "feeds", label: "visualScore scalar" },
+  { source: "feedbackstore", target: "feedback-replay", type: "feeds", label: "exportAll() JSONL" },
   { source: "appmodel", target: "healthkitservice", type: "uses" },
   { source: "appmodel", target: "photolibraryservice", type: "uses" },
   { source: "appmodel", target: "reelexporter", type: "uses" },

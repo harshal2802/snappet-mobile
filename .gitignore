@@ -70,3 +70,5 @@ ios/App/*.xcodeproj
 # Local scratch / untracked notes (token-usage reports, drafts, etc.)
 tmp/
 docs/walkthroughs/video-studio-walkthrough-fullres.mp4
+ios/App/build/
+ios/App/fastlane/README.md

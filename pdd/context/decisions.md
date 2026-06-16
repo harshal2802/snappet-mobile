@@ -4177,7 +4177,94 @@ Invisible on the simulator (no real footage), which is exactly why P1 device val
   paid team; old notes' `8TRC99V9PN`/`HXU7999BJS` are stale) + the time-sensitive entitlement stripped
   locally. Committed `project.yml` is unchanged.
 
-## 2026-06-15 — Workout-with-timer PR 1: a shared, wall-clock stopwatch primitive (prompt 59)
+## 2026-06-15 — Feedback-replay scoring ported into HighlightEngine (#83 Step 2, prompt 59, PR A)
+
+The "using the app improves the app" loop dead-ended in a file: `highlight-feedback.jsonl` was only
+replayable by the off-device Python harness, and `FeedbackStore.exportAll()` had zero callers. Ported
+the replay scoring into `HighlightEngine` as pure Swift (`FeedbackReplay`), mirroring
+`experiments/feedback-replay/replay.py` field-for-field.
+
+- **Decision**: parity is enforced by test, not eyeballed. Bundled the harness's seeded output
+  (`synth_feedback.generate(Random(42))`, 277 events) as a test resource
+  (`Fixtures/synthetic-feedback.jsonl`), decoded through the engine's OWN `HighlightFeedbackEvent`
+  Codable, replayed in Swift, and asserted against replay.py's golden numbers (e.g.
+  `sm9_lag6_l60_s40_g20`: satisfaction 0.877778, effort_mix 0.681818) + recommendation text. If the two
+  ever drift, the suite fails. Re-derive the golden with `python3 run.py` if replay.py changes.
+- **Decision**: the data-driven re-weighting is `FeedbackReplay.tunedWeighting(from:)` — HR-vs-scene
+  split where HR weight tracks the best config's empirical `effort_mix`, both clamped to `[0.2, 0.8]`
+  (the blend never collapses to a single signal — honors "don't hardwire HR-only"). Returns `nil` until
+  ≥5 endorsements, so **weights change ONLY from replayed feedback** (project.md invariant); no data ⇒
+  callers keep gated defaults.
+- **Decision**: `AppModel.recomputeFeedbackTuning()` is the on-device edge — reads
+  `feedback.exportAll()` (its first caller) on `bootstrap`, replays, stores `feedbackTuning`, and
+  `os_log`s the recommendation. **No engine behavior change in this PR**: the scene signal is still 0
+  until #83 Step 1 (PR B) wires the Vision scorer, so scaling HR by a constant weight leaves ranking
+  identical — gated by design. PR B consumes `feedbackTuning` to weight the now-real scene term.
+- **Engine stays platform-free** — `FeedbackReplay` is pure; `swift test` 55 green off-device.
+
+## 2026-06-15 — Vision scene scorer wired into the fusion (#83 Step 1, prompt 60, PR B — closes #83)
+
+`SceneHighlightSelector` returned 0 ("until a real vision pipeline is wired"), so reels were
+effectively HR-only and could pick a blurry pocket-shot over the crux. Added a real on-device Vision
+scorer; #83's two stacked PRs (Step 2 replay = #141, Step 1 vision = this) complete the moat loop.
+
+- **Decision**: `Services/SceneScorer.swift` is the platform edge — samples video frames
+  (`AVAssetImageGenerator`, ≤480 px) and scores each via Vision saliency
+  (`VNGenerateAttentionBasedSaliencyImageRequest`) + Core Image sharpness (variance-of-Laplacian) +
+  face/human presence. Signals relative-normalized across frames, combined by the PURE `SceneScoring`.
+  Only the scalar crosses into the engine via `SceneHighlightSelector.visualScore` — `HighlightEngine`
+  stays platform-free (verified: only `import Foundation`; `swift test` 55 green off-device).
+- **Decision (scoring model, caught by a failing test)**: sharpness is a **multiplicative gate**
+  (`score = sharpness * (0.5 + 0.3·saliency + 0.2·presence)`), not an additive term. The first cut was
+  additive and let a salient-but-blurry frame outscore a sharp one — contradicting "penalize blurry."
+  Multiplicative makes blur kill the score; content is a `[0.5, 1.0]` multiplier so emptiness is
+  penalized too but a sharp subjectless frame isn't zeroed. BOTH blurry and empty are penalized; only
+  sharp-AND-has-something wins. Off-device proof: `SceneScorerTests` synthesizes a sharp checkerboard vs
+  a flat frame and asserts the real Vision/CI metrics rank them correctly, plus pure-combiner cases.
+- **Decision (the invariant)**: the scene term is added to the fusion by `engine(boosting:scene:)`
+  **only when `feedbackTuning != nil`** (PR A's replay-derived weighting). No replayed feedback ⇒ no
+  scene weight ⇒ blend is exactly today's HR + effort. So visual content changes selection ONLY once the
+  user's own feedback earns it (project.md invariant), and the existing effortAligned/achievement-window
+  selection can't regress without data. `sceneSelector(for:)` also skips the Vision cost when untuned.
+- **Device-pending residual**: real-footage selection *quality* (do the scene picks look right?) is a
+  device-verified judgment, not unit-assertable; the fixture proves the scorer penalizes blur/empty.
+
+### Adversarial review of #83 (3-lens + skeptic) — one minor finding, fixed
+The parallel review (engine-layering / invariant-regression / correctness lenses + per-finding skeptics)
+confirmed the four invariants hold (engine platform-free; replay formulas match Python; scene term gated
+behind replayed-feedback tuning; no regression without data). It surfaced ONE minor parity gap:
+`FeedbackReplay.ranked()` tie-breaks by `key` while replay.py relied on dict-insertion order, so an
+equal-satisfaction tie could pick a different best config — and the parity test never pinned the tie.
+Fix: aligned the Python oracle (replay.py + run.py) to the deterministic `(-satisfaction, key)` tie-break
+(a Swift Dictionary can't reproduce insertion order, so the key tie-break is canonical) and added
+`testRankingTieBreaksByKeyMatchingPython` to pin it (verified Z-before-A → "S | Afp" wins on both sides).
+Measure-zero for the shipped fixture (distinct satisfactions), but parity is now drift-proof on ties.
+
+## 2026-06-15 — App Store / TestFlight publishing (prompt 61)
+
+First distribution build shipped to **TestFlight** (internal) under the paid team **`NFUS5W8QC6`**.
+The App Store Connect record **"SnappetAI" (App 6779420682)** was pre-created under bundle id
+**`com.snappet.app.alpha`** — so the alpha ships under `.alpha`, but the repo's **canonical identity
+stays `com.snappet.app`** (user's call). The `.alpha` retarget is a **local overlay**, applied by
+`scripts/alpha-build-overlay.sh <build>` and **never committed**.
+
+- **Decision**: commit the genuine, production-correct bundle-validity fixes Apple's first upload
+  rejected — `UISupportedInterfaceOrientations~ipad` (all 4, for iPad multitasking) and a watchOS
+  `AppIcon` (asset catalog + `ASSETCATALOG_COMPILER_APPICON_NAME` + `CFBundleIconName`); these block any
+  App Store build, not just the alpha. Plus release tooling: `ExportOptions.plist`, fastlane `beta`
+  lane (archive → TestFlight via an ASC API key from env), and `DEVELOPMENT_TEAM → NFUS5W8QC6` (the old
+  free `8TRC99V9PN` is dead; ends the perpetual local team override).
+- **Gotcha recorded**: the watch's `WKCompanionAppBundleIdentifier` is a STATIC literal in
+  `SnappetWatch/Info.plist`; with `GENERATE_INFOPLIST_FILE: NO` the `INFOPLIST_KEY_…` build setting is
+  inert, so the overlay edits the plist directly to match the `.alpha` phone id.
+- **Upload pipeline**: `fastlane beta` (build_app → upload_to_testflight) with the API key in env
+  (`ASC_KEY_ID`/`ASC_ISSUER_ID`/`ASC_KEY_PATH`); the `.p8` lives in `~/.appstoreconnect/private_keys/`,
+  never committed. `altool --upload-app` is the fallback for an already-built `.ipa`.
+- **Not done (needs the user / Apple web)**: App Store *review* submission — metadata, screenshots,
+  privacy policy URL (mandatory for HealthKit), App Privacy labels, age rating. TestFlight internal
+  testing needs none of these.
+
+## 2026-06-15 — Workout-with-timer PR 1: a shared, wall-clock stopwatch primitive (prompt 62)
 
 Kicked off the Gym Tracker "Workout with timer" initiative (timed sets · a one-tap repeat-set loop ·
 free-flow climb sessions · a tracking-type search facet). Two upcoming features need the *same* live

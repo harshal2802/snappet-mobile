@@ -148,7 +148,10 @@ final class ReelViewModel {
             // Full-length clips (no per-clip trim); the planner is uncapped (AppModel) so nothing is
             // dropped for length — the user didn't want a limit on session videos.
             // Boost the source's achievement windows (Phase 4) when present; empty ⇒ HR-only.
-            let res = model.engine(boosting: source.boostWindows)
+            // Score the footage with Vision (#83 Step 1) — a no-op unless replayed feedback has tuned in
+            // a scene weight, so this neither costs nor changes anything until the data earns it.
+            let scene = await model.sceneSelector(for: wk)
+            let res = model.engine(boosting: source.boostWindows, scene: scene)
                 .generate(for: wk, config: .preset(for: wk.activity).fullLength())
             result = res
             highlights = res.highlights
