@@ -125,6 +125,10 @@ struct AppLibraryView: View {
         // The chip's third visibility gate — drive the liveBanner transition when a plan attaches /
         // detaches from outside Kilter (planProgress is a non-Equatable tuple, so key the Bool).
         .snappetAnimation(SnappetMotion.standard, value: app.kilterSessions.planProgress != nil)
+        // Hydrate the session manager from the store when the Apps tab (the chip's container) appears,
+        // so after a cold relaunch the Kilter live chip shows a recoverable session WITHOUT the user
+        // having to open Kilter once first (the Home resume card is store-derived and already does).
+        .task { app.kilterSessions.recover(in: core.context) }
     }
 
     /// The flagship gets a featured hero above the category grid (#71): a first-time user lands

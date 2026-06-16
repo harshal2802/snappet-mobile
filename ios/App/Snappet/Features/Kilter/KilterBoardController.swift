@@ -488,7 +488,13 @@ final class KilterSessionManager {
             },
             now: .now)
         let byID = Dictionary(openSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for closure in plan.close { byID[closure.id]?.endedAt = closure.endedAt }   // auto-close dups/abandoned
+        for closure in plan.close {
+            byID[closure.id]?.endedAt = closure.endedAt   // auto-close dups/abandoned
+            // Close the pinned plan in lockstep too — otherwise an auto-closed (abandoned/duplicate)
+            // session leaks a permanently-open KilterPlan row that bloats the store + every backup.
+            // Mirrors end(sessionID:); stamps at the session's own close time.
+            openPlan(forSession: closure.id, in: context)?.completedAt = closure.endedAt
+        }
         if let adoptID = plan.adopt, let session = byID[adoptID] { adopt(session, in: context) }
         try? context.save()
     }
@@ -577,6 +583,19 @@ final class KilterSessionManager {
         guard updated != plan.items else { return }
         plan.items = updated
         currentPlanId = plan.id
+        planProgress = KilterPlanProgress.progress(updated)
+        planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(updated)
+        try? context.save()
+    }
+
+    /// Skip a pending plan pick (a deliberate "not today") — flips it to `.skipped` so it leaves the
+    /// "next up" rotation without counting as done. Drives the plan-home swipe action; keeps the
+    /// progress/pending caches in lockstep. No-op for an ad-hoc session or an unknown id.
+    func skipPlanItem(id: UUID, in context: ModelContext) {
+        guard let sid = current?.id, let plan = openPlan(forSession: sid, in: context) else { return }
+        let updated = KilterPlanProgress.skipping(id: id, in: plan.items)
+        guard updated != plan.items else { return }
+        plan.items = updated
         planProgress = KilterPlanProgress.progress(updated)
         planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(updated)
         try? context.save()

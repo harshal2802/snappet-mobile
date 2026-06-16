@@ -454,7 +454,12 @@ struct KilterRootView: View {
                         .font(.subheadline.weight(.semibold))
                         .accessibilityIdentifier("kilter.session.end")
                 }
-                Button { router.push(KilterSessionRoute(id: s.id)) } label: {
+                Button {
+                    // Converge with the live chip + Home card: a plan-backed run opens the plan-home
+                    // (re-enterable list with progress); an ad-hoc session opens its live summary.
+                    if sessions.currentPlanId != nil { router.push(KilterPlanRoute()) }
+                    else { router.push(KilterSessionRoute(id: s.id)) }
+                } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "figure.climbing").font(.caption)
                         Text(sessions.activeClimbName).font(.caption.weight(.medium)).lineLimit(1)

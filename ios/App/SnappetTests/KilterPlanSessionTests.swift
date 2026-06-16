@@ -131,6 +131,31 @@ final class KilterPlanSessionTests: XCTestCase {
         XCTAssertEqual(m.nextPlanClimb(excluding: "off-plan"), "w")
     }
 
+    func testSkipPlanItemFlipsToSkippedAndLeavesPendingRotation() throws {
+        let m = KilterSessionManager()
+        m.start(angle: 40, source: "manual", in: context)
+        let plan = makePlan([("w", .warmup), ("s", .send)]); context.insert(plan)
+        m.attachPlan(plan, in: context)
+        let wid = plan.items.first { $0.climbUUID == "w" }!.id
+        m.skipPlanItem(id: wid, in: context)
+        XCTAssertEqual(plan.items.first { $0.climbUUID == "w" }?.status, .skipped)
+        XCTAssertEqual(m.planPendingUUIDs, ["s"], "a skipped pick leaves the pending rotation")
+        XCTAssertEqual(m.nextPlanClimb(excluding: nil), "s")
+    }
+
+    func testRecoverClosesPlanOfAbandonedSessionNoOrphan() throws {
+        // An abandoned open session (>6h idle) with an open plan pinned to it — recover() auto-closes
+        // the session AND must close its plan in lockstep (no permanently-open orphan).
+        let old = KilterSession(startedAt: .now.addingTimeInterval(-8 * 3600), angle: 40, source: "manual")
+        context.insert(old)
+        let plan = makePlan([("s", .send)]); plan.sessionId = old.id; context.insert(plan)
+        try context.save()
+        let m = KilterSessionManager()
+        m.recover(in: context)
+        XCTAssertNotNil(old.endedAt, "the abandoned session is auto-closed")
+        XCTAssertNotNil(plan.completedAt, "its pinned plan is closed in lockstep — no orphan leak")
+    }
+
     func testOpenPlanIgnoresClosedPlans() throws {
         let m = KilterSessionManager()
         m.start(angle: 40, source: "manual", in: context)

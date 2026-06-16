@@ -176,8 +176,10 @@ struct KilterPlanView: View {
         Section {
             Button {
                 guard let id = sessions.currentId else { return }
-                sessions.end(in: modelContext)
+                // Push the summary FIRST so it covers the plan screen before `end` flips this view back
+                // to generate-mode (no one-frame flash of the empty generator).
                 router.push(KilterSessionRoute(id: id))
+                sessions.end(in: modelContext)
             } label: {
                 Label("Finish plan", systemImage: "flag.checkered")
                     .fontWeight(.semibold)
@@ -231,6 +233,17 @@ struct KilterPlanView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("kilter.plan.pick")
+        // Skip a pick you're not doing today — flips it to .skipped (leaves the "next up" rotation,
+        // not counted as done). Only meaningful while still pending.
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if item.status == .pending {
+                Button { sessions.skipPlanItem(id: item.id, in: modelContext) } label: {
+                    Label("Skip", systemImage: "minus.circle")
+                }
+                .tint(.gray)
+                .accessibilityIdentifier("kilter.plan.skip")
+            }
+        }
     }
 
     @ViewBuilder private func statusGlyph(_ status: KilterPlanItemStatus) -> some View {

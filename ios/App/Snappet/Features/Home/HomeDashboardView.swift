@@ -216,9 +216,12 @@ struct HomeDashboardView: View {
     /// `@Query`), so it doesn't depend on the live in-memory session manager.
     private var activeKilterResume: (done: Int, total: Int)? {
         let openSessionIds = Set(kilterSessionsQ.filter { $0.endedAt == nil }.map(\.id))
-        guard let plan = kilterPlansQ.first(where: { p in
-            p.completedAt == nil && (p.sessionId.map(openSessionIds.contains) ?? false)
-        }) else { return nil }
+        // Deterministic pick (newest open plan) — @Query is unordered and, during a brief
+        // duplicate-session window, more than one open plan can match; mirrors KilterSessionDetailView.
+        guard let plan = kilterPlansQ
+            .filter({ p in p.completedAt == nil && (p.sessionId.map(openSessionIds.contains) ?? false) })
+            .max(by: { $0.createdAt < $1.createdAt })
+        else { return nil }
         let p = KilterPlanProgress.progress(plan.items)
         return (p.done, p.total)
     }

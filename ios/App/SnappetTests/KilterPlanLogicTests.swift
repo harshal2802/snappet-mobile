@@ -148,6 +148,23 @@ final class KilterPlanLogicTests: XCTestCase {
         XCTAssertEqual(shuffled.picks.map(\.id), again.picks.map(\.id))
     }
 
+    func testWorkingGradeLabelIsDetectedGradeNotOffsetAnchor() {
+        // Two sends at bucket 18 → working grade 18, labelled "V5" from history.
+        let history = (0..<2).map { i in
+            KilterClimbLog(climbUUID: "h\(i)", climbName: "H", gradeLabel: "V5", difficulty: 18,
+                           status: .sent, attempts: 1, startedAt: nil, endedAt: nil, loggedAt: .now)
+        }
+        // Candidates labelled distinctly at the +2 anchor bucket (20) so we can tell which got labelled.
+        let pool = (16...22).flatMap { d in (0..<3).map { i in
+            KilterListItem(uuid: "c\(d)-\(i)", name: "C", setter: "S", difficulty: Double(d),
+                           gradeLabel: d == 20 ? "V7" : "Vx", quality: 2.5, ascents: 100) }
+        }
+        // Pass an offset anchor (20 = +2, a "Project push"); the label must still be the working grade.
+        let p = KilterRecommender.recommend(history: history, candidates: pool, anchor: 20)
+        XCTAssertEqual(p.workingDifficulty, 18, "detected working grade is unaffected by the offset anchor")
+        XCTAssertEqual(p.workingGradeLabel, "V5", "labels the detected working grade, not the +2 anchor (V7)")
+    }
+
     func testEveryStrategyConfigIsCoherent() {
         for s in KilterRecommender.Strategy.allCases {
             let c = KilterRecommender.config(for: s)

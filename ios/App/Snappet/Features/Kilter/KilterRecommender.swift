@@ -193,8 +193,14 @@ enum KilterRecommender {
         /// Fill up to `count` picks for `goal`, trying each band of difficulty buckets in turn (primary
         /// first, then fallbacks for a sparse catalog), never repeating a climb already chosen.
         func take(bands: [Set<Int>], count: Int, goal: Goal, allowSent: Bool) {
+            // On a re-roll, merge the goal's bands into one pool so the shuffle can reach beyond a tight
+            // primary band (e.g. only a few climbs at the working grade) into its fallbacks — otherwise
+            // rotating a pool that's exactly `count` long just reorders the same climbs.
+            let effectiveBands = options.rerollSeed == 0
+                ? bands
+                : [bands.reduce(into: Set<Int>()) { $0.formUnion($1) }]
             var remaining = count
-            for band in bands where remaining > 0 {
+            for band in effectiveBands where remaining > 0 {
                 var pool = rank(candidates.filter {
                     !chosen.contains($0.uuid)
                         && band.contains(bucket($0.difficulty))
@@ -230,7 +236,9 @@ enum KilterRecommender {
             return a.item.uuid < b.item.uuid
         }
 
-        let label = working == nil ? nil : gradeLabel(forBucket: w, history: history, candidates: candidates)
+        // Label the DETECTED working grade, not the (possibly grade-offset) anchor bucket `w` — a
+        // "Project push" (+2 offset) must still read "Working grade ~V5", not the offset target.
+        let label = working.map { gradeLabel(forBucket: bucket($0), history: history, candidates: candidates) } ?? nil
         return Plan(picks: picks, workingDifficulty: working, workingGradeLabel: label)
     }
 
