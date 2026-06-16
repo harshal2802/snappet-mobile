@@ -67,12 +67,26 @@ final class ClimbAttemptTimerTests: XCTestCase {
         field.typeText(text)
     }
 
+    /// Tapping "Climbing" first presents the "Name this climb" alert (PR 5). On iOS 26 a SwiftUI
+    /// `.alert` TextField is NOT exposed under `app.alerts.textFields`, so query it UNSCOPED via
+    /// `app.textFields["freeform.climbName"]`; the alert's "Add" button is likewise reached unscoped.
+    private func nameThisClimb(_ name: String) {
+        let nameField = app.textFields["freeform.climbName"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5),
+                      "tapping Climbing should present a 'Name this climb' prompt with a name field")
+        nameField.tap()
+        nameField.typeText(name)
+        app.buttons["Add"].tap()
+    }
+
     func testClimbAttemptTimedWithTheLiveStopwatch() {
         openFreeformPlayer()
         snap("01-freeform")
 
-        // Add a Climbing exercise and open its attempt log sheet.
+        // Add a Climbing exercise and open its attempt log sheet. Tapping "Climbing" first presents the
+        // "Name this climb" alert (PR 5), so name the climb before the per-attempt log flow proceeds.
         addExerciseMenu("Climbing")
+        nameThisClimb("Cave")
         sleep(1); snap("02-climbing-added")
         tapAddSetForLastExercise()
 

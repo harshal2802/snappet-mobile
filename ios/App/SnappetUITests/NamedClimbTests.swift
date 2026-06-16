@@ -76,15 +76,16 @@ final class NamedClimbTests: XCTestCase {
 
         // Tap "Climbing" → the "Name this climb" alert appears with a text field. Fill a custom name.
         tapAddClimbingMenuItem()
-        // For an alert text field, query through `app.alerts` (the repo's UI-test lesson): a leaf
-        // TextField inside the alert carries `freeform.climbName` so it's reachable here.
-        let nameField = app.alerts.textFields["freeform.climbName"]
+        // On iOS 26 a SwiftUI `.alert` TextField is NOT exposed under `app.alerts.textFields`; the leaf
+        // TextField carrying `freeform.climbName` is reachable via the UNSCOPED query (the repo's
+        // UI-test lesson). The alert's "Add" button is likewise reached unscoped.
+        let nameField = app.textFields["freeform.climbName"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5),
                       "tapping Climbing should present a 'Name this climb' prompt with a name field")
         nameField.tap()
         nameField.typeText("Cave Project")
         snap("02-named")
-        app.alerts.buttons["Add"].tap()
+        app.buttons["Add"].tap()
 
         // The custom name becomes the section header (via resolver.name(override:) → SessionExercise
         // displayName). Assert the distinctive header text appears — proves the name persisted + renders.

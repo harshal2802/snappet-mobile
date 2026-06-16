@@ -50,6 +50,18 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         field.typeText(text)
     }
 
+    /// Tapping "Climbing" first presents the "Name this climb" alert (PR 5). On iOS 26 a SwiftUI
+    /// `.alert` TextField is NOT exposed under `app.alerts.textFields`, so query it UNSCOPED via
+    /// `app.textFields["freeform.climbName"]`; the alert's "Add" button is likewise reached unscoped.
+    private func nameThisClimb(_ name: String) {
+        let nameField = app.textFields["freeform.climbName"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5),
+                      "tapping Climbing should present a 'Name this climb' prompt with a name field")
+        nameField.tap()
+        nameField.typeText(name)
+        app.buttons["Add"].tap()
+    }
+
     func testFreeformWalkthrough() {
         // 1 — Suite home → App Library → WorkoutTracker dashboard.
         snap("01-suite-home")
@@ -68,8 +80,10 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
             || app.navigationBars["Quick session"].waitForExistence(timeout: 2),
             "the freeform player should open titled 'Quick session'")
 
-        // 3 — Climbing → log an attempt (grade V4, default outcome Sent).
+        // 3 — Climbing → name the climb (PR 5's "Name this climb" alert) → log an attempt
+        // (grade V4, default outcome Sent).
         addExerciseMenu("Climbing")
+        nameThisClimb("Cave")
         sleep(1); snap("04-climbing-added")
         tapAddSetForLastExercise()
         typeIn(app.textFields["logset.grade"], "V4")
