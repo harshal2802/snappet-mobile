@@ -443,6 +443,26 @@ JSONL → replay-derived weighting) and **Step 1** (`SceneScorer` — real Visio
 (`swift test` green); scene fixture penalizes blurry/empty frames. **This completes #83** — with it the
 #100 iOS tracker is **16/16**.
 
+🟡 **Android Wave 3 — reels, BLE HR, Kilter share, Today home (2026-06-15, prompts 61–64, issues #90
+#92 #91 #99).** Android. One wave PR closing four product-review issues. **#90:** the flagship Workout
+Reels screen is rewritten in user language with a real "Coming to Android / Notify me" control (the
+permanently-disabled emulator-blaming button is gone), and the first pipeline slice — `ReelRanking`, a
+pure Kotlin port of the iOS HighlightEngine — lands JVM-tested. **#92:** the standard BLE Heart Rate
+Profile (0x180D/0x2A37) is ported (`HRMeasurementParser` + `HeartRateZone` + `HRStats`/`HRVMetrics`,
+all pure/tested; `BleHeartRateSource` is the thin edge with a default-deny RR-trust gate); a tappable
+**session detail** (grade pyramid + per-climb timeline + HR summary) is driven by the pure
+`KilterSessionStats`; sessions persist avg/max HR via a non-destructive **Room v4→v5 AutoMigration**
+(nullable columns, committed schema, extended baseline test; Wave 2 shipped no schema change, so this v5
+is the only bump and stands as-is). **#91:** the Kilter share loop closes —
+QR render (zxing) + scan (CameraX + ML Kit), the `snappet://kilter/climb/<uuid>?angle=<n>` deep link
+(pure-parsed, the iOS-compatible scheme), and paste-frames import, reusing the UUIDv5 identity. **#99:**
+the Today tab becomes a daily home — feed rows show display names and deep-link in, actionable cards
+(habits with inline check-off, focus) deep-tap in, and **Jetpack Glance widgets** (headless habit
+check-off + focus) plus 4 static launcher shortcuts ride a shared `SuiteRouter`; cards and widgets read
+ONE pure `TodayData` aggregator. **Verified**: `:app:testDebugUnitTest` (124) + `:app:assembleDebug`
+green; androidTest compiles. **Device-pending**: live strap bpm, the instrumented v4→v5 migration run,
+camera QR scan, Glance render + on-launcher check-off, shortcuts, and the full Reels device pipeline.
+
 ## License
 
 TBD.

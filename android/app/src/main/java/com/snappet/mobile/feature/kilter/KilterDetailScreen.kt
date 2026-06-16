@@ -119,6 +119,7 @@ fun KilterDetailScreen(
     var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
     var sizeMenu by remember { mutableStateOf(false) }
     var showProtocolFix by remember { mutableStateOf(false) }
+    var showShareSheet by remember { mutableStateOf(false) }
 
     // Push the persisted/selected dialect to the controller (initial sync + on every switch); a switch
     // re-lights the current climb instantly inside the controller.
@@ -191,13 +192,18 @@ fun KilterDetailScreen(
         val grade = catalog.gradeLabel(stat.difficulty)
         haptics.commit()
         // Optimistic inline pill (auto-dismisses below). The actual write is deferred to the snackbar
-        // so Undo is a clean no-op — nothing was persisted yet (issue #89).
+        // so Undo is a clean no-op — nothing was persisted yet (issue #89). The auto-session (issue #92)
+        // is likewise deferred to commit, so undoing a logged ascent leaves no session behind.
         logConfirmation = "Logged ${status.label.lowercase()} · $grade"
         snackbar.showUndo(
             message = "Logged ${status.label.lowercase()} · $grade",
             onUndo = { logConfirmation = null },
             commit = {
                 scope.launch {
+                    // Issue #92: the first committed log of a sitting auto-opens a "manual" session so
+                    // ascents group without the user discovering the kebab Start. start() is a no-op if
+                    // one is already open.
+                    if (sessions.currentSessionId == null) sessions.start(selectedAngle, "manual")
                     dao.insertLog(
                         KilterLogEntry(
                             climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
@@ -224,13 +230,11 @@ fun KilterDetailScreen(
         title = climb?.name ?: "Climb",
         onExit = onExit,
         actions = {
-            // Frames export — the raw p<placement>r<role> string (catalog storage + the board-explorer's
-            // "Copy frames" format), so any climb (incl. one you authored) is portable as plain text.
+            // Issue #91: share the climb as a cross-platform QR + deep link (with a "Copy hold string"
+            // fallback for climbs the recipient may not have), replacing the old text-only frames send.
             climb?.let { c ->
-                if (c.frames.isNotEmpty()) {
-                    IconButton(onClick = { shareFrames(context, c.frames) }, modifier = Modifier.testTag("kilter.share")) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share frames")
-                    }
+                IconButton(onClick = { showShareSheet = true }, modifier = Modifier.testTag("kilter.share")) {
+                    Icon(Icons.Filled.Share, contentDescription = "Share climb")
                 }
             }
             IconButton(onClick = { toggleFavorite() }, modifier = Modifier.testTag("kilter.favorite")) {
@@ -485,6 +489,15 @@ fun KilterDetailScreen(
                 }
             }
             climb?.let { Text("Set by ${it.setter}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+
+    if (showShareSheet) {
+        climb?.let { c ->
+            com.snappet.mobile.feature.kilter.share.KilterShareSheet(
+                uuid = c.uuid, angle = selectedAngle, frames = c.frames,
+                onDismiss = { showShareSheet = false },
+            )
         }
     }
 }

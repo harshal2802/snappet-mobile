@@ -4305,3 +4305,45 @@ emulator, parallel agents — instrumented run deferred): the 873-row catalog sc
 authoring on-device; set prefill + charts + last-time hint across two real sessions; and all the #89
 feedback paths (snackbar/haptic/undo, Kilter pill timing + BLE-denial Settings deep link, receipt OCR
 failure/empty banner) which are observable only on a device/emulator.
+
+## 2026-06-15 — Android Wave 3: reels, BLE HR, Kilter share loop, Today home (#90 #92 #91 #99)
+
+Four product-review issues shipped in one wave PR. Notes on the non-obvious choices:
+
+- **#92 Room v4 → v5 is one self-contained additive AutoMigration.** Three NULLABLE HR columns
+  (`avgHr`, `maxHr`, `hrSampleCount`) on `kilter_session`, so the bump is a no-SQL Room
+  `@AutoMigration(4, 5)` — nothing is touched, nothing can be lost. **Cross-wave note (resolved at merge):**
+  Wave 2 ultimately shipped NO schema change (its new data fit existing JSON columns), so this v4→v5 is the
+  ONLY schema bump in the Android batch and stands as-is — no renumber to v6 was needed. The column-set +
+  AutoMigration are clearly commented (`KilterSession`, `SnappetDatabase`). `MigrationBaselineTest` gains a
+  `runMigrationsAndValidate` case proving the v4 row survives with the new columns null.
+- **#92 HR parse parity is the unit-tested core; live capture is the device edge.** `HRMeasurementParser`
+  (0x2A37), `HeartRateZone`, `HRStats`/`HRVMetrics`, and `KilterSessionStats` are pure Kotlin ports of
+  the iOS sources (same bit masks, same lower-bound-inclusive zones, population-variance SDNN, RR×1000/1024
+  ms). `BleHeartRateSource` is the thin scan/connect/notify edge; `rrTrusted` is a pure default-deny gate
+  (optical blacklist checked before the chest-strap whitelist, so "TICKR FIT" is rejected). Unsigned byte
+  reads (`and 0xFF`) are the Kotlin gotcha.
+- **#92 first log of a sitting auto-opens a manual session** (in `KilterDetailScreen.log()`), so ascents
+  group without the user finding the kebab Start; `start()` is a no-op if one is already open. The kebab
+  Start/End remains, and the active-session banner now carries a live HR pill + End — a visible affordance.
+- **#91 the QR payload is uuid+angle**, so a *created* climb the recipient lacks needs the "Copy hold
+  string" fallback (the share sheet ships both). The scanner resolves catalog → created (mirroring detail's
+  order) and shows "not in your catalog" otherwise. Deep-link parse + paste-frames import are pure/tested;
+  the camera scan is device-pending. Routing reuses one shared `SuiteRouter` (deep links + shortcuts +
+  widget taps) → `KilterDeepLinkBus` for the intra-module open.
+- **#99 cards and widgets read ONE pure aggregator (`TodayData`)** so they can't drift. Glance habit
+  check-off is **headless** (an `ActionCallback` writes Room + `updateAll`, no app open). Glance "Start
+  focus" instead OPENS the app into Pomodoro: starting the foreground-service countdown from a widget needs
+  a started activity for the FGS permission anyway, so routing through the app is the correct, non-flaky
+  path (recorded here deliberately). Static launcher shortcuts use `snappet://module/<id>` data URIs.
+- **New deps** (resolved + cached once online, then offline builds): `zxing-core` (QR gen),
+  `mlkit barcode-scanning` + CameraX (QR scan), `androidx.glance` (widgets). Added to `libs.versions.toml`
+  + `app/build.gradle.kts`. `CAMERA` permission + a `snappet://` VIEW intent filter added to the manifest.
+
+**Verified**: `:app:testDebugUnitTest` green (124 tests incl. the new HR/parse/stats/deep-link/reel/today
+cores); `:app:assembleDebug` green; v5 schema JSON committed; `:app:assembleDebugAndroidTest` compiles.
+**Device-pending** (recorded, per the repo's established Kilter-BLE pattern): live bpm from a real chest
+strap in the Kilter banner; the instrumented `MigrationBaselineTest` v4→v5 run on a device/emulator (a
+second agent shares the one emulator — not run here); the live camera QR scan; Glance widget render +
+on-launcher headless check-off; long-press launcher shortcuts; and the full Reels device pipeline
+(Health Connect read + MediaStore match + Media3 export) behind the honest Stage-0 screen.

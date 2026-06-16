@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -72,7 +73,7 @@ import com.snappet.mobile.ui.ModuleScaffold
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS, CREATE }
+private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS, CREATE, SESSION, SCAN }
 
 /**
  * Root entry for the Kilter Board mini-app. Browse the user-installed read-only catalog (filtered by
@@ -86,7 +87,10 @@ fun KilterRoot(onExit: () -> Unit) {
     val container = LocalAppContainer.current
     val dao = container.database.kilterDao()
     val board = remember { KilterBoardController(context) }
-    val sessions = remember { KilterSessionManager(dao) }
+    // Issue #92: a standard BLE heart-rate strap (0x180D) captured during a session. The thin platform
+    // edge; live capture is device-pending. The session manager flushes its avg/max summary on end.
+    val heartRate = remember { com.snappet.mobile.feature.kilter.hr.BleHeartRateSource(context) }
+    val sessions = remember { KilterSessionManager(dao, heartRate) }
     // Seed the board's payload dialect from the persisted preference (Standard/Legacy).
     androidx.compose.runtime.LaunchedEffect(Unit) { board.setApiLevel(KilterSettings.apiLevel(context)) }
 
@@ -122,6 +126,19 @@ fun KilterRoot(onExit: () -> Unit) {
 
     var screen by rememberSaveable { mutableStateOf(KilterScreen.ROOT) }
     var selectedUuid by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Issue #91: a queued `snappet://kilter/climb/...` deep link opens its climb at the encoded angle.
+    val pendingLink = KilterDeepLinkBus.pending
+    androidx.compose.runtime.LaunchedEffect(pendingLink) {
+        val (uuid, angle) = pendingLink ?: return@LaunchedEffect
+        angle?.let { KilterSettings.setAngle(context, it) }
+        // Open the climb if it resolves (catalog or created); otherwise fall through to the scanner's
+        // "not in your catalog" handling by opening detail, which already renders a created/missing case.
+        selectedUuid = uuid
+        screen = KilterScreen.DETAIL
+        KilterDeepLinkBus.consume()
+    }
 
     // Issue #86: system back pops one level, mirroring each sub-screen's onExit (all of them —
     // including DETAIL when entered from CREATE — return to ROOT). At ROOT the handler is disabled
@@ -129,7 +146,21 @@ fun KilterRoot(onExit: () -> Unit) {
     BackHandler(enabled = screen != KilterScreen.ROOT) { screen = KilterScreen.ROOT }
 
     when (screen) {
-        KilterScreen.HISTORY -> KilterHistoryScreen(dao = dao, onExit = { screen = KilterScreen.ROOT })
+        KilterScreen.HISTORY -> KilterHistoryScreen(
+            dao = dao,
+            onOpenSession = { id -> selectedSessionId = id; screen = KilterScreen.SESSION },
+            onExit = { screen = KilterScreen.ROOT },
+        )
+        KilterScreen.SESSION -> selectedSessionId?.let { id ->
+            KilterSessionDetailScreen(
+                sessionId = id, dao = dao, catalog = cat,
+                onExit = { screen = KilterScreen.HISTORY },
+            )
+        }
+        KilterScreen.SCAN -> KilterScannerScreen(
+            onResolved = { uuid -> selectedUuid = uuid; screen = KilterScreen.DETAIL },
+            onExit = { screen = KilterScreen.ROOT },
+        )
         KilterScreen.SETTINGS -> KilterSettingsScreen(
             catalog = cat, dao = dao,
             onCatalogChanged = { reloadToken++; screen = KilterScreen.ROOT },
@@ -153,6 +184,7 @@ fun KilterRoot(onExit: () -> Unit) {
             onOpenHistory = { screen = KilterScreen.HISTORY },
             onOpenSettings = { screen = KilterScreen.SETTINGS },
             onOpenCreate = { screen = KilterScreen.CREATE },
+            onOpenScan = { screen = KilterScreen.SCAN },
             onExit = onExit,
         )
     }
@@ -168,6 +200,7 @@ private fun KilterCatalogScreen(
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCreate: () -> Unit,
+    onOpenScan: () -> Unit,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -278,6 +311,11 @@ private fun KilterCatalogScreen(
                                 pick?.let { onOpenClimb(it.uuid) }
                             }
                         })
+                    // Issue #91: scan a shared QR (from iOS or Android) to open the climb.
+                    DropdownMenuItem(text = { Text("Scan QR") },
+                        leadingIcon = { Icon(Icons.Filled.QrCodeScanner, null) },
+                        modifier = Modifier.testTag("kilter.scanQr"),
+                        onClick = { moreMenu = false; onOpenScan() })
                     HorizontalDivider()
                     DropdownMenuItem(text = { Text("Settings") },
                         leadingIcon = { Icon(Icons.Filled.Settings, null) },
@@ -372,6 +410,12 @@ private fun KilterCatalogScreen(
                     Text("Session · $count climb${if (count == 1) "" else "s"}",
                         style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    // Issue #92: live HR pill when a strap is streaming (device-pending capture).
+                    sessions.hr?.let { hr ->
+                        if (hr.isStreaming || hr.latestBpm != null) {
+                            KilterHRPill(bpm = hr.latestBpm, contactLost = hr.isContactLost, compact = true)
+                        }
+                    }
                     TextButton(onClick = { scope.launch { sessions.end() } }, modifier = Modifier.testTag("kilter.session.end")) {
                         Text("End")
                     }

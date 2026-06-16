@@ -348,7 +348,7 @@ fun WorkoutRoot(onExit: () -> Unit) {
             onExit = { screen = if (cameFromPickerForCustom) WorkoutScreen.EXERCISE_PICKER else WorkoutScreen.ROOT },
         )
 
-        WorkoutScreen.ROOT -> ModuleScaffold(title = "Workout", onExit = onExit) { padding ->
+        WorkoutScreen.ROOT -> ModuleScaffold(title = "Workout Tracker", onExit = onExit) { padding ->
             RootContent(
                 padding = padding,
                 section = section,

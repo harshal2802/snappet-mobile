@@ -40,6 +40,26 @@ fun kilterFrames(assignments: Map<Int, KilterAuthorRole>): String =
         .sortedWith(compareBy({ it.first }, { it.second }))
         .joinToString("") { "p${it.first}r${it.second}" }
 
+/**
+ * Issue #91: parse a pasted `p<placement>r<role>` frames string back into editor [KilterAuthorRole]
+ * assignments. Pure (uses the shared [KilterCatalog.parseFrames]) → JVM-unit-tested. Roles that don't
+ * map to an editor role (e.g. an unknown role id) are dropped; the last role for a placement wins.
+ * [validPlacements], when non-null, filters to placements that exist on the target layout/size so a
+ * frames string from another board can't inject off-board holds.
+ */
+fun parseFramesToAssignments(
+    frames: String,
+    validPlacements: Set<Int>? = null,
+): Map<Int, KilterAuthorRole> {
+    val out = LinkedHashMap<Int, KilterAuthorRole>()
+    for ((placement, roleId) in KilterCatalog.parseFrames(frames)) {
+        if (validPlacements != null && placement !in validPlacements) continue
+        val role = KilterAuthorRole.fromRoleId(roleId) ?: continue
+        out[placement] = role
+    }
+    return out
+}
+
 /** Why a draft climb isn't yet valid to save. Mirrors iOS `KilterClimbValidationError`. */
 sealed class KilterClimbValidationError(val message: String) {
     data class TooFewHolds(val need: Int) : KilterClimbValidationError("Add at least $need holds.")

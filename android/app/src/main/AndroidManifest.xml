@@ -15,9 +15,11 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
-    <!-- Camera is used to scan a receipt for the Split Expenses mini-app. Optional, and captured
-         via the system camera app (ACTION_IMAGE_CAPTURE), so no CAMERA permission is required. -->
+    <!-- Camera is used to scan a receipt for the Split Expenses mini-app (system camera app, no
+         permission), AND in-app via CameraX to scan a shared Kilter climb's QR (issue #91), which
+         DOES require the CAMERA permission (requested at the point of use). Optional feature. -->
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- Pomodoro (issue #85): the running phase shows an ongoing countdown notification from a
          foreground service (the Android counterpart of the iOS Live Activity), and an exact
@@ -46,7 +48,44 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Issue #91: open a shared Kilter climb via snappet://kilter/climb/<uuid>?angle=<n>
+                 (the same scheme iOS shares), routed by MainActivity into the Kilter module.
+                 Issue #99: snappet://module/<id> opens a module/editor for static launcher shortcuts. -->
+            <intent-filter android:label="Open in Snappet">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="snappet" android:host="kilter" />
+                <data android:host="module" />
+            </intent-filter>
+
+            <!-- Static launcher shortcuts (issue #99). -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Glance launcher widgets (issue #99): habit (headless check-off) + focus (start). -->
+        <receiver
+            android:name=".widget.HabitWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/habit_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.FocusWidgetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/focus_widget_info" />
+        </receiver>
 
         <!-- Pomodoro countdown (issue #85): foreground service for the ongoing chronometer
              notification, and the phase-boundary alarm receiver. -->
