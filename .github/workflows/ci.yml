@@ -1,15 +1,17 @@
 name: CI
 
-# PR verification gate, split for speed. A single job previously ran ~30+ min, all inside one
-# `xcodebuild test` (clean build + the full unit AND UI suites, serially). It now fans out into three
-# jobs that run in PARALLEL:
-#   • engine — the pure HighlightEngine SwiftPM tests (~1–2 min); an independent fast signal.
-#   • app (SnappetTests)   — builds the app once and runs ONLY the unit suite → the fast gate (~15 min).
-#   • app (SnappetUITests) — builds the app once and runs ONLY the end-to-end UI suite (~30 min, slow).
-# The unit and UI suites are matrix legs (`-only-testing:`), so the unit/correctness signal no longer
-# waits behind the slow UI run. SwiftPM checkouts (notably onnxruntime's binary xcframework) are cached
-# between runs. UI tests still run on every PR (in parallel) so coverage isn't lost — to make a *merge*
-# wait only on the fast checks, require just `engine` + `App tests (SnappetTests)` in branch protection.
+# PR verification gate. For now this runs ONLY the pure, programmatic HighlightEngine tests
+# (`swift test` — no Xcode project, no simulator), keeping CI to ~2 min.
+#
+# The app build + the simulator-bound suites (SnappetTests — which includes StopwatchTimingTests —
+# and SnappetUITests) are COMMENTED OUT below: they're slow (~15 min unit / ~30 min UI) and remain
+# owed at the merge gate (see each PR's verification checklist). Re-enable by uncommenting `app`.
+#
+# ⚠️ Trade-off: with the app build off, CI no longer catches app compile errors (Swift 6 strict
+# concurrency / "unable to type-check this expression") — those now surface only at the merge-gate
+# xcodebuild run, not on the PR. (A compile-only `build-for-testing` job is the middle ground if we
+# want that safety back without the slow test run.)
+#
 # release-ipa.yml / testflight.yml are the only other app-compiling workflows (release / dispatch only).
 
 on:
@@ -36,75 +38,68 @@ jobs:
         working-directory: ios/HighlightEngine
         run: swift test
 
-  app:
-    name: App tests (${{ matrix.suite }})
-    runs-on: macos-26
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
-      matrix:
-        suite: [SnappetTests, SnappetUITests]
-    env:
-      SCHEME: Snappet
-      SPM_CACHE: ${{ github.workspace }}/.spm-cache
-    steps:
-      - uses: actions/checkout@v4
-
-      # Pin the toolchain the app is built & shipped on (decisions.md 2026-06-16) — same as the release
-      # workflows; NOT the runner's drifting `latest-stable`.
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '26.5'
-
-      # Cache the resolved SwiftPM checkouts (notably onnxruntime's prebuilt xcframework) so each run
-      # doesn't re-fetch them. Keyed on project.yml, which pins the package versions.
-      - name: Cache SwiftPM packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SPM_CACHE }}
-          key: spm-${{ runner.os }}-xcode26.5-${{ hashFiles('ios/App/project.yml') }}
-          restore-keys: |
-            spm-${{ runner.os }}-xcode26.5-
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Generate the Xcode project
-        working-directory: ios/App
-        run: xcodegen generate
-
-      # Resolve a concrete simulator (rather than OS=latest) so the destination matches a runtime the
-      # selected Xcode actually has installed.
-      - name: Resolve an available iOS simulator
-        id: sim
-        run: |
-          set -euo pipefail
-          UDID=$(xcrun simctl list devices available --json \
-            | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].udid')
-          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
-            echo "::error::No iPhone simulator available on the runner" >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "Using simulator $UDID"
-          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-
-      - name: Build & run ${{ matrix.suite }} on the simulator
-        working-directory: ios/App
-        run: |
-          set -euo pipefail
-          xcodebuild test \
-            -scheme "$SCHEME" \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            -only-testing:${{ matrix.suite }} \
-            -clonedSourcePackagesDirPath "$SPM_CACHE" \
-            -resultBundlePath "$RUNNER_TEMP/${{ matrix.suite }}.xcresult" \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload xcresult bundle
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.suite }}.xcresult
-          path: ${{ runner.temp }}/${{ matrix.suite }}.xcresult
-          if-no-files-found: ignore
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # DISABLED FOR NOW — the simulator app suites (slow: ~15 min unit / ~30 min UI). Builds the app once
+  # per matrix leg and runs one suite via `-only-testing:`, in parallel, with SwiftPM caching.
+  # To restore the full PR gate: uncomment this whole job. To keep merges fast, require only
+  # `engine` + `App tests (SnappetTests)` as status checks in branch protection.
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # app:
+  #   name: App tests (${{ matrix.suite }})
+  #   runs-on: macos-26
+  #   timeout-minutes: 60
+  #   strategy:
+  #     fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
+  #     matrix:
+  #       suite: [SnappetTests, SnappetUITests]
+  #   env:
+  #     SCHEME: Snappet
+  #     SPM_CACHE: ${{ github.workspace }}/.spm-cache
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: maxim-lobanov/setup-xcode@v1
+  #       with:
+  #         xcode-version: '26.5'
+  #     - name: Cache SwiftPM packages
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: ${{ env.SPM_CACHE }}
+  #         key: spm-${{ runner.os }}-xcode26.5-${{ hashFiles('ios/App/project.yml') }}
+  #         restore-keys: |
+  #           spm-${{ runner.os }}-xcode26.5-
+  #     - name: Install XcodeGen
+  #       run: brew install xcodegen
+  #     - name: Generate the Xcode project
+  #       working-directory: ios/App
+  #       run: xcodegen generate
+  #     - name: Resolve an available iOS simulator
+  #       id: sim
+  #       run: |
+  #         set -euo pipefail
+  #         UDID=$(xcrun simctl list devices available --json \
+  #           | jq -r '[.devices[][] | select(.isAvailable and (.name | startswith("iPhone")))][0].udid')
+  #         if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+  #           echo "::error::No iPhone simulator available on the runner" >&2
+  #           xcrun simctl list devices available >&2
+  #           exit 1
+  #         fi
+  #         echo "Using simulator $UDID"
+  #         echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+  #     - name: Build & run ${{ matrix.suite }} on the simulator
+  #       working-directory: ios/App
+  #       run: |
+  #         set -euo pipefail
+  #         xcodebuild test \
+  #           -scheme "$SCHEME" \
+  #           -destination "id=${{ steps.sim.outputs.udid }}" \
+  #           -only-testing:${{ matrix.suite }} \
+  #           -clonedSourcePackagesDirPath "$SPM_CACHE" \
+  #           -resultBundlePath "$RUNNER_TEMP/${{ matrix.suite }}.xcresult" \
+  #           CODE_SIGNING_ALLOWED=NO
+  #     - name: Upload xcresult bundle
+  #       if: always()
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ${{ matrix.suite }}.xcresult
+  #         path: ${{ runner.temp }}/${{ matrix.suite }}.xcresult
+  #         if-no-files-found: ignore
