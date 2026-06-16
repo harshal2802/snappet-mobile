@@ -339,7 +339,9 @@ private struct LogSetSheet: View {
                         } onRunningChange: { timerRunning = $0 }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
-                        .accessibilityIdentifier("logset.durationTimer")
+                        // NOTE: no .accessibilityIdentifier on the StopwatchView itself — on iOS 26 that
+                        // collapses the composite view into one accessibility element and hides its inner
+                        // `stopwatch.toggle` button from XCUITest. The test queries the child ids directly.
                     case .manual:
                         HStack {
                             TextField("Min", text: $minutes).keyboardType(.numberPad)

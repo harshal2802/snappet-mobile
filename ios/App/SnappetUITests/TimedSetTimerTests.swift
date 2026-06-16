@@ -65,6 +65,11 @@ final class TimedSetTimerTests: XCTestCase {
         sleep(1); snap("02-timed-added")
         tapAddSetForLastExercise()
 
+        // The duration log sheet opens with the Timer|Manual toggle (default Timer). Assert it opened
+        // first, so a sheet-didn't-open failure is distinguishable from a missing stopwatch.
+        XCTAssertTrue(app.segmentedControls["logset.durationMode"].waitForExistence(timeout: 6),
+                      "the duration log sheet should open with the Timer|Manual toggle")
+
         // The sheet defaults to Timer mode → the stopwatch is present; the Manual Min/Sec fields are not.
         let toggle = app.buttons["stopwatch.toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5),
