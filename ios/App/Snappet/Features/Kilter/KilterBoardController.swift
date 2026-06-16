@@ -365,6 +365,12 @@ final class KilterSessionManager {
     /// catalog, a BLE connect, or the first idle log) until a plan is attached.
     private(set) var currentPlanId: UUID?
 
+    /// Live progress of the pinned plan as `(done, total)` for the cross-screen live chip — `nil` for
+    /// an ad-hoc session with no plan. Kept in lockstep with the plan on attach / log / adopt, and
+    /// cleared whenever the session ends. Stored (not computed) so the `@Observable` chip ticks on it
+    /// without a SwiftData fetch.
+    private(set) var planProgress: (done: Int, total: Int)?
+
     /// Live Activity board label (no per-board name today).
     private let boardName = "Kilter Board"
 
@@ -454,6 +460,7 @@ final class KilterSessionManager {
         try? context.save()
         current = nil
         currentPlanId = nil
+        planProgress = nil
         resetActiveClimb()
     }
 
@@ -495,7 +502,7 @@ final class KilterSessionManager {
             : (try? context.fetch(FetchDescriptor<KilterSession>(
                 predicate: #Predicate { $0.id == sessionID })))?.first
         guard let session, session.endedAt == nil else {
-            if isCurrent { current = nil; currentPlanId = nil; resetActiveClimb() }
+            if isCurrent { current = nil; currentPlanId = nil; planProgress = nil; resetActiveClimb() }
             return
         }
         session.endedAt = .now
@@ -524,7 +531,7 @@ final class KilterSessionManager {
         }
         try? context.save()
         liveActivity?.end()
-        if isCurrent { current = nil; currentPlanId = nil; resetActiveClimb() }
+        if isCurrent { current = nil; currentPlanId = nil; planProgress = nil; resetActiveClimb() }
         // Auto-discover photos/videos shot during the session window and tag them to the session + the
         // climb they fall within. Best-effort; only runs with full Photos access.
         discoverMedia(for: session, in: context)
@@ -547,6 +554,7 @@ final class KilterSessionManager {
         }
         plan.sessionId = id
         currentPlanId = plan.id
+        planProgress = KilterPlanProgress.progress(plan.items)
     }
 
     /// Tick the active plan when a climb is logged: flip the lowest-order matching `pending`
@@ -562,6 +570,7 @@ final class KilterSessionManager {
         guard updated != plan.items else { return }
         plan.items = updated
         currentPlanId = plan.id
+        planProgress = KilterPlanProgress.progress(updated)
         try? context.save()
     }
 
@@ -588,6 +597,7 @@ final class KilterSessionManager {
         liveActivity?.end()
         current = nil
         currentPlanId = nil
+        planProgress = nil
         resetActiveClimb()
     }
 
@@ -598,7 +608,13 @@ final class KilterSessionManager {
         resetActiveClimb()
         // Re-establish the pinned plan (if this session was started from "Plan a session") so the
         // plan-home + live chip recover it after a relaunch / navigating back into Kilter.
-        currentPlanId = openPlan(forSession: session.id, in: context)?.id
+        if let plan = openPlan(forSession: session.id, in: context) {
+            currentPlanId = plan.id
+            planProgress = KilterPlanProgress.progress(plan.items)
+        } else {
+            currentPlanId = nil
+            planProgress = nil
+        }
         // The shared metrics coordinator outlives the manager. If it's still streaming, this recovered
         // session owns it (so `end` flushes + stops HR); otherwise we don't resurrect HR for a session
         // recovered after a relaunch (the early buffer is gone — same stance as WorkoutTracker).

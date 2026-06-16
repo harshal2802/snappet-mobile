@@ -90,6 +90,21 @@ final class KilterPlanSessionTests: XCTestCase {
         XCTAssertTrue(try allPlans().isEmpty, "the plan must not outlive an undone session")
     }
 
+    func testPlanProgressTracksAttachLogAndEnd() throws {
+        let m = KilterSessionManager()
+        m.start(angle: 40, source: "manual", in: context)
+        let sid = try XCTUnwrap(m.currentId)
+        let plan = makePlan([("w", .warmup), ("s", .send)]); context.insert(plan)
+        m.attachPlan(plan, in: context)
+        XCTAssertEqual(m.planProgress?.done, 0)
+        XCTAssertEqual(m.planProgress?.total, 2)
+        m.applyLogToPlan(climbUUID: "s", ascent: .sent, at: .now, in: context)
+        XCTAssertEqual(m.planProgress?.done, 1)
+        XCTAssertEqual(m.planProgress?.total, 2)
+        m.end(sessionID: sid, in: context)
+        XCTAssertNil(m.planProgress, "progress clears when the session ends (chip hides)")
+    }
+
     func testOpenPlanIgnoresClosedPlans() throws {
         let m = KilterSessionManager()
         m.start(angle: 40, source: "manual", in: context)

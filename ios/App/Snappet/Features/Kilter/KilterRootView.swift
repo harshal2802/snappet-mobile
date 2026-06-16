@@ -242,6 +242,9 @@ struct KilterRootView: View {
         // services (once, in `AppModel.init`) — binding here would reintroduce the appear-order
         // dependency a plan deep link skips (#71 pre-merge review).
         .onAppear {
+            // Hide the cross-screen Kilter live chip while the user is anywhere in Kilter (the root
+            // stays in the stack under pushed Kilter screens, so this covers the whole module).
+            app.kilterScreenVisible = true
             // Keep the board-size selection valid for the current layout (seed the default when unset).
             syncBoardSize()
             // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
@@ -257,6 +260,8 @@ struct KilterRootView: View {
             }
             board.setAPILevel(apiLevel)
         }
+        // Leaving Kilter entirely (the root pops off the stack) re-reveals the cross-screen live chip.
+        .onDisappear { app.kilterScreenVisible = false }
         // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
         .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
         // Switching layout can invalidate the chosen size (each layout offers different ones) — reseed.
