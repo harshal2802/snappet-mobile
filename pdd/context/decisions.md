@@ -4,6 +4,92 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Kilter plan customization: named strategies over Options + a weighted allocation (kilter-planned-session PR 07)
+
+**Decision**: "Plan a session" gains an **Adjust** sheet leading with climber-language **strategies**
+(`KilterRecommender.Strategy`: balanced / volume / project / power / flash / recovery) that seed three
+knobs — session length, grade offset, prefer-unsent — plus a goal **mix**. Picking a strategy seeds the
+knobs; the climber can then fine-tune them while the strategy's mix stays applied. Persisted in
+`@AppStorage`; snapshotted onto `KilterPlan` (incl. `optionsGradeOffset`) on Start.
+
+**Non-obvious choices**: (1) `Options.mix` is **Optional** — `nil` keeps the original balanced
+`allocation(target:)` byte-for-byte (pinned by `testBalancedDefaultUnchangedByOptionalMix`), so the
+existing `KilterRecommenderTests` and default behaviour don't drift; non-nil routes through a new
+**largest-remainder** `allocation(target:mix:)` (sum==target, ≥1 per positive-weight goal for reachable
+counts ≥3, drops zero-weight goals). (2) The **grade offset is applied to the anchor in the view**
+(`KilterPlanView.rebuild`), NOT inside `Options`/`recommend` — the recommender's contract requires the
+candidate-query window and the bands to share one anchor, so offsetting anywhere but the shared anchor
+would point the deep bands at unfetched climbs. (3) `planKey` includes every knob so the preview
+regenerates live; a started plan stays frozen (session-home never rebuilds).
+
+## [2026-06-16] Kilter climb screen = a station in the plan: advance-by-order + reset-to-plan nav (kilter-planned-session PR 05)
+
+**Decision**: the climb screen's session strip gains a forward loop for plan-backed runs — "Next pick →"
+swaps `currentUUID` **in place** (like `goToSibling`, no stack growth) to `nextPlanClimb(excluding:)`,
+and "Back to plan" does `router.open(module:"kilter") + push(KilterPlanRoute())`.
+
+**Two anti-regression subtleties (from the PR-05 review)**: (1) `nextPlanClimb(excluding:)` advances by
+**plan order** — the pending pick immediately after the current one in the ordered `planPendingUUIDs`,
+falling back to the earliest pending when the current climb isn't pending. A naive "first pending that
+isn't me" **oscillates** (w↔s, never reaching p) when the user taps Next pick without logging — pinned
+by `testNextPlanClimbAdvancesByOrderWithoutLogging`. (2) "Back to plan" must **reset** the path
+(`open(module:)`) before pushing, not bare-`push(KilterPlanRoute())`: the dominant flow is already
+`[kilter, KilterPlanRoute, KilterClimbRoute]`, and a bare push appends a *second* plan route, accreting
+a stale Plan/Climb pair every loop (NavigationPath has no dedup). `open()` replaces the path, so it
+reaches the plan-home cleanly from any entry (plan flow or an off-plan catalog climb) — the same pattern
+the live chip and Home card use. `planPendingUUIDs` is cached on the manager (lockstep with
+`planProgress`) so the strip needn't fetch on every HR-tick re-render.
+
+## [2026-06-16] Kilter plan-home reads stored status; one open plan per session; plan closed with the session (kilter-planned-session PR 02)
+
+**Decision**: `KilterPlanView` has two modes off one screen — **generate** (recommender preview,
+recomputed) and **session-home** (the live session has a pinned `KilterPlan` → read the **stored,
+frozen** plan; per-pick ticks come from `KilterPlanItem.status`, order never reshuffles). On Start,
+`startPlan` snapshots the preview into a `KilterPlan`, and `KilterSessionManager.attachPlan(_:in:)`
+pins it (`sessionId`) and freezes it. The log path calls `applyLogToPlan` to tick the matching item.
+
+**Invariants (from the PR-02 adversarial review)**: (1) **one open plan per session** —
+`attachPlan` closes any other open plan already pinned to the session, and `startPlan` re-enters an
+existing open plan instead of forking a second (with `recover` on appear + before Start so the
+view matches the store on a deep-link race). Without this, a `start` that adopts a stale open session
+which already had a plan could leave two open plans, and both readers use an unordered `.first` →
+non-deterministic tick/order. (2) **a plan never outlives its session** — `end(sessionID:in:)` stamps
+the attached plan's `completedAt` in lockstep with `session.endedAt` (no orphaned open `KilterPlan`
+rows accumulating; an ended session's plan can't resurface as active), and `undoStart` deletes the
+plan attached to the torn-down session. Pinned in `KilterPlanSessionTests` (store-level, unbound
+manager).
+
+**Rules out / non-obvious**: `KilterSessionManager.currentPlanId` is written here but first **read**
+by the PR-03 cross-screen live chip — kept (not removed) because PR 03 is the immediate next step; the
+one-open-plan invariant guarantees `currentPlanId` (keyed by plan.id) and `activePlan` (keyed by
+sessionId) resolve to the same plan, so they can't diverge. The user-facing "Finish plan" (a later PR)
+routes through `end`, which already closes the plan.
+
+## [2026-06-16] Kilter planned session becomes a persisted, frozen-on-Start entity (kilter-planned-session PR 01)
+
+**Decision**: the "Plan a session" plan stops being ephemeral `@State` recomputed from
+`KilterRecommender` on every render and becomes a persisted **`KilterPlan` `@Model`** with ordered
+**`KilterPlanItem`** value structs (embedded Codable array, like `KilterSession.hrSeries` — so it's
+**one** new `@Model` + a trivial lightweight migration, not a SwiftData relationship). On **Start** the
+recommender `Plan` is **snapshotted** into the items and the plan is **frozen** (pinned to its
+`KilterSession` via `KilterPlan.sessionId`); the recommender never rebuilds it again.
+
+**Why**: all four reported defects trace to the plan being a pure function of volatile inputs with
+completion re-derived live. The headline bug — logging a Send/Project pick didn't tick it while warm-ups
+did — was the recommender dropping the now-sent UUID (`allowSent: !preferUnsent`) and reshuffling on the
+`entries.count`-keyed rebuild. Storing per-pick state on `KilterPlanItem.status`
+(`pending`/`sent`/`attempted`/`skipped`) and reading done-ness from it (never from `logs ∩ recommend()`)
+makes the defect structurally impossible and gives the run a re-enterable home.
+
+**Rules out / non-obvious**: (1) completion is keyed by **`climbUUID`**, not a log id —
+`KilterLogEntry` has no stable UUID, and `climbUUID` is also `SessionMedia.assignedClimbUUID`, so a plan
+row inherits its session clips by a pure join (no plan→media FK; no `SessionMedia` schema change for
+v1). (2) A later *send* upgrades an `attempted` item to `sent`; an off-plan/ad-hoc climb leaves the plan
+untouched. (3) `skipped` counts toward neither done nor pending (surfaced as "N skipped" in the
+summary). (4) Pure logic (`KilterPlanProgress`) is SwiftData-free so it unit-tests without a device;
+the `@Model` lives in `KilterModels.swift`, registered in `SnappetSchema.models` and covered by
+`SnappetBackup` (`KilterPlanRow`) — the backup tripwire + round-trip count (now 22) enforce it.
+
 ## [2026-06-10] Android CRUD sweep: one confirm component, long-press as the secondary-action idiom (issue #88)
 
 **Decision** (prompt 41): every destructive flow goes through **one** `ConfirmDeleteDialog`

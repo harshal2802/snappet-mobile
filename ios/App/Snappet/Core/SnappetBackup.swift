@@ -60,6 +60,7 @@ enum SnappetBackup {
         StudioProject.self,
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
+        KilterPlan.self,
     ]
 
     // MARK: - The envelope
@@ -93,6 +94,7 @@ enum SnappetBackup {
         var kilterSessions: [KilterSessionRow] = []
         var kilterFavorites: [KilterFavoriteRow] = []
         var kilterCreatedClimbs: [KilterCreatedClimbRow] = []
+        var kilterPlans: [KilterPlanRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         var recordCount: Int {
@@ -102,7 +104,7 @@ enum SnappetBackup {
                 + workoutSessions.count + customExercises.count + sessionMedia.count
                 + clipEdits.count + studioProjects.count + tipCalculations.count
                 + kilterLogEntries.count + kilterSessions.count + kilterFavorites.count
-                + kilterCreatedClimbs.count
+                + kilterCreatedClimbs.count + kilterPlans.count
         }
     }
 
@@ -170,6 +172,7 @@ enum SnappetBackup {
         file.kilterSessions = try all(KilterSession.self).map(KilterSessionRow.init).sorted(by: rowKey)
         file.kilterFavorites = try all(KilterFavorite.self).map(KilterFavoriteRow.init).sorted(by: rowKey)
         file.kilterCreatedClimbs = try all(KilterCreatedClimb.self).map(KilterCreatedClimbRow.init).sorted(by: rowKey)
+        file.kilterPlans = try all(KilterPlan.self).map(KilterPlanRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -245,6 +248,8 @@ enum SnappetBackup {
             uniqued(file.kilterFavorites, by: \.climbUUID).forEach { context.insert($0.make()) }
             try deleteAll(KilterCreatedClimb.self)
             uniqued(file.kilterCreatedClimbs, by: \.uuid).forEach { context.insert($0.make()) }
+            try deleteAll(KilterPlan.self)
+            uniqued(file.kilterPlans, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -693,6 +698,43 @@ extension SnappetBackup {
             KilterSession(id: id, startedAt: startedAt, endedAt: endedAt, angle: angle,
                           source: source, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR,
                           metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate)
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    struct KilterPlanRow: BackupRow {
+        var id: UUID
+        var createdAt: Date
+        var angle: Int
+        var layoutId: Int
+        var workingDifficulty: Double?
+        var workingGradeLabel: String?
+        var title: String?
+        var sessionId: UUID?
+        var completedAt: Date?
+        var optionsTargetCount: Int
+        var optionsSendThreshold: Int
+        var optionsPreferUnsent: Bool
+        var optionsGradeOffset: Int
+        var strategyRaw: String?
+        var items: [KilterPlanItem]
+
+        init(_ m: KilterPlan) {
+            id = m.id; createdAt = m.createdAt; angle = m.angle; layoutId = m.layoutId
+            workingDifficulty = m.workingDifficulty; workingGradeLabel = m.workingGradeLabel
+            title = m.title; sessionId = m.sessionId; completedAt = m.completedAt
+            optionsTargetCount = m.optionsTargetCount; optionsSendThreshold = m.optionsSendThreshold
+            optionsPreferUnsent = m.optionsPreferUnsent; optionsGradeOffset = m.optionsGradeOffset
+            strategyRaw = m.strategyRaw
+            items = m.items
+        }
+        func make() -> KilterPlan {
+            KilterPlan(id: id, createdAt: createdAt, angle: angle, layoutId: layoutId,
+                       workingDifficulty: workingDifficulty, workingGradeLabel: workingGradeLabel,
+                       title: title, sessionId: sessionId, completedAt: completedAt,
+                       optionsTargetCount: optionsTargetCount, optionsSendThreshold: optionsSendThreshold,
+                       optionsPreferUnsent: optionsPreferUnsent, optionsGradeOffset: optionsGradeOffset,
+                       strategyRaw: strategyRaw, items: items)
         }
         var sortKey: String { id.uuidString }
     }

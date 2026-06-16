@@ -21,6 +21,7 @@ struct KilterSessionDetailView: View {
     @Query private var allSessions: [KilterSession]
     @Query private var allEntries: [KilterLogEntry]
     @Query private var allMedia: [SessionMedia]
+    @Query private var allPlans: [KilterPlan]
 
     @State private var importing = false
     /// Presents the shared `UserHRProfileView` from the default-ceiling affordance (#75): when the
@@ -50,6 +51,19 @@ struct KilterSessionDetailView: View {
     private var session: KilterSession? { allSessions.first { $0.id == sessionID } }
     private var entries: [KilterLogEntry] { allEntries.filter { $0.sessionId == sessionID } }
     private var media: [SessionMedia] { allMedia.filter { $0.sessionID == sessionID } }
+    /// The plan this session ran (if it was started from "Plan a session") — drives the plan-vs-actual
+    /// recap. A session can own two rows sharing `sessionId` (the documented adopt-stale-session race
+    /// supersedes a prior plan by stamping its `completedAt` but leaves `sessionId` pinned), so resolve
+    /// deterministically rather than relying on `@Query` order: prefer a still-open plan, else the one
+    /// closed latest (the real plan closes at session end; a superseded one closes earlier at attach
+    /// time), tie-broken by newest `createdAt`. (Unlike the plan-home this can't just filter
+    /// `completedAt == nil` — after Finish the plan IS completed and must still show.)
+    private var plan: KilterPlan? {
+        allPlans
+            .filter { $0.sessionId == sessionID }
+            .max { ($0.completedAt ?? .distantFuture, $0.createdAt)
+                 < ($1.completedAt ?? .distantFuture, $1.createdAt) }
+    }
 
     private var stats: KilterSessionStats? {
         guard let session else { return nil }
@@ -80,6 +94,7 @@ struct KilterSessionDetailView: View {
                     VStack(spacing: 22) {
                         header(session)
                         summaryGrid(stats)
+                        if let plan { planSection(plan) }
                         if let hrStats { hrSection(hrStats) }
                         if !stats.pyramid.isEmpty { pyramidSection(stats) }
                         if !stats.timeline.isEmpty { timelineSection(stats) }
@@ -166,6 +181,46 @@ struct KilterSessionDetailView: View {
         .padding()
         .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         .padding(.horizontal)
+    }
+
+    // MARK: - Plan vs actual
+
+    /// The plan-vs-actual recap for a session that ran a plan: how many planned picks got done /
+    /// skipped, broken out by goal with a status glyph per pick (reads `KilterPlanItem.status`).
+    private func planSection(_ plan: KilterPlan) -> some View {
+        let done = plan.items.filter { $0.status.isDone }.count
+        let skipped = plan.items.filter { $0.status == .skipped }.count
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Plan").font(.headline)
+            Text("\(done) of \(plan.items.count) planned · \(skipped) skipped")
+                .font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("kilter.summary.planRecap")
+            ForEach(KilterRecommender.Goal.allCases, id: \.self) { goal in
+                let items = plan.items.filter { $0.goal == goal }.sorted { $0.order < $1.order }
+                if !items.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(goal.label)
+                            .font(.caption.weight(.medium))
+                            .frame(width: 64, alignment: .leading)
+                        ForEach(items) { planGoalGlyph($0.status) }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder private func planGoalGlyph(_ status: KilterPlanItemStatus) -> some View {
+        switch status {
+        case .sent:      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
+        case .attempted: Image(systemName: "circle.lefthalf.filled").foregroundStyle(.orange).font(.caption)
+        case .skipped:   Image(systemName: "minus.circle").foregroundStyle(.secondary).font(.caption)
+        case .pending:   Image(systemName: "circle").foregroundStyle(.secondary).font(.caption)
+        }
     }
 
     // MARK: - Summary grid

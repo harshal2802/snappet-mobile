@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 21, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 22, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -403,6 +403,24 @@ final class SnappetBackupTests: XCTestCase {
                                           isNoMatch: true, predictedGrade: 20.2,
                                           source: "generated", modelId: "model-q",
                                           createdAt: Date(timeIntervalSince1970: 1_700_011_000)))
+
+        context.insert(KilterPlan(
+            createdAt: Date(timeIntervalSince1970: 1_700_012_000), angle: 40, layoutId: 1,
+            workingDifficulty: 18, workingGradeLabel: "6a/V3", title: "Volume night",
+            sessionId: kilterSession.id, completedAt: Date(timeIntervalSince1970: 1_700_013_000),
+            optionsTargetCount: 6, optionsSendThreshold: 2, optionsPreferUnsent: false,
+            optionsGradeOffset: 1, strategyRaw: "volume",
+            items: [
+                KilterPlanItem(order: 0, goal: .warmup, climbUUID: "w-1", climbName: "Slab",
+                               setter: "Tonde", gradeLabel: "5+/V2", difficulty: 16,
+                               status: .sent, completedAt: Date(timeIntervalSince1970: 1_700_012_300)),
+                KilterPlanItem(order: 1, goal: .send, climbUUID: "s-1", climbName: "Crimps",
+                               setter: "Ana", gradeLabel: "6a/V3", difficulty: 18,
+                               status: .attempted, locked: true,
+                               completedAt: Date(timeIntervalSince1970: 1_700_012_600)),
+                KilterPlanItem(order: 2, goal: .project, climbUUID: "p-1", climbName: "Arete",
+                               setter: "Sven", gradeLabel: "6b/V4", difficulty: 20, status: .pending),
+            ]))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

@@ -96,16 +96,39 @@ struct AppLibraryView: View {
         // Visible anywhere in this stack while a phase runs, except on the Pomodoro
         // screen itself (the pomodoroScreenVisible flag).
         .overlay(alignment: .bottom) {
-            if app.pomodoro.isRunning && !app.pomodoroScreenVisible {
-                PomodoroLiveChip(timer: app.pomodoro) {
-                    router.push(ModuleRoute(id: "pomodoro"))
+            VStack(spacing: 8) {
+                // The Kilter "session running" re-entry chip — only for a plan-backed session, and
+                // only while the user is outside Kilter; taps back to the frozen plan-home. Same
+                // open-module-then-push pattern Home's "Plan a session" card uses.
+                if app.kilterSessions.isActive, let progress = app.kilterSessions.planProgress,
+                   !app.kilterScreenVisible {
+                    KilterLiveChip(startedAt: app.kilterSessions.current?.startedAt ?? .now,
+                                   progress: progress) {
+                        router.open(module: "kilter")
+                        router.push(KilterPlanRoute())
+                    }
+                    .transition(.liveBanner(reduceMotion: reduceMotion))
                 }
-                .padding(.bottom, SnappetSpacing.lg)
-                .transition(.liveBanner(reduceMotion: reduceMotion))
+                if app.pomodoro.isRunning && !app.pomodoroScreenVisible {
+                    PomodoroLiveChip(timer: app.pomodoro) {
+                        router.push(ModuleRoute(id: "pomodoro"))
+                    }
+                    .transition(.liveBanner(reduceMotion: reduceMotion))
+                }
             }
+            .padding(.bottom, SnappetSpacing.lg)
         }
         .snappetAnimation(SnappetMotion.standard, value: app.pomodoro.isRunning)
         .snappetAnimation(SnappetMotion.standard, value: app.pomodoroScreenVisible)
+        .snappetAnimation(SnappetMotion.standard, value: app.kilterSessions.isActive)
+        .snappetAnimation(SnappetMotion.standard, value: app.kilterScreenVisible)
+        // The chip's third visibility gate — drive the liveBanner transition when a plan attaches /
+        // detaches from outside Kilter (planProgress is a non-Equatable tuple, so key the Bool).
+        .snappetAnimation(SnappetMotion.standard, value: app.kilterSessions.planProgress != nil)
+        // Hydrate the session manager from the store when the Apps tab (the chip's container) appears,
+        // so after a cold relaunch the Kilter live chip shows a recoverable session WITHOUT the user
+        // having to open Kilter once first (the Home resume card is store-derived and already does).
+        .task { app.kilterSessions.recover(in: core.context) }
     }
 
     /// The flagship gets a featured hero above the category grid (#71): a first-time user lands

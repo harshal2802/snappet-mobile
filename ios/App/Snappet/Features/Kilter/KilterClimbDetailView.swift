@@ -31,6 +31,7 @@ struct KilterClimbDetailView: View {
 
     @Environment(SnappetCore.self) private var core
     @Environment(AppModel.self) private var app
+    @Environment(SuiteRouter.self) private var router
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
@@ -403,23 +404,67 @@ struct KilterClimbDetailView: View {
     /// the climber sees their heart rate without leaving the climb.
     @ViewBuilder private var sessionStatusRow: some View {
         if sessions.isActive {
-            HStack(spacing: 10) {
-                Image(systemName: "record.circle").foregroundStyle(.green)
-                    .symbolEffect(.pulse, options: .repeating).font(.caption)
-                Text("Session active").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                Spacer()
-                if app.liveWorkout.state != .unavailable {
-                    KilterHRPill(bpm: app.liveWorkout.latestHR,
-                                 contactLost: app.liveWorkout.isContactLost == true,
-                                 readiness: RecoveryReadiness.evaluate(
-                                    currentBpm: app.liveWorkout.latestHR,
-                                    restBpm: app.userProfile.profile.restingBound,
-                                    maxBpm: app.userProfile.profile.resolvedMaxHR))
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: "record.circle").foregroundStyle(.green)
+                        .symbolEffect(.pulse, options: .repeating).font(.caption)
+                    Text("Session active").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    Spacer()
+                    if app.liveWorkout.state != .unavailable {
+                        KilterHRPill(bpm: app.liveWorkout.latestHR,
+                                     contactLost: app.liveWorkout.isContactLost == true,
+                                     readiness: RecoveryReadiness.evaluate(
+                                        currentBpm: app.liveWorkout.latestHR,
+                                        restBpm: app.userProfile.profile.restingBound,
+                                        maxBpm: app.userProfile.profile.resolvedMaxHR))
+                    }
                 }
+                // For a plan-backed run, the climb screen is a station in the plan: jump back to the
+                // list or advance to the next pending pick — a forward loop, not a back-button hunt.
+                if sessions.currentPlanId != nil { planStrip }
             }
             .padding(.horizontal)
             .accessibilityIdentifier("kilter.session.activeRow")
         }
+    }
+
+    private var planStrip: some View {
+        HStack(spacing: 12) {
+            Button {
+                // Reset to the Kilter root + push the plan, rather than appending another
+                // KilterPlanRoute onto a stack that already has Plan→Climb below (which would accrete
+                // a stale Plan/Climb pair every loop). open() replaces the path, so this reaches the
+                // plan-home cleanly from any entry — the dominant Plan→Climb flow and an off-plan
+                // climb reached from the catalog alike. Same pattern the live chip / Home card use.
+                router.open(module: "kilter")
+                router.push(KilterPlanRoute())
+            } label: {
+                Label("Back to plan", systemImage: "chevron.left")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("kilter.climb.backToPlan")
+            Spacer()
+            if let p = sessions.planProgress {
+                Text("\(p.done)/\(p.total)")
+                    .font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let next = sessions.nextPlanClimb(excluding: currentUUID) {
+                Button { withAnimation(.snappy) { logConfirmation = nil; currentUUID = next } } label: {
+                    HStack(spacing: 3) {
+                        Text("Next pick"); Image(systemName: "chevron.right")
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("kilter.climb.nextPick")
+            } else {
+                Text("Plan done").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+        }
+        .tint(SnappetColor.moduleAccent("kilter"))
+        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
     }
 
     private var logButtons: some View {
@@ -732,6 +777,10 @@ struct KilterClimbDetailView: View {
                 attemptTimestamps: status == .attempt ? [now] : []))
         }
         try? modelContext.save()
+        // Tick the active planned session, if this run came from "Plan a session": flips the matching
+        // KilterPlanItem to sent/attempted so the plan-home shows it done. No-op for an ad-hoc session
+        // or an off-plan climb. Read off the plan, never re-derived from logs + the recommender.
+        sessions.applyLogToPlan(climbUUID: climb.uuid, ascent: status, at: now, in: modelContext)
         // Flush live HR onto the session as climbs are logged, so a clip recorded on this climb already
         // has heart rate to overlay when reviewed mid-session (no need to end the session first).
         sessions.syncLiveHR(in: modelContext)

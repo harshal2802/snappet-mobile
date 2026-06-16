@@ -356,6 +356,74 @@ final class KilterSession {
     var isActive: Bool { endedAt == nil }
 }
 
+/// A **persisted planned session**: a `KilterRecommender` plan snapshotted on Start, with per-pick
+/// completion that survives any recommender re-run. Decoupling the plan from the live recommender is
+/// what fixes the "completed send/project pick vanishes" defect and gives the run a re-enterable home.
+/// `sessionId` pins it to its `KilterSession` once started (and freezes it); done-state is read from
+/// each `KilterPlanItem.status`, never re-derived. Items are an embedded Codable array (the same shape
+/// as `KilterSession.hrSeries`), so there's one new `@Model` and a trivial lightweight migration. The
+/// integrator appends `KilterPlan.self` to `SnappetSchema.models`; pure logic lives in
+/// `KilterPlanLogic.swift` (`KilterPlanProgress`), unit-tested without a device.
+@Model
+final class KilterPlan {
+    @Attribute(.unique) var id: UUID
+    var createdAt: Date
+    var angle: Int
+    var layoutId: Int
+    /// The detected working-grade float difficulty the plan was built around; `nil` on a cold start.
+    var workingDifficulty: Double?
+    var workingGradeLabel: String?
+    /// Optional user/auto title (e.g. the strategy name) for History; `nil` falls back to a date label.
+    var title: String?
+    /// `KilterSession.id` once the plan is **Started** — pins the plan to its run and marks it frozen
+    /// (the recommender no longer rebuilds it). `nil` while still in **Plan ready**.
+    var sessionId: UUID?
+    /// Set by **Finish plan**; `nil` while in progress (or left `nil` when a session is abandoned).
+    var completedAt: Date?
+
+    // MARK: - Options snapshot (the strategy the plan was generated with; mirrors KilterRecommender.Options)
+    var optionsTargetCount: Int
+    var optionsSendThreshold: Int
+    var optionsPreferUnsent: Bool
+    /// The grade offset applied to the anchor when this plan was generated (the config sheet's
+    /// "Target grade" stepper). Snapshotted so History/diagnostics faithfully describe how the plan was
+    /// built even when the climber hand-tuned the offset away from the strategy's seed. Additive with a
+    /// default → lightweight migration.
+    var optionsGradeOffset: Int = 0
+    /// The named selection strategy chosen (e.g. "volume", "project"), when one was; `nil` = defaults.
+    var strategyRaw: String?
+
+    /// Ordered picks with per-item status — the durable replacement for the recommender's volatile
+    /// `[Pick]`. Embedded Codable value array → lightweight migration, like `KilterSession.hrSeries`.
+    var items: [KilterPlanItem]
+
+    init(id: UUID = UUID(), createdAt: Date = .now, angle: Int, layoutId: Int,
+         workingDifficulty: Double? = nil, workingGradeLabel: String? = nil, title: String? = nil,
+         sessionId: UUID? = nil, completedAt: Date? = nil,
+         optionsTargetCount: Int = 6, optionsSendThreshold: Int = 2, optionsPreferUnsent: Bool = true,
+         optionsGradeOffset: Int = 0, strategyRaw: String? = nil, items: [KilterPlanItem] = []) {
+        self.id = id
+        self.createdAt = createdAt
+        self.angle = angle
+        self.layoutId = layoutId
+        self.workingDifficulty = workingDifficulty
+        self.workingGradeLabel = workingGradeLabel
+        self.title = title
+        self.sessionId = sessionId
+        self.completedAt = completedAt
+        self.optionsTargetCount = optionsTargetCount
+        self.optionsSendThreshold = optionsSendThreshold
+        self.optionsPreferUnsent = optionsPreferUnsent
+        self.optionsGradeOffset = optionsGradeOffset
+        self.strategyRaw = strategyRaw
+        self.items = items
+    }
+
+    /// `true` once Started (pinned to a session) — the recommender must not rebuild it.
+    var isStarted: Bool { sessionId != nil }
+    var isCompleted: Bool { completedAt != nil }
+}
+
 /// A climb the user starred. Kept as its own tiny model (rather than a flag on the catalog, which is
 /// read-only) so the "Saved" filter is a fast membership check. The integrator appends
 /// `KilterFavorite.self` to `SnappetSchema.models`.

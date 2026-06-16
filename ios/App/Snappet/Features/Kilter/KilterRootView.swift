@@ -242,6 +242,9 @@ struct KilterRootView: View {
         // services (once, in `AppModel.init`) — binding here would reintroduce the appear-order
         // dependency a plan deep link skips (#71 pre-merge review).
         .onAppear {
+            // Hide the cross-screen Kilter live chip while the user is anywhere in Kilter (the root
+            // stays in the stack under pushed Kilter screens, so this covers the whole module).
+            app.kilterScreenVisible = true
             // Keep the board-size selection valid for the current layout (seed the default when unset).
             syncBoardSize()
             // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
@@ -257,6 +260,8 @@ struct KilterRootView: View {
             }
             board.setAPILevel(apiLevel)
         }
+        // Leaving Kilter entirely (the root pops off the stack) re-reveals the cross-screen live chip.
+        .onDisappear { app.kilterScreenVisible = false }
         // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
         .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
         // Switching layout can invalidate the chosen size (each layout offers different ones) — reseed.
@@ -449,7 +454,12 @@ struct KilterRootView: View {
                         .font(.subheadline.weight(.semibold))
                         .accessibilityIdentifier("kilter.session.end")
                 }
-                Button { router.push(KilterSessionRoute(id: s.id)) } label: {
+                Button {
+                    // Converge with the live chip + Home card: a plan-backed run opens the plan-home
+                    // (re-enterable list with progress); an ad-hoc session opens its live summary.
+                    if sessions.currentPlanId != nil { router.push(KilterPlanRoute()) }
+                    else { router.push(KilterSessionRoute(id: s.id)) }
+                } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "figure.climbing").font(.caption)
                         Text(sessions.activeClimbName).font(.caption.weight(.medium)).lineLimit(1)

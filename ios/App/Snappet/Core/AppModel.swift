@@ -95,6 +95,12 @@ final class AppModel {
     /// re-entry chip while the user is already looking at the timer.
     var pomodoroScreenVisible = false
 
+    /// Whether any Kilter module screen is on screen (the root stays in the nav stack while deeper
+    /// Kilter screens are pushed) — hides the App Library's Kilter "session running" re-entry chip
+    /// while the user is already inside Kilter (where the in-module session bar / plan-home own the
+    /// lifecycle). Set by `KilterRootView` on appear/disappear, mirroring `pomodoroScreenVisible`.
+    var kilterScreenVisible = false
+
     init() {
         // Wire the Kilter session manager to its sibling live services HERE, where all four are
         // constructed — not in a view's `onAppear` — so binding can't depend on appear order:

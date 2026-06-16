@@ -359,6 +359,23 @@ final class KilterSessionManager {
     private(set) var activeClimbGrade: String = ""
     private(set) var activeClimbStartedAt: Date?
 
+    /// The planned session pinned to the live `KilterSession` (`KilterPlan.id`), when the run was
+    /// started from "Plan a session" — so the plan-home and the cross-screen live chip can find the
+    /// frozen plan, and the log path can tick its items. `nil` for an ad-hoc session (started from the
+    /// catalog, a BLE connect, or the first idle log) until a plan is attached.
+    private(set) var currentPlanId: UUID?
+
+    /// Live progress of the pinned plan as `(done, total)` for the cross-screen live chip — `nil` for
+    /// an ad-hoc session with no plan. Kept in lockstep with the plan on attach / log / adopt, and
+    /// cleared whenever the session ends. Stored (not computed) so the `@Observable` chip ticks on it
+    /// without a SwiftData fetch.
+    private(set) var planProgress: (done: Int, total: Int)?
+
+    /// The pinned plan's still-`pending` picks in plan order — backs the climb screen's "Next pick →"
+    /// loop without a per-render fetch (the climb screen re-renders on every HR tick). Kept in lockstep
+    /// with `planProgress`; empty when no plan is live.
+    private(set) var planPendingUUIDs: [String] = []
+
     /// Live Activity board label (no per-board name today).
     private let boardName = "Kilter Board"
 
@@ -436,6 +453,9 @@ final class KilterSessionManager {
         let attached = (try? context.fetch(FetchDescriptor<KilterLogEntry>(
             predicate: #Predicate { $0.sessionId == sid }))) ?? []
         for entry in attached { entry.sessionId = nil }
+        // A plan only exists on the Plan-view start path (not the auto-start path this undo serves),
+        // but a plan must never outlive the session it was pinned to — drop it with the session.
+        if let plan = openPlan(forSession: sid, in: context) { context.delete(plan) }
         if didStartMetrics {
             liveWorkout?.stop()
             didStartMetrics = false
@@ -444,6 +464,9 @@ final class KilterSessionManager {
         context.delete(session)
         try? context.save()
         current = nil
+        currentPlanId = nil
+        planProgress = nil
+        planPendingUUIDs = []
         resetActiveClimb()
     }
 
@@ -465,7 +488,13 @@ final class KilterSessionManager {
             },
             now: .now)
         let byID = Dictionary(openSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for closure in plan.close { byID[closure.id]?.endedAt = closure.endedAt }   // auto-close dups/abandoned
+        for closure in plan.close {
+            byID[closure.id]?.endedAt = closure.endedAt   // auto-close dups/abandoned
+            // Close the pinned plan in lockstep too — otherwise an auto-closed (abandoned/duplicate)
+            // session leaks a permanently-open KilterPlan row that bloats the store + every backup.
+            // Mirrors end(sessionID:); stamps at the session's own close time.
+            openPlan(forSession: closure.id, in: context)?.completedAt = closure.endedAt
+        }
         if let adoptID = plan.adopt, let session = byID[adoptID] { adopt(session, in: context) }
         try? context.save()
     }
@@ -485,10 +514,14 @@ final class KilterSessionManager {
             : (try? context.fetch(FetchDescriptor<KilterSession>(
                 predicate: #Predicate { $0.id == sessionID })))?.first
         guard let session, session.endedAt == nil else {
-            if isCurrent { current = nil; resetActiveClimb() }
+            if isCurrent { current = nil; currentPlanId = nil; planProgress = nil; planPendingUUIDs = []; resetActiveClimb() }
             return
         }
         session.endedAt = .now
+        // Close the plan pinned to this session in lockstep, so it stops being "open" — no orphaned
+        // KilterPlan rows accumulating across sessions, and an ended session's plan can never resurface
+        // as the active one. (PR's user-facing "Finish plan" later routes through here.)
+        openPlan(forSession: sessionID, in: context)?.completedAt = .now
         // Flush the live HR buffer onto the session BEFORE stopping the source (mirrors
         // WorkoutTracker.finishWorkout) — only when this session owns the source. Stamp the source
         // label from the actually-captured data, so it's never a misleading default.
@@ -510,10 +543,81 @@ final class KilterSessionManager {
         }
         try? context.save()
         liveActivity?.end()
-        if isCurrent { current = nil; resetActiveClimb() }
+        if isCurrent { current = nil; currentPlanId = nil; planProgress = nil; planPendingUUIDs = []; resetActiveClimb() }
         // Auto-discover photos/videos shot during the session window and tag them to the session + the
         // climb they fall within. Best-effort; only runs with full Photos access.
         discoverMedia(for: session, in: context)
+    }
+
+    // MARK: - Planned session (KilterPlan)
+
+    /// Pin a freshly-created `KilterPlan` to the live session and freeze it — the recommender never
+    /// rebuilds it again; the plan-home and live chip read it back by `sessionId`, and the log path
+    /// ticks its items. Called by `KilterPlanView` right after `start`. No-op with no live session.
+    ///
+    /// Enforces **one open plan per session**: any *other* open plan already pinned to this session is
+    /// closed first, so a deep-link race (a `start` that adopts a stale open session which already had
+    /// a plan) can't leave two open plans fighting over one session — which would make the tick and the
+    /// rendered order non-deterministic (both readers use an unordered `.first`).
+    func attachPlan(_ plan: KilterPlan, in context: ModelContext) {
+        guard let id = current?.id else { return }
+        if let existing = openPlan(forSession: id, in: context), existing.id != plan.id {
+            existing.completedAt = .now
+        }
+        plan.sessionId = id
+        currentPlanId = plan.id
+        planProgress = KilterPlanProgress.progress(plan.items)
+        planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(plan.items)
+    }
+
+    /// Tick the active plan when a climb is logged: flip the lowest-order matching `pending`
+    /// `KilterPlanItem` to sent/attempted (a later send upgrades an attempted one). Done-state is read
+    /// straight off the plan — never re-derived from logs + the recommender — so a completed
+    /// send/project pick can no longer be filtered out and reshuffled. No-op for an ad-hoc session
+    /// (no pinned plan) or an off-plan climb.
+    func applyLogToPlan(climbUUID: String, ascent: KilterAscentStatus, at date: Date,
+                        in context: ModelContext) {
+        guard let sid = current?.id, let plan = openPlan(forSession: sid, in: context) else { return }
+        let updated = KilterPlanProgress.applyingLog(climbUUID: climbUUID, ascent: ascent,
+                                                     at: date, to: plan.items)
+        guard updated != plan.items else { return }
+        plan.items = updated
+        currentPlanId = plan.id
+        planProgress = KilterPlanProgress.progress(updated)
+        planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(updated)
+        try? context.save()
+    }
+
+    /// Skip a pending plan pick (a deliberate "not today") — flips it to `.skipped` so it leaves the
+    /// "next up" rotation without counting as done. Drives the plan-home swipe action; keeps the
+    /// progress/pending caches in lockstep. No-op for an ad-hoc session or an unknown id.
+    func skipPlanItem(id: UUID, in context: ModelContext) {
+        guard let sid = current?.id, let plan = openPlan(forSession: sid, in: context) else { return }
+        let updated = KilterPlanProgress.skipping(id: id, in: plan.items)
+        guard updated != plan.items else { return }
+        plan.items = updated
+        planProgress = KilterPlanProgress.progress(updated)
+        planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(updated)
+        try? context.save()
+    }
+
+    /// The open (un-finished) plan pinned to a session, if any.
+    func openPlan(forSession sid: UUID, in context: ModelContext) -> KilterPlan? {
+        (try? context.fetch(FetchDescriptor<KilterPlan>(
+            predicate: #Predicate { $0.sessionId == sid && $0.completedAt == nil })))?.first
+    }
+
+    /// The next pick to climb in the pinned plan — advancing by **plan order**: the pending pick
+    /// immediately after `uuid` in the ordered pending list (so "Next pick" always moves forward, even
+    /// when the current climb wasn't logged — a plain "first pending that isn't me" oscillates between
+    /// the first two pending picks). When `uuid` isn't pending (already logged/skipped, or off-plan),
+    /// falls back to the earliest pending pick. `nil` when there's no plan or nothing else pending.
+    /// Reads the cached `planPendingUUIDs` (no fetch) so the climb screen can call it on every HR tick.
+    func nextPlanClimb(excluding uuid: String?) -> String? {
+        guard let uuid, let idx = planPendingUUIDs.firstIndex(of: uuid) else {
+            return planPendingUUIDs.first
+        }
+        return idx + 1 < planPendingUUIDs.count ? planPendingUUIDs[idx + 1] : nil
     }
 
     /// Drop every reference into the store WITHOUT writing to it — the suite restore
@@ -532,6 +636,9 @@ final class KilterSessionManager {
         }
         liveActivity?.end()
         current = nil
+        currentPlanId = nil
+        planProgress = nil
+        planPendingUUIDs = []
         resetActiveClimb()
     }
 
@@ -540,6 +647,17 @@ final class KilterSessionManager {
     private func adopt(_ session: KilterSession, in context: ModelContext) {
         current = session
         resetActiveClimb()
+        // Re-establish the pinned plan (if this session was started from "Plan a session") so the
+        // plan-home + live chip recover it after a relaunch / navigating back into Kilter.
+        if let plan = openPlan(forSession: session.id, in: context) {
+            currentPlanId = plan.id
+            planProgress = KilterPlanProgress.progress(plan.items)
+            planPendingUUIDs = KilterPlanProgress.pendingClimbUUIDs(plan.items)
+        } else {
+            currentPlanId = nil
+            planProgress = nil
+            planPendingUUIDs = []
+        }
         // The shared metrics coordinator outlives the manager. If it's still streaming, this recovered
         // session owns it (so `end` flushes + stops HR); otherwise we don't resurrect HR for a session
         // recovered after a relaunch (the early buffer is gone — same stance as WorkoutTracker).

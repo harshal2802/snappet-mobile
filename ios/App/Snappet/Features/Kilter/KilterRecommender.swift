@@ -45,7 +45,19 @@ enum KilterRecommender {
         func picks(for goal: Goal) -> [Pick] { picks.filter { $0.goal == goal } }
     }
 
-    /// Tunables (sensible defaults; surfaced so tests pin behaviour and a future settings screen can tune).
+    /// Relative emphasis across the three goals — how `targetCount` splits. `nil` (the default) keeps
+    /// the balanced ⅓ warm-up / bulk send / ~1 project allocation; a preset leans it (project-heavy,
+    /// warm-up-heavy, …). Weights are relative; a zero weight drops that goal.
+    struct Mix: Sendable, Equatable {
+        var warmup: Double
+        var send: Double
+        var project: Double
+        init(warmup: Double, send: Double, project: Double) {
+            self.warmup = warmup; self.send = send; self.project = project
+        }
+    }
+
+    /// Tunables (sensible defaults; surfaced so tests pin behaviour and the plan-config sheet can tune).
     struct Options: Sendable, Equatable {
         /// Total climbs to suggest.
         var targetCount: Int = 6
@@ -53,10 +65,77 @@ enum KilterRecommender {
         var sendThreshold: Int = 2
         /// For send/project goals, prefer climbs the user hasn't already sent (chase the new).
         var preferUnsent: Bool = true
-        init(targetCount: Int = 6, sendThreshold: Int = 2, preferUnsent: Bool = true) {
+        /// Goal emphasis; `nil` → the balanced default allocation.
+        var mix: Mix? = nil
+        /// Shuffle/re-roll seed: `0` (default) keeps the deterministic best-ranked picks; a non-zero
+        /// seed rotates each band's ranked candidate pool so "Shuffle" surfaces different — still
+        /// well-ranked — climbs, deterministically per seed.
+        var rerollSeed: Int = 0
+        init(targetCount: Int = 6, sendThreshold: Int = 2, preferUnsent: Bool = true,
+             mix: Mix? = nil, rerollSeed: Int = 0) {
             self.targetCount = targetCount
             self.sendThreshold = sendThreshold
             self.preferUnsent = preferUnsent
+            self.mix = mix
+            self.rerollSeed = rerollSeed
+        }
+    }
+
+    /// A climber-language selection strategy the plan-config sheet leads with — each maps to `Options`
+    /// (count / prefer-unsent / mix) plus a grade offset the view applies to the anchor. Never exposed
+    /// as a raw tuning console; the user picks intent and these encode it.
+    enum Strategy: String, Sendable, Equatable, CaseIterable {
+        case balanced, volume, project, power, flash, recovery
+        var label: String {
+            switch self {
+            case .balanced: return "Balanced"
+            case .volume:   return "Volume / Endurance"
+            case .project:  return "Project push"
+            case .power:    return "Limit / Power"
+            case .flash:    return "Flash practice"
+            case .recovery: return "Easy flush"
+            }
+        }
+        var subtitle: String {
+            switch self {
+            case .balanced: return "A bit of everything"
+            case .volume:   return "More climbs, at grade, revisit favourites"
+            case .project:  return "Fewer, harder, project-leaning"
+            case .power:    return "Short, hard, limit moves"
+            case .flash:    return "Fresh sends at your grade"
+            case .recovery: return "Easy, warm-up heavy"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .balanced: return "circle.grid.2x2"
+            case .volume:   return "infinity"
+            case .project:  return "target"
+            case .power:    return "bolt.fill"
+            case .flash:    return "sparkles"
+            case .recovery: return "leaf.fill"
+            }
+        }
+    }
+
+    /// The default count / prefer-unsent / grade-offset / mix a strategy seeds the config sheet with.
+    /// `gradeOffset` shifts the band centre (the *view* adds it to the anchor so the candidate query
+    /// window and the bands stay aligned — `Options` itself carries no offset).
+    struct StrategyConfig: Sendable, Equatable {
+        var targetCount: Int
+        var preferUnsent: Bool
+        var gradeOffset: Int
+        var mix: Mix?
+    }
+
+    static func config(for strategy: Strategy) -> StrategyConfig {
+        switch strategy {
+        case .balanced: return .init(targetCount: 6, preferUnsent: true,  gradeOffset: 0,  mix: nil)
+        case .volume:   return .init(targetCount: 9, preferUnsent: false, gradeOffset: 0,  mix: Mix(warmup: 2, send: 5, project: 1))
+        case .project:  return .init(targetCount: 5, preferUnsent: true,  gradeOffset: 1,  mix: Mix(warmup: 2, send: 1, project: 2))
+        case .power:    return .init(targetCount: 4, preferUnsent: true,  gradeOffset: 2,  mix: Mix(warmup: 1, send: 1, project: 2))
+        case .flash:    return .init(targetCount: 6, preferUnsent: true,  gradeOffset: 0,  mix: Mix(warmup: 2, send: 4, project: 0))
+        case .recovery: return .init(targetCount: 5, preferUnsent: false, gradeOffset: -2, mix: Mix(warmup: 3, send: 2, project: 0))
         }
     }
 
@@ -104,7 +183,8 @@ enum KilterRecommender {
         }
 
         let w = bucket(resolvedAnchor)
-        let alloc = allocation(target: options.targetCount)
+        let alloc = options.mix.map { allocation(target: options.targetCount, mix: $0) }
+            ?? allocation(target: options.targetCount)
         let sentUUIDs = Set(history.filter(\.isSend).map(\.climbUUID))
 
         var chosen = Set<String>()
@@ -113,13 +193,25 @@ enum KilterRecommender {
         /// Fill up to `count` picks for `goal`, trying each band of difficulty buckets in turn (primary
         /// first, then fallbacks for a sparse catalog), never repeating a climb already chosen.
         func take(bands: [Set<Int>], count: Int, goal: Goal, allowSent: Bool) {
+            // On a re-roll, merge the goal's bands into one pool so the shuffle can reach beyond a tight
+            // primary band (e.g. only a few climbs at the working grade) into its fallbacks — otherwise
+            // rotating a pool that's exactly `count` long just reorders the same climbs.
+            let effectiveBands = options.rerollSeed == 0
+                ? bands
+                : [bands.reduce(into: Set<Int>()) { $0.formUnion($1) }]
             var remaining = count
-            for band in bands where remaining > 0 {
-                let pool = rank(candidates.filter {
+            for band in effectiveBands where remaining > 0 {
+                var pool = rank(candidates.filter {
                     !chosen.contains($0.uuid)
                         && band.contains(bucket($0.difficulty))
                         && (allowSent || !sentUUIDs.contains($0.uuid))
                 })
+                // Shuffle: rotate the ranked pool by the seed so a re-roll picks different, still
+                // well-ranked climbs (deterministic per seed). seed 0 → no rotation (best picks).
+                if options.rerollSeed != 0, !pool.isEmpty {
+                    let k = ((options.rerollSeed % pool.count) + pool.count) % pool.count
+                    pool = Array(pool[k...] + pool[..<k])
+                }
                 for item in pool where remaining > 0 {
                     picks.append(Pick(item: item, goal: goal))
                     chosen.insert(item.uuid)
@@ -144,7 +236,9 @@ enum KilterRecommender {
             return a.item.uuid < b.item.uuid
         }
 
-        let label = working == nil ? nil : gradeLabel(forBucket: w, history: history, candidates: candidates)
+        // Label the DETECTED working grade, not the (possibly grade-offset) anchor bucket `w` — a
+        // "Project push" (+2 offset) must still read "Working grade ~V5", not the offset target.
+        let label = working.map { gradeLabel(forBucket: bucket($0), history: history, candidates: candidates) } ?? nil
         return Plan(picks: picks, workingDifficulty: working, workingGradeLabel: label)
     }
 
@@ -158,6 +252,31 @@ enum KilterRecommender {
         let warmup = max(1, Int((Double(t) / 3.0).rounded()))
         let send = max(1, t - warmup - project)
         return (warmup, send, project)
+    }
+
+    /// Weighted split for a non-default `Mix`: largest-remainder apportionment of `target` across the
+    /// three goals by relative weight, guaranteeing ≥1 for any positive-weight goal (when the count
+    /// allows) and a sum of exactly `target` (for `target ≥ 1`). A zero weight drops that goal.
+    /// Falls back to the balanced `allocation(target:)` when all weights are ≤ 0.
+    static func allocation(target: Int, mix: Mix) -> (warmup: Int, send: Int, project: Int) {
+        let t = max(1, target)
+        let weights = [max(0, mix.warmup), max(0, mix.send), max(0, mix.project)]
+        let total = weights.reduce(0, +)
+        guard total > 0 else { return allocation(target: target) }
+        let raw = weights.map { Double(t) * $0 / total }
+        var counts = raw.map { Int($0) }                       // floor
+        // Hand out the leftover to the largest fractional parts (largest-remainder).
+        var remainder = t - counts.reduce(0, +)
+        let byFrac = raw.indices.sorted { (raw[$0] - Double(Int(raw[$0]))) > (raw[$1] - Double(Int(raw[$1]))) }
+        var k = 0
+        while remainder > 0 { counts[byFrac[k % 3]] += 1; remainder -= 1; k += 1 }
+        // Guarantee ≥1 for any goal that has weight, stealing from the largest bucket with room.
+        for i in 0..<3 where weights[i] > 0 && counts[i] == 0 {
+            if let donor = (0..<3).filter({ counts[$0] > 1 }).max(by: { counts[$0] < counts[$1] }) {
+                counts[donor] -= 1; counts[i] += 1
+            }
+        }
+        return (counts[0], counts[1], counts[2])
     }
 
     /// The catalog difficulty window a caller should fetch candidates over so **every** band

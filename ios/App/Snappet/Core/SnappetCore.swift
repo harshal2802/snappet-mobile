@@ -48,6 +48,7 @@ enum SnappetSchema {
         StudioProject.self,
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
+        KilterPlan.self,
     ]
 }
 
