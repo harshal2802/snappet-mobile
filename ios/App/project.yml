@@ -65,7 +65,9 @@ targets:
       path: Snappet/Resources/Snappet.entitlements
       properties:
         com.apple.developer.healthkit: true
-        com.apple.developer.healthkit.access: [health-records]
+        # NOTE: no `com.apple.developer.healthkit.access: [health-records]` — the app reads only standard
+        # HealthKit (heart rate / workouts), never clinical records. Declaring the unused Health Records
+        # capability is an App Review rejection trigger (Guideline 5.1.3).
         com.apple.developer.healthkit.background-delivery: true
         # Phase-end alerts (Pomodoro) keep .timeSensitive through a user's focus mode —
         # without this the system silently downgrades the interruption level (#70).
