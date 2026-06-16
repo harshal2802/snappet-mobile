@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.kilter.hr
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -14,9 +15,11 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -69,6 +72,11 @@ class BleHeartRateSource(context: Context) {
     fun start(startMillis: Long) {
         if (adapter == null) { state = State.UNSUPPORTED; return }
         if (!adapter.isEnabled) { state = State.FAILED; return }
+        // Issue #90: the first-log auto-session calls start() WITHOUT first going through the
+        // board-connect permission flow. On API 31+ scanning without BLUETOOTH_SCAN/_CONNECT throws
+        // SecurityException, which would escape the caller's coroutine and crash "log an ascent".
+        // Default-deny: if the runtime permissions aren't held, skip HR capture (non-fatal).
+        if (!hasScanPermissions()) { state = State.FAILED; return }
         sessionStartMillis = startMillis
         synchronized(samples) { samples.clear() }
         scanner = adapter.bluetoothLeScanner
@@ -77,9 +85,29 @@ class BleHeartRateSource(context: Context) {
             .setServiceUuid(android.os.ParcelUuid(HR_SERVICE)).build()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        scanner?.startScan(listOf(filter), settings, scanCallback)
+        // Belt-and-suspenders: even with the permission check above, never let a SecurityException /
+        // IllegalStateException from the BLE stack crash the caller — fail soft to FAILED.
+        val started = runCatching { scanner?.startScan(listOf(filter), settings, scanCallback) }.isSuccess
+        if (!started) { state = State.FAILED; return }
         // Watchdog: stop scanning if nothing turns up (mirrors the board controller's timeout).
         handler.postDelayed({ if (state == State.SCANNING) { stopScan(); state = State.FAILED } }, SCAN_TIMEOUT_MS)
+    }
+
+    /**
+     * True only when the BLE scan/connect runtime permissions this OS version requires are granted.
+     * On API 31+ that's BLUETOOTH_SCAN + BLUETOOTH_CONNECT; below 31 those are install-time so the
+     * scan path is always allowed. Thin wrapper over the pure [hasScanPermissions] decision so the
+     * guard logic is unit-testable without a device.
+     */
+    private fun hasScanPermissions(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        fun granted(p: String) =
+            ContextCompat.checkSelfPermission(appContext, p) == PackageManager.PERMISSION_GRANTED
+        return hasScanPermissions(
+            sdkInt = Build.VERSION.SDK_INT,
+            scanGranted = granted(Manifest.permission.BLUETOOTH_SCAN),
+            connectGranted = granted(Manifest.permission.BLUETOOTH_CONNECT),
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -115,7 +143,9 @@ class BleHeartRateSource(context: Context) {
     @SuppressLint("MissingPermission")
     private fun connect(device: BluetoothDevice) {
         state = State.CONNECTING
-        gatt = device.connectGatt(appContext, false, gattCallback)
+        // Never let a SecurityException from a missing BLUETOOTH_CONNECT crash the session.
+        gatt = runCatching { device.connectGatt(appContext, false, gattCallback) }
+            .getOrElse { state = State.FAILED; null }
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -188,6 +218,17 @@ class BleHeartRateSource(context: Context) {
         private val MODEL_NUMBER_CHAR = UUID.fromString("00002a24-0000-1000-8000-00805f9b34fb")
         private val CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         private const val SCAN_TIMEOUT_MS = 15_000L
+
+        /**
+         * Pure permission gate for the BLE scan path. On API 31+ both `BLUETOOTH_SCAN` and
+         * `BLUETOOTH_CONNECT` are runtime permissions that must be granted before scanning/connecting;
+         * below 31 they're install-time, so the scan is always allowed. Extracted so the guard that
+         * keeps the first-log auto-session from crashing (issue #90) is testable without a device.
+         */
+        fun hasScanPermissions(sdkInt: Int, scanGranted: Boolean, connectGranted: Boolean): Boolean {
+            if (sdkInt < Build.VERSION_CODES.S) return true
+            return scanGranted && connectGranted
+        }
 
         /**
          * Default-deny RR trust: RR/HRV is only believable from a real chest strap (optical wrist/ring

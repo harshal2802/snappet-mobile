@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -134,6 +135,18 @@ private fun CameraScanner(onText: (String) -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember { BarcodeScanning.getClient() }
+    // Hold the bound provider so onDispose can unbind it when the scanner leaves composition.
+    val providerRef = remember { java.util.concurrent.atomic.AtomicReference<ProcessCameraProvider?>(null) }
+
+    // Free the analysis thread + native ML Kit client (and unbind the camera) on teardown so the
+    // single-thread executor and BarcodeScanner don't leak each time the scanner is shown.
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { providerRef.getAndSet(null)?.unbindAll() }
+            runCatching { analysisExecutor.shutdown() }
+            runCatching { scanner.close() }
+        }
+    }
 
     AndroidView(
         modifier = Modifier.fillMaxSize().testTag("kilter.scan.preview"),
@@ -142,6 +155,7 @@ private fun CameraScanner(onText: (String) -> Unit) {
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
                 val provider = providerFuture.get()
+                providerRef.set(provider)
                 val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                 val analysis = ImageAnalysis.Builder()
                     .setTargetResolution(Size(1280, 720))

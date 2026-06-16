@@ -141,11 +141,6 @@ interface KilterDao {
     @Query("UPDATE kilter_session SET avgHr = :avgHr, maxHr = :maxHr, hrSampleCount = :count WHERE id = :id")
     suspend fun setSessionHr(id: String, avgHr: Int?, maxHr: Int?, count: Int?)
 
-    /** Issue #92: retroactively group an existing ad-hoc log into a session (e.g. first-log-of-day
-     *  auto-session adopts logs that landed before the session opened). */
-    @Query("UPDATE kilter_log SET sessionId = :sessionId WHERE id = :logId")
-    suspend fun setLogSession(logId: Long, sessionId: String)
-
     @Query("SELECT * FROM kilter_session ORDER BY startedAt DESC")
     fun sessionsFlow(): Flow<List<KilterSession>>
 
