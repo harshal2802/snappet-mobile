@@ -26,13 +26,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pin Xcode 16 (iOS 18 SDK) — the toolchain this app is developed and shipped on. The macos-15
-      # runner's `latest-stable` has drifted to Xcode 26.x, whose Swift type-checker times out
-      # ("unable to type-check this expression in reasonable time") on several of the app's complex
-      # expressions that compile fine on Xcode 16. Pin to the real target toolchain instead.
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16'
+      # The macos-15 runner's `latest-stable` has moved to Xcode 26.x (whose Swift type-checker times
+      # out on the app's complex expressions), while the newest Xcode 16 (16.4) is stricter about Swift 6
+      # concurrency than the toolchain this app was actually built and shipped on. Select the OLDEST
+      # installed Xcode 16.x — the closest match to that shipping toolchain — and print the full
+      # inventory so the exact version is recorded in the log.
+      - name: Select Xcode 16.x (oldest installed) and print the inventory
+        run: |
+          set -euo pipefail
+          echo "== Installed Xcodes =="
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | head -1 || true)
+          if [ -z "$XC" ]; then
+            echo "::error::No Xcode 16.x installed on the runner" >&2
+            exit 1
+          fi
+          echo "== Selecting $XC =="
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
 
       - name: HighlightEngine unit tests (pure SwiftPM, no Xcode project)
         working-directory: ios/HighlightEngine
