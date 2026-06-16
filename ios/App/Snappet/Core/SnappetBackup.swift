@@ -95,14 +95,21 @@ enum SnappetBackup {
         var kilterCreatedClimbs: [KilterCreatedClimbRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
+        ///
+        /// Summed via a homogeneous `[Int]` + `reduce` rather than a 20-term `+` chain on purpose:
+        /// the long chain trips Swift's expression type-checker ("unable to type-check this
+        /// expression in reasonable time") on current toolchains (Xcode 26 / `latest-stable`).
+        /// Keep it as an array — do not fold back into one `+` expression.
         var recordCount: Int {
-            usageRecords.count + pomodoroSessions.count + habits.count + habitCompletions.count
-                + journalEntries.count + expenseGroups.count + expenseRecords.count
-                + budgetCategories.count + budgetTransactions.count + routines.count
-                + workoutSessions.count + customExercises.count + sessionMedia.count
-                + clipEdits.count + studioProjects.count + tipCalculations.count
-                + kilterLogEntries.count + kilterSessions.count + kilterFavorites.count
-                + kilterCreatedClimbs.count
+            [
+                usageRecords.count, pomodoroSessions.count, habits.count, habitCompletions.count,
+                journalEntries.count, expenseGroups.count, expenseRecords.count,
+                budgetCategories.count, budgetTransactions.count, routines.count,
+                workoutSessions.count, customExercises.count, sessionMedia.count,
+                clipEdits.count, studioProjects.count, tipCalculations.count,
+                kilterLogEntries.count, kilterSessions.count, kilterFavorites.count,
+                kilterCreatedClimbs.count,
+            ].reduce(0, +)
         }
     }
 
