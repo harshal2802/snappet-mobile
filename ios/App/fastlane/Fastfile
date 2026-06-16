@@ -31,4 +31,9 @@ platform :ios do
       distribute_external: false                  # internal testing only (no review needed)
     )
   end
+
+  desc "Capture App Store screenshots (iPhone + iPad) via fastlane snapshot — see fastlane/Snapfile"
+  lane :screenshots do
+    capture_screenshots   # reads fastlane/Snapfile; runs only SnappetUITests/SnappetSnapshotTests
+  end
 end

@@ -1,0 +1,23 @@
+# fastlane snapshot config — App Store screenshots.
+#   Run:  cd ios/App && fastlane screenshots      (or: fastlane snapshot)
+# Captures iPhone 6.9" + iPad 13" (the two sizes App Store Connect requires for this app).
+# Apple Watch screenshots can't be automated by snapshot (XCUITest doesn't drive watchOS) — capture
+# those manually from the watchOS Simulator (see docs/app-store-listing.md).
+
+# Adjust to whatever simulators are installed (`xcrun simctl list devices`).
+devices([
+  "iPhone 16 Pro Max",        # 6.9" — required
+  "iPad Pro 13-inch (M4)"     # 13" iPad — required because the app ships an iPad build
+])
+
+languages(["en-US"])
+
+scheme("Snappet")
+
+# Only run the screenshot test class, not the whole ~14-min UI suite.
+only_testing(["SnappetUITests/SnappetSnapshotTests"])
+
+output_directory("./fastlane/screenshots")
+clear_previous_screenshots(true)
+concurrent_simulators(false)     # one sim at a time — steadier on a laptop
+override_status_bar(true)        # clean 9:41 / full-signal status bar for the store
