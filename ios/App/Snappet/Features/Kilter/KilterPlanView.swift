@@ -55,6 +55,7 @@ struct KilterPlanView: View {
             if let plan = activePlan {
                 sessionHomeHeader(plan)
                 planSections(plan)
+                finishSection
             } else {
                 previewHeader
                 previewSections
@@ -145,6 +146,23 @@ struct KilterPlanView: View {
                 }
             }
             .padding(.vertical, 2)
+        }
+    }
+
+    /// Ends the session (which closes the plan) and routes to its summary — the explicit "I'm done"
+    /// that turns a running plan into a completed one with a plan-vs-actual recap.
+    private var finishSection: some View {
+        Section {
+            Button {
+                guard let id = sessions.currentId else { return }
+                sessions.end(in: modelContext)
+                router.push(KilterSessionRoute(id: id))
+            } label: {
+                Label("Finish plan", systemImage: "flag.checkered")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            .accessibilityIdentifier("kilter.plan.finish")
         }
     }
 
