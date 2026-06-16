@@ -1,10 +1,16 @@
 name: CI
 
-# PR verification gate: builds the app and runs the unit + UI test suites on the iOS simulator
-# (no signing required) plus the pure HighlightEngine SwiftPM tests. Runs on every pull request
-# (any base branch, so stacked feature PRs are gated too) and on pushes to main.
-# NOTE: release-ipa.yml / testflight.yml only run on a published release or manual dispatch — this
-# is the only workflow that verifies a PR.
+# PR verification gate, split for speed. A single job previously ran ~30+ min, all inside one
+# `xcodebuild test` (clean build + the full unit AND UI suites, serially). It now fans out into three
+# jobs that run in PARALLEL:
+#   • engine — the pure HighlightEngine SwiftPM tests (~1–2 min); an independent fast signal.
+#   • app (SnappetTests)   — builds the app once and runs ONLY the unit suite → the fast gate (~15 min).
+#   • app (SnappetUITests) — builds the app once and runs ONLY the end-to-end UI suite (~30 min, slow).
+# The unit and UI suites are matrix legs (`-only-testing:`), so the unit/correctness signal no longer
+# waits behind the slow UI run. SwiftPM checkouts (notably onnxruntime's binary xcframework) are cached
+# between runs. UI tests still run on every PR (in parallel) so coverage isn't lost — to make a *merge*
+# wait only on the fast checks, require just `engine` + `App tests (SnappetTests)` in branch protection.
+# release-ipa.yml / testflight.yml are the only other app-compiling workflows (release / dispatch only).
 
 on:
   push:
@@ -17,30 +23,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Build & test (engine + app on the simulator)
-    # macOS 26 (Tahoe) runner — it carries Xcode 26.5, the toolchain the app is developed and shipped on.
-    # This MUST match the team's local Xcode: the older macos-15 image tops out at Xcode 26.3 (whose Swift
-    # type-checker times out — "unable to type-check this expression in reasonable time" — on a couple of
-    # the app's complex SwiftUI expressions) and Xcode 16.4 (whose older Swift 6.0 actor-isolation rules
-    # reject View code that 26.5 accepts). Both are compiler-version artefacts, not real defects, so CI
-    # verifies against the same 26.5 toolchain that actually ships the app.
+  engine:
+    name: HighlightEngine (pure SwiftPM)
+    runs-on: macos-26          # Tahoe runner — Xcode 26.5, the shipping toolchain (see decisions.md)
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.5'
+      - name: HighlightEngine unit tests
+        working-directory: ios/HighlightEngine
+        run: swift test
+
+  app:
+    name: App tests (${{ matrix.suite }})
     runs-on: macos-26
     timeout-minutes: 60
+    strategy:
+      fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
+      matrix:
+        suite: [SnappetTests, SnappetUITests]
     env:
       SCHEME: Snappet
+      SPM_CACHE: ${{ github.workspace }}/.spm-cache
     steps:
       - uses: actions/checkout@v4
 
-      # Pin the exact toolchain the team develops and ships on (Xcode 26.5) rather than the runner's
-      # drifting default — the same pin as release-ipa.yml / testflight.yml, so CI verifies what ships.
+      # Pin the toolchain the app is built & shipped on (decisions.md 2026-06-16) — same as the release
+      # workflows; NOT the runner's drifting `latest-stable`.
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.5'
 
-      - name: HighlightEngine unit tests (pure SwiftPM, no Xcode project)
-        working-directory: ios/HighlightEngine
-        run: swift test
+      # Cache the resolved SwiftPM checkouts (notably onnxruntime's prebuilt xcframework) so each run
+      # doesn't re-fetch them. Keyed on project.yml, which pins the package versions.
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SPM_CACHE }}
+          key: spm-${{ runner.os }}-xcode26.5-${{ hashFiles('ios/App/project.yml') }}
+          restore-keys: |
+            spm-${{ runner.os }}-xcode26.5-
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -49,8 +73,8 @@ jobs:
         working-directory: ios/App
         run: xcodegen generate
 
-      # Resolve a concrete simulator (rather than OS=latest) so the destination matches whatever iOS
-      # runtime the runner actually has installed for the selected Xcode.
+      # Resolve a concrete simulator (rather than OS=latest) so the destination matches a runtime the
+      # selected Xcode actually has installed.
       - name: Resolve an available iOS simulator
         id: sim
         run: |
@@ -65,20 +89,22 @@ jobs:
           echo "Using simulator $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
-      - name: Build & run the test suite on the simulator
+      - name: Build & run ${{ matrix.suite }} on the simulator
         working-directory: ios/App
         run: |
           set -euo pipefail
           xcodebuild test \
             -scheme "$SCHEME" \
             -destination "id=${{ steps.sim.outputs.udid }}" \
-            -resultBundlePath "$RUNNER_TEMP/Snappet.xcresult" \
+            -only-testing:${{ matrix.suite }} \
+            -clonedSourcePackagesDirPath "$SPM_CACHE" \
+            -resultBundlePath "$RUNNER_TEMP/${{ matrix.suite }}.xcresult" \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Upload xcresult bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Snappet.xcresult
-          path: ${{ runner.temp }}/Snappet.xcresult
+          name: ${{ matrix.suite }}.xcresult
+          path: ${{ runner.temp }}/${{ matrix.suite }}.xcresult
           if-no-files-found: ignore
