@@ -140,6 +140,15 @@ fun CreateClimbScreen(
 
     val validation = kilterValidate(assignments)
 
+    // Issue #93: live grade estimate for the *manual* editor. The linear grade model lives in the
+    // generator's meta.json — meta-only, no ONNX, no download — so we can estimate whenever the
+    // generator assets are already installed. Loaded once; the estimate recomputes per hold tap.
+    var manualMeta by remember { mutableStateOf<KilterGeneratorModel?>(null) }
+    LaunchedEffect(Unit) { manualMeta = assets.installedMeta() }
+    val manualEstimate: Double? = manualMeta?.let { m ->
+        KilterClimbGenerator.estimateManualGrade(assignments, angle, isNoMatch, m)
+    }
+
     // Keep the board size valid for the layout; rebuild the editor board + draft holds on changes.
     LaunchedEffect(layoutId, productSizeId) {
         if (sizes.none { it.id == productSizeId }) productSizeId = catalog.defaultSizeId(layoutId)
@@ -276,10 +285,23 @@ fun CreateClimbScreen(
                     onClear = { assignments = emptyMap() },
                     validation = validation,
                     board = board, holds = manualHolds,
+                    gradeEstimate = manualEstimate, gradeLabelFor = { manualMeta?.gradeLabel(it.toInt()) },
+                    generatorInstalled = manualMeta != null,
                     onCopyFrames = { copyFrames(context, kilterFrames(assignments)) },
+                    // Issue #91: paste a shared hold string and resolve it against the current layout.
+                    onPasteFrames = {
+                        val pasted = readClipboardText(context)
+                        if (!pasted.isNullOrBlank()) {
+                            val valid = placeable.map { it.placementId }.toSet()
+                            val parsed = parseFramesToAssignments(pasted, validPlacements = valid)
+                            if (parsed.isNotEmpty()) assignments = parsed
+                        }
+                    },
                     onSave = {
+                        // Issue #93: a manual climb now carries its grade estimate (was always null) so it
+                        // reads in detail/browse exactly like a generated one.
                         if (validation == null) attemptSave(
-                            SavePayload(kilterFrames(assignments), layoutId, productSizeId, angle, isNoMatch, null, "manual", null), false)
+                            SavePayload(kilterFrames(assignments), layoutId, productSizeId, angle, isNoMatch, manualEstimate, "manual", null), false)
                     },
                 )
             } else {
@@ -341,6 +363,14 @@ private fun copyFrames(context: Context, frames: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("frames", KilterClimbIdentity.canonicalFrames(frames)))
 }
 
+/** Issue #91: read the clipboard's primary text (a pasted hold string), or null if empty. */
+private fun readClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val clip = clipboard.primaryClip ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0).coerceToText(context)?.toString()
+}
+
 internal fun shareFrames(context: Context, frames: String) {
     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, frames) }
     context.startActivity(Intent.createChooser(send, "Share frames"))
@@ -356,7 +386,8 @@ private fun ManualSection(
     geometry: KilterBoardGeometry, placeable: List<KilterPlaceableHold>, assignments: Map<Int, KilterAuthorRole>,
     onCycle: (Int) -> Unit, onClear: () -> Unit, validation: KilterClimbValidationError?,
     board: KilterBoardController, holds: List<KilterHold>,
-    onCopyFrames: () -> Unit, onSave: () -> Unit,
+    gradeEstimate: Double?, gradeLabelFor: (Double) -> String?, generatorInstalled: Boolean,
+    onCopyFrames: () -> Unit, onPasteFrames: () -> Unit, onSave: () -> Unit,
 ) {
     PickerRow("Layout", layouts.firstOrNull { it.id == layoutId }?.name ?: "—", layouts.map { it.id to it.name }, onLayout)
     if (sizes.size > 1) PickerRow("Board size", sizes.firstOrNull { it.id == productSizeId }?.name ?: "—", sizes.map { it.id to it.label }, onSize)
@@ -367,6 +398,27 @@ private fun ManualSection(
     }
     KilterEditableBoard(geometry, placeable, assignments, onCycle, Modifier.fillMaxWidth().testTag("kilter.create.board"))
     RoleCounts(assignments.values.toList())
+
+    // Issue #93: live grade estimate chip — "≈ V5 at 40°", updating on every hold tap. Shown only
+    // when the generator assets (the linear grade model in meta.json) are installed; otherwise a quiet
+    // one-line hint. Mirrors the iOS manual-editor estimate.
+    if (generatorInstalled) {
+        if (gradeEstimate != null) {
+            val label = gradeLabelFor(gradeEstimate) ?: "V${gradeEstimate.toInt()}"
+            Box(
+                Modifier.background(com.snappet.mobile.ui.theme.kilterAccent().copy(alpha = 0.14f), CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 6.dp).testTag("kilter.create.gradeEstimate"),
+            ) {
+                Text("≈ $label at $angle°", style = MaterialTheme.typography.labelLarge,
+                    color = com.snappet.mobile.ui.theme.kilterAccent(), fontWeight = FontWeight.SemiBold)
+            }
+        }
+    } else {
+        Text("Download the generator (✨ Generate tab) to see live grade estimates.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("kilter.create.gradeHint"))
+    }
+
     if (validation != null) {
         Text(validation.message, color = com.snappet.mobile.ui.theme.pulseWarning(), style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("kilter.create.invalid"))
@@ -379,9 +431,15 @@ private fun ManualSection(
             Text("Light ${holds.size} holds on board")
         }
     }
+    // Issue #91: import a shared hold string from the clipboard into the editor.
+    OutlinedButton(onClick = onPasteFrames, modifier = Modifier.fillMaxWidth().testTag("kilter.create.paste")) {
+        Text("Paste hold string")
+    }
+    Text("Paste a copied hold string to load someone else's climb onto this board.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (assignments.isNotEmpty()) {
-            OutlinedButton(onClick = onCopyFrames) { Text("Copy frames") }
+            OutlinedButton(onClick = onCopyFrames) { Text("Copy holds") }
             OutlinedButton(onClick = onClear, modifier = Modifier.testTag("kilter.create.clear")) { Text("Clear") }
         }
         Button(onClick = onSave, enabled = validation == null,

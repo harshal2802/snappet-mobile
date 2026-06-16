@@ -4317,3 +4317,147 @@ is built and unit-tested **once, as a primitive with no callers**, to de-risk bo
 - **Verification (honest)**: authored on Linux — type-check / `xcodebuild test` / the `#Preview` sim
   render are owed on a Mac at the merge gate (per CLAUDE.md this target can't build here).
   `StopwatchTimingTests` is the device-free proof of the timing math.
+
+## 2026-06-15 — Android Wave 2: workout authoring + workout loop + feedback/undo (#87 #95 #89)
+
+Three stacked Android issues shipped in one PR (Wave 2). Non-obvious choices:
+
+- **No Room schema bump — DB stays at v4.** #87/#95 add target weights, custom exercises, and per-set
+  actuals, but every one of those already lives in an *existing* JSON `String` column
+  (`WorkoutRoutine.exercisesJson`, `WorkoutSession.exercisesJson`) or an existing entity
+  (`WorkoutCustomExercise`). No `@Entity` field changed, so there is **no v4→v5 migration** and the
+  `MigrationBaselineTest` is untouched. (Wave 3 / #92 BLE HR may independently produce its own v5 — no
+  conflict here, since this batch contributes no schema change at all.) The data layer was fully built
+  and unused; #87 is purely its missing UI.
+- **Bundled catalog uses `kotlinx.serialization`, not `org.json`.** The 873-exercise Free Exercise DB
+  (copied from the iOS resource to `assets/workout/exercises.json`) is parsed by `WorkoutExerciseParser`
+  with `kotlinx.serialization` *specifically* so the parse + search run in `:app:testDebugUnitTest` —
+  Android's `org.json` is stubbed-to-throw in JVM unit tests, and `--offline` blocks adding the
+  `org.json:json` test artifact. `WorkoutCatalog` keeps the 20-entry curated list as an offline
+  fallback (its ids all exist in the full DB) and swaps to the full list once `load(context)` reads the
+  asset.
+- **Analytics run on a JSON-free `SessionView`.** `WorkoutAnalytics` public functions take
+  `WorkoutSession`, but the math runs on a decoded `SessionView` value type, so tests build the view
+  directly and never touch `WorkoutSession.exercises` (which decodes via `org.json`). Weight is
+  normalised to kg for volume/PR comparison so kg/lb-mixed history still aggregates; the PR is reported
+  in the unit it was logged in.
+- **Set prefill carries forward, most→least specific:** previous *completed* set's actuals → routine
+  target → most-recent finished session's logged value. Empty targets no longer wipe a typed value.
+- **One app-level `SnackbarHost` with a built-in undo primitive.** `SnackbarController.showUndo` runs
+  the destructive `commit` only when the snackbar times out *without* Undo. Journal's delete is
+  optimistic (row hidden immediately via `pendingDeleteId`, DAO delete deferred, Undo = clear the id),
+  and Kilter's log defers the *insert* (so Undo is a clean no-op). Designed at `RootShell` so future
+  delete flows reuse it.
+- **OCR failure is now typed.** `ReceiptScanResult` (Success/Empty/Failure) replaces the
+  resume-`""`-on-everything contract, so a failed or blank photo shows an inline error instead of a
+  silent no-op. (Empty and Failure show the same message — "try better lighting, or use Paste" — but
+  stay distinct types for future tuning.)
+
+**Verified**: `:app:testDebugUnitTest` 113 tests green (22 new: `WorkoutAnalyticsTest`,
+`WorkoutExerciseParserTest`); `:app:assembleDebug` BUILD SUCCESSFUL. **Device-pending** (one shared
+emulator, parallel agents — instrumented run deferred): the 873-row catalog scroll/search + routine
+authoring on-device; set prefill + charts + last-time hint across two real sessions; and all the #89
+feedback paths (snackbar/haptic/undo, Kilter pill timing + BLE-denial Settings deep link, receipt OCR
+failure/empty banner) which are observable only on a device/emulator.
+
+## 2026-06-15 — Android Wave 3: reels, BLE HR, Kilter share loop, Today home (#90 #92 #91 #99)
+
+Four product-review issues shipped in one wave PR. Notes on the non-obvious choices:
+
+- **#92 Room v4 → v5 is one self-contained additive AutoMigration.** Three NULLABLE HR columns
+  (`avgHr`, `maxHr`, `hrSampleCount`) on `kilter_session`, so the bump is a no-SQL Room
+  `@AutoMigration(4, 5)` — nothing is touched, nothing can be lost. **Cross-wave note (resolved at merge):**
+  Wave 2 ultimately shipped NO schema change (its new data fit existing JSON columns), so this v4→v5 is the
+  ONLY schema bump in the Android batch and stands as-is — no renumber to v6 was needed. The column-set +
+  AutoMigration are clearly commented (`KilterSession`, `SnappetDatabase`). `MigrationBaselineTest` gains a
+  `runMigrationsAndValidate` case proving the v4 row survives with the new columns null.
+- **#92 HR parse parity is the unit-tested core; live capture is the device edge.** `HRMeasurementParser`
+  (0x2A37), `HeartRateZone`, `HRStats`/`HRVMetrics`, and `KilterSessionStats` are pure Kotlin ports of
+  the iOS sources (same bit masks, same lower-bound-inclusive zones, population-variance SDNN, RR×1000/1024
+  ms). `BleHeartRateSource` is the thin scan/connect/notify edge; `rrTrusted` is a pure default-deny gate
+  (optical blacklist checked before the chest-strap whitelist, so "TICKR FIT" is rejected). Unsigned byte
+  reads (`and 0xFF`) are the Kotlin gotcha.
+- **#92 first log of a sitting auto-opens a manual session** (in `KilterDetailScreen.log()`), so ascents
+  group without the user finding the kebab Start; `start()` is a no-op if one is already open. The kebab
+  Start/End remains, and the active-session banner now carries a live HR pill + End — a visible affordance.
+- **#91 the QR payload is uuid+angle**, so a *created* climb the recipient lacks needs the "Copy hold
+  string" fallback (the share sheet ships both). The scanner resolves catalog → created (mirroring detail's
+  order) and shows "not in your catalog" otherwise. Deep-link parse + paste-frames import are pure/tested;
+  the camera scan is device-pending. Routing reuses one shared `SuiteRouter` (deep links + shortcuts +
+  widget taps) → `KilterDeepLinkBus` for the intra-module open.
+- **#99 cards and widgets read ONE pure aggregator (`TodayData`)** so they can't drift. Glance habit
+  check-off is **headless** (an `ActionCallback` writes Room + `updateAll`, no app open). Glance "Start
+  focus" instead OPENS the app into Pomodoro: starting the foreground-service countdown from a widget needs
+  a started activity for the FGS permission anyway, so routing through the app is the correct, non-flaky
+  path (recorded here deliberately). Static launcher shortcuts use `snappet://module/<id>` data URIs.
+- **New deps** (resolved + cached once online, then offline builds): `zxing-core` (QR gen),
+  `mlkit barcode-scanning` + CameraX (QR scan), `androidx.glance` (widgets). Added to `libs.versions.toml`
+  + `app/build.gradle.kts`. `CAMERA` permission + a `snappet://` VIEW intent filter added to the manifest.
+
+**Verified**: `:app:testDebugUnitTest` green (124 tests incl. the new HR/parse/stats/deep-link/reel/today
+cores); `:app:assembleDebug` green; v5 schema JSON committed; `:app:assembleDebugAndroidTest` compiles.
+**Device-pending** (recorded, per the repo's established Kilter-BLE pattern): live bpm from a real chest
+strap in the Kilter banner; the instrumented `MigrationBaselineTest` v4→v5 run on a device/emulator (a
+second agent shares the one emulator — not run here); the live camera QR scan; Glance widget render +
+on-launcher headless check-off; long-press launcher shortcuts; and the full Reels device pipeline
+(Health Connect read + MediaStore match + Media3 export) behind the honest Stage-0 screen.
+
+## 2026-06-15 — Android Continuous-polish batch (#97 design tokens/motion, #98 a11y, #93 Kilter delight)
+
+Three issues shipped together in one PR (branch `claude/android-continuous`), all JVM-verified
+(`:app:testDebugUnitTest` + `:app:assembleDebug` green; no instrumented runs — one shared emulator,
+parallel waves).
+
+### #97 — design tokens + motion (NN 65)
+- **One page gutter, one card radius.** Added `Spacing.pageGutter` (16dp, the home-dashboard value) +
+  `Spacing.minTouchTarget` (48dp) as derived props on the existing `Spacing` (additive — parallel waves
+  touch the same files). Routed the four scrolling module roots (Home/Reel/Pomodoro/Tip 16/20/24dp) +
+  the App Library grid (12dp) through `pageGutter`; the module-card icon tile through
+  `MaterialTheme.shapes.small`.
+- **Single Kilter accent token.** Added theme-aware `kilterAccent()` (amber, lit brighter in dark) in
+  `Color.kt`; replaced the remaining raw hex (saved-star `0xFFE8A800`, GradeChart highlight) and routed
+  the LogButton send/attempt colors through `SnappetAccents.Leaf`/`Ember` instead of re-hardcoded hex.
+  (#96 had already converted most ad-hoc Kilter status colors to `pulse*` tokens.)
+- **One structural-transition spec.** `Motion.snappetSurfaceTransition(reduceMotion, forward)` returns a
+  slide+fade `ContentTransform` (220/160ms), built via the `ContentTransform(...)` constructor — the
+  fully-qualified `androidx.compose.animation.togetherWith(...)` does NOT resolve (it's an
+  `EnterTransition.togetherWith` extension, not a top-level fun). Used for the tab switch (`RootShell`),
+  the workout phase change, and Kilter's sub-screen swaps; the library `NavHost` got matching
+  enter/exit/pop transitions. All collapse to an instant fade under reduce-motion.
+- **Gotcha:** wrapping `KilterRoot`'s `when (screen)` in `AnimatedContent` shadows the outer `var
+  screen` — the lambda param was renamed to `target` so the `onOpen*` callbacks still reassign the
+  state, not the immutable param.
+
+### #98 — accessibility (NN 66)
+- **Pure spoken-summary builders** in new `ui/ChartAccessibility.kt` (`weekBarSummary`, `boardSummary`,
+  `roleCountsOf`) — no Compose/Android, so the exact TalkBack wording is unit-tested
+  (`ChartAccessibilityTest`). Every silent Canvas (Home WeekChart, PomodoroFocusChart, Budget donut,
+  KilterBoard) now carries a `contentDescription` from these.
+- **Habit DayCell**: `Role.Checkbox` + `stateDescription` + `onClickLabel`, one merged node via
+  `clearAndSetSemantics` (it used to announce just "M 9" from two stray Texts), and `sizeIn(48dp)` on
+  the cell and the edit IconButton (was explicitly `.size(36.dp)`). The visible 28dp circle is unchanged.
+- **Bar charts made legible**: weekday initials under each bar, today's bar full-accent vs muted
+  others, and a value annotation on today/the max bar (reserved 12% headroom so it isn't clipped).
+- **Device-pending:** real TalkBack verification (day-cell role/state toggle + chart summaries) on the
+  shared emulator — deferred (instrumented runs collide with parallel waves).
+
+### #93 — Kilter delight (NN 67)
+- **Live manual grade estimate**: pure `KilterClimbGenerator.holdTokens` + `estimateManualGrade`
+  (mirrors iOS), run over the linear grade model in `meta.json`. Loaded meta-only via new
+  `KilterGeneratorAssets.installedMeta()` (no download, no ONNX). The "≈ V5 at 40°" chip updates per
+  hold tap, gated on assets installed; manual save now persists the estimate into `predictedGrade`
+  (was always null) so authored climbs read like generated ones in detail/browse.
+- **Sibling swipe**: the browsed list's uuids plumb from `KilterRoot` (a saveable `browseSiblings`)
+  into the detail screen, which hosts the existing detail body in a `HorizontalPager` with an
+  "n / total" pill. The existing function was renamed `KilterClimbDetail` (private, per-page) and a thin
+  `KilterDetailScreen` wraps it; `settledPage` syncs the host's selected uuid (the back target).
+  Empty siblings (Create / Surprise me) → single page, no pager.
+- **Plan a session**: ported `KilterRecommender` as a pure, unit-tested core (faithful Kotlin port of
+  the iOS recommender — working-grade detection, warm-up→send→project bands, `candidateWindow`) + a
+  simple `KilterPlanScreen`; new "Plan a session" More-menu entry. The screen does the I/O (reads logs,
+  queries the catalog over the recommender's window with the SAME anchor so every band is populated).
+- **Distinct log icons + tooltips**: Attempt → Replay, Project → Flag (no shared glyph; Project's flag
+  no longer clashes with the top-bar Saved star). Each log button is a long-press `RichTooltip`
+  explaining the climbing status, with a one-line "What do these mean?" affordance teaching the gesture.
+- **Device-pending:** swipe-through, the estimate chip, and Plan-a-session end-to-end need a real
+  catalog (#42 — the app ships none) + the installed generator meta on the emulator.

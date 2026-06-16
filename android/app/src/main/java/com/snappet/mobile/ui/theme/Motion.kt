@@ -70,3 +70,35 @@ fun <T> gated(reduceMotion: Boolean, spec: FiniteAnimationSpec<T>): FiniteAnimat
 /** [gated] overload for the broader [AnimationSpec] type (e.g. cross-fade/animateContentSize). */
 fun <T> gatedSpec(reduceMotion: Boolean, spec: AnimationSpec<T>): AnimationSpec<T> =
     if (reduceMotion) SnappetMotion.reduced() else spec
+
+/**
+ * The shared "structural transition" used for the three suite-level surface swaps — tab switch,
+ * module entry/exit, and the workout phase change (issue #97). A snappy slide-along-axis + cross-fade
+ * (~220ms in, 180ms out) instead of the navigation default 700ms crossfade. Collapses to an instant
+ * cut under reduce-motion. Factored here so the shell, the library NavHost, and the workout player all
+ * read one spec and can't drift.
+ *
+ * [forward] picks the slide direction (true → new content enters from the trailing edge), so a "deeper"
+ * navigation and a "back" pop feel different. Returns an [androidx.compose.animation.ContentTransform].
+ */
+fun snappetSurfaceTransition(
+    reduceMotion: Boolean,
+    forward: Boolean = true,
+): androidx.compose.animation.ContentTransform {
+    if (reduceMotion) {
+        // Instant: a zero-duration fade so AnimatedContent still settles, with no movement.
+        return androidx.compose.animation.ContentTransform(
+            targetContentEnter = androidx.compose.animation.fadeIn(snap()),
+            initialContentExit = androidx.compose.animation.fadeOut(snap()),
+        )
+    }
+    val enterMs = 220
+    val exitMs = 160
+    val dir = if (forward) 1 else -1
+    return androidx.compose.animation.ContentTransform(
+        targetContentEnter = androidx.compose.animation.slideInHorizontally(tween(enterMs)) { full -> dir * full / 12 } +
+            androidx.compose.animation.fadeIn(tween(enterMs)),
+        initialContentExit = androidx.compose.animation.slideOutHorizontally(tween(exitMs)) { full -> -dir * full / 12 } +
+            androidx.compose.animation.fadeOut(tween(exitMs)),
+    )
+}

@@ -27,8 +27,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoNotTouch
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -81,7 +83,14 @@ import kotlin.math.roundToInt
  * beta-video link, and — when a board is connected over BLE — illumination (Phase 2). Mirrors the
  * iOS `KilterClimbDetailView`. `onExit` returns to the catalog.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Issue #93: the detail screen now pages through the browsed list's siblings — swipe left/right (or
+ * the catalog order) to move climb-to-climb without backing out, with an "n / total" pill. When
+ * [siblings] is empty (e.g. opened from Create / Surprise me) it shows just [uuid] with no pager.
+ * [onSelectSibling] keeps the host's selected uuid in step so the back target and any re-entry are
+ * correct. Mirrors iOS `KilterClimbDetailView`'s sibling swipe.
+ */
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun KilterDetailScreen(
     uuid: String,
@@ -89,12 +98,57 @@ fun KilterDetailScreen(
     board: KilterBoardController,
     sessions: KilterSessionManager,
     onExit: () -> Unit,
+    siblings: List<String> = emptyList(),
+    onSelectSibling: (String) -> Unit = {},
+) {
+    val pages = remember(siblings, uuid) {
+        if (siblings.contains(uuid)) siblings else listOf(uuid)
+    }
+    if (pages.size <= 1) {
+        KilterClimbDetail(uuid = uuid, catalog = catalog, board = board, sessions = sessions, onExit = onExit)
+        return
+    }
+    val startIndex = remember(pages, uuid) { pages.indexOf(uuid).coerceAtLeast(0) }
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = startIndex, pageCount = { pages.size },
+    )
+    // As the user settles on a new page, tell the host so the selected uuid (the back target) follows.
+    androidx.compose.runtime.LaunchedEffect(pagerState.settledPage) {
+        pages.getOrNull(pagerState.settledPage)?.let { if (it != uuid) onSelectSibling(it) }
+    }
+    androidx.compose.foundation.pager.HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize().testTag("kilter.detail.pager"),
+        // Keep neighbours warm so a swipe lands on rendered content, not a spinner.
+        beyondViewportPageCount = 1,
+    ) { page ->
+        KilterClimbDetail(
+            uuid = pages[page], catalog = catalog, board = board, sessions = sessions, onExit = onExit,
+            positionLabel = "${page + 1} / ${pages.size}",
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun KilterClimbDetail(
+    uuid: String,
+    catalog: KilterCatalog,
+    board: KilterBoardController,
+    sessions: KilterSessionManager,
+    onExit: () -> Unit,
+    positionLabel: String? = null,
 ) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
     val dao = container.database.kilterDao()
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
+    val snackbar = com.snappet.mobile.ui.LocalSnackbarController.current
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
+    // Issue #89: BLE permission denial used to be a silent no-op — track it to show a rationale +
+    // Settings deep link so Connect is never a dead control.
+    var permissionDenied by remember { mutableStateOf(false) }
 
     val favorites by dao.favoritesFlow().collectAsState(initial = emptyList())
     val isFavorite = remember(favorites, uuid) { favorites.any { it.climbUuid == uuid } }
@@ -114,6 +168,7 @@ fun KilterDetailScreen(
     var productSizeId by remember { mutableStateOf(KilterSettings.productSizeId(context)) }
     var sizeMenu by remember { mutableStateOf(false) }
     var showProtocolFix by remember { mutableStateOf(false) }
+    var showShareSheet by remember { mutableStateOf(false) }
 
     // Push the persisted/selected dialect to the controller (initial sync + on every switch); a switch
     // re-lights the current climb instantly inside the controller.
@@ -153,9 +208,25 @@ fun KilterDetailScreen(
         }
     }
 
+    // Auto-dismiss the inline log pill after ~3s (issue #89: it was set and never cleared).
+    androidx.compose.runtime.LaunchedEffect(logConfirmation) {
+        if (logConfirmation != null) {
+            kotlinx.coroutines.delay(3000)
+            logConfirmation = null
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted -> if (granted.values.all { it }) board.connect() }
+    ) { granted ->
+        if (granted.values.all { it }) {
+            permissionDenied = false
+            board.connect()
+        } else {
+            // Denial is no longer silent — surface a rationale + Settings link instead (issue #89).
+            permissionDenied = true
+        }
+    }
 
     fun requestConnect() {
         val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
@@ -168,18 +239,32 @@ fun KilterDetailScreen(
         val c = climb ?: return
         val stat = stats.firstOrNull { it.angle == selectedAngle } ?: return
         val grade = catalog.gradeLabel(stat.difficulty)
-        scope.launch {
-            dao.insertLog(
-                KilterLogEntry(
-                    climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
-                    difficulty = stat.difficulty, gradeLabel = grade, status = status.name,
-                    createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
-                )
-            )
-            container.core.log("kilter", "log-${status.name.lowercase()}",
-                "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
-        }
+        haptics.commit()
+        // Optimistic inline pill (auto-dismisses below). The actual write is deferred to the snackbar
+        // so Undo is a clean no-op — nothing was persisted yet (issue #89). The auto-session (issue #92)
+        // is likewise deferred to commit, so undoing a logged ascent leaves no session behind.
         logConfirmation = "Logged ${status.label.lowercase()} · $grade"
+        snackbar.showUndo(
+            message = "Logged ${status.label.lowercase()} · $grade",
+            onUndo = { logConfirmation = null },
+            commit = {
+                scope.launch {
+                    // Issue #92: the first committed log of a sitting auto-opens a "manual" session so
+                    // ascents group without the user discovering the kebab Start. start() is a no-op if
+                    // one is already open.
+                    if (sessions.currentSessionId == null) sessions.start(selectedAngle, "manual")
+                    dao.insertLog(
+                        KilterLogEntry(
+                            climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
+                            difficulty = stat.difficulty, gradeLabel = grade, status = status.name,
+                            createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
+                        )
+                    )
+                    container.core.log("kilter", "log-${status.name.lowercase()}",
+                        "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
+                }
+            },
+        )
     }
 
     fun toggleFavorite() {
@@ -194,13 +279,11 @@ fun KilterDetailScreen(
         title = climb?.name ?: "Climb",
         onExit = onExit,
         actions = {
-            // Frames export — the raw p<placement>r<role> string (catalog storage + the board-explorer's
-            // "Copy frames" format), so any climb (incl. one you authored) is portable as plain text.
+            // Issue #91: share the climb as a cross-platform QR + deep link (with a "Copy hold string"
+            // fallback for climbs the recipient may not have), replacing the old text-only frames send.
             climb?.let { c ->
-                if (c.frames.isNotEmpty()) {
-                    IconButton(onClick = { shareFrames(context, c.frames) }, modifier = Modifier.testTag("kilter.share")) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share frames")
-                    }
+                IconButton(onClick = { showShareSheet = true }, modifier = Modifier.testTag("kilter.share")) {
+                    Icon(Icons.Filled.Share, contentDescription = "Share climb")
                 }
             }
             IconButton(onClick = { toggleFavorite() }, modifier = Modifier.testTag("kilter.favorite")) {
@@ -215,6 +298,16 @@ fun KilterDetailScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Issue #93: position pill when paging through siblings ("3 / 24"). Swipe left/right moves.
+            positionLabel?.let { pos ->
+                Box(
+                    Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                        .padding(horizontal = 12.dp, vertical = 4.dp).testTag("kilter.detail.position"),
+                ) {
+                    Text(pos, style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             KilterBoard(geometry, holds, Modifier.fillMaxWidth())
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -294,13 +387,29 @@ fun KilterDetailScreen(
                 }
             }
 
+            // Issue #93: each log action has a DISTINCT icon (Flash = bolt, Sent = check, Project = flag,
+            // Attempt = replay — no two share a glyph; Project's flag also no longer clashes with the
+            // top-bar Saved star) and a long-press RichTooltip spelling out the four climbing statuses,
+            // which are jargon to a newcomer. A one-line "What do these mean?" affordance teaches the
+            // long-press.
+            Text("What do these mean? Long-press a button.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("kilter.log.help"))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LogButton("Flash", Icons.Filled.Bolt, true, Modifier.weight(1f), "kilter.log.flash") { log(KilterAscentStatus.FLASH) }
-                LogButton("Sent", Icons.Filled.Check, true, Modifier.weight(1f), "kilter.log.sent") { log(KilterAscentStatus.SENT) }
+                LogButton("Flash", Icons.Filled.Bolt, true, "Flash",
+                    "Sent it clean on your very first try, with no prior practice on it.",
+                    Modifier.weight(1f), "kilter.log.flash") { log(KilterAscentStatus.FLASH) }
+                LogButton("Sent", Icons.Filled.Check, true, "Sent",
+                    "Completed the climb top to bottom (after one or more goes).",
+                    Modifier.weight(1f), "kilter.log.sent") { log(KilterAscentStatus.SENT) }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                LogButton("Project", Icons.Filled.Star, false, Modifier.weight(1f), "kilter.log.project") { log(KilterAscentStatus.PROJECT) }
-                LogButton("Attempt", Icons.Filled.Bolt, false, Modifier.weight(1f), "kilter.log.attempt") { log(KilterAscentStatus.ATTEMPT) }
+                LogButton("Project", Icons.Filled.Flag, false, "Project",
+                    "A climb you're working toward but haven't sent yet — your current project.",
+                    Modifier.weight(1f), "kilter.log.project") { log(KilterAscentStatus.PROJECT) }
+                LogButton("Attempt", Icons.Filled.Replay, false, "Attempt",
+                    "A try that didn't top out — logged so your effort still counts.",
+                    Modifier.weight(1f), "kilter.log.attempt") { log(KilterAscentStatus.ATTEMPT) }
             }
             androidx.compose.animation.AnimatedVisibility(visible = logConfirmation != null) {
                 val confirm = com.snappet.mobile.ui.theme.pulseSuccess()
@@ -316,6 +425,17 @@ fun KilterDetailScreen(
 
             // Illuminate (Phase 2). Simulators / devices with no BLE radio never show the section.
             if (board.state != KilterBoardController.State.UNSUPPORTED) {
+                if (permissionDenied) {
+                    PermissionRationale(
+                        onOpenSettings = {
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.fromParts("package", context.packageName, null),
+                            )
+                            runCatching { context.startActivity(intent) }
+                        },
+                    )
+                }
                 when (board.state) {
                     KilterBoardController.State.CONNECTED -> {
                         OutlinedButton(
@@ -446,6 +566,40 @@ fun KilterDetailScreen(
             climb?.let { Text("Set by ${it.setter}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
+
+    if (showShareSheet) {
+        climb?.let { c ->
+            com.snappet.mobile.feature.kilter.share.KilterShareSheet(
+                uuid = c.uuid, angle = selectedAngle, frames = c.frames,
+                onDismiss = { showShareSheet = false },
+            )
+        }
+    }
+}
+
+/**
+ * Shown when Nearby-devices (BLE) permission was denied (issue #89): explains why the board needs it
+ * and deep-links to app Settings, so the Connect button is never a silently dead control.
+ */
+@Composable
+private fun PermissionRationale(onOpenSettings: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f))
+            .padding(12.dp)
+            .testTag("kilter.permissionRationale"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            "Snappet needs Nearby devices permission to find your board.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        OutlinedButton(onClick = onOpenSettings, modifier = Modifier.testTag("kilter.openSettings")) {
+            Text("Open Settings")
+        }
+    }
 }
 
 @Composable
@@ -457,29 +611,45 @@ private fun Stat(label: String, value: String, testTag: String?) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LogButton(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     isSend: Boolean,
+    tooltipTitle: String,
+    tooltipBody: String,
     modifier: Modifier,
     testTag: String,
     onClick: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.testTag(testTag),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isSend) Color(0xFF30A46C) else Color(0xFFF76808)),
+    // Issue #93: a long-press RichTooltip explains the climbing status (jargon to a newcomer).
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+        tooltip = { RichTooltip(title = { Text(tooltipTitle) }) { Text(tooltipBody) } },
+        state = tooltipState,
+        modifier = modifier,
     ) {
-        Icon(icon, contentDescription = null); Text("  $label")
+        Button(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().testTag(testTag),
+            colors = ButtonDefaults.buttonColors(
+                // Issue #97: route through the accent tokens instead of re-hardcoded hex (Leaf = send,
+                // Ember = a try/attempt).
+                containerColor = if (isSend) com.snappet.mobile.ui.theme.SnappetAccents.Leaf
+                else com.snappet.mobile.ui.theme.SnappetAccents.Ember),
+        ) {
+            Icon(icon, contentDescription = null); Text("  $label")
+        }
     }
 }
 
 /** How grade changes across board angles — the selected angle highlighted in the Kilter accent. */
 @Composable
 private fun GradeChart(stats: List<KilterClimbStat>, selectedAngle: Int, catalog: KilterCatalog) {
-    val accent = com.snappet.mobile.ui.theme.pulseWarning()
+    // Issue #97: the selected bar reads in the Kilter module accent token (was pulseWarning()).
+    val accent = com.snappet.mobile.ui.theme.kilterAccent()
     val muted = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f)
     val diffs = stats.map { it.difficulty }
     val lo = (diffs.minOrNull() ?: 0.0) - 1.0

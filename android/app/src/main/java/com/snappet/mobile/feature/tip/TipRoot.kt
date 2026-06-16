@@ -48,8 +48,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.animateFloatAsState
 import com.snappet.mobile.ui.LocalAppContainer
+import com.snappet.mobile.ui.LocalSnackbarController
 import com.snappet.mobile.ui.ModuleScaffold
+import com.snappet.mobile.ui.rememberSnappetHaptics
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
 import kotlinx.coroutines.launch
@@ -72,6 +75,11 @@ fun TipRoot(onExit: () -> Unit) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbarController.current
+    val haptics = rememberSnappetHaptics()
+    // Issue #89: guard against the double-tap that silently wrote duplicate rows. Reset whenever the
+    // bill changes (a new calculation), so committing two genuinely different bills still works.
+    var committing by remember { mutableStateOf(false) }
 
     var screen by rememberSaveable { mutableStateOf(TipScreen.ROOT) }
     var showPresetEditor by rememberSaveable { mutableStateOf(false) }
@@ -95,7 +103,9 @@ fun TipRoot(onExit: () -> Unit) {
     val perPerson = total / maxOf(1, splitCount)
 
     fun commit() {
-        if (bill <= 0) return
+        if (bill <= 0 || committing) return
+        committing = true
+        haptics.commit()
         scope.launch {
             container.database.tipDao().insert(
                 TipCalculation(
@@ -108,6 +118,7 @@ fun TipRoot(onExit: () -> Unit) {
                 )
             )
             container.core.log("tip", "calc", "Tip on ${currency(bill)}", tipAmount)
+            snackbar.show("Saved ${currency(total)} to history")
         }
     }
 
@@ -125,14 +136,14 @@ fun TipRoot(onExit: () -> Unit) {
             TipBody(
                 padding = padding,
                 billText = billText,
-                onBillChange = { billText = it.filter { c -> c.isDigit() || c == '.' } },
+                onBillChange = { committing = false; billText = it.filter { c -> c.isDigit() || c == '.' } },
                 presets = presets,
                 tipPercent = tipPercent,
-                onSelectPreset = { tipPercent = it },
+                onSelectPreset = { committing = false; tipPercent = it },
                 splitCount = splitCount,
-                onSplitChange = { splitCount = it.coerceIn(1, 20) },
+                onSplitChange = { committing = false; splitCount = it.coerceIn(1, 20) },
                 roundUp = roundUp,
-                onRoundUpChange = { roundUp = it },
+                onRoundUpChange = { committing = false; roundUp = it },
                 tipAmount = tipAmount,
                 total = total,
                 perPerson = perPerson,
@@ -179,7 +190,7 @@ private fun TipBody(
     onCommit: () -> Unit,
 ) {
     Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
+        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(LocalSpacing.current.pageGutter),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("Bill", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

@@ -1,5 +1,6 @@
 package com.snappet.mobile
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,10 +42,36 @@ class MainActivity : ComponentActivity() {
             KilterCatalog.reset()
         }
 
+        // Deep link (snappet://kilter/climb/...), launcher shortcut, or widget tap → SuiteRouter.
+        routeIntent(intent, container)
+
         setContent {
             CompositionLocalProvider(LocalAppContainer provides container) {
                 SnappetTheme { RootShell() }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        routeIntent(intent, AppContainer.get(applicationContext))
+    }
+
+    /**
+     * Translate a launch [Intent] into a [com.snappet.mobile.core.SuiteRouter] route (issues #91, #99):
+     * a `snappet://` VIEW link opens a Kilter climb; a `snappet.module` string extra (carried by static
+     * launcher shortcuts and Glance widget taps) opens that module. The shell consumes the route once.
+     */
+    private fun routeIntent(intent: Intent?, container: AppContainer) {
+        intent ?: return
+        val handledUri = intent.data?.let { container.router.handleUri(it.toString()) } == true
+        if (handledUri) return
+        intent.getStringExtra(EXTRA_MODULE)?.let { container.router.openModule(it) }
+    }
+
+    companion object {
+        /** String extra carrying a module id for shortcuts / widget taps (issue #99). */
+        const val EXTRA_MODULE = "snappet.module"
     }
 }

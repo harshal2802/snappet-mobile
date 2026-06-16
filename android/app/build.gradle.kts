@@ -75,6 +75,16 @@ dependencies {
     // JSON decode of the generator's meta.json (JVM-testable, no Android dep).
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.splashscreen)
+    // Kilter share loop (issue #91): QR generation (zxing) + on-device QR scan (CameraX + ML Kit barcode).
+    implementation(libs.zxing.core)
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    // Today daily home (issue #99): Jetpack Glance launcher widgets reading the same Room flows.
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

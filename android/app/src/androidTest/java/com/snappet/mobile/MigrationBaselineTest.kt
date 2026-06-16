@@ -57,4 +57,37 @@ class MigrationBaselineTest {
             InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(dbName)
         }
     }
+
+    /**
+     * Issue #92: the v4 → v5 AutoMigration is non-destructive — a kilter_session row inserted under v4
+     * survives the migration with its data intact, and the three new nullable HR columns appear (null
+     * for pre-existing rows). Validated via `runMigrationsAndValidate` so the committed v5 schema and
+     * the generated AutoMigration agree.
+     *
+     * NOTE FOR REVIEWER: when Wave 2's independent v5 (workout columns) is renumbered to v6, bump the
+     * target version here to 6 too (this test stays the proof that the kilter HR columns migrate cleanly).
+     */
+    @Test
+    fun v4ToV5_addsHrColumns_nonDestructively() {
+        val migName = "migration-v5-test.db"
+        helper.createDatabase(migName, 4).use { db ->
+            db.execSQL(
+                "INSERT INTO kilter_session (id, startedAt, endedAt, angle, source) " +
+                    "VALUES ('s1', 100, 200, 40, 'ble')"
+            )
+        }
+        // Validate the AutoMigration to v5; Room verifies the resulting schema matches 5.json.
+        helper.runMigrationsAndValidate(migName, 5, true).use { db ->
+            db.query("SELECT id, angle, avgHr, maxHr, hrSampleCount FROM kilter_session").use { c ->
+                assertEquals(true, c.moveToFirst())
+                assertEquals("s1", c.getString(0))
+                assertEquals(40, c.getInt(1))
+                // New columns exist and are NULL for the pre-existing row.
+                assertEquals(true, c.isNull(2))
+                assertEquals(true, c.isNull(3))
+                assertEquals(true, c.isNull(4))
+            }
+        }
+        InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(migName)
+    }
 }

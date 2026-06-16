@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Glance widget descriptions (issue #99). -->
+    <string name="habit_widget_description">Check off a habit and see your streak</string>
+    <string name="focus_widget_description">Start a focus session and see today\'s minutes</string>
+
+    <!-- Static launcher shortcuts (issue #99). -->
+    <string name="shortcut_focus_short">Focus</string>
+    <string name="shortcut_focus_long">Start focus</string>
+    <string name="shortcut_habit_short">Habit</string>
+    <string name="shortcut_habit_long">Log a habit</string>
+    <string name="shortcut_journal_short">Journal</string>
+    <string name="shortcut_journal_long">New journal entry</string>
+    <string name="shortcut_expense_short">Expense</string>
+    <string name="shortcut_expense_long">Add an expense</string>
+</resources>

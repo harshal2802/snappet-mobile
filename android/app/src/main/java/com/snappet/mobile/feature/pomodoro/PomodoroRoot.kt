@@ -67,6 +67,7 @@ import com.snappet.mobile.core.UsageRecord
 import com.snappet.mobile.ui.LocalAppContainer
 import com.snappet.mobile.ui.ModuleScaffold
 import com.snappet.mobile.ui.theme.LocalReduceMotion
+import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.SnappetAccents
 import com.snappet.mobile.ui.theme.SnappetMotion
 import com.snappet.mobile.ui.theme.gated
@@ -98,6 +99,21 @@ fun PomodoroRoot(onExit: () -> Unit) {
     // alarm. This screen is just a window onto it.
     val timer = container.pomodoro
     LaunchedEffect(Unit) { timer.applyDurations(focus, brk) }
+
+    // Celebrate a completed focus block (issue #89): a focus session is persisted whenever a FOCUS
+    // phase finishes, so a growing sessions count is the completion signal. Skip the first emission
+    // (initial load) so re-entering the screen doesn't fire spuriously.
+    val snackbar = com.snappet.mobile.ui.LocalSnackbarController.current
+    val haptics = com.snappet.mobile.ui.rememberSnappetHaptics()
+    var lastSessionCount by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(sessions.size) {
+        val prev = lastSessionCount
+        if (prev != null && sessions.size > prev) {
+            haptics.commit()
+            snackbar.show("Focus complete — nice work!")
+        }
+        lastSessionCount = sessions.size
+    }
 
     // Phase-end alerts need POST_NOTIFICATIONS on API 33+ — ask in context, before the
     // first start, like the iOS screen does for UNUserNotifications (#70).
@@ -172,7 +188,7 @@ private fun PomodoroBody(timer: PomodoroTimerState, sessions: List<PomodoroSessi
     val todayStart = PomodoroStats.startOfDay(System.currentTimeMillis())
     val today = sessions.filter { it.completedAt >= todayStart }
     Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
+        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(LocalSpacing.current.pageGutter),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
