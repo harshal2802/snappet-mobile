@@ -312,6 +312,14 @@ private struct LogSetSheet: View {
     @State private var grade = ""
     @State private var status: KilterAscentStatus = .sent
     @State private var tries = 1
+    // climb — OPTIONAL per-attempt timer (workout-with-timer PR 4): off by default so quick logging is
+    // unchanged. When on, a StopwatchView(.countUp) Stop capture fills `climbDurationSec`, which `build()`
+    // writes into the (otherwise-unused-for-climbs) SetLog.durationSec. `climbTimerRunning` gates the
+    // disclosure toggle while running so it can't be collapsed mid-run (tearing down the timer without a
+    // Stop, silently dropping the capture — the timed-set lesson).
+    @State private var climbTimed = false
+    @State private var climbTimerRunning = false
+    @State private var climbDurationSec: Double?
 
     init(kind: SetKind, unit: WeightUnit, onAdd: @escaping (SetLog) -> Void) {
         self.kind = kind
@@ -380,6 +388,24 @@ private struct LogSetSheet: View {
                         ForEach(KilterAscentStatus.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     Stepper("Attempts: \(tries)", value: $tries, in: 1...50)
+                    // Optional: time how long the attempt took (the climb-side analogue of the timed-set
+                    // timer, PR 2). Off by default → existing quick-logging is unchanged; the leaf Toggle
+                    // is locked while the stopwatch runs so it can't tear the timer down without a Stop.
+                    Toggle("Time the attempt", isOn: $climbTimed)
+                        .disabled(climbTimerRunning)
+                        .accessibilityIdentifier("logset.climbTimerToggle")
+                    if climbTimed {
+                        // Stop captures the elapsed seconds into `climbDurationSec`, which `build()` writes
+                        // into SetLog.durationSec (the count-up StopwatchView from PR 1; same consumer
+                        // shape as the timed-set Timer mode). NOTE: no .accessibilityIdentifier on the
+                        // StopwatchView itself — on iOS 26 that collapses the composite into one element
+                        // and hides its inner `stopwatch.toggle`; the test queries the child ids directly.
+                        StopwatchView(mode: .countUp) { elapsed in
+                            climbDurationSec = elapsed > 0 ? elapsed : nil
+                        } onRunningChange: { climbTimerRunning = $0 }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
                 }
             }
             .navigationTitle(kind.addLabel)
@@ -409,7 +435,10 @@ private struct LogSetSheet: View {
             return SetLog(durationSec: total > 0 ? total : nil)
         case .climbAttempt:
             let g = grade.trimmingCharacters(in: .whitespaces)
-            return SetLog(climbGradeLabel: g.isEmpty ? nil : g,
+            // Reuse `durationSec` for the optional per-attempt time (PR 4): nil unless the timer was used
+            // and captured a non-zero hold, so untimed attempts log exactly as before.
+            return SetLog(durationSec: climbTimed ? climbDurationSec : nil,
+                          climbGradeLabel: g.isEmpty ? nil : g,
                           climbStatusRaw: status.rawValue, climbAttempts: tries)
         }
     }

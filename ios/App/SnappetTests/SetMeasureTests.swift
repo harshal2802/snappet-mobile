@@ -99,6 +99,34 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V2 · Sent")
     }
 
+    // MARK: - climbAttempt + optional per-attempt timer (durationSec reuse — PR 4)
+
+    func testClimbWithTimedAttemptAppendsDuration() {
+        // The optional per-attempt timer (PR 4) stores its capture in the otherwise-unused durationSec;
+        // the summary appends it after grade/status/tries via the one duration funnel.
+        let s = SetLog(durationSec: 42, climbGradeLabel: "V4",
+                       climbStatusRaw: KilterAscentStatus.sent.rawValue, climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries · 0:42")
+    }
+
+    func testClimbSingleTryWithDurationStillOmitsTries() {
+        // tries == 1 still omits "1 tries"; the duration is appended right after grade/status.
+        let s = SetLog(durationSec: 90, climbGradeLabel: "V2",
+                       climbStatusRaw: KilterAscentStatus.flash.rawValue, climbAttempts: 1)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V2 · Flash · 1:30")
+    }
+
+    func testClimbWithoutDurationIsUnchanged() {
+        // No timer used → durationSec stays nil → the summary is exactly the pre-PR-4 format.
+        let s = SetLog(climbGradeLabel: "V4", climbStatusRaw: KilterAscentStatus.sent.rawValue,
+                       climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries")
+        // A zero/absent capture is dropped too (matches the .duration "> 0" rule).
+        let zero = SetLog(durationSec: 0, climbGradeLabel: "V4",
+                          climbStatusRaw: KilterAscentStatus.sent.rawValue, climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.summary(zero, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries")
+    }
+
     // MARK: - hasInput / isSend
 
     func testHasInput() {

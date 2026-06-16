@@ -4,6 +4,34 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-16] Climb attempts: optional per-attempt timer reusing `durationSec` (no model change), off by default
+
+**Decision** (workout-with-timer PR 4/6, prompt 70): the freeform `LogSetSheet`'s `.climbAttempt` case
+gains an **opt-in** "Time the attempt" `Toggle` (`accessibilityIdentifier("logset.climbTimerToggle")`),
+**default off** so quick log-and-go is byte-for-byte unchanged. When on, it reveals PR 1's
+`StopwatchView(mode: .countUp)`; its `onStop` capture is stored in the **existing**
+`SetLog.durationSec` — a field that was unused for `.climbAttempt` until now, so there is **NO model
+change** — and `build()`'s `.climbAttempt` arm gains `durationSec: climbTimed ? climbDurationSec : nil`.
+`SetMeasure.summary`'s `.climbAttempt` arm appends `formatDuration(durationSec)` (when `> 0`) after
+grade/status/tries → "V4 · Sent · 3 tries · 0:42", reusing the one duration funnel. This is the
+**climb-side analogue of PR 2's timed-set timer** and the **second real consumer** of the stopwatch
+primitive. The `StopwatchView`'s `onRunningChange` drives a `climbTimerRunning` flag that
+`.disabled(...)`s the toggle while running, so it can't be collapsed mid-run (which would tear down the
+timer without a Stop and silently drop the capture — the PR 2 lesson). The toggle is a **leaf** control;
+the `StopwatchView` carries **no** identifier (on iOS 26 an identifier on a composite collapses its
+subtree and hides the inner `stopwatch.toggle`/`stopwatch.elapsed` from XCUITest — the PR 2/3 lesson).
+
+**Why**: timing a boulder/route is occasionally wanted (projecting, comparing burns) but must never slow
+the common grade-and-go log — hence opt-in and off by default. Reusing `durationSec` (rather than a new
+`SetLog` field) means no migration risk on the `Codable` blob and the value rides every existing path
+(persist · `SetMeasure.duplicate`/Repeat · backup) for free; the summary append is the only render
+change, kept in the one tested formatter. `build()`'s save shape and the `SetMeasure.hasInput` Add-gate
+are unchanged — grade/outcome still decide loggability; the timer is purely additive.
+
+**Rules out**: a new `SetLog`/`WorkoutModels` field for the climb time (reuse `durationSec`); making the
+timer on-by-default or mandatory; a second duration formatter; an identifier on the `StopwatchView`
+composite; changing `.repsWeight`/`.duration`, the `.medium` detent, or the Add-gate.
+
 ## [2026-06-16] Repeat set: one-tap identical-set loop via a pure `SetMeasure.duplicate` through the one append path
 
 **Decision** (workout-with-timer PR 3/6, prompt 69): the freeform player gains a one-tap **"Repeat set"**

@@ -30,6 +30,10 @@ enum SetMeasure {
             }
             let tries = set.climbAttempts ?? 1
             if tries > 1 { parts.append("\(tries) tries") }
+            // A climb attempt MAY have been timed (workout-with-timer PR 4): when it carries a captured
+            // duration, append it ("V4 · Sent · 3 tries · 0:42") reusing the one duration funnel. Reuses
+            // `durationSec` (no model change) — it was unused for `.climbAttempt` until now.
+            if let secs = set.durationSec, secs > 0 { parts.append(formatDuration(secs)) }
             return parts.isEmpty ? "—" : parts.joined(separator: " · ")
         }
     }
