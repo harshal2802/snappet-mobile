@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The History section: completed sessions, newest first, grouped by month. Searchable by routine
-/// name, with one-tap routine filter chips (issue #73). Tap for detail, swipe right to delete;
+/// name, with one-tap routine filter chips (issue #73) and a tracking-type facet (workout-with-timer
+/// PR 6) that keeps sessions tracking any selected `SetKind`. Tap for detail, swipe right to delete;
 /// media-bearing rows show a Studio badge and swipe left to open the Video Studio directly (#74).
 struct HistorySectionView: View {
     let history: [WorkoutSession]
@@ -16,6 +17,9 @@ struct HistorySectionView: View {
     @State private var query = ""
     /// The routine name the chip row is filtering to; nil = all routines.
     @State private var routineFilter: String?
+    /// Tracking-type facet (workout-with-timer PR 6): the selected `SetKind`s; empty = no filter.
+    /// A session is kept when any of its exercises tracks one of these kinds.
+    @State private var kindFilter: Set<SetKind> = []
 
     /// A month bucket of sessions. `Identifiable` (by month) so the `ForEach` keeps stable view
     /// identity across re-renders — without it, pushing onto the shared nav path churns this
@@ -28,7 +32,7 @@ struct HistorySectionView: View {
         HistorySearch.effectiveRoutine(filter: routineFilter, names: routineNames)
     }
     private var filtered: [WorkoutSession] {
-        HistorySearch.apply(history, query: query, routine: effectiveFilter)
+        HistorySearch.apply(history, query: query, routine: effectiveFilter, kinds: kindFilter)
     }
     private var routineNames: [String] { HistorySearch.routineNames(history) }
 
@@ -80,8 +84,13 @@ struct HistorySectionView: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic),
                     prompt: "Search by routine")
         .safeAreaInset(edge: .top, spacing: 0) {
-            // Also shown while a filter is active with one routine left, so it can be toggled off.
-            if routineNames.count > 1 || effectiveFilter != nil { routineChips }
+            VStack(spacing: 0) {
+                // Also shown while a filter is active with one routine left, so it can be toggled off.
+                if routineNames.count > 1 || effectiveFilter != nil { routineChips }
+                // Tracking-type facet (workout-with-timer PR 6): always offered once any session exists,
+                // so a kind can always be toggled on/off (it sits alongside the routine chips).
+                if !history.isEmpty { kindChips }
+            }
         }
         .overlay {
             if history.isEmpty {
@@ -123,17 +132,61 @@ struct HistorySectionView: View {
         }
         .background(.bar)
     }
+
+    /// Tracking-type facet (workout-with-timer PR 6): one toggle chip per `SetKind` — keep sessions
+    /// whose exercises track ANY selected kind (empty = all). Mirrors the routine-chip styling; each
+    /// chip is a LEAF (id `history.kindChip.<rawValue>`) so iOS 26 doesn't collapse the a11y subtree.
+    private var kindChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(SetKind.allCases, id: \.self) { kind in
+                    let on = kindFilter.contains(kind)
+                    Button {
+                        if on { kindFilter.remove(kind) } else { kindFilter.insert(kind) }
+                    } label: {
+                        Label(kind.display, systemImage: kind.symbol)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(on ? SnappetColor.workout.opacity(0.2)
+                                           : Color(.secondarySystemFill), in: Capsule())
+                            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .snappetAnimation(SnappetMotion.quick, value: on)
+                    .accessibilityIdentifier("history.kindChip.\(kind.rawValue)")
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+        }
+        .background(.bar)
+    }
 }
 
 /// PURE history search/filter (issue #73) — unit-tested in `SnappetTests` without a simulator.
 enum HistorySearch {
-    /// Routine-name chip filter (exact) first, then the search query (case-insensitive substring).
-    static func apply(_ sessions: [WorkoutSession], query: String, routine: String?) -> [WorkoutSession] {
+    /// Routine-name chip filter (exact) first, then the tracking-type facet (any selected `SetKind`),
+    /// then the search query (case-insensitive substring). `kinds` empty ⇒ the facet is inert.
+    static func apply(_ sessions: [WorkoutSession], query: String, routine: String?,
+                      kinds: Set<SetKind> = []) -> [WorkoutSession] {
         var result = sessions
         if let routine { result = result.filter { $0.routineName == routine } }
+        result = filterByTrackingTypes(result, kinds: kinds)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return result }
         return result.filter { $0.routineName.localizedCaseInsensitiveContains(q) }
+    }
+
+    /// Tracking-type facet (workout-with-timer PR 6): keep a session when ANY of its exercises tracks
+    /// one of `kinds` (the union of the selected chips). An empty selection is a pass-through (no
+    /// filter), so the facet only ever narrows. A session's tracking types = the set of `ex.kind`.
+    static func filterByTrackingTypes(_ sessions: [WorkoutSession], kinds: Set<SetKind>) -> [WorkoutSession] {
+        guard !kinds.isEmpty else { return sessions }
+        return sessions.filter { session in
+            session.exercises.contains { kinds.contains($0.kind) }
+        }
     }
 
     /// Distinct routine names, most recently trained first (the order the chips render in).

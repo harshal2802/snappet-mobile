@@ -40,6 +40,45 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.summary(SetLog(durationSec: 0), kind: .duration, unit: .kg), "—")
     }
 
+    // MARK: - splitDuration (timed-set capture → Min/Sec, the inverse of min*60+sec — PR 2)
+
+    func testSplitDurationRoundTripsThroughTheSavePath() {
+        // What the live timer captures must rebuild to the same seconds the Manual fields would,
+        // since `build()` does (Double(min) ?? 0)*60 + (Double(sec) ?? 0).
+        for secs in [0.0, 5, 45, 60, 90, 599, 600, 3661] {
+            let (m, s) = SetMeasure.splitDuration(secs)
+            let rebuilt = (Double(m) ?? 0) * 60 + (Double(s) ?? 0)
+            XCTAssertEqual(rebuilt, secs.rounded(), "round trip for \(secs)s")
+        }
+    }
+
+    func testSplitDurationCountsTotalMinutesNoHourWrap() {
+        // Two minute/second fields → minutes is the full total (3661s = 61:01), not 1:01:01.
+        let (m, s) = SetMeasure.splitDuration(3661)
+        XCTAssertEqual(m, "61")
+        XCTAssertEqual(s, "1")
+    }
+
+    func testSplitDurationRoundsAndClampsBadInput() {
+        XCTAssertEqual(SetMeasure.splitDuration(44.6).minutes, "0")
+        XCTAssertEqual(SetMeasure.splitDuration(44.6).seconds, "45")   // rounds, like formatDuration
+        XCTAssertEqual(SetMeasure.splitDuration(0).minutes, "0")
+        XCTAssertEqual(SetMeasure.splitDuration(0).seconds, "0")
+        XCTAssertEqual(SetMeasure.splitDuration(-10).seconds, "0")     // clamps negatives
+        XCTAssertEqual(SetMeasure.splitDuration(.infinity).seconds, "0")
+    }
+
+    func testSplitDurationCarriesAtTheMinuteBoundary() {
+        // Rounding up to a full minute must carry into minutes, never emit seconds == "60".
+        XCTAssertEqual(SetMeasure.splitDuration(59.6).minutes, "1")
+        XCTAssertEqual(SetMeasure.splitDuration(59.6).seconds, "0")
+        // …and the carry still round-trips through the save path's min*60 + sec.
+        for secs in [59.6, 119.5, 3599.7] {
+            let (min, sec) = SetMeasure.splitDuration(secs)
+            XCTAssertEqual(Double(min)! * 60 + Double(sec)!, secs.rounded(), "carry round trip for \(secs)s")
+        }
+    }
+
     // MARK: - climbAttempt
 
     func testClimbFlashSummary() {
@@ -60,6 +99,48 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V2 · Sent")
     }
 
+    // MARK: - climbAttempt + optional per-attempt timer (durationSec reuse — PR 4)
+
+    func testClimbWithTimedAttemptAppendsDuration() {
+        // The optional per-attempt timer (PR 4) stores its capture in the otherwise-unused durationSec;
+        // the summary appends it after grade/status/tries via the one duration funnel.
+        let s = SetLog(durationSec: 42, climbGradeLabel: "V4",
+                       climbStatusRaw: KilterAscentStatus.sent.rawValue, climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries · 0:42")
+    }
+
+    func testClimbSingleTryWithDurationStillOmitsTries() {
+        // tries == 1 still omits "1 tries"; the duration is appended right after grade/status.
+        let s = SetLog(durationSec: 90, climbGradeLabel: "V2",
+                       climbStatusRaw: KilterAscentStatus.flash.rawValue, climbAttempts: 1)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V2 · Flash · 1:30")
+    }
+
+    func testClimbWithoutDurationIsUnchanged() {
+        // No timer used → durationSec stays nil → the summary is exactly the pre-PR-4 format.
+        let s = SetLog(climbGradeLabel: "V4", climbStatusRaw: KilterAscentStatus.sent.rawValue,
+                       climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries")
+        // A zero/absent capture is dropped too (matches the .duration "> 0" rule).
+        let zero = SetLog(durationSec: 0, climbGradeLabel: "V4",
+                          climbStatusRaw: KilterAscentStatus.sent.rawValue, climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.summary(zero, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries")
+    }
+
+    // MARK: - climbName (named free-flow climb session — PR 5)
+
+    func testClimbNameTrimsSurroundingWhitespace() {
+        XCTAssertEqual(SetMeasure.climbName("  Cave Project  "), "Cave Project")
+        XCTAssertEqual(SetMeasure.climbName("Blue V4"), "Blue V4")
+    }
+
+    func testClimbNameFallsBackToClimbingWhenBlank() {
+        // Empty/whitespace-only entries must never log under a blank header → the generic "Climbing".
+        XCTAssertEqual(SetMeasure.climbName(""), "Climbing")
+        XCTAssertEqual(SetMeasure.climbName("   "), "Climbing")
+        XCTAssertEqual(SetMeasure.climbName("\n\t "), "Climbing")
+    }
+
     // MARK: - hasInput / isSend
 
     func testHasInput() {
@@ -76,6 +157,49 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertTrue(SetMeasure.isSend(SetLog(climbStatusRaw: KilterAscentStatus.sent.rawValue)))
         XCTAssertFalse(SetMeasure.isSend(SetLog(climbStatusRaw: KilterAscentStatus.project.rawValue)))
         XCTAssertFalse(SetMeasure.isSend(SetLog()))
+    }
+
+    // MARK: - duplicate (one-tap repeat-set loop — PR 3)
+
+    func testDuplicateClearsOnlyTheCompletedAtStamp() {
+        // The repeat loop logs a NEW set identical to the last — same fields, no stamp (appendLog owns it).
+        let original = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg,
+                              completedAt: Date(timeIntervalSince1970: 1_000))
+        let copy = SetMeasure.duplicate(original)
+        XCTAssertNil(copy.completedAt, "the copy carries no stamp — appendLog stamps it on append")
+        // Everything else round-trips verbatim — easiest proof: clear the stamp and compare wholesale.
+        var expected = original
+        expected.completedAt = nil
+        XCTAssertEqual(copy, expected)
+    }
+
+    func testDuplicateCarriesEveryRepsWeightField() {
+        let copy = SetMeasure.duplicate(
+            SetLog(actualReps: 5, actualWeight: 62.5, weightUnit: .lb, completedAt: .now))
+        XCTAssertEqual(copy.actualReps, 5)
+        XCTAssertEqual(copy.actualWeight, 62.5)
+        XCTAssertEqual(copy.weightUnit, .lb)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
+        // The summary of the copy reads identically to the original's — a logged loop of the same set.
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .repsWeight, unit: .kg), "5 × 62.5 lb")
+    }
+
+    func testDuplicateCarriesDurationField() {
+        let copy = SetMeasure.duplicate(SetLog(completedAt: .now, durationSec: 45))
+        XCTAssertEqual(copy.durationSec, 45)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .duration, unit: .kg), "0:45")
+    }
+
+    func testDuplicateCarriesEveryClimbField() {
+        let original = SetLog(completedAt: .now, climbGradeLabel: "7a",
+                              climbStatusRaw: KilterAscentStatus.project.rawValue, climbAttempts: 4)
+        let copy = SetMeasure.duplicate(original)
+        XCTAssertEqual(copy.climbGradeLabel, "7a")
+        XCTAssertEqual(copy.climbStatusRaw, KilterAscentStatus.project.rawValue)
+        XCTAssertEqual(copy.climbAttempts, 4)
+        XCTAssertNil(copy.completedAt, "the stamp is cleared; appendLog stamps it on append")
+        XCTAssertEqual(SetMeasure.summary(copy, kind: .climbAttempt, unit: .kg), "7a · Project · 4 tries")
     }
 
     func testWeightFormatTrimsTrailingZero() {

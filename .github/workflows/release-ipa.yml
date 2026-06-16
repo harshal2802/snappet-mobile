@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15        # Sequoia runner ships Xcode 16 / the iOS 18 SDK
+    runs-on: macos-26        # Tahoe runner — Xcode 26.5, the toolchain the app is built & shipped on
     env:
       TEAM_ID: P6U6C88W9J
       BUNDLE_ID: com.snappet.app
@@ -27,9 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Build the release on the SAME toolchain CI verifies and the team ships on (see ci.yml). NOT
+      # `latest-stable`: on the runner it drifts (e.g. to Xcode 26.3, whose type-checker times out on
+      # some of the app's SwiftUI expressions) — a release must not break on a runner-image bump.
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.5'
 
       - name: Install XcodeGen
         run: brew install xcodegen

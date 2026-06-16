@@ -26,6 +26,11 @@ struct FreeformPlayerView: View {
     @State private var pickingLift = false
     @State private var logging: LogTarget?
     @State private var showingEnd = false
+    // Naming a free-flow climb (workout-with-timer PR 5): tapping "Climbing" in the add menu first asks
+    // for a custom climb name (e.g. "Cave Project", "Blue V4") so per-attempt logging groups under the
+    // named climb instead of a fixed "Climbing". Empty/whitespace falls back to "Climbing".
+    @State private var namingClimb = false
+    @State private var climbNameDraft = ""
 
     private var unit: WeightUnit { defaultUnit }
 
@@ -67,6 +72,18 @@ struct FreeformPlayerView: View {
             Button("Save & exit") { finish(saved: true) }
             Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
             Button("Keep going", role: .cancel) {}
+        }
+        // Name this climb (workout-with-timer PR 5): the typed name is the section header + persists on the
+        // SessionExercise's `displayName`; a blank/whitespace entry falls back to "Climbing" via the pure
+        // `SetMeasure.climbName`. The TextField is a leaf control with its own id so XCUITest can fill it
+        // (`app.alerts.textFields`) — no identifier on a composite (the PR 2/3/4 a11y lesson).
+        .alert("Name this climb", isPresented: $namingClimb) {
+            TextField("Climb name (e.g. Cave Project)", text: $climbNameDraft)
+                .accessibilityIdentifier("freeform.climbName")
+            Button("Add") { addExercise(kind: .climbAttempt, name: SetMeasure.climbName(climbNameDraft)) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Group every attempt under a name, or leave blank for \"Climbing\".")
         }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
@@ -123,6 +140,18 @@ struct FreeformPlayerView: View {
                 Label(ex.kind.addLabel, systemImage: "plus.circle.fill")
             }
             .accessibilityIdentifier("freeform.addSet")
+
+            // One-tap repeat of the most recent set — duplicates it (all kind-specific fields, fresh
+            // completedAt) without opening the sheet. Only shown once there's a set to repeat. A sibling
+            // leaf Button (NOT wrapped in a composite) so its accessibilityIdentifier stays queryable.
+            if !ex.sets.isEmpty {
+                Button {
+                    repeatLastSet(ex)
+                } label: {
+                    Label("Repeat set", systemImage: "arrow.clockwise")
+                }
+                .accessibilityIdentifier("freeform.repeatSet")
+            }
         } header: {
             HStack {
                 Label(resolver.name(for: ex.exerciseId, override: ex.displayName), systemImage: ex.kind.symbol)
@@ -140,7 +169,7 @@ struct FreeformPlayerView: View {
         Section {
             Menu {
                 Button { pickingLift = true } label: { Label("Lifting exercise", systemImage: "dumbbell.fill") }
-                Button { addExercise(kind: .climbAttempt, name: "Climbing") } label: {
+                Button { climbNameDraft = ""; namingClimb = true } label: {
                     Label("Climbing", systemImage: "figure.climbing")
                 }
                 Button { addExercise(kind: .duration, name: "Timed exercise") } label: {
@@ -204,6 +233,15 @@ struct FreeformPlayerView: View {
         Haptics.success()
     }
 
+    /// One-tap "Repeat set": append a copy of `ex`'s most recent set (all kind-specific fields via the
+    /// pure `SetMeasure.duplicate`) WITHOUT opening `LogSetSheet`, then reuse the same append+persist+haptic
+    /// path the sheet commits through — `appendLog` stamps the fresh `completedAt`. No-op when the exercise
+    /// has no sets (the control is hidden in that case). (workout-with-timer PR 3)
+    private func repeatLastSet(_ ex: SessionExercise) {
+        guard let last = ex.sets.last else { return }
+        appendLog(SetMeasure.duplicate(last), toExerciseID: ex.id)
+    }
+
     private func deleteSets(_ ex: SessionExercise, at offsets: IndexSet) {
         guard let idx = indexOf(ex) else { return }
         session.exercises[idx].sets.remove(atOffsets: offsets)
@@ -255,6 +293,19 @@ private struct LogTarget: Identifiable {
     var id: UUID { exerciseID }
 }
 
+/// How a `.duration` set's seconds are entered: time it live with the stopwatch (default), or type
+/// minutes/seconds. Both write the same `minutes`/`seconds` state the save path reads. (workout-with-timer PR 2)
+private enum DurationInputMode: String, CaseIterable, Identifiable {
+    case timer, manual
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .timer: return "Timer"
+        case .manual: return "Manual"
+        }
+    }
+}
+
 /// A focused sheet to log one set/attempt, with fields that adapt to the exercise's `SetKind`. Builds a
 /// `SetLog` and hands it back; the player stamps `completedAt` and appends it.
 private struct LogSetSheet: View {
@@ -268,13 +319,24 @@ private struct LogSetSheet: View {
     @State private var reps = ""
     @State private var weight = ""
     @State private var unitSel: WeightUnit
-    // duration
+    // duration — Timer (live `StopwatchView`) or Manual (Min/Sec fields); a Stop capture fills the same
+    // `minutes`/`seconds` the Manual fields write, so `build()` stays one expression. (workout-with-timer PR 2)
+    @State private var durationMode: DurationInputMode = .timer
+    @State private var timerRunning = false
     @State private var minutes = ""
     @State private var seconds = ""
     // climb
     @State private var grade = ""
     @State private var status: KilterAscentStatus = .sent
     @State private var tries = 1
+    // climb — OPTIONAL per-attempt timer (workout-with-timer PR 4): off by default so quick logging is
+    // unchanged. When on, a StopwatchView(.countUp) Stop capture fills `climbDurationSec`, which `build()`
+    // writes into the (otherwise-unused-for-climbs) SetLog.durationSec. `climbTimerRunning` gates the
+    // disclosure toggle while running so it can't be collapsed mid-run (tearing down the timer without a
+    // Stop, silently dropping the capture — the timed-set lesson).
+    @State private var climbTimed = false
+    @State private var climbTimerRunning = false
+    @State private var climbDurationSec: Double?
 
     init(kind: SetKind, unit: WeightUnit, onAdd: @escaping (SetLog) -> Void) {
         self.kind = kind
@@ -303,14 +365,39 @@ private struct LogSetSheet: View {
                         .pickerStyle(.segmented).frame(width: 110).labelsHidden()
                     }
                 case .duration:
-                    HStack {
-                        TextField("Min", text: $minutes).keyboardType(.numberPad)
-                            .focused($keypadFocused)
-                        Text(":").foregroundStyle(.secondary)
-                        TextField("Sec", text: $seconds).keyboardType(.numberPad)
-                            .focused($keypadFocused)
+                    Picker("Input", selection: $durationMode) {
+                        ForEach(DurationInputMode.allCases) { Text($0.label).tag($0) }
                     }
-                    .accessibilityIdentifier("logset.duration")
+                    .pickerStyle(.segmented).labelsHidden()
+                    // Lock the mode while the stopwatch runs: switching to Manual would remove the
+                    // StopwatchView, whose onDisappear cancels the ticker without a Stop — silently
+                    // dropping the capture. The user must Stop first (onStop fills Min/Sec).
+                    .disabled(timerRunning)
+                    .accessibilityIdentifier("logset.durationMode")
+                    switch durationMode {
+                    case .timer:
+                        // Press Start → do the hold → Stop captures the elapsed seconds into the same
+                        // minutes/seconds the save path reads (PR 1's StopwatchView, first real consumer).
+                        StopwatchView(mode: .countUp) { elapsed in
+                            let split = SetMeasure.splitDuration(elapsed)
+                            minutes = split.minutes
+                            seconds = split.seconds
+                        } onRunningChange: { timerRunning = $0 }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        // NOTE: no .accessibilityIdentifier on the StopwatchView itself — on iOS 26 that
+                        // collapses the composite view into one accessibility element and hides its inner
+                        // `stopwatch.toggle` button from XCUITest. The test queries the child ids directly.
+                    case .manual:
+                        HStack {
+                            TextField("Min", text: $minutes).keyboardType(.numberPad)
+                                .focused($keypadFocused)
+                            Text(":").foregroundStyle(.secondary)
+                            TextField("Sec", text: $seconds).keyboardType(.numberPad)
+                                .focused($keypadFocused)
+                        }
+                        .accessibilityIdentifier("logset.duration")
+                    }
                 case .climbAttempt:
                     TextField("Grade (e.g. V4, 6c)", text: $grade)
                         .accessibilityIdentifier("logset.grade")
@@ -318,6 +405,24 @@ private struct LogSetSheet: View {
                         ForEach(KilterAscentStatus.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     Stepper("Attempts: \(tries)", value: $tries, in: 1...50)
+                    // Optional: time how long the attempt took (the climb-side analogue of the timed-set
+                    // timer, PR 2). Off by default → existing quick-logging is unchanged; the leaf Toggle
+                    // is locked while the stopwatch runs so it can't tear the timer down without a Stop.
+                    Toggle("Time the attempt", isOn: $climbTimed)
+                        .disabled(climbTimerRunning)
+                        .accessibilityIdentifier("logset.climbTimerToggle")
+                    if climbTimed {
+                        // Stop captures the elapsed seconds into `climbDurationSec`, which `build()` writes
+                        // into SetLog.durationSec (the count-up StopwatchView from PR 1; same consumer
+                        // shape as the timed-set Timer mode). NOTE: no .accessibilityIdentifier on the
+                        // StopwatchView itself — on iOS 26 that collapses the composite into one element
+                        // and hides its inner `stopwatch.toggle`; the test queries the child ids directly.
+                        StopwatchView(mode: .countUp) { elapsed in
+                            climbDurationSec = elapsed > 0 ? elapsed : nil
+                        } onRunningChange: { climbTimerRunning = $0 }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
                 }
             }
             .navigationTitle(kind.addLabel)
@@ -347,7 +452,10 @@ private struct LogSetSheet: View {
             return SetLog(durationSec: total > 0 ? total : nil)
         case .climbAttempt:
             let g = grade.trimmingCharacters(in: .whitespaces)
-            return SetLog(climbGradeLabel: g.isEmpty ? nil : g,
+            // Reuse `durationSec` for the optional per-attempt time (PR 4): nil unless the timer was used
+            // and captured a non-zero hold, so untimed attempts log exactly as before.
+            return SetLog(durationSec: climbTimed ? climbDurationSec : nil,
+                          climbGradeLabel: g.isEmpty ? nil : g,
                           climbStatusRaw: status.rawValue, climbAttempts: tries)
         }
     }
