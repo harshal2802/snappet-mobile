@@ -89,6 +89,191 @@ untouched. (3) `skipped` counts toward neither done nor pending (surfaced as "N 
 summary). (4) Pure logic (`KilterPlanProgress`) is SwiftData-free so it unit-tests without a device;
 the `@Model` lives in `KilterModels.swift`, registered in `SnappetSchema.models` and covered by
 `SnappetBackup` (`KilterPlanRow`) — the backup tripwire + round-trip count (now 22) enforce it.
+## [2026-06-16] History tracking-type facet: a pure derivation over `SessionExercise.kind` (no model change), composed in `HistorySearch`
+
+**Decision** (workout-with-timer PR 6/6 — the final slice, prompt 72): the workout **History** gains a
+**tracking-type facet** — a second chip row, alongside the routine-name chips (issue #73), of the three
+`SetKind`s (Reps & weight / Time / Climb) — that keeps a session when **any** of its exercises tracks a
+selected kind. A session's tracking types are **derived** from the set of `ex.kind` across its
+`exercises` (`SessionExercise.kind`, which already reads `kindRaw` and defaults `.repsWeight`), so this
+is a **pure derivation over existing data with NO model change** (`SetKind` + `SessionExercise.kindRaw`
+already exist). The semantics are **union, not intersection** (selecting Time + Climb keeps a session
+tracking *either*) and **empty selection = inert** (all sessions through), so the prior behavior is the
+default. Filtering stays in the **pure, unit-tested `HistorySearch`** (no SwiftUI in the logic): a new
+composable `filterByTrackingTypes(_:kinds:)` carries the one-line "any selected kind" rule, and
+`apply(_:query:routine:kinds: Set<SetKind> = [])` calls it in the funnel **routine chip → tracking-type
+facet → text query**. The defaulted `kinds:` keeps the existing `apply` call site and the existing
+`HistorySearchTests` untouched. The chip row **mirrors `routineChips`** exactly (horizontal `ScrollView`
+of plain pill `Button`s, active = `SnappetColor.workout.opacity(0.2)` fill + `SnappetColor.workout`
+foreground, `.snappetAnimation(SnappetMotion.quick, value:)`, `.accessibilityAddTraits(.isSelected)`),
+uses `SetKind.allCases` with each chip's `.display` label + `.symbol` icon, and is shown once
+`!history.isEmpty` so a kind can always be toggled. Selection lives in a `@State private var kindFilter:
+Set<SetKind>` (the `ExerciseFilters` `Set`-per-facet precedent). Chose **(both, layered)** over either a
+bare `kinds:` param or a standalone helper: the helper is directly testable and composable, the param
+threads it through the one funnel, and the default preserves the old surface.
+
+**Why**: a bouldering/route session, a stretch/hold session, and a lifting session should each be
+findable by *what they tracked*, not only by routine name. Deriving from `SessionExercise.kind` is the
+smallest change (zero migration — nothing new persisted), and keeping the rule in pure `HistorySearch`
+means it's covered without a simulator and composes cleanly with the routine + text layers already there.
+
+**UI-test approach**: the real flow is drivable end-to-end (Quick Start → log a Timed set via the
+`LogSetSheet` Manual mode → `freeform.finish` commits a saved finish with **no** confirm dialog → the
+`segmentedControls["History"]` segment → toggle `history.kindChip.duration`), so `TrackingTypeFilterTests`
+drives it: with a fresh store the timed session is the only `historyRow`, so toggling **Time** keeps it,
+adding **Reps & weight** keeps it (union), and turning **Time** back off (leaving only Reps & weight)
+**hides** it — the distinctive narrow/widen. A chip-render + toggle fallback was the documented
+contingency but wasn't needed. Each chip is a **leaf** with id `history.kindChip.<rawValue>` (e.g.
+`history.kindChip.duration`); rows are queried **type-agnostically**
+(`descendants(matching: .any).matching(identifier: "historyRow")`, not `app.cells`) — the PR 2–5 lesson
+that an id on a composite collapses the a11y subtree on iOS 26.
+
+**Rules out**: a stored "tracking types" field on `WorkoutSession`/`SessionExercise` (derive from
+`kind`); a second/parallel filter funnel (extend `HistorySearch`); intersection semantics or a
+non-inert empty selection; an `accessibilityIdentifier` on the composite chip row; touching the
+guided `WorkoutPlayerView`, the watch/widget, or `HighlightEngine`.
+
+## [2026-06-16] Named free-flow climb: custom climb name via the existing `displayName` (no model change); prompt-on-tap
+
+**Decision** (workout-with-timer PR 5/6, prompt 71): in the freeform player a **climbing** exercise can
+carry a **custom climb name** (e.g. "Cave Project", "Blue V4") so per-attempt logging groups under the
+named climb instead of the fixed "Climbing". Tapping "Climbing" in the add-exercise menu no longer adds
+immediately — it presents a small **`.alert("Name this climb", …)`** with a leaf `TextField`
+(`accessibilityIdentifier("freeform.climbName")`) + Add/Cancel; "Add" calls the **existing**
+`addExercise(kind: .climbAttempt, name: SetMeasure.climbName(draft))`. The typed name is stored on the
+**existing** `SessionExercise.displayName` and rendered by the **existing**
+`resolver.name(for:override:)` (which already returns a non-empty override as the header) — so there is
+**NO model change** and the name rides every existing path (persist · Live Activity label · backup) for
+free. A new pure `SetMeasure.climbName(_:)` trims `.whitespacesAndNewlines` and falls back to "Climbing"
+on a blank entry, so naming is **optional** and the prior behavior is the default. The trim/fallback is
+the one tested definition (unit-tested in `SetMeasureTests`, no simulator) rather than inline in the
+view. Chose the **prompt-on-tap** option over add-then-rename: it puts naming where the intent is, keeps
+the per-exercise header `Menu` simple (still just "Remove exercise"), and reuses the repo's existing
+alert-with-`TextField` pattern (`StudioEditorView`'s "Add text"/"Rename"). Attempt logging, the PR-4
+per-attempt timer, summaries, and Repeat set are untouched; only the name the attempts group under
+changes. The text field is a **leaf** with its own id and is queried via `app.alerts.textFields` (an id
+on a composite collapses the a11y subtree on iOS 26 — the PR 2/3/4 lesson).
+
+**Why**: a bouldering/route session wants attempts grouped by the *specific* problem ("Cave Project"),
+not all lumped under "Climbing"; storing that in the already-rendered `displayName` is the smallest
+change that achieves it (zero migration risk on the `Codable` blob). Putting the trim/fallback in pure
+`SetMeasure` keeps "what name to store" as one tested rule and leaves room to reuse it from a future
+rename surface.
+
+**Deferred (device-pending)**: **photo attachment to a free-flow climb** (a reference shot of the
+boulder/route) is intentionally **not** in this PR — it needs PHPicker/Photos, which is **device-only and
+unverifiable in this CI-only environment** (a clean type-check ≠ a device run for Photos), so it is split
+into a separate follow-up to be done where a device run is available.
+
+**Rules out**: a new `SessionExercise`/`SetLog`/`WorkoutModels` field for the climb name (reuse
+`displayName`); a second add-exercise site or inlining the trim/fallback in the view; changing attempt
+logging / the per-attempt timer / summaries / Repeat set / the guided `WorkoutPlayerView`; implementing
+photo attachment in this PR; an identifier on a composite alert view.
+
+## [2026-06-16] Climb attempts: optional per-attempt timer reusing `durationSec` (no model change), off by default
+
+**Decision** (workout-with-timer PR 4/6, prompt 70): the freeform `LogSetSheet`'s `.climbAttempt` case
+gains an **opt-in** "Time the attempt" `Toggle` (`accessibilityIdentifier("logset.climbTimerToggle")`),
+**default off** so quick log-and-go is byte-for-byte unchanged. When on, it reveals PR 1's
+`StopwatchView(mode: .countUp)`; its `onStop` capture is stored in the **existing**
+`SetLog.durationSec` — a field that was unused for `.climbAttempt` until now, so there is **NO model
+change** — and `build()`'s `.climbAttempt` arm gains `durationSec: climbTimed ? climbDurationSec : nil`.
+`SetMeasure.summary`'s `.climbAttempt` arm appends `formatDuration(durationSec)` (when `> 0`) after
+grade/status/tries → "V4 · Sent · 3 tries · 0:42", reusing the one duration funnel. This is the
+**climb-side analogue of PR 2's timed-set timer** and the **second real consumer** of the stopwatch
+primitive. The `StopwatchView`'s `onRunningChange` drives a `climbTimerRunning` flag that
+`.disabled(...)`s the toggle while running, so it can't be collapsed mid-run (which would tear down the
+timer without a Stop and silently drop the capture — the PR 2 lesson). The toggle is a **leaf** control;
+the `StopwatchView` carries **no** identifier (on iOS 26 an identifier on a composite collapses its
+subtree and hides the inner `stopwatch.toggle`/`stopwatch.elapsed` from XCUITest — the PR 2/3 lesson).
+
+**Why**: timing a boulder/route is occasionally wanted (projecting, comparing burns) but must never slow
+the common grade-and-go log — hence opt-in and off by default. Reusing `durationSec` (rather than a new
+`SetLog` field) means no migration risk on the `Codable` blob and the value rides every existing path
+(persist · `SetMeasure.duplicate`/Repeat · backup) for free; the summary append is the only render
+change, kept in the one tested formatter. `build()`'s save shape and the `SetMeasure.hasInput` Add-gate
+are unchanged — grade/outcome still decide loggability; the timer is purely additive.
+
+**Rules out**: a new `SetLog`/`WorkoutModels` field for the climb time (reuse `durationSec`); making the
+timer on-by-default or mandatory; a second duration formatter; an identifier on the `StopwatchView`
+composite; changing `.repsWeight`/`.duration`, the `.medium` detent, or the Add-gate.
+
+## [2026-06-16] Repeat set: one-tap identical-set loop via a pure `SetMeasure.duplicate` through the one append path
+
+**Decision** (workout-with-timer PR 3/6, prompt 69): the freeform player gains a one-tap **"Repeat set"**
+control on every exercise that already has ≥1 logged set. It appends a copy of that exercise's most
+recent set — every kind-specific field (reps/weight/unit · `durationSec` · climb grade/status/attempts)
+carried over verbatim, only `completedAt` replaced with `now` — and **does not open `LogSetSheet`**. The
+copy is built by a new pure `SetMeasure.duplicate(_:now:)` (next to `summary`/`hasInput`/`isSend`) and
+then handed to the **existing** `appendLog(_:toExerciseID:)`, so the append + `persist()` +
+`pushLiveActivity()` + `Haptics.success()` path is reused unchanged — Repeat is just another producer of
+a `SetLog`, not a second save site. The control is a **sibling leaf `Button`** beside `freeform.addSet`
+(`accessibilityIdentifier("freeform.repeatSet")`), gated by `if !ex.sets.isEmpty` so it's absent with
+nothing to repeat.
+
+**Why**: the slow part of straight sets / a bouldering burn of the same problem is re-typing identical
+numbers; one tap removes it for the common case while the sheet stays the path for a *different* set.
+Putting the copy in the pure `SetMeasure` keeps "duplicate a set" as one tested definition (a `SetLog`
+struct copy carries every additive-optional kind field for free); `now` is injected so the duplicate is
+unit-tested deterministically without a device. Note `appendLog` re-stamps `completedAt = .now` itself,
+so the duplicate's stamp is authoritative-by-the-append — `duplicate` still owns the field-copy + stamp
+semantics that the tests pin. The control is a leaf `Button` (never a wrapped composite) because on
+iOS 26 an identifier on a composite collapses its subtree and hides children from XCUITest (PR 2 lesson).
+
+**Rules out**: a second save/persist site for Repeat; inlining the `SetLog` copy in the view; opening a
+prefilled `LogSetSheet` for a repeat; changing `LogSetSheet`/`build()`/`SetLog` or any `SetKind`'s
+behavior; an identifier on a composite Repeat view.
+
+## [2026-06-16] Timed sets: live-time a duration with the shared stopwatch; Timer/Manual toggle over one save path
+
+**Decision** (workout-with-timer PR 2/6, prompt 68): the freeform `LogSetSheet`'s `.duration` case
+gains a **Timer | Manual** segmented toggle, **Timer the default**. Timer mode embeds PR 1's
+`StopwatchView(mode: .countUp)` — its `onStop` writes the captured elapsed back into the **same**
+`minutes`/`seconds` `@State` the Manual fields use (mapped by a new pure `SetMeasure.splitDuration`,
+the inverse of the build path's `min*60 + sec`), so `build()` and the `SetMeasure.hasInput` Add-gate
+are **byte-for-byte unchanged** — the timer is just a third way to fill two fields, not a second save
+path. This makes the freeform timed-set sheet the **first real consumer** of the stopwatch primitive
+that PR 1 deliberately shipped with "no callers yet" (de-risking it before the heavier per-climb-attempt
+timer, PR 5).
+
+**Why**: typing minutes/seconds for a plank/hang is the wrong affordance — you want to press Start,
+do the hold, press Stop. Routing the capture through the existing `minutes`/`seconds` state (rather than
+a parallel `durationSec` state) keeps the one tested save expression and the Add-enablement gate intact,
+so the only new logic is a pure, unit-tested mapping. `splitDuration` lives next to `formatDuration` /
+`parseReps` / `parseWeight` because the repo funnels every duration string through one place — no second
+formatter. Manual stays as an exact-value override (and the path `FreeformFlowWalkthroughTests` already
+drives, after it first taps Manual).
+
+**Rules out**: a separate `durationSec` state or a forked `.duration` save branch; inlining the
+seconds→Min/Sec split in the view; a second duration formatter; changing `SetLog`/`build()`,
+`.repsWeight`/`.climbAttempt`, or the sheet's `.medium` detent.
+
+## [2026-06-16] CI + release builds pin Xcode 26.5 on `macos-26` (match the shipping toolchain)
+
+**Decision** (workout-with-timer PR 1/6, wiring the PR CI gate): every GitHub Actions workflow that
+compiles the app — `ci.yml`, `release-ipa.yml`, `testflight.yml` — pins **`runs-on: macos-26` +
+Xcode 26.5** (`maxim-lobanov/setup-xcode@v1`, `xcode-version: '26.5'`): the exact toolchain this repo
+is developed and verified on (see the "Xcode/SDK 26.5" entries below). NOT `latest-stable`, NOT
+`macos-15`.
+
+**Why**: the new PR CI proved the app build is **toolchain-version-fragile**, and the GitHub runners
+had drifted off our toolchain. `latest-stable` on `macos-15` → **Xcode 26.3**, whose Swift
+type-checker times out ("unable to type-check this expression in reasonable time") on complex SwiftUI
+expressions (`WorkoutDashboardSection`, `WorkoutTrackerModule`) that 26.5 compiles fine. Pinning
+"Xcode 16" → **16.4**, whose older Swift 6.0 rules make `View`-conformance actor isolation a hard
+*error* (`KilterBoardView.holdPath`) where 26.5 only warns. `macos-15` also has no Xcode ≥26.4 and
+only iOS 18.5/18.6/26.x sim runtimes (so Xcode 16.0–16.3 can't build for iOS there at all). Only
+`macos-26` carries 26.5.
+
+**Two pre-existing Swift 6 build breaks fixed forward** (real defects on `main`, masked by the
+timeouts + by never doing a clean CI module-emit — NOT toolchain hacks): (1) `SnappetBackup.recordCount`
+→ an **imperative running total**; both a 20-term `+` chain (times out on 26.3) and a 20-element
+array-literal `+ reduce` (times out on 26.5) overflow the expression type-checker, but `n += …` is
+trivial everywhere. (2) `SceneScorer` → **`@unchecked Sendable`** (an explicitly-`Sendable` class
+whose only stored property is a thread-safe `CIContext`, which Apple doesn't mark `Sendable`).
+
+**Rules out**: `latest-stable` / `macos-15` for any app-compiling workflow; folding `recordCount`
+back into one expression; plain `: Sendable` on `SceneScorer`.
 
 ## [2026-06-10] Android CRUD sweep: one confirm component, long-press as the secondary-action idiom (issue #88)
 
@@ -4349,6 +4534,33 @@ stays `com.snappet.app`** (user's call). The `.alpha` retarget is a **local over
 - **Not done (needs the user / Apple web)**: App Store *review* submission — metadata, screenshots,
   privacy policy URL (mandatory for HealthKit), App Privacy labels, age rating. TestFlight internal
   testing needs none of these.
+
+## 2026-06-15 — Workout-with-timer PR 1: a shared, wall-clock stopwatch primitive (prompt 62)
+
+Kicked off the Gym Tracker "Workout with timer" initiative (timed sets · a one-tap repeat-set loop ·
+free-flow climb sessions · a tracking-type search facet). Two upcoming features need the *same* live
+Start/Stop timer — timed sets (`SetKind.duration`, PR 2) and per-climb attempts (PR 5) — so the timer
+is built and unit-tested **once, as a primitive with no callers**, to de-risk both.
+
+- **Decision**: split it the repo's usual way — a PURE core (`StopwatchTiming`, no SwiftUI/SwiftData)
+  computes the only tricky parts (elapsed-with-pause, count-down clamp, reached-zero) and is unit-tested
+  on the Mac (`StopwatchTimingTests`); the SwiftUI `StopwatchView` + `@Observable StopwatchViewModel` is a
+  thin shell over it. Mirrors `SetMeasure` / `LastSetLookup` (pure logic at a thin edge).
+- **Decision**: the displayed time is ALWAYS recomputed from `Date` (`elapsed = accumulated + (now −
+  startedAt)`), never summed from a tick counter — the exact anti-drift rule the rest timer and the
+  overall timer already use, so it's correct across backgrounding (reconciled on `scenePhase == .active`).
+  The ~200 ms task only refreshes the digits and fires the at-zero haptic. Count-up's no-pause common case
+  renders `Text(timerInterval:)` for a zero-background-CPU self-update; a resumed (accumulated > 0) run
+  falls back to the recomputed reading so the total stays correct.
+- **Decision**: reuse `SetMeasure.formatDuration` for every duration string (no second formatter) and the
+  rest timer's 220 pt `Circle().trim` arc + Reduce-Motion snap for the count-down dial — consistency by
+  reuse, not re-implementation.
+- **Decision**: `Haptics.success()` at 0 is the ONLY device-only line; the core + its tests need no
+  device. No model change, no callers — `WorkoutModels` / `WorkoutPlayerView` / `FreeformPlayerView` are
+  untouched; PRs 2 and 5 wire it in (and add the knowledge-graph caller edges then).
+- **Verification (honest)**: authored on Linux — type-check / `xcodebuild test` / the `#Preview` sim
+  render are owed on a Mac at the merge gate (per CLAUDE.md this target can't build here).
+  `StopwatchTimingTests` is the device-free proof of the timing math.
 
 ## 2026-06-15 — Android Wave 2: workout authoring + workout loop + feedback/undo (#87 #95 #89)
 

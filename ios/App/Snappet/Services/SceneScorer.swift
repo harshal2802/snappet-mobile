@@ -40,7 +40,10 @@ enum SceneScoring {
 /// scores cross into `HighlightEngine` (via `SceneHighlightSelector.visualScore`) — the engine stays
 /// platform-free. Real-footage selection quality is device-verified; the off-device proof is the
 /// synthesized blurry-vs-sharp fixture test (`SceneScorerTests`).
-final class SceneScorer: Sendable {
+// `@unchecked Sendable`: the sole stored property is a `CIContext`, which Apple documents as thread-safe
+// and shareable across threads but does not mark `Sendable`; the type is otherwise stateless. Plain
+// `: Sendable` fails the Swift 6 strict-concurrency build ("non-sendable type 'CIContext'").
+final class SceneScorer: @unchecked Sendable {
     private let context = CIContext(options: [.useSoftwareRenderer: false])
 
     /// Score a workout's video media → `visualScore` map keyed by **workout-offset seconds** (the engine

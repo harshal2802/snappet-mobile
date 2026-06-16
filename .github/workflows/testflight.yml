@@ -14,7 +14,7 @@ on:
 
 jobs:
   testflight:
-    runs-on: macos-15
+    runs-on: macos-26        # Tahoe runner — Xcode 26.5, the shipping toolchain
     env:
       TEAM_ID: P6U6C88W9J
       BUNDLE_ID: com.snappet.app
@@ -22,9 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same toolchain pin as ci.yml / release-ipa.yml (see ci.yml) — `latest-stable` drifts on the
+      # runner and would break a TestFlight build on a runner-image bump.
       - uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.5'
 
       - name: Install XcodeGen
         run: brew install xcodegen

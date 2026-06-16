@@ -97,14 +97,37 @@ enum SnappetBackup {
         var kilterPlans: [KilterPlanRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
+        ///
+        /// Summed imperatively into an explicitly-typed `Int` accumulator — deliberately NOT a 20-term
+        /// `+` chain, and NOT a 20-element array literal + `reduce(0, +)`. Both of those forms overflow
+        /// Swift's expression type-checker budget ("unable to type-check this expression in reasonable
+        /// time") on a *clean* build, on different toolchains (the `+` chain on Xcode 26.3, the array
+        /// literal on 26.5 — neither shape survives both). A plain running total is trivial for the
+        /// type-checker everywhere. Keep it imperative — do not "simplify" it back into one expression.
         var recordCount: Int {
-            usageRecords.count + pomodoroSessions.count + habits.count + habitCompletions.count
-                + journalEntries.count + expenseGroups.count + expenseRecords.count
-                + budgetCategories.count + budgetTransactions.count + routines.count
-                + workoutSessions.count + customExercises.count + sessionMedia.count
-                + clipEdits.count + studioProjects.count + tipCalculations.count
-                + kilterLogEntries.count + kilterSessions.count + kilterFavorites.count
-                + kilterCreatedClimbs.count + kilterPlans.count
+            var n = 0
+            n += usageRecords.count
+            n += pomodoroSessions.count
+            n += habits.count
+            n += habitCompletions.count
+            n += journalEntries.count
+            n += expenseGroups.count
+            n += expenseRecords.count
+            n += budgetCategories.count
+            n += budgetTransactions.count
+            n += routines.count
+            n += workoutSessions.count
+            n += customExercises.count
+            n += sessionMedia.count
+            n += clipEdits.count
+            n += studioProjects.count
+            n += tipCalculations.count
+            n += kilterLogEntries.count
+            n += kilterSessions.count
+            n += kilterFavorites.count
+            n += kilterCreatedClimbs.count
+            n += kilterPlans.count
+            return n
         }
     }
 
