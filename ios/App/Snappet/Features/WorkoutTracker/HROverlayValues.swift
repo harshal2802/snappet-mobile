@@ -47,12 +47,16 @@ struct HROverlayValues {
         var hex: String
         var value: String
         var unit: String?
+        /// A 0…1 ratio for the metrics a gauge/bar can fill proportionally (%HRR effort, redline share) —
+        /// drives the Zone Ring sweep arc and the zone bars. `nil` for everything else.
+        var fraction: Double?
 
-        init(text: String, hex: String, value: String? = nil, unit: String? = nil) {
+        init(text: String, hex: String, value: String? = nil, unit: String? = nil, fraction: Double? = nil) {
             self.text = text
             self.hex = hex
             self.value = value ?? text
             self.unit = unit
+            self.fraction = fraction
         }
     }
 
@@ -82,7 +86,7 @@ struct HROverlayValues {
         case .hrr:
             guard let h = hrrFraction(bpm: bpm) else { return nil }
             let p = Int((h * 100).rounded())
-            return Reading(text: "\(p)% effort", hex: zone.colorHex, value: "\(p)", unit: "%")
+            return Reading(text: "\(p)% effort", hex: zone.colorHex, value: "\(p)", unit: "%", fraction: h)
         case .recovery:
             switch RecoveryReadiness.evaluate(currentBpm: bpm, restBpm: restHR, maxBpm: maxHR).state {
             case .ready:      return Reading(text: "Recovered", hex: "#34C759", value: "Recovered")
@@ -116,11 +120,11 @@ struct HROverlayValues {
             guard let s = stats, let h = hrrFraction(bpm: s.maxBpm) else { return nil }
             let z = HeartRateZone.forBpm(s.maxBpm, maxHR: effectiveMaxHR)
             let p = Int((h * 100).rounded())
-            return Reading(text: "\(p)% peak", hex: z.colorHex, value: "\(p)", unit: "%")
+            return Reading(text: "\(p)% peak", hex: z.colorHex, value: "\(p)", unit: "%", fraction: h)
         case .redline:
             guard let s = stats, s.totalSeconds > 0 else { return nil }
             let p = Int((s.redlineFraction * 100).rounded())
-            return Reading(text: "\(p)% redline", hex: fallbackHex, value: "\(p)", unit: "%")
+            return Reading(text: "\(p)% redline", hex: fallbackHex, value: "\(p)", unit: "%", fraction: s.redlineFraction)
         case .strain:
             guard let s = stats else { return nil }
             let n = Int(s.edwardsTRIMP.rounded())

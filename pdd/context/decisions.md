@@ -62,6 +62,35 @@ semantic colour only for the live-intensity metrics (zone / %HRR / redline / rec
 for the aggregates — so a single hue never misrepresents a multi-zone session (the prompt-51 rule,
 refreshed for the value-only chips).
 
+**Phase 2 — the full premium catalog (prompt 78).** The 6 non-default templates got bespoke geometry on
+the PR1 foundation: HR Trace (`chartBanner`, top row + curve + 4-up), Broadcast (`scorebug`, accent bar +
+5-cell zone bar + right stat columns + chart lane), Vertical Rail (`list`, vertical zone bar + label→value
+rows), Zone Ring (`ring`, %HRR sweep gauge with the zone in the arc colour), Gradient Strain (`bento`, the
+Glass Hero layout on an effort gradient skin), HUD Pill (unchanged). Two shared primitives: a `.zoneBar`
+role and a `Decoration` (accent bar / gradient skin) the pure layout places so both renders draw it from
+the same frame; `Reading.fraction` carries %HRR/redline for the sweep + bars. Non-obvious choices:
+
+- **The gauge sweep + zone bar ANIMATE in the export (keyframes), not just the preview.** They bind to
+  live+animated metrics (zone/%HRR), and the preview re-resolves per frame, so a static export froze the
+  arc/lit-cell at the clip start — a WYSIWYG break (caught by the phase-2 adversarial review). Fix: the
+  export keyframes the gauge's `strokeEnd`/`strokeColor` and cross-fades a per-segment lit-cell overlay
+  on the zone bar, the same baked-keyframe pattern the hero number / zone pill / chart dot already use.
+- **Chrome (accent bar / gradient skin) is STATIC — the clip's AVERAGE-bpm zone, both sides.** Keyframing
+  a background tint per-frame isn't worth it; a stable "effort backdrop" (computed identically in preview
+  and export from the avg bpm) is cleaner and trivially WYSIWYG. The live tracking stays on the
+  hero/pill/zone-bar/gauge/dot. The gradient skin is **horizontal** (cool → zone) so its orientation is
+  flip-safe in the Core-Animation tool tree (a vertical gradient is flip-ambiguous — same call as the
+  curve's flat area fill).
+- **Zone-bar orientation is explicit per template (`MetricSlot.zoneBarVertical`), never inferred from the
+  slot aspect** — Broadcast's bar is horizontal even though its slot is taller-than-wide at the default
+  size (inferring from aspect flipped it vertical).
+- **`hiddenCount` credits a colour-encoded metric.** The Zone Ring shows the zone as the arc colour (no
+  slot), so an enabled `.zone` there is *covered*, not parked — otherwise a pristine ring showed a false
+  "+1 · enlarge". The builder's `+N` hint (`tileHiddenCount`, computed on a nominal canvas scaled by the
+  tile size) only promises metrics that enlarging can actually reveal.
+- **Per-template caps match each design's spawn set** so the focused default fully shows and only
+  user-added extras park.
+
 ## [2026-06-16] Kilter planned-session Android port: faithful mirror with Android-specific divergences (kilter-planned-session A-PR1..4)
 
 **Decision**: the iOS planned-session feature is ported to Android (Kotlin/Compose/Room) mirroring the

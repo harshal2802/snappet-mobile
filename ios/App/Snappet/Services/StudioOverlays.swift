@@ -332,6 +332,15 @@ enum StudioOverlays {
         let slotDur = slotDurationSec ?? totalDuration
         let segByMetric = Dictionary(tile.metrics.map { ($0.metric, $0.segments) }, uniquingKeysWith: { a, _ in a })
 
+        // Template chrome (Broadcast accent bar / Gradient Strain skin), behind the content. Coloured by
+        // the clip's OVERALL zone (average bpm) — static, matching the preview's `chromeZoneHex`, so it
+        // doesn't flicker (the live tracking is the hero/pill/zone-bar/gauge/dot).
+        let avg = averageBPM(samples)
+        let zoneHex = avg > 0 ? HeartRateZone.forBpm(avg, maxHR: tile.maxHR).colorHex : HeartRateZone.aerobic.colorHex
+        for d in result.decorations {
+            container.addSublayer(tileDecorationLayer(d, frame: flip(d.frame), zoneHex: zoneHex, tileRadius: radius))
+        }
+
         if tile.showChart, let chartRect = result.chartRect, samples.count >= 2 {
             container.addSublayer(tileChartLayer(samples: samples, maxHR: tile.maxHR,
                                                  localRect: flip(chartRect), zoneColored: tile.zoneColored,
@@ -350,7 +359,11 @@ enum StudioOverlays {
                     container.addSublayer(l)
                 }
             case .gauge:
-                container.addSublayer(tileGaugeLayer(segs.first, frame: frame))   // the centered number is a .hero slot
+                container.addSublayer(tileGaugeLayer(segs, frame: frame,
+                                                     slotStartSec: slotStartSec, slotDur: slotDur, total: totalDuration))
+            case .zoneBar:
+                container.addSublayer(tileZoneBarLayer(segs, frame: frame, vertical: slot.zoneBarVertical,
+                                                       slotStartSec: slotStartSec, slotDur: slotDur, total: totalDuration))
             default:
                 for l in tileValueLayers(slot, segs: segs, frame: frame,
                                          slotStartSec: slotStartSec, slotDur: slotDur, total: totalDuration) {
@@ -565,19 +578,132 @@ enum StudioOverlays {
         }
     }
 
-    /// A decorative gauge ring (the %HRR arc) coloured by the current zone — the centered bpm number
-    /// (a separate `.hero` slot) is the value of record, so the ring is a full coloured stroke.
-    private static func tileGaugeLayer(_ seg: HROverlayValues.Segment?, frame: CGRect) -> CALayer {
-        let ring = CAShapeLayer()
-        ring.frame = frame
-        let lw = max(3, frame.width * 0.08)
-        let path = UIBezierPath(ovalIn: ring.bounds.insetBy(dx: lw / 2 + 1, dy: lw / 2 + 1))
-        ring.path = path.cgPath
-        ring.fillColor = UIColor.clear.cgColor
-        ring.strokeColor = uiColor(seg?.reading.hex ?? "#FF3B30").cgColor
-        ring.lineWidth = lw
-        ring.opacity = 1
-        return ring
+    /// The %HRR **sweep** gauge: a faint full-circle track + a zone-coloured arc revealed to the effort
+    /// `fraction` (via `strokeEnd`), starting at the top — the export twin of `HRTileView.gauge`. The
+    /// arc's extent AND colour **animate across the clip's segments** (keyframes) so the burned-in arc
+    /// tracks the playhead like the live preview, not frozen at the clip start. The centred bpm hero is a
+    /// separate `.hero` slot. (Sweep direction is a device-burn-in check, like all export visuals.)
+    private static func tileGaugeLayer(_ segs: [HROverlayValues.Segment], frame: CGRect,
+                                       slotStartSec: Double, slotDur: Double, total: Double) -> CALayer {
+        let container = CALayer(); container.frame = frame
+        let first = segs.first
+        let color0 = uiColor(first?.reading.hex ?? "#FF3B30")
+        let frac0 = CGFloat(max(0.02, min(1, first?.reading.fraction ?? 1)))
+        let lw = max(3, frame.width * 0.09)
+        let r = (min(frame.width, frame.height) - lw) / 2
+        let c = CGPoint(x: frame.width / 2, y: frame.height / 2)
+
+        let track = CAShapeLayer(); track.frame = container.bounds
+        track.path = UIBezierPath(arcCenter: c, radius: r, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
+        track.fillColor = UIColor.clear.cgColor; track.strokeColor = color0.withAlphaComponent(0.16).cgColor
+        track.lineWidth = lw
+        container.addSublayer(track)
+
+        let sweep = CAShapeLayer(); sweep.frame = container.bounds
+        // Start at the top (+y is up in the tool's bottom-left space) and reveal `frac` via strokeEnd.
+        sweep.path = UIBezierPath(arcCenter: c, radius: r, startAngle: .pi / 2,
+                                  endAngle: .pi / 2 - 2 * .pi, clockwise: false).cgPath
+        sweep.fillColor = UIColor.clear.cgColor; sweep.strokeColor = color0.cgColor
+        sweep.lineWidth = lw; sweep.lineCap = .round
+        sweep.strokeStart = 0; sweep.strokeEnd = frac0
+        sweep.shadowColor = color0.cgColor; sweep.shadowRadius = 3; sweep.shadowOpacity = 0.6; sweep.shadowOffset = .zero
+
+        // Strictly-increasing keyTimes from the segment starts (mapped onto the clip slot).
+        var kts: [NSNumber] = [], ends: [NSNumber] = [], cols: [CGColor] = []
+        var last = -1.0; let eps = 1e-4
+        for s in segs {
+            let kt = min(1, max(0, (slotStartSec + s.start * slotDur) / total))
+            if kt > last + eps {
+                kts.append(NSNumber(value: kt))
+                ends.append(NSNumber(value: Double(max(0.02, min(1, s.reading.fraction ?? 1)))))
+                cols.append(uiColor(s.reading.hex).cgColor)
+                last = kt
+            }
+        }
+        if kts.count >= 2 {
+            kts[0] = 0; kts[kts.count - 1] = 1
+            func anim(_ key: String, _ values: [Any]) -> CAKeyframeAnimation {
+                let a = CAKeyframeAnimation(keyPath: key)
+                a.values = values; a.keyTimes = kts; a.calculationMode = .linear
+                a.beginTime = AVCoreAnimationBeginTimeAtZero; a.duration = max(0.01, total)
+                a.isRemovedOnCompletion = false; a.fillMode = .both
+                return a
+            }
+            sweep.add(anim("strokeEnd", ends), forKey: "gaugeEnd")
+            sweep.add(anim("strokeColor", cols), forKey: "gaugeColor")
+            sweep.add(anim("shadowColor", cols), forKey: "gaugeGlow")
+        }
+        container.addSublayer(sweep)
+        return container
+    }
+
+    /// The segmented zone bar — 5 cells (Z1…Z5) tinted their zone colours, dimmed, with the **current
+    /// zone's** cell lit + glowing on top. The lit cell **animates across the clip's segments** (one
+    /// opacity-gated overlay per zone segment), so it tracks the playhead like the live preview rather
+    /// than freezing at the clip start. `vertical` (Rail, Z5 on top) vs horizontal (Broadcast, Z1→Z5
+    /// left→right) is set explicitly by the template, never inferred from the slot aspect. Export twin of
+    /// `HRTileView.zoneBar`.
+    private static func tileZoneBarLayer(_ segs: [HROverlayValues.Segment], frame: CGRect, vertical: Bool,
+                                         slotStartSec: Double, slotDur: Double, total: Double) -> CALayer {
+        let container = CALayer(); container.frame = frame
+        let n = 5, gap: CGFloat = 3
+        func cellFrame(_ k: Int) -> CGRect {
+            if vertical {
+                let cellH = (frame.height - gap * CGFloat(n - 1)) / CGFloat(n)
+                let y = frame.height - CGFloat(k + 1) * cellH - CGFloat(k) * gap   // bottom-left: k=0 → top
+                return CGRect(x: 0, y: y, width: frame.width, height: cellH)
+            } else {
+                let cellW = (frame.width - gap * CGFloat(n - 1)) / CGFloat(n)
+                return CGRect(x: CGFloat(k) * (cellW + gap), y: 0, width: cellW, height: frame.height)
+            }
+        }
+        func cellIndex(forZone z: Int) -> Int { vertical ? (5 - z) : (z - 1) }   // bar position of zone z
+        func zoneColor(_ z: Int) -> UIColor { uiColor((HeartRateZone(rawValue: z) ?? .aerobic).colorHex) }
+
+        // Base dim cells (static).
+        for k in 0..<n {
+            let z = vertical ? (5 - k) : (k + 1)
+            let cell = CALayer(); cell.frame = cellFrame(k); cell.cornerRadius = 2
+            cell.backgroundColor = zoneColor(z).withAlphaComponent(0.22).cgColor
+            container.addSublayer(cell)
+        }
+        // Lit overlay per zone segment, cross-faded.
+        let single = segs.count <= 1
+        for s in segs {
+            let cur = HeartRateZone.zoneIndex(forColorHex: s.reading.hex)
+            guard (1...5).contains(cur) else { continue }
+            let color = zoneColor(cur)
+            let lit = CALayer(); lit.frame = cellFrame(cellIndex(forZone: cur)); lit.cornerRadius = 2
+            lit.backgroundColor = color.cgColor
+            lit.shadowColor = color.cgColor; lit.shadowRadius = 2; lit.shadowOpacity = 0.7; lit.shadowOffset = .zero
+            if single { lit.opacity = 1 } else {
+                gateSegmentOpacity(lit, start: (slotStartSec + s.start * slotDur) / total,
+                                   end: (slotStartSec + s.end * slotDur) / total, totalDuration: total)
+            }
+            container.addSublayer(lit)
+        }
+        return container
+    }
+
+    /// Template chrome (Broadcast accent bar / Gradient Strain skin), the export twin of
+    /// `HRTileView.decoration`. The gradient skin is **horizontal** (cool → zone) so its orientation is
+    /// flip-safe in the tool tree, matching the preview.
+    private static func tileDecorationLayer(_ d: HRTileLayout.Decoration, frame: CGRect,
+                                            zoneHex: String, tileRadius: CGFloat) -> CALayer {
+        let zone = uiColor(zoneHex)
+        switch d.kind {
+        case .accentBar:
+            let bar = CALayer(); bar.frame = frame
+            bar.backgroundColor = zone.cgColor; bar.cornerRadius = frame.width / 2
+            bar.shadowColor = zone.cgColor; bar.shadowRadius = 3; bar.shadowOpacity = 0.7; bar.shadowOffset = .zero
+            return bar
+        case .gradientSkin:
+            let grad = CAGradientLayer(); grad.frame = frame
+            grad.startPoint = CGPoint(x: 0, y: 0.5); grad.endPoint = CGPoint(x: 1, y: 0.5)
+            grad.colors = [uiColor("#0E3A4A").withAlphaComponent(0.5).cgColor, zone.withAlphaComponent(0.5).cgColor]
+            grad.cornerRadius = tileRadius
+            return grad
+        }
     }
 
     /// The tile's chart register — the premium **zone-banded HR trace** (issue #163), the export twin of
