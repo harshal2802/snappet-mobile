@@ -1,15 +1,25 @@
 name: CI
 
 # PR verification gate, split for speed. A single job previously ran ~30+ min, all inside one
-# `xcodebuild test` (clean build + the full unit AND UI suites, serially). It now fans out into three
-# jobs that run in PARALLEL:
+# `xcodebuild test` (clean build + the full unit AND UI suites, serially). It now fans out into jobs
+# that run in PARALLEL:
 #   • engine — the pure HighlightEngine SwiftPM tests (~1–2 min); an independent fast signal.
 #   • app (SnappetTests)   — builds the app once and runs ONLY the unit suite → the fast gate (~15 min).
 #   • app (SnappetUITests) — builds the app once and runs ONLY the end-to-end UI suite (~30 min, slow).
 # The unit and UI suites are matrix legs (`-only-testing:`), so the unit/correctness signal no longer
 # waits behind the slow UI run. SwiftPM checkouts (notably onnxruntime's binary xcframework) are cached
-# between runs. UI tests still run on every PR (in parallel) so coverage isn't lost — to make a *merge*
-# wait only on the fast checks, require just `engine` + `App tests (SnappetTests)` in branch protection.
+# between runs.
+#
+# The ~30-min UI leg only RUNS WHEN A PR TOUCHES `ios/**` OR this workflow file — all app + UI + engine
+# source lives under ios/, so a docs/`pdd`-only PR cannot change app behavior and the UI suite would add
+# no signal (a change to ci.yml itself IS the build recipe, so it re-runs UI to validate it). A cheap
+# `changes` job (Linux) computes the test matrix: full `[SnappetTests, SnappetUITests]` when ios/** (or
+# ci.yml) changed (or on a `main` push / manual dispatch — always full), else just `[SnappetTests]`, so
+# the UI runner is never even requested. The decision is fail-OPEN: only an explicit "no ios changes"
+# drops UI, so an ambiguous/failed filter errs toward running it. Unit + engine ALWAYS run (so
+# they never go un-reported and can't deadlock a required-check rule). To make a *merge* wait only on the
+# fast checks, require just `engine` + `App tests (SnappetTests)` in branch protection (NOT the UI leg —
+# it is deliberately skippable and must not be required, or skipped PRs would block).
 # release-ipa.yml / testflight.yml are the only other app-compiling workflows (release / dispatch only).
 
 on:
@@ -27,6 +37,52 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Cheap Linux gate that decides which app-test suites the macOS `app` job runs, so the slow UI leg's
+  # macOS runner is never requested when a PR can't affect the app. Outputs a JSON array consumed by the
+  # `app` matrix via fromJSON. Runs in ~20s and only `app` waits on it; `engine` runs in parallel.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read   # dorny/paths-filter lists the PR's changed files via the API (no checkout)
+    outputs:
+      suites: ${{ steps.suites.outputs.suites }}
+    steps:
+      # Only meaningful on pull_request (diff vs base). On push/dispatch we force the full suite below,
+      # so the filter is skipped there (it has no diff base on workflow_dispatch).
+      - name: Detect ios/** changes (PRs only)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ios:
+              - 'ios/**'
+              # A PR that changes THIS workflow changes how the UI suite is built — run it to validate
+              # the recipe (the build steps live here, outside ios/**). release-ipa/testflight don't
+              # affect the PR test build, so they're intentionally not listed.
+              - '.github/workflows/ci.yml'
+      - name: Decide which app test suites to run
+        id: suites
+        env:
+          EVENT: ${{ github.event_name }}
+          IOS_CHANGED: ${{ steps.filter.outputs.ios }}
+        run: |
+          set -euo pipefail
+          # Fail-OPEN: full suite on non-PR events (a `main` push is post-merge integration; a manual
+          # dispatch is an explicit "run everything"), and on PRs UNLESS we're certain ios/** was
+          # untouched — i.e. only drop the ~30-min UI leg when the filter explicitly reported "false".
+          # Any empty/ambiguous filter value (e.g. the action silently no-ops) keeps the full suite, so we
+          # never SKIP UI by accident. Unit (SnappetTests) is always in the matrix — it's the fast gate.
+          if [ "$EVENT" != "pull_request" ] || [ "$IOS_CHANGED" != "false" ]; then
+            echo 'suites=["SnappetTests","SnappetUITests"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'suites=["SnappetTests"]' >> "$GITHUB_OUTPUT"
+            echo "::notice title=UI tests skipped::No ios/** (or ci.yml) changes in this PR — skipping the ~30-min SnappetUITests leg. Unit + engine still run."
+          fi
+
   engine:
     name: HighlightEngine (pure SwiftPM)
     runs-on: macos-26          # Tahoe runner — Xcode 26.5, the shipping toolchain (see decisions.md)
@@ -42,12 +98,20 @@ jobs:
 
   app:
     name: App tests (${{ matrix.suite }})
+    needs: changes
+    # Run even if `changes` fails (e.g. a paths-filter API hiccup/rate-limit): `!cancelled()` overrides the
+    # implicit "skip a job whose `needs` failed", and the fromJSON fallback below then expands the FULL
+    # matrix — so a broken gate degrades to "run everything", never to silently losing the unit signal.
+    if: ${{ !cancelled() }}
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
       fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
       matrix:
-        suite: [SnappetTests, SnappetUITests]
+        # ["SnappetTests","SnappetUITests"] or just ["SnappetTests"] — see the `changes` job. The UI leg
+        # is omitted (not skipped-in-place) when a PR doesn't touch ios/**, so no macOS runner is spent.
+        # The `|| [...]` fallback expands the full matrix if `changes` produced no output (job failed).
+        suite: ${{ fromJSON(needs.changes.outputs.suites || '["SnappetTests","SnappetUITests"]') }}
     env:
       SCHEME: Snappet
       SPM_CACHE: ${{ github.workspace }}/.spm-cache
