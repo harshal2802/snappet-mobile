@@ -241,6 +241,39 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                             app.swipeDown()   // dismiss the sheet
                         }
                     }
+                    // 11f — The HR stat tile builder (the overlay redesign): open the HR tool, enable
+                    // the tile, pick a design from the catalog, and toggle a metric off. The HR tool sits
+                    // at the far end of the horizontally-scrolling action bar, so scroll it into view
+                    // first (a fixed count — `isHittable` throws on an off-screen scroll element).
+                    let bar = app.scrollViews["studioActionBar"]
+                    let hrTool = app.buttons["studioHRTool"]
+                    if bar.exists { for _ in 0..<5 { bar.swipeLeft() } }
+                    if hrTool.exists, hrTool.isEnabled {
+                        hrTool.tap()
+                        let enable = app.switches["hrTileEnable"]
+                        if enable.waitForExistence(timeout: 3) {
+                            if (enable.value as? String) != "1" { enable.tap() }   // turn the tile on
+                            // The design catalog (one button per template) appears once the tile is on.
+                            XCTAssertTrue(app.buttons["studioTileTemplate.scorebug"].waitForExistence(timeout: 3),
+                                          "the tile design catalog should appear when the HR tile is enabled")
+                            snap("11f-hr-tile-builder")
+                            let bento = app.buttons["studioTileTemplate.bento"]
+                            if bento.waitForExistence(timeout: 2) { bento.tap() }
+                            // Every metric is ON by default — toggling one off proves the per-metric control.
+                            let zone = app.switches["studioTileMetric.zone"]
+                            if zone.waitForExistence(timeout: 2) { zone.tap() }
+                            snap("11g-hr-tile-bento")
+                            // Dismiss with a long downward drag from the sheet's (non-scrollable) title —
+                            // a SwiftUI sheet ignores outside taps and a swipe in the scrollable body just
+                            // scrolls the metric list; a short swipe may not clear the detent.
+                            let sheetTitle = app.staticTexts["Heart-rate tile"]
+                            if sheetTitle.exists {
+                                let start = sheetTitle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                                start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 480)))
+                            }
+                            _ = app.buttons["studioPlayPause"].waitForExistence(timeout: 3)  // sheet gone → studio back
+                        }
+                    }
                     app.buttons["studioClose"].tap()
                 } else {
                     snap("11c-studio-NOTREACHED")
