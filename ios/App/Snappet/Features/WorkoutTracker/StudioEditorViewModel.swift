@@ -544,10 +544,11 @@ final class StudioEditorViewModel {
 
     func toggleHROverlay() {
         if hrOverlay == nil {
-            // Enabling the overlay spawns the unified stat tile (the redesign), defaulting to the
-            // Scorebug with every metric on — the most intuitive "show everything" starting point.
+            // Enabling the overlay spawns the unified stat tile (the redesign, issue #163), defaulting to
+            // the premium **Glass Hero Card with the sparkline ON** — the most legible + general-purpose
+            // design, safest over any footage.
             var cfg = HROverlayConfig.default
-            cfg.tile = HRTile.make(template: .scorebug)
+            cfg.tile = HRTile.make(template: .hero)
             editOverlaysOnly { var s = $0; s.hrOverlay = cfg; return s }
         } else {
             editOverlaysOnly { var s = $0; s.hrOverlay = nil; return s }
@@ -600,8 +601,16 @@ final class StudioEditorViewModel {
             if let i = tile.entries.firstIndex(where: { $0.id == id }) { tile.entries[i].animated = animated }
         }
     }
-    /// Show/hide the moving chart line as a tile register.
-    func setTileShowChart(_ on: Bool) { mutateTile { $0.showChart = on } }
+    /// Show/hide the moving chart line as a tile register. Enabling it **nudges the tile height up** to
+    /// the template's `minHeightWithChart` so the curve always has a readable register (the user sees the
+    /// tile grow; preview == export). The pure layout carves the chart as a fraction, so this normalized
+    /// floor — not an absolute point height — is what guarantees the curve is never cropped.
+    func setTileShowChart(_ on: Bool) {
+        mutateTile { tile in
+            tile.showChart = on
+            if on { tile.height = min(1, max(tile.height, tile.template.minHeightWithChart)) }
+        }
+    }
     /// Commit the tile's dragged/resized frame (normalized centre + size).
     func setTileFrame(center: CGPoint, size: CGSize) {
         mutateTile { $0.center = center; $0.size = size }

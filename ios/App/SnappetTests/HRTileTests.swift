@@ -7,38 +7,50 @@ import HighlightEngine
 /// types → no simulator.
 final class HRTileTests: XCTestCase {
 
-    func testDetailedTemplateSpawnsAllMetricsOn() {
+    func testTemplateSpawnsFocusedLegibleSet() {
         let tile = HRTile.make(template: .bento)
-        // One entry per known metric, in catalog order…
+        // One entry per known metric, in catalog order (the rest exist, just OFF)…
         XCTAssertEqual(tile.entries.map(\.metric), HROverlayMetric.allCases)
-        // …and a detailed template starts with every metric ON ("all selected by default").
-        XCTAssertTrue(tile.entries.allSatisfy(\.on))
-        XCTAssertEqual(tile.enabledMetrics, HROverlayMetric.allCases)
+        XCTAssertEqual(tile.entries.count, HROverlayMetric.allCases.count)
+        // …but the redesign spawns the template's FOCUSED legible set ON — never all 10 at once (the
+        // anti-crop hierarchy: one hero + secondary + a few tertiary).
+        XCTAssertEqual(tile.enabledMetrics, HRTileTemplate.bento.spawnMetrics)
+        XCTAssertLessThan(tile.enabledMetrics.count, HROverlayMetric.allCases.count)
     }
 
-    func testCompactTemplateSpawnsFocusedSet() {
-        let tile = HRTile.make(template: .hero)
-        XCTAssertEqual(tile.enabledMetrics, [.bpm, .zone])         // hero/pill spawn a focused set
+    func testCompactTemplateSpawnsLeanestSet() {
+        let tile = HRTile.make(template: .hudPill)
+        XCTAssertEqual(tile.enabledMetrics, [.bpm, .zone])         // the HUD pill spawns the leanest set
         XCTAssertEqual(tile.entries.count, HROverlayMetric.allCases.count)  // the rest exist, just OFF
         XCTAssertFalse(tile.entry(for: .calories) != nil)         // calories is present but OFF
     }
 
+    func testDefaultTemplateIsGlassHeroWithChart() {
+        // The redesign default: Glass Hero Card (`hero`) with the sparkline ON, spawning a focused set.
+        let tile = HRTile.make(template: .hero)
+        XCTAssertEqual(tile.enabledMetrics, [.bpm, .zone, .avgHR, .maxHR, .calories])
+        XCTAssertTrue(tile.showChart)
+    }
+
     func testEnabledMetricsFiltersOffEntries() {
         var tile = HRTile.make(template: .scorebug)
-        XCTAssertEqual(tile.enabledMetrics.count, HROverlayMetric.allCases.count)
-        // Toggle calories OFF.
-        if let idx = tile.entries.firstIndex(where: { $0.metric == .calories }) {
+        // `enabledMetrics` is always in catalog (allCases) order — `spawnMetrics` only decides the SET
+        // that's ON, not the order — so compare as a set.
+        let spawn = Set(HRTileTemplate.scorebug.spawnMetrics)
+        XCTAssertEqual(Set(tile.enabledMetrics), spawn)
+        // Toggle a spawned metric (avgHR) OFF.
+        if let idx = tile.entries.firstIndex(where: { $0.metric == .avgHR }) {
             tile.entries[idx].on = false
         }
-        XCTAssertFalse(tile.enabledMetrics.contains(.calories))
-        XCTAssertEqual(tile.enabledMetrics.count, HROverlayMetric.allCases.count - 1)
+        XCTAssertFalse(tile.enabledMetrics.contains(.avgHR))
+        XCTAssertEqual(tile.enabledMetrics.count, spawn.count - 1)
     }
 
     func testSwitchingTemplatePreservesToggles() {
-        let hero = HRTile.make(template: .hero)               // only bpm + zone ON
+        let hero = HRTile.make(template: .hero)               // hero's focused set ON
         let switched = hero.switchingTemplate(to: .bento)
         XCTAssertEqual(switched.template, .bento)             // template changed…
-        XCTAssertEqual(switched.enabledMetrics, [.bpm, .zone]) // …but the user's toggles are kept (NOT reset)
+        XCTAssertEqual(switched.enabledMetrics, hero.enabledMetrics) // …but the user's toggles are kept (NOT reset)
     }
 
     func testMakeUsesTemplateDefaultFrameAndChart() {
@@ -47,8 +59,8 @@ final class HRTileTests: XCTestCase {
         XCTAssertEqual(banner.center, HRTileTemplate.chartBanner.defaultCenter)
         XCTAssertEqual(banner.size, HRTileTemplate.chartBanner.defaultSize)
 
-        let strip = HRTile.make(template: .scorebug)
-        XCTAssertFalse(strip.showChart)
+        let rail = HRTile.make(template: .list)               // the Rail defaults the chart OFF
+        XCTAssertFalse(rail.showChart)
     }
 
     func testSizeClampsToLegibleMinimums() {

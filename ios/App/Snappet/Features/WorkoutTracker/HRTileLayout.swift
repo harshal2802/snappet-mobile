@@ -49,25 +49,52 @@ enum HRTileLayout {
     }
 
     /// The full layout: the tile rect, an optional chart register, and the metric slots in display order.
+    /// `hiddenCount` is how many **enabled** metrics didn't make it onto the tile (per-template cap +
+    /// fit reflow) — the editor surfaces it as a `+N · enlarge tile` affordance so "toggle all 10 on"
+    /// fills the legible tier and parks the rest, instead of cropping (rules #6/#7).
     struct Result: Equatable, Sendable {
         var tileRect: CGRect
         var chartRect: CGRect?
         var slots: [MetricSlot]
+        var hiddenCount: Int = 0
     }
 
     // MARK: - Entry point
 
     static func layout(template: HRTileTemplate, enabledMetrics: [HROverlayMetric],
                        tileRect rect: CGRect, hasChart: Bool) -> Result {
-        let metrics = enabledMetrics
+        // Per-template **hard visible cap** (rule #6): one hero + secondary + tertiary, never all 10 at
+        // equal size. Keep the highest-priority prefix (the catalog order IS priority order); the rest
+        // become `hiddenCount` → `+N · enlarge`. The per-template reflow may drop further if the rect is
+        // tiny, and that's counted into `hiddenCount` too.
+        let cap = visibleCap(template, hasChart: hasChart)
+        let metrics = Array(enabledMetrics.prefix(cap))
+        var result: Result
         switch template {
-        case .scorebug:    return scorebug(metrics, rect, hasChart)
-        case .hero:        return heroCard(metrics, rect, hasChart)
-        case .bento:       return bento(metrics, rect, hasChart)
-        case .list:        return list(metrics, rect, hasChart)
-        case .ring:        return ring(metrics, rect, hasChart)
-        case .hudPill:     return hudPill(metrics, rect, hasChart)
-        case .chartBanner: return chartBanner(metrics, rect, hasChart)
+        case .scorebug:    result = scorebug(metrics, rect, hasChart)
+        case .hero:        result = heroCard(metrics, rect, hasChart)
+        case .bento:       result = bento(metrics, rect, hasChart)
+        case .list:        result = list(metrics, rect, hasChart)
+        case .ring:        result = ring(metrics, rect, hasChart)
+        case .hudPill:     result = hudPill(metrics, rect, hasChart)
+        case .chartBanner: result = chartBanner(metrics, rect, hasChart)
+        }
+        // Count DISTINCT rendered metrics — ring can emit one metric as both a gauge and a hero/chip, so
+        // slots.count overstates coverage; the parked count must reflect metrics not shown at all.
+        result.hiddenCount = Swift.max(0, enabledMetrics.count - Set(result.slots.map(\.metric)).count)
+        return result
+    }
+
+    /// The per-template hard ceiling on visible metrics (hero + medium + chips) — issue #163, rule #6.
+    static func visibleCap(_ t: HRTileTemplate, hasChart: Bool) -> Int {
+        switch t {
+        case .hero:        return 5   // hero + zone pill + ≤3 chips
+        case .ring:        return 4   // gauge + centred hero + ≤2 chips
+        case .scorebug:    return 4   // hero + zone bar + ≤3 right stats
+        case .list:        return 6   // hero + ≤5 rows
+        case .bento:       return 6
+        case .hudPill:     return 3   // zone-dot · bpm · zone
+        case .chartBanner: return 4   // bpm + zone + 4-up row reduces to a hero + chips set
         }
     }
 
@@ -77,9 +104,24 @@ enum HRTileLayout {
     /// order, so this is bpm when bpm is on, else the next most-important enabled metric).
     private static func hero(_ metrics: [HROverlayMetric]) -> HROverlayMetric? { metrics.first }
 
-    /// Estimated rendered width of a value at `font`, in the same units as `font` (pure — no HR data).
+    /// Em-advance for the **honest** width estimate — ~0.66 for the semibold SF Rounded *tabular*
+    /// numerals the tile draws on both sides (rule #3). Replaces the old fictional 0.62 × inline-string
+    /// guess; combined with the value-only `tileValueChars` it's the single biggest on-device crop fix.
+    static let emAdvance: CGFloat = 0.66
+
+    /// Honest rendered width of a metric's **value-only** string at `font` + padding (pure — no HR data,
+    /// so it uses the value FORMAT's worst-case char count, which is stable across the clip so the layout
+    /// doesn't reflow frame-to-frame). Inline-unit roles add the unit separately.
     private static func valueWidth(_ m: HROverlayMetric, font: CGFloat, pad: CGFloat) -> CGFloat {
-        m.tileValueChars * font * 0.62 + pad * 2
+        m.tileValueChars * font * emAdvance + pad * 2
+    }
+
+    /// A value-only **chip's** width: wide enough for BOTH the value and its (often wider) uppercase
+    /// caption ("EFFORT" > "72"), since they stack centred (rule #4). Caption is rendered ~0.42× the value.
+    private static func chipWidth(_ m: HROverlayMetric, font: CGFloat, pad: CGFloat) -> CGFloat {
+        let vw = m.tileValueChars * font * emAdvance
+        let cw = CGFloat(m.tileCaption.count) * font * 0.46 * emAdvance
+        return Swift.max(vw, cw) + pad * 2
     }
 
     /// Drop the lowest-priority metric (largest `tilePriority`) among the droppable tail until `fits`
@@ -98,6 +140,12 @@ enum HRTileLayout {
     }
 
     private static func empty(_ rect: CGRect) -> Result { Result(tileRect: rect, chartRect: nil, slots: []) }
+
+    /// Inset a tile rect by a fraction of each dimension so content reads as a padded **card** (the glass
+    /// kit), not edge-to-edge text. Fraction-based → scale-invariant (preview points == export pixels).
+    private static func inset(_ rect: CGRect, by f: CGFloat) -> CGRect {
+        rect.insetBy(dx: rect.width * f, dy: rect.height * f)
+    }
 
     // MARK: - Scorebug (default): broadcast lower-third strip
 
@@ -141,55 +189,72 @@ enum HRTileLayout {
         return Result(tileRect: rect, chartRect: chartRect, slots: slots)
     }
 
-    // MARK: - HR Hero: one big number + zone pill + demoted chips
+    // MARK: - ① Glass Hero Card (the default): zone pill · giant BPM hero · sparkline · value-only chips
 
-    private static func heroCard(_ metrics: [HROverlayMetric], _ rect: CGRect, _ hasChart: Bool) -> Result {
-        guard let lead = hero(metrics) else { return empty(rect) }
+    /// The premium default (issue #163 ①). Top-to-bottom: a **zone pill** (top-left), the **giant BPM
+    /// hero** (value + small inline unit), an optional **sparkline** tucked under it, then a row of ≤3
+    /// **value-only chips** (AVG · PEAK · KCAL — value + uppercase caption, never the wide inline string).
+    /// The hero owns the dominant visual weight (rule #1); content is inset from the glass edge so it
+    /// reads as a card, not edge-to-edge text.
+    private static func heroCard(_ metrics: [HROverlayMetric], _ rawRect: CGRect, _ hasChart: Bool) -> Result {
+        guard let lead = hero(metrics) else { return empty(rawRect) }
+        let rect = inset(rawRect, by: 0.07)
         var slots: [MetricSlot] = []
-        let heroH = rect.height * 0.52
-        let heroFont = max(fontFloor, heroH * 0.60)
-        slots.append(MetricSlot(metric: lead,
-                                frame: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: heroH),
-                                role: .hero, fontSize: heroFont, align: .center, showsLabel: true))
-        var y = rect.minY + heroH
         let others = metrics.filter { $0 != lead }
+        let hasZone = others.contains(.zone)
+        let chips = others.filter { $0 != .zone }
 
-        if others.contains(.zone) {
-            let pillH = rect.height * 0.20
+        // Vertical budget (fractions → scale-invariant). The hero takes whatever the pill/sparkline/chips
+        // leave, so it stays the dominant ~45–55%.
+        let pillH  = hasZone ? rect.height * 0.17 : 0
+        let chipsH = chips.isEmpty ? 0 : rect.height * 0.22
+        let chartH = hasChart ? rect.height * 0.20 : 0
+        let heroH  = max(rect.height * 0.30, rect.height - pillH - chartH - chipsH)
+
+        var y = rect.minY
+        if hasZone {
             slots.append(MetricSlot(metric: .zone,
                                     frame: CGRect(x: rect.minX, y: y, width: rect.width, height: pillH),
-                                    role: .pill, fontSize: max(fontFloor, pillH * 0.52),
-                                    align: .center, showsLabel: false))
+                                    role: .pill, fontSize: max(fontFloor, pillH * 0.46),
+                                    align: .leading, showsLabel: false))
             y += pillH
         }
+        slots.append(MetricSlot(metric: lead,
+                                frame: CGRect(x: rect.minX, y: y, width: rect.width, height: heroH),
+                                role: .hero, fontSize: max(fontFloor, heroH * 0.66),
+                                align: .leading, showsLabel: false))
+        y += heroH
 
         var chartRect: CGRect?
-        if hasChart && (rect.maxY - y) > rect.height * 0.22 {
-            let chH = rect.height * 0.18
-            chartRect = CGRect(x: rect.minX, y: y, width: rect.width, height: chH)
-            y += chH
+        if hasChart {
+            chartRect = CGRect(x: rect.minX, y: y, width: rect.width, height: chartH)
+            y += chartH
         }
 
-        let chips = others.filter { $0 != .zone }
-        let chipRowH = rect.maxY - y
-        if !chips.isEmpty && chipRowH >= fontFloor {
-            let rawChip = min(chipRowH * 0.5, heroH * 0.18)
-            let pad = rect.width * 0.015
-            func chipW(_ m: HROverlayMetric) -> CGFloat { valueWidth(m, font: rawChip, pad: pad) }
-            let kept = reflowed(chips, keepLeading: 0,
-                                fits: { $0.reduce(0) { $0 + chipW($1) } <= rect.width })
-            let total = kept.reduce(0) { $0 + chipW($1) }
-            var x = rect.minX + (rect.width - total) / 2
-            for m in kept {
-                let w = chipW(m)
+        if !chips.isEmpty {
+            let n = chips.count
+            let gap = rect.width * 0.04
+            let chipW = (rect.width - gap * CGFloat(n - 1)) / CGFloat(n)
+            // Cap the chip font so the widest value OR caption (the caption renders ~0.62× the value)
+            // fits chipW with a safety margin — the layout GUARANTEES fit instead of leaning on clip/scale
+            // (rule #11; a 4-digit "1999" kcal used to overflow the column at the default size). The
+            // showsLabel gate uses the UNfloored font so it stays scale-invariant (the 11pt floor never
+            // leaks into the fit decision — preview points == export pixels).
+            let safety = chipW * 0.08
+            let need = chips.map { Swift.max($0.tileValueChars, CGFloat($0.tileCaption.count) * 0.62) }.max() ?? 3
+            let widthCapFont = (chipW - 2 * safety) / (Swift.max(1, need) * emAdvance)
+            let chipFontRaw = Swift.min(chipsH * 0.46, widthCapFont)
+            let chipFont = Swift.max(fontFloor, chipFontRaw)
+            let showsLabel = chipsH >= chipFontRaw * 2.0   // room for caption above value
+            var x = rect.minX
+            for m in chips {
                 slots.append(MetricSlot(metric: m,
-                                        frame: CGRect(x: x, y: y, width: w, height: chipRowH),
-                                        role: .chip, fontSize: max(fontFloor, rawChip),
-                                        align: .center, showsLabel: false))
-                x += w
+                                        frame: CGRect(x: x, y: y, width: chipW, height: chipsH),
+                                        role: .chip, fontSize: chipFont, align: .center, showsLabel: showsLabel))
+                x += chipW + gap
             }
         }
-        return Result(tileRect: rect, chartRect: chartRect, slots: slots)
+        return Result(tileRect: rawRect, chartRect: chartRect, slots: slots)
     }
 
     // MARK: - Stats Bento: hero spans the top, then an N-column grid
@@ -427,20 +492,22 @@ extension HROverlayMetric {
         }
     }
 
-    /// Representative character count of the rendered value, for the layout's pure width estimate (it
-    /// must size fields without the live HR data). Worst-case-ish so fields don't overflow.
+    /// Worst-case character count of the **value-only** rendered string (the redesign — `142`, not
+    /// `142 avg bpm`), for the layout's honest pure width estimate. It must size slots without the live
+    /// HR data, so this is the value FORMAT's worst case (stable across the clip → no frame-to-frame
+    /// reflow). The inline unit ("BPM"/"%"/…) and the caption are sized separately by the layout.
     var tileValueChars: CGFloat {
         switch self {
-        case .bpm:      return 4.5   // "♥ 156"
-        case .zone:     return 3     // "Z3"
-        case .hrr:      return 4     // "72%"
-        case .avgHR:    return 4     // "142"
-        case .maxHR:    return 4     // "178"
-        case .redline:  return 4.5   // "🔥12%"
-        case .strain:   return 3     // "86"
-        case .hrv:      return 5     // "42ms"
-        case .calories: return 5     // "320k"
-        case .recovery: return 6     // "Ready"
+        case .bpm:      return 3     // "188"
+        case .zone:     return 13    // "Z4 · Threshold"
+        case .hrr:      return 3     // "100"
+        case .avgHR:    return 3     // "188"
+        case .maxHR:    return 3     // "188"
+        case .redline:  return 3     // "100"
+        case .strain:   return 3     // "999"
+        case .hrv:      return 3     // "199"
+        case .calories: return 4     // "1999"
+        case .recovery: return 10    // "Recovering"
         }
     }
 }

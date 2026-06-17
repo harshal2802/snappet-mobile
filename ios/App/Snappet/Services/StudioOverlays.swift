@@ -2,6 +2,7 @@ import AVFoundation
 import QuartzCore
 import UIKit
 import SwiftUI
+import CoreText
 
 /// Builds the Core Animation overlay layer tree for the studio's **text overlays** (S4), composited
 /// into export + preview via `AVVideoCompositionCoreAnimationTool` (the layer-tree pattern the studio's
@@ -307,12 +308,23 @@ enum StudioOverlays {
         let container = CALayer()
         container.frame = CGRect(x: topLeft.minX, y: canvas.height - topLeft.maxY, width: w, height: h)
 
-        // Legibility scrim behind everything (honors the HR-legibility decision, prompt 51).
-        let scrim = CALayer()
-        scrim.frame = container.bounds
-        scrim.backgroundColor = UIColor.black.withAlphaComponent(0.32).cgColor
-        scrim.cornerRadius = min(18, h * 0.18)
-        container.addSublayer(scrim)
+        // The "Glass HUD" panel (issue #163): the kit's translucent fill (doubles as the legibility
+        // scrim — the export can't live-blur the footage), a hairline edge, and a soft drop shadow. Same
+        // hex/alpha + fraction-based radius the SwiftUI preview uses, so the two match.
+        let radius = HRTileStyle.tileRadius(w: w, h: h)
+        let glass = CALayer()
+        glass.frame = container.bounds
+        glass.backgroundColor = uiColor(HRTileStyle.glassFillHex)
+            .withAlphaComponent(HRTileStyle.glassFillAlpha).cgColor
+        glass.cornerRadius = radius
+        glass.borderColor = uiColor(HRTileStyle.hairlineHex)
+            .withAlphaComponent(HRTileStyle.hairlineAlpha).cgColor
+        glass.borderWidth = 1
+        container.addSublayer(glass)
+        container.shadowColor = UIColor.black.cgColor
+        container.shadowOpacity = Float(HRTileStyle.shadowAlpha)
+        container.shadowRadius = radius * 0.45
+        container.shadowOffset = .zero
 
         // Flip a top-left local frame (HRTileLayout space) into the container's bottom-left space.
         func flip(_ r: CGRect) -> CGRect { CGRect(x: r.minX, y: h - r.maxY, width: r.width, height: r.height) }
@@ -321,8 +333,10 @@ enum StudioOverlays {
         let segByMetric = Dictionary(tile.metrics.map { ($0.metric, $0.segments) }, uniquingKeysWith: { a, _ in a })
 
         if tile.showChart, let chartRect = result.chartRect, samples.count >= 2 {
-            container.addSublayer(tileChartLayer(samples: samples, localRect: flip(chartRect),
-                                                 zoneColored: tile.zoneColored, totalDuration: totalDuration,
+            container.addSublayer(tileChartLayer(samples: samples, maxHR: tile.maxHR,
+                                                 localRect: flip(chartRect), zoneColored: tile.zoneColored,
+                                                 sparkline: chartRect.height < h * 0.30,
+                                                 totalDuration: totalDuration,
                                                  slotStartSec: slotStartSec, slotDurationSec: slotDur))
         }
 
@@ -331,7 +345,7 @@ enum StudioOverlays {
             let frame = flip(slot.frame)
             switch slot.role {
             case .pill:
-                for l in tilePillLayers(segs, frame: frame, fontSize: slot.fontSize,
+                for l in tilePillLayers(segs, frame: frame, fontSize: slot.fontSize, align: slot.align,
                                         slotStartSec: slotStartSec, slotDur: slotDur, total: totalDuration) {
                     container.addSublayer(l)
                 }
@@ -354,60 +368,194 @@ enum StudioOverlays {
         return container
     }
 
-    /// Value text for a hero / field / chip slot: one text layer per display segment (a static metric
-    /// is one always-on layer; an animated live metric cross-fades per-value layers, opacity-gated to
-    /// each reading's window mapped onto the clip slot). A caption (`metric.tileCaption`) is drawn under
-    /// the value when the slot has room.
+    /// Value text for a hero / field / chip slot (issue #163), the export twin of `HRTileView`'s
+    /// `heroValue` / `chip` / `field`: value-only strings with the uppercase caption (`metric.tileCaption`)
+    /// supplying the label, drawn in the kit's tabular rounded font. One text layer per display segment
+    /// (a static metric is one always-on layer; an animated live metric cross-fades per-value layers,
+    /// opacity-gated to each reading's window mapped onto the clip slot). Decorations (chip bg, caption)
+    /// are static; only the value cross-fades.
     private static func tileValueLayers(_ slot: HRTileLayout.MetricSlot, segs: [HROverlayValues.Segment],
                                         frame: CGRect, slotStartSec: Double, slotDur: Double,
                                         total: Double) -> [CALayer] {
-        let captionH = slot.showsLabel ? min(frame.height * 0.34, slot.fontSize * 0.7) : 0
-        // Bottom-left space: caption at the bottom (lower y), value above it.
-        let valueRect = CGRect(x: frame.minX, y: frame.minY + captionH,
-                               width: frame.width, height: frame.height - captionH)
         var layers: [CALayer] = []
         let single = segs.count <= 1
-        for seg in segs {
-            let label = plainTextLayer(seg.reading.text, color: uiColor(seg.reading.hex),
-                                       fontSize: slot.fontSize, weight: slot.role == .hero ? .heavy : .semibold,
-                                       align: slot.align, in: valueRect, shadow: true)
-            if single { label.opacity = 1 } else {
-                gateSegmentOpacity(label, start: (slotStartSec + seg.start * slotDur) / total,
+        func gate(_ l: CALayer, _ seg: HROverlayValues.Segment) {
+            if single { l.opacity = 1 } else {
+                gateSegmentOpacity(l, start: (slotStartSec + seg.start * slotDur) / total,
                                    end: (slotStartSec + seg.end * slotDur) / total, totalDuration: total)
             }
-            layers.append(label)
         }
-        if captionH > 0 {
-            let capRect = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: captionH)
-            let cap = plainTextLayer(slot.metric.tileCaption, color: UIColor.white.withAlphaComponent(0.75),
-                                     fontSize: max(8, slot.fontSize * 0.42), weight: .medium,
-                                     align: slot.align, in: capRect, shadow: true)
-            cap.opacity = 1
-            layers.append(cap)
+
+        switch slot.role {
+        case .hero:
+            for seg in segs { let g = heroGroupLayer(seg.reading, frame: frame, fontSize: slot.fontSize, align: slot.align); gate(g, seg); layers.append(g) }
+
+        case .chip:
+            let bg = CALayer(); bg.frame = frame; bg.opacity = 1
+            bg.backgroundColor = uiColor(HRTileStyle.chipFillHex).withAlphaComponent(HRTileStyle.chipFillAlpha).cgColor
+            bg.cornerRadius = HRTileStyle.chipRadius(h: frame.height)
+            layers.append(bg)
+            // Bottom-left: caption at the TOP (higher y), value below it.
+            let capH = slot.showsLabel ? frame.height * 0.34 : 0
+            if capH > 0 {
+                let capRect = CGRect(x: frame.minX, y: frame.maxY - capH, width: frame.width, height: capH)
+                let cap = plainTextLayer(slot.metric.tileCaption.uppercased(), color: heroWhite(HRTileStyle.captionAlpha),
+                                         fontSize: slot.fontSize * 0.62, weight: .semibold, align: .center, in: capRect, shadow: false)
+                cap.opacity = 1; layers.append(cap)
+            }
+            let valRect = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height - capH)
+            for seg in segs {
+                let v = plainTextLayer(seg.reading.value, color: valueColorUI(slot.metric, seg.reading),
+                                       fontSize: slot.fontSize, weight: .bold, align: .center, in: valRect, shadow: false)
+                gate(v, seg); layers.append(v)
+            }
+
+        case .field where slot.showsLabel && slot.align == .leading:
+            // Label-column (leading) + value-column (trailing) so the value can't collide with its label.
+            let capRect = CGRect(x: frame.minX, y: frame.minY, width: frame.width * 0.5, height: frame.height)
+            let cap = plainTextLayer(slot.metric.tileCaption.uppercased(), color: heroWhite(HRTileStyle.captionAlpha),
+                                     fontSize: slot.fontSize * 0.62, weight: .semibold, align: .leading, in: capRect, shadow: true)
+            cap.opacity = 1; layers.append(cap)
+            for seg in segs {
+                let v = valueUnitLayer(seg.reading, color: valueColorUI(slot.metric, seg.reading),
+                                       fontSize: slot.fontSize, align: .trailing, in: frame)
+                gate(v, seg); layers.append(v)
+            }
+
+        default:   // stacked value (caption under it, centred) or value-only
+            let capH = slot.showsLabel ? frame.height * 0.32 : 0
+            let valRect = CGRect(x: frame.minX, y: frame.minY + capH, width: frame.width, height: frame.height - capH)
+            for seg in segs {
+                let v = valueUnitLayer(seg.reading, color: valueColorUI(slot.metric, seg.reading),
+                                       fontSize: slot.fontSize, align: slot.align, in: valRect)
+                gate(v, seg); layers.append(v)
+            }
+            if capH > 0 {
+                let capRect = CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: capH)
+                let cap = plainTextLayer(slot.metric.tileCaption.uppercased(), color: heroWhite(HRTileStyle.captionAlpha),
+                                         fontSize: slot.fontSize * 0.62, weight: .semibold, align: slot.align, in: capRect, shadow: true)
+                cap.opacity = 1; layers.append(cap)
+            }
         }
         return layers
     }
 
-    /// A zone pill: a rounded capsule filled with the (zone) colour, white text centered, one per
-    /// segment (cross-faded for an animated live zone).
+    /// The hero number: a near-white value + a small inline unit ("156" + "BPM"), bottom-aligned so they
+    /// share a baseline. Grouped in one layer so a live-bpm cross-fade gates the value+unit together.
+    private static func heroGroupLayer(_ reading: HROverlayValues.Reading, frame: CGRect,
+                                       fontSize: CGFloat, align: HRTileLayout.TextAlign) -> CALayer {
+        let group = CALayer(); group.frame = frame
+        let valFont = tileFont(size: fontSize, weight: .heavy)
+        let valAttr = NSAttributedString(string: reading.value, attributes: [.font: valFont, .foregroundColor: heroWhite()])
+        let vs = valAttr.size()
+        let unitFont = tileFont(size: fontSize * 0.34, weight: .bold)
+        let unitAttr = reading.unit.map {
+            NSAttributedString(string: $0, attributes: [.font: unitFont, .foregroundColor: heroWhite(HRTileStyle.captionAlpha)])
+        }
+        let us = unitAttr?.size() ?? .zero
+        let gap = fontSize * 0.08
+        let vw = min(vs.width, frame.width)
+        let totalW = min(frame.width, vw + (unitAttr != nil ? gap + us.width : 0))
+        let startX: CGFloat
+        switch align { case .leading: startX = 0; case .trailing: startX = frame.width - totalW; case .center: startX = (frame.width - totalW) / 2 }
+        let valY = (frame.height - vs.height) / 2
+        let vl = CATextLayer(); vl.string = valAttr; vl.contentsScale = 2; vl.isWrapped = false; vl.alignmentMode = .left
+        vl.frame = CGRect(x: startX, y: valY, width: vw, height: vs.height)
+        applyTextShadow(vl); group.addSublayer(vl)
+        if let unitAttr {
+            let ul = CATextLayer(); ul.string = unitAttr; ul.contentsScale = 2; ul.isWrapped = false; ul.alignmentMode = .left
+            ul.frame = CGRect(x: startX + vw + gap, y: valY, width: us.width, height: us.height)   // bottom-aligned ≈ shared baseline
+            applyTextShadow(ul); group.addSublayer(ul)
+        }
+        return group
+    }
+
+    /// A field value + a SMALL inline unit (the unit at 0.5× the value, matching `HRTileView.field`'s
+    /// preview — not a same-size concatenation), measured & aligned in `rect`. Grouped so a live cross-fade
+    /// gates value+unit together.
+    private static func valueUnitLayer(_ reading: HROverlayValues.Reading, color: UIColor,
+                                       fontSize: CGFloat, align: HRTileLayout.TextAlign, in rect: CGRect) -> CALayer {
+        let group = CALayer(); group.frame = rect
+        let valFont = tileFont(size: fontSize, weight: .bold)
+        let valAttr = NSAttributedString(string: reading.value, attributes: [.font: valFont, .foregroundColor: color])
+        let vs = valAttr.size()
+        let unitFont = tileFont(size: fontSize * 0.5, weight: .semibold)
+        let unitAttr = reading.unit.map {
+            NSAttributedString(string: $0, attributes: [.font: unitFont, .foregroundColor: heroWhite(HRTileStyle.captionAlpha)])
+        }
+        let us = unitAttr?.size() ?? .zero
+        let gap = fontSize * 0.1
+        let vw = min(vs.width, rect.width)
+        let totalW = min(rect.width, vw + (unitAttr != nil ? gap + us.width : 0))
+        let startX: CGFloat
+        switch align { case .leading: startX = 0; case .trailing: startX = rect.width - totalW; case .center: startX = (rect.width - totalW) / 2 }
+        let valY = (rect.height - vs.height) / 2
+        let vl = CATextLayer(); vl.string = valAttr; vl.contentsScale = 2; vl.isWrapped = false; vl.alignmentMode = .left
+        vl.truncationMode = .end
+        vl.frame = CGRect(x: startX, y: valY, width: vw, height: vs.height)
+        applyTextShadow(vl); group.addSublayer(vl)
+        if let unitAttr {
+            let ul = CATextLayer(); ul.string = unitAttr; ul.contentsScale = 2; ul.isWrapped = false; ul.alignmentMode = .left
+            ul.frame = CGRect(x: startX + vw + gap, y: valY, width: us.width, height: us.height)   // bottom-aligned ≈ shared baseline
+            applyTextShadow(ul); group.addSublayer(ul)
+        }
+        return group
+    }
+
+    private static func heroWhite(_ alpha: CGFloat = 1) -> UIColor {
+        uiColor(HRTileStyle.heroTextHex).withAlphaComponent(alpha)
+    }
+    /// Accent colour for a value: zone/semantic hue for the live-intensity metrics, near-white for the
+    /// aggregates (the `decisions.md` rule, refreshed for the value-only chips).
+    private static func valueColorUI(_ m: HROverlayMetric, _ r: HROverlayValues.Reading) -> UIColor {
+        switch m {
+        case .zone, .hrr, .redline, .recovery: return uiColor(r.hex)
+        default: return heroWhite(HRTileStyle.valueAlpha)
+        }
+    }
+
+    /// The kit's **tabular rounded** font (SF Rounded + monospaced figures) — the export's missing-tabular
+    /// fix (a top on-device crop cause): tabular digits don't reflow/clip as the value changes.
+    private static func tileFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        var desc = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
+        let tabular: [UIFontDescriptor.FeatureKey: Int] = [.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector]
+        desc = desc.addingAttributes([.featureSettings: [tabular]])
+        return UIFont(descriptor: desc, size: size)
+    }
+
+    /// The zone pill (issue #163): a zone-tinted glass capsule with a leading zone **dot** + zone-coloured
+    /// uppercase label — the export twin of `HRTileView.zonePill`. One per segment (cross-faded for an
+    /// animated live zone). Aligned within its slot per `align` (leading on the hero card; centred on the pill).
     private static func tilePillLayers(_ segs: [HROverlayValues.Segment], frame: CGRect, fontSize: CGFloat,
-                                       slotStartSec: Double, slotDur: Double, total: Double) -> [CALayer] {
+                                       align: HRTileLayout.TextAlign, slotStartSec: Double, slotDur: Double,
+                                       total: Double) -> [CALayer] {
         let single = segs.count <= 1
         return segs.map { seg in
-            let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
-            let attr = NSAttributedString(string: seg.reading.text,
-                                          attributes: [.font: font, .foregroundColor: UIColor.white])
+            let zone = uiColor(seg.reading.hex)
+            let font = tileFont(size: fontSize, weight: .bold)
+            let attr = NSAttributedString(string: seg.reading.value.uppercased(),
+                                          attributes: [.font: font, .foregroundColor: zone])
             let ts = attr.size()
-            let pad = fontSize * 0.5
-            let pw = min(frame.width, ceil(ts.width) + 2 * pad)
-            let ph = min(frame.height, ceil(ts.height) + fontSize * 0.4)
+            let dotD = fontSize * 0.42, dotGap = fontSize * 0.34, hPad = fontSize * 0.6
+            let textW = min(ceil(ts.width), frame.width - 2 * hPad - dotD - dotGap)
+            let pw = min(frame.width, dotD + dotGap + textW + 2 * hPad)
+            let ph = min(frame.height, ceil(ts.height) + fontSize * 0.56)
+            let px: CGFloat
+            switch align { case .leading: px = frame.minX; case .trailing: px = frame.maxX - pw; case .center: px = frame.midX - pw / 2 }
             let pill = CALayer()
-            pill.frame = CGRect(x: frame.midX - pw / 2, y: frame.midY - ph / 2, width: pw, height: ph)
-            pill.backgroundColor = uiColor(seg.reading.hex).withAlphaComponent(0.95).cgColor
+            pill.frame = CGRect(x: px, y: frame.midY - ph / 2, width: pw, height: ph)
+            pill.backgroundColor = zone.withAlphaComponent(0.16).cgColor
             pill.cornerRadius = ph / 2
+            pill.borderColor = zone.withAlphaComponent(0.35).cgColor; pill.borderWidth = 1
+            let dot = CALayer()
+            dot.frame = CGRect(x: hPad, y: (ph - dotD) / 2, width: dotD, height: dotD)
+            dot.cornerRadius = dotD / 2; dot.backgroundColor = zone.cgColor
+            pill.addSublayer(dot)
             let label = CATextLayer()
-            label.string = attr; label.contentsScale = 2; label.alignmentMode = .center
-            label.frame = CGRect(x: pad, y: (ph - ceil(ts.height)) / 2, width: pw - 2 * pad, height: ceil(ts.height))
+            label.string = attr; label.contentsScale = 2; label.alignmentMode = .left; label.isWrapped = false
+            label.truncationMode = .end
+            label.frame = CGRect(x: hPad + dotD + dotGap, y: (ph - ceil(ts.height)) / 2, width: textW, height: ceil(ts.height))
             pill.addSublayer(label)
             if single { pill.opacity = 1 } else {
                 gateSegmentOpacity(pill, start: (slotStartSec + seg.start * slotDur) / total,
@@ -432,46 +580,132 @@ enum StudioOverlays {
         return ring
     }
 
-    /// The tile's chart register: the HR polyline + an animated playhead dot drawn inside `localRect`
-    /// (bottom-left, inside the tile container). Reuses the chart's strictly-increasing-keyTimes dot
-    /// animation; the dot sweeps over the clip's slot.
-    private static func tileChartLayer(samples: [HRPoint], localRect outer: CGRect, zoneColored: Bool,
-                                       totalDuration: Double, slotStartSec: Double, slotDurationSec: Double) -> CALayer {
+    /// The tile's chart register — the premium **zone-banded HR trace** (issue #163), the export twin of
+    /// the SwiftUI `PremiumHRCurve`. A smooth Catmull-Rom→bézier curve (the shared `HRChartGeometry` path,
+    /// so the two sides draw the identical line) with a zone-coloured stroke gradient (a `CAGradientLayer`
+    /// masked by the stroke shape — left→right, flip-safe), a flat zone area wash, a glow so it floats
+    /// over footage, a baked peak label (full curve), and a glowing playhead dot that is **x-synced** to
+    /// the playhead (position keyframes keyed by x = t/maxT, like the preview) and **recoloured** by the
+    /// bpm under it (colour keyframes). The FULL curve draws (no `strokeEnd` draw-on) so the per-frame
+    /// preview matches. `localRect` is bottom-left, inside the tile container.
+    private static func tileChartLayer(samples: [HRPoint], maxHR: Double, localRect outer: CGRect,
+                                       zoneColored: Bool, sparkline: Bool, totalDuration: Double,
+                                       slotStartSec: Double, slotDurationSec: Double) -> CALayer {
         let container = CALayer(); container.frame = outer
-        let rect = container.bounds.insetBy(dx: 4, dy: 4)
+        let rect = container.bounds          // no inset — the preview maps into the full chart rect too (WYSIWYG)
         let pts = HRChartGeometry.normalizedPoints(samples)
         func local(_ n: CGPoint) -> CGPoint {
             CGPoint(x: rect.minX + n.x * rect.width, y: rect.minY + n.y * rect.height)   // n.y=1 → top (bottom-left)
         }
-        let lineColor = zoneColored ? UIColor(HeartRateZone.forBpm(averageBPM(samples)).color)
-                                    : UIColor(red: 1, green: 0.23, blue: 0.19, alpha: 1)
-        let path = CGMutablePath()
-        if let f = pts.first { path.move(to: local(f)); for q in pts.dropFirst() { path.addLine(to: local(q)) } }
-        let line = CAShapeLayer()
-        line.frame = container.bounds; line.path = path
-        line.strokeColor = lineColor.cgColor; line.fillColor = UIColor.clear.cgColor
-        line.lineWidth = 2; line.lineJoin = .round
-        container.addSublayer(line)
+        guard pts.count >= 2 else { return container }
+        let mapped = pts.map(local)
+        let smooth = HRChartGeometry.smoothedPath(through: mapped)
+        let lw: CGFloat = sparkline ? HRTileStyle.lineWidthSpark : HRTileStyle.lineWidthFull
+        let peakZone = HeartRateZone.forBpm(HRChartGeometry.peakBPM(samples), maxHR: maxHR)
+        let glowColor = zoneColored ? uiColor(peakZone.colorHex) : uiColor("#FF3B30")
 
-        let dot = CALayer()
-        dot.bounds = CGRect(x: 0, y: 0, width: 8, height: 8); dot.cornerRadius = 4
-        dot.backgroundColor = UIColor.white.cgColor
-        if !pts.isEmpty {
-            var values: [NSValue] = [], keyTimes: [NSNumber] = []
-            var last = -1.0; let eps = 1e-4
-            for p in pts {
-                let kt = min(1, max(0, p.x))
-                if kt > last + eps { values.append(NSValue(cgPoint: local(p))); keyTimes.append(NSNumber(value: kt)); last = kt }
+        // Area wash (flat, matches the preview's flat fill).
+        let areaPath = CGMutablePath()
+        areaPath.addPath(smooth)
+        if let first = mapped.first, let last = mapped.last {
+            areaPath.addLine(to: CGPoint(x: last.x, y: rect.minY))     // baseline (bottom in bottom-left)
+            areaPath.addLine(to: CGPoint(x: first.x, y: rect.minY))
+            areaPath.closeSubpath()
+        }
+        let area = CAShapeLayer()
+        area.frame = container.bounds; area.path = areaPath
+        area.fillColor = glowColor.withAlphaComponent(HRTileStyle.areaTopAlpha * 0.55).cgColor
+        area.strokeColor = UIColor.clear.cgColor
+        container.addSublayer(area)
+
+        // Glow underlay (blurred coloured stroke under the gradient stroke).
+        let glow = CAShapeLayer()
+        glow.frame = container.bounds; glow.path = smooth
+        glow.strokeColor = glowColor.cgColor; glow.fillColor = UIColor.clear.cgColor
+        glow.lineWidth = lw; glow.lineCap = .round; glow.lineJoin = .round
+        glow.shadowColor = glowColor.cgColor; glow.shadowRadius = sparkline ? 2 : 3
+        glow.shadowOpacity = Float(HRTileStyle.curveGlowAlpha); glow.shadowOffset = .zero
+        container.addSublayer(glow)
+
+        // The zone-banded stroke: a horizontal gradient masked by the stroke shape (left→right is
+        // flip-safe). Flat colour when zoneColored is off or there aren't enough stops.
+        let strokeMask = CAShapeLayer()
+        strokeMask.frame = container.bounds; strokeMask.path = smooth
+        strokeMask.strokeColor = UIColor.black.cgColor; strokeMask.fillColor = UIColor.clear.cgColor
+        strokeMask.lineWidth = lw; strokeMask.lineCap = .round; strokeMask.lineJoin = .round
+        let stops = zoneColored ? HRChartGeometry.zoneStops(samples, maxHR: maxHR) : []
+        if stops.count >= 2 {
+            let grad = CAGradientLayer()
+            grad.frame = container.bounds
+            grad.startPoint = CGPoint(x: 0, y: 0.5); grad.endPoint = CGPoint(x: 1, y: 0.5)
+            grad.colors = stops.map { uiColor($0.hex).cgColor }
+            grad.locations = stops.map { NSNumber(value: $0.location) }
+            grad.mask = strokeMask
+            container.addSublayer(grad)
+        } else {
+            strokeMask.strokeColor = uiColor(zoneColored ? peakZone.colorHex : "#FF3B30").cgColor
+            container.addSublayer(strokeMask)
+        }
+
+        // Baked peak label above the hump (full curve only — CA can't redraw text per frame). Its centre
+        // sits 0.18·height above the peak, matching `HRTileView`'s `h * 0.18` so preview == export.
+        if !sparkline, let pk = HRChartGeometry.peakIndex(pts), let peak = HRChartGeometry.peakBPM(samples) {
+            let f = max(9, rect.height * 0.16)
+            let center = min(rect.maxY - f / 2, mapped[pk].y + rect.height * 0.18)
+            let label = plainTextLayer("\(Int(peak.rounded()))", color: UIColor.white.withAlphaComponent(0.9),
+                                       fontSize: f, weight: .bold, align: .center,
+                                       in: CGRect(x: mapped[pk].x - f * 1.5, y: center - f / 2,
+                                                  width: f * 3, height: f), shadow: true)
+            container.addSublayer(label)
+        }
+
+        // Glowing playhead dot, time-synced by x (= t/maxT, the same fraction the preview uses) and
+        // recoloured by the bpm UNDER the dot — both via x-keyed keyframes, so the burned-in dot tracks
+        // the same point AND the same zone colour the preview's live dot shows (preview == export). The
+        // white disc is static; the halo (the dot's own bg) + the core animate their colour.
+        let sorted = samples.sorted { $0.t < $1.t }
+        let halo = sparkline ? 11.0 : 16.0, white = sparkline ? 7.0 : 10.0, core = sparkline ? 4.0 : 6.0
+        func dotColorAt(_ i: Int) -> UIColor {
+            zoneColored ? uiColor(HeartRateZone.forBpm(sorted[i].bpm, maxHR: maxHR).colorHex) : uiColor("#FF3B30")
+        }
+        // Strictly-increasing x keyframes (drop duplicate timestamps so CA keeps the animation).
+        var positions: [NSValue] = [], haloColors: [CGColor] = [], coreColors: [CGColor] = [], keyTimes: [NSNumber] = []
+        var last = -1.0; let eps = 1e-4
+        for (i, p) in pts.enumerated() where i < sorted.count {
+            let kt = min(1, max(0, p.x))
+            if kt > last + eps {
+                positions.append(NSValue(cgPoint: mapped[i]))
+                let c = dotColorAt(i)
+                haloColors.append(c.withAlphaComponent(0.35).cgColor); coreColors.append(c.cgColor)
+                keyTimes.append(NSNumber(value: kt)); last = kt
             }
-            if keyTimes.count >= 2 {
-                keyTimes[0] = 0; keyTimes[keyTimes.count - 1] = 1
-                let anim = CAKeyframeAnimation(keyPath: "position")
-                anim.values = values; anim.keyTimes = keyTimes; anim.calculationMode = .linear
-                anim.beginTime = AVCoreAnimationBeginTimeAtZero + slotStartSec
-                anim.duration = max(0.01, slotDurationSec)
-                anim.isRemovedOnCompletion = false; anim.fillMode = .both
-                dot.position = local(pts[0]); dot.add(anim, forKey: "hrPlayhead")
-            } else { dot.position = local(pts[0]) }
+        }
+        let dot = CALayer()
+        dot.bounds = CGRect(x: 0, y: 0, width: halo, height: halo); dot.cornerRadius = halo / 2
+        dot.backgroundColor = haloColors.first ?? UIColor(red: 1, green: 0.23, blue: 0.19, alpha: 0.35).cgColor
+        let whiteDisc = CALayer()
+        whiteDisc.frame = CGRect(x: (halo - white) / 2, y: (halo - white) / 2, width: white, height: white)
+        whiteDisc.cornerRadius = white / 2; whiteDisc.backgroundColor = UIColor.white.cgColor
+        dot.addSublayer(whiteDisc)
+        let coreDisc = CALayer()
+        coreDisc.frame = CGRect(x: (halo - core) / 2, y: (halo - core) / 2, width: core, height: core)
+        coreDisc.cornerRadius = core / 2; coreDisc.backgroundColor = coreColors.first ?? UIColor.white.cgColor
+        dot.addSublayer(coreDisc)
+        dot.position = mapped[0]
+        if keyTimes.count >= 2 {
+            keyTimes[0] = 0; keyTimes[keyTimes.count - 1] = 1
+            func keyed(_ key: String, _ values: [Any]) -> CAKeyframeAnimation {
+                let a = CAKeyframeAnimation(keyPath: key)
+                a.values = values; a.keyTimes = keyTimes; a.calculationMode = .linear
+                a.beginTime = AVCoreAnimationBeginTimeAtZero + slotStartSec
+                a.duration = max(0.01, slotDurationSec); a.isRemovedOnCompletion = false; a.fillMode = .both
+                return a
+            }
+            dot.add(keyed("position", positions), forKey: "hrPlayheadPos")
+            if zoneColored {
+                dot.add(keyed("backgroundColor", haloColors), forKey: "hrPlayheadHalo")
+                coreDisc.add(keyed("backgroundColor", coreColors), forKey: "hrPlayheadCore")
+            }
         }
         container.addSublayer(dot)
         return container
@@ -482,7 +716,7 @@ enum StudioOverlays {
     private static func plainTextLayer(_ text: String, color: UIColor, fontSize: CGFloat,
                                        weight: UIFont.Weight, align: HRTileLayout.TextAlign,
                                        in rect: CGRect, shadow: Bool) -> CATextLayer {
-        let font = UIFont.systemFont(ofSize: fontSize, weight: weight)
+        let font = tileFont(size: fontSize, weight: weight)
         let attr = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
         let size = attr.size()
         let tw = min(rect.width, ceil(size.width)), th = ceil(size.height)
@@ -499,11 +733,14 @@ enum StudioOverlays {
         label.truncationMode = .end
         label.alignmentMode = align == .leading ? .left : (align == .trailing ? .right : .center)
         label.frame = CGRect(x: x, y: rect.midY - th / 2, width: tw, height: th)
-        if shadow {
-            label.shadowColor = UIColor.black.cgColor; label.shadowOpacity = 0.7
-            label.shadowRadius = 3; label.shadowOffset = .zero
-        }
+        if shadow { applyTextShadow(label) }
         return label
+    }
+
+    /// A soft drop shadow so text stays legible over footage.
+    private static func applyTextShadow(_ layer: CALayer) {
+        layer.shadowColor = UIColor.black.cgColor; layer.shadowOpacity = 0.7
+        layer.shadowRadius = 3; layer.shadowOffset = .zero
     }
 
     private static func averageBPM(_ samples: [HRPoint]) -> Double {

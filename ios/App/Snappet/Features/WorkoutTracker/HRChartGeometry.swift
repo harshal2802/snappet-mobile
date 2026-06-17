@@ -55,4 +55,63 @@ enum HRChartGeometry {
         let (lo, hi) = bpmRange(samples)
         return min(1, max(0, (bpm - lo) / Swift.max(1, hi - lo)))
     }
+
+    // MARK: - Premium HR-curve recipe (the redesign — preview == export)
+
+    /// A **smooth** curve through already-mapped points, as a `CGPath` — Catmull-Rom converted to
+    /// cubic béziers: `c1 = p1 + (p2−p0)/6`, `c2 = p2 − (p3−p1)/6`. Coordinate-space agnostic (both the
+    /// SwiftUI preview and the Core-Animation export map their normalized points into their OWN space
+    /// first, then call this), so the curve is identical on both sides — WYSIWYG. A `CGPath` because
+    /// SwiftUI's `Path(cgPath)` and Core Animation's `CAShapeLayer.path` both consume it directly.
+    /// Fewer than 2 points → an empty path; exactly 2 → a straight segment.
+    static func smoothedPath(through pts: [CGPoint]) -> CGPath {
+        let path = CGMutablePath()
+        guard let first = pts.first else { return path }
+        path.move(to: first)
+        guard pts.count >= 3 else {
+            if pts.count == 2 { path.addLine(to: pts[1]) }
+            return path
+        }
+        for i in 0 ..< (pts.count - 1) {
+            let p0 = pts[Swift.max(0, i - 1)]
+            let p1 = pts[i]
+            let p2 = pts[i + 1]
+            let p3 = pts[Swift.min(pts.count - 1, i + 2)]
+            let c1 = CGPoint(x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6)
+            let c2 = CGPoint(x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6)
+            path.addCurve(to: p2, control1: c1, control2: c2)
+        }
+        return path
+    }
+
+    /// The index of the curve's **peak** (highest-bpm normalized point — `y` is largest, since `y = 1`
+    /// is the top). Drives the single baked "peak" label above the hump. `nil` for an empty input.
+    static func peakIndex(_ pts: [CGPoint]) -> Int? {
+        guard !pts.isEmpty else { return nil }
+        return pts.indices.max(by: { pts[$0].y < pts[$1].y })
+    }
+
+    /// The peak (max) bpm over the samples, for the baked peak label. `nil` with no positive samples.
+    static func peakBPM(_ samples: [HRPoint]) -> Double? {
+        samples.map(\.bpm).filter { $0 > 0 }.max()
+    }
+
+    /// One stop of the **zone-banded stroke gradient** (the curve greens through the aerobic plateau
+    /// and reddens into the peak): a normalized x (0…1) along the curve and the repo zone colour at the
+    /// bpm there. Pure — no SwiftUI; the renderers turn the hex into their platform colour.
+    struct ZoneStop: Equatable, Sendable { var location: Double; var hex: String }
+
+    /// The zone-banded stroke gradient stops along x — each sample coloured by ITS bpm's zone, using the
+    /// repo `HeartRateZone` ramp (one source of truth with every pill). `x = t / maxT`. Fewer than 2
+    /// positive samples → empty (a flat-colour fallback is the renderer's job). Locations are clamped to
+    /// [0,1] and non-decreasing (the renderer can feed them straight to a gradient layer).
+    static func zoneStops(_ samples: [HRPoint], maxHR: Double) -> [ZoneStop] {
+        let sorted = samples.sorted { $0.t < $1.t }
+        guard let maxT = sorted.last?.t, maxT > 0, sorted.count >= 2 else { return [] }
+        var last = 0.0
+        return sorted.map { p in
+            let loc = Swift.min(1, Swift.max(last, p.t / maxT)); last = loc
+            return ZoneStop(location: loc, hex: HeartRateZone.forBpm(p.bpm, maxHR: maxHR).colorHex)
+        }
+    }
 }
