@@ -99,6 +99,19 @@ sets `container.opacity`) so preview == export; (2) a plain-English **`HROverlay
 metric shown under each builder toggle, so the user knows what each readout means. Opacity is a render/
 model concern, deliberately NOT in the pure `HRTileLayout`.
 
+**Phase 4 — the legacy free-floating-badge fallback was deleted.** Removed `HROverlayElementsView` +
+`StudioHRChartView` (whole files), `StudioOverlays.hrElementLayers`/`hrBadgeLayer`/`hrChartLayer` + the
+legacy `makeAnimationTool` branches + the `hrConfig`/`hrElements`/`PlacedClipHR.elements`/
+`StudioClipHRContent.elements` threading through `StudioComposer`, `HROverlayValues.resolve(_:)` +
+`ResolvedHROverlay`, and the view-model element-CRUD / `setShowChart`/`setHRPosition`/`setHRScale` +
+`LegacyHROverlayControls`/`StudioHRElementRow`. **Deliberately KEPT** (NOT "also delete"): `HRTileMigration`
++ `HROverlayElement` + `HROverlayConfig.elements` (decode-only) + `.showChart` — because the live tile
+resolver reuses `HROverlayElement` and migration folds any old persisted `elements[]` into a tile, so a
+project not yet re-opened since the tile shipped does NOT lose its HR overlay (zero data loss). The other
+legacy `HROverlayConfig` fields (`scale`/`colorHex`/`normalizedX`/`showBPM`) stay too — they're the
+persisted-blob schema, harmless, and dropping them is a separate migration concern. A 9-agent adversarial
+review confirmed the tile path + migration are intact with no dangling refs.
+
 ## [2026-06-16] Kilter planned-session Android port: faithful mirror with Android-specific divergences (kilter-planned-session A-PR1..4)
 
 **Decision**: the iOS planned-session feature is ported to Android (Kotlin/Compose/Room) mirroring the

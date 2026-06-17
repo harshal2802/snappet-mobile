@@ -62,7 +62,6 @@ final class StudioComposer: Sendable {
     func makeComposition(for snapshot: StudioProjectSnapshot,
                          sourceDurations: [UUID: Double] = [:],
                          hrSamples: [HRPoint] = [],
-                         hrElements: [ResolvedHROverlay] = [],
                          hrTile: ResolvedHRTile? = nil,
                          clipHRByID: [UUID: StudioClipHRContent] = [:],
                          forPlayback: Bool = false) async throws
@@ -87,7 +86,7 @@ final class StudioComposer: Sendable {
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
                                   overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
                                   videoOverlays: videoOverlays, hrSamples: hrSamples,
-                                  hrConfig: snapshot.hrOverlay, hrElements: hrElements, hrTile: hrTile,
+                                  hrTile: hrTile,
                                   baseFrame: snapshot.baseFrame, forPlayback: forPlayback)
     }
 
@@ -101,8 +100,7 @@ final class StudioComposer: Sendable {
                   overlays: [OverlayItem] = [],
                   audioTracks: [AudioTrack] = [],
                   videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
-                  hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
-                  hrElements: [ResolvedHROverlay] = [],
+                  hrSamples: [HRPoint] = [],
                   hrTile: ResolvedHRTile? = nil,
                   clipHRByID: [UUID: StudioClipHRContent] = [:],
                   baseFrame: StudioFrameRect? = nil,
@@ -120,15 +118,15 @@ final class StudioComposer: Sendable {
             return try await assembleWithTransitions(
                 resolved: resolved, transitions: transitions, aspect: aspect,
                 sourceDurations: sourceDurations, overlays: overlays,
-                hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements, hrTile: hrTile,
+                hrSamples: hrSamples, hrTile: hrTile,
                 clipHRByID: clipHRByID,
                 baseFrame: baseFrame, forPlayback: forPlayback)
         }
         return try await assembleSingleTrack(resolved: resolved, aspect: aspect,
                                              sourceDurations: sourceDurations, overlays: overlays,
                                              audioTracks: audioTracks, videoOverlays: videoOverlays,
-                                             hrSamples: hrSamples, hrConfig: hrConfig,
-                                             hrElements: hrElements, hrTile: hrTile, clipHRByID: clipHRByID,
+                                             hrSamples: hrSamples,
+                                             hrTile: hrTile, clipHRByID: clipHRByID,
                                              baseFrame: baseFrame, forPlayback: forPlayback)
     }
 
@@ -140,8 +138,7 @@ final class StudioComposer: Sendable {
                                      overlays: [OverlayItem],
                                      audioTracks: [AudioTrack] = [],
                                      videoOverlays: sending [(overlay: OverlayItem, asset: AVAsset)] = [],
-                                     hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
-                  hrElements: [ResolvedHROverlay] = [],
+                                     hrSamples: [HRPoint] = [],
                                      hrTile: ResolvedHRTile? = nil,
                                      clipHRByID: [UUID: StudioClipHRContent] = [:],
                                      baseFrame: StudioFrameRect? = nil,
@@ -229,8 +226,7 @@ final class StudioComposer: Sendable {
             filterRanges.append((outRange, clip.filter, clip.filterIntensity, clip.adjust))
             if let content = clipHRByID[clip.id] {
                 placedHR.append(PlacedClipHR(startSec: insertAt.seconds, durationSec: outDuration,
-                                             samples: content.samples, elements: content.elements,
-                                             tile: content.tile))
+                                             samples: content.samples, tile: content.tile))
             }
             cursor = outRange.end
         }
@@ -263,7 +259,7 @@ final class StudioComposer: Sendable {
             if !forPlayback {
                 videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                     overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-                    hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements, hrTile: hrTile,
+                    hrSamples: hrSamples, hrTile: hrTile,
                     clipHR: placedHR)
             }
         } else {
@@ -291,7 +287,7 @@ final class StudioComposer: Sendable {
             if !forPlayback {
                 videoComposition.animationTool = StudioOverlays.makeAnimationTool(
                     overlays: overlays, canvas: canvas, totalDuration: composition.duration.seconds,
-                    hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements, hrTile: hrTile,
+                    hrSamples: hrSamples, hrTile: hrTile,
                     clipHR: placedHR)
             }
         }
@@ -392,8 +388,7 @@ final class StudioComposer: Sendable {
         aspect: ClipEditGeometry.OutputAspect,
         sourceDurations: [UUID: Double],
         overlays: [OverlayItem] = [],
-        hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
-        hrElements: [ResolvedHROverlay] = [],
+        hrSamples: [HRPoint] = [],
         hrTile: ResolvedHRTile? = nil,
         clipHRByID: [UUID: StudioClipHRContent] = [:],
         baseFrame: StudioFrameRect? = nil,
@@ -511,11 +506,11 @@ final class StudioComposer: Sendable {
             let placedHR: [PlacedClipHR] = ordered.compactMap { clip in
                 guard let content = clipHRByID[clip.id], let p = placeByID[clip.id] else { return nil }
                 return PlacedClipHR(startSec: p.startSec, durationSec: p.durationSec,
-                                    samples: content.samples, elements: content.elements, tile: content.tile)
+                                    samples: content.samples, tile: content.tile)
             }
             vc.animationTool = StudioOverlays.makeAnimationTool(
                 overlays: overlays, canvas: cv, totalDuration: composition.duration.seconds,
-                hrSamples: hrSamples, hrConfig: hrConfig, hrElements: hrElements, hrTile: hrTile,
+                hrSamples: hrSamples, hrTile: hrTile,
                 clipHR: placedHR)
         }
         // Per-clip volume on the transition path is a follow-up (audio here is a plain stitch).
@@ -526,13 +521,13 @@ final class StudioComposer: Sendable {
     /// `quality` picks the `AVAssetExportSession` preset; an unsupported preset for this composition
     /// falls back to HighestQuality so export never fails on an over-ambitious 4K request.
     func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:],
-                hrSamples: [HRPoint] = [], hrElements: [ResolvedHROverlay] = [],
+                hrSamples: [HRPoint] = [],
                 hrTile: ResolvedHRTile? = nil,
                 clipHRByID: [UUID: StudioClipHRContent] = [:],
                 quality: StudioExportQuality = .highest) async throws -> URL {
         let (composition, videoComposition, audioMix) = try await makeComposition(
             for: snapshot, sourceDurations: sourceDurations, hrSamples: hrSamples,
-            hrElements: hrElements, hrTile: hrTile, clipHRByID: clipHRByID)
+            hrTile: hrTile, clipHRByID: clipHRByID)
         let session = AVAssetExportSession(asset: composition, presetName: quality.presetName)
             ?? AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
         guard let session else {

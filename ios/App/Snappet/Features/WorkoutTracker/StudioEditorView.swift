@@ -171,28 +171,12 @@ struct StudioEditorView: View {
                                 onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
                                 onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
             // The unified HR stat tile (the overlay redesign): one draggable + corner-resizable tile,
-            // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Supersedes the
-            // legacy chart + free-floating badges below.
+            // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Any legacy
+            // free-floating-badge overlay is folded into a tile by HRTileMigration on appear.
             if let tile = vm.hrTile {
                 HRTileEditorView(tile: tile, values: vm.previewOverlayValues,
                                  fraction: vm.previewElementFraction, ratio: vm.previewRatio,
                                  onFrame: { vm.setTileFrame(center: $0, size: $1) })
-            } else {
-                // Legacy (pre-migration) chart + badges — a loaded overlay is upgraded to a tile on appear.
-                if let hr = vm.hrOverlay, hr.showChart {
-                    let preview = vm.previewHR
-                    StudioHRChartView(samples: preview.samples, config: hr, ratio: vm.previewRatio,
-                                      currentTime: preview.currentTime, totalDuration: preview.totalDuration,
-                                      onMove: { vm.setHRPosition($0) },
-                                      onResize: { vm.setHRScale($0) })
-                        .accessibilityIdentifier("studioHRChart")
-                }
-                if let hr = vm.hrOverlay, !hr.elements.isEmpty {
-                    HROverlayElementsView(
-                        elements: hr.elements, values: vm.previewOverlayValues,
-                        fraction: vm.previewElementFraction,
-                        onMove: { vm.setElementPosition($0, $1) })
-                }
             }
             if let err = vm.previewError {
                 Text(err)
@@ -495,9 +479,6 @@ private struct StudioHRControls: View {
                     .accessibilityIdentifier("hrTileEnable")
                 if vm.hrTile != nil {
                     HRTileBuilder(vm: vm)
-                } else if vm.hrOverlay != nil {
-                    // A legacy overlay that hasn't been migrated yet (pre-migration fallback).
-                    LegacyHROverlayControls(vm: vm)
                 } else {
                     Text("Turn on to overlay your heart rate and fitness metrics as a single resizable tile.")
                         .font(.caption2).foregroundStyle(.secondary)
@@ -600,97 +581,6 @@ private struct HRTileMetricRow: View {
             }
         }
         .padding(.vertical, 2)
-    }
-}
-
-/// The legacy free-floating-badge HR controls — kept only for the brief pre-migration window (a loaded
-/// overlay is upgraded to a tile on appear). New overlays never see this.
-private struct LegacyHROverlayControls: View {
-    @Bindable var vm: StudioEditorViewModel
-    private let swatches = ["#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#FFFFFF"]
-
-    private var addable: [HROverlayMetric] {
-        let placed = Set(vm.overlayElements.map(\.metric))
-        return vm.availableOverlayMetrics.filter { !placed.contains($0) }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // The chart line (moving-playhead graph) — independent of the number/badge picks.
-            Toggle("Show chart line", isOn: Binding(
-                get: { vm.hrOverlay?.showChart ?? false },
-                set: { vm.setShowChart($0) }))
-                .accessibilityIdentifier("hrChartEnable")
-            if let cfg = vm.hrOverlay, cfg.showChart {
-                HStack(spacing: 10) {
-                    Text("Colour").font(.caption).frame(width: 60, alignment: .leading)
-                    ForEach(swatches, id: \.self) { hex in
-                        Circle().fill(Color(studioHex: hex)).frame(width: 24, height: 24)
-                            .overlay(Circle().stroke(.white, lineWidth: cfg.colorHex == hex ? 2 : 0))
-                            .onTapGesture { var c = cfg; c.colorHex = hex; c.zoneColored = false; vm.updateHROverlay(c) }
-                    }
-                }
-                HStack {
-                    Text("Size").font(.caption).frame(width: 60, alignment: .leading)
-                    Slider(value: Binding(get: { cfg.scale },
-                                          set: { var c = cfg; c.scale = $0; vm.updateHROverlay(c) }),
-                           in: 0.4...1).accessibilityIdentifier("hrSize")
-                }
-                Toggle("Colour line by HR zone", isOn: Binding(
-                    get: { cfg.zoneColored }, set: { var c = cfg; c.zoneColored = $0; vm.updateHROverlay(c) }))
-            }
-
-            Divider().overlay(Color.white.opacity(0.1))
-
-            // Selectable numbers/badges — each Live (tracks the playhead) and/or Animated.
-            Text("Numbers & badges").font(.subheadline.weight(.semibold))
-            ForEach(vm.overlayElements) { element in
-                StudioHRElementRow(vm: vm, element: element)
-            }
-            if !addable.isEmpty {
-                Menu {
-                    ForEach(addable) { metric in
-                        Button { vm.addOverlayElement(metric) } label: {
-                            Label(metric.label, systemImage: metric.systemImage)
-                        }
-                    }
-                } label: { Label("Add overlay", systemImage: "plus") }
-                    .accessibilityIdentifier("studioAddHROverlay")
-            }
-            Text("Drag any chart or badge on the preview to position it.")
-                .font(.caption2).foregroundStyle(.secondary)
-        }
-    }
-}
-
-/// One Studio overlay element row: label, remove, and Live/Animate toggles (enabled only where the
-/// metric supports them — a static aggregate can't be live or animate).
-private struct StudioHRElementRow: View {
-    @Bindable var vm: StudioEditorViewModel
-    let element: HROverlayElement
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label(element.metric.label, systemImage: element.metric.systemImage).font(.subheadline)
-                Spacer()
-                Button(role: .destructive) { vm.removeOverlayElement(element.id) } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("studioRemoveHROverlay")
-            }
-            HStack(spacing: 16) {
-                Toggle("Live", isOn: Binding(get: { element.isLive },
-                                             set: { vm.setElementLive(element.id, $0) }))
-                    .disabled(!element.metric.supportsLive)
-                Toggle("Animate", isOn: Binding(get: { element.isAnimated },
-                                                set: { vm.setElementAnimated(element.id, $0) }))
-                    .disabled(!element.isLive)
-            }
-            .font(.caption).toggleStyle(.button)
-        }
-        .padding(.vertical, 4)
     }
 }
 

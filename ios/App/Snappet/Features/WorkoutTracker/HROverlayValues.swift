@@ -194,24 +194,11 @@ struct HROverlayValues {
         return segs
     }
 
-    /// Resolve a list of elements into render-ready overlays — placement + the display segments —
-    /// dropping elements with no data (so the device renderer stays dumb and the same result feeds the
-    /// preview and the export). Pure + `Sendable` → built where the session data lives, then handed to
-    /// the AVFoundation render across the actor boundary.
-    func resolve(_ elements: [HROverlayElement]) -> [ResolvedHROverlay] {
-        elements.compactMap { el in
-            let segs = segments(for: el)
-            guard !segs.isEmpty else { return nil }
-            return ResolvedHROverlay(normalizedX: el.normalizedX, normalizedY: el.normalizedY,
-                                     scale: el.scale, segments: segs)
-        }
-    }
-
     /// Resolve an `HRTile` into a render-ready `ResolvedHRTile` — its template + geometry + each
     /// **enabled** metric's display segments — dropping metrics with no data (no profile for kcal, no
     /// RR for HRV, empty HR). Placement is NOT stored here: the pure `HRTileLayout` derives every slot
-    /// from the template + the tile rect, so this is the tile twin of `resolve(_:)`. Returns `nil` when
-    /// the tile would draw nothing (no metric with data **and** no chart). Pure + `Sendable`.
+    /// from the template + the tile rect. Returns `nil` when the tile would draw nothing (no metric with
+    /// data **and** no chart). Pure + `Sendable`.
     func resolveTile(_ tile: HRTile) -> ResolvedHRTile? {
         let resolved: [ResolvedTileMetric] = tile.entries.filter(\.on).compactMap { entry in
             var el = HROverlayElement(metric: entry.metric, colorHex: entry.colorHex)
@@ -230,8 +217,8 @@ struct HROverlayValues {
 }
 
 /// One enabled metric of an `HRTile`, resolved to its time-tiled display **segments** (text + colour),
-/// ready for the device render — the tile analogue of `ResolvedHROverlay`, but with no per-element
-/// position (the pure `HRTileLayout` places it). `Sendable` so it crosses the export actor boundary.
+/// ready for the device render — with no per-element position (the pure `HRTileLayout` places it).
+/// `Sendable` so it crosses the export actor boundary.
 struct ResolvedTileMetric: Sendable, Equatable {
     var metricRaw: String
     var segments: [HROverlayValues.Segment]
@@ -240,8 +227,8 @@ struct ResolvedTileMetric: Sendable, Equatable {
 
 /// A fully-resolved HR stat **tile** ready to draw: the template + normalized geometry + which metrics
 /// (with their segments) are on. The device-only `StudioOverlays.hrTileLayer` runs `HRTileLayout` over
-/// this to place each metric inside one composite card and burns it in — the single-tile analogue of a
-/// `[ResolvedHROverlay]`. Built by `HROverlayValues.resolveTile(_:)`.
+/// this to place each metric inside one composite card and burns it in. Built by
+/// `HROverlayValues.resolveTile(_:)`.
 struct ResolvedHRTile: Sendable, Equatable {
     var templateRaw: String
     var centerX: Double, centerY: Double, width: Double, height: Double
@@ -259,12 +246,3 @@ struct ResolvedHRTile: Sendable, Equatable {
     var enabledMetrics: [HROverlayMetric] { metrics.map(\.metric) }
 }
 
-/// A fully-resolved overlay element ready to draw — placement + the time-tiled display segments (the
-/// only thing the device-only Core-Animation / SwiftUI renderers need). `Sendable` so it crosses into
-/// the AVFoundation export actor. Built by `HROverlayValues.resolve(_:)`.
-struct ResolvedHROverlay: Sendable, Equatable {
-    var normalizedX: Double
-    var normalizedY: Double
-    var scale: Double
-    var segments: [HROverlayValues.Segment]
-}
