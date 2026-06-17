@@ -45,6 +45,7 @@ struct HRTileView: View {
                         .position(x: slot.frame.midX, y: slot.frame.midY)
                 }
             }
+            .opacity(min(1, max(HRTile.minOpacity, tile.opacity)))   // user-controlled tile transparency
         }
         .accessibilityIdentifier("studioHRTile")
     }

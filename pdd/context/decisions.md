@@ -91,6 +91,14 @@ the same frame; `Reading.fraction` carries %HRR/redline for the sweep + bars. No
 - **Per-template caps match each design's spawn set** so the focused default fully shows and only
   user-added extras park.
 
+**Phase 3 — on-device feedback polish (prompt 79).** Two additions after seeing the tiles on a phone:
+(1) a user **tile-opacity** control (`HRTile.opacity`, default 1.0, clamped to `minOpacity 0.25`) applied
+to the whole tile on both sides — SwiftUI `.opacity(...)`, and the export composes it with the per-clip
+gate via a `level:` param on `gateSegmentOpacity` (gated tile ramps to `opacityF`, whole-timeline tile
+sets `container.opacity`) so preview == export; (2) a plain-English **`HROverlayMetric.explanation`** per
+metric shown under each builder toggle, so the user knows what each readout means. Opacity is a render/
+model concern, deliberately NOT in the pure `HRTileLayout`.
+
 ## [2026-06-16] Kilter planned-session Android port: faithful mirror with Android-specific divergences (kilter-planned-session A-PR1..4)
 
 **Decision**: the iOS planned-session feature is ported to Android (Kotlin/Compose/Room) mirroring the

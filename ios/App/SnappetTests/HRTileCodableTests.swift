@@ -38,6 +38,27 @@ final class HRTileCodableTests: XCTestCase {
         XCTAssertEqual(tile.template, .scorebug)
     }
 
+    func testTileOpacityDefaultsToOneWhenAbsentAndClampsOnDecode() throws {
+        // A tile blob from before the opacity control → fully opaque.
+        let legacy = """
+        {"id":"\(uuid)","templateRaw":"hero","entries":[],"centerX":0.5,"centerY":0.3,"width":0.54,"height":0.36,"showChart":true,"zoneColored":true}
+        """
+        XCTAssertEqual(try JSONDecoder().decode(HRTile.self, from: Data(legacy.utf8)).opacity, 1.0, accuracy: 1e-9)
+        // A too-faint persisted opacity is clamped up to the legible floor on decode.
+        let faint = """
+        {"id":"\(uuid)","templateRaw":"hero","entries":[],"centerX":0.5,"centerY":0.3,"width":0.54,"height":0.36,"showChart":true,"zoneColored":true,"opacity":0.01}
+        """
+        XCTAssertEqual(try JSONDecoder().decode(HRTile.self, from: Data(faint.utf8)).opacity,
+                       HRTile.minOpacity, accuracy: 1e-9)
+    }
+
+    func testTileOpacityRoundTrips() throws {
+        var tile = HRTile.make(template: .hero)
+        tile.opacity = 0.6
+        let back = try JSONDecoder().decode(HRTile.self, from: try JSONEncoder().encode(tile))
+        XCTAssertEqual(back.opacity, 0.6, accuracy: 1e-9)
+    }
+
     func testMetricEntryMissingOnDefaultsTrue() throws {
         // An entry persisted before the `on` toggle existed must default to visible (on = true).
         let json = """

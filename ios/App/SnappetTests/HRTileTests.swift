@@ -63,6 +63,13 @@ final class HRTileTests: XCTestCase {
         XCTAssertFalse(rail.showChart)
     }
 
+    func testEveryMetricHasAPlainExplanationAndOpacityDefaultsOpaque() {
+        for m in HROverlayMetric.allCases {
+            XCTAssertFalse(m.explanation.isEmpty, "\(m) needs a plain-English explanation for the builder")
+        }
+        XCTAssertEqual(HRTile.make(template: .hero).opacity, 1.0, accuracy: 1e-9)   // opaque by default
+    }
+
     func testSizeClampsToLegibleMinimums() {
         var tile = HRTile.make(template: .scorebug)
         tile.size = CGSize(width: 0.01, height: 0.01)         // absurdly tiny

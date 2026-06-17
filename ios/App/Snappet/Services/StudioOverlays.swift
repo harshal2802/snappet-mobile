@@ -267,14 +267,14 @@ enum StudioOverlays {
     /// Opacity-gate a badge to its `[start, end]` fraction window. A full-clip `[0,1]` segment stays
     /// fully visible; a sub-window appears/disappears on cue (the animated-live cross-fade).
     private static func gateSegmentOpacity(_ layer: CALayer, start: Double, end: Double,
-                                           totalDuration: Double) {
-        if start <= 0.0001 && end >= 0.9999 { layer.opacity = 1; return }   // static → always on
+                                           totalDuration: Double, level: Float = 1) {
+        if start <= 0.0001 && end >= 0.9999 { layer.opacity = level; return }   // static → always on (at `level`)
         let s = min(1, max(0, start)), e = min(1, max(s, end))
         layer.opacity = 0
         let anim = CAKeyframeAnimation(keyPath: "opacity")
-        // 0 before the window, 1 across it, 0 after — tiny epsilons keep keyTimes strictly increasing.
+        // 0 before the window, `level` across it, 0 after — tiny epsilons keep keyTimes strictly increasing.
         let eps = 1e-4
-        anim.values = [0, 0, 1, 1, 0] as [Float]
+        anim.values = [0, 0, level, level, 0] as [Float]
         anim.keyTimes = [0, max(0, s - eps), s, e, min(1, e + eps)].map { NSNumber(value: $0) }
         anim.beginTime = AVCoreAnimationBeginTimeAtZero
         anim.duration = max(0.01, totalDuration)
@@ -372,11 +372,16 @@ enum StudioOverlays {
             }
         }
 
-        // A per-clip tile shows only during its own slot (skip the gate for a whole-timeline tile).
+        // Whole-tile opacity the user dialed (clamped to the legible floor) — composed with the per-clip
+        // gate so a gated tile shows at `opacityF` during its slot and a whole-timeline tile holds it.
+        let opacityF = Float(min(1, max(HRTile.minOpacity, tile.opacity)))
         if let slotDurationSec,
            !(slotStartSec <= 0.0001 && slotStartSec + slotDurationSec >= totalDuration - 0.0001) {
             gateSegmentOpacity(container, start: slotStartSec / totalDuration,
-                               end: (slotStartSec + slotDurationSec) / totalDuration, totalDuration: totalDuration)
+                               end: (slotStartSec + slotDurationSec) / totalDuration,
+                               totalDuration: totalDuration, level: opacityF)
+        } else {
+            container.opacity = opacityF
         }
         return container
     }
