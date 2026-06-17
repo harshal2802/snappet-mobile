@@ -15,42 +15,33 @@ import CoreText
 /// (keyframed) opacity are follow-ups; v1 is static, time-gated text.
 
 /// One video clip's HR placed on the composed output timeline — the per-clip analogue of the
-/// session-wide `(hrSamples, hrElements)` pair. `samples` are already sliced to the clip's capture
-/// window and rebased to clip-local time (`StudioHRPlacement` + `HRWindowSlicer`); the chart normalizes
-/// its own x-axis, so only the relative shape matters. `elements` are the badges resolved over THIS
-/// clip's window. `Sendable` so it crosses into the AVFoundation export actor.
+/// session-wide `(hrSamples, hrTile)` pair. `samples` are already sliced to the clip's capture window
+/// and rebased to clip-local time (`StudioHRPlacement` + `HRWindowSlicer`); the chart normalizes its own
+/// x-axis, so only the relative shape matters. `Sendable` so it crosses into the AVFoundation export actor.
 struct PlacedClipHR: Sendable, Equatable {
     var startSec: Double          // clip's start on the output timeline
     var durationSec: Double       // clip's output (trim+speed) length
     var samples: [HRPoint]
-    var elements: [ResolvedHROverlay]
-    /// The resolved HR stat **tile** for this clip (the overlay redesign). When set, one composite tile
-    /// is drawn at the clip's slot instead of the free-floating `elements`. `nil` = legacy badges.
+    /// The resolved HR stat **tile** for this clip — one composite tile drawn at the clip's slot.
     var tile: ResolvedHRTile? = nil
 }
 
 enum StudioOverlays {
 
-    /// `clipHR` (non-empty for the **multi-clip Studio**) draws each clip's own capture-window HR at
-    /// the clip's slot — superseding the session-wide `hrSamples`/`hrElements` (the fallback when
-    /// `clipHR` is empty). This is the fix for the Studio drawing the whole session's HR across the
-    /// concatenated composition.
+    /// `clipHR` (non-empty for the **multi-clip Studio**) draws each clip's own capture-window HR stat
+    /// tile at the clip's slot — superseding the session-wide `hrTile` (the fallback when `clipHR` is
+    /// empty). This is the fix for the Studio drawing the whole session's HR across the concatenated
+    /// composition.
     static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double,
-                                  hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
-                                  hrElements: [ResolvedHROverlay] = [],
+                                  hrSamples: [HRPoint] = [],
                                   hrTile: ResolvedHRTile? = nil,
                                   clipHR: [PlacedClipHR] = [])
         -> AVVideoCompositionCoreAnimationTool? {
         // `.video` overlays are PiP video tracks (handled by the composer), NOT Core Animation layers.
         let visible = overlays.filter { !$0.content.isEmpty && $0.kind != .video }
         let perClip = !clipHR.isEmpty
-        let chartOn = hrConfig?.showChart ?? false
-        let hasHR = perClip ? (chartOn && clipHR.contains { $0.samples.count >= 2 })
-                            : (chartOn && hrSamples.count >= 2)
-        let hasElements = perClip ? clipHR.contains { !$0.elements.isEmpty } : !hrElements.isEmpty
-        // The unified HR stat tile (the overlay redesign) supersedes `hrElements` when present.
         let hasTile = perClip ? clipHR.contains { $0.tile != nil } : (hrTile != nil)
-        guard (!visible.isEmpty || hasHR || hasElements || hasTile),
+        guard (!visible.isEmpty || hasTile),
               canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return nil }
 
         let parent = CALayer(); parent.frame = CGRect(origin: .zero, size: canvas)
@@ -70,202 +61,29 @@ enum StudioOverlays {
             overlayLayer.addSublayer(layer)
         }
         if perClip {
-            // Multi-clip Studio: one tile (or, legacy, one chart + element set) PER clip, each placed/
-            // gated to its own slot so it shows that clip's capture-window HR (not the whole session
-            // across the composition).
+            // Multi-clip Studio: one HR stat tile PER clip, placed/gated to its own slot so it shows that
+            // clip's capture-window HR (not the whole session across the composition).
             for clip in clipHR {
-                if let tile = clip.tile {
-                    // The unified HR stat tile owns the whole overlay (including its own chart register).
-                    if let layer = hrTileLayer(tile, samples: clip.samples, canvas: canvas,
-                                               totalDuration: totalDuration,
-                                               slotStartSec: clip.startSec, slotDurationSec: clip.durationSec) {
-                        overlayLayer.addSublayer(layer)
-                    }
-                    continue
-                }
-                if let hrConfig, chartOn, clip.samples.count >= 2 {
-                    overlayLayer.addSublayer(hrChartLayer(
-                        samples: clip.samples, config: hrConfig, canvas: canvas,
-                        totalDuration: totalDuration,
-                        slotStartSec: clip.startSec, slotDurationSec: clip.durationSec))
-                }
-                for layer in hrElementLayers(clip.elements, canvas: canvas, totalDuration: totalDuration,
-                                             slotStartSec: clip.startSec, slotDurationSec: clip.durationSec) {
+                if let tile = clip.tile,
+                   let layer = hrTileLayer(tile, samples: clip.samples, canvas: canvas,
+                                           totalDuration: totalDuration,
+                                           slotStartSec: clip.startSec, slotDurationSec: clip.durationSec) {
                     overlayLayer.addSublayer(layer)
                 }
             }
-        } else if let hrTile {
+        } else if let hrTile,
+                  let layer = hrTileLayer(hrTile, samples: hrSamples, canvas: canvas, totalDuration: totalDuration) {
             // Session-wide tile (the fallback path for clips with no media link).
-            if let layer = hrTileLayer(hrTile, samples: hrSamples, canvas: canvas, totalDuration: totalDuration) {
-                overlayLayer.addSublayer(layer)
-            }
-        } else {
-            if let hrConfig, hasHR {
-                overlayLayer.addSublayer(hrChartLayer(samples: hrSamples, config: hrConfig,
-                                                      canvas: canvas, totalDuration: totalDuration))
-            }
-            // The configurable HR/fitness overlay elements (prompt 28): one badge layer per display
-            // segment, opacity-gated to its time window (a static element is a single [0,1] segment).
-            for layer in hrElementLayers(hrElements, canvas: canvas, totalDuration: totalDuration) {
-                overlayLayer.addSublayer(layer)
-            }
+            overlayLayer.addSublayer(layer)
         }
         parent.addSublayer(videoLayer)
         parent.addSublayer(overlayLayer)
         return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
     }
 
-    /// The export heart-rate chart (moving-playhead line): the HR polyline + a dot animated along it
-    /// in sync with the video time. Bottom-left origin (the animation tool's layer space — same flip
-    /// as `ClipEditGeometry.layerPoint`). Internal so the studio's render engine reuses it.
-    /// `slotStartSec`/`slotDurationSec` place the chart on **one clip's slot** of a multi-clip
-    /// composition: the playhead dot sweeps only during the slot and the whole chart is opacity-gated to
-    /// it (so each clip shows its own capture-window HR). Defaulted (`slotStartSec = 0`, `slotDurationSec
-    /// = nil → the whole timeline, no gate`) so a whole-timeline chart renders without a slot gate.
-    static func hrChartLayer(samples: [HRPoint], config: HROverlayConfig,
-                             canvas: CGSize, totalDuration: Double,
-                             slotStartSec: Double = 0, slotDurationSec: Double? = nil) -> CALayer {
-        let playheadDuration = slotDurationSec ?? totalDuration
-        let chartW = max(60, canvas.width * config.scale)
-        let chartH = chartW * 0.36
-        let cx = config.normalizedX * canvas.width
-        let cy = canvas.height - config.normalizedY * canvas.height        // flip Y to bottom-left
-        let outer = CGRect(x: cx - chartW / 2, y: cy - chartH / 2, width: chartW, height: chartH)
-        let rect = outer.insetBy(dx: 6, dy: 6)
-
-        let container = CALayer(); container.frame = outer
-        let bg = CALayer(); bg.frame = container.bounds
-        bg.backgroundColor = UIColor.black.withAlphaComponent(0.35).cgColor; bg.cornerRadius = 8
-        container.addSublayer(bg)
-
-        let pts = HRChartGeometry.normalizedPoints(samples)
-        // bottom-left: y = n.y * height (n.y = 1 → top). Map into rect (local to container).
-        func local(_ n: CGPoint) -> CGPoint {
-            CGPoint(x: (rect.minX - outer.minX) + n.x * rect.width,
-                    y: (rect.minY - outer.minY) + n.y * rect.height)
-        }
-        let lineColor = config.zoneColored
-            ? UIColor(HeartRateZone.forBpm(averageBPM(samples)).color)
-            : uiColor(config.colorHex)
-
-        let path = CGMutablePath()
-        if let f = pts.first { path.move(to: local(f)); for q in pts.dropFirst() { path.addLine(to: local(q)) } }
-        let line = CAShapeLayer()
-        line.frame = container.bounds; line.path = path
-        line.strokeColor = lineColor.cgColor; line.fillColor = UIColor.clear.cgColor
-        line.lineWidth = 2; line.lineJoin = .round
-        container.addSublayer(line)
-
-        // The playhead dot, animated along the line over the whole timeline.
-        let dot = CALayer()
-        dot.bounds = CGRect(x: 0, y: 0, width: 9, height: 9); dot.cornerRadius = 4.5
-        dot.backgroundColor = UIColor.white.cgColor
-        let inner = CALayer(); inner.frame = CGRect(x: 2, y: 2, width: 5, height: 5)
-        inner.cornerRadius = 2.5; inner.backgroundColor = lineColor.cgColor
-        dot.addSublayer(inner)
-        if !pts.isEmpty {
-            // Build STRICTLY-INCREASING keyTimes in [0,1] (Core Animation drops a `.linear` keyframe
-            // animation with equal/decreasing keyTimes — duplicate sample timestamps would otherwise
-            // freeze the export dot). Keep values aligned to the kept keyTimes; span [0,1].
-            var values: [NSValue] = []
-            var keyTimes: [NSNumber] = []
-            var last = -1.0
-            let eps = 1e-4
-            for p in pts {
-                let kt = min(1, max(0, p.x))
-                if kt > last + eps {
-                    values.append(NSValue(cgPoint: local(p))); keyTimes.append(NSNumber(value: kt)); last = kt
-                }
-            }
-            if keyTimes.count >= 2 {
-                keyTimes[0] = 0
-                keyTimes[keyTimes.count - 1] = 1
-                let anim = CAKeyframeAnimation(keyPath: "position")
-                anim.values = values
-                anim.keyTimes = keyTimes
-                anim.calculationMode = .linear
-                anim.beginTime = AVCoreAnimationBeginTimeAtZero + slotStartSec
-                anim.duration = max(0.01, playheadDuration)
-                anim.isRemovedOnCompletion = false
-                anim.fillMode = .both
-                dot.position = local(pts[0])
-                dot.add(anim, forKey: "hrPlayhead")
-            } else {
-                dot.position = local(pts[0])
-            }
-        }
-        container.addSublayer(dot)
-        // Multi-clip: the chart is only on screen during its own clip's slot (otherwise every clip's
-        // chart would stack on top of each other for the whole video).
-        if let slotDurationSec,
-           !(slotStartSec <= 0.0001 && slotStartSec + slotDurationSec >= totalDuration - 0.0001) {
-            gateSegmentOpacity(container, start: slotStartSec / totalDuration,
-                               end: (slotStartSec + slotDurationSec) / totalDuration,
-                               totalDuration: totalDuration)
-        }
-        return container
-    }
-
-    /// Build the burned-in badge layers for the configurable HR/fitness overlay elements (prompt 28).
-    /// Each resolved overlay contributes one rounded "pill" `CATextLayer` per display segment, all at
-    /// the same position, each opacity-gated to its `[start, end]` fraction window — so a **static**
-    /// element (one `[0,1]` segment) is always visible while an **animated live** element shows its
-    /// changing readings over the clip (Core Animation can't redraw text per frame, so we cross-fade
-    /// pre-rendered per-value layers). Bottom-left layer space (the animation tool's), like the chart.
-    /// `slotStartSec`/`slotDurationSec` place the badges on **one clip's slot** of a multi-clip
-    /// composition: each element's `[0,1]` clip-local segment fractions are mapped onto the clip's
-    /// slot window before opacity-gating, so a clip's per-clip badges only show during that clip.
-    /// Defaulted (`slotStartSec = 0`, `slotDurationSec = nil → whole timeline`) to an identity mapping,
-    /// so a whole-timeline badge renders without a slot gate.
-    static func hrElementLayers(_ overlays: [ResolvedHROverlay], canvas: CGSize,
-                                totalDuration: Double,
-                                slotStartSec: Double = 0, slotDurationSec: Double? = nil) -> [CALayer] {
-        guard canvas.width > 0, canvas.height > 0, totalDuration > 0 else { return [] }
-        let slotDur = slotDurationSec ?? totalDuration
-        var layers: [CALayer] = []
-        for o in overlays {
-            let cx = o.normalizedX * canvas.width
-            let cy = canvas.height - o.normalizedY * canvas.height        // flip Y to bottom-left
-            let fontSize = max(10, canvas.height * 0.045 * o.scale)
-            for seg in o.segments {
-                let pill = hrBadgeLayer(text: seg.reading.text, hex: seg.reading.hex,
-                                        fontSize: fontSize, center: CGPoint(x: cx, y: cy))
-                // Map clip-local segment fractions onto the clip's slot, as fractions of the whole timeline.
-                let absStart = (slotStartSec + seg.start * slotDur) / totalDuration
-                let absEnd = (slotStartSec + seg.end * slotDur) / totalDuration
-                gateSegmentOpacity(pill, start: absStart, end: absEnd, totalDuration: totalDuration)
-                layers.append(pill)
-            }
-        }
-        return layers
-    }
-
-    /// One rounded badge: a coloured `CATextLayer` on a translucent dark capsule, sized to its text.
-    private static func hrBadgeLayer(text: String, hex: String, fontSize: CGFloat,
-                                     center: CGPoint) -> CALayer {
-        let font = UIFont.systemFont(ofSize: fontSize, weight: .semibold)
-        let color = uiColor(hex)
-        let attributed = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
-        let textSize = attributed.size()
-        let hPad: CGFloat = fontSize * 0.5, vPad: CGFloat = fontSize * 0.3
-        let boxW = ceil(textSize.width) + 2 * hPad, boxH = ceil(textSize.height) + 2 * vPad
-
-        let container = CALayer()
-        container.frame = CGRect(x: center.x - boxW / 2, y: center.y - boxH / 2, width: boxW, height: boxH)
-        container.backgroundColor = UIColor.black.withAlphaComponent(0.4).cgColor
-        container.cornerRadius = boxH / 2
-
-        let label = CATextLayer()
-        label.string = attributed
-        label.contentsScale = 2
-        label.alignmentMode = .center
-        label.frame = CGRect(x: hPad, y: vPad, width: ceil(textSize.width), height: ceil(textSize.height))
-        container.addSublayer(label)
-        return container
-    }
-
-    /// Opacity-gate a badge to its `[start, end]` fraction window. A full-clip `[0,1]` segment stays
-    /// fully visible; a sub-window appears/disappears on cue (the animated-live cross-fade).
+    /// Opacity-gate a layer to its `[start, end]` fraction window (at visible `level`). A full-clip
+    /// `[0,1]` segment stays fully visible; a sub-window appears/disappears on cue (per-clip gating, the
+    /// animated-live cross-fade for a tile's live metric, and the whole-tile opacity).
     private static func gateSegmentOpacity(_ layer: CALayer, start: Double, end: Double,
                                            totalDuration: Double, level: Float = 1) {
         if start <= 0.0001 && end >= 0.9999 { layer.opacity = level; return }   // static → always on (at `level`)

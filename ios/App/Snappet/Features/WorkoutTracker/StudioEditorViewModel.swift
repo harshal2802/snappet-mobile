@@ -686,13 +686,6 @@ final class StudioEditorViewModel {
         HROverlayValues(samples: hrSeries, durationSec: hrSeries.last?.t ?? 0,
                         maxHR: hrMaxHR, restHR: hrRestHR, kcal: hrKcal, hrv: hrHRV)
     }
-    private func resolvedOverlayElements() -> [ResolvedHROverlay] {
-        // When a unified tile is configured it owns the overlay — don't also draw legacy free badges.
-        guard snapshot.hrOverlay?.tile == nil else { return [] }
-        let els = snapshot.hrOverlay?.elements ?? []
-        return els.isEmpty ? [] : overlayValues.resolve(els)
-    }
-
     /// The session-wide resolved HR stat **tile** (the overlay redesign), or `nil` when no tile is set.
     /// The composer uses it as the fallback for clips with no media link; per-clip tiles (each clip's own
     /// capture window) come from `clipHRContent()`.
@@ -705,8 +698,8 @@ final class StudioEditorViewModel {
 
     /// Per-clip HR content for **export**, keyed by clip id: the session series sliced to each visible
     /// video clip's capture window (`StudioHRPlacement` + `HRWindowSlicer`) plus that clip's resolved
-    /// overlay badges. Empty (→ composer falls back to the session-wide path) when there's no HR, no
-    /// media offsets, or the overlay is off. The composer places each entry at the clip's output slot.
+    /// HR stat tile. Empty (→ composer falls back to the session-wide tile) when there's no HR, no media
+    /// offsets, or no tile. The composer places each entry at the clip's output slot.
     private func clipHRContent() -> [UUID: StudioClipHRContent] {
         guard !hrSeries.isEmpty else { return [:] }
         let videoClips = visibleSnapshotClips.filter { !$0.isPhoto }
@@ -717,26 +710,19 @@ final class StudioEditorViewModel {
         let samplesByID = StudioHRPlacement.sample(clips: videoClips, offsets: offsets,
                                                    sourceDurations: sourceDurations, series: hrSeries)
         guard !samplesByID.isEmpty else { return [:] }
+        // One composite tile per clip, resolved over the clip's own capture window. No tile → no per-clip
+        // HR content (legacy free-floating badges were removed once everything migrates to a tile).
+        guard let tile = snapshot.hrOverlay?.tile else { return [:] }
         var out: [UUID: StudioClipHRContent] = [:]
-        // Unified tile path (the redesign): one composite tile per clip, resolved over the clip window.
-        if let tile = snapshot.hrOverlay?.tile {
-            for (id, samples) in samplesByID {
-                out[id] = StudioClipHRContent(samples: samples, elements: [],
-                                              tile: resolveClipTile(tile, samples: samples))
-            }
-            return out
-        }
-        let elements = snapshot.hrOverlay?.elements ?? []
         for (id, samples) in samplesByID {
-            out[id] = StudioClipHRContent(samples: samples,
-                                          elements: resolveClipElements(elements, samples: samples))
+            out[id] = StudioClipHRContent(samples: samples, tile: resolveClipTile(tile, samples: samples))
         }
         return out
     }
 
     /// Resolve the HR tile over ONE clip's window — per-clip avg/max/zone/calories/HRV (not the
-    /// session-wide values), the tile twin of `resolveClipElements`. Bounds (max/rest HR) stay
-    /// session-wide; calories/HRV are computed over the clip's own samples.
+    /// session-wide values). Bounds (max/rest HR) stay session-wide; calories/HRV are computed over the
+    /// clip's own samples.
     private func resolveClipTile(_ tile: HRTile, samples: [HRPoint]) -> ResolvedHRTile? {
         let span = samples.last?.t ?? 0
         let kcal = hrProfile?.estimatedKcal(forSeries: samples, durationSec: span)
@@ -745,20 +731,6 @@ final class StudioEditorViewModel {
             start: 0, end: span)
         return HROverlayValues(samples: samples, durationSec: span, maxHR: hrMaxHR, restHR: hrRestHR,
                                kcal: kcal, hrv: hrv).resolveTile(tile)
-    }
-
-    /// Resolve the overlay badge elements over ONE clip's window — per-clip avg/max/zone/calories/HRV
-    /// (not the session-wide values the old Studio drew). Bounds (max/rest HR) stay session-wide;
-    /// calories/HRV are computed over the clip's own samples.
-    private func resolveClipElements(_ elements: [HROverlayElement], samples: [HRPoint]) -> [ResolvedHROverlay] {
-        guard !elements.isEmpty else { return [] }
-        let span = samples.last?.t ?? 0
-        let kcal = hrProfile?.estimatedKcal(forSeries: samples, durationSec: span)
-        let hrv = HRVMetrics.make(
-            from: samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
-            start: 0, end: span)
-        return HROverlayValues(samples: samples, durationSec: span, maxHR: hrMaxHR, restHR: hrRestHR,
-                               kcal: kcal, hrv: hrv).resolve(elements)
     }
 
     /// Per-clip HR for the **preview** chart (WYSIWYG with export): the clip under the playhead sliced
@@ -795,52 +767,6 @@ final class StudioEditorViewModel {
     var previewElementFraction: Double {
         let p = previewHR
         return p.totalDuration > 0 ? min(1, max(0, p.currentTime / p.totalDuration)) : 0
-    }
-    var availableOverlayMetrics: [HROverlayMetric] {
-        let v = overlayValues
-        return HROverlayMetric.allCases.filter {
-            v.staticValue($0, fallbackHex: "#FFFFFF") != nil
-                || v.live($0, atFraction: 0.5, fallbackHex: "#FFFFFF") != nil
-        }
-    }
-    var overlayElements: [HROverlayElement] { snapshot.hrOverlay?.elements ?? [] }
-
-    func addOverlayElement(_ metric: HROverlayMetric) {
-        var c = hrOverlay ?? HROverlayConfig(normalizedX: 0.5, normalizedY: 0.80, scale: 0.86,
-                                             colorHex: "#FF3B30", showBPM: false,
-                                             zoneColored: false, showChart: false)
-        let y = 0.12 + Double(c.elements.count) * 0.08
-        c.elements.append(HROverlayElement(metric: metric, normalizedX: 0.5, normalizedY: min(0.9, y)))
-        updateHROverlay(c)
-    }
-    func removeOverlayElement(_ id: UUID) {
-        guard var c = hrOverlay else { return }
-        c.elements.removeAll { $0.id == id }; updateHROverlay(c)
-    }
-    func setElementLive(_ id: UUID, _ live: Bool) { mutateElement(id) { $0.live = live } }
-    func setElementAnimated(_ id: UUID, _ animated: Bool) { mutateElement(id) { $0.animated = animated } }
-    func setElementPosition(_ id: UUID, _ p: CGPoint) {
-        mutateElement(id) { $0.position = CGPoint(x: min(max(p.x, 0), 1), y: min(max(p.y, 0), 1)) }
-    }
-    private func mutateElement(_ id: UUID, _ change: (inout HROverlayElement) -> Void) {
-        guard var c = hrOverlay, let i = c.elements.firstIndex(where: { $0.id == id }) else { return }
-        change(&c.elements[i]); updateHROverlay(c)
-    }
-    func setShowChart(_ show: Bool) {
-        var c = hrOverlay ?? .default
-        c.showChart = show; updateHROverlay(c)
-    }
-    /// Commit the dragged HR chart to a new normalized centre (0…1, top-left).
-    func setHRPosition(_ normalized: CGPoint) {
-        guard var c = hrOverlay else { return }
-        c.position = CGPoint(x: min(max(normalized.x, 0), 1), y: min(max(normalized.y, 0), 1))
-        updateHROverlay(c)
-    }
-    /// Commit a pinch-resize of the HR chart (width as a fraction of the canvas).
-    func setHRScale(_ scale: Double) {
-        guard var c = hrOverlay else { return }
-        c.scale = min(1, max(0.3, scale))
-        updateHROverlay(c)
     }
 
     // MARK: Picture-in-picture (a second video composited over the main track)
@@ -925,12 +851,10 @@ final class StudioEditorViewModel {
     func export() async {
         exportState = .exporting
         do {
-            // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples/
-            // hrElements in the composer; the session-wide values stay as the fallback for clips with
-            // no media link.
+            // Per-clip HR (each clip's own capture-window) supersedes the session-wide hrSamples in the
+            // composer; the session-wide tile stays as the fallback for clips with no media link.
             let url = try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
                                                 hrSamples: hrSeries,
-                                                hrElements: resolvedOverlayElements(),
                                                 hrTile: resolvedSessionTile(),
                                                 clipHRByID: clipHRContent(),
                                                 quality: exportQuality)
