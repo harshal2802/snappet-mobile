@@ -140,11 +140,15 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
             || app.staticTexts.matching(NSPredicate(format: "label CONTAINS '0:45'")).firstMatch.exists,
             "the timed row should read 0:45")
 
-        // 6 — Finish → land back on the dashboard; the session is in History.
+        // 6 — Finish → completion summary (#158 §D) → Done saves & exits; the session is in History.
         let finish = app.buttons["freeform.finish"]
         if !finish.exists { app.swipeUp() }
         XCTAssertTrue(finish.waitForExistence(timeout: 4), "Finish workout should be available")
         finish.tap()
+        let done = app.buttons["freeform.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "the completion summary should appear")
+        snap("12b-summary")
+        done.tap()
         sleep(2); snap("13-after-finish")
 
         if app.segmentedControls.buttons["History"].waitForExistence(timeout: 4) {

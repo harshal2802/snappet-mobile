@@ -32,16 +32,33 @@ struct FreeformPlayerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
     /// Cross-session prefill per exerciseId, cached so the ~1 Hz body re-render never re-scans history
     /// (history is fixed for the live session). Recomputed on appear + when an exercise is added. (§B)
     @State private var prefills: [String: LastSetLookup.LastTime] = [:]
+    /// Post-workout completion moment (§D): Finish switches the cover to a summary screen (in-cover, not a
+    /// push — avoids the push-vs-cover wedge `SessionRoute` exists for). The milestones drive the burst.
+    @State private var showingSummary = false
+    @State private var doneMilestones: [FreeformSummary.Milestone] = []
+    @State private var doneBounce = 0
+    @State private var celebrationTrigger = 0
+    @State private var showingDiscard = false
+    @ScaledMetric(relativeTo: .largeTitle) private var doneSealSize: CGFloat = 72
 
     private var unit: WeightUnit { defaultUnit }
 
     var body: some View {
+        if showingSummary {
+            doneScreen
+        } else {
+            loggingContent
+        }
+    }
+
+    private var loggingContent: some View {
         NavigationStack {
             List {
                 titleSection
@@ -276,7 +293,7 @@ struct FreeformPlayerView: View {
                     .accessibilityIdentifier("freeform.hrChip")
             }
 
-            Button { finish(saved: true) } label: {
+            Button { finishTapped() } label: {
                 Text("Finish").font(.headline)
             }
             .buttonStyle(.borderedProminent)
@@ -286,6 +303,94 @@ struct FreeformPlayerView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    // MARK: - Completion moment (§D)
+
+    /// The post-workout summary, mirroring the guided player's done-screen: a seal, the three completion
+    /// stats (Duration · Sets · a dominant-kind headline — Volume / Sends / Hold-time), an optional
+    /// milestone headline, and the Done / View detail CTAs (plus Keep going / Discard). A milestone fires
+    /// a `CelebrationBurst` (haptic always; confetti suppressed under Reduce Motion). All figures come from
+    /// the pure `FreeformSummary` — derived, not persisted, so there's no model change.
+    private var doneScreen: some View {
+        let stats = FreeformSummary.stats(for: session, unit: unit)
+        return VStack(spacing: 0) {
+            HStack {
+                Button("Keep going") { showingSummary = false }
+                    .accessibilityIdentifier("freeform.keepGoing")
+                Spacer()
+            }
+            .padding(.horizontal)
+
+            Spacer()
+
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: doneSealSize))
+                    .foregroundStyle(SnappetColor.workout)
+                    .symbolEffect(.bounce, value: reduceMotion ? 0 : doneBounce)
+                Text("Workout Complete").font(.title.bold())
+                Text(session.routineName).foregroundStyle(.secondary)
+                if let milestone = doneMilestones.first {
+                    Text(FreeformSummary.milestoneHeadline(milestone))
+                        .font(.headline)
+                        .foregroundStyle(SnappetColor.workout)
+                        .accessibilityIdentifier("freeform.milestone")
+                }
+                HStack(spacing: 28) {
+                    statCell(stats.duration)
+                    statCell(stats.sets)
+                    statCell(stats.headline)
+                }
+                .padding(.top, 8)
+            }
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button { finish(saved: true) } label: {
+                    Text("Done").font(.headline).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                .accessibilityIdentifier("freeform.done")
+
+                Button { onViewDetail(session) } label: {
+                    Text("View detail").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("freeform.viewDetail")
+
+                Button("Discard workout", role: .destructive) { showingDiscard = true }
+                    .font(.footnote)
+                    .accessibilityIdentifier("freeform.discard")
+            }
+            .padding(.horizontal)
+        }
+        .padding(.vertical)
+        .celebrates(on: celebrationTrigger)
+        .confirmationDialog("Discard this workout?", isPresented: $showingDiscard, titleVisibility: .visible) {
+            Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
+            Button("Keep going", role: .cancel) { showingSummary = false }
+        }
+        .onAppear {
+            doneBounce += 1
+            if !doneMilestones.isEmpty { celebrationTrigger += 1 }
+        }
+    }
+
+    private func statCell(_ stat: FreeformSummary.Stat) -> some View {
+        VStack(spacing: 4) {
+            Text(stat.value).font(.title2.bold().monospacedDigit()).contentTransition(.numericText())
+            Text(stat.label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Finish from the command bar: a logged session opens the completion summary (computing milestones
+    /// against prior history first); an empty session just exits (discarded — nothing to celebrate).
+    private func finishTapped() {
+        guard session.completedSetCount > 0 else { finish(saved: false); return }
+        doneMilestones = FreeformSummary.milestones(for: session, history: history)
+        showingSummary = true
     }
 
     // MARK: - Mutations

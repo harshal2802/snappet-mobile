@@ -85,12 +85,15 @@ final class TrackingTypeFilterTests: XCTestCase {
         app.buttons["logset.add"].tap()
         sleep(1); snap("04-timed-logged")
 
-        // 2 — Finish the session (the "Finish workout" button commits a saved finish directly — no
-        // confirm dialog; the confirmation is only on the toolbar "End"). Lands back on the dashboard.
+        // 2 — Finish the session. Finish opens the completion summary (#158 §D); its Done button saves &
+        // exits to the dashboard.
         let finish = app.buttons["freeform.finish"]
         if !finish.exists { app.swipeUp() }
         XCTAssertTrue(finish.waitForExistence(timeout: 5), "Finish workout should be available")
         finish.tap()
+        let done = app.buttons["freeform.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "the completion summary should appear")
+        done.tap()
         sleep(2); snap("05-after-finish")
 
         // 3 — Open History. The just-finished freeform session ("Quick session", Timed-only) is the
