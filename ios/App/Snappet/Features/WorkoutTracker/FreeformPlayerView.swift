@@ -46,6 +46,8 @@ struct FreeformPlayerView: View {
     @State private var doneBounce = 0
     @State private var celebrationTrigger = 0
     @State private var showingDiscard = false
+    /// The expandable live-metrics & recovery panel (§E), opened from the command-bar HR chip.
+    @State private var showingMetrics = false
     @ScaledMetric(relativeTo: .largeTitle) private var doneSealSize: CGFloat = 72
 
     private var unit: WeightUnit { defaultUnit }
@@ -120,6 +122,9 @@ struct FreeformPlayerView: View {
             LogSetSheet(kind: target.kind, unit: unit, prefill: prefills[target.exerciseId]) { log in
                 appendLog(log, toExerciseID: target.exerciseID)
             }
+        }
+        .sheet(isPresented: $showingMetrics) {
+            LiveMetricsPanel(session: session)
         }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
@@ -287,10 +292,29 @@ struct FreeformPlayerView: View {
             Spacer(minLength: 8)
 
             if let bpm = app.liveWorkout.latestHR {
-                Label("\(Int(bpm.rounded()))", systemImage: "heart.fill")
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(HeartRateZone.forBpm(bpm).color)
-                    .accessibilityIdentifier("freeform.hrChip")
+                let profile = app.userProfile.profile
+                let zone = HeartRateZone.forBpm(bpm, maxHR: profile.resolvedMaxHR ?? HeartRateZone.defaultMaxHR)
+                let recovery = RecoveryReadiness.evaluate(currentBpm: bpm, restBpm: profile.restingBound,
+                                                          maxBpm: profile.resolvedMaxHR)
+                Button { showingMetrics = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "heart.fill").foregroundStyle(zone.color)
+                        Text("\(Int(bpm.rounded()))")
+                            .font(.subheadline.weight(.semibold).monospacedDigit()).foregroundStyle(.primary)
+                        if zone != .none {
+                            Text("Z\(zone.rawValue)").font(.caption2.weight(.bold))
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(zone.color.opacity(0.18), in: Capsule())
+                                .foregroundStyle(zone.color)
+                        }
+                        if recovery.state != .unknown {
+                            Circle().fill(recovery.state == .ready ? Color.green : Color.orange)
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.hrChip")
             }
 
             Button { finishTapped() } label: {
