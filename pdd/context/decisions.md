@@ -4,6 +4,64 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-17] HR stat-tile "Glass HUD" redesign (issue #163, prompts 77–78) — supersedes the #160–162 catalog
+
+**Decision**: rebuild the HR stat tile's visual language as a premium **"Glass HUD"** with a strict
+**hero → secondary → tertiary** hierarchy and an **anti-crop layout engine**; bring the live HR chart
+back as a premium **zone-banded trace**; default to **Glass Hero Card with the sparkline ON** (the
+`hero` model case — replacing the Scorebug default). Model `rawValue`s are unchanged, so persisted
+tiles + the walkthrough UITest's `studioTileTemplate.<raw>` ids keep working; migration-safe Codable +
+the SwiftData phantom-tile→nil normalization stay. The pure `HRTileLayout` is still the single source
+of truth feeding both the SwiftUI preview and the Core-Animation export (WYSIWYG).
+
+**The actual on-device crop fix is honest widths + tabular numerals — NOT a font floor in the fit
+math.** On-device crop is an **export** phenomenon (the burned-in `.mp4`): the export rect is in
+**pixels** (~1080 wide), so the raw font is always far above the 11pt floor there and the floor never
+bites. The old crop came from (1) a non-tabular export `UIFont` (digits wider than estimated) and (2)
+the fictional `HROverlayMetric.tileValueChars` underestimating width. So we ship **value-only chips**
+(`142` + caption `AVG`, not `142 avg bpm` — ~40% narrower), an **honest width estimate** (em-advance
+0.66 over the real value-only char counts), and a **tabular rounded `UIFont`** (`kMonospacedNumbers`) in
+every export text layer. We deliberately **keep the 11pt floor OUT of the fit/reflow math** — applying
+it there (as the spec's rule #5 reads literally) would make a small preview (points) and a large export
+(pixels) reflow to *different* metric counts, breaking the scale-invariance that makes WYSIWYG hold.
+The floor stays a preview-only legibility guard on the *reported* size.
+
+**Per-template hard caps + `hiddenCount` (`+N · enlarge`), not silent cropping.** Each template caps
+the visible metrics (one hero + secondary + tertiary; hero 5 / scorebug 4 / ring 4 / hudPill 3 / list 6
+/ bento 6 / chartBanner 4). "Toggle all 10 on" fills the cap by priority and parks the rest into
+`HRTileLayout.Result.hiddenCount`, which the editor surfaces as a `+N · enlarge tile` affordance.
+Spawn sets are focused (never all 10) so a freshly-placed tile reads cleanly before any toggle.
+
+**Chart auto-grow is a normalized editor nudge + a fractional carve — never an absolute-point min in
+the pure layout.** Enabling the chart nudges `tile.height` up to the template's `minHeightWithChart`
+(normalized) so the curve has room; the pure layout carves the chart as a *fraction* of the tile. An
+absolute "≥24pt" min in the layout would diverge between preview points and export pixels — so it lives
+in the (normalized) model/editor, not the scale-invariant layout.
+
+**No `strokeEnd` draw-on — full curve + moving dot, both sides.** The SwiftUI preview is a per-frame
+snapshot with no `strokeEnd` animation, so a Core-Animation draw-on would diverge from the preview
+*during playback*. We render the full smooth curve with only the playhead **dot** moving. The export dot
+is **x-synced** (position `CAKeyframeAnimation` keyed by `x = t/maxT` with `.linear` — the same timeline
+fraction the preview tracks; NOT `.paced`, which parameterizes by arc length and would desync from the
+preview's x-fraction) and its halo/core colours animate by the **zone under the dot** (colour keyframes),
+so the burned-in dot tracks the same point AND the same colour the preview's live dot shows — preview ==
+export at every frame, the project's top invariant.
+
+**Curve gradients: horizontal zone-banded stroke (flip-safe), flat area wash (flip-ambiguous).** The
+zone-banded **stroke** is a horizontal `CAGradientLayer` (`(0,0.5)→(1,0.5)`) masked by the smooth stroke
+shape — x isn't flipped, so it's identical in preview and export. The **area** fill is a flat low-alpha
+zone wash on both sides: a *vertical* `CAGradientLayer` orientation is flip-ambiguous in the raw tool
+tree (bottom-left origin) and only device-verifiable, so we avoid it. The smooth path itself is the
+shared pure `HRChartGeometry.smoothedPath` (Catmull-Rom→bézier `CGPath`), consumed by `Path(cgPath)` and
+`CAShapeLayer` alike. `ResolvedHRTile.maxHR` is threaded through so the export's zone colours tint
+against the *same* bound as the preview.
+
+**Colour: near-white hero, selective zone accents.** The hero number is near-white `#F2F4F8` (the kit's
+"never pure white"); the zone pill / sparkline carry the zone hue; chip/field values use the zone or
+semantic colour only for the live-intensity metrics (zone / %HRR / redline / recovery) and near-white
+for the aggregates — so a single hue never misrepresents a multi-zone session (the prompt-51 rule,
+refreshed for the value-only chips).
+
 ## [2026-06-16] Kilter planned-session Android port: faithful mirror with Android-specific divergences (kilter-planned-session A-PR1..4)
 
 **Decision**: the iOS planned-session feature is ported to Android (Kotlin/Compose/Room) mirroring the

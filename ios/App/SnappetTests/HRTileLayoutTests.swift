@@ -130,6 +130,57 @@ final class HRTileLayoutTests: XCTestCase {
         for t in HRTileTemplate.allCases {
             let r = HRTileLayout.layout(template: t, enabledMetrics: [], tileRect: CGRect(x: 0, y: 0, width: 400, height: 200), hasChart: false)
             XCTAssertTrue(r.slots.isEmpty, "\(t) should produce no slots with no metrics")
+            XCTAssertEqual(r.hiddenCount, 0)
+        }
+    }
+
+    // MARK: Anti-crop redesign (issue #163)
+
+    func testEveryTemplateHonorsItsVisibleCap() {
+        // A generous rect + all 10 metrics: each template caps the visible count (one hero + secondary +
+        // tertiary, never all 10) and parks the overflow into `hiddenCount` (→ "+N · enlarge").
+        for t in HRTileTemplate.allCases {
+            let r = HRTileLayout.layout(template: t, enabledMetrics: all,
+                                        tileRect: CGRect(x: 0, y: 0, width: 900, height: 520), hasChart: false)
+            let cap = HRTileLayout.visibleCap(t, hasChart: false)
+            XCTAssertLessThanOrEqual(r.slots.count, cap, "\(t) drew \(r.slots.count) slots, cap \(cap)")
+            let distinct = Set(r.slots.map(\.metric)).count
+            XCTAssertLessThan(distinct, all.count, "\(t) should not draw all 10")
+            XCTAssertEqual(r.hiddenCount, all.count - distinct, "\(t) hiddenCount counts DISTINCT rendered metrics")
+            XCTAssertGreaterThan(r.hiddenCount, 0, "\(t) should report parked metrics")
+        }
+    }
+
+    func testGlassHeroCardStructureAndHierarchy() {
+        // The default: zone pill + giant BPM hero + sparkline + ≤3 value-only chips.
+        let r = HRTileLayout.layout(template: .hero, enabledMetrics: [.bpm, .zone, .avgHR, .maxHR, .calories],
+                                    tileRect: CGRect(x: 0, y: 0, width: 540, height: 360), hasChart: true)
+        XCTAssertEqual(r.slots.first { $0.role == .hero }?.metric, .bpm)
+        XCTAssertTrue(r.slots.contains { $0.role == .pill && $0.metric == .zone })
+        let chips = r.slots.filter { $0.role == .chip }
+        XCTAssertEqual(Set(chips.map(\.metric)), [.avgHR, .maxHR, .calories])
+        XCTAssertNotNil(r.chartRect)                                   // sparkline carved
+        // The hero owns the dominant visual weight (strictly the largest font).
+        let heroFont = r.slots.first { $0.role == .hero }?.fontSize ?? 0
+        XCTAssertGreaterThan(heroFont, r.slots.filter { $0.role != .hero }.map(\.fontSize).max() ?? 0)
+    }
+
+    func testHeroCardParksOverflowBehindEnlargeAffordance() {
+        // Toggle all 10 on: the hero card shows its 5-metric tier and parks the other 5.
+        let r = HRTileLayout.layout(template: .hero, enabledMetrics: all,
+                                    tileRect: CGRect(x: 0, y: 0, width: 540, height: 360), hasChart: true)
+        XCTAssertEqual(r.slots.count, 5)
+        XCTAssertEqual(r.hiddenCount, 5)
+    }
+
+    func testChartRegisterCarvesWithinTileForHero() {
+        let r = HRTileLayout.layout(template: .hero, enabledMetrics: [.bpm, .zone],
+                                    tileRect: CGRect(x: 0, y: 0, width: 540, height: 360), hasChart: true)
+        let chart = try? XCTUnwrap(r.chartRect)
+        XCTAssertNotNil(chart)
+        if let chart = chart {
+            XCTAssertTrue(r.tileRect.contains(chart), "the chart register must stay inside the tile")
+            XCTAssertGreaterThan(chart.height, 0)
         }
     }
 }

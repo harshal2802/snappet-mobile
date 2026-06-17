@@ -14,7 +14,13 @@ final class HRTileResolveTests: XCTestCase {
                                kcal: kcal, hrv: hrv)
     }
 
-    private func tileAllOn() -> HRTile { HRTile.make(template: .scorebug) }   // every metric ON
+    /// A tile with **every** metric forced ON — the redesign spawns only a focused set by default, so
+    /// these data-driven resolve tests turn them all on to exercise the no-data dropping in isolation.
+    private func tileAllOn() -> HRTile {
+        var t = HRTile.make(template: .scorebug)
+        for i in t.entries.indices { t.entries[i].on = true }
+        return t
+    }
 
     func testResolveDropsMetricsWithoutData() throws {
         // No kcal + no RR → calories and HRV have no data and are dropped from the tile.

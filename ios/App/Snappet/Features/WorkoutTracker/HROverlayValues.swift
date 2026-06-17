@@ -33,14 +33,33 @@ struct HROverlayValues {
         self.stats = WorkoutHRStats.make(from: samples, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
     }
 
-    /// A resolved overlay reading: the string to draw + the `#RRGGBB` colour. Equatable so the export's
-    /// segment de-duping can coalesce identical consecutive readings.
+    /// A resolved overlay reading: the string(s) to draw + the `#RRGGBB` colour. Equatable so the
+    /// export's segment de-duping can coalesce identical consecutive readings.
+    ///
+    /// Carries **two render forms** (the tile redesign): `text` is the legacy full inline string
+    /// ("142 avg bpm") still used by the free-floating badge path; `value` + `unit` are the split form
+    /// the unified tile uses — `value` is the value-ONLY string ("142", "72", "Z3 · Aerobic") with the
+    /// caption (`metric.tileCaption`) supplying the label (~40% narrower → a top cropping fix), and
+    /// `unit` is the inline suffix ("BPM", "%", "MS", "KCAL") drawn small beside the hero / wide rows
+    /// (nil where the value is self-describing, e.g. the zone pill or a recovery state).
     struct Reading: Equatable, Sendable {
         var text: String
         var hex: String
+        var value: String
+        var unit: String?
+
+        init(text: String, hex: String, value: String? = nil, unit: String? = nil) {
+            self.text = text
+            self.hex = hex
+            self.value = value ?? text
+            self.unit = unit
+        }
     }
 
     private var effectiveMaxHR: Double { maxHR ?? HeartRateZone.defaultMaxHR }
+    /// The max HR the readings resolved against (a real profile's, else the 190 default) — carried into
+    /// the resolved tile so the export's zone-banded chart tints against the SAME bound as the preview.
+    var resolvedMaxHR: Double { effectiveMaxHR }
 
     /// Smoothed bpm at a playhead fraction (0…1) — reuses the chart's interpolation.
     func bpm(atFraction f: Double) -> Double? { HRChartGeometry.sampleBPM(samples, atFraction: f) }
@@ -56,16 +75,18 @@ struct HROverlayValues {
         let zone = HeartRateZone.forBpm(bpm, maxHR: effectiveMaxHR)
         switch metric {
         case .bpm:
-            return Reading(text: "\(Int(bpm.rounded())) bpm", hex: zone.colorHex)
+            let n = Int(bpm.rounded())
+            return Reading(text: "\(n) bpm", hex: zone.colorHex, value: "\(n)", unit: "BPM")
         case .zone:
-            return zone == .none ? nil : Reading(text: zone.pillLabel, hex: zone.colorHex)
+            return zone == .none ? nil : Reading(text: zone.pillLabel, hex: zone.colorHex, value: zone.pillLabel)
         case .hrr:
             guard let h = hrrFraction(bpm: bpm) else { return nil }
-            return Reading(text: "\(Int((h * 100).rounded()))% effort", hex: zone.colorHex)
+            let p = Int((h * 100).rounded())
+            return Reading(text: "\(p)% effort", hex: zone.colorHex, value: "\(p)", unit: "%")
         case .recovery:
             switch RecoveryReadiness.evaluate(currentBpm: bpm, restBpm: restHR, maxBpm: maxHR).state {
-            case .ready:      return Reading(text: "Recovered", hex: "#34C759")
-            case .recovering: return Reading(text: "Recovering", hex: "#FF9500")
+            case .ready:      return Reading(text: "Recovered", hex: "#34C759", value: "Recovered")
+            case .recovering: return Reading(text: "Recovering", hex: "#FF9500", value: "Recovering")
             case .unknown:    return nil
             }
         default:
@@ -80,31 +101,38 @@ struct HROverlayValues {
         case .bpm, .avgHR:
             guard let s = stats else { return nil }
             let z = HeartRateZone.forBpm(s.avgBpm, maxHR: effectiveMaxHR)
-            return Reading(text: "\(Int(s.avgBpm.rounded())) avg bpm", hex: z.colorHex)
+            let n = Int(s.avgBpm.rounded())
+            return Reading(text: "\(n) avg bpm", hex: z.colorHex, value: "\(n)", unit: "BPM")
         case .maxHR:
             guard let s = stats else { return nil }
             let z = HeartRateZone.forBpm(s.maxBpm, maxHR: effectiveMaxHR)
-            return Reading(text: "\(Int(s.maxBpm.rounded())) max bpm", hex: z.colorHex)
+            let n = Int(s.maxBpm.rounded())
+            return Reading(text: "\(n) max bpm", hex: z.colorHex, value: "\(n)", unit: "BPM")
         case .zone:
             guard let s = stats else { return nil }
             let z = HeartRateZone.forBpm(s.avgBpm, maxHR: effectiveMaxHR)
-            return z == .none ? nil : Reading(text: z.pillLabel, hex: z.colorHex)
+            return z == .none ? nil : Reading(text: z.pillLabel, hex: z.colorHex, value: z.pillLabel)
         case .hrr:
             guard let s = stats, let h = hrrFraction(bpm: s.maxBpm) else { return nil }
             let z = HeartRateZone.forBpm(s.maxBpm, maxHR: effectiveMaxHR)
-            return Reading(text: "\(Int((h * 100).rounded()))% peak", hex: z.colorHex)
+            let p = Int((h * 100).rounded())
+            return Reading(text: "\(p)% peak", hex: z.colorHex, value: "\(p)", unit: "%")
         case .redline:
             guard let s = stats, s.totalSeconds > 0 else { return nil }
-            return Reading(text: "\(Int((s.redlineFraction * 100).rounded()))% redline", hex: fallbackHex)
+            let p = Int((s.redlineFraction * 100).rounded())
+            return Reading(text: "\(p)% redline", hex: fallbackHex, value: "\(p)", unit: "%")
         case .strain:
             guard let s = stats else { return nil }
-            return Reading(text: "Strain \(Int(s.edwardsTRIMP.rounded()))", hex: fallbackHex)
+            let n = Int(s.edwardsTRIMP.rounded())
+            return Reading(text: "Strain \(n)", hex: fallbackHex, value: "\(n)")
         case .hrv:
             guard let r = hrv.rmssd else { return nil }
-            return Reading(text: "HRV \(Int(r.rounded())) ms", hex: fallbackHex)
+            let n = Int(r.rounded())
+            return Reading(text: "HRV \(n) ms", hex: fallbackHex, value: "\(n)", unit: "MS")
         case .calories:
             guard let kcal else { return nil }
-            return Reading(text: "\(Int(kcal.rounded())) kcal", hex: fallbackHex)
+            let n = Int(kcal.rounded())
+            return Reading(text: "\(n) kcal", hex: fallbackHex, value: "\(n)", unit: "KCAL")
         case .recovery:
             return live(.recovery, atFraction: 1, fallbackHex: fallbackHex)   // end-of-clip state
         }
@@ -192,7 +220,7 @@ struct HROverlayValues {
         guard !resolved.isEmpty || tile.showChart else { return nil }
         return ResolvedHRTile(templateRaw: tile.templateRaw, centerX: tile.centerX, centerY: tile.centerY,
                               width: tile.width, height: tile.height, showChart: tile.showChart,
-                              zoneColored: tile.zoneColored, metrics: resolved)
+                              zoneColored: tile.zoneColored, maxHR: resolvedMaxHR, metrics: resolved)
     }
 }
 
@@ -214,9 +242,12 @@ struct ResolvedHRTile: Sendable, Equatable {
     var centerX: Double, centerY: Double, width: Double, height: Double
     var showChart: Bool
     var zoneColored: Bool
+    /// The max HR the readings resolved against — so the export's zone-banded chart tints against the
+    /// SAME bound as the preview (WYSIWYG). Defaulted to the 190 fallback for back-compat decodes.
+    var maxHR: Double = HeartRateZone.defaultMaxHR
     var metrics: [ResolvedTileMetric]
 
-    var template: HRTileTemplate { HRTileTemplate(rawValue: templateRaw) ?? .scorebug }
+    var template: HRTileTemplate { HRTileTemplate(rawValue: templateRaw) ?? .hero }
     var enabledMetrics: [HROverlayMetric] { metrics.map(\.metric) }
 }
 

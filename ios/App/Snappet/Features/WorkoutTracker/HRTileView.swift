@@ -24,11 +24,11 @@ struct HRTileView: View {
                                              enabledMetrics: resolved.map(\.metric),
                                              tileRect: rect, hasChart: tile.showChart)
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: min(18, rect.height * 0.18))
-                    .fill(.black.opacity(0.32))
+                glassCard(radius: HRTileStyle.tileRadius(w: rect.width, h: rect.height))
                 if tile.showChart, let chartRect = layout.chartRect {
-                    HRTileSparkline(samples: values.samples, fraction: fraction,
-                                    zoneColored: tile.zoneColored)
+                    PremiumHRCurve(samples: values.samples, maxHR: values.resolvedMaxHR,
+                                   fraction: fraction, zoneColored: tile.zoneColored,
+                                   sparkline: chartRect.height < rect.height * 0.30)
                         .frame(width: chartRect.width, height: chartRect.height)
                         .position(x: chartRect.midX, y: chartRect.midY)
                 }
@@ -41,6 +41,19 @@ struct HRTileView: View {
             }
         }
         .accessibilityIdentifier("studioHRTile")
+    }
+
+    /// The shared "Glass HUD" card backing (issue #163): a liquid-glass panel (material blur + the kit's
+    /// translucent fill) with a hairline edge + soft drop shadow. The export draws the same fill over a
+    /// scrim (it can't live-blur the footage), so the colours match and only the blur is preview-only.
+    private func glassCard(radius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: radius)
+            .fill(.ultraThinMaterial)
+            .overlay(RoundedRectangle(cornerRadius: radius)
+                .fill(Color(studioHex: HRTileStyle.glassFillHex).opacity(HRTileStyle.glassFillAlpha)))
+            .overlay(RoundedRectangle(cornerRadius: radius)
+                .strokeBorder(.white.opacity(HRTileStyle.hairlineAlpha), lineWidth: 1))
+            .shadow(color: .black.opacity(HRTileStyle.shadowAlpha), radius: radius * 0.5, y: radius * 0.18)
     }
 
     // The enabled metrics that actually have data at this playhead, in display order — the layout input
@@ -60,79 +73,232 @@ struct HRTileView: View {
         resolved.first { $0.metric == metric }?.reading
     }
 
+    private var heroColor: Color { Color(studioHex: HRTileStyle.heroTextHex) }
+
+    /// The accent colour for a non-hero value: zone/semantic hue for the live-intensity metrics
+    /// (zone/%HRR/redline/recovery), near-white for the aggregates — so a single hue never misrepresents
+    /// a multi-zone session (the `decisions.md` rule, refreshed for the value-only chips).
+    private func valueColor(_ metric: HROverlayMetric, _ reading: HROverlayValues.Reading) -> Color {
+        switch metric {
+        case .zone, .hrr, .redline, .recovery: return Color(studioHex: reading.hex)
+        default: return heroColor.opacity(HRTileStyle.valueAlpha)
+        }
+    }
+
     @ViewBuilder
     private func slotView(_ slot: HRTileLayout.MetricSlot, reading: HROverlayValues.Reading?) -> some View {
-        switch slot.role {
-        case .gauge:
-            Circle().strokeBorder(Color(studioHex: reading?.hex ?? "#FF3B30"),
-                                  lineWidth: max(3, slot.frame.width * 0.08))
-        case .pill:
-            if let reading {
-                Text(reading.text)
-                    .font(.system(size: slot.fontSize, weight: .semibold)).monospacedDigit()
-                    .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.6)
-                    .padding(.horizontal, slot.fontSize * 0.5).padding(.vertical, slot.fontSize * 0.2)
-                    .background(Color(studioHex: reading.hex).opacity(0.95), in: Capsule())
-            }
-        default:
-            if let reading {
-                VStack(spacing: 1) {
-                    Text(reading.text)
-                        .font(.system(size: slot.fontSize, weight: slot.role == .hero ? .heavy : .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(Color(studioHex: reading.hex))
-                        .shadow(color: .black.opacity(0.7), radius: 2)
-                    if slot.showsLabel {
-                        Text(slot.metric.tileCaption)
-                            .font(.system(size: max(8, slot.fontSize * 0.42), weight: .medium))
-                            .foregroundStyle(.white.opacity(0.75))
-                            .shadow(color: .black.opacity(0.7), radius: 2)
-                    }
-                }
-                .lineLimit(1).minimumScaleFactor(0.6)
-                .frame(maxWidth: .infinity,
-                       alignment: slot.align == .leading ? .leading : (slot.align == .trailing ? .trailing : .center))
+        if let reading {
+            switch slot.role {
+            case .gauge:
+                Circle().strokeBorder(Color(studioHex: reading.hex),
+                                      lineWidth: max(3, slot.frame.width * 0.08))
+            case .pill:
+                zonePill(reading, fontSize: slot.fontSize, align: slot.align)
+            case .hero:
+                heroValue(reading, fontSize: slot.fontSize, align: slot.align)
+            case .chip:
+                chip(slot.metric, reading, fontSize: slot.fontSize, height: slot.frame.height, showsLabel: slot.showsLabel)
+            case .field:
+                field(slot, reading)
             }
         }
     }
+
+    /// The giant hero number: near-white value + a small inline unit ("156" + "BPM"), tabular digits.
+    private func heroValue(_ reading: HROverlayValues.Reading, fontSize: CGFloat, align: HRTileLayout.TextAlign) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.07) {
+            Text(reading.value)
+                .font(.system(size: fontSize, weight: .heavy, design: .rounded)).monospacedDigit()
+                .foregroundStyle(heroColor)
+            if let unit = reading.unit {
+                Text(unit)
+                    .font(.system(size: fontSize * 0.34, weight: .bold, design: .rounded))
+                    .foregroundStyle(heroColor.opacity(HRTileStyle.captionAlpha))
+            }
+        }
+        .lineLimit(1).minimumScaleFactor(0.5)
+        .shadow(color: .black.opacity(0.45), radius: 3)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign(align))
+    }
+
+    /// The zone pill: a zone-tinted glass capsule with a leading zone dot + zone-coloured uppercase label.
+    private func zonePill(_ reading: HROverlayValues.Reading, fontSize: CGFloat, align: HRTileLayout.TextAlign) -> some View {
+        let zone = Color(studioHex: reading.hex)
+        return HStack(spacing: fontSize * 0.34) {
+            Circle().fill(zone).frame(width: fontSize * 0.42, height: fontSize * 0.42)
+            Text(reading.value.uppercased())
+                .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                .foregroundStyle(zone).lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .padding(.horizontal, fontSize * 0.6).padding(.vertical, fontSize * 0.28)
+        .background(zone.opacity(0.16), in: Capsule())
+        .overlay(Capsule().strokeBorder(zone.opacity(0.35), lineWidth: 1))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign(align))
+    }
+
+    /// A value-only chip: uppercase caption above a value, on a nested glass chip (issue #163 ①). The
+    /// corner radius is computed from the slot `height` (the rendered chip height) so it matches the
+    /// export's `chipRadius(h: frame.height)` exactly — WYSIWYG.
+    private func chip(_ metric: HROverlayMetric, _ reading: HROverlayValues.Reading,
+                      fontSize: CGFloat, height: CGFloat, showsLabel: Bool) -> some View {
+        VStack(spacing: fontSize * 0.12) {
+            if showsLabel {
+                Text(metric.tileCaption)
+                    .font(.system(size: fontSize * 0.62, weight: .semibold, design: .rounded))
+                    .tracking(0.5)
+                    .foregroundStyle(heroColor.opacity(HRTileStyle.captionAlpha))
+            }
+            Text(reading.value)
+                .font(.system(size: fontSize, weight: .bold, design: .rounded)).monospacedDigit()
+                .foregroundStyle(valueColor(metric, reading))
+        }
+        .lineLimit(1).minimumScaleFactor(0.6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(studioHex: HRTileStyle.chipFillHex).opacity(HRTileStyle.chipFillAlpha),
+                    in: RoundedRectangle(cornerRadius: HRTileStyle.chipRadius(h: height)))
+    }
+
+    /// A field/row. Mirrors the export's `tileValueLayers` `.field` cases exactly (WYSIWYG): when
+    /// `showsLabel && align == .leading` → a label-column (leading) + value-column (trailing) so the
+    /// value owns a fixed slot and can't collide with its label (rule #9, list/rail); else when
+    /// `showsLabel` → value on top with the caption stacked under it (scorebug-style); else value-only.
+    @ViewBuilder
+    private func field(_ slot: HRTileLayout.MetricSlot, _ reading: HROverlayValues.Reading) -> some View {
+        let captionText = Text(slot.metric.tileCaption)
+            .font(.system(size: slot.fontSize * 0.62, weight: .semibold, design: .rounded))
+            .tracking(0.5)
+            .foregroundStyle(heroColor.opacity(HRTileStyle.captionAlpha))
+        let valueView = HStack(alignment: .firstTextBaseline, spacing: slot.fontSize * 0.1) {
+            Text(reading.value)
+                .font(.system(size: slot.fontSize, weight: .bold, design: .rounded)).monospacedDigit()
+                .foregroundStyle(valueColor(slot.metric, reading))
+            if let unit = reading.unit {
+                Text(unit).font(.system(size: slot.fontSize * 0.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(heroColor.opacity(HRTileStyle.captionAlpha))
+            }
+        }
+        if slot.showsLabel && slot.align == .leading {
+            HStack {
+                captionText
+                Spacer(minLength: slot.fontSize * 0.3)
+                valueView
+            }
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if slot.showsLabel {
+            VStack(spacing: slot.fontSize * 0.08) { valueView; captionText }
+                .lineLimit(1).minimumScaleFactor(0.6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign(slot.align))
+        } else {
+            valueView.lineLimit(1).minimumScaleFactor(0.6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlign(slot.align))
+        }
+    }
+
+    private func frameAlign(_ a: HRTileLayout.TextAlign) -> Alignment {
+        switch a { case .leading: return .leading; case .trailing: return .trailing; case .center: return .center }
+    }
 }
 
-/// A compact HR sparkline (polyline + playhead dot) for the tile's chart register — the preview twin of
-/// `StudioOverlays.tileChartLayer`. SwiftUI top-left coords, so the normalized y (1 = top) is flipped.
-private struct HRTileSparkline: View {
+/// The premium **zone-banded HR trace** (issue #163) — the preview twin of
+/// `StudioOverlays.tileChartLayer`. A smooth Catmull-Rom→bézier curve (shared `HRChartGeometry`) drawn
+/// with a zone-coloured stroke gradient (green over the aerobic plateau → orange/red into the peak), a
+/// soft area fill, a glow so it floats over footage, and a glowing playhead dot. Draws on left→right to
+/// the playhead `fraction` (matching the export's `strokeEnd` draw-on), so preview == export.
+struct PremiumHRCurve: View {
     let samples: [HRPoint]
+    let maxHR: Double
     let fraction: Double
     let zoneColored: Bool
+    /// A compact register tucked under a hero (thinner stroke, no peak label / baseline rule).
+    var sparkline: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             let pts = HRChartGeometry.normalizedPoints(samples)
             let w = geo.size.width, h = geo.size.height
-            let color = zoneColored ? HeartRateZone.forBpm(avgBPM).color : Color(studioHex: "#FF3B30")
-            ZStack {
-                Path { p in
-                    guard let f = pts.first else { return }
-                    p.move(to: CGPoint(x: f.x * w, y: (1 - f.y) * h))
-                    for q in pts.dropFirst() { p.addLine(to: CGPoint(x: q.x * w, y: (1 - q.y) * h)) }
-                }
-                .stroke(color, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-                if let dot = dotPoint(pts) {
-                    Circle().fill(.white).frame(width: 7, height: 7)
-                        .position(x: dot.x * w, y: (1 - dot.y) * h)
+            let f = min(1, max(0, fraction))
+            let lw = sparkline ? HRTileStyle.lineWidthSpark : HRTileStyle.lineWidthFull
+            let stops = HRChartGeometry.zoneStops(samples, maxHR: maxHR)
+            let dotZone = HeartRateZone.forBpm(HRChartGeometry.sampleBPM(samples, atFraction: f), maxHR: maxHR)
+            let dotColor = zoneColored ? dotZone.color : Color(studioHex: "#FF3B30")
+            let glow = zoneColored ? (peakZone(pts).color) : Color(studioHex: "#FF3B30")
+            if pts.count >= 2 {
+                ZStack {
+                    // Area fill — a flat low-alpha zone wash (both sides use a flat fill so preview ==
+                    // export; a CAGradientLayer's vertical orientation is flip-ambiguous in the tool tree).
+                    SmoothHRArea(norm: pts)
+                        .fill(glow.opacity(HRTileStyle.areaTopAlpha * 0.55))
+                    // The zone-banded stroke + glow. The FULL curve draws (no `strokeEnd` draw-on) so the
+                    // per-frame SwiftUI preview and the Core-Animation export match during playback — only
+                    // the dot moves; see `decisions.md`.
+                    SmoothHRCurve(norm: pts)
+                        .stroke(strokeStyle(stops: stops, flat: !zoneColored),
+                                style: StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round))
+                        .shadow(color: glow.opacity(HRTileStyle.curveGlowAlpha), radius: sparkline ? 2 : 3)
+                    // Baked peak label (full curve only).
+                    if !sparkline, let pk = HRChartGeometry.peakIndex(pts), let peak = HRChartGeometry.peakBPM(samples) {
+                        Text("\(Int(peak.rounded()))")
+                            .font(.system(size: max(9, h * 0.16), weight: .bold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.9))
+                            .position(x: pts[pk].x * w, y: max(h * 0.12, (1 - pts[pk].y) * h - h * 0.18))
+                    }
+                    // Glowing playhead dot + baseline rule.
+                    playhead(pts: pts, f: f, w: w, h: h, color: dotColor)
                 }
             }
         }
     }
 
-    private var avgBPM: Double {
-        let v = samples.map(\.bpm).filter { $0 > 0 }
-        return v.isEmpty ? 0 : v.reduce(0, +) / Double(v.count)
+    private func strokeStyle(stops: [HRChartGeometry.ZoneStop], flat: Bool) -> AnyShapeStyle {
+        if flat || stops.count < 2 { return AnyShapeStyle(Color(studioHex: "#FF3B30")) }
+        return AnyShapeStyle(LinearGradient(
+            stops: stops.map { .init(color: Color(studioHex: $0.hex), location: $0.location) },
+            startPoint: .leading, endPoint: .trailing))
     }
-    private func dotPoint(_ pts: [CGPoint]) -> CGPoint? {
-        guard !pts.isEmpty else { return nil }
-        let f = min(1, max(0, fraction))
-        // Nearest point by x to the playhead fraction.
-        return pts.min { abs($0.x - f) < abs($1.x - f) }
+
+    private func peakZone(_ pts: [CGPoint]) -> HeartRateZone {
+        HeartRateZone.forBpm(HRChartGeometry.peakBPM(samples), maxHR: maxHR)
+    }
+
+    @ViewBuilder
+    private func playhead(pts: [CGPoint], f: Double, w: CGFloat, h: CGFloat, color: Color) -> some View {
+        let dot = pts.min { abs($0.x - f) < abs($1.x - f) } ?? pts[pts.count - 1]
+        let p = CGPoint(x: dot.x * w, y: (1 - dot.y) * h)
+        ZStack {
+            if !sparkline {
+                Rectangle().fill(.white.opacity(0.5)).frame(width: 1.25, height: max(0, h - p.y))
+                    .position(x: p.x, y: (p.y + h) / 2)
+            }
+            Circle().fill(color.opacity(0.35)).frame(width: sparkline ? 11 : 16, height: sparkline ? 11 : 16).position(p)
+            Circle().fill(.white).frame(width: sparkline ? 7 : 10, height: sparkline ? 7 : 10).position(p)
+            Circle().fill(color).frame(width: sparkline ? 4 : 6, height: sparkline ? 4 : 6).position(p)
+        }
+    }
+}
+
+/// A smooth Catmull-Rom→bézier curve through normalized HR points (`y = 1` is the top), mapped into the
+/// shape's rect — the SwiftUI twin of `HRChartGeometry.smoothedPath` (which both this and the export use).
+private struct SmoothHRCurve: Shape {
+    var norm: [CGPoint]
+    func path(in rect: CGRect) -> Path {
+        let mapped = norm.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + (1 - $0.y) * rect.height) }
+        return Path(HRChartGeometry.smoothedPath(through: mapped))
+    }
+}
+
+/// The closed area under the smooth curve (down to the baseline), for the gradient fill.
+private struct SmoothHRArea: Shape {
+    var norm: [CGPoint]
+    func path(in rect: CGRect) -> Path {
+        let mapped = norm.map { CGPoint(x: rect.minX + $0.x * rect.width, y: rect.minY + (1 - $0.y) * rect.height) }
+        var p = Path(HRChartGeometry.smoothedPath(through: mapped))
+        if let last = mapped.last, let first = mapped.first {
+            p.addLine(to: CGPoint(x: last.x, y: rect.maxY))
+            p.addLine(to: CGPoint(x: first.x, y: rect.maxY))
+            p.closeSubpath()
+        }
+        return p
     }
 }
 
