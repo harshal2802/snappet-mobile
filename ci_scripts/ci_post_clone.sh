@@ -50,7 +50,18 @@ echo "✅ Snappet.xcodeproj generated"
 # generate it (same "a resolved file is required" error). The lock lives at ios/App/Package.resolved
 # (refresh it locally with `xcodebuild -resolvePackageDependencies` when a package version changes).
 echo "▸ Installing committed Package.resolved"
+RESOLVED_SRC="$CI_PRIMARY_REPOSITORY_PATH/ios/App/Package.resolved"
+# Fail LOUDLY with the exact fix if the committed lock is missing/stale-deleted, instead of letting the
+# build hit the opaque "a resolved file is required when automatic dependency resolution is disabled".
+# (`set -e` + `cp` would abort anyway, but only with a bare "No such file or directory".)
+if [ ! -f "$RESOLVED_SRC" ]; then
+  echo "✗ ios/App/Package.resolved is missing — Xcode Cloud disables automatic package resolution and cannot build without it." >&2
+  echo "  Refresh it locally and recommit (do this whenever a package version in project.yml changes):" >&2
+  echo "    cd ios/App && xcodegen generate && xcodebuild -resolvePackageDependencies \\" >&2
+  echo "      && cp Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved Package.resolved" >&2
+  exit 1
+fi
 SWIFTPM_DIR="Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
 mkdir -p "$SWIFTPM_DIR"
-cp "$CI_PRIMARY_REPOSITORY_PATH/ios/App/Package.resolved" "$SWIFTPM_DIR/Package.resolved"
+cp "$RESOLVED_SRC" "$SWIFTPM_DIR/Package.resolved"
 echo "✅ Package.resolved installed"

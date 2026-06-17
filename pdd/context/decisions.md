@@ -4,6 +4,34 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-17] Xcode Cloud post-clone setup + CI concurrency scoping (PRs #169–#171, follow-up)
+
+**Decision**: make Xcode Cloud build the **generated** project from a freshly cloned repo, and stop
+`main`'s post-merge CI runs from cancelling each other. Two systems, two distinct fixes:
+
+**Xcode Cloud (the `SnappetAI | Default` commit check).** The `.xcodeproj` is XcodeGen-generated and
+gitignored, so it is absent on a fresh clone. A `ci_post_clone.sh` regenerates it — but three
+non-obvious constraints stack: (1) Xcode Cloud resolves `ci_scripts/` **relative to the Xcode project**
+(`ios/App/`), NOT the repo root, so the script must live at `ios/App/ci_scripts/ci_post_clone.sh` (a
+byte-identical copy is kept at the repo root as a fallback — keep them in sync); (2) Homebrew's bin is
+not reliably on the non-login `/bin/sh` PATH, so the script resolves `$(brew --prefix)/bin` explicitly
+before calling `xcodegen`; (3) Xcode Cloud **disables automatic SwiftPM resolution at the environment
+level**, so `xcodebuild -resolvePackageDependencies` inside the script can't generate the lock (exits
+74) — we instead **commit `ios/App/Package.resolved`** (negated in `.gitignore`) and the script copies it
+into `Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/`. The script `set -ex`-traces every
+step and **guards loudly** (missing project / missing `Package.resolved`) with the exact refresh command,
+so a future failure is legible in the build log instead of an opaque downstream error. **Refresh the
+committed lock** (`xcodebuild -resolvePackageDependencies` → copy out → recommit) whenever a package
+version in `project.yml` changes, or Xcode Cloud resolution fails again.
+
+**GitHub Actions `ci.yml` concurrency.** `cancel-in-progress` is scoped to **pull requests only**
+(`${{ github.event_name == 'pull_request' }}`), not a blanket `true`. A new commit on a PR branch still
+cancels its stale run (saves runner minutes), but back-to-back **merges to `main` no longer cancel each
+other** — each merge's post-merge verification runs to completion so its commit status reports green.
+Rapid merges previously cancelled the prior main run, which surfaced as a red "failure" that was really
+just `cancelled`. This rules out relying on the latest main run alone as a health signal during a merge
+train; with the scope fix, every main commit gets its own honest result.
+
 ## [2026-06-17] HR stat-tile "Glass HUD" redesign (issue #163, prompts 77–78) — supersedes the #160–162 catalog
 
 **Decision**: rebuild the HR stat tile's visual language as a premium **"Glass HUD"** with a strict
