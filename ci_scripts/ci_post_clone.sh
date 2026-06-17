@@ -6,9 +6,9 @@
 # is gitignored, so it is NOT present in the freshly cloned repo. Generate it here — before Xcode Cloud
 # resolves dependencies and builds/archives — otherwise the build fails with:
 #   "Project Snappet.xcodeproj does not exist at ios/App/Snappet.xcodeproj"
-# Then resolve Swift packages: Xcode Cloud DISABLES automatic package resolution and requires a
-# Package.resolved (at Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved), but
-# that lives inside the generated/gitignored project so it's never committed — so we write it here.
+# Then install the committed Package.resolved: Xcode Cloud DISABLES automatic package resolution and
+# requires a Package.resolved (at Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/), but that
+# lives inside the generated/gitignored project — so the committed ios/App/Package.resolved is copied in.
 #
 # Xcode Cloud resolves `ci_scripts/` relative to the Xcode project, so when the project is in a
 # subfolder it looks in `ios/App/ci_scripts/` (NOT the repo root). This script therefore lives in BOTH
@@ -45,13 +45,12 @@ if [ ! -d "Snappet.xcodeproj" ]; then
 fi
 echo "✅ Snappet.xcodeproj generated"
 
-# Write Package.resolved (Xcode Cloud's resolve step has automatic resolution disabled and requires it).
-echo "▸ Resolving Swift package dependencies"
-xcodebuild -resolvePackageDependencies -project Snappet.xcodeproj -scheme Snappet
-
-RESOLVED="Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-if [ ! -f "$RESOLVED" ]; then
-  echo "✗ $RESOLVED was NOT written — package resolution did not produce a resolved file" >&2
-  exit 1
-fi
-echo "✅ Package.resolved written"
+# Install the COMMITTED Package.resolved into the generated project. Xcode Cloud DISABLES automatic
+# package resolution at the environment level, so `xcodebuild -resolvePackageDependencies` here can't
+# generate it (same "a resolved file is required" error). The lock lives at ios/App/Package.resolved
+# (refresh it locally with `xcodebuild -resolvePackageDependencies` when a package version changes).
+echo "▸ Installing committed Package.resolved"
+SWIFTPM_DIR="Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
+mkdir -p "$SWIFTPM_DIR"
+cp "$CI_PRIMARY_REPOSITORY_PATH/ios/App/Package.resolved" "$SWIFTPM_DIR/Package.resolved"
+echo "✅ Package.resolved installed"
