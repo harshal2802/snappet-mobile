@@ -55,4 +55,26 @@ final class HRTileCodableTests: XCTestCase {
         let back = try JSONDecoder().decode(HROverlayConfig.self, from: data)
         XCTAssertEqual(back.tile, cfg.tile)
     }
+
+    /// SwiftData's composite coder materializes a `nil` nested-optional Codable as a content-EMPTY
+    /// value (a tile with no entries + a fresh random id) rather than absent — which is nondeterministic
+    /// and would wrongly block legacy migration. A real tile always carries every metric entry, so an
+    /// entries-empty tile must normalize back to `nil`. (Regression for the backup-determinism break.)
+    func testPhantomEmptyTileNormalizesToNil() throws {
+        let json = """
+        {"normalizedX":0.5,"normalizedY":0.8,"scale":0.86,"colorHex":"#FF3B30","showBPM":true,\
+        "zoneColored":false,"showChart":false,"elements":[],\
+        "tile":{"id":"\(uuid)","templateRaw":"scorebug","entries":[],"centerX":0.5,"centerY":0.8,\
+        "width":0.62,"height":0.16,"showChart":false,"zoneColored":true}}
+        """
+        let cfg = try JSONDecoder().decode(HROverlayConfig.self, from: Data(json.utf8))
+        XCTAssertNil(cfg.tile)        // phantom empty tile → nil
+
+        // A tile WITH entries is a real tile and is preserved.
+        var real = HROverlayConfig.default
+        real.tile = HRTile.make(template: .scorebug)
+        let back = try JSONDecoder().decode(HROverlayConfig.self,
+                                            from: try JSONEncoder().encode(real))
+        XCTAssertNotNil(back.tile)
+    }
 }
