@@ -617,6 +617,11 @@ final class StudioEditorViewModel {
             if let i = tile.entries.firstIndex(where: { $0.id == id }) { tile.entries[i].animated = animated }
         }
     }
+    /// Set the whole-tile opacity (transparency control), clamped to the legible floor.
+    func setTileOpacity(_ value: Double) {
+        mutateTile { $0.opacity = min(1, max(HRTile.minOpacity, value)) }
+    }
+
     /// Show/hide the moving chart line as a tile register. Enabling it **nudges the tile height up** to
     /// the template's `minHeightWithChart` so the curve always has a readable register (the user sees the
     /// tile grow; preview == export). The pure layout carves the chart as a fraction, so this normalized

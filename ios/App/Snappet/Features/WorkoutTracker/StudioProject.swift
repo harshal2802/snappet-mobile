@@ -420,6 +420,23 @@ enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 
+    /// A one-line plain-English explanation of what the metric is — shown under each toggle in the
+    /// builder so the user knows what they're putting on the video and what it means.
+    var explanation: String {
+        switch self {
+        case .bpm:      return "Your live heart rate, in beats per minute."
+        case .zone:     return "Training zone Z1–Z5, by how hard you're working (% of max HR)."
+        case .hrr:      return "Effort as a % of your heart-rate reserve (resting → max)."
+        case .avgHR:    return "Average heart rate over this clip."
+        case .maxHR:    return "Peak heart rate reached in this clip."
+        case .redline:  return "Share of the clip spent in the hardest zones (Z4–Z5)."
+        case .strain:   return "Training load — time weighted by how hard each zone is."
+        case .hrv:      return "Heart-rate variability (RMSSD) — a recovery/stress signal (chest strap only)."
+        case .calories: return "Estimated energy burned this clip, in kcal (needs your profile)."
+        case .recovery: return "Whether your heart rate has settled enough for the next hard effort."
+        }
+    }
+
     /// Whether the metric varies over the clip (can track the playhead / be "live").
     var supportsLive: Bool {
         switch self {

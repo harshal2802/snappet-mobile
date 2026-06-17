@@ -541,8 +541,21 @@ private struct HRTileBuilder: View {
                 get: { vm.hrTile?.showChart ?? false }, set: { vm.setTileShowChart($0) }))
                 .accessibilityIdentifier("hrChartEnable")
 
+            // Whole-tile transparency — drag left to let more of the video show through.
+            HStack(spacing: 10) {
+                Image(systemName: "circle.lefthalf.filled").font(.caption)
+                Text("Opacity").font(.caption).frame(width: 64, alignment: .leading)
+                Slider(value: Binding(get: { vm.hrTile?.opacity ?? 1 }, set: { vm.setTileOpacity($0) }),
+                       in: HRTile.minOpacity...1)
+                    .accessibilityIdentifier("hrTileOpacity")
+                Text("\(Int((vm.hrTile?.opacity ?? 1) * 100))%")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40)
+            }
+
             Divider().overlay(Color.white.opacity(0.1))
             Text("Metrics").font(.subheadline.weight(.semibold))
+            Text("Toggle what to show — the caption under each explains what it means.")
+                .font(.caption2).foregroundStyle(.secondary)
             ForEach(vm.tileEntries) { entry in
                 HRTileMetricRow(vm: vm, entry: entry)
             }
@@ -567,7 +580,12 @@ private struct HRTileMetricRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle(isOn: Binding(get: { entry.on }, set: { _ in vm.toggleTileMetric(entry.id) })) {
-                Label(entry.metric.label, systemImage: entry.metric.systemImage).font(.subheadline)
+                VStack(alignment: .leading, spacing: 1) {
+                    Label(entry.metric.label, systemImage: entry.metric.systemImage).font(.subheadline)
+                    Text(entry.metric.explanation)
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .accessibilityIdentifier("studioTileMetric.\(entry.metric.rawValue)")
             if entry.on && entry.metric.supportsLive {

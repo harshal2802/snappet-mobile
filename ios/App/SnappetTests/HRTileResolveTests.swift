@@ -38,6 +38,13 @@ final class HRTileResolveTests: XCTestCase {
         XCTAssertEqual(resolved.enabledMetrics, HROverlayMetric.allCases)
     }
 
+    func testResolveCarriesOpacityToTheExport() throws {
+        var tile = tileAllOn()
+        tile.opacity = 0.55
+        let resolved = try XCTUnwrap(values().resolveTile(tile))
+        XCTAssertEqual(resolved.opacity, 0.55, accuracy: 1e-9)   // export tints the burn-in to match
+    }
+
     func testResolveReturnsNilWhenNothingToShow() {
         var tile = tileAllOn()
         for i in tile.entries.indices { tile.entries[i].on = false }

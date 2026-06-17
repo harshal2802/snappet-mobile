@@ -224,7 +224,8 @@ struct HROverlayValues {
         guard !resolved.isEmpty || tile.showChart else { return nil }
         return ResolvedHRTile(templateRaw: tile.templateRaw, centerX: tile.centerX, centerY: tile.centerY,
                               width: tile.width, height: tile.height, showChart: tile.showChart,
-                              zoneColored: tile.zoneColored, maxHR: resolvedMaxHR, metrics: resolved)
+                              zoneColored: tile.zoneColored, maxHR: resolvedMaxHR,
+                              opacity: tile.opacity, metrics: resolved)
     }
 }
 
@@ -249,6 +250,9 @@ struct ResolvedHRTile: Sendable, Equatable {
     /// The max HR the readings resolved against — so the export's zone-banded chart tints against the
     /// SAME bound as the preview (WYSIWYG). Defaulted to the 190 fallback for back-compat decodes.
     var maxHR: Double = HeartRateZone.defaultMaxHR
+    /// Whole-tile opacity the user set — applied to the export's content layer so the burn-in matches
+    /// the preview. Defaulted to fully opaque for back-compat.
+    var opacity: Double = 1.0
     var metrics: [ResolvedTileMetric]
 
     var template: HRTileTemplate { HRTileTemplate(rawValue: templateRaw) ?? .hero }

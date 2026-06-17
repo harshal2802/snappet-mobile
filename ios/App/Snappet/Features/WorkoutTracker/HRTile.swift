@@ -236,10 +236,15 @@ struct HRTile: Codable, Hashable, Sendable {
     var showChart: Bool = false
     /// Tint live-intensity readings by HR zone (vs. each entry's `colorHex`).
     var zoneColored: Bool = true
+    /// Whole-tile opacity (0…1) the user controls — multiplies the glass + all content so the footage
+    /// shows through more/less. Clamped to a legible floor (`minOpacity`) so text never disappears.
+    var opacity: Double = 1.0
 
     /// Legibility floor for a corner-resize (raised in the #163 redesign from 0.14/0.06 so even the
     /// smallest tile a user can drag to stays readable before any reflow).
     static let minWidth = 0.18, minHeight = 0.09
+    /// The lowest tile opacity the user can dial to and still read it over footage.
+    static let minOpacity = 0.25
 
     var template: HRTileTemplate { HRTileTemplate(rawValue: templateRaw) ?? .scorebug }
 
@@ -304,7 +309,7 @@ struct HRTile: Codable, Hashable, Sendable {
     // MARK: Codable (migration-safe)
 
     private enum CodingKeys: String, CodingKey {
-        case id, templateRaw, entries, centerX, centerY, width, height, showChart, zoneColored
+        case id, templateRaw, entries, centerX, centerY, width, height, showChart, zoneColored, opacity
     }
 
     init(from decoder: any Decoder) throws {
@@ -318,6 +323,8 @@ struct HRTile: Codable, Hashable, Sendable {
         height = try c.decodeIfPresent(Double.self, forKey: .height) ?? 0.16
         showChart = try c.decodeIfPresent(Bool.self, forKey: .showChart) ?? false
         zoneColored = try c.decodeIfPresent(Bool.self, forKey: .zoneColored) ?? true
+        // Missing → 1.0 (old blobs predate the opacity control), then clamp to the legible floor.
+        opacity = min(1, max(HRTile.minOpacity, try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1.0))
     }
 }
 
