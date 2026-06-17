@@ -4777,3 +4777,59 @@ one multi-clip Studio, the entire old single-clip editor stack was removed as de
 (`LiveWorkoutStudioWalkthroughTests` 11g) now drives the Studio (`studioClose`) instead of
 `clipEditorDone`. Device check pending: tapping a freshly-discovered clip shows the focused clip in the
 timeline (the reconcile path).
+
+## 2026-06-17 — Unified, resizable HR stat tile replaces the free-floating overlay badges (NN 74-76)
+
+**What.** The configurable HR/fitness overlay (the scattered `HROverlayElement` badges, each
+independently placed) is replaced by ONE resizable, draggable **stat tile** — a design picked from a
+7-template catalog (`HRTileTemplate`: scorebug / hero / bento / list / ring / hudPill / chartBanner),
+with every metric individually toggleable (ON/OFF) and **all on by default**. Shipped as 3 stacked
+PRs: model + pure layout (74), export burn-in (75), editor UX (76).
+
+**Why these choices (the non-obvious ones):**
+
+- **One pure layout, two render paths (WYSIWYG).** `HRTileLayout.layout(...)` is a single
+  platform-free function (CoreGraphics only) that both the SwiftUI preview (`HRTileView`) and the
+  Core-Animation export (`StudioOverlays.hrTileLayer`) run — so what's placed is what burns in, the
+  same contract `HROverlayValues` already gave the per-badge path.
+
+- **Scale-invariant layout is what makes WYSIWYG actually hold.** The preview passes a rect in
+  **points** (~hundreds wide), the export passes one in **pixels** (~1080 wide). So every layout
+  decision (how many fields fit, grid columns, list rows) is derived from the rect's **proportions**,
+  never absolute pixels, and the 11pt legibility floor is applied ONLY to the reported font size,
+  **not** to the fit/reflow math — otherwise reflow would diverge between a small preview and a large
+  export. Reflow drops trailing low-priority metrics (never bpm/zone) before going below the floor.
+
+- **Default = Scorebug Strip.** A broadcast-style lower-third (y≈0.80, safe zone) led by a
+  zone-coloured bpm hero: the one archetype where "all metrics on" reads cleanly (toggles map 1:1 to
+  fields), the natural successor to the scattered badges, and the strongest "live numbers over moving
+  footage" pattern (broadcast scorebug + Garmin/Strava transparent lower-thirds).
+
+- **Zone colours stay the repo ramp** (`HeartRateZone.color`: blue/teal/green/orange/red), NOT the
+  Garmin gray-led ramp the design research suggested — to keep one source of truth with every existing
+  pill (prompt 51). Aggregates render white; only live-intensity metrics (bpm/zone/%HRR) +
+  redline (red) + recovery (traffic-light) carry semantic colour, so a single hue never misrepresents
+  a multi-zone session.
+
+- **Migration-safe + zero data loss.** `HROverlayConfig.tile` is additive-optional; `HRTileMigration`
+  folds any legacy `elements[]` into a tile on appear (every badge → an ON entry preserving
+  order/flags/colour, the rest appended OFF, template inferred from the count, frame = the badges'
+  bounding box). The legacy `elements[]` is kept (read-only) — a later prompt can drop it once all
+  persisted blobs are known-migrated.
+
+- **SwiftData phantom-tile gotcha (new, important).** SwiftData's composite coder materializes a
+  `nil` **nested-optional** Codable struct (`HRTile?` inside the `HROverlayConfig` blob) as a
+  *content-empty* value rather than absent — so `decodeIfPresent` returns an entries-empty `HRTile`
+  with a fresh `UUID()` id. That broke `testSnapshotEncodingIsDeterministic` (nondeterministic backup
+  bytes) and would have wrongly blocked migration. Fix: a real tile ALWAYS carries every metric entry,
+  so `HROverlayConfig.init(from:)` normalizes an entries-empty decoded tile back to `nil`. (Pure-JSON
+  round-trips were already correct; only SwiftData's coder exhibits this.) Regression test added.
+
+**Device-only (cannot verify on the simulator / CI), flagged like prior HR prompts:** the burned-in
+`.mp4` (scrim opacity, font metrics, Y-flip, the per-value opacity cross-fade for live metrics, which
+exists because Core Animation can't redraw text per frame) and the drag/corner-resize feel.
+
+**Verified:** `xcodegen generate` + `xcodebuild build-for-testing` clean; full `SnappetTests` green
+(774, incl. new `HRTileLayoutTests` / `HRTileTests` / `HRTileCodableTests` / `HRTileMigrationTests` /
+`HRTileResolveTests` + the determinism regression); the studio walkthrough XCUITest now drives the tile
+builder (enable → pick Bento → toggle a metric → dismiss).

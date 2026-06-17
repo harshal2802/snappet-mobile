@@ -543,11 +543,77 @@ final class StudioEditorViewModel {
     // MARK: Heart-rate chart overlay (preview = SwiftUI layer; export = Core Animation; no rebuild)
 
     func toggleHROverlay() {
-        let enable = hrOverlay == nil
-        editOverlaysOnly { var s = $0; s.hrOverlay = enable ? .default : nil; return s }
+        if hrOverlay == nil {
+            // Enabling the overlay spawns the unified stat tile (the redesign), defaulting to the
+            // Scorebug with every metric on — the most intuitive "show everything" starting point.
+            var cfg = HROverlayConfig.default
+            cfg.tile = HRTile.make(template: .scorebug)
+            editOverlaysOnly { var s = $0; s.hrOverlay = cfg; return s }
+        } else {
+            editOverlaysOnly { var s = $0; s.hrOverlay = nil; return s }
+        }
     }
     func updateHROverlay(_ config: HROverlayConfig) {
         editOverlaysOnly { var s = $0; s.hrOverlay = config; return s }
+    }
+
+    // MARK: - Unified HR stat tile (the overlay redesign)
+
+    /// The current tile, or `nil` when the overlay is off / a (pre-migration) legacy element overlay.
+    var hrTile: HRTile? { snapshot.hrOverlay?.tile }
+    /// The per-metric toggle rows for the builder UI (ordered).
+    var tileEntries: [HRTileMetricEntry] { hrTile?.entries ?? [] }
+
+    /// Mutate the tile in place and commit (one overlay-only edit → undo + persist, no preview rebuild).
+    private func mutateTile(_ body: (inout HRTile) -> Void) {
+        guard var cfg = snapshot.hrOverlay, var tile = cfg.tile else { return }
+        body(&tile)
+        cfg.tile = tile
+        updateHROverlay(cfg)
+    }
+
+    /// Pick a tile design from the catalog, preserving the user's per-metric toggles/colours.
+    func selectTileTemplate(_ template: HRTileTemplate) {
+        mutateTile { tile in
+            let switched = tile.switchingTemplate(to: template)
+            tile = switched
+            // Adopt the new template's default frame + chart only when first switching templates so the
+            // tile sits where that design expects (the user can still drag/resize afterward).
+            tile.center = template.defaultCenter
+            tile.size = template.defaultSize
+            tile.showChart = template.spawnShowChart
+        }
+    }
+    /// Toggle a metric on/off (the ON/OFF control — all metrics start on).
+    func toggleTileMetric(_ id: UUID) {
+        mutateTile { tile in
+            if let i = tile.entries.firstIndex(where: { $0.id == id }) { tile.entries[i].on.toggle() }
+        }
+    }
+    func setTileMetricLive(_ id: UUID, _ live: Bool) {
+        mutateTile { tile in
+            if let i = tile.entries.firstIndex(where: { $0.id == id }) { tile.entries[i].live = live }
+        }
+    }
+    func setTileMetricAnimated(_ id: UUID, _ animated: Bool) {
+        mutateTile { tile in
+            if let i = tile.entries.firstIndex(where: { $0.id == id }) { tile.entries[i].animated = animated }
+        }
+    }
+    /// Show/hide the moving chart line as a tile register.
+    func setTileShowChart(_ on: Bool) { mutateTile { $0.showChart = on } }
+    /// Commit the tile's dragged/resized frame (normalized centre + size).
+    func setTileFrame(center: CGPoint, size: CGSize) {
+        mutateTile { $0.center = center; $0.size = size }
+    }
+
+    /// Lazily upgrade a legacy free-floating-elements overlay into the unified tile (zero data loss).
+    /// Idempotent (guards `tile == nil`); called on appear once the overlay context is loaded.
+    func migrateHRTileIfNeeded() {
+        guard var cfg = snapshot.hrOverlay, cfg.tile == nil,
+              let tile = HRTileMigration.tile(from: cfg) else { return }
+        cfg.tile = tile
+        editOverlaysOnly { var s = $0; s.hrOverlay = cfg; return s }
     }
 
     // MARK: Configurable HR/fitness overlay builder (prompt 28 — Studio parity)
@@ -582,6 +648,7 @@ final class StudioEditorViewModel {
             from: hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
             start: 0, end: dur)
         setOverlayContext(maxHR: maxHR, restHR: restHR, kcal: kcal, hrv: hrv)
+        migrateHRTileIfNeeded()   // upgrade any legacy free-floating-elements overlay to the unified tile
     }
 
     /// The pure resolver over the session HR — feeds the preview badges + the export burn-in.

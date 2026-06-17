@@ -170,22 +170,29 @@ struct StudioEditorView: View {
                                 onScale: { vm.setOverlayScale($0, $1) },
                                 onFrame: { vm.setOverlayFrame($0, center: $1, size: $2) },
                                 onBaseFrame: { vm.setBaseFrame(center: $0, size: $1) })
-            // Live heart-rate chart overlay (moving-playhead line), draggable to reposition. Per-clip:
-            // shows the HR of the clip currently under the playhead (WYSIWYG with the per-clip export).
-            if let hr = vm.hrOverlay, hr.showChart {
-                let preview = vm.previewHR
-                StudioHRChartView(samples: preview.samples, config: hr, ratio: vm.previewRatio,
-                                  currentTime: preview.currentTime, totalDuration: preview.totalDuration,
-                                  onMove: { vm.setHRPosition($0) },
-                                  onResize: { vm.setHRScale($0) })
-                    .accessibilityIdentifier("studioHRChart")
-            }
-            // Configurable HR/fitness overlay badges (prompt 28): live ones track the playhead.
-            if let hr = vm.hrOverlay, !hr.elements.isEmpty {
-                HROverlayElementsView(
-                    elements: hr.elements, values: vm.previewOverlayValues,
-                    fraction: vm.previewElementFraction,
-                    onMove: { vm.setElementPosition($0, $1) })
+            // The unified HR stat tile (the overlay redesign): one draggable + corner-resizable tile,
+            // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Supersedes the
+            // legacy chart + free-floating badges below.
+            if let tile = vm.hrTile {
+                HRTileEditorView(tile: tile, values: vm.previewOverlayValues,
+                                 fraction: vm.previewElementFraction, ratio: vm.previewRatio,
+                                 onFrame: { vm.setTileFrame(center: $0, size: $1) })
+            } else {
+                // Legacy (pre-migration) chart + badges — a loaded overlay is upgraded to a tile on appear.
+                if let hr = vm.hrOverlay, hr.showChart {
+                    let preview = vm.previewHR
+                    StudioHRChartView(samples: preview.samples, config: hr, ratio: vm.previewRatio,
+                                      currentTime: preview.currentTime, totalDuration: preview.totalDuration,
+                                      onMove: { vm.setHRPosition($0) },
+                                      onResize: { vm.setHRScale($0) })
+                        .accessibilityIdentifier("studioHRChart")
+                }
+                if let hr = vm.hrOverlay, !hr.elements.isEmpty {
+                    HROverlayElementsView(
+                        elements: hr.elements, values: vm.previewOverlayValues,
+                        fraction: vm.previewElementFraction,
+                        onMove: { vm.setElementPosition($0, $1) })
+                }
             }
             if let err = vm.previewError {
                 Text(err)
@@ -284,6 +291,7 @@ struct StudioEditorView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
         }
+        .accessibilityIdentifier("studioActionBar")
         .background(Color(white: 0.05))
         .overlay(alignment: .top) {
             if vm.selectedClip == nil {
@@ -406,7 +414,7 @@ private struct StudioToolSheet: View {
         case .adjust: return "Adjust"
         case .transition: return "Transition"
         case .aspect: return "Canvas aspect"
-        case .hr: return "Heart-rate chart"
+        case .hr: return "Heart-rate tile"
         case .grid: return "PiP grid"
         }
     }
@@ -473,6 +481,107 @@ private struct StudioToolSheet: View {
 /// Position is set by dragging the chart on the preview. Sliders/toggles commit immediately (the HR
 /// overlay isn't in the playback composition, so there's no preview rebuild).
 private struct StudioHRControls: View {
+    @Bindable var vm: StudioEditorViewModel
+
+    var body: some View {
+        // Scrollable: the tile builder (catalog + chart toggle + a row per metric) is taller than the
+        // sheet, so every metric stays reachable.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                // Enable the overlay (spawns the stat tile). The barButton shows "HR ✓" once on.
+                Toggle("Show heart-rate tile", isOn: Binding(
+                    get: { vm.hrOverlay != nil }, set: { _ in vm.toggleHROverlay() }))
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("hrTileEnable")
+                if vm.hrTile != nil {
+                    HRTileBuilder(vm: vm)
+                } else if vm.hrOverlay != nil {
+                    // A legacy overlay that hasn't been migrated yet (pre-migration fallback).
+                    LegacyHROverlayControls(vm: vm)
+                } else {
+                    Text("Turn on to overlay your heart rate and fitness metrics as a single resizable tile.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// The HR stat tile builder: pick a design from the catalog, toggle the chart line, and turn each
+/// metric on/off (all on by default). The tile itself is dragged/resized on the preview.
+private struct HRTileBuilder: View {
+    @Bindable var vm: StudioEditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Tile design").font(.subheadline.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(HRTileTemplate.allCases) { template in
+                        let selected = vm.hrTile?.template == template
+                        Button { vm.selectTileTemplate(template) } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: template.systemImage).font(.title3)
+                                Text(template.label).font(.caption2)
+                            }
+                            .frame(width: 78, height: 64)
+                            .background(Color(white: selected ? 0.28 : 0.15), in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10)
+                                .stroke(SnappetColor.workout, lineWidth: selected ? 2 : 0))
+                            .foregroundStyle(.white)
+                        }
+                        .accessibilityIdentifier("studioTileTemplate.\(template.rawValue)")
+                    }
+                }
+            }
+            .accessibilityIdentifier("studioTileTemplatePicker")
+
+            Toggle("Show chart line", isOn: Binding(
+                get: { vm.hrTile?.showChart ?? false }, set: { vm.setTileShowChart($0) }))
+                .accessibilityIdentifier("hrChartEnable")
+
+            Divider().overlay(Color.white.opacity(0.1))
+            Text("Metrics").font(.subheadline.weight(.semibold))
+            ForEach(vm.tileEntries) { entry in
+                HRTileMetricRow(vm: vm, entry: entry)
+            }
+            Text("Drag the tile on the preview to move it; drag a corner to resize.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// One metric row in the tile builder: the ON/OFF visibility toggle (all on by default), plus Live /
+/// Animate for time-varying metrics (disabled for static aggregates, like the legacy row).
+private struct HRTileMetricRow: View {
+    @Bindable var vm: StudioEditorViewModel
+    let entry: HRTileMetricEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(get: { entry.on }, set: { _ in vm.toggleTileMetric(entry.id) })) {
+                Label(entry.metric.label, systemImage: entry.metric.systemImage).font(.subheadline)
+            }
+            .accessibilityIdentifier("studioTileMetric.\(entry.metric.rawValue)")
+            if entry.on && entry.metric.supportsLive {
+                HStack(spacing: 16) {
+                    Toggle("Live", isOn: Binding(get: { entry.isLive },
+                                                 set: { vm.setTileMetricLive(entry.id, $0) }))
+                    Toggle("Animate", isOn: Binding(get: { entry.isAnimated },
+                                                    set: { vm.setTileMetricAnimated(entry.id, $0) }))
+                        .disabled(!entry.isLive)
+                }
+                .font(.caption).toggleStyle(.button)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// The legacy free-floating-badge HR controls — kept only for the brief pre-migration window (a loaded
+/// overlay is upgraded to a tile on appear). New overlays never see this.
+private struct LegacyHROverlayControls: View {
     @Bindable var vm: StudioEditorViewModel
     private let swatches = ["#FF3B30", "#FF9F0A", "#FFD60A", "#30D158", "#0A84FF", "#FFFFFF"]
 
