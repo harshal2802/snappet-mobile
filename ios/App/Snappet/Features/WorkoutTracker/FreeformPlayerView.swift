@@ -35,11 +35,6 @@ struct FreeformPlayerView: View {
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
-    // Naming a free-flow climb (workout-with-timer PR 5): tapping "Climbing" in the add menu first asks
-    // for a custom climb name (e.g. "Cave Project", "Blue V4") so per-attempt logging groups under the
-    // named climb instead of a fixed "Climbing". Empty/whitespace falls back to "Climbing".
-    @State private var namingClimb = false
-    @State private var climbNameDraft = ""
     /// Cross-session prefill per exerciseId, cached so the ~1 Hz body re-render never re-scans history
     /// (history is fixed for the live session). Recomputed on appear + when an exercise is added. (§B)
     @State private var prefills: [String: LastSetLookup.LastTime] = [:]
@@ -84,7 +79,7 @@ struct FreeformPlayerView: View {
                         Button { pickingLift = true } label: {
                             Label("Lifting exercise", systemImage: "dumbbell.fill")
                         }
-                        Button { climbNameDraft = ""; namingClimb = true } label: {
+                        Button { addExercise(kind: .climbAttempt, name: SetMeasure.climbName("")) } label: {
                             Label("Climbing", systemImage: "figure.climbing")
                         }
                         Button { addExercise(kind: .duration, name: "Timed exercise") } label: {
@@ -108,18 +103,6 @@ struct FreeformPlayerView: View {
             LogSetSheet(kind: target.kind, unit: unit, prefill: prefills[target.exerciseId]) { log in
                 appendLog(log, toExerciseID: target.exerciseID)
             }
-        }
-        // Name this climb (workout-with-timer PR 5): the typed name is the section header + persists on the
-        // SessionExercise's `displayName`; a blank/whitespace entry falls back to "Climbing" via the pure
-        // `SetMeasure.climbName`. The TextField is a leaf control with its own id so XCUITest can fill it
-        // — no identifier on a composite (the PR 2/3/4 a11y lesson).
-        .alert("Name this climb", isPresented: $namingClimb) {
-            TextField("Climb name (e.g. Cave Project)", text: $climbNameDraft)
-                .accessibilityIdentifier("freeform.climbName")
-            Button("Add") { addExercise(kind: .climbAttempt, name: SetMeasure.climbName(climbNameDraft)) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Group every attempt under a name, or leave blank for \"Climbing\".")
         }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
@@ -163,7 +146,7 @@ struct FreeformPlayerView: View {
                              id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
                     typeCard("Climbing", symbol: "figure.climbing",
                              id: "freeform.cardClimbing", accLabel: "Start climbing") {
-                        climbNameDraft = ""; namingClimb = true
+                        addExercise(kind: .climbAttempt, name: SetMeasure.climbName(""))
                     }
                     typeCard("Timed", symbol: "timer",
                              id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
@@ -245,7 +228,21 @@ struct FreeformPlayerView: View {
             }
         } header: {
             HStack {
-                Label(resolver.name(for: ex.exerciseId, override: ex.displayName), systemImage: ex.kind.symbol)
+                Image(systemName: ex.kind.symbol).foregroundStyle(.secondary)
+                // Climbs name inline (§C): rename anytime, no blocking prompt. Commits via the one tested
+                // SetMeasure.climbName trim/"Climbing" fallback. The TextField is a directly-queryable leaf
+                // (freeform.climbName) — simpler than the iOS-26 alert-TextField workaround it replaces.
+                if ex.kind == .climbAttempt {
+                    ClimbNameHeader(initialName: ex.displayName ?? SetMeasure.climbName("")) { name in
+                        guard let idx = indexOf(ex) else { return }
+                        session.exercises[idx].displayName = name
+                        persist()
+                        pushLiveActivity()
+                    }
+                    .id(ex.id)
+                } else {
+                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                }
                 Spacer()
                 Menu {
                     Button(role: .destructive) { removeExercise(ex) } label: {
@@ -253,6 +250,7 @@ struct FreeformPlayerView: View {
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
+            .textCase(nil)
         }
     }
 
@@ -404,6 +402,36 @@ private struct LogTarget: Identifiable {
     let kind: SetKind
     let exerciseId: String
     var id: UUID { exerciseID }
+}
+
+/// Inline-editable climb name (§C): replaces the blocking "Name this climb" alert. Seeds from the
+/// climb's current `displayName`, commits on return/blur through `SetMeasure.climbName` (trim, blank →
+/// "Climbing"). A leaf TextField with its own id (`freeform.climbName`) so it's directly queryable.
+private struct ClimbNameHeader: View {
+    let onCommit: (String) -> Void
+    @State private var draft: String
+    @FocusState private var focused: Bool
+
+    init(initialName: String, onCommit: @escaping (String) -> Void) {
+        self.onCommit = onCommit
+        _draft = State(initialValue: initialName)
+    }
+
+    var body: some View {
+        TextField("Climb name", text: $draft)
+            .font(.headline)
+            .focused($focused)
+            .submitLabel(.done)
+            .onSubmit(commit)
+            .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+            .accessibilityIdentifier("freeform.climbName")
+    }
+
+    private func commit() {
+        let normalized = SetMeasure.climbName(draft)
+        draft = normalized
+        onCommit(normalized)
+    }
 }
 
 /// Keyboard-free inline quick-add for reps & weight (§B): `[−] value [+]` steppers + a one-tap Log that

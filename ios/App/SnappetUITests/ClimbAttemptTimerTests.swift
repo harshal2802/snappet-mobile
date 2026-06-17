@@ -67,16 +67,16 @@ final class ClimbAttemptTimerTests: XCTestCase {
         field.typeText(text)
     }
 
-    /// Tapping "Climbing" first presents the "Name this climb" alert (PR 5). On iOS 26 a SwiftUI
-    /// `.alert` TextField is NOT exposed under `app.alerts.textFields`, so query it UNSCOPED via
-    /// `app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch`; the alert's "Add" button is likewise reached unscoped.
+    /// Climbs are added immediately now (#158 §C — no blocking prompt); the section header is an inline
+    /// `freeform.climbName` TextField defaulting to "Climbing". Rename it in place (clear + type + submit).
     private func nameThisClimb(_ name: String) {
-        let nameField = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch
-        XCTAssertTrue(nameField.waitForExistence(timeout: 5),
-                      "tapping Climbing should present a 'Name this climb' prompt with a name field")
-        nameField.tap()
-        nameField.typeText(name)
-        app.buttons["Add"].tap()
+        let field = app.textFields["freeform.climbName"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "the climb section should have an inline name field")
+        field.tap()
+        if let current = field.value as? String, !current.isEmpty {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+        }
+        field.typeText("\(name)\n")
     }
 
     func testClimbAttemptTimedWithTheLiveStopwatch() {
