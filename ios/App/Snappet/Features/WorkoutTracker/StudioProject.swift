@@ -51,8 +51,8 @@ struct ClipAdjust: Codable, Hashable, Sendable {
 
 /// One clip on the **main video track**: a source (video or photo) with trim, speed, crop, a
 /// colour filter, and optional Ken-Burns scale keyframes (photos). Non-destructive and
-/// resolution-independent (seconds / normalized 0…1), like `ClipEdit` — generalized to many clips.
-/// `order` sequences the track; **split** = two clips with adjacent trims (same `order` neighbours).
+/// resolution-independent (seconds / normalized 0…1). `order` sequences the track; **split** = two
+/// clips with adjacent trims (same `order` neighbours).
 struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
     var id: UUID
     /// Source `SessionMedia.id` (nil only for a synthetic/imported source); `localIdentifier` is the
@@ -501,10 +501,9 @@ enum StudioBackground: String, Codable, Sendable, CaseIterable {
 
 /// The **edit document** for the full studio (S1): a non-destructive, resolution-independent
 /// description of a multi-clip timeline — ordered `clips`, `transitions`, `overlays`, `audioTracks`,
-/// plus the output canvas (`aspect` + `background`). Generalizes `ClipEdit`: a single trimmed clip
-/// is just a one-clip project. Keyed to its `WorkoutSession` by `sessionID` (UUID FK — the suite
-/// convention). Nested value types are stored as Codable composites (the `WorkoutSession.exercises`
-/// / `ClipEdit.textOverlays` precedent), so adding the model is one `SnappetSchema.models` line.
+/// plus the output canvas (`aspect` + `background`); a single trimmed clip is just a one-clip
+/// project. Keyed to its `WorkoutSession` by `sessionID` (UUID FK — the suite convention). Nested
+/// value types are stored as Codable composites (the `WorkoutSession.exercises` precedent).
 ///
 /// The model + the pure `StudioGeometry` math are **platform-free** and unit-tested; turning a
 /// project into a playable/exportable `AVComposition` is the device-only `StudioComposer`.

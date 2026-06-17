@@ -7,7 +7,7 @@ import CoreGraphics
 /// `CGSize` / `CGRect` / `CGPoint` value types and returns the same, so the trim→range,
 /// speed→duration, crop-rect→transform, normalized-position→point, and output-aspect→renderSize
 /// math is unit-tested in `SnappetTests` with **no device, no AVFoundation, no SwiftUI** (the
-/// same testability discipline that keeps `HighlightEngine` platform-free). `VideoStudio`
+/// same testability discipline that keeps `HighlightEngine` platform-free). `StudioComposer`
 /// (`Services/`) consumes these to build the actual `AVMutableComposition` /
 /// `AVMutableVideoComposition`; the seconds here become `CMTime`s there.
 ///
@@ -81,7 +81,7 @@ enum ClipEditGeometry {
     // MARK: - Trim → time range (seconds)
 
     /// A validated, clamped trim window in seconds: `start < end`, both within
-    /// `[0, assetDuration]`. Used to build the source `CMTimeRange` in `VideoStudio`.
+    /// `[0, assetDuration]`. Used to build the source `CMTimeRange` in `StudioComposer`.
     struct TimeWindow: Equatable, Sendable {
         let start: Double
         let end: Double
@@ -132,7 +132,7 @@ enum ClipEditGeometry {
     }
 
     /// The output duration after applying `speed` to a `sourceDuration` (seconds).
-    /// `scaleTimeRange` in `VideoStudio` maps a source range of `sourceDuration` onto a target
+    /// `scaleTimeRange` in `StudioComposer` maps a source range of `sourceDuration` onto a target
     /// range of `sourceDuration / speed` — 2× halves the duration, 0.5× doubles it. Speed is
     /// clamped first, so the result is always positive for a positive source.
     static func scaledDuration(sourceDuration: Double, speed: Double) -> Double {
@@ -245,7 +245,7 @@ enum ClipEditGeometry {
 
     /// Map a normalized overlay position (`x,y` in 0…1, **top-left origin** like SwiftUI) to a
     /// point in a `CALayer`'s coordinate space (**bottom-left origin, y flipped**) for the
-    /// given canvas size. Used to place each `TextOverlay` in the Core Animation layer tree.
+    /// given canvas size. Used to place each studio `OverlayItem` in the Core Animation layer tree.
     static func layerPoint(normalized: CGPoint, in size: CGSize) -> CGPoint {
         let x = min(max(normalized.x, 0), 1) * size.width
         let yTopDown = min(max(normalized.y, 0), 1) * size.height

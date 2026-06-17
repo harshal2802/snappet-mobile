@@ -15,7 +15,7 @@ import Photos
 final class MediaLibraryService: Sendable {
 
     /// Wraps a non-Sendable PhotoKit value (PHAsset / editing input·output) so it can cross a
-    /// continuation / `performChanges` closure boundary under Swift 6 — same pattern as `VideoStudio`.
+    /// continuation / `performChanges` closure boundary under Swift 6 — same pattern as `StudioComposer`.
     private struct Box<T>: @unchecked Sendable { let value: T }
 
     enum SaveError: LocalizedError {
@@ -37,7 +37,7 @@ final class MediaLibraryService: Sendable {
         }
     }
 
-    /// Save the video at `url` (a temp `.mp4` from `VideoStudio.export` / `ReelExporter.export`)
+    /// Save the video at `url` (a temp `.mp4` from `StudioComposer.export` / `ReelExporter.export`)
     /// into the Photos library. Requests **add-only** authorization first; throws `SaveError.denied`
     /// if the user declines, or `SaveError.failed` if the change-block fails. On-device only.
     func saveVideoToPhotos(_ url: URL) async throws {

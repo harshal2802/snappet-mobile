@@ -29,11 +29,6 @@ final class AppModel {
     /// WorkoutTracker session-scoped media tagging (B1): auto-discovery by capture-time
     /// window + manual PHPicker add. Distinct from `photos`, the flagship reels path.
     let sessionMedia = SessionMediaService()
-    /// On-device CapCut-style clip editor render engine (B3): turns a non-destructive
-    /// `ClipEdit` + its source PHAsset into a playable/exportable `AVMutableComposition` +
-    /// `AVMutableVideoComposition` (trim/split, crop/aspect, text overlays, speed, mute).
-    /// Reuses `ReelExporter`'s composition-sharing + PHAsset-resolve patterns.
-    let videoStudio = VideoStudio()
     let feedback = FeedbackStore()      // FeedbackSink → disk (training data)
     /// On-device Vision scene scorer (#83 Step 1): saliency + sharpness + face/body presence per sampled
     /// frame → a scalar `visualScore` for the fusion's scene term. Platform I/O lives here; only the

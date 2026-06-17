@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 22, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 21, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -355,17 +355,6 @@ final class SnappetBackupTests: XCTestCase {
                                  assignedClimbUUID: "climb-uuid",
                                  source: .manual)
         context.insert(media)
-
-        let edit = ClipEdit(sessionMediaID: media.id, localIdentifier: media.localIdentifier,
-                            trimStart: 1.25, trimEnd: 8.5, splitOrder: 1,
-                            cropRect: CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.6),
-                            speed: 2.0,
-                            textOverlays: [TextOverlay(string: "Send!", fontSize: 36,
-                                                       colorHex: "#FF0000", startSec: 1, endSec: 4)],
-                            mutedOriginalAudio: true, musicTrackName: "track",
-                            hrOverlay: .default)
-        edit.updatedAt = Date(timeIntervalSince1970: 1_700_006_000)
-        context.insert(edit)
 
         context.insert(makeStudioProject(sessionID: session.id))
 

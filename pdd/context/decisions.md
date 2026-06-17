@@ -4731,3 +4731,49 @@ parallel waves).
   explaining the climbing status, with a one-line "What do these mean?" affordance teaching the gesture.
 - **Device-pending:** swipe-through, the estimate chip, and Plan-a-session end-to-end need a real
   catalog (#42 — the app ships none) + the installed generator meta on the emulator.
+
+## 2026-06-17 — Gym clip-tap opens the scoped Studio (Kilter parity); single-clip editor retired (NN 73)
+
+**What.** In the WorkoutTracker (gym) completed-session detail, tapping a video clip now opens the
+CapCut-style **multi-clip Studio** (`StudioEditorView`) **scoped to that one clip**
+(`focusClipMediaID: clip.id`, `visibleClipMediaIDs: [clip.id]`) — the same editor Kilter already opens
+per-clip — instead of the old single-clip "Edit Clip" sheet. The session-wide "Edit in Video Studio"
+button keeps opening the Studio unscoped. With both clip-editing entry points now flowing through the
+one multi-clip Studio, the entire old single-clip editor stack was removed as dead code.
+
+- **Bare `StudioEditorView`, not `KilterClipStudio`.** The gym side uses the plain scoped studio; the
+  Kilter wrapper adds a Climb panel that's meaningless for gym sessions (sets, not climbs). One small
+  `StudioPresentation` struct ({project, visibleClipMediaIDs, focusClipMediaID}) drives the existing
+  `fullScreenCover` for both the unscoped (`openStudio`) and scoped (`editClip`) opens — the
+  `editingClip` sheet + `onEditClip` closure plumbing is gone.
+  **Why:** parity with Kilter and one editor to maintain; the studio's own Climb action-bar button is
+  already gated on climb info, so it just renders disabled on a gym project.
+- **`StudioEntry.resolveProject(for:media:context:)`** = `findOrCreateProject` THEN append any video
+  clips discovered after the project was created (mirrors Kilter's inline `resolveStudioProject`).
+  **Why:** `findOrCreateProject` returned the existing project verbatim, so a scoped open of a
+  just-discovered clip (`visibleClipMediaIDs:[id]`) would filter to an empty timeline. The whole-session
+  button hid this; the per-clip open exposes it. Kilter's reconcile stays inline this round (converging
+  both onto the shared helper is an optional follow-up — not changing Kilter's behavior here).
+- **Retired stack:** `ClipEditorView`, `ClipEditorViewModel`, `@Model ClipEdit` + `TextOverlay`
+  (`ClipEdit.swift`), the `VideoStudio` + `EditPlan` render engine, and `AppModel.videoStudio`. The
+  multi-clip `StudioProject` / `StudioComposer` supersede them — two render engines + two edit models
+  was the drift the full-studio (S1) work always intended to collapse. **Kept (shared):**
+  `ClipEditGeometry` (used across the studio), `HROverlayConfig` (defined in `StudioProject.swift`), and
+  the HR-overlay views (`HROverlayElementsView`/`HROverlayValues`/`StudioHRChartView` — all studio-used).
+- **DATA-LOSS NOTE (first intentional `@Model` removal).** Dropping `ClipEdit.self` from
+  `SnappetSchema.models` (`SnappetCore.swift` AND `SnappetBackup.swift` — kept in lockstep so the
+  `testCodecCoversEverySchemaModel` tripwire holds) is destructive: the live store uses the default
+  `ModelContainer(for:)` with **no** `SchemaMigrationPlan`, so legacy persisted single-clip edits
+  (trim/crop/speed/textOverlays/hrOverlay/music) are orphaned, not migrated to `StudioProject` (different
+  stored shapes). `ClipEditRow` + the `clipEdits` field leave the backup format; OLD backups still
+  **decode** (synthesized `Codable` ignores the now-unknown `clipEdits` key — no custom `CodingKeys`),
+  but that payload is dropped on restore. **Accepted** because edits were non-destructive overlays on
+  still-present Photos assets (source video intact), the app is pre-release alpha, and the studio
+  re-seeds its timeline from the same clips. `SnappetBackupTests` lost the ClipEdit round-trip and its
+  seeded recordCount went 22→21.
+
+**Verified:** `xcodegen generate` + `xcodebuild build-for-testing` clean; `SnappetTests` green
+(incl. the schema tripwire). This PR changes real UI, so the XCUITest walkthrough's clip-tap step
+(`LiveWorkoutStudioWalkthroughTests` 11g) now drives the Studio (`studioClose`) instead of
+`clipEditorDone`. Device check pending: tapping a freshly-discovered clip shows the focused clip in the
+timeline (the reconcile path).

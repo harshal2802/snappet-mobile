@@ -6,8 +6,8 @@ import CoreImage
 import UIKit
 
 /// Turns a `StudioProjectSnapshot` (multi-clip timeline) into a playable/exportable AVFoundation
-/// composition — the full studio's render engine (S1), generalizing `VideoStudio` from one clip to
-/// many. Like `VideoStudio`, the single `makeComposition(for:sourceDurations:)` builds the
+/// composition — the studio's one render engine (S1), which originally generalized the per-clip render
+/// path from one clip to many. The single `makeComposition(for:sourceDurations:)` builds the
 /// `(AVMutableComposition, AVVideoComposition?)` reused for **both** preview (`AVPlayer`) and export,
 /// reusing the same `Box`/`avAsset` PHAsset-resolution and `ClipEditGeometry` transform math.
 ///
@@ -164,7 +164,7 @@ final class StudioComposer: Sendable {
         var filterRanges: [(range: CMTimeRange, filter: StudioFilter, intensity: Double, adjust: ClipAdjust?)] = []
         // Per-clip original-audio volume, by the audio segment's start time (drives the AVAudioMix).
         var audioVolumes: [(at: CMTime, volume: Double)] = []
-        // Per-clip HR placed at each clip's output slot (multi-clip Studio; empty for VideoStudio).
+        // Per-clip HR placed at each clip's output slot (empty when no per-clip HR placement applies).
         var placedHR: [PlacedClipHR] = []
 
         for (clip, source) in resolved {
@@ -514,7 +514,7 @@ final class StudioComposer: Sendable {
         return (composition, vc, nil)
     }
 
-    /// Export the composed timeline to a temp `.mp4` (same async export path as `VideoStudio`).
+    /// Export the composed timeline to a temp `.mp4` via an async `AVAssetExportSession`.
     /// `quality` picks the `AVAssetExportSession` preset; an unsupported preset for this composition
     /// falls back to HighestQuality so export never fails on an over-ambitious 4K request.
     func export(_ snapshot: StudioProjectSnapshot, sourceDurations: [UUID: Double] = [:],

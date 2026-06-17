@@ -21,8 +21,10 @@ import XCTest
 ///    source picker sheet.
 ///  - DEVICE-ONLY (not shown here): a real live-HR overlay value, real media thumbnails (the
 ///    seeded clips render their placeholder — the grouping/reassignment UI is model-driven), the
-///    B3 clip editor, an actual generated highlight reel — they need a paired Apple Watch / BLE
-///    band + a real Photos video. Expected; the seed showcases the HR summary + the live UI.
+///    multi-clip Studio's actual preview/export render (the canvas shows its device-only
+///    placeholder on the sim — its timeline + edits are exercised model-driven in 11c/11g), an
+///    actual generated highlight reel — they need a paired Apple Watch / BLE band + a real Photos
+///    video. Expected; the seed showcases the HR summary + the live UI.
 final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
     var app: XCUIApplication!
 
@@ -177,18 +179,23 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 snap("11b-reassign-menu-NOTSHOWN")
             }
 
-            // 11g — REGRESSION: tapping a VIDEO opens the clip editor and it STAYS open. It used to
-            // collapse on the first open (creating the ClipEdit saved mid-presentation, tearing the
-            // sheet down). The editor's "Done" must still be present a moment after it appears.
+            // 11g — tapping a VIDEO opens the CapCut-style multi-clip Studio *scoped to that clip*
+            // (Kilter parity; replaces the old single-clip "Edit Clip" sheet). It opens on the first
+            // tap and STAYS open — the Studio's close ("studioClose") must still be present a moment
+            // after it appears.
             if let videoThumb = firstVideoMediaThumb() {
                 videoThumb.tap()
-                if app.buttons["clipEditorDone"].waitForExistence(timeout: 4) {
-                    usleep(900_000)
-                    XCTAssertTrue(app.buttons["clipEditorDone"].exists,
-                                  "the clip editor must stay open on the first tap, not collapse")
-                    snap("11g-clip-editor")
-                    app.buttons["clipEditorDone"].tap()
-                }
+                // Hard assertion (not best-effort): once a clip is tapped the scoped Studio MUST open —
+                // this guards the parity rewire + the stable-host presentation (a section-hosted cover
+                // would collapse on this first tap; see decisions.md). studioClose lives on the Studio's
+                // custom top bar (it's a fullScreenCover, not a NavigationStack).
+                XCTAssertTrue(app.buttons["studioClose"].waitForExistence(timeout: 8),
+                              "tapping a clip must open the scoped Studio")
+                usleep(900_000)
+                XCTAssertTrue(app.buttons["studioClose"].exists,
+                              "the scoped Studio must stay open on the first tap, not collapse")
+                snap("11g-clip-studio")
+                app.buttons["studioClose"].tap()
             }
 
             // 11c — The full multi-clip Studio (S1): open it over the session's video clips and

@@ -12,6 +12,18 @@ import HighlightEngine
 /// text fields so a fat-fingered entry can be corrected after the fact — Save rewrites
 /// `SessionExercise.sets` in place (via the pure `SessionSetEditing`), so PRs / volume / progress
 /// recompute from the corrected values.
+///
+/// Tapping a video clip opens the CapCut-style multi-clip Studio **scoped to that one clip** (Kilter
+/// parity), and the "Edit in Video Studio" button opens it session-wide — both via `StudioPresentation`.
+private struct StudioPresentation: Identifiable {
+    let id = UUID()
+    let project: StudioProject
+    /// `nil` = whole session; `[clip.id]` = one clip (filters the timeline by `TimelineClip.sessionMediaID`).
+    let visibleClipMediaIDs: Set<UUID>?
+    /// Pre-selects the tapped clip on open. Mirrors the Kilter side's `ClipStudioPresentation`.
+    let focusClipMediaID: UUID?
+}
+
 struct SessionDetailView: View {
     let session: WorkoutSession
     let resolver: ExerciseResolver
@@ -27,14 +39,12 @@ struct SessionDetailView: View {
         return WorkoutActivityMapping.dominantCategory(of: cats)
     }
 
-    /// The clip being edited. Hosted HERE (on the `List`, which has no `@Query` so it never
-    /// re-renders from media/app changes) rather than inside `SessionMediaSection` — a `.sheet`
-    /// attached to the section's `Group` (which flattens into the `List`) gets torn down when the
-    /// section re-renders, so it collapsed on the first open and only worked on the second
-    /// (decisions.md: present from a stable host, not a flattened Group).
-    @State private var editingClip: SessionMedia?
     /// A clip the user asked to remove — drives the destructive confirmation (hosted on the List).
     @State private var pendingRemoval: SessionMedia?
+    /// The multi-clip Studio presentation, hosted HERE on the `List` (a stable host) so the cover
+    /// survives the media section's `Group` re-renders. `nil` = closed; the section requests it
+    /// (session-wide from the button, or scoped to a clip on tap) via the `onOpenStudio` closure.
+    @State private var studio: StudioPresentation?
     /// Edit-sets mode (issue #73): while on, each completed reps/weight tile shows text fields
     /// editing `drafts`; Save parses them back into the session, Cancel discards.
     @State private var editingSets = false
@@ -70,8 +80,8 @@ struct SessionDetailView: View {
             SessionMediaSection(session: session, resolver: resolver, unit: unit,
                                 sport: sport, category: dominantCategory,
                                 setDrafts: $setDrafts, keypadFocus: $keypadFocused,
-                                onEditClip: { editingClip = $0 },
-                                onRemove: { pendingRemoval = $0 })
+                                onRemove: { pendingRemoval = $0 },
+                                onOpenStudio: { studio = $0 })
         }
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
@@ -96,8 +106,6 @@ struct SessionDetailView: View {
                 }
             }
         }
-        // Presented from the List (a stable host), so opening the editor never tears itself down.
-        .sheet(item: $editingClip) { clip in ClipEditorView(media: clip) }
         // Destructive remove, confirmed (also hosted on the List). "Delete from Photos" removes the
         // underlying asset from the library; "Remove from session" only drops the tag.
         .confirmationDialog(
@@ -111,6 +119,14 @@ struct SessionDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("“Remove from session” keeps the video in your Photos library. “Delete from Photos” permanently removes it (iOS will ask once more).")
+        }
+        // The CapCut-style multi-clip Studio, hosted on the List (a stable host) so a clip-tap open
+        // from the media section's flattened Group can't collapse it. Scoped to one clip on tap,
+        // unscoped from the "Edit in Video Studio" button — both via `studio`.
+        .fullScreenCover(item: $studio) { p in
+            StudioEditorView(project: p.project, context: context,
+                             focusClipMediaID: p.focusClipMediaID,
+                             visibleClipMediaIDs: p.visibleClipMediaIDs)
         }
     }
 
@@ -277,10 +293,14 @@ private struct SessionMediaSection: View {
     @Binding var setDrafts: [SessionSetEditing.Key: SessionSetEditing.Draft]
     /// The parent's shared keypad focus, so its Done toolbar dismisses any edit field.
     var keypadFocus: FocusState<Bool>.Binding
-    /// Open the clip editor — presented by the parent on a stable host (see `SessionDetailView`).
-    let onEditClip: (SessionMedia) -> Void
     /// Ask the parent to confirm + perform removal (tag-only or delete-from-Photos).
     let onRemove: (SessionMedia) -> Void
+    /// Ask the parent to present the multi-clip Studio. The cover is hosted on the parent `List` (a
+    /// stable host) rather than here, because this section's `Group` flattens into the `List` and gets
+    /// torn down on re-render — a presentation hosted on it collapses on the first open (decisions.md:
+    /// present from a stable host, not a flattened Group). This is the same reason the old per-clip
+    /// editor sheet was hosted on the parent.
+    let onOpenStudio: (StudioPresentation) -> Void
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
@@ -291,7 +311,6 @@ private struct SessionMediaSection: View {
     @State private var isDiscovering = false
     @State private var didAppear = false
     @State private var message: String?
-    @State private var studioProject: StudioProject?
     /// One sheet at a time. Stacking several `.sheet` modifiers on this `Group` (which flattens into
     /// the parent `List`) makes them fight — the first presentation collapses immediately, the second
     /// works. A single `item:`-driven sheet (stable identity) presents reliably on the first tap.
@@ -306,8 +325,8 @@ private struct SessionMediaSection: View {
          sport: SportTag?, category: ExerciseCategory?,
          setDrafts: Binding<[SessionSetEditing.Key: SessionSetEditing.Draft]>,
          keypadFocus: FocusState<Bool>.Binding,
-         onEditClip: @escaping (SessionMedia) -> Void,
-         onRemove: @escaping (SessionMedia) -> Void) {
+         onRemove: @escaping (SessionMedia) -> Void,
+         onOpenStudio: @escaping (StudioPresentation) -> Void) {
         self.session = session
         self.resolver = resolver
         self.unit = unit
@@ -315,8 +334,8 @@ private struct SessionMediaSection: View {
         self.category = category
         self._setDrafts = setDrafts
         self.keypadFocus = keypadFocus
-        self.onEditClip = onEditClip
         self.onRemove = onRemove
+        self.onOpenStudio = onOpenStudio
         let sid = session.id
         _media = Query(filter: #Predicate<SessionMedia> { $0.sessionID == sid },
                        sort: \SessionMedia.offsetSec, order: .forward)
@@ -463,9 +482,6 @@ private struct SessionMediaSection: View {
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("openStudio")
-            .fullScreenCover(item: $studioProject) { project in
-                StudioEditorView(project: project, context: context)
-            }
         } header: {
             Text("Media from this workout")
         }
@@ -485,7 +501,7 @@ private struct SessionMediaSection: View {
             if item.kind == .video { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }
         }
         .contentShape(Rectangle())
-        .onTapGesture { if item.kind == .video { onEditClip(item) } }
+        .onTapGesture { editClip(item) }
         .contextMenu { thumbMenu(for: item) }
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) { onRemove(item) } label: { Label("Remove", systemImage: "trash") }
@@ -504,7 +520,7 @@ private struct SessionMediaSection: View {
 
     @ViewBuilder private func thumbMenu(for item: SessionMedia) -> some View {
         if item.kind == .video {
-            Button { onEditClip(item) } label: { Label("Edit clip", systemImage: "slider.horizontal.3") }
+            Button { editClip(item) } label: { Label("Edit in studio", systemImage: "slider.horizontal.3") }
         }
         Menu {
             ForEach(moveTargets) { target in
@@ -673,11 +689,22 @@ private struct SessionMediaSection: View {
         reconcileAssignments()
     }
 
-    /// Find or create the session's `StudioProject` (seeded from its video clips, in capture order)
-    /// and present the multi-clip studio editor. Shares `StudioEntry.findOrCreateProject` with the
-    /// module-level entries (#74) so every path opens the same project.
+    /// Open the multi-clip Studio for the whole session (the "Edit in Video Studio" button). Shares
+    /// the session's one `StudioProject` with the per-clip tap and the module-level entries (#74).
     private func openStudio() {
-        studioProject = StudioEntry.findOrCreateProject(for: session, media: media, context: context)
+        onOpenStudio(StudioPresentation(
+            project: StudioEntry.resolveProject(for: session, media: media, context: context),
+            visibleClipMediaIDs: nil, focusClipMediaID: nil))
+    }
+
+    /// Tap a video clip → open the SAME Studio **scoped to just that clip** (big preview, focused on
+    /// it), the CapCut-style editor the Kilter side already uses — replacing the old single-clip
+    /// "Edit Clip" sheet. Videos only; photos aren't clip-editable.
+    private func editClip(_ item: SessionMedia) {
+        guard item.kind == .video else { return }
+        onOpenStudio(StudioPresentation(
+            project: StudioEntry.resolveProject(for: session, media: media, context: context),
+            visibleClipMediaIDs: [item.id], focusClipMediaID: item.id))
     }
 }
 

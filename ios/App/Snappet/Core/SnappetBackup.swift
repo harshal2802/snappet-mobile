@@ -56,7 +56,7 @@ enum SnappetBackup {
         JournalEntry.self,
         ExpenseGroup.self, ExpenseRecord.self,
         BudgetCategory.self, BudgetTransaction.self,
-        Routine.self, WorkoutSession.self, CustomExercise.self, SessionMedia.self, ClipEdit.self,
+        Routine.self, WorkoutSession.self, CustomExercise.self, SessionMedia.self,
         StudioProject.self,
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
@@ -87,7 +87,6 @@ enum SnappetBackup {
         var workoutSessions: [WorkoutSessionRow] = []
         var customExercises: [CustomExerciseRow] = []
         var sessionMedia: [SessionMediaRow] = []
-        var clipEdits: [ClipEditRow] = []
         var studioProjects: [StudioProjectRow] = []
         var tipCalculations: [TipCalculationRow] = []
         var kilterLogEntries: [KilterLogEntryRow] = []
@@ -119,7 +118,6 @@ enum SnappetBackup {
             n += workoutSessions.count
             n += customExercises.count
             n += sessionMedia.count
-            n += clipEdits.count
             n += studioProjects.count
             n += tipCalculations.count
             n += kilterLogEntries.count
@@ -188,7 +186,6 @@ enum SnappetBackup {
         file.workoutSessions = try all(WorkoutSession.self).map(WorkoutSessionRow.init).sorted(by: rowKey)
         file.customExercises = try all(CustomExercise.self).map(CustomExerciseRow.init).sorted(by: rowKey)
         file.sessionMedia = try all(SessionMedia.self).map(SessionMediaRow.init).sorted(by: rowKey)
-        file.clipEdits = try all(ClipEdit.self).map(ClipEditRow.init).sorted(by: rowKey)
         file.studioProjects = try all(StudioProject.self).map(StudioProjectRow.init).sorted(by: rowKey)
         file.tipCalculations = try all(TipCalculation.self).map(TipCalculationRow.init).sorted(by: rowKey)
         file.kilterLogEntries = try all(KilterLogEntry.self).map(KilterLogEntryRow.init).sorted(by: rowKey)
@@ -257,8 +254,6 @@ enum SnappetBackup {
             uniqued(file.customExercises, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(SessionMedia.self)
             uniqued(file.sessionMedia, by: \.id).forEach { context.insert($0.make()) }
-            try deleteAll(ClipEdit.self)
-            uniqued(file.clipEdits, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(StudioProject.self)
             uniqued(file.studioProjects, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(TipCalculation.self)
@@ -560,51 +555,6 @@ extension SnappetBackup {
             media.kindRaw = kindRaw
             media.assignmentSourceRaw = assignmentSourceRaw
             return media
-        }
-        var sortKey: String { id.uuidString }
-    }
-
-    struct ClipEditRow: BackupRow {
-        var id: UUID
-        var sessionMediaID: UUID
-        var localIdentifier: String
-        var trimStart: Double
-        var trimEnd: Double?
-        var splitOrder: Int
-        var cropX: Double
-        var cropY: Double
-        var cropWidth: Double
-        var cropHeight: Double
-        var aspectRaw: String
-        var speed: Double
-        var textOverlays: [TextOverlay]
-        var mutedOriginalAudio: Bool
-        var musicTrackName: String?
-        var hrOverlay: HROverlayConfig?
-        var createdAt: Date
-        var updatedAt: Date
-
-        init(_ m: ClipEdit) {
-            id = m.id; sessionMediaID = m.sessionMediaID; localIdentifier = m.localIdentifier
-            trimStart = m.trimStart; trimEnd = m.trimEnd; splitOrder = m.splitOrder
-            cropX = m.cropX; cropY = m.cropY; cropWidth = m.cropWidth; cropHeight = m.cropHeight
-            aspectRaw = m.aspectRaw; speed = m.speed; textOverlays = m.textOverlays
-            mutedOriginalAudio = m.mutedOriginalAudio; musicTrackName = m.musicTrackName
-            hrOverlay = m.hrOverlay; createdAt = m.createdAt; updatedAt = m.updatedAt
-        }
-        func make() -> ClipEdit {
-            let edit = ClipEdit(id: id, sessionMediaID: sessionMediaID, localIdentifier: localIdentifier,
-                                trimStart: trimStart, trimEnd: trimEnd, splitOrder: splitOrder,
-                                textOverlays: textOverlays,
-                                mutedOriginalAudio: mutedOriginalAudio, musicTrackName: musicTrackName,
-                                hrOverlay: hrOverlay, createdAt: createdAt)
-            // Stored fields the init derives/clamps — restore them verbatim.
-            edit.cropX = cropX; edit.cropY = cropY
-            edit.cropWidth = cropWidth; edit.cropHeight = cropHeight
-            edit.aspectRaw = aspectRaw
-            edit.speed = speed
-            edit.updatedAt = updatedAt   // the init pins it to createdAt
-            return edit
         }
         var sortKey: String { id.uuidString }
     }
