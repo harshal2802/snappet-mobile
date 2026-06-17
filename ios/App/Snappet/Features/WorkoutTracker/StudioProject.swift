@@ -317,12 +317,18 @@ struct HROverlayConfig: Codable, Hashable, Sendable {
     /// (prompt 28). Defaults `true` (the pre-feature behaviour: an active overlay == a chart).
     var showChart: Bool
     /// Extra HR/fitness **overlay elements** the user picked beyond the chart (numbers + badges) —
-    /// the configurable overlay builder (prompt 28).
+    /// the configurable overlay builder (prompt 28). **Legacy** once `tile` is set: kept read-only so
+    /// old persisted projects still decode and `HRTileMigration` can fold them into the tile (zero
+    /// data loss); never written once a tile exists.
     var elements: [HROverlayElement]
+    /// The unified, resizable HR stat **tile** (the redesign). `nil` = legacy free-floating
+    /// `elements` / chart-only / off. When set, the tile owns layout and the standalone chart renders
+    /// only if `tile.showChart`. Optional → migration-safe additive field (old blobs decode `nil`).
+    var tile: HRTile?
 
     init(normalizedX: Double, normalizedY: Double, scale: Double, colorHex: String,
          showBPM: Bool, zoneColored: Bool, showChart: Bool = true,
-         elements: [HROverlayElement] = []) {
+         elements: [HROverlayElement] = [], tile: HRTile? = nil) {
         self.normalizedX = normalizedX
         self.normalizedY = normalizedY
         self.scale = scale
@@ -331,15 +337,16 @@ struct HROverlayConfig: Codable, Hashable, Sendable {
         self.zoneColored = zoneColored
         self.showChart = showChart
         self.elements = elements
+        self.tile = tile
     }
 
     private enum CodingKeys: String, CodingKey {
-        case normalizedX, normalizedY, scale, colorHex, showBPM, zoneColored, showChart, elements
+        case normalizedX, normalizedY, scale, colorHex, showBPM, zoneColored, showChart, elements, tile
     }
 
-    /// Custom decode so blobs persisted **before** `showChart`/`elements` existed still load —
+    /// Custom decode so blobs persisted **before** `showChart`/`elements`/`tile` existed still load —
     /// synthesized `Codable` would throw on the missing keys (they're non-optional). Missing →
-    /// `showChart = true` (the old "active overlay = chart" behaviour) and no extra `elements`.
+    /// `showChart = true` (the old "active overlay = chart" behaviour), no extra `elements`, no `tile`.
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         normalizedX = try c.decode(Double.self, forKey: .normalizedX)
@@ -350,6 +357,7 @@ struct HROverlayConfig: Codable, Hashable, Sendable {
         zoneColored = try c.decode(Bool.self, forKey: .zoneColored)
         showChart = try c.decodeIfPresent(Bool.self, forKey: .showChart) ?? true
         elements = try c.decodeIfPresent([HROverlayElement].self, forKey: .elements) ?? []
+        tile = try c.decodeIfPresent(HRTile.self, forKey: .tile) ?? nil
     }
 
     var position: CGPoint {
