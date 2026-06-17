@@ -19,6 +19,10 @@ import Foundation
 struct StudioClipHRContent: Sendable, Equatable {
     var samples: [HRPoint]
     var elements: [ResolvedHROverlay]
+    /// The resolved HR stat **tile** for this clip's window (the overlay redesign). When set, the
+    /// composer draws one composite tile for the clip instead of the free-floating `elements`. `nil`
+    /// for legacy element-based overlays. Additive default → existing constructions stay source-compatible.
+    var tile: ResolvedHRTile? = nil
 }
 
 enum StudioHRPlacement {

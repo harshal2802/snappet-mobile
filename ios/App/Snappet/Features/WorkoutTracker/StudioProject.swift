@@ -357,7 +357,12 @@ struct HROverlayConfig: Codable, Hashable, Sendable {
         zoneColored = try c.decode(Bool.self, forKey: .zoneColored)
         showChart = try c.decodeIfPresent(Bool.self, forKey: .showChart) ?? true
         elements = try c.decodeIfPresent([HROverlayElement].self, forKey: .elements) ?? []
-        tile = try c.decodeIfPresent(HRTile.self, forKey: .tile) ?? nil
+        // SwiftData's composite coder materializes a `nil` nested-optional Codable struct as an empty
+        // value rather than absent (so `decodeIfPresent` returns a content-empty `HRTile` with a fresh
+        // `UUID()` id — nondeterministic, and it would wrongly block legacy migration). A real tile
+        // ALWAYS carries all metric entries, so an entries-empty tile is that phantom → normalize to nil.
+        let decodedTile = try c.decodeIfPresent(HRTile.self, forKey: .tile)
+        tile = (decodedTile?.entries.isEmpty ?? true) ? nil : decodedTile
     }
 
     var position: CGPoint {

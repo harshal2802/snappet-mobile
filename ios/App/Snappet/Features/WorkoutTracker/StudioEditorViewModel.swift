@@ -590,8 +590,18 @@ final class StudioEditorViewModel {
                         maxHR: hrMaxHR, restHR: hrRestHR, kcal: hrKcal, hrv: hrHRV)
     }
     private func resolvedOverlayElements() -> [ResolvedHROverlay] {
+        // When a unified tile is configured it owns the overlay — don't also draw legacy free badges.
+        guard snapshot.hrOverlay?.tile == nil else { return [] }
         let els = snapshot.hrOverlay?.elements ?? []
         return els.isEmpty ? [] : overlayValues.resolve(els)
+    }
+
+    /// The session-wide resolved HR stat **tile** (the overlay redesign), or `nil` when no tile is set.
+    /// The composer uses it as the fallback for clips with no media link; per-clip tiles (each clip's own
+    /// capture window) come from `clipHRContent()`.
+    private func resolvedSessionTile() -> ResolvedHRTile? {
+        guard let tile = snapshot.hrOverlay?.tile else { return nil }
+        return overlayValues.resolveTile(tile)
     }
 
     // MARK: - Per-clip HR (the fix: each clip shows its OWN capture-window HR, not the whole session)
@@ -610,13 +620,34 @@ final class StudioEditorViewModel {
         let samplesByID = StudioHRPlacement.sample(clips: videoClips, offsets: offsets,
                                                    sourceDurations: sourceDurations, series: hrSeries)
         guard !samplesByID.isEmpty else { return [:] }
-        let elements = snapshot.hrOverlay?.elements ?? []
         var out: [UUID: StudioClipHRContent] = [:]
+        // Unified tile path (the redesign): one composite tile per clip, resolved over the clip window.
+        if let tile = snapshot.hrOverlay?.tile {
+            for (id, samples) in samplesByID {
+                out[id] = StudioClipHRContent(samples: samples, elements: [],
+                                              tile: resolveClipTile(tile, samples: samples))
+            }
+            return out
+        }
+        let elements = snapshot.hrOverlay?.elements ?? []
         for (id, samples) in samplesByID {
             out[id] = StudioClipHRContent(samples: samples,
                                           elements: resolveClipElements(elements, samples: samples))
         }
         return out
+    }
+
+    /// Resolve the HR tile over ONE clip's window — per-clip avg/max/zone/calories/HRV (not the
+    /// session-wide values), the tile twin of `resolveClipElements`. Bounds (max/rest HR) stay
+    /// session-wide; calories/HRV are computed over the clip's own samples.
+    private func resolveClipTile(_ tile: HRTile, samples: [HRPoint]) -> ResolvedHRTile? {
+        let span = samples.last?.t ?? 0
+        let kcal = hrProfile?.estimatedKcal(forSeries: samples, durationSec: span)
+        let hrv = HRVMetrics.make(
+            from: samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: span)
+        return HROverlayValues(samples: samples, durationSec: span, maxHR: hrMaxHR, restHR: hrRestHR,
+                               kcal: kcal, hrv: hrv).resolveTile(tile)
     }
 
     /// Resolve the overlay badge elements over ONE clip's window — per-clip avg/max/zone/calories/HRV
@@ -803,6 +834,7 @@ final class StudioEditorViewModel {
             let url = try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
                                                 hrSamples: hrSeries,
                                                 hrElements: resolvedOverlayElements(),
+                                                hrTile: resolvedSessionTile(),
                                                 clipHRByID: clipHRContent(),
                                                 quality: exportQuality)
             exportState = .exported(url)
