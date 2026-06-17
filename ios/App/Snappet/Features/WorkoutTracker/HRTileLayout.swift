@@ -31,7 +31,8 @@ enum HRTileLayout {
         case field     // a value + caption column/cell
         case chip      // a compact value-only chip
         case pill      // a zone pill (filled, rounded)
-        case gauge     // an arc/ring bound to a ratio metric (%HRR)
+        case gauge     // an arc/ring bound to a ratio metric (%HRR), filled by `fraction`
+        case zoneBar   // the zone as a segmented bar — 5 cells (broadcast) / vertical (rail), current zone lit
     }
 
     enum TextAlign: String, Sendable, Equatable { case leading, center, trailing }
@@ -46,17 +47,30 @@ enum HRTileLayout {
         var align: TextAlign
         /// Draw the metric's caption (e.g. "BPM") alongside the value — dropped when there's no room.
         var showsLabel: Bool
+        /// For a `.zoneBar` slot only: lay the 5 cells **vertically** (Rail) vs horizontally (Broadcast).
+        /// Set explicitly by the template so a tall/narrow slot can't flip the intended axis.
+        var zoneBarVertical: Bool = false
     }
 
     /// The full layout: the tile rect, an optional chart register, and the metric slots in display order.
     /// `hiddenCount` is how many **enabled** metrics didn't make it onto the tile (per-template cap +
     /// fit reflow) — the editor surfaces it as a `+N · enlarge tile` affordance so "toggle all 10 on"
     /// fills the legible tier and parks the rest, instead of cropping (rules #6/#7).
+    /// Template **chrome** the pure layout places (so both render sides draw it identically): the
+    /// Broadcast accent bar, the Gradient Strain effort-driven skin. The colour is the render's job
+    /// (derived from the resolved zone), so the decoration carries only kind + frame.
+    struct Decoration: Equatable, Sendable {
+        enum Kind: String, Sendable, Equatable { case accentBar, gradientSkin }
+        var kind: Kind
+        var frame: CGRect
+    }
+
     struct Result: Equatable, Sendable {
         var tileRect: CGRect
         var chartRect: CGRect?
         var slots: [MetricSlot]
         var hiddenCount: Int = 0
+        var decorations: [Decoration] = []
     }
 
     // MARK: - Entry point
@@ -79,22 +93,27 @@ enum HRTileLayout {
         case .hudPill:     result = hudPill(metrics, rect, hasChart)
         case .chartBanner: result = chartBanner(metrics, rect, hasChart)
         }
-        // Count DISTINCT rendered metrics — ring can emit one metric as both a gauge and a hero/chip, so
-        // slots.count overstates coverage; the parked count must reflect metrics not shown at all.
-        result.hiddenCount = Swift.max(0, enabledMetrics.count - Set(result.slots.map(\.metric)).count)
+        // Count metrics not shown AT ALL. Use DISTINCT rendered metrics (ring can emit one metric as both
+        // a gauge and a hero/chip), and credit metrics the template encodes WITHOUT a slot — the Zone Ring
+        // shows the zone as the arc COLOUR, so an enabled `.zone` there is covered, not parked (no false
+        // "+1 · enlarge" on a pristine ring).
+        var covered = Set(result.slots.map(\.metric))
+        if template == .ring, !result.slots.isEmpty, enabledMetrics.contains(.zone) { covered.insert(.zone) }
+        result.hiddenCount = Swift.max(0, enabledMetrics.count - covered.count)
         return result
     }
 
-    /// The per-template hard ceiling on visible metrics (hero + medium + chips) — issue #163, rule #6.
+    /// The per-template hard ceiling on visible metrics (hero + secondary + tertiary) — issue #163,
+    /// rule #6 — set so each design's focused **spawn set fully shows** and only user-added extras park.
     static func visibleCap(_ t: HRTileTemplate, hasChart: Bool) -> Int {
         switch t {
         case .hero:        return 5   // hero + zone pill + ≤3 chips
-        case .ring:        return 4   // gauge + centred hero + ≤2 chips
-        case .scorebug:    return 4   // hero + zone bar + ≤3 right stats
-        case .list:        return 6   // hero + ≤5 rows
-        case .bento:       return 6
+        case .ring:        return 5   // gauge(%HRR) + centred hero (zone encoded in arc colour) + ≤2 chips
+        case .scorebug:    return 5   // hero + zone bar + ≤3 right stats
+        case .list:        return 6   // hero + vertical zone bar + ≤5 rows
+        case .bento:       return 5   // hero + zone pill + %HRR + ≤2 caption
         case .hudPill:     return 3   // zone-dot · bpm · zone
-        case .chartBanner: return 4   // bpm + zone + 4-up row reduces to a hero + chips set
+        case .chartBanner: return 6   // bpm + zone pill on top, the curve, a 4-up AVG·PEAK·KCAL·EFFORT row
         }
     }
 
@@ -147,46 +166,49 @@ enum HRTileLayout {
         rect.insetBy(dx: rect.width * f, dy: rect.height * f)
     }
 
-    // MARK: - Scorebug (default): broadcast lower-third strip
+    // MARK: - ③ Broadcast Lower-Third: accent bar · bpm hero · 5-cell zone bar · right stat columns · chart lane
 
-    private static func scorebug(_ metrics: [HROverlayMetric], _ rect: CGRect, _ hasChart: Bool) -> Result {
-        guard !metrics.isEmpty else { return empty(rect) }
-        let chartH: CGFloat = hasChart ? rect.height * 0.34 : 0
-        let rowH = rect.height - chartH
-        let rowRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rowH)
-        let chartRect = hasChart
-            ? CGRect(x: rect.minX, y: rowRect.maxY, width: rect.width, height: chartH) : nil
-
-        let pad = rowH * 0.10
-        let rawFont = rowH * 0.40                      // UNfloored — drives the scale-invariant fit
-        let showsLabel = rowH >= rawFont * 2.0         // room for a caption line under the value
-
-        func fieldWidth(_ m: HROverlayMetric) -> CGFloat {
-            let lead = (m == metrics.first) ? 1.30 : 1.0
-            return valueWidth(m, font: rawFont, pad: pad) * lead
-        }
-        func fits(_ ms: [HROverlayMetric]) -> Bool {
-            ms.reduce(0) { $0 + fieldWidth($1) } <= rowRect.width
-        }
-        let kept = reflowed(metrics, keepLeading: min(2, metrics.count), fits: fits)
-
-        // Scale field widths to fill the row exactly (shrink only) and centre them.
-        let total = kept.reduce(0) { $0 + fieldWidth($1) }
-        let k = total > 0 ? min(1, rowRect.width / total) : 1
-        var x = rowRect.minX + (rowRect.width - total * k) / 2
+    private static func scorebug(_ metrics: [HROverlayMetric], _ rawRect: CGRect, _ hasChart: Bool) -> Result {
+        guard let lead = hero(metrics) else { return empty(rawRect) }
+        let rect = inset(rawRect, by: 0.04)
         var slots: [MetricSlot] = []
-        for m in kept {
-            let w = fieldWidth(m) * k
-            let isHero = (m == kept.first)
-            slots.append(MetricSlot(
-                metric: m,
-                frame: CGRect(x: x, y: rowRect.minY, width: w, height: rowH),
-                role: isHero ? .hero : .field,
-                fontSize: max(fontFloor, rawFont * (isHero ? 1.12 : 1.0)),
-                align: .center, showsLabel: showsLabel))
-            x += w
+        let others = metrics.filter { $0 != lead }
+        let hasZone = others.contains(.zone)
+        let stats = others.filter { $0 != .zone }          // right column rows (AVG/PEAK/EFFORT)
+
+        let chartH = hasChart ? rect.height * 0.42 : 0
+        let stripH = rect.height - chartH
+        let stripY = rect.minY
+
+        // A thin zone-coloured accent bar at the leading edge, then the columns.
+        let accentW = rect.width * 0.018
+        let accent = CGRect(x: rect.minX, y: stripY, width: accentW, height: stripH)
+        let cx = rect.minX + accentW + rect.width * 0.02   // content start after the accent + a gap
+        let heroW = rect.width * 0.30
+        let barW = hasZone ? rect.width * 0.20 : 0
+        let statsW = max(0, rect.maxX - (cx + heroW + barW))
+
+        slots.append(MetricSlot(metric: lead,
+                                frame: CGRect(x: cx, y: stripY, width: heroW, height: stripH),
+                                role: .hero, fontSize: max(fontFloor, stripH * 0.50), align: .leading, showsLabel: false))
+        if hasZone {
+            slots.append(MetricSlot(metric: .zone,
+                                    frame: CGRect(x: cx + heroW, y: stripY, width: barW, height: stripH),
+                                    role: .zoneBar, fontSize: max(fontFloor, stripH * 0.16), align: .center, showsLabel: false))
         }
-        return Result(tileRect: rect, chartRect: chartRect, slots: slots)
+        if !stats.isEmpty && statsW > 0 {
+            let rows = stats.count
+            let rowH = stripH / CGFloat(rows)
+            let rowFont = max(fontFloor, rowH * 0.5)
+            for (i, m) in stats.enumerated() {
+                slots.append(MetricSlot(metric: m,
+                                        frame: CGRect(x: cx + heroW + barW, y: stripY + CGFloat(i) * rowH, width: statsW, height: rowH),
+                                        role: .field, fontSize: rowFont, align: .leading, showsLabel: true))
+            }
+        }
+        let chartRect = hasChart ? CGRect(x: rect.minX, y: stripY + stripH, width: rect.width, height: chartH) : nil
+        return Result(tileRect: rawRect, chartRect: chartRect, slots: slots,
+                      decorations: [Decoration(kind: .accentBar, frame: accent)])
     }
 
     // MARK: - ① Glass Hero Card (the default): zone pill · giant BPM hero · sparkline · value-only chips
@@ -257,90 +279,61 @@ enum HRTileLayout {
         return Result(tileRect: rawRect, chartRect: chartRect, slots: slots)
     }
 
-    // MARK: - Stats Bento: hero spans the top, then an N-column grid
+    // MARK: - ⑤ Gradient Strain Card: the Glass Hero layout on an effort-driven gradient skin
 
-    private static func bento(_ metrics: [HROverlayMetric], _ rect: CGRect, _ hasChart: Bool) -> Result {
-        guard let lead = hero(metrics) else { return empty(rect) }
-        var slots: [MetricSlot] = []
-        let heroH = rect.height * 0.26
-        slots.append(MetricSlot(metric: lead,
-                                frame: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: heroH),
-                                role: .hero, fontSize: max(fontFloor, heroH * 0.50),
-                                align: .leading, showsLabel: true))
-        var y = rect.minY + heroH
-
-        var chartRect: CGRect?
-        if hasChart {
-            let chH = rect.height * 0.20
-            chartRect = CGRect(x: rect.minX, y: y, width: rect.width, height: chH)
-            y += chH
-        }
-
-        let gridMetrics = metrics.filter { $0 != lead }
-        guard !gridMetrics.isEmpty else { return Result(tileRect: rect, chartRect: chartRect, slots: slots) }
-        let gridRect = CGRect(x: rect.minX, y: y, width: rect.width, height: max(0, rect.maxY - y))
-
-        // Columns from proportions: a cell must be at least ~one field wide. Scale-invariant because
-        // both the cell width and the min cell width scale with the rect.
-        let rawCellFont = gridRect.height * 0.18
-        let minCellW = valueWidth(.avgHR, font: max(rawCellFont, 8), pad: gridRect.width * 0.02)
-        let cols = (gridRect.width / 2 >= minCellW) ? 2 : 1
-        let rowsNeeded = Int(ceil(Double(gridMetrics.count) / Double(cols)))
-        let rawRowH = gridRect.height / CGFloat(max(1, rowsNeeded))
-        // Drop lowest-priority cells if rows would be shorter than the floor would allow.
-        let maxRows = max(1, Int(gridRect.height / (fontFloor * 1.7)))
-        let cellFont = max(fontFloor, rawRowH * 0.34)
-        let capacity = maxRows * cols
-        let kept = gridMetrics.count <= capacity
-            ? gridMetrics
-            : reflowed(gridMetrics, keepLeading: 0, fits: { $0.count <= capacity })
-        let rows = max(1, Int(ceil(Double(kept.count) / Double(cols))))
-        let rowH = gridRect.height / CGFloat(rows)
-        let colW = gridRect.width / CGFloat(cols)
-        for (i, m) in kept.enumerated() {
-            let r = i / cols, c = i % cols
-            slots.append(MetricSlot(
-                metric: m,
-                frame: CGRect(x: gridRect.minX + CGFloat(c) * colW,
-                              y: gridRect.minY + CGFloat(r) * rowH, width: colW, height: rowH),
-                role: .field, fontSize: cellFont, align: .leading,
-                showsLabel: rowH >= cellFont * 1.7))
-        }
-        return Result(tileRect: rect, chartRect: chartRect, slots: slots)
+    /// Reuses the premium Glass Hero Card layout (zone pill · hero · sparkline · value-only chips — its
+    /// `hrr` chip carries the effort number) and adds a **gradient skin** decoration whose colour the
+    /// render drives from the current zone/effort (calm blue-green → hot orange-red), so colour does
+    /// double duty as a metric.
+    private static func bento(_ metrics: [HROverlayMetric], _ rawRect: CGRect, _ hasChart: Bool) -> Result {
+        guard !metrics.isEmpty else { return empty(rawRect) }
+        var result = heroCard(metrics, rawRect, hasChart)
+        result.decorations = [Decoration(kind: .gradientSkin, frame: rawRect)]
+        return result
     }
 
-    // MARK: - Metrics List: single-column label–value rows
+    // MARK: - ④ Vertical Glass Rail: bpm hero · vertical zone bar · label→value rows
 
-    private static func list(_ metrics: [HROverlayMetric], _ rect: CGRect, _ hasChart: Bool) -> Result {
-        guard !metrics.isEmpty else { return empty(rect) }
-        let chartH: CGFloat = hasChart ? rect.height * 0.16 : 0
-        let listH = rect.height - chartH
-        let chartRect = hasChart
-            ? CGRect(x: rect.minX, y: rect.minY + listH, width: rect.width, height: chartH) : nil
-
-        // Lead row is 1.4× tall, the rest 1 unit. n rows occupy (n + 0.4)·unit, so the most that fit
-        // is ⌊listH/unit − 0.4⌋. Truncate from the bottom (lowest-priority) keeping the lead.
-        let unit = fontFloor * 1.7
-        let maxRows = max(1, Int((listH / unit) - 0.4))
-        let kept = metrics.count <= maxRows
-            ? metrics
-            : reflowed(metrics, keepLeading: 1, fits: { $0.count <= maxRows })
-
-        let denom = 1.4 + CGFloat(max(0, kept.count - 1))
-        let baseRowH = listH / max(1, denom)
+    private static func list(_ metrics: [HROverlayMetric], _ rawRect: CGRect, _ hasChart: Bool) -> Result {
+        guard let lead = hero(metrics) else { return empty(rawRect) }
+        let rect = inset(rawRect, by: 0.06)
         var slots: [MetricSlot] = []
-        var y = rect.minY
-        for (i, m) in kept.enumerated() {
-            let isLead = (i == 0)
-            let h = baseRowH * (isLead ? 1.4 : 1.0)
-            slots.append(MetricSlot(metric: m,
-                                    frame: CGRect(x: rect.minX, y: y, width: rect.width, height: h),
-                                    role: isLead ? .hero : .field,
-                                    fontSize: max(fontFloor, h * (isLead ? 0.42 : 0.40)),
-                                    align: .leading, showsLabel: true))
-            y += h
+        let hasZone = metrics.contains(.zone)
+        let rows = metrics.filter { $0 != lead && $0 != .zone }   // label→value rows (zone → the bar)
+
+        let chartH = hasChart ? rect.height * 0.18 : 0
+        let heroH = rect.height * 0.20
+        let bodyH = max(0, rect.height - heroH - chartH)
+
+        slots.append(MetricSlot(metric: lead,
+                                frame: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: heroH),
+                                role: .hero, fontSize: max(fontFloor, heroH * 0.6), align: .leading, showsLabel: false))
+        let bodyY = rect.minY + heroH
+
+        // A slim vertical zone bar on the left; the rows own the column to its right.
+        let barW = hasZone ? rect.width * 0.10 : 0
+        if hasZone {
+            slots.append(MetricSlot(metric: .zone,
+                                    frame: CGRect(x: rect.minX, y: bodyY, width: barW, height: bodyH),
+                                    role: .zoneBar, fontSize: fontFloor, align: .center, showsLabel: false,
+                                    zoneBarVertical: true))
         }
-        return Result(tileRect: rect, chartRect: chartRect, slots: slots)
+        let rowsX = rect.minX + barW + (hasZone ? rect.width * 0.05 : 0)
+        let rowsW = rect.maxX - rowsX
+        let unit = fontFloor * 1.9
+        let maxRows = max(1, Int(bodyH / unit))
+        let kept = rows.count <= maxRows ? rows : reflowed(rows, keepLeading: 0, fits: { $0.count <= maxRows })
+        if !kept.isEmpty {
+            let rowH = bodyH / CGFloat(kept.count)
+            let rowFont = max(fontFloor, min(rowH * 0.42, rowsW * 0.20))
+            for (i, m) in kept.enumerated() {
+                slots.append(MetricSlot(metric: m,
+                                        frame: CGRect(x: rowsX, y: bodyY + CGFloat(i) * rowH, width: rowsW, height: rowH),
+                                        role: .field, fontSize: rowFont, align: .leading, showsLabel: true))
+            }
+        }
+        let chartRect = hasChart ? CGRect(x: rect.minX, y: rect.maxY - chartH, width: rect.width, height: chartH) : nil
+        return Result(tileRect: rawRect, chartRect: chartRect, slots: slots)
     }
 
     // MARK: - Zone Ring: %HRR arc with bpm centered
@@ -350,54 +343,55 @@ enum HRTileLayout {
     /// triggers at degenerate sizes (kept consistent across preview/export in practice).
     static let ringMinDiameter: CGFloat = 64
 
-    private static func ring(_ metrics: [HROverlayMetric], _ rect: CGRect, _ hasChart: Bool) -> Result {
-        guard let lead = hero(metrics) else { return empty(rect) }
+    private static func ring(_ metrics: [HROverlayMetric], _ rawRect: CGRect, _ hasChart: Bool) -> Result {
+        guard let lead = hero(metrics) else { return empty(rawRect) }
+        let rect = inset(rawRect, by: 0.06)
         let others = metrics.filter { $0 != lead }
-        let hasChips = others.contains { $0 != .zone }
-        let chipBandH = hasChips ? rect.height * 0.18 : 0
+        // The arc fills by %HRR when on, else the lead; the zone is encoded in the arc COLOUR (no zone
+        // slot). Chips are the rest — minus zone and minus the gauge metric, so nothing double-renders.
+        let gaugeMetric: HROverlayMetric = others.contains(.hrr) ? .hrr : lead
+        let chips = others.filter { $0 != .zone && $0 != gaugeMetric }
+        let chipBandH = chips.isEmpty ? 0 : rect.height * 0.18
         let ringArea = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height - chipBandH)
         let diameter = min(ringArea.width, ringArea.height)
 
         var slots: [MetricSlot] = []
         if diameter < ringMinDiameter {
-            // Collapse: a pill with bpm + zone, no gauge.
+            // Collapse: a pill with bpm, no gauge.
             let h = min(rect.height, fontFloor * 2.2)
             slots.append(MetricSlot(metric: lead,
                                     frame: CGRect(x: rect.minX, y: rect.midY - h / 2, width: rect.width, height: h),
-                                    role: .pill, fontSize: max(fontFloor, h * 0.5), align: .center,
-                                    showsLabel: false))
-            return Result(tileRect: rect, chartRect: nil, slots: slots)
+                                    role: .pill, fontSize: max(fontFloor, h * 0.5), align: .center, showsLabel: false))
+            return Result(tileRect: rawRect, chartRect: nil, slots: slots)
         }
 
         let ringRect = CGRect(x: ringArea.midX - diameter / 2, y: ringArea.midY - diameter / 2,
                               width: diameter, height: diameter)
-        // The arc is bound to %HRR when on, else to the lead (render computes the fill fraction).
-        let gaugeMetric: HROverlayMetric = others.contains(.hrr) ? .hrr : lead
         slots.append(MetricSlot(metric: gaugeMetric, frame: ringRect, role: .gauge,
                                 fontSize: max(fontFloor, diameter * 0.10), align: .center, showsLabel: false))
-        // Centered bpm hero (inside the ring).
-        let inset = diameter * 0.22
-        let centerRect = ringRect.insetBy(dx: inset, dy: inset)
+        let inset2 = diameter * 0.24
+        let centerRect = ringRect.insetBy(dx: inset2, dy: inset2)
         slots.append(MetricSlot(metric: lead, frame: centerRect, role: .hero,
-                                fontSize: max(fontFloor, centerRect.height * 0.42), align: .center, showsLabel: true))
+                                fontSize: max(fontFloor, centerRect.height * 0.5), align: .center, showsLabel: false))
 
-        if hasChips {
-            let chips = others.filter { $0 != .zone }
+        if !chips.isEmpty {
             let band = CGRect(x: rect.minX, y: ringArea.maxY, width: rect.width, height: chipBandH)
-            let rawChip = band.height * 0.5
-            let pad = rect.width * 0.012
-            func chipW(_ m: HROverlayMetric) -> CGFloat { valueWidth(m, font: rawChip, pad: pad) }
-            let kept = reflowed(chips, keepLeading: 0, fits: { $0.reduce(0) { $0 + chipW($1) } <= band.width })
-            let total = kept.reduce(0) { $0 + chipW($1) }
-            var x = band.minX + (band.width - total) / 2
-            for m in kept {
-                let w = chipW(m)
-                slots.append(MetricSlot(metric: m, frame: CGRect(x: x, y: band.minY, width: w, height: band.height),
-                                        role: .chip, fontSize: max(fontFloor, rawChip), align: .center, showsLabel: false))
-                x += w
+            let n = chips.count
+            let gap = band.width * 0.04
+            let chipW = (band.width - gap * CGFloat(n - 1)) / CGFloat(n)
+            let need = chips.map { Swift.max($0.tileValueChars, CGFloat($0.tileCaption.count) * 0.62) }.max() ?? 3
+            let widthCapFont = (chipW - 2 * (chipW * 0.08)) / (Swift.max(1, need) * emAdvance)
+            let chipFontRaw = Swift.min(band.height * 0.5, widthCapFont)
+            let chipFont = Swift.max(fontFloor, chipFontRaw)
+            let showsLabel = band.height >= chipFontRaw * 2.0
+            var x = band.minX
+            for m in chips {
+                slots.append(MetricSlot(metric: m, frame: CGRect(x: x, y: band.minY, width: chipW, height: chipBandH),
+                                        role: .chip, fontSize: chipFont, align: .center, showsLabel: showsLabel))
+                x += chipW + gap
             }
         }
-        return Result(tileRect: rect, chartRect: nil, slots: slots)
+        return Result(tileRect: rawRect, chartRect: nil, slots: slots)
     }
 
     // MARK: - HUD Pill: a single compact chip row
@@ -423,35 +417,49 @@ enum HRTileLayout {
         return Result(tileRect: rect, chartRect: nil, slots: slots)
     }
 
-    // MARK: - Chart Banner: the moving chart + a caption row
+    // MARK: - ⑦ HR Trace: the curve IS the hero — top row (bpm + zone pill) · curve · 4-up stat row
 
-    private static func chartBanner(_ metrics: [HROverlayMetric], _ rect: CGRect, _ hasChart: Bool) -> Result {
-        // The chart is this template's point; if the user turned it off, the whole tile is the caption row.
-        let chartH: CGFloat = hasChart ? rect.height * 0.58 : 0
-        let chartRect = hasChart
-            ? CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: chartH) : nil
-        let capH = rect.height - chartH
-        guard !metrics.isEmpty, capH > 0 else { return Result(tileRect: rect, chartRect: chartRect, slots: []) }
-
-        let capRect = CGRect(x: rect.minX, y: rect.minY + chartH, width: rect.width, height: capH)
-        let pad = capH * 0.12
-        let rawFont = capH * 0.42
-        func chipW(_ m: HROverlayMetric) -> CGFloat { valueWidth(m, font: rawFont, pad: pad) }
-        let kept = reflowed(metrics, keepLeading: min(2, metrics.count),
-                            fits: { $0.reduce(0) { $0 + chipW($1) } <= capRect.width })
-        let total = kept.reduce(0) { $0 + chipW($1) }
-        let k = total > 0 ? min(1, capRect.width / total) : 1
-        var x = capRect.minX + (capRect.width - total * k) / 2
+    private static func chartBanner(_ metrics: [HROverlayMetric], _ rawRect: CGRect, _ hasChart: Bool) -> Result {
+        guard let lead = hero(metrics) else { return empty(rawRect) }
+        let rect = inset(rawRect, by: 0.05)
         var slots: [MetricSlot] = []
-        for m in kept {
-            let w = chipW(m) * k
-            slots.append(MetricSlot(metric: m, frame: CGRect(x: x, y: capRect.minY, width: w, height: capRect.height),
-                                    role: m == kept.first ? .hero : .chip,
-                                    fontSize: max(fontFloor, rawFont * (m == kept.first ? 1.05 : 1.0)),
-                                    align: .center, showsLabel: false))
-            x += w
+        let others = metrics.filter { $0 != lead }
+        let hasZone = others.contains(.zone)
+        let chips = others.filter { $0 != .zone }          // the 4-up row (AVG·PEAK·KCAL·EFFORT)
+
+        let topH = rect.height * (hasChart ? 0.28 : 0.40)
+        let chartH = hasChart ? rect.height * 0.42 : 0
+        let rowH = max(0, rect.height - topH - chartH)
+
+        // Top row: bpm hero (leading) + zone pill (trailing).
+        let heroW = rect.width * (hasZone ? 0.42 : 1.0)
+        slots.append(MetricSlot(metric: lead,
+                                frame: CGRect(x: rect.minX, y: rect.minY, width: heroW, height: topH),
+                                role: .hero, fontSize: max(fontFloor, topH * 0.62), align: .leading, showsLabel: false))
+        if hasZone {
+            slots.append(MetricSlot(metric: .zone,
+                                    frame: CGRect(x: rect.minX + heroW, y: rect.minY, width: rect.width - heroW, height: topH),
+                                    role: .pill, fontSize: max(fontFloor, topH * 0.30), align: .trailing, showsLabel: false))
         }
-        return Result(tileRect: rect, chartRect: chartRect, slots: slots)
+        var y = rect.minY + topH
+        var chartRect: CGRect?
+        if hasChart {
+            chartRect = CGRect(x: rect.minX, y: y, width: rect.width, height: chartH); y += chartH
+        }
+        // 4-up summary row (value over caption, evenly divided).
+        if !chips.isEmpty && rowH > 0 {
+            let n = chips.count
+            let cellW = rect.width / CGFloat(n)
+            let cellFontRaw = rowH * 0.42
+            let cellFont = max(fontFloor, cellFontRaw)
+            let showsLabel = rowH >= cellFontRaw * 2.0
+            for (i, m) in chips.enumerated() {
+                slots.append(MetricSlot(metric: m,
+                                        frame: CGRect(x: rect.minX + CGFloat(i) * cellW, y: y, width: cellW, height: rowH),
+                                        role: .field, fontSize: cellFont, align: .center, showsLabel: showsLabel))
+            }
+        }
+        return Result(tileRect: rawRect, chartRect: chartRect, slots: slots)
     }
 }
 

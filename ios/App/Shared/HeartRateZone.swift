@@ -85,6 +85,12 @@ enum HeartRateZone: Int, CaseIterable, Equatable, Sendable {
         }
     }
 
+    /// The zone index (1…5) whose `colorHex` matches `hex`, or 0 (none) — lets the overlay's zone bar
+    /// light the current cell from a resolved reading's colour without threading the enum through.
+    static func zoneIndex(forColorHex hex: String) -> Int {
+        allCases.first { $0.colorHex.caseInsensitiveCompare(hex) == .orderedSame }?.rawValue ?? 0
+    }
+
     /// The zone color as a `#RRGGBB` hex — the system-color values for `color`, so a burned-in video
     /// overlay (UIKit/Core Animation) tints identically to the SwiftUI pill (one source of truth for
     /// the bpm→color mapping across phone, watch, widget, and the exported reel). (overlay builder)

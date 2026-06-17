@@ -23,8 +23,14 @@ struct HRTileView: View {
             let layout = HRTileLayout.layout(template: tile.template,
                                              enabledMetrics: resolved.map(\.metric),
                                              tileRect: rect, hasChart: tile.showChart)
+            let zoneHex = chromeZoneHex
             ZStack(alignment: .topLeading) {
                 glassCard(radius: HRTileStyle.tileRadius(w: rect.width, h: rect.height))
+                // Template chrome (Broadcast accent bar / Gradient Strain skin), behind the content.
+                ForEach(layout.decorations.indices, id: \.self) { i in
+                    decoration(layout.decorations[i], zoneHex: zoneHex,
+                               radius: HRTileStyle.tileRadius(w: rect.width, h: rect.height))
+                }
                 if tile.showChart, let chartRect = layout.chartRect {
                     PremiumHRCurve(samples: values.samples, maxHR: values.resolvedMaxHR,
                                    fraction: fraction, zoneColored: tile.zoneColored,
@@ -90,8 +96,9 @@ struct HRTileView: View {
         if let reading {
             switch slot.role {
             case .gauge:
-                Circle().strokeBorder(Color(studioHex: reading.hex),
-                                      lineWidth: max(3, slot.frame.width * 0.08))
+                gauge(reading, side: slot.frame.width)
+            case .zoneBar:
+                zoneBar(reading, vertical: slot.zoneBarVertical)
             case .pill:
                 zonePill(reading, fontSize: slot.fontSize, align: slot.align)
             case .hero:
@@ -101,6 +108,68 @@ struct HRTileView: View {
             case .field:
                 field(slot, reading)
             }
+        }
+    }
+
+    /// The %HRR sweep gauge: a faint full-circle track + a zone-coloured arc filled to `reading.fraction`
+    /// (the effort), sweeping clockwise from 12 o'clock. The centred bpm hero is a separate slot.
+    private func gauge(_ reading: HROverlayValues.Reading, side: CGFloat) -> some View {
+        let frac = max(0.02, min(1, reading.fraction ?? 1))
+        let color = Color(studioHex: reading.hex)
+        let lw = max(3, side * 0.09)
+        return ZStack {
+            Circle().stroke(color.opacity(0.16), lineWidth: lw)
+            Circle().trim(from: 0, to: frac)
+                .stroke(color, style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .shadow(color: color.opacity(0.6), radius: 3)
+        }
+        .padding(lw / 2)
+    }
+
+    /// The segmented zone bar — 5 cells (Z1…Z5), each tinted its zone colour, the current zone lit and
+    /// the rest dimmed. Horizontal (Broadcast) or vertical with Z5 on top (Rail).
+    private func zoneBar(_ reading: HROverlayValues.Reading, vertical: Bool) -> some View {
+        let cur = HeartRateZone.zoneIndex(forColorHex: reading.hex)
+        let order = vertical ? [5, 4, 3, 2, 1] : [1, 2, 3, 4, 5]
+        func cellColor(_ z: Int) -> Color { (HeartRateZone(rawValue: z) ?? .aerobic).color }
+        let cells = ForEach(order, id: \.self) { z in
+            RoundedRectangle(cornerRadius: 2)
+                .fill(cellColor(z).opacity(z == cur ? 1 : 0.22))
+                .shadow(color: z == cur ? cellColor(z).opacity(0.7) : .clear, radius: 2)
+        }
+        return Group {
+            if vertical { VStack(spacing: 3) { cells } } else { HStack(spacing: 3) { cells } }
+        }
+    }
+
+    /// The chrome (accent bar / gradient skin) colour — the clip's **overall** zone (from the average
+    /// bpm), STATIC so it doesn't flicker per-frame; the export computes the same, so the two match. The
+    /// live tracking is done by the bpm hero / zone pill / zone bar / gauge / chart dot.
+    private var chromeZoneHex: String {
+        let v = values.samples.map(\.bpm).filter { $0 > 0 }
+        guard !v.isEmpty else { return HeartRateZone.aerobic.colorHex }
+        return HeartRateZone.forBpm(v.reduce(0, +) / Double(v.count), maxHR: values.resolvedMaxHR).colorHex
+    }
+
+    /// Template chrome: the Broadcast accent bar (a thin zone-coloured bar) and the Gradient Strain skin
+    /// (a horizontal cool→zone gradient wash, so colour doubles as the effort metric). Horizontal so it
+    /// matches the export (a vertical CAGradientLayer's orientation is flip-ambiguous in the tool tree).
+    @ViewBuilder
+    private func decoration(_ d: HRTileLayout.Decoration, zoneHex: String, radius: CGFloat) -> some View {
+        let zone = Color(studioHex: zoneHex)
+        switch d.kind {
+        case .accentBar:
+            RoundedRectangle(cornerRadius: d.frame.width / 2)
+                .fill(zone).shadow(color: zone.opacity(0.7), radius: 3)
+                .frame(width: d.frame.width, height: d.frame.height)
+                .position(x: d.frame.midX, y: d.frame.midY)
+        case .gradientSkin:
+            RoundedRectangle(cornerRadius: radius)
+                .fill(LinearGradient(colors: [Color(studioHex: "#0E3A4A").opacity(0.5), zone.opacity(0.5)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: d.frame.width, height: d.frame.height)
+                .position(x: d.frame.midX, y: d.frame.midY)
         }
     }
 

@@ -546,6 +546,12 @@ private struct HRTileBuilder: View {
             ForEach(vm.tileEntries) { entry in
                 HRTileMetricRow(vm: vm, entry: entry)
             }
+            if vm.tileHiddenCount > 0 {
+                Label("+\(vm.tileHiddenCount) more — drag a corner to enlarge the tile",
+                      systemImage: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption2).foregroundStyle(SnappetColor.workout)
+                    .accessibilityIdentifier("studioTileEnlargeHint")
+            }
             Text("Drag the tile on the preview to move it; drag a corner to resize.")
                 .font(.caption2).foregroundStyle(.secondary)
         }

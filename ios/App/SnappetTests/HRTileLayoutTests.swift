@@ -42,46 +42,39 @@ final class HRTileLayoutTests: XCTestCase {
     func testScorebugAllocatesChartRegisterWhenEnabled() {
         let r = HRTileLayout.layout(template: .scorebug, enabledMetrics: [.bpm, .zone],
                                     tileRect: CGRect(x: 0, y: 0, width: 600, height: 160), hasChart: true)
-        XCTAssertNotNil(r.chartRect)
-        XCTAssertEqual(r.chartRect?.maxY ?? 0, 160, accuracy: 0.5)   // chart sits at the bottom
+        let chart = try! XCTUnwrap(r.chartRect)
+        XCTAssertGreaterThan(chart.minY, 80)                       // a full-width lane in the lower half…
+        XCTAssertLessThanOrEqual(chart.maxY, 160)                  // …inside the tile
+        XCTAssertEqual(chart.width, r.tileRect.width * 0.92, accuracy: 1)   // ~full width (after the 0.04 inset)
     }
 
-    // MARK: Bento
+    // MARK: Gradient Strain (bento)
 
-    func testBentoHeroSpansWidthAndGridReflowsColumns() {
-        let wide = HRTileLayout.layout(template: .bento, enabledMetrics: all,
-                                       tileRect: CGRect(x: 0, y: 0, width: 600, height: 400), hasChart: false)
-        let heroW = try! XCTUnwrap(wide.slots.first { $0.role == .hero }).frame
-        XCTAssertEqual(heroW.width, 600, accuracy: 0.5)             // hero spans full width
-        let wideCols = Set(fields(wide).map { ($0.frame.minX).rounded() })
-        XCTAssertEqual(wideCols.count, 2)                           // 2-column grid when wide
-
-        let narrow = HRTileLayout.layout(template: .bento, enabledMetrics: all,
-                                         tileRect: CGRect(x: 0, y: 0, width: 180, height: 500), hasChart: false)
-        XCTAssertEqual(try! XCTUnwrap(narrow.slots.first { $0.role == .hero }).frame.width, 180, accuracy: 0.5)
-        let narrowCols = Set(fields(narrow).map { ($0.frame.minX).rounded() })
-        XCTAssertEqual(narrowCols.count, 1)                        // collapses to 1 column when narrow
+    func testGradientStrainUsesHeroLayoutWithSkin() {
+        let r = HRTileLayout.layout(template: .bento, enabledMetrics: [.bpm, .zone, .hrr, .avgHR, .maxHR],
+                                    tileRect: CGRect(x: 0, y: 0, width: 500, height: 360), hasChart: true)
+        XCTAssertEqual(r.slots.first { $0.role == .hero }?.metric, .bpm)   // the Glass Hero layout…
+        XCTAssertTrue(r.slots.contains { $0.role == .chip })               // …with value-only chips
+        XCTAssertTrue(r.decorations.contains { $0.kind == .gradientSkin })  // …on an effort gradient skin
     }
 
-    // MARK: List
+    // MARK: Rail (list)
 
-    func testListIsSingleColumnAndTruncatesFromBottom() {
-        // Short rail can't fit all 10 rows → keeps the top-priority prefix, single column.
+    func testRailRowsAreSingleColumnWithZoneBarAndTruncate() {
         let r = HRTileLayout.layout(template: .list, enabledMetrics: all,
                                     tileRect: CGRect(x: 0, y: 0, width: 200, height: 120), hasChart: false)
-        let xs = Set(r.slots.map { $0.frame.minX.rounded() })
-        XCTAssertEqual(xs.count, 1)                                // always one column
-        XCTAssertLessThan(r.slots.count, all.count)               // truncated
-        // Kept = the highest-priority prefix (default order is priority order).
-        XCTAssertEqual(r.slots.map(\.metric), Array(all.prefix(r.slots.count)))
-        XCTAssertEqual(r.slots.first?.role, .hero)                 // first row is the lead/hero
+        let rows = fields(r)
+        XCTAssertEqual(Set(rows.map { $0.frame.minX.rounded() }).count, 1)  // the value rows are one column
+        XCTAssertLessThan(r.slots.count, all.count)                        // capped/truncated
+        XCTAssertEqual(r.slots.first?.role, .hero)                         // bpm hero on top
+        XCTAssertTrue(r.slots.contains { $0.role == .zoneBar })            // a vertical zone bar
     }
 
-    func testListPreservesEnabledOrder() {
-        let order: [HROverlayMetric] = [.maxHR, .avgHR, .hrv]
+    func testRailPreservesRowOrder() {
+        let order: [HROverlayMetric] = [.maxHR, .avgHR, .hrv]               // no zone → no bar
         let r = HRTileLayout.layout(template: .list, enabledMetrics: order,
                                     tileRect: CGRect(x: 0, y: 0, width: 220, height: 600), hasChart: false)
-        XCTAssertEqual(r.slots.map(\.metric), order)              // order preserved, none dropped
+        XCTAssertEqual(r.slots.map(\.metric), order)              // hero + rows, order preserved, none dropped
     }
 
     // MARK: Ring
@@ -146,8 +139,10 @@ final class HRTileLayoutTests: XCTestCase {
             XCTAssertLessThanOrEqual(r.slots.count, cap, "\(t) drew \(r.slots.count) slots, cap \(cap)")
             let distinct = Set(r.slots.map(\.metric)).count
             XCTAssertLessThan(distinct, all.count, "\(t) should not draw all 10")
-            XCTAssertEqual(r.hiddenCount, all.count - distinct, "\(t) hiddenCount counts DISTINCT rendered metrics")
+            // hiddenCount = enabled − covered; covered ≥ distinct (a template may also encode a metric
+            // without a slot, e.g. the ring's zone as the arc colour), so it's bounded by all − distinct.
             XCTAssertGreaterThan(r.hiddenCount, 0, "\(t) should report parked metrics")
+            XCTAssertLessThanOrEqual(r.hiddenCount, all.count - distinct, "\(t) hiddenCount upper bound")
         }
     }
 
@@ -171,6 +166,25 @@ final class HRTileLayoutTests: XCTestCase {
                                     tileRect: CGRect(x: 0, y: 0, width: 540, height: 360), hasChart: true)
         XCTAssertEqual(r.slots.count, 5)
         XCTAssertEqual(r.hiddenCount, 5)
+    }
+
+    func testZoneRingDefaultSpawnHasNoFalseEnlargeHint() {
+        // The ring encodes zone as the arc COLOUR (no zone slot), so its focused spawn set must report
+        // hiddenCount 0 — no false "+1 · enlarge" on a pristine tile.
+        let r = HRTileLayout.layout(template: .ring, enabledMetrics: HRTileTemplate.ring.spawnMetrics,
+                                    tileRect: CGRect(x: 0, y: 0, width: 560, height: 340), hasChart: false)
+        XCTAssertEqual(r.hiddenCount, 0)
+        XCTAssertFalse(r.slots.contains { $0.metric == .zone })   // zone is not a slot…
+        XCTAssertTrue(r.slots.contains { $0.role == .gauge })     // …it's the arc
+    }
+
+    func testZoneBarOrientationIsExplicitPerTemplate() {
+        let broadcast = HRTileLayout.layout(template: .scorebug, enabledMetrics: [.bpm, .zone, .avgHR],
+                                            tileRect: CGRect(x: 0, y: 0, width: 1000, height: 300), hasChart: false)
+        XCTAssertEqual(broadcast.slots.first { $0.role == .zoneBar }?.zoneBarVertical, false)  // horizontal 5-cell
+        let rail = HRTileLayout.layout(template: .list, enabledMetrics: [.bpm, .zone, .avgHR],
+                                       tileRect: CGRect(x: 0, y: 0, width: 300, height: 560), hasChart: false)
+        XCTAssertEqual(rail.slots.first { $0.role == .zoneBar }?.zoneBarVertical, true)        // vertical
     }
 
     func testChartRegisterCarvesWithinTileForHero() {

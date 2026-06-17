@@ -565,6 +565,22 @@ final class StudioEditorViewModel {
     /// The per-metric toggle rows for the builder UI (ordered).
     var tileEntries: [HRTileMetricEntry] { hrTile?.entries ?? [] }
 
+    /// How many toggled-on metrics (with data) the tile can't show at its current proportions — the
+    /// layout's `hiddenCount`, computed on a nominal canvas scaled by the tile size (scale-invariant).
+    /// Drives the builder's `+N · enlarge` hint so "toggle everything on" never silently crops.
+    var tileHiddenCount: Int {
+        guard let tile = hrTile else { return 0 }
+        let enabled = tile.enabledMetrics.filter { metric in
+            guard let e = tile.entry(for: metric) else { return false }
+            var el = HROverlayElement(metric: metric, colorHex: e.colorHex)
+            el.live = e.live; el.animated = e.animated
+            return overlayValues.reading(for: el, atFraction: 1) != nil
+        }
+        let rect = CGRect(x: 0, y: 0, width: max(1, 1000 * tile.width), height: max(1, 1000 * tile.height))
+        return HRTileLayout.layout(template: tile.template, enabledMetrics: enabled,
+                                   tileRect: rect, hasChart: tile.showChart).hiddenCount
+    }
+
     /// Mutate the tile in place and commit (one overlay-only edit → undo + persist, no preview rebuild).
     private func mutateTile(_ body: (inout HRTile) -> Void) {
         guard var cfg = snapshot.hrOverlay, var tile = cfg.tile else { return }
