@@ -76,6 +76,21 @@ targets:
         # Today snapshot (and, from Phase 2, the check-off outbox) the widget extension also
         # reaches. The app AND SnappetWidgets must carry the SAME id (group.com.snappet.app).
         com.apple.security.application-groups: [group.com.snappet.app]
+    # Fix ITMS-90208: the embedded onnxruntime.framework's Info.plist declares MinimumOSVersion 15.1,
+    # but its binary is compiled for the app's 18.0 deployment target — App Store processing rejects the
+    # mismatch. Realign the framework's MinimumOSVersion to the app's target (and re-sign, since this runs
+    # after the embed/sign phase). Applies to every build path (local fastlane, GitHub CI, Xcode Cloud).
+    postBuildScripts:
+      - name: Fix onnxruntime MinimumOSVersion (ITMS-90208)
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          FW="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework"
+          [ -f "$FW/Info.plist" ] || exit 0
+          /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion ${IPHONEOS_DEPLOYMENT_TARGET}" "$FW/Info.plist"
+          if [ "${CODE_SIGNING_ALLOWED}" != "NO" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+            codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" "$FW"
+          fi
   # watchOS companion: runs HKWorkoutSession + HKLiveWorkoutBuilder and relays live HR /
   # energy to the phone over WCSession (live-workout-studio A1).
   SnappetWatch:
