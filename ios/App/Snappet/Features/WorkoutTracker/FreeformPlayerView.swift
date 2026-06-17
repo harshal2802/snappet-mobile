@@ -40,6 +40,9 @@ struct FreeformPlayerView: View {
     // named climb instead of a fixed "Climbing". Empty/whitespace falls back to "Climbing".
     @State private var namingClimb = false
     @State private var climbNameDraft = ""
+    /// Cross-session prefill per exerciseId, cached so the ~1 Hz body re-render never re-scans history
+    /// (history is fixed for the live session). Recomputed on appear + when an exercise is added. (§B)
+    @State private var prefills: [String: LastSetLookup.LastTime] = [:]
 
     private var unit: WeightUnit { defaultUnit }
 
@@ -49,7 +52,13 @@ struct FreeformPlayerView: View {
                 titleSection
                 if session.exercises.isEmpty { emptyStateHero }
                 ForEach(session.exercises) { ex in exerciseSection(ex) }
-                addExerciseSection
+                // Bottom buffer so the last exercise's controls never sit flush under the floating
+                // command bar — without it a tap near the final row can fall through to Finish.
+                Color.clear
+                    .frame(height: 64)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .accessibilityHidden(true)
             }
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +76,28 @@ struct FreeformPlayerView: View {
                     }
                     .accessibilityIdentifier("pauseWorkout")
                 }
+                // Add-exercise lives in the toolbar (§A): always one tap away regardless of how long the
+                // logbook grows — a bottom-of-list Menu becomes unreliable once the list scrolls. Keeps
+                // the freeform.addExercise id + the menu-item labels the existing UITests drive.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button { pickingLift = true } label: {
+                            Label("Lifting exercise", systemImage: "dumbbell.fill")
+                        }
+                        Button { climbNameDraft = ""; namingClimb = true } label: {
+                            Label("Climbing", systemImage: "figure.climbing")
+                        }
+                        Button { addExercise(kind: .duration, name: "Timed exercise") } label: {
+                            Label("Timed exercise", systemImage: "timer")
+                        }
+                    } label: {
+                        // Label is "New exercise" (not "Add …") so it doesn't collide with the exercise
+                        // picker's nav-bar "Add (N)" commit that the UITests match by `BEGINSWITH 'Add'`.
+                        // The add flow is driven by the freeform.addExercise id, not this label.
+                        Label("New exercise", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("freeform.addExercise")
+                }
             }
         }
         .interactiveDismissDisabled()
@@ -74,7 +105,9 @@ struct FreeformPlayerView: View {
             ExercisePickerView(resolver: resolver) { picked in addLifting(picked) }
         }
         .sheet(item: $logging) { target in
-            LogSetSheet(kind: target.kind, unit: unit) { log in appendLog(log, toExerciseID: target.exerciseID) }
+            LogSetSheet(kind: target.kind, unit: unit, prefill: prefills[target.exerciseId]) { log in
+                appendLog(log, toExerciseID: target.exerciseID)
+            }
         }
         // Name this climb (workout-with-timer PR 5): the typed name is the section header + persists on the
         // SessionExercise's `displayName`; a blank/whitespace entry falls back to "Climbing" via the pure
@@ -90,8 +123,10 @@ struct FreeformPlayerView: View {
         }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
+            recomputePrefills()
             pushLiveActivity()
         }
+        .onChange(of: session.exercises.count) { _, _ in recomputePrefills() }
         // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
         // live HR and the paused state push as they change. The overall timer self-ticks off
         // `startedAt`; these refresh HR + the exercise line + the paused flag. Mirrors `WorkoutPlayerView`.
@@ -171,21 +206,40 @@ struct FreeformPlayerView: View {
             }
             .onDelete { offsets in deleteSets(ex, at: offsets) }
 
+            // Faster entry (§B): keyboard-free inline steppers for reps & weight, seeded from this
+            // session's last set or the cached cross-session prefill, logging through the one `appendLog`
+            // funnel. `.id(ex.sets.count)` re-seeds them to the latest after each log/delete. The sheet
+            // ("Log something different") stays for precise / non-default entry.
+            if ex.kind == .repsWeight {
+                let last = ex.sets.last
+                let pf = prefills[ex.exerciseId]
+                QuickAddRow(reps: last?.actualReps ?? pf?.reps ?? 8,
+                            weight: last?.actualWeight ?? pf?.weight ?? 0,
+                            unitSel: last?.weightUnit ?? pf?.unit ?? unit,
+                            hint: last == nil ? pf?.hint : nil) { log in
+                    appendLog(log, toExerciseID: ex.id)
+                }
+                .id(ex.sets.count)
+            }
+
             Button {
-                logging = LogTarget(exerciseID: ex.id, kind: ex.kind)
+                logging = LogTarget(exerciseID: ex.id, kind: ex.kind, exerciseId: ex.exerciseId)
             } label: {
-                Label(ex.kind.addLabel, systemImage: "plus.circle.fill")
+                Label(ex.kind == .repsWeight ? "Log something different" : ex.kind.addLabel,
+                      systemImage: "plus.circle.fill")
             }
             .accessibilityIdentifier("freeform.addSet")
 
             // One-tap repeat of the most recent set — duplicates it (all kind-specific fields, fresh
             // completedAt) without opening the sheet. Only shown once there's a set to repeat. A sibling
-            // leaf Button (NOT wrapped in a composite) so its accessibilityIdentifier stays queryable.
-            if !ex.sets.isEmpty {
+            // leaf Button (NOT wrapped in a composite); value-labelled via the pure FreeformSummary (§B)
+            // so it reads like the set it duplicates ("Repeat 8 × 60 kg"). Matched by id in tests.
+            if let last = ex.sets.last {
                 Button {
                     repeatLastSet(ex)
                 } label: {
-                    Label("Repeat set", systemImage: "arrow.clockwise")
+                    Label(FreeformSummary.repeatLabel(for: last, kind: ex.kind, unit: unit),
+                          systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("freeform.repeatSet")
             }
@@ -199,24 +253,6 @@ struct FreeformPlayerView: View {
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
             }
-        }
-    }
-
-    private var addExerciseSection: some View {
-        Section {
-            Menu {
-                Button { pickingLift = true } label: { Label("Lifting exercise", systemImage: "dumbbell.fill") }
-                Button { climbNameDraft = ""; namingClimb = true } label: {
-                    Label("Climbing", systemImage: "figure.climbing")
-                }
-                Button { addExercise(kind: .duration, name: "Timed exercise") } label: {
-                    Label("Timed exercise", systemImage: "timer")
-                }
-            } label: {
-                Label("Add exercise", systemImage: "plus")
-                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 4)
-            }
-            .accessibilityIdentifier("freeform.addExercise")
         }
     }
 
@@ -316,6 +352,19 @@ struct FreeformPlayerView: View {
 
     private func persist() { try? context.save() }
 
+    /// Cache the cross-session prefill per `exerciseId` once (history is fixed for the live session), so
+    /// the ~1 Hz body re-render never re-scans history. (§B; the guided player caches the same way.)
+    private func recomputePrefills() {
+        var map: [String: LastSetLookup.LastTime] = [:]
+        for ex in session.exercises where ex.kind == .repsWeight {
+            guard map[ex.exerciseId] == nil else { continue }
+            if let lastTime = LastSetLookup.lastTime(exerciseId: ex.exerciseId, history: history) {
+                map[ex.exerciseId] = lastTime
+            }
+        }
+        prefills = map
+    }
+
     // MARK: - Live Activity
 
     /// Push the current freeform state to the Live Activity so the Lock Screen / Dynamic Island show
@@ -348,11 +397,81 @@ struct FreeformPlayerView: View {
     }
 }
 
-/// Which exercise a new set/attempt is being logged into (drives the `LogSetSheet`).
+/// Which exercise a new set/attempt is being logged into (drives the `LogSetSheet`). Carries the
+/// catalog `exerciseId` too so the sheet can pull the cross-session prefill for that exercise. (§B)
 private struct LogTarget: Identifiable {
     let exerciseID: UUID
     let kind: SetKind
+    let exerciseId: String
     var id: UUID { exerciseID }
+}
+
+/// Keyboard-free inline quick-add for reps & weight (§B): `[−] value [+]` steppers + a one-tap Log that
+/// funnels through `appendLog`. Custom leaf `+`/`−` buttons (not a native `Stepper`) so each control has
+/// its own queryable accessibilityIdentifier (`freeform.quickReps.plus`, …) and the value text carries
+/// the base id — the leaf-only a11y rule. Its own `@State` (re-seeded by the parent's `.id(ex.sets.count)`)
+/// so adjusting once and tapping Log repeatedly logs a quick loop without the keyboard. The Log button
+/// label stays plain ("Log set") so it never collides with a set row's value text in tests.
+private struct QuickAddRow: View {
+    let onLog: (SetLog) -> Void
+    let hint: String?
+    @State private var reps: Int
+    @State private var weight: Double
+    @State private var unitSel: WeightUnit
+
+    init(reps: Int, weight: Double, unitSel: WeightUnit, hint: String?,
+         onLog: @escaping (SetLog) -> Void) {
+        self.hint = hint
+        self.onLog = onLog
+        _reps = State(initialValue: max(0, reps))
+        _weight = State(initialValue: max(0, weight))
+        _unitSel = State(initialValue: unitSel)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let hint {
+                Text(hint).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("lastTimeHint")
+            }
+            stepper(idBase: "freeform.quickReps", label: "Reps", value: "\(reps)",
+                    dec: { reps = max(0, reps - 1) }, inc: { reps = min(999, reps + 1) })
+            stepper(idBase: "freeform.quickWeight", label: "Weight",
+                    value: weight > 0 ? "\(SetMeasure.formatWeight(weight)) \(unitSel.display)" : "Body",
+                    dec: { weight = max(0, weight - 2.5) }, inc: { weight = min(2000, weight + 2.5) })
+            Button {
+                onLog(SetLog(actualReps: reps > 0 ? reps : nil,
+                             actualWeight: weight > 0 ? weight : nil,
+                             weightUnit: unitSel))
+            } label: {
+                Label("Log set", systemImage: "bolt.fill").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(SnappetColor.workout)
+            .accessibilityIdentifier("freeform.quickLog")
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func stepper(idBase: String, label: String, value: String,
+                         dec: @escaping () -> Void, inc: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
+            Text(label).font(.subheadline).foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .leading)
+            Spacer(minLength: 0)
+            Button(action: dec) { Image(systemName: "minus.circle.fill").font(.title3) }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("\(idBase).minus")
+                .accessibilityLabel("Decrease \(label.lowercased())")
+            Text(value).font(.subheadline.weight(.semibold).monospacedDigit())
+                .frame(minWidth: 80)
+                .accessibilityIdentifier(idBase)
+            Button(action: inc) { Image(systemName: "plus.circle.fill").font(.title3) }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("\(idBase).plus")
+                .accessibilityLabel("Increase \(label.lowercased())")
+        }
+    }
 }
 
 /// How a `.duration` set's seconds are entered: time it live with the stopwatch (default), or type
@@ -400,11 +519,16 @@ private struct LogSetSheet: View {
     @State private var climbTimerRunning = false
     @State private var climbDurationSec: Double?
 
-    init(kind: SetKind, unit: WeightUnit, onAdd: @escaping (SetLog) -> Void) {
+    init(kind: SetKind, unit: WeightUnit, prefill: LastSetLookup.LastTime?,
+         onAdd: @escaping (SetLog) -> Void) {
         self.kind = kind
         self.unit = unit
         self.onAdd = onAdd
-        _unitSel = State(initialValue: unit)
+        // Prefill the reps/weight/unit from the last time this exercise was done (§B) so the "log
+        // something different" sheet opens on the user's last values to tweak, not blank.
+        _unitSel = State(initialValue: prefill?.unit ?? unit)
+        _reps = State(initialValue: prefill?.reps.map(String.init) ?? "")
+        _weight = State(initialValue: prefill?.weight.map(SetMeasure.formatWeight) ?? "")
     }
 
     @FocusState private var keypadFocused: Bool
