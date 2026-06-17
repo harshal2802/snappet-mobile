@@ -16,6 +16,11 @@ xcuserdata/
 .build/
 .swiftpm/
 Package.resolved
+# …but DO track this committed lock file: Xcode Cloud disables automatic package resolution and needs a
+# Package.resolved, which would otherwise live only inside the generated/gitignored .xcodeproj.
+# ci_scripts/ci_post_clone.sh copies it into the project on CI. Refresh it via
+# `xcodebuild -resolvePackageDependencies` (locally) whenever a package version in project.yml changes.
+!ios/App/Package.resolved
 # CocoaPods (if used)
 Pods/
 # Carthage (if used)
