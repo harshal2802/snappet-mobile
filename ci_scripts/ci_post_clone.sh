@@ -6,6 +6,9 @@
 # is gitignored, so it is NOT present in the freshly cloned repo. Generate it here — before Xcode Cloud
 # resolves dependencies and builds/archives — otherwise the build fails with:
 #   "Project Snappet.xcodeproj does not exist at ios/App/Snappet.xcodeproj"
+# Then resolve Swift packages: Xcode Cloud DISABLES automatic package resolution and requires a
+# Package.resolved (at Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved), but
+# that lives inside the generated/gitignored project so it's never committed — so we write it here.
 #
 # Xcode Cloud resolves `ci_scripts/` relative to the Xcode project, so when the project is in a
 # subfolder it looks in `ios/App/ci_scripts/` (NOT the repo root). This script therefore lives in BOTH
@@ -40,5 +43,15 @@ if [ ! -d "Snappet.xcodeproj" ]; then
   ls -la
   exit 1
 fi
-
 echo "✅ Snappet.xcodeproj generated"
+
+# Write Package.resolved (Xcode Cloud's resolve step has automatic resolution disabled and requires it).
+echo "▸ Resolving Swift package dependencies"
+xcodebuild -resolvePackageDependencies -project Snappet.xcodeproj -scheme Snappet
+
+RESOLVED="Snappet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+if [ ! -f "$RESOLVED" ]; then
+  echo "✗ $RESOLVED was NOT written — package resolution did not produce a resolved file" >&2
+  exit 1
+fi
+echo "✅ Package.resolved written"
