@@ -161,9 +161,14 @@ struct WorkoutHomeView: View {
                 // Routineless sessions use the grow-as-you-go freeform logbook; routine sessions keep
                 // the guided set-by-set player. (dynamic-sessions D3/D5)
                 if session.routineID == nil {
-                    FreeformPlayerView(session: session, resolver: resolver, defaultUnit: unit,
+                    FreeformPlayerView(session: session, resolver: resolver, history: history,
+                                       defaultUnit: unit,
                                        onClose: { saved in finishWorkout(session, saved: saved) },
-                                       onMinimize: { minimizeWorkout() })
+                                       onMinimize: { minimizeWorkout() },
+                                       onViewDetail: { s in
+                                           finishWorkout(s, saved: true)
+                                           router.push(SessionRoute(id: s.id))
+                                       })
                 } else {
                     WorkoutPlayerView(session: session, resolver: resolver, history: history,
                                       defaultUnit: unit,

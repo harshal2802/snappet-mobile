@@ -6,26 +6,35 @@ import HighlightEngine
 /// routine set-by-set), this is a grow-as-you-go logbook — add exercises and sets/attempts on the fly,
 /// of any `SetKind` (reps & weight, timed, or climb attempts). Used for routineless sessions
 /// (`routineID == nil`), e.g. an ad-hoc gym lifting session or a bouldering session where you don't
-/// know the next climb. (dynamic-sessions D3/D5)
+/// know the next climb. (dynamic-sessions D3/D5; reworked as a discoverable canvas in issue #158)
 ///
 /// Kept separate from `WorkoutPlayerView` on purpose: the guided flow is device-verified and tightly
 /// coupled to reps×weight + a fixed index walk; a list-based logbook is the right shape for "add as you
 /// go" and avoids destabilizing it.
+///
+/// **Canvas + command bar (issue #158 §A):** the empty state offers three discoverable type cards
+/// (Lifting / Climbing / Timed); an always-present `Menu` (`freeform.addExercise`) adds more once
+/// underway; the title is inline-editable; and a persistent bottom command bar
+/// (`safeAreaInset(edge: .bottom)`) carries the wall-clock timer, a compact live-HR chip, and the
+/// always-available Finish — replacing the redundant toolbar "End" so there's one consistent exit.
 struct FreeformPlayerView: View {
     @Bindable var session: WorkoutSession
     let resolver: ExerciseResolver
+    /// Prior completed sessions — feeds the "Last time…" prefill/hint (§B) and the milestone check (§D).
+    let history: [WorkoutSession]
     let defaultUnit: WeightUnit
     /// Close + report whether to keep (finish / save & exit) or discard the session.
     let onClose: (_ saved: Bool) -> Void
     /// Dismiss without ending — the session stays active (background/minimize ask).
     let onMinimize: () -> Void
+    /// Finish + save, then open the completed session's detail (the completion screen's "View detail").
+    let onViewDetail: (WorkoutSession) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
-    @State private var showingEnd = false
     // Naming a free-flow climb (workout-with-timer PR 5): tapping "Climbing" in the add menu first asks
     // for a custom climb name (e.g. "Cave Project", "Blue V4") so per-attempt logging groups under the
     // named climb instead of a fixed "Climbing". Empty/whitespace falls back to "Climbing".
@@ -37,14 +46,16 @@ struct FreeformPlayerView: View {
     var body: some View {
         NavigationStack {
             List {
-                hrSection
+                titleSection
+                if session.exercises.isEmpty { emptyStateHero }
                 ForEach(session.exercises) { ex in exerciseSection(ex) }
                 addExerciseSection
-                if session.completedSetCount > 0 { finishSection }
             }
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .top) { timerHeader }
+            // The persistent command bar (§A): wall-clock timer · compact HR chip · always-on Finish.
+            // Reuses the module's `safeAreaInset(edge: .bottom)` banner idiom.
+            .safeAreaInset(edge: .bottom) { commandBar }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { onMinimize() } label: { Label("Minimize", systemImage: "chevron.down") }
@@ -56,9 +67,6 @@ struct FreeformPlayerView: View {
                     }
                     .accessibilityIdentifier("pauseWorkout")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("End") { showingEnd = true }
-                }
             }
         }
         .interactiveDismissDisabled()
@@ -68,15 +76,10 @@ struct FreeformPlayerView: View {
         .sheet(item: $logging) { target in
             LogSetSheet(kind: target.kind, unit: unit) { log in appendLog(log, toExerciseID: target.exerciseID) }
         }
-        .confirmationDialog("End this workout?", isPresented: $showingEnd, titleVisibility: .visible) {
-            Button("Save & exit") { finish(saved: true) }
-            Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
-            Button("Keep going", role: .cancel) {}
-        }
         // Name this climb (workout-with-timer PR 5): the typed name is the section header + persists on the
         // SessionExercise's `displayName`; a blank/whitespace entry falls back to "Climbing" via the pure
         // `SetMeasure.climbName`. The TextField is a leaf control with its own id so XCUITest can fill it
-        // (`app.alerts.textFields`) — no identifier on a composite (the PR 2/3/4 a11y lesson).
+        // — no identifier on a composite (the PR 2/3/4 a11y lesson).
         .alert("Name this climb", isPresented: $namingClimb) {
             TextField("Climb name (e.g. Cave Project)", text: $climbNameDraft)
                 .accessibilityIdentifier("freeform.climbName")
@@ -98,26 +101,60 @@ struct FreeformPlayerView: View {
 
     // MARK: - Sections
 
-    private var timerHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: isPaused ? "pause.fill" : "stopwatch")
-                .foregroundStyle(isPaused ? .yellow : SnappetColor.workout)
-            Text("Total").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(.primary)
+    /// Inline-editable session title (§A). Commits to `WorkoutSession.routineName` (default "Quick
+    /// session") and pushes the Live Activity so the Lock-Screen label updates. A leaf TextField.
+    private var titleSection: some View {
+        Section {
+            TextField("Session name", text: $session.routineName)
+                .font(.title3.weight(.semibold))
+                .submitLabel(.done)
+                .onSubmit { persist(); pushLiveActivity() }
+                .accessibilityIdentifier("freeform.sessionTitle")
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 6).background(.bar)
-        .accessibilityIdentifier("overallWorkoutTimer")
     }
 
-    @ViewBuilder private var hrSection: some View {
-        if let bpm = app.liveWorkout.latestHR {
-            Section {
-                Label("\(Int(bpm.rounded())) bpm · \(app.liveWorkout.displayName)", systemImage: "heart.fill")
-                    .font(.subheadline).foregroundStyle(HeartRateZone.forBpm(bpm).color)
+    /// Discoverable empty-state canvas (§A): three labelled type cards instead of a buried menu. They
+    /// call the same mutators as the `freeform.addExercise` menu items; their accessibility labels are
+    /// distinct from the menu-item labels so XCUITest queries stay unambiguous.
+    private var emptyStateHero: some View {
+        Section {
+            VStack(spacing: 12) {
+                Text("Start your session").font(.headline)
+                Text("Pick what you're tracking — add more as you go.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                HStack(spacing: 12) {
+                    typeCard("Lifting", symbol: "dumbbell.fill",
+                             id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
+                    typeCard("Climbing", symbol: "figure.climbing",
+                             id: "freeform.cardClimbing", accLabel: "Start climbing") {
+                        climbNameDraft = ""; namingClimb = true
+                    }
+                    typeCard("Timed", symbol: "timer",
+                             id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
+                        addExercise(kind: .duration, name: "Timed exercise")
+                    }
+                }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .listRowBackground(Color.clear)
         }
+    }
+
+    private func typeCard(_ title: String, symbol: String, id: String,
+                          accLabel: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: symbol).font(.title2).foregroundStyle(SnappetColor.workout)
+                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 14)
+            .snappetTile()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityLabel(accLabel)
     }
 
     private func exerciseSection(_ ex: SessionExercise) -> some View {
@@ -183,13 +220,38 @@ struct FreeformPlayerView: View {
         }
     }
 
-    private var finishSection: some View {
-        Section {
-            Button { finish(saved: true) } label: {
-                Text("Finish workout").font(.headline).frame(maxWidth: .infinity)
+    /// The persistent bottom command bar (§A): wall-clock total timer · compact live-HR chip · the
+    /// always-available Finish. The timer/HR are non-interactive labels (a labelled composite is fine —
+    /// the leaf-only rule is about interactive controls); Finish keeps its `freeform.finish` id.
+    private var commandBar: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: isPaused ? "pause.fill" : "stopwatch")
+                    .foregroundStyle(isPaused ? .yellow : SnappetColor.workout)
+                Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
             }
+            .accessibilityIdentifier("overallWorkoutTimer")
+
+            Spacer(minLength: 8)
+
+            if let bpm = app.liveWorkout.latestHR {
+                Label("\(Int(bpm.rounded()))", systemImage: "heart.fill")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(HeartRateZone.forBpm(bpm).color)
+                    .accessibilityIdentifier("freeform.hrChip")
+            }
+
+            Button { finish(saved: true) } label: {
+                Text("Finish").font(.headline)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(SnappetColor.workout)
             .accessibilityIdentifier("freeform.finish")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     // MARK: - Mutations
