@@ -4,6 +4,33 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-17] CI: path-gate the ~30-min UI suite to `ios/**` PRs (PR #173, follow-up)
+
+**Decision**: the slow `SnappetUITests` leg (~30 min, 33 tests) no longer runs on every PR push — only
+when a PR touches `ios/**` (all app + UI + engine source) **or `.github/workflows/ci.yml`** (the build
+recipe itself). A cheap Linux `changes` job runs `dorny/paths-filter` and emits a **dynamic test matrix**
+(`["SnappetTests","SnappetUITests"]` vs `["SnappetTests"]`) that the macOS `app` job consumes via
+`fromJSON(needs.changes.outputs.suites)`, so the UI runner is **never requested** (omitted from the
+matrix, not skipped-in-place) on docs/`pdd`-only PRs. This enforces in config what was previously a
+manual policy.
+
+**Why these specific guards (each closes a footgun an adversarial review confirmed):**
+- **`ios/**` is the trigger, not a per-file allowlist** — every app/UI/engine input lives under `ios/`
+  (incl. `project.yml`, assets, `Package.resolved`, fastlane), so any app-affecting change is caught;
+  `ci.yml` is added because it *is* how the suite is built. `release-ipa.yml`/`testflight.yml` are not
+  (they don't affect the PR test build).
+- **Fail-OPEN**: UI is dropped only on an explicit `ios == "false"`; any empty/ambiguous filter value
+  keeps the full suite. We never *skip* UI by accident — at worst we over-run it.
+- **`if: ${{ !cancelled() }}` + `fromJSON(… || '[full]')` on `app`**: if the `changes` job itself fails,
+  the build degrades to "run everything" instead of `needs:`-skipping `app` and **silently losing the
+  unit signal**. Unit (`SnappetTests`) + engine therefore ALWAYS report.
+- **The UI leg must NOT be a required check.** It's deliberately skippable, so requiring it would block
+  any PR that legitimately skips it. Require only `engine` + `App tests (SnappetTests)` for merge.
+
+This rules out top-level `paths-ignore` (would skip the whole workflow incl. the fast gate) and a
+static matrix. Combined with the [#172] PR-only `cancel-in-progress`, a PR now runs the minimum useful
+set and main runs full + uncancelled.
+
 ## [2026-06-17] Xcode Cloud post-clone setup + CI concurrency scoping (PRs #169–#171, follow-up)
 
 **Decision**: make Xcode Cloud build the **generated** project from a freshly cloned repo, and stop
