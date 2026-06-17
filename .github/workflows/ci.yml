@@ -18,9 +18,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel superseded runs on the SAME ref — but only for pull requests. Pushing a new commit to a PR
+# branch should cancel its now-stale in-flight run (save runner minutes); pushing to `main` must NOT —
+# each merge's post-merge verification has to run to completion so the commit's status reports green.
+# (Rapid back-to-back merges previously cancelled each other's main runs, which read as red "failures".)
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   engine:
