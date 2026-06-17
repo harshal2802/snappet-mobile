@@ -4,7 +4,8 @@ import UIKit
 import SwiftUI
 
 /// Builds the Core Animation overlay layer tree for the studio's **text overlays** (S4), composited
-/// into export + preview via `AVVideoCompositionCoreAnimationTool` (the proven `VideoStudio` pattern).
+/// into export + preview via `AVVideoCompositionCoreAnimationTool` (the layer-tree pattern the studio's
+/// render engine, `StudioComposer`, drives).
 /// Each `OverlayItem` (kind `.text`) becomes a CATextLayer positioned (normalized → canvas via
 /// `ClipEditGeometry.layerPoint`), scaled, rotated, coloured, and **time-gated** to `[startSec,
 /// endSec]` by an opacity keyframe so it appears/disappears on cue. Device-only render; attached only
@@ -27,9 +28,9 @@ struct PlacedClipHR: Sendable, Equatable {
 enum StudioOverlays {
 
     /// `clipHR` (non-empty for the **multi-clip Studio**) draws each clip's own capture-window HR at
-    /// the clip's slot — superseding the session-wide `hrSamples`/`hrElements` (which the single-clip
-    /// `VideoStudio` still uses, with `clipHR` empty). This is the fix for the Studio drawing the whole
-    /// session's HR across the concatenated composition.
+    /// the clip's slot — superseding the session-wide `hrSamples`/`hrElements` (the fallback when
+    /// `clipHR` is empty). This is the fix for the Studio drawing the whole session's HR across the
+    /// concatenated composition.
     static func makeAnimationTool(overlays: [OverlayItem], canvas: CGSize, totalDuration: Double,
                                   hrSamples: [HRPoint] = [], hrConfig: HROverlayConfig? = nil,
                                   hrElements: [ResolvedHROverlay] = [],
@@ -94,12 +95,11 @@ enum StudioOverlays {
 
     /// The export heart-rate chart (moving-playhead line): the HR polyline + a dot animated along it
     /// in sync with the video time. Bottom-left origin (the animation tool's layer space — same flip
-    /// as `ClipEditGeometry.layerPoint`). Internal so `VideoStudio` (the per-clip editor) reuses it.
+    /// as `ClipEditGeometry.layerPoint`). Internal so the studio's render engine reuses it.
     /// `slotStartSec`/`slotDurationSec` place the chart on **one clip's slot** of a multi-clip
     /// composition: the playhead dot sweeps only during the slot and the whole chart is opacity-gated to
     /// it (so each clip shows its own capture-window HR). Defaulted (`slotStartSec = 0`, `slotDurationSec
-    /// = nil → the whole timeline, no gate`) so the single-clip `VideoStudio` path renders exactly as
-    /// before.
+    /// = nil → the whole timeline, no gate`) so a whole-timeline chart renders without a slot gate.
     static func hrChartLayer(samples: [HRPoint], config: HROverlayConfig,
                              canvas: CGSize, totalDuration: Double,
                              slotStartSec: Double = 0, slotDurationSec: Double? = nil) -> CALayer {
@@ -194,7 +194,7 @@ enum StudioOverlays {
     /// composition: each element's `[0,1]` clip-local segment fractions are mapped onto the clip's
     /// slot window before opacity-gating, so a clip's per-clip badges only show during that clip.
     /// Defaulted (`slotStartSec = 0`, `slotDurationSec = nil → whole timeline`) to an identity mapping,
-    /// so the single-clip `VideoStudio` path renders exactly as before.
+    /// so a whole-timeline badge renders without a slot gate.
     static func hrElementLayers(_ overlays: [ResolvedHROverlay], canvas: CGSize,
                                 totalDuration: Double,
                                 slotStartSec: Double = 0, slotDurationSec: Double? = nil) -> [CALayer] {

@@ -1,7 +1,7 @@
 import Foundation
 
-/// The pure state machine for the B5 "export → share / save to Photos" flow, shared by the B3 clip
-/// editor (`ClipEditorViewModel`) and the B4 highlight reel (`SessionHighlightViewModel`). Modelled
+/// The pure state machine for the B5 "export → share / save to Photos" flow, shared by the multi-clip
+/// Studio export (`StudioEditorViewModel`) and the B4 highlight reel (`SessionHighlightViewModel`). Modelled
 /// as a value type with a reducer so the transitions are **unit-testable with no AVFoundation /
 /// PhotoKit / UIKit** (the device-only export/save/share themselves are not — but the state logic
 /// that drives the UI is). Mirrors the suite's "isolate the pure logic" discipline (`ClipEditGeometry`,

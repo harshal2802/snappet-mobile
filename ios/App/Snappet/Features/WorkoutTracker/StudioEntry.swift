@@ -78,4 +78,27 @@ enum StudioEntry {
         try? context.save()
         return project
     }
+
+    /// Find-or-create the session's project **then** append any video clips discovered after it was
+    /// created, so opening the studio *scoped to one clip* (tap a clip → `visibleClipMediaIDs:[id]`)
+    /// can't land on a clip the project doesn't know about and show an empty timeline. Mirrors the
+    /// Kilter side's inline reconcile (`KilterSessionDetailView.resolveStudioProject`).
+    @MainActor
+    static func resolveProject(for session: WorkoutSession, media: [SessionMedia],
+                               context: ModelContext) -> StudioProject {
+        let project = findOrCreateProject(for: session, media: media, context: context)
+        let sid = session.id
+        let present = Set(project.clips.compactMap(\.sessionMediaID))
+        let missing = media.filter { $0.sessionID == sid && $0.kind == .video && !present.contains($0.id) }
+            .sorted { $0.offsetSec < $1.offsetSec }
+        guard !missing.isEmpty else { return project }
+        var order = (project.clips.map(\.order).max() ?? -1) + 1
+        for m in missing {
+            project.clips.append(TimelineClip(sessionMediaID: m.id, localIdentifier: m.localIdentifier,
+                                              isPhoto: false, order: order, trimEnd: m.durationSec))
+            order += 1
+        }
+        try? context.save()
+        return project
+    }
 }

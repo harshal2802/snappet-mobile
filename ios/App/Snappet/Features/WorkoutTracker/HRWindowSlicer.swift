@@ -4,8 +4,8 @@ import Foundation
 /// place that decides which heart-rate samples a tagged video shows. Foundation only (no AVFoundation
 /// / SwiftData / Photos), so it runs in `SnappetTests` with no simulator.
 ///
-/// Both the single-clip editor (`ClipEditorView`) and the multi-clip Studio (`StudioHRPlacement`)
-/// route through this, so a video can never silently lose its HR overlay. The previous inline slice
+/// The multi-clip Studio (`StudioHRPlacement`) routes every clip through this, so a video can never
+/// silently lose its HR overlay. The previous inline slice
 /// (a strict `t >= start && t <= start+span` filter) returned **empty** whenever the window fell
 /// between two sparse band samples, before the first sample (band connected late), or after the last
 /// (a victory clip shot once HR stopped) — and an empty series makes the chart (needs ≥2 points) and

@@ -258,6 +258,19 @@ overlays; made optional-backed with computed defaults (the codebase's migration-
 a decode-from-old-JSON test. Full suite green (**301 unit + 15 UI**). All 5 surfaces (placement, resize,
 text+styling, base cell, **export**) confirmed working on-device.
 
+🟢 **Gym clip-tap → scoped Studio; single-clip editor retired (2026-06-17,
+`73-ios-workout-clip-tap-studio-parity.md`).** Brought the WorkoutTracker session detail to Kilter
+parity: tapping a video clip now opens the CapCut-style **multi-clip Studio scoped to that one clip**
+(`focusClipMediaID` + `visibleClipMediaIDs=[clip.id]`) — the same editor the Kilter side opens per-clip —
+instead of the old single-clip "Edit Clip" sheet; the session-wide "Edit in Video Studio" button still
+opens it unscoped. New `StudioEntry.resolveProject` reconciles videos discovered after the project was
+created (mirrors Kilter) so a scoped open is never blank. With both clip paths through the one Studio, the
+old stack was **deleted as dead code** — `ClipEditorView`/`ClipEditorViewModel`, the `@Model ClipEdit` +
+`TextOverlay`, and the `VideoStudio`/`EditPlan` render engine — leaving the multi-clip
+`StudioProject`/`StudioComposer` as the single editor + render engine. First intentional `@Model` removal
+from the schema/backup (destructive to legacy single-clip edits — accepted, alpha; see decisions.md).
+Build + `SnappetTests` green; the UI walkthrough's clip-tap step now drives the Studio.
+
 🟢 **Kilter board design: size on the climb page, size-accurate render, color-blind hold shapes
 (2026-06-07, `FEAT-board-size-render-and-colorblind-shapes`).** iOS + Android. The physical board-size
 preference moved onto the browse filter bar as an inline **Size chip beside Layout** (shown when a layout
