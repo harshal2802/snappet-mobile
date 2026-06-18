@@ -64,6 +64,9 @@ enum StudioProjectEditor {
         s.clips = reindexed(StudioGeometry.ordered(s.clips).filter { $0.id != id })
         // Drop a transition that pointed at (after) the removed clip — it no longer has a successor.
         s.transitions = s.transitions.filter { $0.afterClipID != id }
+        // Prompt 12 STEP 7a: garbage-collect any overlay bound to the removed clip (its per-clip climb
+        // tag) so it doesn't float orphaned over the remaining clips.
+        s.overlays.removeAll { $0.clipID == id }
         return s
     }
 
@@ -260,6 +263,22 @@ enum StudioProjectEditor {
         var s = s
         guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
         s.overlays[i].content = content
+        return s
+    }
+
+    /// Set a climb-name tag's **persisted** compose flags (prompt 12): whether it shows the setter and/or
+    /// the "Attempt N" line, and which attempt number. Each parameter is optional → leave unchanged when
+    /// `nil`, EXCEPT `attemptNumber`, which is set unconditionally (a passed `nil` clears it — call it
+    /// without the argument to leave it alone). The rendered string is composed from these + the base
+    /// `content` at render time, so user text and the system lines never share an encoding.
+    static func setOverlayClimbFlags(_ s: StudioProjectSnapshot, id: UUID,
+                                     showsSetter: Bool? = nil, showsAttempt: Bool? = nil,
+                                     attemptNumber: Int?? = nil) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.overlays.firstIndex(where: { $0.id == id }) else { return s }
+        if let showsSetter { s.overlays[i].showsSetter = showsSetter }
+        if let showsAttempt { s.overlays[i].showsAttempt = showsAttempt }
+        if let attemptNumber { s.overlays[i].attemptNumber = attemptNumber }
         return s
     }
 

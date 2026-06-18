@@ -4,6 +4,63 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-18] Quick Session redesign — climb-name overlay is a PER-CLIP property (prompt 12)
+
+**Decision**: the Studio's freeform climb-name tag is now a **property of its clip**, not a whole-project
+overlay. `OverlayItem` gains four additive-optional, migration-safe fields: `clipID: UUID?` (the owning
+`TimelineClip.id`), `showsAttemptRaw: Bool?` / `attemptNumber: Int?` / `showsSetterRaw: Bool?` (the
+persisted compose flags). **Why each:**
+
+- **Bug #1 (tag spanned the whole project).** `addClimbNameOverlay()` now stamps `clipID = selectedClip?.id`
+  and seeds the window from that clip's placed slot (whole-project fallback when no clip is selected). The
+  on-screen window is **resolved at RENDER time** from `clipID` → the clip's *current* placed slot via a new
+  `outputWindow(for:)` — so trim/reorder/split never desync the tag. Both the canvas gate AND export read
+  this resolved window. **Where it's resolved:** in the VM's `scopedSnapshot`/`canvasOverlays` (a new
+  `renderedOverlays(_:)` re-derives each `.climbName` overlay's `startSec/endSec` + composed `content`), NOT
+  in `StudioOverlays`/`StudioComposer` — the lower-risk of the two options the prompt allowed ("re-derive into
+  those fields before makeAnimationTool"), so the export composer is untouched and `applyVisibility` reads the
+  fresh window. The persisted model keeps the BASE window/caption.
+- **Bug #2 (tap "Climb" re-added a box).** `addClimbNameOverlay()` is now idempotent: if a `.climbName`
+  overlay with `clipID == selectedClip?.id` exists, it just SELECTS it (never re-seeds the caption — that
+  would wipe a manual edit; the lower-risk choice) and returns. The "Climb" bar button shows "Climb ✓" when
+  the selected clip already has a tag (like Music/HR).
+- **Canvas time-gate.** `StudioOverlayCanvas` takes `currentTime` and renders a text/sticker/climb chip only
+  while `selected || startSec-eps ≤ currentTime ≤ endSec+eps` (the selected overlay always renders so a
+  just-added/off-segment tag stays draggable); PiP frames always render (they're in the player). Opacity is
+  now sampled from `opacityKeyframes` at the playhead with the 0.15 floor dropped (held only for a *selected*
+  chip so it stays grabbable) — preview now matches the export bake.
+- **Multi-clip attempt#.** `select(_:)` repoints `selectedOverlayID` to the `.climbName` overlay owned by the
+  newly-selected clip (by `clipID`) before `refreshAttemptLineForSelection()`, so the Attempt# acts on the
+  RIGHT per-clip tag. Attempt number = that clip's `SessionMedia.assignedSetIndex + 1`.
+- **Killed the transient Sets + the regex.** The in-memory `climbAttemptEnabled`/`climbSetterEnabled` Sets and
+  the `\nAttempt \d+$` strip regex are GONE. Toggle state lives on the model (`showsAttempt`/`showsSetter`,
+  read back correctly across reopen/undo). The rendered string is COMPOSED at render time by a new pure
+  `KilterClimbCaption.composeClimbTag(base:setter:showSetter:attempt:showAttempt:)` = base (+ " · by {setter}"
+  on the detail line if `showsSetter`) (+ "\nAttempt N" if `showsAttempt`) — used by BOTH the canvas chip and
+  export, so user text and the system lines never share an encoding (no more caption corruption / setter-edit
+  wipe). Unit-tested.
+- **Migration safety gotcha**: a non-optional `Bool = false` is **NOT** decode-safe — Swift's synthesized
+  `Decodable` calls `decode` (not `decodeIfPresent`) and throws `keyNotFound` on a missing key even with a
+  property default (it broke the existing `testOverlayDecodesFromPreStyleJSON`). So the flags are stored as
+  **optional raws** (`showsAttemptRaw`/`showsSetterRaw`, `nil → false`) with non-optional accessors — the same
+  `boldRaw`/`italicRaw` precedent. `clipID`/`attemptNumber` are optional so they're fine as-is.
+- **Polish**: `removeClip` prunes `s.overlays.removeAll { $0.clipID == id }` (no orphan tags); "Show setter"
+  is gated behind `canShowClimbSetter` (`resolvedClimbUUID != nil`) so it's HIDDEN for freeform climbs; an
+  empty resolved caption no-ops the add and empty-content chips are filtered from the canvas (matching the
+  export filter); `TextOverlayChip` gets a11y label/value/`.isSelected`/`studioOverlayChip` id.
+
+**New editor op**: `StudioProjectEditor.setOverlayClimbFlags(_:id:showsSetter:showsAttempt:attemptNumber:)`
+(pure, each param optional → leave-unchanged; `attemptNumber` is `Int??` so it can be cleared). The
+`StudioProjectSnapshot`/undo-redo carry the new fields automatically (they're part of the Codable `OverlayItem`).
+
+**Verified**: `xcodegen generate` + `build-for-testing` clean (Swift 6, 0 errors / 0 new warnings in the
+changed files — the only warnings are the pre-existing `StudioComposer` CIFilter deprecation + the
+`SnappetBackupTests` main-actor isolation). Full `SnappetTests` **887** green (2 skipped) incl. new
+compose/window-resolution/idempotency/migration tests; `SnappetUITests` `NamedClimbTests` + `EditClimbTests`
++ `LiveWorkoutStudioWalkthroughTests` all pass (studio walkthrough green first try). Device-only / deferred:
+the actual export burn-in of a per-clip tag (only-its-segment) + the drag/scrub feel — covered by the pure
+compose/window unit tests + the green studio UITest; the on-device render is the usual export-burn check.
+
 ## [2026-06-18] Quick Session redesign Phase 2 — live timed-attempt FOCUS cover
 
 **Decision**: replaced Phase 1's minimal `TimedAttemptSheet` (a `.sheet(item:)`) with a full-screen

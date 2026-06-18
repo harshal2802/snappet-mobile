@@ -140,12 +140,14 @@ final class StudioEditorViewModel {
     private var visibleSnapshotClips: [TimelineClip] {
         StudioGeometry.filterByMedia(snapshot.clips, to: visibleClipMediaIDs)
     }
-    /// The snapshot handed to the composer for preview/export — scoped to the visible clips. Unscoped
-    /// (`visibleClipMediaIDs == nil`) returns the snapshot untouched, so the workout studio is identical.
+    /// The snapshot handed to the composer for preview/export — scoped to the visible clips, with every
+    /// `.climbName` tag RENDER-RESOLVED (composed string + per-clip window) so the exported file matches
+    /// the editor (prompt 12). Unscoped (`visibleClipMediaIDs == nil`) keeps all clips; either way the
+    /// overlays are resolved, so a per-clip climb tag exports only over its clip's segment.
     private var scopedSnapshot: StudioProjectSnapshot {
-        guard visibleClipMediaIDs != nil else { return snapshot }
         var s = snapshot
-        s.clips = visibleSnapshotClips
+        if visibleClipMediaIDs != nil { s.clips = visibleSnapshotClips }
+        s.overlays = renderedOverlays(s.overlays)
         return s
     }
     var clips: [TimelineClip] { StudioGeometry.ordered(visibleSnapshotClips) }
@@ -154,6 +156,10 @@ final class StudioEditorViewModel {
     var selectedClip: TimelineClip? { clips.first { $0.id == selectedClipID } }
     var overlays: [OverlayItem] { snapshot.overlays }
     var selectedOverlay: OverlayItem? { overlays.first { $0.id == selectedOverlayID } }
+    /// Overlays prepared for the WYSIWYG canvas: `.climbName` tags carry their composed string + their
+    /// clip-resolved window (so the canvas time-gate matches export). Selection/ids are preserved (the
+    /// resolution keeps each overlay's `id`), so dragging/selecting still target the right overlay.
+    var canvasOverlays: [OverlayItem] { renderedOverlays(snapshot.overlays) }
     var aspect: ClipEditGeometry.OutputAspect { snapshot.aspect }
     /// Canvas width:height for placing the overlay layer over the preview. `.original` has no fixed
     /// ratio (it follows the source) — fall back to the studio's 9:16 default for the editing rect.
@@ -177,6 +183,61 @@ final class StudioEditorViewModel {
     /// The resolved source length for a clip (asset duration), or its trimmed end as a fallback.
     func sourceDuration(of clip: TimelineClip) -> Double {
         sourceDurations[clip.id] ?? clip.trimEnd ?? outputDuration(of: clip)
+    }
+
+    // MARK: - Overlay render resolution (per-clip window + composed string — prompt 12)
+
+    /// The on-screen window for an overlay, RESOLVED at render time. A clip-bound overlay (a per-clip
+    /// `.climbName` tag, `clipID != nil`) takes its **current** placed slot's `[startSec, endSec]` — so
+    /// trim/reorder/split never desync the tag from its clip; if the clip is gone (e.g. mid-undo) it
+    /// falls back to the stored window. A whole-project overlay (`clipID == nil`) keeps its stored
+    /// window. Used by BOTH the canvas time-gate and the export window (re-derived into the overlay).
+    func outputWindow(for overlay: OverlayItem) -> (start: Double, end: Double) {
+        if let clipID = overlay.clipID,
+           let slot = placedClips.first(where: { $0.clip.id == clipID }) {
+            return (slot.startSec, slot.endSec)
+        }
+        return (overlay.startSec, overlay.endSec)
+    }
+
+    /// The **rendered** string for a `.climbName` overlay: the user-editable base `content`, plus the
+    /// system-composed ` · by {setter}` (when `showsSetter`) and `Attempt N` (when `showsAttempt`)
+    /// lines — composed via the pure `KilterClimbCaption.composeClimbTag` so user text and system lines
+    /// never share an encoding. Non-climb overlays return their `content` unchanged. The setter is
+    /// resolved from the overlay's owning clip's Kilter assignment (nil for freeform). Used by BOTH the
+    /// canvas chip and the export (the model keeps the base, so a manual edit is never wiped).
+    func renderedContent(for overlay: OverlayItem) -> String {
+        guard overlay.kind == .climbName else { return overlay.content }
+        let setter = (overlay.showsSetter ? resolvedSetter(for: overlay) : nil)
+        return KilterClimbCaption.composeClimbTag(
+            base: overlay.content, setter: setter, showSetter: overlay.showsSetter,
+            attempt: overlay.attemptNumber, showAttempt: overlay.showsAttempt)
+    }
+
+    /// Resolve the setter name for a climb tag from its owning clip's Kilter assignment (read-only
+    /// `KilterCatalog`); `nil` for a freeform tag (no `KilterLogEntry`/catalog entry).
+    private func resolvedSetter(for overlay: OverlayItem) -> String? {
+        guard let clipID = overlay.clipID,
+              let clip = snapshot.clips.first(where: { $0.id == clipID }),
+              let uuid = assignedClimbUUID(for: clip) else { return nil }
+        return KilterCatalog.shared.climb(uuid)?.setter
+    }
+
+    /// The overlays prepared for RENDER (canvas + composer): each `.climbName` tag's `content` is the
+    /// fully composed string and its `[startSec, endSec]` is re-derived from its clip's current slot, so
+    /// preview and export read the identical, up-to-date strings/windows. Empty-content tags are dropped
+    /// (matching the export filter), so a tag with no caption never shows an invisible chip. The
+    /// PERSISTED model is untouched — this is a derived view only.
+    func renderedOverlays(_ overlays: [OverlayItem]) -> [OverlayItem] {
+        overlays.compactMap { overlay in
+            guard overlay.kind == .climbName else { return overlay }
+            var ov = overlay
+            ov.content = renderedContent(for: overlay)
+            let w = outputWindow(for: overlay)
+            ov.startSec = w.start
+            ov.endSec = w.end
+            return ov.content.isEmpty ? nil : ov
+        }
     }
 
     // MARK: Lifecycle
@@ -302,8 +363,14 @@ final class StudioEditorViewModel {
 
     func select(_ id: UUID?) {
         selectedClipID = id
-        // Prompt 11: in the combined "Edit all clips" view the attempt number is per-clip, so a tag whose
-        // "Attempt #" line is ON must re-derive to the newly-focused clip's number on each selection change.
+        // Prompt 12 STEP 5: repoint the selected overlay to the climb tag OWNED by the newly-selected clip
+        // (by clipID), or nil if it has none — so the Attempt#/Setter toggles act on the RIGHT per-clip
+        // tag, not the last-selected one. Only repoints among climb tags (leave a selected text/sticker
+        // alone): if the current selection is a climb tag (or nothing), point at this clip's tag.
+        if selectedOverlay == nil || selectedOverlay?.kind == .climbName {
+            selectedOverlayID = climbOverlayForSelectedClip?.id
+        }
+        // Prompt 11/12: a tag whose "Attempt #" line is ON re-derives to the newly-focused clip's number.
         refreshAttemptLineForSelection()
     }
 
@@ -407,23 +474,36 @@ final class StudioEditorViewModel {
         editOverlaysOnly { StudioProjectEditor.setOverlayStyle($0, id: id, italic: on) }
     }
 
-    // MARK: - Climb-name overlay (auto-filled from the clip's assigned climb; mirrors the HR overlay)
-
-    /// Overlay ids whose caption currently includes the setter (transient — the caption string itself
-    /// is the persisted source of truth; this just remembers the toggle for re-deriving on change).
-    private var climbSetterEnabled: Set<UUID> = []
+    // MARK: - Climb-name overlay (a PER-CLIP property — prompt 12: scoped · idempotent · correct attempt#)
 
     /// True when a climb resolves for the selected (or any) clip — gates the "Climb" action button.
     /// A Kilter climb resolves via `resolvedClimbUUID`; a FREEFORM climb (prompt 09) has no
     /// `KilterLogEntry`, so the threaded `suggestedClimbCaption` widens the gate for it.
     var hasClimbInfo: Bool { resolvedClimbUUID != nil || suggestedClimbCaption != nil }
 
-    /// Add a climb-name overlay (a styled lower-third), prefilled with the resolved climb's
-    /// name · grade · angle, positioned low-centre. The text stays freely editable afterwards. A Kilter
-    /// clip derives the caption from its `KilterLogEntry` (the unchanged path); a FREEFORM clip with no
-    /// `KilterLogEntry` falls back to the threaded `suggestedClimbCaption` (prompt 09), dropping the SAME
-    /// overlay shape/position so it's draggable / editable / deletable identically.
+    /// The existing `.climbName` overlay owned by the selected clip (its `clipID`), or — when no clip is
+    /// selected — any whole-project climb tag (`clipID == nil`). Drives the idempotent add-or-select and
+    /// the "Climb ✓" button state, so one tag per clip and tapping "Climb" never duplicates.
+    var climbOverlayForSelectedClip: OverlayItem? {
+        let target = selectedClip?.id
+        return overlays.first { $0.kind == .climbName && $0.clipID == target }
+    }
+    /// True when the selected clip already has a climb tag — the "Climb ✓" selected state (like Music/HR).
+    var hasClimbOverlay: Bool { climbOverlayForSelectedClip != nil }
+
+    /// Add a climb-name overlay (a styled lower-third) for the selected clip, OR select the clip's
+    /// existing tag (idempotent — never duplicates, prompt 12 BUG #2). The tag is a per-clip property:
+    /// its `clipID` is the selected clip and its initial window is that clip's placed slot, so it shows
+    /// ONLY during that clip's segment (BUG #1); the window is re-resolved at render time. A Kilter clip
+    /// derives the caption from its `KilterLogEntry`; a FREEFORM clip falls back to the threaded
+    /// `suggestedClimbCaption` (prompt 09). No-op when the resolved base caption is empty.
     func addClimbNameOverlay() {
+        // Idempotent: if this clip already has a tag, just SELECT it — never duplicate, and never re-seed
+        // its caption (that would wipe a manual edit; the lower-risk choice, prompt 12 BUG #2).
+        if let existing = climbOverlayForSelectedClip {
+            selectedOverlayID = existing.id
+            return
+        }
         let caption: String
         if let uuid = resolvedClimbUUID {
             caption = climbCaption(uuid: uuid, includeSetter: false)
@@ -432,32 +512,39 @@ final class StudioEditorViewModel {
         } else {
             return
         }
-        let overlay = OverlayItem(kind: .climbName, content: caption, startSec: 0,
-                                  endSec: max(3, totalDuration),
-                                  position: CGPoint(x: 0.5, y: 0.85))
+        guard !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Anchor the tag to the selected clip's placed slot (whole-project fallback when none selected).
+        let clipID = selectedClip?.id
+        let slot = clipID.flatMap { id in placedClips.first { $0.clip.id == id } }
+        let overlay = OverlayItem(kind: .climbName, content: caption,
+                                  startSec: slot?.startSec ?? 0,
+                                  endSec: slot?.endSec ?? max(3, totalDuration),
+                                  position: CGPoint(x: 0.5, y: 0.85),
+                                  clipID: clipID,
+                                  attemptNumber: effectiveAttemptNumber)
         editOverlaysOnly { StudioProjectEditor.addOverlay($0, overlay) }
         selectedOverlayID = overlay.id
     }
 
-    /// True when the selected climb-name overlay's caption includes the setter.
-    var selectedClimbShowsSetter: Bool {
-        guard let id = selectedOverlayID else { return false }
-        return climbSetterEnabled.contains(id)
+    /// True when the selected climb-name overlay shows the setter (read from the model, not transient
+    /// state — survives reopen/undo, prompt 12 STEP 6).
+    var selectedClimbShowsSetter: Bool { selectedOverlay?.showsSetter ?? false }
+
+    /// Whether the "Show setter" toggle should appear: a `.climbName` overlay AND a Kilter climb resolves
+    /// for it (`resolvedClimbUUID != nil`) — HIDDEN for freeform climbs, where it would be a dead no-op
+    /// (prompt 12 STEP 7b).
+    var canShowClimbSetter: Bool {
+        guard let ov = selectedOverlay, ov.kind == .climbName else { return false }
+        return resolvedClimbUUID != nil
     }
 
-    /// Toggle the setter on the selected climb-name overlay, re-deriving its caption from the climb.
-    /// (Resets any manual text edit — the toggle re-fills from the climb data.)
+    /// Toggle the setter on the selected climb-name overlay by flipping its persisted `showsSetter` flag.
+    /// The rendered ` · by {setter}` is COMPOSED at render time (canvas + export) from the base caption,
+    /// so a manual caption edit is never wiped (prompt 12 STEP 6).
     func setSelectedClimbShowsSetter(_ on: Bool) {
-        guard let ov = selectedOverlay, ov.kind == .climbName, let uuid = resolvedClimbUUID else { return }
-        if on { climbSetterEnabled.insert(ov.id) } else { climbSetterEnabled.remove(ov.id) }
-        let caption = climbCaption(uuid: uuid, includeSetter: on)
-        editOverlayText(ov.id, caption)
+        guard let ov = selectedOverlay, ov.kind == .climbName else { return }
+        editOverlaysOnly { StudioProjectEditor.setOverlayClimbFlags($0, id: ov.id, showsSetter: on) }
     }
-
-    /// Overlay ids whose caption currently carries the "Attempt N" line (prompt 10). Transient — the
-    /// caption string is the persisted source of truth; this just remembers the toggle so OFF can strip
-    /// the line and the toggle reads back correctly across selections.
-    private var climbAttemptEnabled: Set<UUID> = []
 
     /// The 1-based attempt number the **currently selected** clip belongs to (prompt 11): the selected
     /// clip's backing `SessionMedia.assignedSetIndex + 1`. `nil` when the selection has no media link or
@@ -484,52 +571,33 @@ final class StudioEditorViewModel {
         return ov.kind == .climbName
     }
 
-    /// True when the selected climb-name overlay's caption currently includes the "Attempt N" line.
-    var selectedClimbShowsAttempt: Bool {
-        guard let id = selectedOverlayID else { return false }
-        return climbAttemptEnabled.contains(id)
-    }
+    /// True when the selected climb-name overlay shows the "Attempt N" line (read from the model — survives
+    /// reopen/undo, prompt 12 STEP 6).
+    var selectedClimbShowsAttempt: Bool { selectedOverlay?.showsAttempt ?? false }
 
-    /// Toggle the "Attempt N" line on the selected climb-name overlay, recomposing THAT one overlay's
-    /// content via the pure `KilterClimbCaption.climbTagContent` (prompt 10/11). ON appends the attempt line
-    /// for the SELECTED clip's number (`effectiveAttemptNumber`); OFF strips it — the base caption (incl.
-    /// any manual edit) is preserved, and no second overlay is created.
+    /// Toggle the "Attempt N" line on the selected climb-name overlay by flipping its persisted
+    /// `showsAttempt` flag (and stamping the current `effectiveAttemptNumber`). The line is COMPOSED at
+    /// render time, so the base caption (incl. any manual edit) is preserved and there's no regex strip
+    /// (prompt 12 STEP 6).
     func setSelectedClimbShowsAttempt(_ on: Bool) {
         guard let ov = selectedOverlay, ov.kind == .climbName,
               let attempt = effectiveAttemptNumber else { return }
-        let base = climbTagBase(ov.content)
-        if on {
-            climbAttemptEnabled.insert(ov.id)
-            editOverlayText(ov.id, KilterClimbCaption.climbTagContent(
-                caption: base, attempt: attempt, showAttempt: true))
-        } else {
-            climbAttemptEnabled.remove(ov.id)
-            editOverlayText(ov.id, base)
+        editOverlaysOnly {
+            StudioProjectEditor.setOverlayClimbFlags($0, id: ov.id, showsAttempt: on,
+                                                     attemptNumber: on ? attempt : nil)
         }
     }
 
-    /// Re-derive any "Attempt #"-enabled climb-name overlay's appended line to the **newly-selected** clip's
-    /// attempt number (prompt 11). Called by the view when the clip selection changes in the combined
-    /// "Edit all clips" view, so a tag that read "Attempt 2" follows the focused clip to "Attempt 4". Only
-    /// touches an overlay whose attempt line is currently ON; a no-op when nothing resolves (keeps the
-    /// single-clip + Kilter paths intact). The base caption (incl. manual edits) is preserved.
+    /// Re-derive the selected `.climbName` tag's attempt number to the **newly-selected** clip's number
+    /// (prompt 11/12). Called from `select(_:)` after the selected overlay is repointed to the focused
+    /// clip's tag, so an "Attempt #"-ON tag follows the focused clip ("Attempt 2" → "Attempt 4"). Only
+    /// restamps the number on an already-ON tag; never wipes the base caption.
     func refreshAttemptLineForSelection() {
-        guard let ov = selectedOverlay, ov.kind == .climbName,
-              climbAttemptEnabled.contains(ov.id), let attempt = effectiveAttemptNumber else { return }
-        let base = climbTagBase(ov.content)
-        editOverlayText(ov.id, KilterClimbCaption.climbTagContent(
-            caption: base, attempt: attempt, showAttempt: true))
-    }
-
-    /// Strip a trailing "Attempt N" line from a climb-tag caption, leaving the base (so manual edits to
-    /// the base survive a toggle and re-toggling never compounds the line). Matches ANY positive N — the
-    /// selected clip's number can differ from the one originally appended (prompt 11), so the strip must
-    /// not be pinned to a single value.
-    private func climbTagBase(_ content: String) -> String {
-        guard let range = content.range(of: #"\nAttempt \d+$"#, options: .regularExpression) else {
-            return content
+        guard let ov = selectedOverlay, ov.kind == .climbName, ov.showsAttempt,
+              let attempt = effectiveAttemptNumber, attempt != ov.attemptNumber else { return }
+        editOverlaysOnly {
+            StudioProjectEditor.setOverlayClimbFlags($0, id: ov.id, attemptNumber: attempt)
         }
-        return String(content[content.startIndex..<range.lowerBound])
     }
 
     /// The climb uuid backing the caption: the selected clip's assignment, else the first assigned clip.

@@ -36,4 +36,27 @@ enum KilterClimbCaption {
         let base = caption
         return base.isEmpty ? "Attempt \(attempt)" : "\(base)\nAttempt \(attempt)"
     }
+
+    /// **Compose** a climb-name tag's RENDERED string from its parts (prompt 12): the user-editable BASE
+    /// `caption` (kept verbatim as `OverlayItem.content`), optionally a ` · by {setter}` suffix on the
+    /// detail line, then an `Attempt N` line on its own. The base and the system-derived lines never
+    /// share an encoding, so toggling the setter / attempt can't corrupt user text and there's no regex
+    /// strip — the canvas chip and the export build the SAME string from this one pure helper, so
+    /// preview == file. Pure (Foundation-only) → unit-tested without a device.
+    ///
+    /// `setter` is appended only when `showSetter` is on AND a non-empty setter is supplied: as
+    /// ` · by {setter}` after the LAST line of the base caption (the detail line, e.g.
+    /// "Blue Crux\n6c · 40°" → "Blue Crux\n6c · 40° · by jdoe"). `Attempt N` is appended only when
+    /// `showAttempt` is on and `attempt > 0`, on its own trailing line.
+    static func composeClimbTag(base: String, setter: String?, showSetter: Bool,
+                                attempt: Int?, showAttempt: Bool) -> String {
+        var body = base
+        if showSetter, let setter = setter?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !setter.isEmpty {
+            // Ride the LAST line (the detail line, e.g. "grade · angle") — append to the end of the base
+            // so the setter sits beside it, then the Attempt line (if any) goes below them both.
+            body = body.isEmpty ? "by \(setter)" : "\(body) · by \(setter)"
+        }
+        return climbTagContent(caption: body, attempt: attempt, showAttempt: showAttempt)
+    }
 }

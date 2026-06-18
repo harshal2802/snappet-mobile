@@ -194,6 +194,28 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var normalizedHeight: Double? = nil
     var rotationDegrees: Double
     var opacity: Double
+    /// The **clip this overlay belongs to** (its `TimelineClip.id`). For a `.climbName` lower-third this
+    /// makes the tag a true **per-clip property**: its on-screen window is RESOLVED at render time from
+    /// the clip's current placed slot (so trim/reorder/split never desync), it's idempotent per clip
+    /// (one tag per clip), and it's garbage-collected when its clip is deleted. `nil` = a whole-project
+    /// overlay (text/sticker, or a climb tag added with no clip selected). Additive + optional →
+    /// migration-safe (old projects decode `nil`), the same convention as `highlightHex`/`fontRaw` below.
+    var clipID: UUID? = nil
+    /// Whether this climb-name tag renders an **"Attempt N"** line (prompt 10/11) — the number is
+    /// `attemptNumber`. Persisted (was a transient in-memory Set) so the toggle survives reopen/undo and
+    /// the rendered string composes from `content` (the base caption) + these flags. Stored as an
+    /// **optional raw** (`nil` → `false` via the `showsAttempt` accessor below) because Swift's
+    /// synthesized `Decodable` throws `keyNotFound` for a missing NON-optional key — it does NOT fall back
+    /// to a property default. Optional → old persisted overlays decode unchanged (the `boldRaw` precedent).
+    var showsAttemptRaw: Bool? = nil
+    /// The 1-based attempt number the "Attempt N" line shows (the owning clip's attempt). `nil` when no
+    /// attempt resolves. Stored so the composed string is re-derivable without re-parsing `content`.
+    var attemptNumber: Int? = nil
+    /// Whether this climb-name tag appends the setter (` · by {setter}`). Persisted flag (was a transient
+    /// Set) so the composed string is robust across reopen/undo and never wipes a manual caption edit.
+    /// Optional raw (`nil` → `false`) for the same migration-safe reason as `showsAttemptRaw`. Only
+    /// meaningful for a Kilter climb.
+    var showsSetterRaw: Bool? = nil
     /// Text colour (hex). For text/sticker/climb-name overlays.
     var colorHex: String
     /// Optional **highlight / background** colour (hex) behind a text/climb-name overlay. `nil` = no
@@ -213,7 +235,9 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     init(id: UUID = UUID(), kind: Kind, content: String, startSec: Double = 0, endSec: Double = 3,
          position: CGPoint = CGPoint(x: 0.5, y: 0.5), scale: Double = 1,
          normalizedWidth: Double? = nil, normalizedHeight: Double? = nil, rotationDegrees: Double = 0,
-         opacity: Double = 1, colorHex: String = "#FFFFFF", highlightHex: String? = nil,
+         opacity: Double = 1, clipID: UUID? = nil,
+         showsAttempt: Bool = false, attemptNumber: Int? = nil, showsSetter: Bool = false,
+         colorHex: String = "#FFFFFF", highlightHex: String? = nil,
          font: StudioFont = .system, bold: Bool = true, italic: Bool = false,
          opacityKeyframes: [StudioKeyframe] = []) {
         self.id = id
@@ -227,6 +251,10 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
         self.normalizedHeight = normalizedHeight
         self.rotationDegrees = rotationDegrees
         self.opacity = min(1, max(0, opacity))
+        self.clipID = clipID
+        self.showsAttemptRaw = showsAttempt
+        self.attemptNumber = attemptNumber
+        self.showsSetterRaw = showsSetter
         self.colorHex = colorHex
         self.highlightHex = highlightHex
         self.fontRaw = font.rawValue
@@ -247,6 +275,16 @@ struct OverlayItem: Codable, Hashable, Sendable, Identifiable {
     var italic: Bool {
         get { italicRaw ?? false }
         set { italicRaw = newValue }
+    }
+    /// `showsAttempt` / `showsSetter` default OFF (`nil` raw) — old overlays carry the legacy behaviour
+    /// (no system "Attempt N" / setter line) and decode without `keyNotFound`.
+    var showsAttempt: Bool {
+        get { showsAttemptRaw ?? false }
+        set { showsAttemptRaw = newValue }
+    }
+    var showsSetter: Bool {
+        get { showsSetterRaw ?? false }
+        set { showsSetterRaw = newValue }
     }
     var position: CGPoint {
         get { CGPoint(x: normalizedX, y: normalizedY) }

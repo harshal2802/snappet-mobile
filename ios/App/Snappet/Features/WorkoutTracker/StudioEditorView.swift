@@ -162,8 +162,9 @@ struct StudioEditorView: View {
             // WYSIWYG overlay editing layer: text/sticker overlays are draggable here (they're not in
             // the live preview video — Core Animation overlays are export-only), and map to the same
             // normalized position export reads, so what you place is what renders.
-            StudioOverlayCanvas(overlays: vm.overlays, ratio: vm.previewRatio,
+            StudioOverlayCanvas(overlays: vm.canvasOverlays, ratio: vm.previewRatio,
                                 selectedID: vm.selectedOverlayID,
+                                currentTime: vm.currentTime,
                                 snapEnabled: vm.snapEnabled,
                                 baseFrame: vm.baseFrame,
                                 sourceAspects: vm.sourceAspects,
@@ -267,7 +268,8 @@ struct StudioEditorView: View {
                     .accessibilityIdentifier("studioAddPiP")
                 barButton("Grid", "square.grid.2x2") { activeTool = .grid }
                     .accessibilityIdentifier("studioGridTool")
-                barButton("Climb", "signpost.right", enabled: vm.hasClimbInfo) { vm.addClimbNameOverlay() }
+                barButton(vm.hasClimbOverlay ? "Climb ✓" : "Climb", "signpost.right",
+                          enabled: vm.hasClimbInfo) { vm.addClimbNameOverlay() }
                     .accessibilityIdentifier("studioAddClimbName")
                 barButton(vm.hrOverlay == nil ? "HR" : "HR ✓", "waveform.path.ecg",
                           enabled: vm.hasHRData) { activeTool = .hr }
@@ -317,10 +319,14 @@ struct StudioEditorView: View {
                     Button { vm.selectOverlay(nil) } label: { Text("Done").font(.caption.weight(.semibold)) }
                 }
                 if ov.kind == .climbName {
-                    Toggle("Show setter", isOn: Binding(get: { vm.selectedClimbShowsSetter },
-                                                        set: { vm.setSelectedClimbShowsSetter($0) }))
-                        .font(.caption)
-                        .accessibilityIdentifier("studioClimbSetter")
+                    // "Show setter" only for a Kilter climb (resolvedClimbUUID != nil) — hidden for
+                    // freeform, where it would be a dead no-op (prompt 12 STEP 7b).
+                    if vm.canShowClimbSetter {
+                        Toggle("Show setter", isOn: Binding(get: { vm.selectedClimbShowsSetter },
+                                                            set: { vm.setSelectedClimbShowsSetter($0) }))
+                            .font(.caption)
+                            .accessibilityIdentifier("studioClimbSetter")
+                    }
                     // "Attempt #" (prompt 10): add/remove an "Attempt N" line on THIS climb-name tag for a
                     // clip attached to a specific attempt. Shown only when an attempt number was threaded in.
                     if vm.canShowClimbAttempt {
