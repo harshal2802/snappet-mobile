@@ -300,7 +300,12 @@ final class StudioEditorViewModel {
     func redoEdit() { undo.redo(); persist(); Task { await rebuildPreview() } }
     private func persist() { undo.current.apply(to: project); try? context.save() }
 
-    func select(_ id: UUID?) { selectedClipID = id }
+    func select(_ id: UUID?) {
+        selectedClipID = id
+        // Prompt 11: in the combined "Edit all clips" view the attempt number is per-clip, so a tag whose
+        // "Attempt #" line is ON must re-derive to the newly-focused clip's number on each selection change.
+        refreshAttemptLineForSelection()
+    }
 
     func deleteSelected() {
         guard let id = selectedClipID else { return }
@@ -454,10 +459,28 @@ final class StudioEditorViewModel {
     /// the line and the toggle reads back correctly across selections.
     private var climbAttemptEnabled: Set<UUID> = []
 
+    /// The 1-based attempt number the **currently selected** clip belongs to (prompt 11): the selected
+    /// clip's backing `SessionMedia.assignedSetIndex + 1`. `nil` when the selection has no media link or
+    /// isn't tied to a specific attempt. Drives a DYNAMIC "Attempt #" — in the combined "Edit all clips"
+    /// view (where `suggestedAttemptNumber` is nil because the scope spans many attempts), the tag follows
+    /// whichever clip is selected; in single-clip mode it agrees with the threaded `suggestedAttemptNumber`.
+    var selectedClipAttemptNumber: Int? {
+        guard let mediaID = selectedClip?.sessionMediaID else { return nil }
+        var d = FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.id == mediaID })
+        d.fetchLimit = 1
+        return (try? context.fetch(d))?.first?.assignedSetIndex.map { $0 + 1 }
+    }
+
+    /// The attempt number the "Attempt #" tag uses/shows — the SELECTED clip's, falling back to the static
+    /// number threaded at open (prompt 11). So the tag tracks the focused clip in "Edit all clips" and the
+    /// single clip in single-clip mode. `nil` (neither available) ⇒ no attempt to tag.
+    var effectiveAttemptNumber: Int? { selectedClipAttemptNumber ?? suggestedAttemptNumber }
+
     /// Whether the "Attempt #" option is available for the selected overlay: a `.climbName` overlay exists
-    /// AND a single attempt number was threaded in (prompt 10). Gates showing the toggle in the editor.
+    /// AND an attempt number resolves for the current selection (prompt 11 — the SELECTED clip's, else the
+    /// threaded fallback). Gates showing the toggle in the editor.
     var canShowClimbAttempt: Bool {
-        guard suggestedAttemptNumber != nil, let ov = selectedOverlay else { return false }
+        guard effectiveAttemptNumber != nil, let ov = selectedOverlay else { return false }
         return ov.kind == .climbName
     }
 
@@ -468,13 +491,13 @@ final class StudioEditorViewModel {
     }
 
     /// Toggle the "Attempt N" line on the selected climb-name overlay, recomposing THAT one overlay's
-    /// content via the pure `KilterClimbCaption.climbTagContent` (prompt 10). ON appends the attempt line
-    /// to the current base caption; OFF strips it — the base caption (incl. any manual edit) is preserved,
-    /// and no second overlay is created.
+    /// content via the pure `KilterClimbCaption.climbTagContent` (prompt 10/11). ON appends the attempt line
+    /// for the SELECTED clip's number (`effectiveAttemptNumber`); OFF strips it — the base caption (incl.
+    /// any manual edit) is preserved, and no second overlay is created.
     func setSelectedClimbShowsAttempt(_ on: Bool) {
         guard let ov = selectedOverlay, ov.kind == .climbName,
-              let attempt = suggestedAttemptNumber else { return }
-        let base = climbTagBase(ov.content, attempt: attempt)
+              let attempt = effectiveAttemptNumber else { return }
+        let base = climbTagBase(ov.content)
         if on {
             climbAttemptEnabled.insert(ov.id)
             editOverlayText(ov.id, KilterClimbCaption.climbTagContent(
@@ -485,11 +508,28 @@ final class StudioEditorViewModel {
         }
     }
 
+    /// Re-derive any "Attempt #"-enabled climb-name overlay's appended line to the **newly-selected** clip's
+    /// attempt number (prompt 11). Called by the view when the clip selection changes in the combined
+    /// "Edit all clips" view, so a tag that read "Attempt 2" follows the focused clip to "Attempt 4". Only
+    /// touches an overlay whose attempt line is currently ON; a no-op when nothing resolves (keeps the
+    /// single-clip + Kilter paths intact). The base caption (incl. manual edits) is preserved.
+    func refreshAttemptLineForSelection() {
+        guard let ov = selectedOverlay, ov.kind == .climbName,
+              climbAttemptEnabled.contains(ov.id), let attempt = effectiveAttemptNumber else { return }
+        let base = climbTagBase(ov.content)
+        editOverlayText(ov.id, KilterClimbCaption.climbTagContent(
+            caption: base, attempt: attempt, showAttempt: true))
+    }
+
     /// Strip a trailing "Attempt N" line from a climb-tag caption, leaving the base (so manual edits to
-    /// the base survive a toggle and re-toggling never compounds the line).
-    private func climbTagBase(_ content: String, attempt: Int) -> String {
-        let suffix = "\nAttempt \(attempt)"
-        return content.hasSuffix(suffix) ? String(content.dropLast(suffix.count)) : content
+    /// the base survive a toggle and re-toggling never compounds the line). Matches ANY positive N — the
+    /// selected clip's number can differ from the one originally appended (prompt 11), so the strip must
+    /// not be pinned to a single value.
+    private func climbTagBase(_ content: String) -> String {
+        guard let range = content.range(of: #"\nAttempt \d+$"#, options: .regularExpression) else {
+            return content
+        }
+        return String(content[content.startIndex..<range.lowerBound])
     }
 
     /// The climb uuid backing the caption: the selected clip's assignment, else the first assigned clip.

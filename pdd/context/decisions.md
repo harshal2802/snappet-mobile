@@ -5451,3 +5451,53 @@ skipped) including 4 new `climbTagContent` cases; `SnappetUITests/NamedClimbTest
 details path) and `EditClimbTests` both pass. Device-only / deferred: the actual on-video overlay
 render/burn-in incl. the "Attempt N" line (Core-Animation export is device-only — sim shows the placeholder
 canvas), and the PHPicker/Photos clip pick that populates the per-climb multi-clip view.
+
+## 2026-06-18 — Climb clip lifecycle: dynamic attempt# · deep-tap reassign/remove/delete (prompt 11)
+
+On-device-feedback iteration on the per-attempt clips (Quick Session redesign), four cohesive refinements —
+**most of it PORTED from the post-session `SessionDetailView`** (which already does move/remove/delete) into
+the LIVE freeform strip, matching its wording:
+- **Dynamic attempt # in the Studio editor.** `StudioEditorViewModel.selectedClipAttemptNumber` fetches the
+  `SessionMedia` for `selectedClip?.sessionMediaID` → `assignedSetIndex.map { $0 + 1 }`; a new
+  `effectiveAttemptNumber = selectedClipAttemptNumber ?? suggestedAttemptNumber` is what `canShowClimbAttempt`
+  and `setSelectedClimbShowsAttempt` use, so the "Attempt #" tag follows the **selected** clip (critical in
+  the combined "Edit all clips" view, where the threaded `suggestedAttemptNumber` is nil because the scope
+  spans many attempts). **Decision:** `select(_:)` now calls `refreshAttemptLineForSelection()`, which
+  re-derives any "Attempt #"-ON `.climbName` overlay's appended line to the newly-focused clip's number via
+  `KilterClimbCaption.climbTagContent` — so a tag reading "Attempt 2" becomes "Attempt 4" when you select a
+  different attempt's clip. The "Attempt #" OFF-strip is now a `\nAttempt \d+$` regex (matches ANY number)
+  rather than a fixed-N suffix, since the appended number can change with selection.
+- **Deep-tap (long-press) clip menu on the live strip.** `SetMediaStrip` gains an optional `.contextMenu`
+  (a `ClipContextMenu` ViewModifier, attached to either a video Button or a plain photo thumb) wired ONLY on
+  the climb-attempt strips via three new (defaulted-nil) params: `moveTargets: [ClipMoveTarget]`, `onReassign:
+  (SessionMedia, UUID?, Int?) -> Void`, `onRequestDelete: (SessionMedia) -> Void`. Lifting/timed/guided
+  strips pass none → no menu (unchanged). Items (ported from `SessionDetailView.thumbMenu`): **Move to
+  attempt…** (submenu over the climb's attempts) · **Remove from attempt** (→ General) · **Delete clip…**
+  (destructive). a11y: `freeform.clipMenu` on the thumbnail, `freeform.clipMove.<i>` / `freeform.clipRemove`
+  / `freeform.clipDelete` on the leaves.
+- **Reassign + remove (sticky).** `FreeformPlayerView.reassignClip(_:to:set:)` (port of
+  `SessionDetailView.reassign`) sets `assignedExerciseID/assignedSetIndex` + `assignmentSource =
+  exerciseID == nil ? .general : .manual`, so a moved clip pins `.manual` and a removed clip pins `.general`
+  — both sticky against `reconcileAssignments`, which only re-places `.auto` rows. "Remove from attempt" =
+  reassign to General (`assignedExerciseID nil`): it leaves the strip but keeps the file.
+- **Photos-aware delete.** A single `.confirmationDialog($pendingClipDeletion)` is hosted on the (stable)
+  logging screen, **ported verbatim** from `SessionDetailView` incl. the Photos wording ("…iOS will ask once
+  more"); only the first button's noun is "Remove from attempt only" (vs "…from session only"). "Delete from
+  Photos too" → `deleteClipFromPhotos` (port of `deleteFromPhotos`): `MediaLibraryService.deleteAssets(...)`
+  FIRST (iOS shows its own confirm), then `context.delete` + save only on success, so a denied/cancelled
+  delete never orphans the tag. The `MediaLibraryService` is obtained the same way `SessionDetailView` does
+  (a stored `private let mediaLibrary = MediaLibraryService()`).
+- **Pure helper + test.** Move targets come from a pure `climbClipMoveTargets(for ex:) -> [ClipMoveTarget]`
+  (in `SessionMediaAssignment.swift`): one `ClipMoveTarget(id:"<exID>-<i>", title:"Attempt N", exerciseID,
+  setIndex)` per attempt. Unit-tested in `ClipMoveTargetTests` (1-based titles / 0-based setIndex / stable
+  unique ids / empty for an attempt-less climb). No model change — `MediaAssignmentSource`/reconcile were
+  already correct.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 warnings in the changed
+app-code files — `StudioEditorViewModel`, `SetMediaStrip`, `FreeformPlayerView`, `SessionMediaAssignment`;
+the test-target main-actor-isolation warnings are pre-existing). Full `SnappetTests` green (**876**, 2
+skipped) including 4 new `climbClipMoveTargets` cases; `SnappetUITests/NamedClimbTests` + `EditClimbTests`
+both pass (sim-wedge "hung before establishing connection" cleared by `simctl shutdown all` + retry).
+Device-only / deferred: the actual Photos asset deletion (the system confirm + on-disk removal), the PHPicker
+pick, and the context-menu long-press feel — a focused unit test for the pure helper + the green climb
+UITests cover the rest (a context-menu + Photos-deletion XCUITest is too device-y/flaky to force here).

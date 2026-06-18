@@ -33,6 +33,9 @@ struct FreeformPlayerView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    /// Photos library access for the deep-tap "Delete from Photos too" path (prompt 11) — the same
+    /// stateless `Sendable` service `SessionDetailView` uses for its deletion confirmation.
+    private let mediaLibrary = MediaLibraryService()
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
@@ -80,6 +83,10 @@ struct FreeformPlayerView: View {
     @State private var milestoneTrigger = 0
     /// A freeform clip opened in the shared Studio editor (§G).
     @State private var studioClip: FreeformStudioPresentation?
+    /// A clip the user asked to permanently delete via the attempt-strip deep-tap menu (prompt 11) — drives
+    /// the single Photos-aware confirmation hosted on this view (ported from `SessionDetailView`). `nil` ⇒
+    /// no deletion in flight.
+    @State private var pendingClipDeletion: SessionMedia?
 
     // MARK: Remembered rest timer (Phase 7)
     /// Opt-in: when on, completing an attempt/set auto-starts a count-down rest in the command bar.
@@ -240,6 +247,23 @@ struct FreeformPlayerView: View {
             Button("Climbing") { addingClimb = true }
             Button("Timed exercise") { addingTimed = true }
             Button("Cancel", role: .cancel) {}
+        }
+        // Deep-tap clip deletion (prompt 11), ported VERBATIM from `SessionDetailView` (incl. the Photos
+        // wording): "Remove from attempt only" untie it to General (keeps the file); "Delete from Photos
+        // too" permanently removes the underlying asset (iOS then asks once more). Hosted here on the
+        // (stable) logging screen so the dialog survives the climb cards' re-renders.
+        .confirmationDialog(
+            "Delete this \(pendingClipDeletion?.kind == .video ? "video" : "photo")?",
+            isPresented: Binding(get: { pendingClipDeletion != nil },
+                                 set: { if !$0 { pendingClipDeletion = nil } }),
+            titleVisibility: .visible, presenting: pendingClipDeletion
+        ) { item in
+            Button("Remove from attempt only") { reassignClip(item, to: nil, set: nil) }
+            Button("Delete from Photos too", role: .destructive) { deleteClipFromPhotos(item) }
+                .accessibilityIdentifier("freeform.clipDeleteConfirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("“Remove from session” keeps the video in your Photos library. “Delete from Photos” permanently removes it (iOS will ask once more).")
         }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
@@ -644,8 +668,14 @@ struct FreeformPlayerView: View {
                     // `.climbAttempt` sets (`SessionMediaAssignment.completions`), so this is a pure UI add.
                     // Keyed by exercise+attempt so its @Query re-scopes per attempt. Device-only for the
                     // PHPicker/Photos pick; the affordance renders everywhere.
+                    // Deep-tap clip lifecycle (prompt 11): the move-targets are this climb's attempts, and
+                    // the reassign/delete closures pin `.manual`/`.general` (sticky) or host the Photos-aware
+                    // delete confirmation.
                     SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
-                                  onEdit: { presentStudio($0) })
+                                  onEdit: { presentStudio($0) },
+                                  moveTargets: climbClipMoveTargets(for: ex),
+                                  onReassign: { reassignClip($0, to: $1, set: $2) },
+                                  onRequestDelete: { pendingClipDeletion = $0 })
                         .id("climb-media-\(ex.id)-\(i)")
                 }
                 .onDelete { offsets in deleteSets(ex, at: offsets) }
@@ -1324,6 +1354,36 @@ struct FreeformPlayerView: View {
             }
         }
         if changed { try? context.save() }
+    }
+
+    // MARK: - Clip lifecycle (deep-tap: reassign / remove / delete) — prompt 11
+
+    /// Reassign a clip to `(exerciseID, setIndex)` — the move-to-attempt and remove-from-attempt paths of
+    /// the deep-tap menu (prompt 11). Ported from `SessionDetailView.reassign`: a `nil` exerciseID untie it
+    /// to the **General** bucket (it leaves the strip but keeps the file); any target pins `.manual` so the
+    /// auto-reconciler (`reconcileAssignments`, which only re-places `.auto` rows) never clobbers the choice.
+    private func reassignClip(_ item: SessionMedia, to exerciseID: UUID?, set setIndex: Int?) {
+        item.assignedExerciseID = exerciseID
+        item.assignedSetIndex = setIndex
+        item.assignmentSource = exerciseID == nil ? .general : .manual
+        try? context.save()
+    }
+
+    /// Permanently delete a clip — the deep-tap menu's destructive "Delete clip…" → the confirmation's
+    /// "Delete from Photos too". Ported VERBATIM from `SessionDetailView.deleteFromPhotos`: delete the
+    /// Photos asset FIRST (iOS shows its own confirmation), and only drop the session tag if that
+    /// succeeds, so a denied/cancelled delete doesn't orphan the tag from a still-present asset.
+    private func deleteClipFromPhotos(_ item: SessionMedia) {
+        let id = item.localIdentifier
+        Task {
+            do {
+                try await mediaLibrary.deleteAssets(localIdentifiers: [id])
+                context.delete(item)
+                try? context.save()
+            } catch {
+                // Asset not deleted (denied/cancelled) — keep the tag so the clip still shows.
+            }
+        }
     }
 
     // MARK: - Clip → Studio (§G)
