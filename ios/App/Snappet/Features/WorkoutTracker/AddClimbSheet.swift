@@ -17,7 +17,11 @@ import SwiftUI
 struct AddClimbSheet: View {
     /// The session's most recent climb gym, inherited as the default (free text, no catalog gate).
     let inheritedGym: String?
+    /// EDIT mode (prompt 09): when non-nil, the sheet opens PREFILLED from an existing climb and the CTA
+    /// becomes a single "Save" (no "Add & log first attempt"). `nil` ⇒ the original add-a-climb flow.
+    var initial: AddClimbParams? = nil
     /// Hand back the created climb's identity; `logFirstAttempt` true ⇒ auto-expand to the outcome strip.
+    /// In EDIT mode `logFirstAttempt` is always false (Save just overwrites the climb's fields in place).
     let onAdd: (_ params: AddClimbParams, _ logFirstAttempt: Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -46,6 +50,9 @@ struct AddClimbSheet: View {
     /// One-shot guard so a double/triple-tapped CTA (a user mash, or XCUITest delivering the tap more
     /// than once as the sheet settles — the documented double-fire hazard) creates exactly ONE climb.
     @State private var committed = false
+    /// True once `.onAppear` has finished seeding state, so the `type` `.onChange` (which snaps the grade
+    /// to the scale's default) doesn't clobber an EDIT-mode prefill when `seed(from:)` flips the type.
+    @State private var didSeed = false
 
     /// The scale the user last toggled to **for this discipline** (boulder / route), so the V↔Font /
     /// YDS↔French choice sticks per type across sheet opens (Phase 7, task 5). One key per discipline.
@@ -76,7 +83,7 @@ struct AddClimbSheet: View {
                 moreSection
                 ctaSection
             }
-            .navigationTitle("Add a climb")
+            .navigationTitle(initial == nil ? "Add a climb" : "Edit climb")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -84,18 +91,38 @@ struct AddClimbSheet: View {
             .presentationDetents([.medium, .large])
         }
         .onAppear {
-            gym = inheritedGym ?? ""
-            // Restore the remembered scale for the opening discipline (boulder default), then snap the
-            // grade to that scale's default so a route never opens on a V grade.
-            scale = rememberedScale(for: type)
-            grade = scale.defaultGrade
+            if let initial {
+                seed(from: initial)        // EDIT mode: prefill every field from the existing climb
+            } else {
+                gym = inheritedGym ?? ""
+                // Restore the remembered scale for the opening discipline (boulder default), then snap the
+                // grade to that scale's default so a route never opens on a V grade.
+                scale = rememberedScale(for: type)
+                grade = scale.defaultGrade
+            }
             recentGrades = Self.loadRecents(scale: scale)
             recentGyms = Self.loadRecentGyms()
             recentWalls = Self.loadWalls(forGym: trimmedGym)   // walls for the inherited gym, if any
-            // Surface the gym affordance when there's a remembered gym to one-tap (recents OR inherited),
-            // so the chip rail / prefilled gym is discoverable without hunting under the disclosure.
-            if !recentGyms.isEmpty || (inheritedGym?.isEmpty == false) { showMore = true }
+            // Surface the gym affordance when there's a remembered gym to one-tap (recents OR inherited OR
+            // a prefilled gym in edit mode), so the chip rail / prefilled gym is discoverable.
+            if !recentGyms.isEmpty || (inheritedGym?.isEmpty == false) || (trimmedGym != nil) { showMore = true }
+            didSeed = true
         }
+    }
+
+    /// Prefill the sheet's state from an existing climb (EDIT mode). The grade is shown verbatim; the
+    /// stored NAME is shown raw (an empty/type-label-only name renders blank so the placeholder shows and
+    /// `resolvedName` re-derives the fallback on Save).
+    private func seed(from p: AddClimbParams) {
+        type = p.type
+        scale = p.scale
+        grade = p.grade
+        color = p.color
+        // A name equal to the bare type label (the add-flow's blank fallback) shows as empty so the
+        // placeholder reads and the user can clear it; any real name is shown verbatim.
+        name = (p.name == p.type.label) ? "" : p.name
+        gym = p.gym ?? ""
+        wall = p.wall ?? ""
     }
 
     /// The scale remembered for a discipline (Phase 7), falling back to the type's default if the stored
@@ -124,6 +151,7 @@ struct AddClimbSheet: View {
             // Changing type restores the scale REMEMBERED for the new discipline (Phase 7) and snaps the
             // grade to that scale's default — a route can't carry a V grade. Recents re-load for the scale.
             .onChange(of: type) { _, newType in
+                guard didSeed else { return }   // don't clobber an EDIT-mode prefill as `seed` sets the type
                 scale = rememberedScale(for: newType)
                 grade = scale.defaultGrade
                 recentGrades = Self.loadRecents(scale: scale)
@@ -299,24 +327,37 @@ struct AddClimbSheet: View {
         }
     }
 
-    private var ctaSection: some View {
+    @ViewBuilder private var ctaSection: some View {
         Section {
-            Button {
-                commit(logFirstAttempt: true)
-            } label: {
-                Text("Add & log first attempt").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.workout)
-            .accessibilityIdentifier("addClimb.addAndLog")
+            if initial == nil {
+                // ADD mode: the two original CTAs (prominent "Add & log first attempt" · bordered "Add climb").
+                Button {
+                    commit(logFirstAttempt: true)
+                } label: {
+                    Text("Add & log first attempt").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.workout)
+                .accessibilityIdentifier("addClimb.addAndLog")
 
-            Button {
-                commit(logFirstAttempt: false)
-            } label: {
-                Text("Add climb").frame(maxWidth: .infinity)
+                Button {
+                    commit(logFirstAttempt: false)
+                } label: {
+                    Text("Add climb").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("addClimb.add")
+            } else {
+                // EDIT mode (prompt 09): a single "Save" that overwrites the climb's fields in place.
+                Button {
+                    commit(logFirstAttempt: false)
+                } label: {
+                    Text("Save").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.workout)
+                .accessibilityIdentifier("addClimb.save")
             }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("addClimb.add")
         }
         .listRowBackground(Color.clear)
     }
@@ -444,6 +485,25 @@ struct AddClimbParams {
     let gym: String?
     let wall: String?
     let color: ClimbColor?
+
+    init(type: ClimbType, scale: GradeScale, grade: String, name: String,
+         gym: String?, wall: String?, color: ClimbColor?) {
+        self.type = type; self.scale = scale; self.grade = grade; self.name = name
+        self.gym = gym; self.wall = wall; self.color = color
+    }
+
+    /// Build a prefill from an existing climb `SessionExercise` (EDIT mode, prompt 09). The grade falls
+    /// back to the scale's default when the climb has none, and the NAME to the type label so the sheet
+    /// always opens on a valid grade rung and shows the climb's identity.
+    init(from ex: SessionExercise) {
+        self.type = ex.climbType
+        self.scale = ex.climbGradeScale
+        self.grade = ex.climbGradeLabel ?? ex.climbGradeScale.defaultGrade
+        self.name = ex.displayName ?? ex.climbType.label
+        self.gym = ex.gym?.isEmpty == false ? ex.gym : nil
+        self.wall = ex.wall?.isEmpty == false ? ex.wall : nil
+        self.color = ex.climbColor
+    }
 }
 
 private extension String {

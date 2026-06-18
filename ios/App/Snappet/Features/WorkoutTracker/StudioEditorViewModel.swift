@@ -24,6 +24,12 @@ final class StudioEditorViewModel {
     /// so a scoped edit carries into every other scope of the same shared project.
     let visibleClipMediaIDs: Set<UUID>?
 
+    /// A FREEFORM climb's caption ("Cave Roof · V5"), threaded from the Quick Session player when the
+    /// opened clip belongs to a `.climbAttempt` exercise (prompt 09). A freeform climb has no Kilter
+    /// `KilterLogEntry`, so `resolvedClimbUUID` is nil — this lets the "Add climb name" action still drop
+    /// the same `.climbName` lower-third, seeded with this caption. `nil` for Kilter / non-climb clips.
+    private let suggestedClimbCaption: String?
+
     var selectedClipID: UUID?
     var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
@@ -58,10 +64,12 @@ final class StudioEditorViewModel {
 
     private static let log = Logger(subsystem: "com.snappet.app", category: "studio")
 
-    init(project: StudioProject, context: ModelContext, visibleClipMediaIDs: Set<UUID>? = nil) {
+    init(project: StudioProject, context: ModelContext, visibleClipMediaIDs: Set<UUID>? = nil,
+         suggestedClimbCaption: String? = nil) {
         self.project = project
         self.context = context
         self.visibleClipMediaIDs = visibleClipMediaIDs
+        self.suggestedClimbCaption = suggestedClimbCaption?.isEmpty == false ? suggestedClimbCaption : nil
         undo = UndoStack(StudioProjectSnapshot(project))
     }
 
@@ -394,13 +402,24 @@ final class StudioEditorViewModel {
     private var climbSetterEnabled: Set<UUID> = []
 
     /// True when a climb resolves for the selected (or any) clip — gates the "Climb" action button.
-    var hasClimbInfo: Bool { resolvedClimbUUID != nil }
+    /// A Kilter climb resolves via `resolvedClimbUUID`; a FREEFORM climb (prompt 09) has no
+    /// `KilterLogEntry`, so the threaded `suggestedClimbCaption` widens the gate for it.
+    var hasClimbInfo: Bool { resolvedClimbUUID != nil || suggestedClimbCaption != nil }
 
     /// Add a climb-name overlay (a styled lower-third), prefilled with the resolved climb's
-    /// name · grade · angle, positioned low-centre. The text stays freely editable afterwards.
+    /// name · grade · angle, positioned low-centre. The text stays freely editable afterwards. A Kilter
+    /// clip derives the caption from its `KilterLogEntry` (the unchanged path); a FREEFORM clip with no
+    /// `KilterLogEntry` falls back to the threaded `suggestedClimbCaption` (prompt 09), dropping the SAME
+    /// overlay shape/position so it's draggable / editable / deletable identically.
     func addClimbNameOverlay() {
-        guard let uuid = resolvedClimbUUID else { return }
-        let caption = climbCaption(uuid: uuid, includeSetter: false)
+        let caption: String
+        if let uuid = resolvedClimbUUID {
+            caption = climbCaption(uuid: uuid, includeSetter: false)
+        } else if let suggested = suggestedClimbCaption {
+            caption = suggested
+        } else {
+            return
+        }
         let overlay = OverlayItem(kind: .climbName, content: caption, startSec: 0,
                                   endSec: max(3, totalDuration),
                                   position: CGPoint(x: 0.5, y: 0.85))

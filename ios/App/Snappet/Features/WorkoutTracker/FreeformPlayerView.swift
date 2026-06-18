@@ -40,6 +40,9 @@ struct FreeformPlayerView: View {
     /// The "Add a climb" sheet (Quick Session redesign Phase 1): the climb-first entry point both the
     /// empty-state Climbing card and the add-menu's Climbing button now present.
     @State private var addingClimb = false
+    /// The climb being EDITED (prompt 09): when set, the same `AddClimbSheet` opens PREFILLED in edit mode
+    /// and Save overwrites that climb's fields in place (no duplicate). `nil` ⇒ no edit in flight.
+    @State private var editingClimb: EditClimbTarget?
     /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
     /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
     @State private var addingTimed = false
@@ -188,6 +191,13 @@ struct FreeformPlayerView: View {
                 addClimbFromSheet(params, logFirstAttempt: logFirst)
             }
         }
+        // Edit a climb's details (prompt 09): the same sheet PREFILLED from the climb, with a single "Save"
+        // that overwrites that `SessionExercise`'s climb fields in place (attempts preserved, no duplicate).
+        .sheet(item: $editingClimb) { target in
+            AddClimbSheet(inheritedGym: lastClimbGym, initial: target.initial) { params, _ in
+                updateClimb(target.exerciseID, params)
+            }
+        }
         // Quick Session redesign Phase 5: tapping Timed opens the pick-or-create sheet (searchable catalog
         // · Create new · recents · seeded suggestions) instead of dropping a bare, unnamed timed row.
         .sheet(isPresented: $addingTimed) {
@@ -220,7 +230,8 @@ struct FreeformPlayerView: View {
         // session, so a clip opened mid-workout keeps its heart-rate overlay.
         .fullScreenCover(item: $studioClip) { p in
             StudioEditorView(project: p.project, context: context,
-                             focusClipMediaID: p.focusClipMediaID, visibleClipMediaIDs: p.visibleClipMediaIDs)
+                             focusClipMediaID: p.focusClipMediaID, visibleClipMediaIDs: p.visibleClipMediaIDs,
+                             suggestedClimbCaption: p.climbCaption)
         }
         // Add-exercise options (§A). The button titles are the labels the freeform UITests drive.
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
@@ -627,6 +638,14 @@ struct FreeformPlayerView: View {
                         Spacer()
                     }
                     .accessibilityIdentifier("freeform.setRow")
+                    // Per-attempt media (prompt 09): a clip filmed during / attached to THIS attempt shows
+                    // under it; a video tap opens the Studio editor. Auto-assignment already tags
+                    // `.climbAttempt` sets (`SessionMediaAssignment.completions`), so this is a pure UI add.
+                    // Keyed by exercise+attempt so its @Query re-scopes per attempt. Device-only for the
+                    // PHPicker/Photos pick; the affordance renders everywhere.
+                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
+                                  onEdit: { presentStudio($0) })
+                        .id("climb-media-\(ex.id)-\(i)")
                 }
                 .onDelete { offsets in deleteSets(ex, at: offsets) }
 
@@ -666,10 +685,20 @@ struct FreeformPlayerView: View {
                 .accessibilityIdentifier("freeform.climbExpand")
                 .accessibilityLabel(expanded ? "Collapse climb" : "Expand climb")
                 Menu {
+                    // Edit details (prompt 09): open the Add-a-climb sheet PREFILLED in edit mode so the
+                    // type/grade/scale/name/gym/wall/colour can all be changed — not just the inline name.
+                    Button {
+                        editingClimb = EditClimbTarget(exerciseID: ex.id, initial: AddClimbParams(from: ex))
+                    } label: {
+                        Label("Edit details", systemImage: "pencil")
+                    }
+                    .accessibilityIdentifier("freeform.editClimb")
                     Button(role: .destructive) { removeExercise(ex) } label: {
                         Label("Remove climb", systemImage: "trash")
                     }
                 } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("freeform.climbMenu")
+                    .accessibilityLabel("Climb options")
             }
             climbLocationLine(ex)
             HStack(spacing: 8) {
@@ -953,7 +982,8 @@ struct FreeformPlayerView: View {
         // the cover is mounted on the completion screen (the logging screen's cover isn't in this branch).
         .fullScreenCover(item: $studioClip) { p in
             StudioEditorView(project: p.project, context: context,
-                             focusClipMediaID: p.focusClipMediaID, visibleClipMediaIDs: p.visibleClipMediaIDs)
+                             focusClipMediaID: p.focusClipMediaID, visibleClipMediaIDs: p.visibleClipMediaIDs,
+                             suggestedClimbCaption: p.climbCaption)
         }
     }
 
@@ -1004,6 +1034,25 @@ struct FreeformPlayerView: View {
         session.exercises.append(climb)
         expandedClimbs.insert(climb.id)
         if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
+        persist()
+        pushLiveActivity()
+    }
+
+    /// Overwrite an existing climb's identity fields IN PLACE from the edit sheet (prompt 09): the same
+    /// `SessionExercise` keeps its `id` and its logged attempts (the `sets`) — only the climb-level
+    /// type/grade/scale/name/gym/wall/colour change. An empty NAME falls back to the type label (the
+    /// sheet's `resolvedName` already supplies that), mirroring the add path. No duplicate is created.
+    /// Note: existing attempts keep the grade they were stamped with at log time (the per-`SetLog` source
+    /// of truth for send/pyramid reads); the card's grade pill re-derives from the climb immediately.
+    private func updateClimb(_ exID: UUID, _ params: AddClimbParams) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        session.exercises[idx].displayName = params.name
+        session.exercises[idx].climbTypeRaw = params.type.rawValue
+        session.exercises[idx].climbGradeLabel = params.grade
+        session.exercises[idx].climbGradeScaleRaw = params.scale.rawValue
+        session.exercises[idx].gym = params.gym
+        session.exercises[idx].wall = params.wall
+        session.exercises[idx].climbColorRaw = params.color?.rawValue
         persist()
         pushLiveActivity()
     }
@@ -1261,7 +1310,19 @@ struct FreeformPlayerView: View {
             predicate: #Predicate { $0.sessionID == sid }))) ?? []
         let project = StudioEntry.resolveProject(for: session, media: media, context: context)
         studioClip = FreeformStudioPresentation(
-            project: project, visibleClipMediaIDs: [clip.id], focusClipMediaID: clip.id)
+            project: project, visibleClipMediaIDs: [clip.id], focusClipMediaID: clip.id,
+            climbCaption: freeformClimbCaption(for: clip))
+    }
+
+    /// The climb-name caption ("Cave Roof · V5") for a clip assigned to a freeform `.climbAttempt`
+    /// exercise (prompt 09): name · grade, dropping either piece when blank. `nil` when the clip isn't
+    /// assigned to a climb — so the editor's Kilter (`resolvedClimbUUID`) path is untouched.
+    private func freeformClimbCaption(for clip: SessionMedia) -> String? {
+        guard let exID = clip.assignedExerciseID,
+              let ex = session.exercises.first(where: { $0.id == exID && $0.kind == .climbAttempt })
+        else { return nil }
+        let parts = [ex.displayName, ex.climbGradeLabel].compactMap { $0?.isEmpty == false ? $0 : nil }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Open the WHOLE session in the shared Studio editor — the completion summary's "Turn N clips into a
@@ -1319,6 +1380,18 @@ private struct FreeformStudioPresentation: Identifiable {
     let visibleClipMediaIDs: Set<UUID>?
     /// Pre-selects the tapped clip on open.
     let focusClipMediaID: UUID?
+    /// The freeform climb's caption ("Cave Roof · V5") when the tapped clip belongs to a `.climbAttempt`
+    /// exercise (prompt 09) — threaded to the editor so the user can drop the climb's NAME as a lower-third
+    /// overlay even without a Kilter `KilterLogEntry`. `nil` for non-climb clips / the whole-session reel.
+    var climbCaption: String? = nil
+}
+
+/// A climb being EDITED (prompt 09): the climb's `id` to overwrite + the prefill snapshot for the sheet.
+/// `Identifiable` so it drives a `.sheet(item:)` (re-presents per climb without a stale binding).
+private struct EditClimbTarget: Identifiable {
+    let exerciseID: UUID
+    let initial: AddClimbParams
+    var id: UUID { exerciseID }
 }
 
 /// Which exercise a new set/attempt is being logged into (drives the `LogSetSheet`). Carries the

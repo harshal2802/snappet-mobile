@@ -31,9 +31,10 @@ struct StudioEditorView: View {
     private let focusClipMediaID: UUID?
 
     init(project: StudioProject, context: ModelContext, focusClipMediaID: UUID? = nil,
-         visibleClipMediaIDs: Set<UUID>? = nil) {
+         visibleClipMediaIDs: Set<UUID>? = nil, suggestedClimbCaption: String? = nil) {
         _vm = State(initialValue: StudioEditorViewModel(project: project, context: context,
-                                                        visibleClipMediaIDs: visibleClipMediaIDs))
+                                                        visibleClipMediaIDs: visibleClipMediaIDs,
+                                                        suggestedClimbCaption: suggestedClimbCaption))
         self.focusClipMediaID = focusClipMediaID
     }
 

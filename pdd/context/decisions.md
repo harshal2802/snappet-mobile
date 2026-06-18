@@ -5358,3 +5358,50 @@ On-device-feedback iteration on `AddClimbSheet` (Quick Session redesign):
 (**868**, +2 new: ClimbColor palette + mergedRecents); `SnappetUITests/NamedClimbTests` green. Sim note:
 the iPhone 17 Pro runner wedged ("hung before establishing connection") after a device build left MrRobot
 connected+locked — an `xcrun simctl erase` + a different sim model (iPhone 17) cleared it.
+
+## 2026-06-18 — Climb card: edit details · per-attempt clips → editor · climb-name overlay (prompt 09)
+
+On-device-feedback iteration on the freeform CLIMB card (Quick Session redesign), three cohesive parts:
+
+- **Edit climb details — reuse `AddClimbSheet` in an EDIT mode, not a second sheet.** A new optional
+  `initial: AddClimbParams?` makes the sheet open PREFILLED (title "Edit climb", a single "Save" CTA
+  `addClimb.save`, no "Add & log first attempt"); a "Edit details" (pencil) item sits above "Remove climb"
+  in the climb header Menu (`freeform.editClimb`; the Menu's ellipsis label gained `freeform.climbMenu` so
+  the XCUITest can open it deterministically — SwiftUI Menu items aren't queryable until the label is
+  tapped). The player routes Save to a new `updateClimb(_ exID:, _ params:)` that overwrites THAT
+  `SessionExercise`'s type/grade/scale/name/gym/wall/colour **in place** (same `id`, attempts preserved —
+  no duplicate). A `AddClimbParams.init(from: SessionExercise)` builds the prefill (grade falls back to the
+  scale default, name to the type label). **Gotcha:** the sheet's `type` `.onChange` snaps the grade to the
+  scale default, which would clobber a route prefill when `seed(from:)` flips the type — guarded with a
+  one-shot `didSeed` flag so the reset only fires on a USER type change, not the seed. A name equal to the
+  bare type label (the add-flow blank fallback) is shown empty so the placeholder reads. Decision: existing
+  logged attempts keep the grade they were **stamped** with at log time (the per-`SetLog` source of truth
+  for the send/pyramid reads); only the card-level grade re-derives — editing the climb is not a
+  retroactive re-stamp.
+- **Per-attempt media — a UI-only add (no model change).** `SetMediaStrip(session:exerciseID:setIndex:onEdit:)`
+  is now rendered under EACH attempt row in the expanded card (`.id("climb-media-\(ex.id)-\(i)")`, `onEdit`
+  → `presentStudio`). `SessionMediaAssignment.completions(from:)` already tags `.climbAttempt` sets, so an
+  auto-discovered or manually-attached clip maps to `(climbExerciseID, attemptIndex)` with no schema change;
+  a video tap opens the shared Studio editor exactly as lifting/timed sets do.
+- **Climb-name overlay for FREEFORM clips — widen the existing `.climbName` path, keep the Kilter path
+  byte-identical.** A freeform climb has no Kilter `KilterLogEntry`, so `resolvedClimbUUID` is nil and the
+  editor's "Climb" action was unreachable for it. Thread the climb's caption end-to-end:
+  `FreeformStudioPresentation.climbCaption` (built in `presentStudio` from the tapped clip's
+  `assignedExerciseID` → `[displayName, climbGradeLabel].compactMap{…}.joined(" · ")`, e.g. "Cave Roof · V5")
+  → `StudioEditorView.init(… suggestedClimbCaption:)` → `StudioEditorViewModel`. `hasClimbInfo` widens to
+  `resolvedClimbUUID != nil || suggestedClimbCaption != nil`; `addClimbNameOverlay()` prefers the Kilter
+  caption when present, else drops the SAME `.climbName` lower-third (same shape/position/editability)
+  seeded with the suggested caption. `suggestedClimbCaption` is an additive optional defaulting to nil — the
+  Kilter (`resolvedClimbUUID`) path is untouched; the "Show setter" toggle stays Kilter-only (it early-returns
+  for a freeform overlay, which has no setter — benign/inert).
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 warnings in the changed
+app-code files — `FreeformPlayerView`, `AddClimbSheet`, `StudioEditorView`, `StudioEditorViewModel`); full
+`SnappetTests` green (**868**, 2 skipped); new `SnappetUITests/EditClimbTests` passes (add V3 → Edit details
+→ change rung to V5 → Save → `freeform.gradePill` reads V5 and there is still exactly ONE climb) and
+`NamedClimbTests` (Phase-1 add-mode regression guard) still passes. The new UITest file carries the same
+Swift-6 main-actor-isolation warnings the whole `SnappetUITests` target already has on `XCUIApplication`
+access (confirmed by force-recompiling `NamedClimbTests` — same warning family); it deliberately mirrors that
+plain-`XCTestCase` idiom rather than diverge. Device-only / deferred: the PHPicker/Photos pick on a real
+device (the strip's affordance renders on the sim but the library is empty), and the actual on-video overlay
+render/burn-in (Core-Animation export is device-only — the sim shows the editor's placeholder canvas).
