@@ -36,6 +36,7 @@ struct FreeformPlayerView: View {
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
+    @State private var showingAddMenu = false
     /// Cross-session prefill per exerciseId, cached so the ~1 Hz body re-render never re-scans history
     /// (history is fixed for the live session). Recomputed on appear + when an exercise is added. (§B)
     @State private var prefills: [String: LastSetLookup.LastTime] = [:]
@@ -62,17 +63,22 @@ struct FreeformPlayerView: View {
 
     private var loggingContent: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             List {
                 titleSection
                 if session.exercises.isEmpty { emptyStateHero }
                 ForEach(session.exercises) { ex in exerciseSection(ex) }
-                // Bottom buffer so the last exercise's controls never sit flush under the floating
-                // command bar — without it a tap near the final row can fall through to Finish.
-                Color.clear
-                    .frame(height: 64)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .accessibilityHidden(true)
+            }
+            // Keep the scroll content clear of the floating command bar: without enough bottom margin a
+            // tap on the last exercise's controls can fall through to the Finish button beneath it.
+            .contentMargins(.bottom, 96, for: .scrollContent)
+            // Auto-scroll to a newly added exercise so it (and its controls) are on-screen as the logbook
+            // grows — otherwise a new exercise can land off the bottom of a long list (and a List renders
+            // off-screen rows lazily, so the freshly-added section isn't even there until scrolled to).
+            .onChange(of: session.exercises.count) { old, new in
+                if new > old, let lastID = session.exercises.last?.id {
+                    withAnimation { proxy.scrollTo(lastID, anchor: .center) }
+                }
             }
             .navigationTitle(session.routineName)
             .navigationBarTitleDisplayMode(.inline)
@@ -91,27 +97,18 @@ struct FreeformPlayerView: View {
                     .accessibilityIdentifier("pauseWorkout")
                 }
                 // Add-exercise lives in the toolbar (§A): always one tap away regardless of how long the
-                // logbook grows — a bottom-of-list Menu becomes unreliable once the list scrolls. Keeps
-                // the freeform.addExercise id + the menu-item labels the existing UITests drive.
+                // logbook grows — a bottom-of-list Menu becomes unreachable once the list scrolls. A
+                // confirmationDialog (not a Menu) because SwiftUI toolbar-Menu item actions fire
+                // unreliably under XCUITest (the action sometimes no-ops); the dialog's buttons are
+                // dependable. Label is "New exercise" (not "Add …") so it doesn't collide with the
+                // picker's nav-bar "Add (N)" commit the UITests match by `BEGINSWITH 'Add'`.
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button { pickingLift = true } label: {
-                            Label("Lifting exercise", systemImage: "dumbbell.fill")
-                        }
-                        Button { addExercise(kind: .climbAttempt, name: SetMeasure.climbName("")) } label: {
-                            Label("Climbing", systemImage: "figure.climbing")
-                        }
-                        Button { addExercise(kind: .duration, name: "Timed exercise") } label: {
-                            Label("Timed exercise", systemImage: "timer")
-                        }
-                    } label: {
-                        // Label is "New exercise" (not "Add …") so it doesn't collide with the exercise
-                        // picker's nav-bar "Add (N)" commit that the UITests match by `BEGINSWITH 'Add'`.
-                        // The add flow is driven by the freeform.addExercise id, not this label.
+                    Button { showingAddMenu = true } label: {
                         Label("New exercise", systemImage: "plus")
                     }
                     .accessibilityIdentifier("freeform.addExercise")
                 }
+            }
             }
         }
         .interactiveDismissDisabled()
@@ -126,6 +123,13 @@ struct FreeformPlayerView: View {
         .sheet(isPresented: $showingMetrics) {
             LiveMetricsPanel(session: session)
         }
+        // Add-exercise options (§A). The button titles are the labels the freeform UITests drive.
+        .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
+            Button("Lifting exercise") { pickingLift = true }
+            Button("Climbing") { addExercise(kind: .climbAttempt, name: SetMeasure.climbName("")) }
+            Button("Timed exercise") { addExercise(kind: .duration, name: "Timed exercise") }
+            Button("Cancel", role: .cancel) {}
+        }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
             recomputePrefills()
@@ -137,6 +141,16 @@ struct FreeformPlayerView: View {
         // `startedAt`; these refresh HR + the exercise line + the paused flag. Mirrors `WorkoutPlayerView`.
         .onChange(of: app.liveWorkout.latestHR) { _, _ in pushLiveActivity() }
         .onChange(of: app.liveWorkout.isPaused) { _, _ in pushLiveActivity() }
+        // Live clip discovery (§F): periodically scan the Photos library for clips filmed during the
+        // session and auto-tag them to the set they fall in. Device-only — a no-op without full Photo
+        // access / on the simulator. ~20 s cadence (clips don't land faster, and a full-library time
+        // scan is not free).
+        .task {
+            while !Task.isCancelled {
+                await discoverClips()
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
     }
 
     // MARK: - Sections
@@ -247,6 +261,15 @@ struct FreeformPlayerView: View {
                           systemImage: "arrow.clockwise")
                 }
                 .accessibilityIdentifier("freeform.repeatSet")
+            }
+
+            // Live clips (§F): a per-set media strip for the latest set — auto-discovered clips appear
+            // here seconds after you film them, and you can attach more by hand. Keyed by exercise+set so
+            // its @Query re-scopes as sets are logged. Device-only (Photos/PHPicker); the affordance
+            // renders everywhere, the pick/discovery is on-device.
+            if let lastIndex = ex.sets.indices.last {
+                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex)
+                    .id("set-media-\(ex.id)-\(lastIndex)")
             }
         } header: {
             HStack {
@@ -490,6 +513,54 @@ struct FreeformPlayerView: View {
             }
         }
         prefills = map
+    }
+
+    // MARK: - Live clips (§F)
+
+    /// Discover clips filmed during the live session and auto-tag them to the set they fall in. Device
+    /// -only: a no-op unless Photos is fully authorized (`canAutoDiscover`). Mirrors the post-session
+    /// SessionDetailView path (discover → insert auto rows → reconcile) with the live window
+    /// (`completedAt: nil` ⇒ "up to now").
+    @MainActor private func discoverClips() async {
+        guard app.sessionMedia.canAutoDiscover else { return }
+        let sid = session.id
+        let existing = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        let existingIDs = Set(existing.map(\.localIdentifier))
+        guard let found = try? await app.sessionMedia.discover(
+            startedAt: session.startedAt, completedAt: nil, existingIdentifiers: existingIDs) else { return }
+        for c in found {
+            context.insert(SessionMedia(
+                sessionID: sid, localIdentifier: c.localIdentifier, kind: c.kind,
+                offsetSec: c.offsetSec, durationSec: c.durationSec, addedManually: false))
+        }
+        if !found.isEmpty { try? context.save() }
+        reconcileAssignments()
+    }
+
+    /// Re-place ONLY the auto-assigned clips against the running set-completion timeline (sticky manual /
+    /// general rows are never touched). The pure `SessionMediaAssignment` owns the clip→set mapping.
+    @MainActor private func reconcileAssignments() {
+        let sid = session.id
+        let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        let autoRows = media.filter { $0.assignmentSource == .auto }
+        guard !autoRows.isEmpty else { return }
+        let completions = SessionMediaAssignment.completions(from: session.exercises, startedAt: session.startedAt)
+        guard !completions.isEmpty else { return }
+        let assigned = SessionMediaAssignment.assign(
+            clips: autoRows.map { .init(id: $0.id, offsetSec: $0.offsetSec) },
+            completions: completions)
+        var changed = false
+        for row in autoRows {
+            let ref = assigned[row.id]
+            if row.assignedExerciseID != ref?.exerciseID || row.assignedSetIndex != ref?.setIndex {
+                row.assignedExerciseID = ref?.exerciseID
+                row.assignedSetIndex = ref?.setIndex
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
     }
 
     // MARK: - Live Activity
