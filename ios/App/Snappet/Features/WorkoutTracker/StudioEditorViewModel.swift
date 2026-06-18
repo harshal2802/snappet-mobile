@@ -30,6 +30,12 @@ final class StudioEditorViewModel {
     /// the same `.climbName` lower-third, seeded with this caption. `nil` for Kilter / non-climb clips.
     private let suggestedClimbCaption: String?
 
+    /// The 1-based attempt number the focused clip belongs to (prompt 10), threaded from the Quick Session
+    /// player when the opened clip is a single climb attempt. Gates + feeds the user-toggleable "Attempt #"
+    /// option on the climb-name tag. `nil` when there's no single attempt to tag (whole-session reel /
+    /// non-attempt clip / the combined "Edit all clips" view spanning many attempts).
+    let suggestedAttemptNumber: Int?
+
     var selectedClipID: UUID?
     var selectedOverlayID: UUID?
     private(set) var sourceDurations: [UUID: Double] = [:]
@@ -65,11 +71,12 @@ final class StudioEditorViewModel {
     private static let log = Logger(subsystem: "com.snappet.app", category: "studio")
 
     init(project: StudioProject, context: ModelContext, visibleClipMediaIDs: Set<UUID>? = nil,
-         suggestedClimbCaption: String? = nil) {
+         suggestedClimbCaption: String? = nil, suggestedAttemptNumber: Int? = nil) {
         self.project = project
         self.context = context
         self.visibleClipMediaIDs = visibleClipMediaIDs
         self.suggestedClimbCaption = suggestedClimbCaption?.isEmpty == false ? suggestedClimbCaption : nil
+        self.suggestedAttemptNumber = (suggestedAttemptNumber ?? 0) > 0 ? suggestedAttemptNumber : nil
         undo = UndoStack(StudioProjectSnapshot(project))
     }
 
@@ -440,6 +447,49 @@ final class StudioEditorViewModel {
         if on { climbSetterEnabled.insert(ov.id) } else { climbSetterEnabled.remove(ov.id) }
         let caption = climbCaption(uuid: uuid, includeSetter: on)
         editOverlayText(ov.id, caption)
+    }
+
+    /// Overlay ids whose caption currently carries the "Attempt N" line (prompt 10). Transient — the
+    /// caption string is the persisted source of truth; this just remembers the toggle so OFF can strip
+    /// the line and the toggle reads back correctly across selections.
+    private var climbAttemptEnabled: Set<UUID> = []
+
+    /// Whether the "Attempt #" option is available for the selected overlay: a `.climbName` overlay exists
+    /// AND a single attempt number was threaded in (prompt 10). Gates showing the toggle in the editor.
+    var canShowClimbAttempt: Bool {
+        guard suggestedAttemptNumber != nil, let ov = selectedOverlay else { return false }
+        return ov.kind == .climbName
+    }
+
+    /// True when the selected climb-name overlay's caption currently includes the "Attempt N" line.
+    var selectedClimbShowsAttempt: Bool {
+        guard let id = selectedOverlayID else { return false }
+        return climbAttemptEnabled.contains(id)
+    }
+
+    /// Toggle the "Attempt N" line on the selected climb-name overlay, recomposing THAT one overlay's
+    /// content via the pure `KilterClimbCaption.climbTagContent` (prompt 10). ON appends the attempt line
+    /// to the current base caption; OFF strips it — the base caption (incl. any manual edit) is preserved,
+    /// and no second overlay is created.
+    func setSelectedClimbShowsAttempt(_ on: Bool) {
+        guard let ov = selectedOverlay, ov.kind == .climbName,
+              let attempt = suggestedAttemptNumber else { return }
+        let base = climbTagBase(ov.content, attempt: attempt)
+        if on {
+            climbAttemptEnabled.insert(ov.id)
+            editOverlayText(ov.id, KilterClimbCaption.climbTagContent(
+                caption: base, attempt: attempt, showAttempt: true))
+        } else {
+            climbAttemptEnabled.remove(ov.id)
+            editOverlayText(ov.id, base)
+        }
+    }
+
+    /// Strip a trailing "Attempt N" line from a climb-tag caption, leaving the base (so manual edits to
+    /// the base survive a toggle and re-toggling never compounds the line).
+    private func climbTagBase(_ content: String, attempt: Int) -> String {
+        let suffix = "\nAttempt \(attempt)"
+        return content.hasSuffix(suffix) ? String(content.dropLast(suffix.count)) : content
     }
 
     /// The climb uuid backing the caption: the selected clip's assignment, else the first assigned clip.

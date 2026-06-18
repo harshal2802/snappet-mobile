@@ -31,10 +31,12 @@ struct StudioEditorView: View {
     private let focusClipMediaID: UUID?
 
     init(project: StudioProject, context: ModelContext, focusClipMediaID: UUID? = nil,
-         visibleClipMediaIDs: Set<UUID>? = nil, suggestedClimbCaption: String? = nil) {
+         visibleClipMediaIDs: Set<UUID>? = nil, suggestedClimbCaption: String? = nil,
+         suggestedAttemptNumber: Int? = nil) {
         _vm = State(initialValue: StudioEditorViewModel(project: project, context: context,
                                                         visibleClipMediaIDs: visibleClipMediaIDs,
-                                                        suggestedClimbCaption: suggestedClimbCaption))
+                                                        suggestedClimbCaption: suggestedClimbCaption,
+                                                        suggestedAttemptNumber: suggestedAttemptNumber))
         self.focusClipMediaID = focusClipMediaID
     }
 
@@ -319,6 +321,14 @@ struct StudioEditorView: View {
                                                         set: { vm.setSelectedClimbShowsSetter($0) }))
                         .font(.caption)
                         .accessibilityIdentifier("studioClimbSetter")
+                    // "Attempt #" (prompt 10): add/remove an "Attempt N" line on THIS climb-name tag for a
+                    // clip attached to a specific attempt. Shown only when an attempt number was threaded in.
+                    if vm.canShowClimbAttempt {
+                        Toggle("Attempt #", isOn: Binding(get: { vm.selectedClimbShowsAttempt },
+                                                          set: { vm.setSelectedClimbShowsAttempt($0) }))
+                            .font(.caption)
+                            .accessibilityIdentifier("studioClimbAttempt")
+                    }
                 }
                 if ov.kind != .video {
                     HStack {

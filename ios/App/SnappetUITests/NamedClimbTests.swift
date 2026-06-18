@@ -3,12 +3,13 @@ import XCTest
 /// UI coverage for the **climb-first hierarchy** (Quick Session redesign Phase 1): tapping "Climbing"
 /// now opens an **"Add a climb"** sheet (TYPE → scale-aware GRADE → optional NAME → optional GYM) — NOT a
 /// bare attempt row. The created climb is an **expandable card** whose attempts log underneath it (grade
-/// captured ONCE on the card, never re-entered per attempt). The section header keeps the inline
-/// `freeform.climbName` TextField for renaming.
+/// captured ONCE on the card, never re-entered per attempt). The header name is a **tap-to-expand label**
+/// (`freeform.climbName`, prompt 10 — no longer an inline field); renaming is via ⋯ → Edit details.
 ///
 /// Drives the real path — Quick Start → tap Climbing → Add-a-climb sheet → pick a grade rung → name
 /// "Cave Project" → "Add & log first attempt" → pick the Sent outcome → assert the climb card shows the
-/// grade pill (V3), the Sent status, and the attempt row — and that the inline name is "Cave Project".
+/// grade pill (V3), the Sent status, and the attempt row — and that the header LABEL reads "Cave Project".
+/// Then renames via ⋯ → Edit details → addClimb.name → Save and asserts the label updates.
 ///
 /// Same fresh-store launch as the rest of SnappetUITests so the run never inherits a leftover active
 /// session. Extract shots with `xcrun xcresulttool export attachments`.
@@ -100,20 +101,36 @@ final class NamedClimbTests: XCTestCase {
         let row = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 4), "the logged attempt should appear as a row under the card")
 
-        // The inline name field reads the name captured in the sheet (Cave Project), and is renameable.
-        let nameField = app.textFields["freeform.climbName"]
-        XCTAssertTrue(nameField.waitForExistence(timeout: 4), "the climb card should keep an inline name field")
-        XCTAssertEqual(nameField.value as? String, "Cave Project",
-                       "the climb keeps the name captured in the Add-a-climb sheet")
+        // The header name is now a tap-to-expand LABEL (prompt 10) — a button whose `.label` is the climb
+        // name, no longer a text field — reading the name captured in the sheet.
+        let nameLabel = app.buttons["freeform.climbName"]
+        XCTAssertTrue(nameLabel.waitForExistence(timeout: 4), "the climb card should show its name label")
+        XCTAssertEqual(nameLabel.label, "Cave Project",
+                       "the header label reads the name captured in the Add-a-climb sheet")
 
-        // Rename inline — it persists as the field's value (SessionExercise.displayName).
-        clearAndType(nameField, "Slab\n")
-        XCTAssertEqual(nameField.value as? String, "Slab", "the renamed climb name should persist inline")
+        // Rename via ⋯ → Edit details → addClimb.name → Save (the only rename path now, prompt 10).
+        let climbMenu = app.buttons["freeform.climbMenu"]
+        XCTAssertTrue(climbMenu.waitForExistence(timeout: 4), "the climb header should offer an options menu")
+        climbMenu.tap()
+        let editItem = app.buttons["freeform.editClimb"]
+        XCTAssertTrue(editItem.waitForExistence(timeout: 4), "the climb Menu should offer 'Edit details'")
+        editItem.tap()
+        let editName = app.textFields["addClimb.name"]
+        clearAndType(editName, "Slab")
+        let save = app.buttons["addClimb.save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 4), "the edit sheet should show a single 'Save' CTA")
+        save.tap()
         snap("05-renamed")
+
+        // The header label now reads the new name (Cave Project → Slab), edited in place.
+        let renamed = app.buttons["freeform.climbName"]
+        XCTAssertTrue(renamed.waitForExistence(timeout: 6), "the climb card should still show its name label")
+        XCTAssertEqual(renamed.label, "Slab", "the renamed climb name should show on the header label")
     }
 
     /// Clear a text field's current value, then type `text` (which may end in "\n" to submit).
     private func clearAndType(_ field: XCUIElement, _ text: String) {
+        XCTAssertTrue(field.waitForExistence(timeout: 4), "field should exist before typing")
         field.tap()
         if let current = field.value as? String, !current.isEmpty {
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))

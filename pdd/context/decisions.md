@@ -5405,3 +5405,49 @@ access (confirmed by force-recompiling `NamedClimbTests` — same warning family
 plain-`XCTestCase` idiom rather than diverge. Device-only / deferred: the PHPicker/Photos pick on a real
 device (the strip's affordance renders on the sim but the library is empty), and the actual on-video overlay
 render/burn-in (Core-Animation export is device-only — the sim shows the editor's placeholder canvas).
+
+## 2026-06-18 — Climb card: name-tap expands · attempt-count on the tag · edit-all-clips (prompt 10)
+
+On-device-feedback iteration on the freeform CLIMB card + its Studio clip editor (Quick Session redesign),
+three cohesive refinements:
+- **Name tap = expand/collapse (not inline-edit).** The inline-editable `ClimbNameHeader` TextField is
+  replaced by a plain, non-editing `Text(name)` wrapped in a `Button { toggleExpanded(ex) }` — the name now
+  joins the chevron as the expand/collapse affordance. Editing the name is solely via ⋯ → "Edit details"
+  (prompt 09's `AddClimbSheet` edit mode). `ClimbNameHeader` is deleted (nothing else used it).
+  **A11y gotcha:** the id (`freeform.climbName`) had to move onto the **Button**, not the inner `Text` —
+  a `Button`-wrapped `Text` is exposed to XCUITest as a *button* (the inner Text's id is absorbed), so
+  `staticTexts["freeform.climbName"]` no longer matches. It's now `buttons["freeform.climbName"]` whose
+  `.label` is the climb name. `NamedClimbTests` was updated: the rename path is ⋯ (`freeform.climbMenu`) →
+  `freeform.editClimb` → `addClimb.name` → `addClimb.save`, then assert the button label shows the new name.
+- **Attempt-count option on the climb-name tag.** Additive `suggestedAttemptNumber: Int?` threaded
+  `FreeformStudioPresentation` → `StudioEditorView.init` → `StudioEditorViewModel` (default nil — the Kilter
+  and whole-session paths are byte-identical when nil). In `presentStudio(_ clip:)` it's
+  `clip.assignedSetIndex.map { $0 + 1 }` (the clip is attached to one attempt, `assignedSetIndex` 0-based).
+  The editor shows a user-toggleable **"Attempt #"** toggle (`studioClimbAttempt`) on the `.climbName`
+  overlay bar, gated by `canShowClimbAttempt` (`suggestedAttemptNumber != nil` AND a `.climbName` overlay
+  selected) — mirroring the existing "Show setter" toggle. Toggling regenerates THAT ONE overlay's content
+  via a new **pure** `KilterClimbCaption.climbTagContent(caption:attempt:showAttempt:)` (ON appends a
+  trailing "Attempt N" line; OFF strips it). **Decision:** OFF strips by removing a trailing `\nAttempt N`
+  suffix from the *current* content rather than re-deriving from climb data — so a manual edit to the base
+  caption survives the toggle and re-toggling never compounds the line (the base caption stays the editable
+  source of truth, and no 2nd overlay is created). Unit-tested in `KilterClimbCaptionTests`.
+- **Edit all clips together.** A "Edit all clips" item (`freeform.editAllClips`) is added to the climb ⋯
+  menu, shown only when the climb has ≥1 video `SessionMedia` (`assignedExerciseID == ex.id`,
+  `kind == .video`). `presentStudioForClimb(_ ex:)` gathers those media ids, resolves the session's single
+  shared+persisted `StudioProject` (`StudioEntry.resolveProject`), and presents
+  `FreeformStudioPresentation(project:, visibleClipMediaIDs: Set(thoseIds), focusClipMediaID: first,
+  climbCaption: <name · grade>, suggestedAttemptNumber: nil)`. **No new persistence** — because every
+  per-clip edit already lives on that one shared project, a wider `visibleClipMediaIDs` simply shows them
+  together; `suggestedAttemptNumber` is nil here since the combined view spans many attempts.
+- **Build gotcha:** after threading `suggestedAttemptNumber`, `FreeformPlayerView`'s giant `loggingContent`
+  opaque-result body tripped a "compiler unable to type-check in reasonable time". Extracted the climb ⋯
+  menu items into a `@ViewBuilder climbMenuContent(_ ex:)` helper to drop the inference load — kept as a
+  genuine simplification.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 warnings in the changed
+app-code files — `FreeformPlayerView`, `StudioEditorView`, `StudioEditorViewModel`, `KilterClimbCaption`;
+the test-target main-actor-isolation warnings are pre-existing). Full `SnappetTests` green (**872**, 2
+skipped) including 4 new `climbTagContent` cases; `SnappetUITests/NamedClimbTests` (updated rename-via-Edit-
+details path) and `EditClimbTests` both pass. Device-only / deferred: the actual on-video overlay
+render/burn-in incl. the "Attempt N" line (Core-Animation export is device-only — sim shows the placeholder
+canvas), and the PHPicker/Photos clip pick that populates the per-climb multi-clip view.

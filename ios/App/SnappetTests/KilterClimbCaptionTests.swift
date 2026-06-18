@@ -37,4 +37,37 @@ final class KilterClimbCaptionTests: XCTestCase {
         XCTAssertEqual(KilterClimbCaption.caption(name: "  ", gradeLabel: "7a", angle: 25,
                                                   setter: nil, includeSetter: false), "7a · 25°")
     }
+
+    // MARK: - climbTagContent (prompt 10 — the toggleable "Attempt N" line on the climb-name tag)
+
+    func testClimbTagAppendsAttemptLineWhenOn() {
+        // The base caption (which may itself be two lines) gets "Attempt N" on its own trailing line.
+        XCTAssertEqual(
+            KilterClimbCaption.climbTagContent(caption: "Cave Roof · V5", attempt: 3, showAttempt: true),
+            "Cave Roof · V5\nAttempt 3")
+        XCTAssertEqual(
+            KilterClimbCaption.climbTagContent(caption: "Blue Crux\n6c/V5 · 40°", attempt: 2, showAttempt: true),
+            "Blue Crux\n6c/V5 · 40°\nAttempt 2")
+    }
+
+    func testClimbTagOffReturnsBaseUnchanged() {
+        XCTAssertEqual(
+            KilterClimbCaption.climbTagContent(caption: "Cave Roof · V5", attempt: 3, showAttempt: false),
+            "Cave Roof · V5")
+    }
+
+    func testClimbTagNilOrNonPositiveAttemptIsNoOp() {
+        XCTAssertEqual(
+            KilterClimbCaption.climbTagContent(caption: "Cave Roof", attempt: nil, showAttempt: true),
+            "Cave Roof")
+        XCTAssertEqual(
+            KilterClimbCaption.climbTagContent(caption: "Cave Roof", attempt: 0, showAttempt: true),
+            "Cave Roof")
+    }
+
+    func testClimbTagEmptyCaptionWithAttemptIsAttemptOnly() {
+        XCTAssertEqual(
+            KilterClimbCaption.climbTagContent(caption: "", attempt: 1, showAttempt: true),
+            "Attempt 1")
+    }
 }
