@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import AudioToolbox
 import HighlightEngine
 
@@ -70,8 +71,14 @@ struct StructuredTimedRunner: View {
             vm.cueSink = { [self] cue in fire(cue) }
             vm.hrSink = { app.liveWorkout.latestHR }
             vm.start()
+            // Keep the screen awake through the interval run — a sleeping screen mid-set hid the phase
+            // ring + count-down (Phase-6 device note). Cheaply reverted on disappear. (Phase 7)
+            UIApplication.shared.isIdleTimerDisabled = true
         }
-        .onDisappear { vm.endTicking() }
+        .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
+            vm.endTicking()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { vm.syncToWallClock() }
         }

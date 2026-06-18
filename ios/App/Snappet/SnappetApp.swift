@@ -31,6 +31,18 @@ struct SnappetApp: App {
             // touch — clear the remembered "me" so expense tests are deterministic
             // (the KilterCatalogFixture precedent for its kilter.* keys).
             UserDefaults.standard.removeObject(forKey: "expense.myName")
+            // Quick Session recents/prefs also ride @AppStorage and survive a fresh store, so a prior
+            // run's recent grades/gyms (the chip rails) would add duplicate "V4"/gym elements the
+            // freeform walkthrough then trips over, and the per-type scale / auto-rest toggle would
+            // carry over. Clear them so the climbing flow starts from the seeded defaults every run.
+            let defaults = UserDefaults.standard
+            for scale in GradeScale.allCases {
+                defaults.removeObject(forKey: "freeform.recentGrades.\(scale.rawValue)")
+            }
+            for key in ["freeform.recentGyms", "addClimb.boulderScale", "addClimb.routeScale",
+                        "freeform.restAutoStart", RestTimerDefaults.storageKey] {
+                defaults.removeObject(forKey: key)
+            }
         }
         // Kilter catalog (issue #42): the app ships no catalog. Under the catalog test args this clears
         // any leftover on-device catalog and — only with `-uiTestInstallKilterCatalog` — installs a

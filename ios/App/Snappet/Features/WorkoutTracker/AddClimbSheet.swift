@@ -33,6 +33,17 @@ struct AddClimbSheet: View {
     /// rail and the YDS rail don't bleed into each other. Persisted in `UserDefaults` (the lightweight
     /// recents-store precedent), read on appear so the warm path is two taps (recent chip → CTA).
     @State private var recentGrades: [String] = []
+    /// The last ~5 gyms entered, surfaced as a one-tap chip rail under "More · gym" (Phase 7) — so a gym
+    /// is one tap, never re-typed. Persisted in `UserDefaults` like the recent grades; not scale-keyed.
+    @State private var recentGyms: [String] = []
+    /// One-shot guard so a double/triple-tapped CTA (a user mash, or XCUITest delivering the tap more
+    /// than once as the sheet settles — the documented double-fire hazard) creates exactly ONE climb.
+    @State private var committed = false
+
+    /// The scale the user last toggled to **for this discipline** (boulder / route), so the V↔Font /
+    /// YDS↔French choice sticks per type across sheet opens (Phase 7, task 5). One key per discipline.
+    @AppStorage("addClimb.boulderScale") private var boulderScaleRaw = GradeScale.vScale.rawValue
+    @AppStorage("addClimb.routeScale") private var routeScaleRaw = GradeScale.yds.rawValue
 
     private var resolvedName: String {
         // Empty NAME falls back to the TYPE label (e.g. "Boulder"), NOT the generic "Climbing", so a
@@ -64,8 +75,29 @@ struct AddClimbSheet: View {
         }
         .onAppear {
             gym = inheritedGym ?? ""
+            // Restore the remembered scale for the opening discipline (boulder default), then snap the
+            // grade to that scale's default so a route never opens on a V grade.
+            scale = rememberedScale(for: type)
+            grade = scale.defaultGrade
             recentGrades = Self.loadRecents(scale: scale)
+            recentGyms = Self.loadRecentGyms()
+            // Surface the gym affordance when there's a remembered gym to one-tap (recents OR inherited),
+            // so the chip rail / prefilled gym is discoverable without hunting under the disclosure.
+            if !recentGyms.isEmpty || (inheritedGym?.isEmpty == false) { showMore = true }
         }
+    }
+
+    /// The scale remembered for a discipline (Phase 7), falling back to the type's default if the stored
+    /// raw is unknown or doesn't match the discipline (so a corrupt default can't open a boulder on YDS).
+    private func rememberedScale(for type: ClimbType) -> GradeScale {
+        let raw = type.isRoute ? routeScaleRaw : boulderScaleRaw
+        let candidate = GradeScale(rawValue: raw) ?? type.defaultScale
+        return candidate.isBoulderScale == !type.isRoute ? candidate : type.defaultScale
+    }
+
+    /// Remember the chosen scale for the current discipline so it sticks per type across opens.
+    private func rememberScale(_ scale: GradeScale) {
+        if type.isRoute { routeScaleRaw = scale.rawValue } else { boulderScaleRaw = scale.rawValue }
     }
 
     // MARK: - Sections
@@ -78,10 +110,10 @@ struct AddClimbSheet: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .accessibilityIdentifier("addClimb.type")
-            // Changing type resets the scale to the type's default and the grade to that scale's default —
-            // a route can't carry a V grade. Recents re-load for the new scale.
+            // Changing type restores the scale REMEMBERED for the new discipline (Phase 7) and snaps the
+            // grade to that scale's default — a route can't carry a V grade. Recents re-load for the scale.
             .onChange(of: type) { _, newType in
-                scale = newType.defaultScale
+                scale = rememberedScale(for: newType)
                 grade = scale.defaultGrade
                 recentGrades = Self.loadRecents(scale: scale)
             }
@@ -162,6 +194,21 @@ struct AddClimbSheet: View {
                 TextField("Gym / location", text: $gym)
                     .submitLabel(.done)
                     .accessibilityIdentifier("addClimb.gym")
+                // Recent-gym chips (Phase 7): a one-tap rail of the last few gyms so a gym is never
+                // re-typed. Same persisted-recents idiom as the grade rail.
+                if !recentGyms.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(recentGyms, id: \.self) { g in
+                                chip(g, selected: g == gym.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                                    gym = g
+                                }
+                                .accessibilityIdentifier("addClimb.recentGym.\(g)")
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
             }
         }
     }
@@ -215,10 +262,14 @@ struct AddClimbSheet: View {
             grade = next.defaultGrade
         }
         recentGrades = Self.loadRecents(scale: next)
+        rememberScale(next)   // the notation choice sticks per type (Phase 7)
     }
 
     private func commit(logFirstAttempt: Bool) {
+        guard !committed else { return }   // ignore a double/triple-fired CTA → exactly one climb
+        committed = true
         Self.rememberRecent(grade, scale: scale)
+        if let g = params.gym { Self.rememberRecentGym(g) }   // remember the gym for the one-tap rail (Phase 7)
         onAdd(params, logFirstAttempt)
         dismiss()
     }
@@ -237,6 +288,24 @@ struct AddClimbSheet: View {
         recents.removeAll { $0 == grade }
         recents.insert(grade, at: 0)
         UserDefaults.standard.set(Array(recents.prefix(5)), forKey: recentsKey(scale))
+    }
+
+    // MARK: - Recent-gyms store (Phase 7)
+
+    private static let recentGymsKey = "freeform.recentGyms"
+
+    private static func loadRecentGyms() -> [String] {
+        UserDefaults.standard.stringArray(forKey: recentGymsKey) ?? []
+    }
+
+    /// Most-recent-first, de-duplicated (case-insensitively), capped at 5 — the gym chip-rail order.
+    private static func rememberRecentGym(_ gym: String) {
+        let trimmed = gym.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var recents = loadRecentGyms()
+        recents.removeAll { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+        recents.insert(trimmed, at: 0)
+        UserDefaults.standard.set(Array(recents.prefix(5)), forKey: recentGymsKey)
     }
 }
 

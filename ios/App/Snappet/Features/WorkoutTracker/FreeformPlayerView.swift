@@ -32,7 +32,7 @@ struct FreeformPlayerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var pickingLift = false
     @State private var logging: LogTarget?
@@ -61,9 +61,6 @@ struct FreeformPlayerView: View {
     /// push — avoids the push-vs-cover wedge `SessionRoute` exists for). The milestones drive the burst.
     @State private var showingSummary = false
     @State private var doneMilestones: [FreeformSummary.Milestone] = []
-    @State private var doneBounce = 0
-    @State private var celebrationTrigger = 0
-    @State private var showingDiscard = false
     /// The expandable live-metrics & recovery panel (§E), opened from the command-bar HR chip.
     @State private var showingMetrics = false
     /// The expanded live climbing-stats sheet (Phase 3), opened from the stat ribbon.
@@ -80,9 +77,26 @@ struct FreeformPlayerView: View {
     @State private var milestoneTrigger = 0
     /// A freeform clip opened in the shared Studio editor (§G).
     @State private var studioClip: FreeformStudioPresentation?
-    @ScaledMetric(relativeTo: .largeTitle) private var doneSealSize: CGFloat = 72
+
+    // MARK: Remembered rest timer (Phase 7)
+    /// Opt-in: when on, completing an attempt/set auto-starts a count-down rest in the command bar.
+    /// Off by default so existing logging is unchanged; toggled from the rest chip's menu.
+    @AppStorage("freeform.restAutoStart") private var restAutoStart = false
+    /// The per-context remembered rest durations, as a JSON `[contextKey: seconds]` blob (the only thing
+    /// `@AppStorage` can hold) — decoded/encoded through the pure `RestTimerDefaults`.
+    @AppStorage(RestTimerDefaults.storageKey) private var restDefaultsJSON = "{}"
+    /// The live rest count-down (reused `StopwatchViewModel(.countDown)` + the at-zero `Haptics`). Held
+    /// for the player's lifetime; armed + started per rest, non-blocking in the command bar.
+    @State private var restTimer = StopwatchViewModel(mode: .countDown(targetSec: 120))
+    /// The context the active rest belongs to (so its length is remembered back to the right bucket).
+    @State private var restContext: RestTimerDefaults.Context?
+    /// Whether a rest count-down is currently shown in the command bar.
+    @State private var restRunning = false
 
     private var unit: WeightUnit { defaultUnit }
+
+    /// The decoded remembered-rest map.
+    private var restDefaults: [String: Int] { RestTimerDefaults.decode(restDefaultsJSON) }
 
     var body: some View {
         if showingSummary {
@@ -230,6 +244,10 @@ struct FreeformPlayerView: View {
         // `startedAt`; these refresh HR + the exercise line + the paused flag. Mirrors `WorkoutPlayerView`.
         .onChange(of: app.liveWorkout.latestHR) { _, _ in pushLiveActivity() }
         .onChange(of: app.liveWorkout.isPaused) { _, _ in pushLiveActivity() }
+        // Keep the rest count-down correct across backgrounding (it's wall-clock-backed; this just nudges
+        // an immediate refresh + the at-zero haptic on return) and tear its ticker down on disappear.
+        .onChange(of: scenePhase) { _, phase in if phase == .active { restTimer.syncToWallClock() } }
+        .onDisappear { restTimer.endTicking() }
         // Live clip discovery (§F): periodically scan the Photos library for clips filmed during the
         // session and auto-tag them to the set they fall in. Device-only — a no-op without full Photo
         // access / on the simulator. ~20 s cadence (clips don't land faster, and a full-library time
@@ -769,8 +787,64 @@ struct FreeformPlayerView: View {
 
     /// The persistent bottom command bar (§A): wall-clock total timer · compact live-HR chip · the
     /// always-available Finish. The timer/HR are non-interactive labels (a labelled composite is fine —
-    /// the leaf-only rule is about interactive controls); Finish keeps its `freeform.finish` id.
+    /// the leaf-only rule is about interactive controls); Finish keeps its `freeform.finish` id. A thin
+    /// rest-timer banner (Phase 7) floats ABOVE it (an overlay, not a stacked row) while a rest count-down
+    /// is active — so the bar's `safeAreaInset` height (which the List's bottom content-margin is sized
+    /// to) is unchanged when there's no rest, keeping the last set's controls hittable.
     private var commandBar: some View {
+        commandBarRow
+            .background(.bar)
+            .overlay(alignment: .top) {
+                if restRunning {
+                    restBar.alignmentGuide(.top) { $0[.bottom] }   // sit just above the bar
+                }
+            }
+    }
+
+    /// The non-blocking rest count-down banner (Phase 7): a label · −/+ nudges (remembered per context) ·
+    /// a dismiss. Shown only while a rest is running; logging the next set is never gated by it. At zero
+    /// it reads "Rest done" (the at-zero haptic already fired in the view model).
+    private var restBar: some View {
+        let remaining = restTimer.reading.remaining ?? 0
+        let done = restTimer.reading.reachedZero
+        return HStack(spacing: 10) {
+            Image(systemName: "hourglass").foregroundStyle(SnappetColor.workout)
+            if done {
+                Text("Rest done").font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.workout)
+            } else {
+                Text("Rest").font(.subheadline).foregroundStyle(.secondary)
+                Text(SetMeasure.formatDuration(remaining))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .contentTransition(.numericText())
+                    .accessibilityIdentifier("freeform.restTimer")
+            }
+            Spacer(minLength: 8)
+            if !done {
+                Button { adjustRest(by: -RestTimerDefaults.stepSeconds) } label: {
+                    Image(systemName: "minus.circle.fill").font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("freeform.restMinus")
+                .accessibilityLabel("Shorten rest")
+                Button { adjustRest(by: RestTimerDefaults.stepSeconds) } label: {
+                    Image(systemName: "plus.circle.fill").font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("freeform.restPlus")
+                .accessibilityLabel("Lengthen rest")
+            }
+            Button { dismissRest() } label: {
+                Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("freeform.restDismiss")
+            .accessibilityLabel("Dismiss rest timer")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(SnappetColor.workout.opacity(0.10))
+    }
+
+    private var commandBarRow: some View {
         HStack(spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: isPaused ? "pause.fill" : "stopwatch")
@@ -808,6 +882,17 @@ struct FreeformPlayerView: View {
                 .accessibilityIdentifier("freeform.hrChip")
             }
 
+            // Auto-rest opt-in (Phase 7): a glanceable toggle so the remembered count-down can be turned
+            // on/off without leaving the player. Dimmed when off; a filled hourglass when armed.
+            Button { restAutoStart.toggle(); Haptics.tap() } label: {
+                Image(systemName: restAutoStart ? "hourglass.circle.fill" : "hourglass.circle")
+                    .font(.title3)
+                    .foregroundStyle(restAutoStart ? SnappetColor.workout : .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.restToggle")
+            .accessibilityLabel(restAutoStart ? "Auto rest timer on" : "Auto rest timer off")
+
             Button { finishTapped() } label: {
                 Text("Finish").font(.headline)
             }
@@ -817,86 +902,30 @@ struct FreeformPlayerView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(.bar)
     }
 
     // MARK: - Completion moment (§D)
 
-    /// The post-workout summary, mirroring the guided player's done-screen: a seal, the three completion
-    /// stats (Duration · Sets · a dominant-kind headline — Volume / Sends / Hold-time), an optional
-    /// milestone headline, and the Done / View detail CTAs (plus Keep going / Discard). A milestone fires
-    /// a `CelebrationBurst` (haptic always; confetti suppressed under Reduce Motion). All figures come from
-    /// the pure `FreeformSummary` — derived, not persisted, so there's no model change.
+    /// The post-workout summary — the **type-adaptive** `FreeformDoneSummaryView` (Quick Session redesign
+    /// Phase 7): a scrollable recap whose hero strip + cards adapt to `FreeformSummary.dominant` (climbing
+    /// pyramid + timeline + Effort / timed per-exercise / strength PRs + volume), keeping the milestone
+    /// seal + `CelebrationBurst` and the Done / View detail / Keep going / Discard actions. All figures
+    /// are derived from the pure `FreeformSummary` + `FreeformClimbStats` — no model change. The Studio
+    /// CTA (shown when video clips exist) opens the whole session in the shared editor.
     private var doneScreen: some View {
-        let stats = FreeformSummary.stats(for: session, unit: unit)
-        return VStack(spacing: 0) {
-            HStack {
-                Button("Keep going") { showingSummary = false }
-                    .accessibilityIdentifier("freeform.keepGoing")
-                Spacer()
-            }
-            .padding(.horizontal)
-
-            Spacer()
-
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: doneSealSize))
-                    .foregroundStyle(SnappetColor.workout)
-                    .symbolEffect(.bounce, value: reduceMotion ? 0 : doneBounce)
-                Text("Workout Complete").font(.title.bold())
-                Text(session.routineName).foregroundStyle(.secondary)
-                if let milestone = doneMilestones.first {
-                    Text(FreeformSummary.milestoneHeadline(milestone))
-                        .font(.headline)
-                        .foregroundStyle(SnappetColor.workout)
-                        .accessibilityIdentifier("freeform.milestone")
-                }
-                HStack(spacing: 28) {
-                    statCell(stats.duration)
-                    statCell(stats.sets)
-                    statCell(stats.headline)
-                }
-                .padding(.top, 8)
-            }
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Button { finish(saved: true) } label: {
-                    Text("Done").font(.headline).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
-                .accessibilityIdentifier("freeform.done")
-
-                Button { onViewDetail(session) } label: {
-                    Text("View detail").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("freeform.viewDetail")
-
-                Button("Discard workout", role: .destructive) { showingDiscard = true }
-                    .font(.footnote)
-                    .accessibilityIdentifier("freeform.discard")
-            }
-            .padding(.horizontal)
-        }
-        .padding(.vertical)
-        .celebrates(on: celebrationTrigger)
-        .confirmationDialog("Discard this workout?", isPresented: $showingDiscard, titleVisibility: .visible) {
-            Button("Discard (don't save)", role: .destructive) { finish(saved: false) }
-            Button("Keep going", role: .cancel) { showingSummary = false }
-        }
-        .onAppear {
-            doneBounce += 1
-            if !doneMilestones.isEmpty { celebrationTrigger += 1 }
-        }
-    }
-
-    private func statCell(_ stat: FreeformSummary.Stat) -> some View {
-        VStack(spacing: 4) {
-            Text(stat.value).font(.title2.bold().monospacedDigit()).contentTransition(.numericText())
-            Text(stat.label).font(.caption).foregroundStyle(.secondary)
+        FreeformDoneSummaryView(
+            session: session, resolver: resolver, unit: unit,
+            milestones: doneMilestones, maxHR: zoneMaxHR,
+            onDone: { finish(saved: true) },
+            onViewDetail: { onViewDetail(session) },
+            onKeepGoing: { showingSummary = false },
+            onDiscard: { finish(saved: false) },
+            onOpenStudio: { presentSessionStudio() })
+        // The summary's "Turn N clips into a reel" CTA opens the whole session in Studio — hosted here so
+        // the cover is mounted on the completion screen (the logging screen's cover isn't in this branch).
+        .fullScreenCover(item: $studioClip) { p in
+            StudioEditorView(project: p.project, context: context,
+                             focusClipMediaID: p.focusClipMediaID, visibleClipMediaIDs: p.visibleClipMediaIDs)
         }
     }
 
@@ -993,6 +1022,7 @@ struct FreeformPlayerView: View {
         guard let idx = session.exercises.firstIndex(where: { $0.id == id }) else { return }
         var entry = log
         entry.completedAt = .now
+        let ex = session.exercises[idx]
         session.exercises[idx].sets.append(entry)
         persist()
         recomputeClimbStats()
@@ -1003,6 +1033,58 @@ struct FreeformPlayerView: View {
         // flash). Fires once per milestone — never on every attempt. Reduce Motion → haptic + static
         // text only (handled by `.celebrates(on:)`).
         checkLiveMilestones()
+        // Remembered rest timer (Phase 7): opt-in, NON-blocking — after the log lands, auto-start a
+        // count-down rest in the command bar at the duration remembered for this exercise's context.
+        // Never gates logging (the append already happened); off by default.
+        if restAutoStart { startRest(for: ex) }
+    }
+
+    // MARK: - Remembered rest timer (Phase 7)
+
+    /// The rest-timer context for an exercise — climbs key by `ClimbType`, timed by category, lifting one
+    /// bucket — so the remembered duration recalls the right length for the next rest of that kind.
+    private func restContext(for ex: SessionExercise) -> RestTimerDefaults.Context {
+        switch ex.kind {
+        case .climbAttempt: return .climb(ex.climbType)
+        case .duration:     return .timed(TimedExerciseCategory(rawValue: ex.timedCategory ?? "") ?? .other)
+        case .repsWeight:   return .lifting
+        }
+    }
+
+    /// Arm + start the rest count-down at the remembered duration for the exercise's context. Reuses the
+    /// shared `StopwatchViewModel(.countDown)` (one success `Haptics` at zero); the chip is dismissable
+    /// and never blocks the next log.
+    private func startRest(for ex: SessionExercise) {
+        let ctx = restContext(for: ex)
+        let seconds = RestTimerDefaults.remembered(for: ctx, in: restDefaults)
+        restContext = ctx
+        restTimer.reset()
+        restTimer.arm(target: TimeInterval(seconds))
+        restTimer.start()
+        restRunning = true
+    }
+
+    /// Nudge the active rest by ±`RestTimerDefaults.stepSeconds`, re-arming from the time remaining, and
+    /// remember the new total per context so the next rest of this kind starts there. Clamped in band.
+    private func adjustRest(by delta: Int) {
+        guard let ctx = restContext else { return }
+        let remaining = restTimer.reading.remaining ?? 0
+        let next = RestTimerDefaults.clamp(Int(remaining.rounded()) + delta)
+        restTimer.reset()
+        restTimer.arm(target: TimeInterval(next))
+        restTimer.start()
+        restRunning = true
+        restDefaultsJSON = RestTimerDefaults.encode(
+            RestTimerDefaults.remembering(next, for: ctx, in: restDefaults))
+        Haptics.tap()
+    }
+
+    /// Dismiss the rest chip (stop the count-down). The remembered duration is untouched — only the live
+    /// timer ends.
+    private func dismissRest() {
+        restTimer.reset()
+        restRunning = false
+        restContext = nil
     }
 
     /// Recompute milestones against prior history and celebrate each one not yet celebrated this
@@ -1150,6 +1232,20 @@ struct FreeformPlayerView: View {
         let project = StudioEntry.resolveProject(for: session, media: media, context: context)
         studioClip = FreeformStudioPresentation(
             project: project, visibleClipMediaIDs: [clip.id], focusClipMediaID: clip.id)
+    }
+
+    /// Open the WHOLE session in the shared Studio editor — the completion summary's "Turn N clips into a
+    /// reel" CTA (Phase 7). Reuses the same one `StudioProject` (`StudioEntry.resolveProject`) the
+    /// per-clip path and the post-session detail resolve, with no clip filter so every clip is on the
+    /// reel timeline. No-op when the session has no video clip (the CTA is hidden in that case anyway).
+    @MainActor private func presentSessionStudio() {
+        let sid = session.id
+        let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        guard media.contains(where: { $0.kind == .video }) else { return }
+        let project = StudioEntry.resolveProject(for: session, media: media, context: context)
+        studioClip = FreeformStudioPresentation(
+            project: project, visibleClipMediaIDs: nil, focusClipMediaID: nil)
     }
 
     // MARK: - Live Activity

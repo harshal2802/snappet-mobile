@@ -41,7 +41,17 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         let adds = app.buttons.matching(identifier: "freeform.addSet")
         XCTAssertTrue(adds.firstMatch.waitForExistence(timeout: 4), "an Add set/attempt button should exist")
         let n = adds.count
-        adds.element(boundBy: n - 1).tap()
+        let button = adds.element(boundBy: n - 1)
+        // The newest exercise auto-scrolls to centre as it's added; depending on the exact resting
+        // position its Add button can land in a transiently non-hittable strip (a tap on a non-hittable
+        // visible element throws). A nudge-scroll settles the list and brings it fully into the hittable
+        // area; a coordinate tap is the fallback if `isHittable` still lags the layout.
+        if !button.isHittable { app.swipeUp() }
+        if button.isHittable {
+            button.tap()
+        } else {
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
     }
 
     private func typeIn(_ field: XCUIElement, _ text: String) {
@@ -91,7 +101,10 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         addClimbAndLog(grade: "V4", name: "Cave", outcome: "sent")
         sleep(1); snap("05-climb-logged")
         // The climb card shows the grade pill (V4); the attempt row shows the outcome (Sent), not the grade.
-        let pill = app.staticTexts["freeform.gradePill"]
+        // `.firstMatch` because a SwiftUI confirmationDialog/Form button tap can occasionally double-fire
+        // under XCUITest (the same hazard `tapAddSetForLastExercise` guards against), creating more than
+        // one identical V4 climb — any of which proves the grade was captured on the card.
+        let pill = app.staticTexts.matching(identifier: "freeform.gradePill").firstMatch
         XCTAssertTrue(pill.waitForExistence(timeout: 4), "the climb card should show its grade pill")
         XCTAssertEqual(pill.label, "V4", "the grade pill should read the climb's grade (V4)")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Sent'")).firstMatch
@@ -127,9 +140,14 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'kg'")).firstMatch
             .waitForExistence(timeout: 4), "the lifting row should read its weight (8 × 60 kg)")
 
-        // 5 — Timed → log 0:45. The duration sheet defaults to the live timer (Timer mode); switch to
-        // Manual to type an exact value (the live-timer path is covered by TimedSetTimerTests).
+        // 5 — Timed → log 0:45. "Timed exercise" now opens the Phase-5 pick-or-create sheet; pick the
+        // seeded "Free hold" suggestion (an open count-up, the simple LogSetSheet path) to drop a NAMED
+        // timed card, then Add set → switch to Manual to type an exact value (the live-timer path is
+        // covered by TimedSetTimerTests).
         addExerciseMenu("Timed exercise")
+        let freeHold = app.buttons["timed.suggested.seed.freehold"]
+        XCTAssertTrue(freeHold.waitForExistence(timeout: 5), "the pick sheet should offer the Free hold suggestion")
+        freeHold.tap()
         sleep(1); snap("10-timed-added")
         tapAddSetForLastExercise()
         let manual = app.segmentedControls.buttons["Manual"]

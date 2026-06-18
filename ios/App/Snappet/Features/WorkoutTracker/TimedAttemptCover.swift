@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import HighlightEngine
 
 /// The **live timed-attempt FOCUS cover** (Quick Session redesign Phase 2): a dark, glass, full-screen
@@ -61,8 +62,14 @@ struct TimedAttemptCover: View {
             .padding(.bottom, 24)
         }
         .preferredColorScheme(.dark)
-        .onAppear { vm.start() }
+        .onAppear {
+            vm.start()
+            // Keep the screen awake while timing an attempt off the wall — a sleeping screen mid-effort
+            // hid the live timer (Phase-6 device note). Cheaply reverted on disappear. (Phase 7)
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             vm.endTicking()
             // Never silently drop a captured effort: a dismissal after Stop (Peek / swipe-down) logs the
             // attempt with the captured duration. Cleared first so a subsequent outcome-tap can't double-log.

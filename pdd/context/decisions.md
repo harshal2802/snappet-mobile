@@ -5277,3 +5277,60 @@ files); full `SnappetTests` green incl. new `IntervalScheduleTests` (18 cases); 
 `SnappetUITests/StructuredIntervalRunnerTests` (create a Repeaters exercise → named card → "Add set" opens
 the runner → asserts `intervalRunner.phase` + `.timer` are live → lead-in elapses into WORK → STOP →
 capture card → `intervalRunner.logSet` → a set row appears) passes on the simulator.
+
+### Quick Session redesign — Phase 7 (type-adaptive completion summary · remembered rest timers · polish)
+
+- **The completion screen is now a SCROLLABLE, type-adaptive recap (`FreeformDoneSummaryView`)**, extracted
+  out of `FreeformPlayerView.doneScreen`. Its hero strip + cards adapt to `FreeformSummary.dominant(for:)`:
+  - **Climbing** → hero Sends · Hardest · On-the-wall(time); a secondary Effort card (sends/hr · total
+    attempts · median), the full **grade pyramid**, the per-climb **timeline** (newest-first, top 5 +
+    "Show all N"), and — only when `!session.hrSeries.isEmpty` — the **Effort** zone-bar.
+  - **Timed** → hero Hold time · Best · Sets; per-exercise rows (name · sets · TUT · best hold).
+  - **Strength** → hero Volume · Sets · PRs; a PRs list + per-exercise volume.
+  - **Honest degradation, no fake data:** no per-climb timing → "Climbs" (count) not "On the wall"; no HR →
+    the Effort block is omitted. Every figure is derived from the pure `FreeformSummary` + `FreeformClimbStats`
+    (no model migration). The milestone seal/headline + `CelebrationBurst` and Done / View detail / Keep going
+    / Discard all carry over (same a11y ids). A "Turn N clips into a reel" Studio CTA shows when the session
+    has video clips and opens the WHOLE session in the shared editor.
+- **The pyramid / zone-bar / timeline are SHARED subviews, not duplicated.** `FreeformClimbSummaryComponents`
+  holds `ClimbGradePyramid` / `ClimbEffortSection` / `ClimbTimelineList` (+ a shared section title), extracted
+  from the Phase-3 `LiveClimbStatsSheet` so the live sheet and the completion recap render the IDENTICAL views
+  (the pyramid keeps its `freeform.statsPyramid` id). `LiveClimbStatsSheet` now composes those shared views.
+- **Remembered rest timer = a pure `RestTimerDefaults` + a non-blocking command-bar count-down.** A small
+  PURE type (unit-tested, `RestTimerDefaultsTests`, 8 cases) owns the deterministic parts — the per-context
+  KEY (`.climb(ClimbType)` / `.timed(TimedExerciseCategory)` / `.lifting`), the clamp `[10, 600]s`, the seeded
+  per-discipline default (boulder 120 / route 240 / hangboard 180 / lifting 120), and the remember/recall +
+  JSON round-trip for `@AppStorage` (which can't hold a dictionary). The view holds the live count-down
+  (reused `StopwatchViewModel(.countDown)` + the at-zero `Haptics`): **opt-in** (`freeform.restToggle`, OFF by
+  default), and on each `appendLog` (the one funnel) it auto-arms the remembered rest for that exercise's
+  context. The rest banner floats as an `.overlay` ABOVE the command bar (NOT a stacked row) so the bar's
+  `safeAreaInset` height — which the List's bottom content-margin is sized to — is unchanged when there's no
+  rest, keeping the last set's controls hittable. ±15 s nudges remember the new length per context; an X
+  dismisses. Never gates logging.
+- **Recent-gym chips + per-type scale stick in `AddClimbSheet`.** A one-tap recent-gyms rail under "More ·
+  gym" (`addClimb.recentGym.<gym>`, persisted in `UserDefaults` like the recent grades, capped 5,
+  case-insensitively de-duped; the disclosure auto-opens when a gym is remembered). The V↔Font / YDS↔French
+  scale toggle now sticks **per discipline** via `@AppStorage` (`addClimb.boulderScale` / `addClimb.routeScale`):
+  the sheet restores the remembered scale for the opening/selected type, snapping the grade to that scale's
+  default so a route never opens on a V grade.
+- **Keep-awake on the FOCUS covers** — `TimedAttemptCover` and `StructuredTimedRunner` set
+  `UIApplication.shared.isIdleTimerDisabled = true` onAppear / `false` onDisappear so the screen doesn't sleep
+  mid-effort (the Phase-6 device-only note). Cheaply revertible.
+- **`AddClimbSheet.commit` is now ONE-SHOT (`committed` guard).** A double/triple-tapped CTA — a user mash, or
+  XCUITest delivering the tap more than once as the sheet settles — now creates exactly ONE climb (it had been
+  creating 2–3, which is why `FreeformFlowWalkthroughTests` was already red on the Phase-6 baseline at its
+  grade-pill assertion). Genuine hardening that also stabilizes the walkthrough.
+- **`-uiTestFreshStore` now also clears the Quick-Session @AppStorage keys** (recent grades/gyms, per-type
+  scales, auto-rest + rest-defaults) in `SnappetApp` — they ride `UserDefaults`, which the in-memory store
+  swap doesn't touch, so a prior run's recents would add duplicate chip elements the freeform walkthrough trips
+  over (the `KilterCatalogFixture` precedent for its `kilter.*` keys). The walkthrough's timed step was also
+  modernized for the Phase-5 pick sheet (pick the seeded "Free hold" suggestion → named card → Add set →
+  Manual → 0:45), and its grade-pill assertion + Add-set helper made robust to the documented XCUITest
+  double-fire / transient-non-hittable scroll positions.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 new warnings in the changed
+files); full `SnappetTests` green (866 tests, 2 skipped) incl. new `RestTimerDefaultsTests` (8 cases);
+`SnappetUITests/FreeformFlowWalkthroughTests` passes end-to-end on the simulator (climb → attempts → lifting →
+timed → Finish → the type-adaptive summary with the climbing pyramid + Effort + New-PR milestone → Done) — a
+test that was already RED on the clean Phase-6 baseline (pre-existing CTA double-fire) and is green after this
+phase. Device-only: the keep-awake, the rest-timer at-zero haptic, and the clips→reel pipeline.

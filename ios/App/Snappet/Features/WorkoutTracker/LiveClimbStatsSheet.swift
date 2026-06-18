@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 import HighlightEngine
 
 /// The expanded **live climbing stats** sheet (Quick Session redesign Phase 3), presented from the
@@ -10,9 +9,9 @@ import HighlightEngine
 ///
 /// Every figure comes from the already-pure `FreeformClimbStats.stats` (the same `KilterSessionStats`
 /// the Kilter board flow computes) plus `WorkoutHRStats` for the HR roll-up, so this view does no stats
-/// math of its own. It REUSES the shared `ZoneBar`; the Kilter summary's pyramid is private to its file,
-/// so the pyramid here is a small Swift Charts `BarMark` (per the Phase 3 spec). Presented `.medium`
-/// /`.large`; nothing here mutates the session.
+/// math of its own. The grade pyramid and the HR-effort block are the shared `ClimbGradePyramid` /
+/// `ClimbEffortSection` (extracted in Phase 7 so the completion summary reuses the identical views);
+/// the stacked `ZoneBar` is shared too. Presented `.medium`/`.large`; nothing here mutates the session.
 struct LiveClimbStatsSheet: View {
     let session: WorkoutSession
     /// The zone ceiling for the Effort block — the session's own snapshot, else the live profile, else
@@ -43,9 +42,9 @@ struct LiveClimbStatsSheet: View {
             ScrollView {
                 VStack(spacing: 22) {
                     heroTiles(s)
-                    if !s.pyramid.isEmpty { pyramidSection(s) }
+                    ClimbGradePyramid(pyramid: s.pyramid).padding(.horizontal)
                     countsSection(s)
-                    if let hrStats { effortSection(hrStats) }
+                    if let hrStats { ClimbEffortSection(hr: hrStats).padding(.horizontal) }
                 }
                 .padding(.vertical)
             }
@@ -91,39 +90,13 @@ struct LiveClimbStatsSheet: View {
         value > 0 ? String(format: "%.1f", value) : "—"
     }
 
-    // MARK: - Grade pyramid
-
-    /// The full grade pyramid, easiest→hardest (`stats.pyramid` is already in that order). A small Swift
-    /// Charts `BarMark` per grade — the Kilter summary's pyramid is private to its file, so this is the
-    /// Phase 3-sanctioned local copy rather than a shared extraction.
-    private func pyramidSection(_ s: KilterSessionStats) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Grade pyramid", systemImage: "chart.bar.fill")
-            Chart(s.pyramid) { g in
-                BarMark(x: .value("Sends", g.sends), y: .value("Grade", g.gradeLabel))
-                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
-                    .annotation(position: .trailing) {
-                        Text("\(g.sends)").font(.caption2).foregroundStyle(.secondary)
-                    }
-            }
-            .chartXAxis(.hidden)
-            // Easiest at the bottom, hardest at the top — a pyramid that grows up by difficulty.
-            .chartYScale(domain: s.pyramid.map(\.gradeLabel))
-            .frame(height: CGFloat(s.pyramid.count) * 30 + 20)
-            .accessibilityIdentifier("freeform.statsPyramid")
-        }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-        .padding(.horizontal)
-    }
-
     // MARK: - Counts & timing
 
     /// Projects / total attempts, median time-on-climb, and (when ≥1 climb was timed) time-on-wall vs
     /// rest — the secondary climbing figures beneath the hero/pyramid.
     private func countsSection(_ s: KilterSessionStats) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Effort", systemImage: "figure.climbing")
+            ClimbSummarySectionTitle("Effort", systemImage: "figure.climbing")
             statRow("Projects", "\(s.projects)")
             statRow("Total attempts", "\(s.totalAttempts)")
             if let median = s.medianTimeOnClimb {
@@ -156,41 +129,4 @@ struct LiveClimbStatsSheet: View {
         }
     }
 
-    // MARK: - HR effort
-
-    /// Avg / max / redline + a single stacked zone bar (the shared `ZoneBar`) — shown only when the
-    /// session carries heart rate (the caller already gated on `!session.hrSeries.isEmpty`, but this
-    /// branch is defensive). Read-only; reuses the same `WorkoutHRStats` figures the detail summary shows.
-    private func effortSection(_ hr: WorkoutHRStats) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Heart rate", systemImage: "heart.fill")
-            HStack(spacing: 0) {
-                hrStat("\(Int(hr.avgBpm.rounded()))", "Avg")
-                hrStat("\(Int(hr.maxBpm.rounded()))", "Max")
-                hrStat(ZoneBar.minutesLabel(hr.redlineSeconds), "Redline")
-            }
-            if hr.totalSeconds > 0 {
-                ZoneBar(stats: hr)
-            }
-        }
-        .padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-        .padding(.horizontal)
-    }
-
-    private func hrStat(_ value: String, _ label: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Shared section title
-
-    private func sectionTitle(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
-    }
 }
