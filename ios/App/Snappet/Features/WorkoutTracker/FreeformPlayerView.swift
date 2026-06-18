@@ -49,6 +49,8 @@ struct FreeformPlayerView: View {
     @State private var showingDiscard = false
     /// The expandable live-metrics & recovery panel (§E), opened from the command-bar HR chip.
     @State private var showingMetrics = false
+    /// A freeform clip opened in the shared Studio editor (§G).
+    @State private var studioClip: FreeformStudioPresentation?
     @ScaledMetric(relativeTo: .largeTitle) private var doneSealSize: CGFloat = 72
 
     private var unit: WeightUnit { defaultUnit }
@@ -122,6 +124,14 @@ struct FreeformPlayerView: View {
         }
         .sheet(isPresented: $showingMetrics) {
             LiveMetricsPanel(session: session)
+        }
+        // Tap a freeform clip → the shared scoped Studio editor (§G). Hosted on the (stable) logging
+        // screen — the cover must not live inside a re-rendering subview or it collapses on a clip tap.
+        // The editor loads HR once on open and falls back to the live watch+BLE buffer for a still-live
+        // session, so a clip opened mid-workout keeps its heart-rate overlay.
+        .fullScreenCover(item: $studioClip) { p in
+            StudioEditorView(project: p.project, context: context,
+                             focusClipMediaID: p.focusClipMediaID, visibleClipMediaIDs: p.visibleClipMediaIDs)
         }
         // Add-exercise options (§A). The button titles are the labels the freeform UITests drive.
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
@@ -268,7 +278,8 @@ struct FreeformPlayerView: View {
             // its @Query re-scopes as sets are logged. Device-only (Photos/PHPicker); the affordance
             // renders everywhere, the pick/discovery is on-device.
             if let lastIndex = ex.sets.indices.last {
-                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex)
+                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex,
+                              onEdit: { presentStudio($0) })
                     .id("set-media-\(ex.id)-\(lastIndex)")
             }
         } header: {
@@ -563,6 +574,22 @@ struct FreeformPlayerView: View {
         if changed { try? context.save() }
     }
 
+    // MARK: - Clip → Studio (§G)
+
+    /// Open a freeform video clip in the shared multi-clip Studio editor, scoped to that clip. Reuses the
+    /// session's one `StudioProject` (`StudioEntry.resolveProject`) — the same project the post-session
+    /// detail and the module-level entry resolve — so the clip is editable now and as a reel later. The
+    /// editor's own HR-load handles a still-live session (live watch+BLE fallback), so no manual flush.
+    @MainActor private func presentStudio(_ clip: SessionMedia) {
+        guard clip.kind == .video else { return }
+        let sid = session.id
+        let media = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        let project = StudioEntry.resolveProject(for: session, media: media, context: context)
+        studioClip = FreeformStudioPresentation(
+            project: project, visibleClipMediaIDs: [clip.id], focusClipMediaID: clip.id)
+    }
+
     // MARK: - Live Activity
 
     /// Push the current freeform state to the Live Activity so the Lock Screen / Dynamic Island show
@@ -593,6 +620,17 @@ struct FreeformPlayerView: View {
         if isPaused { app.liveWorkout.resume() } else { app.liveWorkout.pause() }
         Haptics.tap()
     }
+}
+
+/// A freeform clip opened in the shared Studio editor (§G), scoped to that one clip. Mirrors the
+/// session-detail / Kilter presentation structs; held in `@State` and presented via `fullScreenCover`.
+private struct FreeformStudioPresentation: Identifiable {
+    let id = UUID()
+    let project: StudioProject
+    /// `nil` = whole session; `[clip.id]` = one clip (filters the timeline by `TimelineClip.sessionMediaID`).
+    let visibleClipMediaIDs: Set<UUID>?
+    /// Pre-selects the tapped clip on open.
+    let focusClipMediaID: UUID?
 }
 
 /// Which exercise a new set/attempt is being logged into (drives the `LogSetSheet`). Carries the
