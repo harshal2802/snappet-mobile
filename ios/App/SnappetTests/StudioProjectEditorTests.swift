@@ -171,6 +171,80 @@ final class StudioProjectEditorTests: XCTestCase {
         XCTAssertEqual(s.overlays.first?.content, "New\nLine")
     }
 
+    // MARK: - Per-clip climb tag (prompt 12 — clipID + compose flags, migration-safe)
+
+    func testClimbTagFieldsDefaultMigrationSafe() {
+        // The new per-clip fields all default to nil/false so an old overlay carries the legacy behaviour.
+        let ov = OverlayItem(kind: .climbName, content: "Pez")
+        XCTAssertNil(ov.clipID)
+        XCTAssertFalse(ov.showsAttempt)
+        XCTAssertNil(ov.attemptNumber)
+        XCTAssertFalse(ov.showsSetter)
+    }
+
+    func testClimbTagDecodesFromPreClipIDJSON() throws {
+        // An overlay persisted BEFORE clipID/showsAttempt/attemptNumber/showsSetter existed must still
+        // decode (the migration guard) — old StudioProject.overlays blobs omit these keys entirely.
+        let json = """
+        {"id":"\(UUID().uuidString)","kindRaw":"climbName","content":"Pez","startSec":0,"endSec":3,\
+        "normalizedX":0.5,"normalizedY":0.85,"scale":1,"rotationDegrees":0,"opacity":1,\
+        "colorHex":"#FFFFFF","opacityKeyframes":[]}
+        """.data(using: .utf8)!
+        let ov = try JSONDecoder().decode(OverlayItem.self, from: json)
+        XCTAssertNil(ov.clipID)
+        XCTAssertFalse(ov.showsAttempt)
+        XCTAssertNil(ov.attemptNumber)
+        XCTAssertFalse(ov.showsSetter)
+    }
+
+    func testClimbTagFieldsSurviveCodableRoundTrip() throws {
+        // clipID + flags ride the Codable overlay (so undo/redo snapshots + persistence carry them).
+        let clip = UUID()
+        let ov = OverlayItem(kind: .climbName, content: "Roof", clipID: clip,
+                             showsAttempt: true, attemptNumber: 3, showsSetter: true)
+        let data = try JSONEncoder().encode(ov)
+        let back = try JSONDecoder().decode(OverlayItem.self, from: data)
+        XCTAssertEqual(back.clipID, clip)
+        XCTAssertTrue(back.showsAttempt)
+        XCTAssertEqual(back.attemptNumber, 3)
+        XCTAssertTrue(back.showsSetter)
+    }
+
+    func testSetOverlayClimbFlagsUpdatesOnlyPassedFields() {
+        let ov = OverlayItem(kind: .climbName, content: "Roof")
+        var s = empty(); s.overlays = [ov]
+        // Turn the attempt line ON with a number; setter left untouched (nil arg).
+        s = StudioProjectEditor.setOverlayClimbFlags(s, id: ov.id, showsAttempt: true, attemptNumber: 4)
+        XCTAssertTrue(s.overlays.first!.showsAttempt)
+        XCTAssertEqual(s.overlays.first!.attemptNumber, 4)
+        XCTAssertFalse(s.overlays.first!.showsSetter)   // not passed → unchanged
+        // Re-stamp just the number (the per-clip-attempt refresh) without touching showsAttempt.
+        s = StudioProjectEditor.setOverlayClimbFlags(s, id: ov.id, attemptNumber: 7)
+        XCTAssertTrue(s.overlays.first!.showsAttempt)
+        XCTAssertEqual(s.overlays.first!.attemptNumber, 7)
+        // Toggle the setter on; attempt fields unchanged.
+        s = StudioProjectEditor.setOverlayClimbFlags(s, id: ov.id, showsSetter: true)
+        XCTAssertTrue(s.overlays.first!.showsSetter)
+        XCTAssertEqual(s.overlays.first!.attemptNumber, 7)
+        // Unknown id is a no-op.
+        s = StudioProjectEditor.setOverlayClimbFlags(s, id: UUID(), showsAttempt: false)
+        XCTAssertTrue(s.overlays.first!.showsAttempt)
+    }
+
+    func testRemoveClipPrunesItsBoundOverlays() {
+        let a = video(0), b = video(1)
+        let tagA = OverlayItem(kind: .climbName, content: "A-tag", clipID: a.id)
+        let tagB = OverlayItem(kind: .climbName, content: "B-tag", clipID: b.id)
+        let loose = OverlayItem(kind: .text, content: "free")   // clipID nil → never pruned
+        var s = empty(); s.clips = [a, b]; s.overlays = [tagA, tagB, loose]
+        s = StudioProjectEditor.removeClip(s, id: a.id)
+        // a's tag is gone; b's tag + the loose text remain (no orphan floating over the rest).
+        XCTAssertNil(s.overlays.first { $0.id == tagA.id })
+        XCTAssertNotNil(s.overlays.first { $0.id == tagB.id })
+        XCTAssertNotNil(s.overlays.first { $0.id == loose.id })
+        XCTAssertEqual(s.clips.count, 1)
+    }
+
     func testSetOverlayTimeRangeClampsAndKeepsMinLength() {
         let ov = OverlayItem(kind: .text, content: "A", startSec: 0, endSec: 3)
         var s = empty(); s.overlays = [ov]

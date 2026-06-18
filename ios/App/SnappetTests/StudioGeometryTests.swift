@@ -187,4 +187,39 @@ final class StudioGeometryTests: XCTestCase {
         // Off the end of the visible subset → nil even though a full neighbor (h2) exists.
         XCTAssertNil(StudioGeometry.reorderDestination(id: v3.id, by: 1, visible: visible, full: full))
     }
+
+    // MARK: - filterOverlays (scope overlays to the visible clips — prompt 13)
+
+    private func mediaClip(_ order: Int, media: UUID) -> TimelineClip {
+        TimelineClip(id: UUID(), sessionMediaID: media, localIdentifier: "m\(order)", isPhoto: false, order: order)
+    }
+
+    func testFilterOverlaysScopesToVisibleClipsKeepingGlobals() {
+        let mediaA = UUID(), mediaB = UUID()
+        let clipA = mediaClip(0, media: mediaA)
+        let clipB = mediaClip(1, media: mediaB)
+        let clips = [clipA, clipB]
+        let tagA = OverlayItem(kind: .climbName, content: "A", clipID: clipA.id)
+        let tagB = OverlayItem(kind: .climbName, content: "B", clipID: clipB.id)
+        let global = OverlayItem(kind: .text, content: "G")   // clipID == nil → shows in every scope
+        let all = [tagA, tagB, global]
+
+        // Scope to clipA's media → only clipA's tag + the global overlay.
+        XCTAssertEqual(Set(StudioGeometry.filterOverlays(all, clips: clips, to: [mediaA]).map(\.id)),
+                       Set([tagA.id, global.id]))
+        // Scope to clipB's media → only clipB's tag + the global overlay.
+        XCTAssertEqual(Set(StudioGeometry.filterOverlays(all, clips: clips, to: [mediaB]).map(\.id)),
+                       Set([tagB.id, global.id]))
+        // No scope (whole-workout) → everything.
+        XCTAssertEqual(StudioGeometry.filterOverlays(all, clips: clips, to: nil).count, 3)
+    }
+
+    func testFilterOverlaysDropsOrphanClipBoundOverlayWhenScoping() {
+        let mediaA = UUID()
+        let clipA = mediaClip(0, media: mediaA)
+        let orphan = OverlayItem(kind: .climbName, content: "X", clipID: UUID())   // clip not present
+        XCTAssertTrue(StudioGeometry.filterOverlays([orphan], clips: [clipA], to: [mediaA]).isEmpty)
+        // …but it survives the unscoped view.
+        XCTAssertEqual(StudioGeometry.filterOverlays([orphan], clips: [clipA], to: nil).count, 1)
+    }
 }

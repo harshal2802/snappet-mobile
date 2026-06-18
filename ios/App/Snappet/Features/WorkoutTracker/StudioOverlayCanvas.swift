@@ -17,6 +17,10 @@ struct StudioOverlayCanvas: View {
     /// Canvas width:height (e.g. 9/16) — the preview video rect this layer aligns to.
     let ratio: CGFloat
     let selectedID: UUID?
+    /// The playhead in output seconds — TIME-GATES the overlay chips so the editor preview matches the
+    /// export (each overlay shows only while `startSec ≤ currentTime ≤ endSec`); the SELECTED overlay
+    /// always renders so a just-added / off-segment tag stays draggable (prompt 12 STEP 4).
+    let currentTime: Double
     /// Whether a moving/resizing frame snaps to the alignment grid (drives the live guide lines too).
     let snapEnabled: Bool
     /// The main video's collage frame (normalized centre + size), or `nil` when it fills the canvas.
@@ -35,6 +39,19 @@ struct StudioOverlayCanvas: View {
     /// Guide lines reported live by the active frame gesture (cleared on end).
     @State private var activeGuides: [StudioGridLayout.Guide] = []
 
+    /// Overlays to draw at the current playhead — the export's time-gate, mirrored in the editor so
+    /// preview == file (prompt 12 STEP 4). A `.video` (PiP) is composited into the player itself, so its
+    /// editable frame is always shown; a text/sticker/climb-name chip renders only while the playhead is
+    /// inside its `[startSec, endSec]` window (a small epsilon tolerates touching slot boundaries). The
+    /// SELECTED overlay always renders so a just-added / off-segment tag stays draggable.
+    private var visibleOverlays: [OverlayItem] {
+        let eps = 0.05
+        return overlays.filter { ov in
+            ov.kind == .video || ov.id == selectedID
+                || (currentTime >= ov.startSec - eps && currentTime <= ov.endSec + eps)
+        }
+    }
+
     var body: some View {
         GeometryReader { geo in
             let rect = ClipEditGeometry.displayRect(ratio: ratio, in: geo.size)
@@ -51,7 +68,7 @@ struct StudioOverlayCanvas: View {
                                    onGuides: { activeGuides = $0 })
                         .accessibilityIdentifier("studioBaseFrame")
                 }
-                ForEach(overlays) { overlay in
+                ForEach(visibleOverlays) { overlay in
                     if overlay.kind == .video {
                         ResizableFrame(center: overlay.position, size: overlay.pipSize, rect: rect,
                                        selected: overlay.id == selectedID, snapEnabled: snapEnabled,
@@ -61,6 +78,7 @@ struct StudioOverlayCanvas: View {
                                        onGuides: { activeGuides = $0 })
                     } else {
                         TextOverlayChip(overlay: overlay, rect: rect, selected: overlay.id == selectedID,
+                                        currentTime: currentTime,
                                         onSelect: { onSelect(overlay.id) },
                                         onMove: { onMove(overlay.id, $0) },
                                         onScale: { onScale(overlay.id, $0) })
@@ -297,6 +315,9 @@ private struct TextOverlayChip: View {
     let overlay: OverlayItem
     let rect: CGRect
     let selected: Bool
+    /// The playhead in output seconds — samples `opacityKeyframes` so a keyframed/faded chip previews
+    /// the SAME opacity the export bakes (prompt 12 STEP 4 / STEP 7d).
+    let currentTime: Double
     let onSelect: () -> Void
     let onMove: (CGPoint) -> Void
     let onScale: (Double) -> Void
@@ -313,6 +334,11 @@ private struct TextOverlayChip: View {
                 }
             }
             .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityValue(overlay.content)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("studioOverlayChip")
             .position(x: base.x + dragTranslation.width, y: base.y + dragTranslation.height)
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -334,6 +360,24 @@ private struct TextOverlayChip: View {
     /// The live font scale: the committed `scale` times the in-progress pinch magnification.
     private var liveScale: Double { overlay.scale * magnify }
 
+    /// The chip's opacity AT the playhead — sampled from `opacityKeyframes` (else the static `opacity`),
+    /// with NO editor floor so it matches the export's 0-floor bake (prompt 12 STEP 4 / STEP 7d). A
+    /// selected chip is held at a legible minimum so it stays grabbable even when keyframed to 0.
+    private var liveOpacity: Double {
+        let o = StudioGeometry.value(of: overlay.opacityKeyframes, at: currentTime, default: overlay.opacity)
+        return selected ? max(0.15, o) : o
+    }
+
+    /// VoiceOver label for the chip — names the overlay kind so the WYSIWYG layer is navigable (#79).
+    private var accessibilityLabel: String {
+        switch overlay.kind {
+        case .climbName: return "Climb name overlay"
+        case .sticker:   return "Sticker overlay"
+        case .video:     return "Picture-in-picture overlay"
+        case .text:      return "Text overlay"
+        }
+    }
+
     @ViewBuilder private var content: some View {
         switch overlay.kind {
         case .sticker:
@@ -341,7 +385,7 @@ private struct TextOverlayChip: View {
                 .font(.system(size: max(12, rect.height * 0.12 * liveScale), weight: .semibold))
                 .foregroundStyle(Color(studioHex: overlay.colorHex))
                 .rotationEffect(.degrees(overlay.rotationDegrees))
-                .opacity(max(0.15, overlay.opacity)).padding(6)
+                .opacity(liveOpacity).padding(6)
         case .climbName:
             styledText(fontFraction: 0.04, defaultHighlight: "#000000")
         default:   // .text (and any future Core-Animation kind)
@@ -371,7 +415,7 @@ private struct TextOverlayChip: View {
                 }
             }
             .rotationEffect(.degrees(overlay.rotationDegrees))
-            .opacity(max(0.15, overlay.opacity))
+            .opacity(liveOpacity)
     }
 }
 

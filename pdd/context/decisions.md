@@ -4,6 +4,160 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-18] Quick Session redesign — climb-name overlay is a PER-CLIP property (prompt 12)
+
+**Decision**: the Studio's freeform climb-name tag is now a **property of its clip**, not a whole-project
+overlay. `OverlayItem` gains four additive-optional, migration-safe fields: `clipID: UUID?` (the owning
+`TimelineClip.id`), `showsAttemptRaw: Bool?` / `attemptNumber: Int?` / `showsSetterRaw: Bool?` (the
+persisted compose flags). **Why each:**
+
+- **Bug #1 (tag spanned the whole project).** `addClimbNameOverlay()` now stamps `clipID = selectedClip?.id`
+  and seeds the window from that clip's placed slot (whole-project fallback when no clip is selected). The
+  on-screen window is **resolved at RENDER time** from `clipID` → the clip's *current* placed slot via a new
+  `outputWindow(for:)` — so trim/reorder/split never desync the tag. Both the canvas gate AND export read
+  this resolved window. **Where it's resolved:** in the VM's `scopedSnapshot`/`canvasOverlays` (a new
+  `renderedOverlays(_:)` re-derives each `.climbName` overlay's `startSec/endSec` + composed `content`), NOT
+  in `StudioOverlays`/`StudioComposer` — the lower-risk of the two options the prompt allowed ("re-derive into
+  those fields before makeAnimationTool"), so the export composer is untouched and `applyVisibility` reads the
+  fresh window. The persisted model keeps the BASE window/caption.
+- **Bug #2 (tap "Climb" re-added a box).** `addClimbNameOverlay()` is now idempotent: if a `.climbName`
+  overlay with `clipID == selectedClip?.id` exists, it just SELECTS it (never re-seeds the caption — that
+  would wipe a manual edit; the lower-risk choice) and returns. The "Climb" bar button shows "Climb ✓" when
+  the selected clip already has a tag (like Music/HR).
+- **Canvas time-gate.** `StudioOverlayCanvas` takes `currentTime` and renders a text/sticker/climb chip only
+  while `selected || startSec-eps ≤ currentTime ≤ endSec+eps` (the selected overlay always renders so a
+  just-added/off-segment tag stays draggable); PiP frames always render (they're in the player). Opacity is
+  now sampled from `opacityKeyframes` at the playhead with the 0.15 floor dropped (held only for a *selected*
+  chip so it stays grabbable) — preview now matches the export bake.
+- **Multi-clip attempt#.** `select(_:)` repoints `selectedOverlayID` to the `.climbName` overlay owned by the
+  newly-selected clip (by `clipID`) before `refreshAttemptLineForSelection()`, so the Attempt# acts on the
+  RIGHT per-clip tag. Attempt number = that clip's `SessionMedia.assignedSetIndex + 1`.
+- **Killed the transient Sets + the regex.** The in-memory `climbAttemptEnabled`/`climbSetterEnabled` Sets and
+  the `\nAttempt \d+$` strip regex are GONE. Toggle state lives on the model (`showsAttempt`/`showsSetter`,
+  read back correctly across reopen/undo). The rendered string is COMPOSED at render time by a new pure
+  `KilterClimbCaption.composeClimbTag(base:setter:showSetter:attempt:showAttempt:)` = base (+ " · by {setter}"
+  on the detail line if `showsSetter`) (+ "\nAttempt N" if `showsAttempt`) — used by BOTH the canvas chip and
+  export, so user text and the system lines never share an encoding (no more caption corruption / setter-edit
+  wipe). Unit-tested.
+- **Migration safety gotcha**: a non-optional `Bool = false` is **NOT** decode-safe — Swift's synthesized
+  `Decodable` calls `decode` (not `decodeIfPresent`) and throws `keyNotFound` on a missing key even with a
+  property default (it broke the existing `testOverlayDecodesFromPreStyleJSON`). So the flags are stored as
+  **optional raws** (`showsAttemptRaw`/`showsSetterRaw`, `nil → false`) with non-optional accessors — the same
+  `boldRaw`/`italicRaw` precedent. `clipID`/`attemptNumber` are optional so they're fine as-is.
+- **Polish**: `removeClip` prunes `s.overlays.removeAll { $0.clipID == id }` (no orphan tags); "Show setter"
+  is gated behind `canShowClimbSetter` (`resolvedClimbUUID != nil`) so it's HIDDEN for freeform climbs; an
+  empty resolved caption no-ops the add and empty-content chips are filtered from the canvas (matching the
+  export filter); `TextOverlayChip` gets a11y label/value/`.isSelected`/`studioOverlayChip` id.
+
+**New editor op**: `StudioProjectEditor.setOverlayClimbFlags(_:id:showsSetter:showsAttempt:attemptNumber:)`
+(pure, each param optional → leave-unchanged; `attemptNumber` is `Int??` so it can be cleared). The
+`StudioProjectSnapshot`/undo-redo carry the new fields automatically (they're part of the Codable `OverlayItem`).
+
+**Verified**: `xcodegen generate` + `build-for-testing` clean (Swift 6, 0 errors / 0 new warnings in the
+changed files — the only warnings are the pre-existing `StudioComposer` CIFilter deprecation + the
+`SnappetBackupTests` main-actor isolation). Full `SnappetTests` **887** green (2 skipped) incl. new
+compose/window-resolution/idempotency/migration tests; `SnappetUITests` `NamedClimbTests` + `EditClimbTests`
++ `LiveWorkoutStudioWalkthroughTests` all pass (studio walkthrough green first try). Device-only / deferred:
+the actual export burn-in of a per-clip tag (only-its-segment) + the drag/scrub feel — covered by the pure
+compose/window unit tests + the green studio UITest; the on-device render is the usual export-burn check.
+
+## [2026-06-18] Quick Session redesign Phase 2 — live timed-attempt FOCUS cover
+
+**Decision**: replaced Phase 1's minimal `TimedAttemptSheet` (a `.sheet(item:)`) with a full-screen
+**`TimedAttemptCover`** presented via `.fullScreenCover(item: $timingAttemptFor)` — a dark, glass FOCUS
+surface that times ONE climbing attempt. RUNNING state: near-black gradient · "Peek canvas"
+(`timedAttempt.cancel`) + "try N" · a glass climb card (type chip · name · grade pill) · a big
+SF-Rounded tabular hero timer (`timedAttempt.timer`) · an optional glass HR chip (`timedAttempt.hr`) ·
+a full-width ≥64pt STOP (`timedAttempt.stop`). STOP freezes/greys the timer and cross-fades in a **2×2
+outcome grid** — thumb-nearest BOTTOM row = the "close the climb" Send/Flash pair, TOP row =
+Fall/Project (`timedAttempt.outcome.<status>`) — plus a "Save as attempt" (`timedAttempt.saveAsAttempt`).
+Commits through the SAME `logAttempt(toExerciseID:status:durationSec:)` funnel (stamps grade +
+completedAt + haptic) — no model change.
+
+**Why these specifics**:
+- **`StopwatchViewModel(.countUp)` driven DIRECTLY**, NOT the packaged `StopwatchView`. The packaged
+  view's composite collapses under XCUITest on iOS 26 (hides its inner `stopwatch.toggle`); driving the
+  `@Observable` VM directly lets the cover own its OWN leaf ids (`timedAttempt.timer`, `.stop`,
+  `.outcome.*`) — one a11y id per interactive leaf, the iOS-26 rule. The VM is still the single
+  wall-clock-backed timing source: auto-`start()` `onAppear`, `endTicking()` `onDisappear`,
+  `syncToWallClock()` on scenePhase `.active` (correct across backgrounding, no drift).
+- **Never silently drop a captured effort**: a dismissal (Peek / swipe-down) AFTER a Stop save-as-attempt
+  via `onDisappear` (commit `.attempt` + the captured duration); BEFORE a Stop logs nothing. The
+  outcome-tap path clears `capturedSeconds` first so the `onDisappear` guard can't double-log the same
+  effort.
+- **HR chip OMITTED entirely (not "♥ --") when `latestHR == nil`** — a missing sample never renders as a
+  misleading inert chip; zone via `HeartRateZone.forBpm(bpm, maxHR: resolvedMaxHR ?? defaultMaxHR)`.
+- The hero timer renders `SetMeasure.formatDuration(vm.reading.elapsed)` so the captured value matches
+  the attempt row EXACTLY and a long attempt rolls to H:MM:SS (formatDuration already handles it).
+- **No milestone celebration here** — Phase 3 owns that.
+
+**Rules out**: a half-sheet timed attempt; counting ticks instead of the wall clock; an id on the
+packaged StopwatchView (collapses the composite). The `ClimbAttemptTimerTests` UITest was rewired to
+drive the cover (tap `freeform.timedAttempt` → wait the auto-started `timedAttempt.timer` →
+`timedAttempt.stop` → `timedAttempt.outcome.sent` → assert a `freeform.setRow` shows the captured M:SS).
+
+**Verified**: `xcodegen generate` + `xcodebuild build-for-testing` clean (0 errors, 0 new warnings —
+the test-target actor-isolation warnings are pre-existing across the whole suite); `SnappetTests` green
+(829, 2 skipped); `ClimbAttemptTimerTests` green (1 test, ~44 s). **Device-only / deferred**: the live
+HR chip needs a real watch/BLE HR source (the simulator has none, so the chip is exercised only via its
+nil path); the glass/material rendering feel.
+
+## [2026-06-18] Quick Session redesign Phase 1 — climb-first hierarchy (Add-a-climb sheet · expandable climb cards · attempts under climbs)
+
+**Decision**: turned the freeform **Climbing** flow from flat attempt rows into a **climb-first
+hierarchy** (`quick-session-redesign/PLAN.md` → Phase 1). Tapping Climbing (the empty-state
+`freeform.cardClimbing` card OR the add-menu "Climbing" button) now presents a new **`AddClimbSheet`**
+that captures the climb's identity ONCE — TYPE (drives the grade scale) → a scale-aware DISCRETE grade
+rung picker + recent-grade chips + V/Font·YDS/French toggle → optional NAME → optional GYM under a
+"More" disclosure (inherited from the session's most recent climb). The created climb is an
+**expandable card** (`climbSection`): a rolled-up header (type icon · inline-editable name
+`freeform.climbName` · grade pill · status badge · "N attempts" · time-on-climb) that toggles open to
+the attempt list + a footer ("+ Log attempt" → an inline outcome strip · "Timed attempt" · "Repeat
+last"). This fixes "you can't group three tries on the same V4 project". Lifting + Timed flows are
+unchanged this phase (`liftingOrTimedSection` keeps the flat set-list rendering + `LogSetSheet`).
+
+**Why these specific choices**:
+- **Grade is stamped onto each attempt `SetLog` (`climbGradeLabel`), captured once on the climb card.**
+  The pure `FreeformSummary` / `KilterMilestones` reads are per-`SetLog`, so stamping the climb grade
+  onto every attempt keeps sends/pyramid/milestones working **unchanged** and old flat data still
+  renders — no rewrite of the stats engines, no migration. The per-attempt **row** (`SetMeasure.attemptRow`)
+  shows only outcome (+ optional duration + tries), NOT the grade (the grade lives once on the header,
+  so repeating it per row would be noise). The existing `SetMeasure.summary(.climbAttempt)` is kept
+  verbatim for History / back-compat.
+- **Ember, not coral.** Primary CTAs/accents stay `SnappetColor.workout` (the module's established
+  ember) — NOT the research doc's "Pulse Coral" — for native consistency with the rest of the player.
+  Boulder grade pills use `SnappetColor.kilter` (amber); route pills a cool tint (`SnappetColor.budget`).
+- **Route status relabels reuse `KilterAscentStatus`** (no enum change): `ClimbType.statusLabel` only
+  **relabels** the four states for display (flash→Onsight, sent→Redpoint, project→Project, attempt→Fell)
+  so the outcome strip + status badge read naturally for ropes without touching the persisted vocabulary
+  or the send/pyramid math. Boulder uses the plain labels.
+- **`AddClimbSheet` a11y ids** (one per interactive leaf, the iOS-26 rule): `addClimb.type`,
+  `addClimb.grade` (container) + `addClimb.gradeValue` (the picked label, queryable), `addClimb.rung.<G>`
+  per rung, `addClimb.recent.<G>`, `addClimb.scaleToggle`, `addClimb.name`, `addClimb.gym`,
+  `addClimb.add` / `addClimb.addAndLog`. The card footer: `freeform.logAttempt`,
+  `freeform.outcome.<status>`, `freeform.timedAttempt` (+ the in-sheet `freeform.timedOutcome.<status>`),
+  `freeform.climbExpand`, `freeform.gradePill`, `freeform.climbStatus`; attempt rows keep `freeform.setRow`
+  and the climb name keeps `freeform.climbName`.
+- **Recent grades** persist per scale in `UserDefaults` (key `freeform.recentGrades.<scale>`), most-
+  recent-first, de-duplicated, capped at 5 — the warm path is two taps (recent chip → CTA).
+- **Timed attempt stays a minimal sheet for now** (`TimedAttemptSheet`: a count-up `StopwatchView`
+  whose Stop captures `durationSec`, then an inline outcome) — Phase 2 replaces it with a full-screen
+  FOCUS cover. The StopwatchView carries no `accessibilityIdentifier` itself (it would collapse the
+  composite and hide the inner `stopwatch.toggle` on iOS 26); the outcome buttons are disabled while the
+  stopwatch runs so a capture can't be dropped mid-run.
+
+**Tests**: `SetMeasureTests` extended for `attemptRow` (boulder/route relabels, duration appended, tries
+> 1, grade never present, no-outcome dash). The three climb UITests rewritten to the new flow
+(`NamedClimbTests` = Add-a-climb sheet → graded card + attempt + inline rename; `ClimbAttemptTimerTests`
+= card footer "Timed attempt" → stopwatch capture → outcome → duration in the attempt row;
+`FreeformFlowWalkthroughTests` climbing leg → Add-a-climb sheet → grade pill + outcome). `TrackingTypeFilterTests`
+is Timed-only and unchanged. Verified: `xcodegen generate` + `build-for-testing` clean (Swift 6,
+0 warnings in the changed files); full `SnappetTests` green (829, incl. the 5 new `attemptRow` tests).
+
+**Rules out**: per-attempt grade entry (the old `LogSetSheet(.climbAttempt)` free-text grade path is no
+longer reached for new climbs — kept only for legacy decode); a separate `@Model` for the climb (it
+stays a `SessionExercise(.climbAttempt)`, attempts stay its `sets`, all new fields additive Optionals).
+
 ## [2026-06-17] Quick Sessions UX rework — freeform player: canvas · faster entry · inline climb naming · completion moment · live metrics · live clips · clip→Studio (issue #158)
 
 **Decision**: reworked the routineless **`FreeformPlayerView`** end-to-end (issue #158, one combined PR;
@@ -5056,3 +5210,398 @@ exists because Core Animation can't redraw text per frame) and the drag/corner-r
 (774, incl. new `HRTileLayoutTests` / `HRTileTests` / `HRTileCodableTests` / `HRTileMigrationTests` /
 `HRTileResolveTests` + the determinism regression); the studio walkthrough XCUITest now drives the tile
 builder (enable → pick Bento → toggle a metric → dismiss).
+
+## [2026-06-18] iOS — Quick Session redesign Phase 3: live climbing stats ribbon + at-logging milestones
+
+**Decision** (`pdd/prompts/features/quick-session-redesign/03-...`): the freeform player gets a docked
+**stat ribbon** above the climb cards (shown only when `FreeformClimbStats.hasClimbing`) — hero "N
+sends" · "hardest <grade>" (omitted pre-send) · an inline mini-pyramid, with a pre-send teaching
+variant — tapping it presents a read-only **`LiveClimbStatsSheet`** (hero Sends/Hardest/Sends-hr tiles,
+the full grade pyramid, projects/attempts, median time, time-on-wall-vs-rest, and an Effort block when
+HR is present). And after every log, a **milestone celebration** fires for a genuine new best.
+
+- **Reuse the pure helpers, don't re-derive.** The ribbon + sheet read `FreeformClimbStats.stats`
+  (which bridges the freeform climbs into the exact `KilterSessionStats` the Kilter board flow
+  computes) and `WorkoutHRStats` for the HR roll-up; the views do **no** stats math. The milestone
+  diff reuses `FreeformSummary.milestones(for:history:)` — the same gate the done-screen uses — so
+  "new hardest" for climbing falls out naturally as a `firstSend` of a harder grade (the existing
+  `Milestone` enum is `firstSend` + weighted `personalRecord`; not expanded).
+
+- **Cache the ribbon stats like `prefills`.** `climbStats` is `@State`, recomputed on `session.exercises`
+  change (and on append), NOT per render — the command bar re-renders ~1 Hz off the HR/timer, and
+  re-deriving the pyramid each tick would be wasteful. `hasClimbing` (cheap) still gates the ribbon
+  inline per render so the row appears the instant the first attempt lands.
+
+- **Pyramid is a local `BarMark`, not a shared view.** The Kilter summary's pyramid (`pyramidSection`)
+  is a **private** func on `KilterSessionDetailView` (depends on its private `kilterGrade` helper), so
+  it can't be reused across files; per the prompt, `LiveClimbStatsSheet` carries its own small Swift
+  Charts `BarMark` pyramid (`freeform.statsPyramid`, `chartYScale` pinned to the easiest→hardest order).
+  The **`ZoneBar`** (heart-rate zone bar) IS a shared `struct` view, so that's reused as-is.
+
+- **At-logging celebration fires once per milestone, never per attempt.** `appendLog` (the single funnel
+  both `logAttempt` and the inline outcome strip route through) calls `checkLiveMilestones()`, which
+  diffs the freeform milestones against a `celebratedMilestones: Set<String>` (stable key: `pr:<id>` /
+  `send:<grade>`). A new key → a transient `freeform.liveMilestone` banner + a `milestoneTrigger` bump
+  driving the screen-level `.celebrates(on:)` (`CelebrationBurst` + `Haptics.success`, already
+  Reduce-Motion-aware: haptic + static text, no confetti). A repeat send of an already-celebrated grade
+  is silent. The done-screen milestone burst (Phase D) is unchanged and independent.
+
+**Verified:** `xcodegen generate` + `xcodebuild build-for-testing` clean (0 errors / 0 new warnings in
+the changed files); full `SnappetTests` green (829, 2 skipped, 0 failures); new
+`SnappetUITests/LiveClimbStatsTests` (add a climb → log a Sent attempt → ribbon reads "1 send" → tap →
+the `freeform.statsExpand` sheet shows the `freeform.statsPyramid`) passed on the simulator. The HR
+**Effort** block is HR-data-gated, so it's exercised only on a session that carries `hrSeries` (a
+device/recorded session) — the ribbon, pyramid, counts, and milestone paths are all sim-verified.
+
+## [2026-06-18] iOS — Quick Session redesign Phase 5: timed-exercise hierarchy + catalog (pick or create)
+
+**Decision** (`pdd/prompts/features/quick-session-redesign/05-timed-exercise-catalog.md`): give timed
+exercises the same first-class, *named* hierarchy climbs got in Phase 1. Tapping **Timed** (the empty-state
+`freeform.cardTimed` card OR the add-menu "Timed exercise") now opens a **`PickTimedExerciseSheet`**
+(searchable catalog · "Create new" pinned · recents · category groups · seeded suggestions) instead of
+dropping a bare unnamed `.duration` row; selecting/creating one drops a **named timed card** whose timed
+sets log underneath it like a climb's attempts. Named exercises **persist** for reuse.
+
+- **`TimedExerciseSpec` is a pure `Shared/` value type, presets only PRE-FILL.** The structure
+  (`mode` ∈ openCountUp/maxHang/countDown/repeaters/tabata/emom + work/rest/reps/sets/restBetweenSets/
+  leadInSec) lives in `ios/App/Shared/TimedExerciseSpec.swift` (Codable/Sendable/Hashable, compiled into
+  every target via the `project.yml` `Shared` glob, like `HeartRateZone`). Pure `totalSeconds` (lead-in +
+  all work + inter-rep rest + between-set rest, NO trailing rest) and one-line `summary` ("7:3 × 6 · 6
+  sets" / "10s hold" / "Count up"); protocol-preset static factories (`.repeaters7x3x6`, `.maxHang10/7`,
+  `.tabata`, `.emom`, `.hold(_)`). **A user-edited value is NEVER snapped back to a preset** (the Tindeq
+  antipattern) — chips pre-fill the form, nothing more. Unit-tested (`TimedExerciseSpecTests`).
+
+- **`TimedExerciseCatalog` is the persisted `@Model`; suggestions are in-memory.** New `@Model`
+  (`id/name/categoryRaw/specData/createdAt/lastUsedAt`) registered in **`SnappetSchema.models`** AND
+  mirrored by a `TimedExerciseCatalogRow` in **`SnappetBackup`** (the enforced invariant — `SnappetBackupTests`
+  now seeds one row and asserts `recordCount == 22`). The **structure rides `specData`** (an encoded
+  `TimedExerciseSpec`), not a fan of columns, so the value type stays the single source of truth and adding
+  a mode never migrates the model. Built-in starters (`7s max hang`, `Dead hang`, `Repeaters`, `Plank`,
+  `Wall sit`, `Tabata`) are **in-memory `Suggestion`s**, not seeded rows — the catalog is never an empty
+  void without writing rows the user didn't ask for; "Save to my exercises" is how a pick graduates into a
+  persisted row. Recents = saved rows with a `lastUsedAt`, newest-first (`@Query` sort).
+
+- **`SessionExercise` gains additive `timedSpecData`/`timedCategory` (migration-safe).** Mirrors the
+  Phase-1 climb fields — additive Optionals decode `nil` on legacy data (an old unnamed "Timed exercise"
+  renders as a plain open count-up), and the `WorkoutSessionRow` already snapshots `exercises` wholesale so
+  backup round-trips them with no codec change. `timedSpec` is the computed Codable bridge.
+
+- **Phase 5 reuses the simple `StopwatchView` timer; the structured runner is Phase 6.** The named card's
+  "Add set" opens the existing `LogSetSheet(.duration)` Timer path (the timer measurement IS the log →
+  `SetLog(durationSec:)`; Manual stays as a fallback; one-tap Repeat kept). For a **max-hang / count-down**
+  spec the dial is armed to count **down** from `workSec` (`StopwatchTiming.Mode.countDown`) — the captured
+  value is still the *elapsed time held*, so logging is unchanged. The structured repeaters/tabata/emom
+  interval runner is **deferred to Phase 6** (the spec already carries the parameters it will read).
+
+**Verified:** `xcodegen generate` + `xcodebuild build-for-testing` clean (0 errors / 0 new warnings in the
+changed files); full `SnappetTests` green incl. new `TimedExerciseSpecTests` and the `SnappetBackupTests`
+drift+round-trip tripwire; `SnappetUITests/TimedSetTimerTests` (pick a seeded suggestion → named card → log
+a timed set with the live timer; AND create "10s hang" count-down + preset → named card → log a set) on the
+simulator. Structured interval runner deferred to Phase 6.
+
+### Quick Session redesign — Phase 6 (structured interval runner: repeaters/tabata/emom)
+
+- **Pure `IntervalSchedule` in `Shared/`, mirroring `StopwatchTiming`.** A `.repeaters`/`.tabata`/`.emom`
+  `TimedExerciseSpec` unrolls into an ordered `[Phase]` (`kind: leadIn/work/rest/restBetweenSets/done`,
+  each with `durationSec`, 1-based `setIndex`/`repIndex`, a big `label`, and the **next** phase's `nextLabel`
+  for the preview chip). A pure `state(at elapsed) -> (phase, remainingInPhase, overallRemaining, setRep,
+  isDone)` walks the phases off a wall-clock anchor, so the running view is a thin read that can't drift and
+  survives backgrounding. Unit-tested exhaustively (`IntervalScheduleTests`, 18 cases): total ==
+  `spec.totalSeconds`, phase counts/boundaries, the multi-set set/rep counter, next-phase labels, and edges
+  (lead-in 0, single rep/set). Lives in `Shared/` so the same schedule is available on every target.
+- **EMOM is 60-second work windows.** `.emom` carries `workSec/restSec == 0` in the preset, so the schedule
+  models each rep as a **60 s work phase** (one effort at the top of every minute, no inter-rep rest) — its
+  schedule `totalSeconds` is `leadIn + reps*60` and so deliberately does NOT equal `spec.totalSeconds`
+  (which is the spec's raw-field math). For repeaters/tabata the two agree (asserted).
+- **`StructuredTimedRunner` drives a wall-clock `RunnerViewModel` directly** (the `StopwatchViewModel`
+  freeze idiom, NOT the packaged `StopwatchView` — its composite collapses under XCUITest). A ~200 ms ticker
+  recomputes `state(at:)`, fires the per-phase + final-3s cues, and auto-finishes at the `done` marker.
+  **Pause** folds the running segment into `accumulated`; **Skip** jumps the anchor to the next phase
+  boundary. **"The timer is the log":** on finish/STOP a capture card pre-fills the **time-under-tension**
+  (Σ completed work seconds, partial when stopped mid-work), completed reps·sets, and avg/peak HR; "Log set"
+  commits `SetLog(durationSec: TUT)` through the same freeform `appendLog` funnel.
+- **Cues are a light system sound + the shared `Haptics`, gated by a tri-state toggle.** Per-phase
+  work/rest tones (`AudioServicesPlaySystemSound`, no bundled asset → revertible) + a final-3s tick + a
+  completion tone, with a **sound + haptic / haptic only / silent** toggle persisted via `@AppStorage`. The
+  phase background telegraphs the phase before the beep (WORK = `SnappetColor.workout` ember / REST = muted)
+  and Reduce Motion snaps the ring instead of animating. (Audio/haptic + keep-awake are **device-only**.)
+- **Wire-in is a one-line branch in the named timed card.** "Add set" presents `StructuredTimedRunner`
+  (`.fullScreenCover`) when `ex.timedSpec?.mode.isStructured`, else keeps the Phase-5 `LogSetSheet`
+  stopwatch — Phases 1–5 untouched.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 new warnings in the changed
+files); full `SnappetTests` green incl. new `IntervalScheduleTests` (18 cases); a new
+`SnappetUITests/StructuredIntervalRunnerTests` (create a Repeaters exercise → named card → "Add set" opens
+the runner → asserts `intervalRunner.phase` + `.timer` are live → lead-in elapses into WORK → STOP →
+capture card → `intervalRunner.logSet` → a set row appears) passes on the simulator.
+
+### Quick Session redesign — Phase 7 (type-adaptive completion summary · remembered rest timers · polish)
+
+- **The completion screen is now a SCROLLABLE, type-adaptive recap (`FreeformDoneSummaryView`)**, extracted
+  out of `FreeformPlayerView.doneScreen`. Its hero strip + cards adapt to `FreeformSummary.dominant(for:)`:
+  - **Climbing** → hero Sends · Hardest · On-the-wall(time); a secondary Effort card (sends/hr · total
+    attempts · median), the full **grade pyramid**, the per-climb **timeline** (newest-first, top 5 +
+    "Show all N"), and — only when `!session.hrSeries.isEmpty` — the **Effort** zone-bar.
+  - **Timed** → hero Hold time · Best · Sets; per-exercise rows (name · sets · TUT · best hold).
+  - **Strength** → hero Volume · Sets · PRs; a PRs list + per-exercise volume.
+  - **Honest degradation, no fake data:** no per-climb timing → "Climbs" (count) not "On the wall"; no HR →
+    the Effort block is omitted. Every figure is derived from the pure `FreeformSummary` + `FreeformClimbStats`
+    (no model migration). The milestone seal/headline + `CelebrationBurst` and Done / View detail / Keep going
+    / Discard all carry over (same a11y ids). A "Turn N clips into a reel" Studio CTA shows when the session
+    has video clips and opens the WHOLE session in the shared editor.
+- **The pyramid / zone-bar / timeline are SHARED subviews, not duplicated.** `FreeformClimbSummaryComponents`
+  holds `ClimbGradePyramid` / `ClimbEffortSection` / `ClimbTimelineList` (+ a shared section title), extracted
+  from the Phase-3 `LiveClimbStatsSheet` so the live sheet and the completion recap render the IDENTICAL views
+  (the pyramid keeps its `freeform.statsPyramid` id). `LiveClimbStatsSheet` now composes those shared views.
+- **Remembered rest timer = a pure `RestTimerDefaults` + a non-blocking command-bar count-down.** A small
+  PURE type (unit-tested, `RestTimerDefaultsTests`, 8 cases) owns the deterministic parts — the per-context
+  KEY (`.climb(ClimbType)` / `.timed(TimedExerciseCategory)` / `.lifting`), the clamp `[10, 600]s`, the seeded
+  per-discipline default (boulder 120 / route 240 / hangboard 180 / lifting 120), and the remember/recall +
+  JSON round-trip for `@AppStorage` (which can't hold a dictionary). The view holds the live count-down
+  (reused `StopwatchViewModel(.countDown)` + the at-zero `Haptics`): **opt-in** (`freeform.restToggle`, OFF by
+  default), and on each `appendLog` (the one funnel) it auto-arms the remembered rest for that exercise's
+  context. The rest banner floats as an `.overlay` ABOVE the command bar (NOT a stacked row) so the bar's
+  `safeAreaInset` height — which the List's bottom content-margin is sized to — is unchanged when there's no
+  rest, keeping the last set's controls hittable. ±15 s nudges remember the new length per context; an X
+  dismisses. Never gates logging.
+- **Recent-gym chips + per-type scale stick in `AddClimbSheet`.** A one-tap recent-gyms rail under "More ·
+  gym" (`addClimb.recentGym.<gym>`, persisted in `UserDefaults` like the recent grades, capped 5,
+  case-insensitively de-duped; the disclosure auto-opens when a gym is remembered). The V↔Font / YDS↔French
+  scale toggle now sticks **per discipline** via `@AppStorage` (`addClimb.boulderScale` / `addClimb.routeScale`):
+  the sheet restores the remembered scale for the opening/selected type, snapping the grade to that scale's
+  default so a route never opens on a V grade.
+- **Keep-awake on the FOCUS covers** — `TimedAttemptCover` and `StructuredTimedRunner` set
+  `UIApplication.shared.isIdleTimerDisabled = true` onAppear / `false` onDisappear so the screen doesn't sleep
+  mid-effort (the Phase-6 device-only note). Cheaply revertible.
+- **`AddClimbSheet.commit` is now ONE-SHOT (`committed` guard).** A double/triple-tapped CTA — a user mash, or
+  XCUITest delivering the tap more than once as the sheet settles — now creates exactly ONE climb (it had been
+  creating 2–3, which is why `FreeformFlowWalkthroughTests` was already red on the Phase-6 baseline at its
+  grade-pill assertion). Genuine hardening that also stabilizes the walkthrough.
+- **`-uiTestFreshStore` now also clears the Quick-Session @AppStorage keys** (recent grades/gyms, per-type
+  scales, auto-rest + rest-defaults) in `SnappetApp` — they ride `UserDefaults`, which the in-memory store
+  swap doesn't touch, so a prior run's recents would add duplicate chip elements the freeform walkthrough trips
+  over (the `KilterCatalogFixture` precedent for its `kilter.*` keys). The walkthrough's timed step was also
+  modernized for the Phase-5 pick sheet (pick the seeded "Free hold" suggestion → named card → Add set →
+  Manual → 0:45), and its grade-pill assertion + Add-set helper made robust to the documented XCUITest
+  double-fire / transient-non-hittable scroll positions.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 new warnings in the changed
+files); full `SnappetTests` green (866 tests, 2 skipped) incl. new `RestTimerDefaultsTests` (8 cases);
+`SnappetUITests/FreeformFlowWalkthroughTests` passes end-to-end on the simulator (climb → attempts → lifting →
+timed → Finish → the type-adaptive summary with the climbing pyramid + Effort + New-PR milestone → Done) — a
+test that was already RED on the clean Phase-6 baseline (pre-existing CTA double-fire) and is green after this
+phase. Device-only: the keep-awake, the rest-timer at-zero haptic, and the clips→reel pipeline.
+
+## 2026-06-18 — Add-a-climb: wall name (gym→wall suggestions) + climb colour (prompt 08)
+
+On-device-feedback iteration on `AddClimbSheet` (Quick Session redesign):
+
+- **Wall is scoped to the gym, not global.** A gym has many walls, so wall suggestions live in a
+  per-gym map (`UserDefaults` key `freeform.gymWalls`, JSON `[gymKey: [wall]]`, gymKey = trimmed+lowercased
+  so "The Front"/"the front " share walls) — reloaded whenever the gym changes (typed or chip-tapped), and
+  empty until a gym is set. A newly-typed wall is remembered only under the current gym. Deliberately
+  mirrors the recent-gym rail but keyed per gym; the recents ordering (most-recent-first, case-insensitive
+  dedupe, capped) is now ONE pure tested helper `AddClimbSheet.mergedRecents`. `SessionExercise.wall` is an
+  additive optional; shown in the card's "📍 gym · wall" caption (new `freeform.climbLocation`).
+- **Colour is a curated palette, stored by name, swatch derived.** New pure `ClimbColor` enum (12 gym
+  hold/tape colours) with `hexValue: UInt32` so the swatch reuses the existing `Color(hex:)` — keeping
+  `ClimbColor` Foundation-only + unit-tested (no SwiftUI in the value type). Optional (a "None" clear chip;
+  re-tapping the selected colour clears it). Picked **next to the grade** (the user's placement), value
+  mirrored on `addClimb.colorValue`; shown as a 14pt swatch next to the grade pill on the card
+  (`freeform.colorSwatch`, near-white gets a hairline ring). `SessionExercise.climbColorRaw` additive
+  optional. Both fields migration-safe (no new @Model, no non-optional stored field).
+
+**Verified:** `build-for-testing` clean (0 errors / 0 warnings in changed files); `SnappetTests` green
+(**868**, +2 new: ClimbColor palette + mergedRecents); `SnappetUITests/NamedClimbTests` green. Sim note:
+the iPhone 17 Pro runner wedged ("hung before establishing connection") after a device build left MrRobot
+connected+locked — an `xcrun simctl erase` + a different sim model (iPhone 17) cleared it.
+
+## 2026-06-18 — Climb card: edit details · per-attempt clips → editor · climb-name overlay (prompt 09)
+
+On-device-feedback iteration on the freeform CLIMB card (Quick Session redesign), three cohesive parts:
+
+- **Edit climb details — reuse `AddClimbSheet` in an EDIT mode, not a second sheet.** A new optional
+  `initial: AddClimbParams?` makes the sheet open PREFILLED (title "Edit climb", a single "Save" CTA
+  `addClimb.save`, no "Add & log first attempt"); a "Edit details" (pencil) item sits above "Remove climb"
+  in the climb header Menu (`freeform.editClimb`; the Menu's ellipsis label gained `freeform.climbMenu` so
+  the XCUITest can open it deterministically — SwiftUI Menu items aren't queryable until the label is
+  tapped). The player routes Save to a new `updateClimb(_ exID:, _ params:)` that overwrites THAT
+  `SessionExercise`'s type/grade/scale/name/gym/wall/colour **in place** (same `id`, attempts preserved —
+  no duplicate). A `AddClimbParams.init(from: SessionExercise)` builds the prefill (grade falls back to the
+  scale default, name to the type label). **Gotcha:** the sheet's `type` `.onChange` snaps the grade to the
+  scale default, which would clobber a route prefill when `seed(from:)` flips the type — guarded with a
+  one-shot `didSeed` flag so the reset only fires on a USER type change, not the seed. A name equal to the
+  bare type label (the add-flow blank fallback) is shown empty so the placeholder reads. Decision: existing
+  logged attempts keep the grade they were **stamped** with at log time (the per-`SetLog` source of truth
+  for the send/pyramid reads); only the card-level grade re-derives — editing the climb is not a
+  retroactive re-stamp.
+- **Per-attempt media — a UI-only add (no model change).** `SetMediaStrip(session:exerciseID:setIndex:onEdit:)`
+  is now rendered under EACH attempt row in the expanded card (`.id("climb-media-\(ex.id)-\(i)")`, `onEdit`
+  → `presentStudio`). `SessionMediaAssignment.completions(from:)` already tags `.climbAttempt` sets, so an
+  auto-discovered or manually-attached clip maps to `(climbExerciseID, attemptIndex)` with no schema change;
+  a video tap opens the shared Studio editor exactly as lifting/timed sets do.
+- **Climb-name overlay for FREEFORM clips — widen the existing `.climbName` path, keep the Kilter path
+  byte-identical.** A freeform climb has no Kilter `KilterLogEntry`, so `resolvedClimbUUID` is nil and the
+  editor's "Climb" action was unreachable for it. Thread the climb's caption end-to-end:
+  `FreeformStudioPresentation.climbCaption` (built in `presentStudio` from the tapped clip's
+  `assignedExerciseID` → `[displayName, climbGradeLabel].compactMap{…}.joined(" · ")`, e.g. "Cave Roof · V5")
+  → `StudioEditorView.init(… suggestedClimbCaption:)` → `StudioEditorViewModel`. `hasClimbInfo` widens to
+  `resolvedClimbUUID != nil || suggestedClimbCaption != nil`; `addClimbNameOverlay()` prefers the Kilter
+  caption when present, else drops the SAME `.climbName` lower-third (same shape/position/editability)
+  seeded with the suggested caption. `suggestedClimbCaption` is an additive optional defaulting to nil — the
+  Kilter (`resolvedClimbUUID`) path is untouched; the "Show setter" toggle stays Kilter-only (it early-returns
+  for a freeform overlay, which has no setter — benign/inert).
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 warnings in the changed
+app-code files — `FreeformPlayerView`, `AddClimbSheet`, `StudioEditorView`, `StudioEditorViewModel`); full
+`SnappetTests` green (**868**, 2 skipped); new `SnappetUITests/EditClimbTests` passes (add V3 → Edit details
+→ change rung to V5 → Save → `freeform.gradePill` reads V5 and there is still exactly ONE climb) and
+`NamedClimbTests` (Phase-1 add-mode regression guard) still passes. The new UITest file carries the same
+Swift-6 main-actor-isolation warnings the whole `SnappetUITests` target already has on `XCUIApplication`
+access (confirmed by force-recompiling `NamedClimbTests` — same warning family); it deliberately mirrors that
+plain-`XCTestCase` idiom rather than diverge. Device-only / deferred: the PHPicker/Photos pick on a real
+device (the strip's affordance renders on the sim but the library is empty), and the actual on-video overlay
+render/burn-in (Core-Animation export is device-only — the sim shows the editor's placeholder canvas).
+
+## 2026-06-18 — Climb card: name-tap expands · attempt-count on the tag · edit-all-clips (prompt 10)
+
+On-device-feedback iteration on the freeform CLIMB card + its Studio clip editor (Quick Session redesign),
+three cohesive refinements:
+- **Name tap = expand/collapse (not inline-edit).** The inline-editable `ClimbNameHeader` TextField is
+  replaced by a plain, non-editing `Text(name)` wrapped in a `Button { toggleExpanded(ex) }` — the name now
+  joins the chevron as the expand/collapse affordance. Editing the name is solely via ⋯ → "Edit details"
+  (prompt 09's `AddClimbSheet` edit mode). `ClimbNameHeader` is deleted (nothing else used it).
+  **A11y gotcha:** the id (`freeform.climbName`) had to move onto the **Button**, not the inner `Text` —
+  a `Button`-wrapped `Text` is exposed to XCUITest as a *button* (the inner Text's id is absorbed), so
+  `staticTexts["freeform.climbName"]` no longer matches. It's now `buttons["freeform.climbName"]` whose
+  `.label` is the climb name. `NamedClimbTests` was updated: the rename path is ⋯ (`freeform.climbMenu`) →
+  `freeform.editClimb` → `addClimb.name` → `addClimb.save`, then assert the button label shows the new name.
+- **Attempt-count option on the climb-name tag.** Additive `suggestedAttemptNumber: Int?` threaded
+  `FreeformStudioPresentation` → `StudioEditorView.init` → `StudioEditorViewModel` (default nil — the Kilter
+  and whole-session paths are byte-identical when nil). In `presentStudio(_ clip:)` it's
+  `clip.assignedSetIndex.map { $0 + 1 }` (the clip is attached to one attempt, `assignedSetIndex` 0-based).
+  The editor shows a user-toggleable **"Attempt #"** toggle (`studioClimbAttempt`) on the `.climbName`
+  overlay bar, gated by `canShowClimbAttempt` (`suggestedAttemptNumber != nil` AND a `.climbName` overlay
+  selected) — mirroring the existing "Show setter" toggle. Toggling regenerates THAT ONE overlay's content
+  via a new **pure** `KilterClimbCaption.climbTagContent(caption:attempt:showAttempt:)` (ON appends a
+  trailing "Attempt N" line; OFF strips it). **Decision:** OFF strips by removing a trailing `\nAttempt N`
+  suffix from the *current* content rather than re-deriving from climb data — so a manual edit to the base
+  caption survives the toggle and re-toggling never compounds the line (the base caption stays the editable
+  source of truth, and no 2nd overlay is created). Unit-tested in `KilterClimbCaptionTests`.
+- **Edit all clips together.** A "Edit all clips" item (`freeform.editAllClips`) is added to the climb ⋯
+  menu, shown only when the climb has ≥1 video `SessionMedia` (`assignedExerciseID == ex.id`,
+  `kind == .video`). `presentStudioForClimb(_ ex:)` gathers those media ids, resolves the session's single
+  shared+persisted `StudioProject` (`StudioEntry.resolveProject`), and presents
+  `FreeformStudioPresentation(project:, visibleClipMediaIDs: Set(thoseIds), focusClipMediaID: first,
+  climbCaption: <name · grade>, suggestedAttemptNumber: nil)`. **No new persistence** — because every
+  per-clip edit already lives on that one shared project, a wider `visibleClipMediaIDs` simply shows them
+  together; `suggestedAttemptNumber` is nil here since the combined view spans many attempts.
+- **Build gotcha:** after threading `suggestedAttemptNumber`, `FreeformPlayerView`'s giant `loggingContent`
+  opaque-result body tripped a "compiler unable to type-check in reasonable time". Extracted the climb ⋯
+  menu items into a `@ViewBuilder climbMenuContent(_ ex:)` helper to drop the inference load — kept as a
+  genuine simplification.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 warnings in the changed
+app-code files — `FreeformPlayerView`, `StudioEditorView`, `StudioEditorViewModel`, `KilterClimbCaption`;
+the test-target main-actor-isolation warnings are pre-existing). Full `SnappetTests` green (**872**, 2
+skipped) including 4 new `climbTagContent` cases; `SnappetUITests/NamedClimbTests` (updated rename-via-Edit-
+details path) and `EditClimbTests` both pass. Device-only / deferred: the actual on-video overlay
+render/burn-in incl. the "Attempt N" line (Core-Animation export is device-only — sim shows the placeholder
+canvas), and the PHPicker/Photos clip pick that populates the per-climb multi-clip view.
+
+## 2026-06-18 — Climb clip lifecycle: dynamic attempt# · deep-tap reassign/remove/delete (prompt 11)
+
+On-device-feedback iteration on the per-attempt clips (Quick Session redesign), four cohesive refinements —
+**most of it PORTED from the post-session `SessionDetailView`** (which already does move/remove/delete) into
+the LIVE freeform strip, matching its wording:
+- **Dynamic attempt # in the Studio editor.** `StudioEditorViewModel.selectedClipAttemptNumber` fetches the
+  `SessionMedia` for `selectedClip?.sessionMediaID` → `assignedSetIndex.map { $0 + 1 }`; a new
+  `effectiveAttemptNumber = selectedClipAttemptNumber ?? suggestedAttemptNumber` is what `canShowClimbAttempt`
+  and `setSelectedClimbShowsAttempt` use, so the "Attempt #" tag follows the **selected** clip (critical in
+  the combined "Edit all clips" view, where the threaded `suggestedAttemptNumber` is nil because the scope
+  spans many attempts). **Decision:** `select(_:)` now calls `refreshAttemptLineForSelection()`, which
+  re-derives any "Attempt #"-ON `.climbName` overlay's appended line to the newly-focused clip's number via
+  `KilterClimbCaption.climbTagContent` — so a tag reading "Attempt 2" becomes "Attempt 4" when you select a
+  different attempt's clip. The "Attempt #" OFF-strip is now a `\nAttempt \d+$` regex (matches ANY number)
+  rather than a fixed-N suffix, since the appended number can change with selection.
+- **Deep-tap (long-press) clip menu on the live strip.** `SetMediaStrip` gains an optional `.contextMenu`
+  (a `ClipContextMenu` ViewModifier, attached to either a video Button or a plain photo thumb) wired ONLY on
+  the climb-attempt strips via three new (defaulted-nil) params: `moveTargets: [ClipMoveTarget]`, `onReassign:
+  (SessionMedia, UUID?, Int?) -> Void`, `onRequestDelete: (SessionMedia) -> Void`. Lifting/timed/guided
+  strips pass none → no menu (unchanged). Items (ported from `SessionDetailView.thumbMenu`): **Move to
+  attempt…** (submenu over the climb's attempts) · **Remove from attempt** (→ General) · **Delete clip…**
+  (destructive). a11y: `freeform.clipMenu` on the thumbnail, `freeform.clipMove.<i>` / `freeform.clipRemove`
+  / `freeform.clipDelete` on the leaves.
+- **Reassign + remove (sticky).** `FreeformPlayerView.reassignClip(_:to:set:)` (port of
+  `SessionDetailView.reassign`) sets `assignedExerciseID/assignedSetIndex` + `assignmentSource =
+  exerciseID == nil ? .general : .manual`, so a moved clip pins `.manual` and a removed clip pins `.general`
+  — both sticky against `reconcileAssignments`, which only re-places `.auto` rows. "Remove from attempt" =
+  reassign to General (`assignedExerciseID nil`): it leaves the strip but keeps the file.
+- **Photos-aware delete.** A single `.confirmationDialog($pendingClipDeletion)` is hosted on the (stable)
+  logging screen, **ported verbatim** from `SessionDetailView` incl. the Photos wording ("…iOS will ask once
+  more"); only the first button's noun is "Remove from attempt only" (vs "…from session only"). "Delete from
+  Photos too" → `deleteClipFromPhotos` (port of `deleteFromPhotos`): `MediaLibraryService.deleteAssets(...)`
+  FIRST (iOS shows its own confirm), then `context.delete` + save only on success, so a denied/cancelled
+  delete never orphans the tag. The `MediaLibraryService` is obtained the same way `SessionDetailView` does
+  (a stored `private let mediaLibrary = MediaLibraryService()`).
+- **Pure helper + test.** Move targets come from a pure `climbClipMoveTargets(for ex:) -> [ClipMoveTarget]`
+  (in `SessionMediaAssignment.swift`): one `ClipMoveTarget(id:"<exID>-<i>", title:"Attempt N", exerciseID,
+  setIndex)` per attempt. Unit-tested in `ClipMoveTargetTests` (1-based titles / 0-based setIndex / stable
+  unique ids / empty for an attempt-less climb). No model change — `MediaAssignmentSource`/reconcile were
+  already correct.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 warnings in the changed
+app-code files — `StudioEditorViewModel`, `SetMediaStrip`, `FreeformPlayerView`, `SessionMediaAssignment`;
+the test-target main-actor-isolation warnings are pre-existing). Full `SnappetTests` green (**876**, 2
+skipped) including 4 new `climbClipMoveTargets` cases; `SnappetUITests/NamedClimbTests` + `EditClimbTests`
+both pass (sim-wedge "hung before establishing connection" cleared by `simctl shutdown all` + retry).
+Device-only / deferred: the actual Photos asset deletion (the system confirm + on-disk removal), the PHPicker
+pick, and the context-menu long-press feel — a focused unit test for the pure helper + the green climb
+UITests cover the rest (a context-menu + Photos-deletion XCUITest is too device-y/flaky to force here).
+
+## 2026-06-18 — Studio editor: scope overlays to the visible clips (prompt 13)
+
+Bug (user, single-clip editor): opening ONE climb clip showed the NEXT attempt's tag too (two overlay-lane
+bars over one clip), and "the default climb tag (Attempt# ON) always shows even though I set it once."
+
+- **Root cause (one):** `visibleClipMediaIDs` scoped the CLIPS (`StudioGeometry.filterByMedia`) but NEVER
+  the OVERLAYS — `canvasOverlays`/`timelineOverlays`/`scopedSnapshot.overlays` all returned the full
+  project set. A foreign clip's per-clip tag (clipID owned by a non-visible clip) leaked into the canvas,
+  the overlay lane, AND the export (its `outputWindow` fell back to a stored ~[0,clipDur] window that
+  overlaps the single visible clip's [0,2], passing the time-gate). The "default tag that won't stick"
+  was the SAME leak wearing a different hat — the other clip's persisted tag (with its flags) bleeding in;
+  NOT a persistence/default bug. (11-agent review confirmed nothing auto-adds a tag and the flags persist;
+  it explicitly warned NOT to "fix" the toggles — that would have been a misdiagnosis.)
+- **Fix (minimal):** a pure `StudioGeometry.filterOverlays(_:clips:to:)` bridging the key mismatch
+  (`OverlayItem.clipID` = a `TimelineClip.id`, not the `SessionMedia.id` that `visibleClipMediaIDs` holds):
+  nil scope → all; `clipID == nil` (whole-project overlay) → kept in every scope; else `clipID → owning
+  clip → sessionMediaID → membership`; orphan dropped while scoping. A VM `scopedOverlays` routes the
+  three render surfaces (`canvasOverlays`, `timelineOverlays`, `scopedSnapshot.overlays`) through it.
+  `overlays`/`selectedOverlay`/`climbOverlayForSelectedClip` deliberately KEEP reading the full set so a
+  scoped edit still persists to the shared project and add-or-select stays idempotent.
+
+**Process note (why this recurred):** prompt 12 made overlays per-clip but only scoped the CLIP list, not
+the overlay list — a "what's scoped vs not" gap. Folding an explicit *scope-parity* check (every per-entity
+list that has a visible-subset must filter BOTH the entities and anything keyed to them) into the review lens.
+
+**Verified:** `build-for-testing` clean (0 errors / 0 warnings in changed files); `SnappetTests` green
+(**889**, +2 new `filterOverlays` cases).
+
+## 2026-06-18 — Studio editor: tapping a clip shows the CLIP editor, not the climb-tag editor (prompt 14)
+
+Bug (user): with a climb tag on, tapping the video clip in the timeline popped the climb-tag OVERLAY editor
+(Attempt#/opacity) instead of the clip editor, hiding the clip's trim/speed/filter options.
+
+- **Root cause:** prompt 12 STEP 5 coupled clip selection to overlay selection — `select(_:)` repointed
+  `selectedOverlayID` to the clip's climb tag so the dynamic Attempt# could "follow the selected clip." But
+  the bottom panel is `selectedOverlay != nil ? overlayBar : actionBar`, so selecting a CLIP showed the
+  OVERLAY editor. Now that every tag is a per-clip property (`clipID`, prompt 12), that coupling is obsolete.
+- **Fix:** `select(_:)` now sets `selectedOverlayID = nil` (clip tap → clip editor); the climb tag is
+  selected only by tapping the tag (overlay-lane bar / canvas chip → `selectOverlay`). `effectiveAttemptNumber`
+  now derives from the SELECTED OVERLAY's own `clipID` (a tag's attempt is intrinsic to its clip), falling
+  back to `selectedClip?.id` (the add-a-tag moment) then `suggestedAttemptNumber`. Removed the now-obsolete
+  `selectedClipAttemptNumber` + `refreshAttemptLineForSelection`. `hasClimbOverlay`/"Climb ✓" read
+  `climbOverlayForSelectedClip` (clip HAS a tag), independent of selection — unaffected.
+
+**Verified:** build clean (0 errors / 0 warnings in changed files); `SnappetTests` green (**889**);
+`LiveWorkoutStudioWalkthroughTests` + `NamedClimbTests` pass.

@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Quick Session Redesign · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens */
+    --coral:#FF5A4D; --coral-d:#FF7A6B;
+    --ember:#F2761E; --amber:#B45309; --amber-band:#C2750B;
+    --route:#2A7DE1; --leaf:#3F9D55; --teal:#1592A6;
+    --paper:#FBFAF8; --paper-d:#121214;
+    --surface:#FFFFFF; --surface-d:#1E1E22;
+    --muted:#F2F1EE; --muted-d:#26262B;
+    --hair:#E7E5E1; --hair-d:#34343A;
+    --ink:#1A1A1E; --ink-d:#F4F3F1;
+    --t2:#6B6A66; --t2-d:#A6A5A1;
+    --glass:rgba(17,25,40,.78); --glasshair:rgba(255,255,255,.14);
+    --z1:#1592A6; --z2:#3F9D55; --z3:#F2761E; --z4:#E5483D; --z5:#9B1C16;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{
+    margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1b2030,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 80px;
+  }
+  .wrap{max-width:1320px;margin:0 auto;padding:0 28px}
+  header.page{padding:64px 28px 18px;max-width:1320px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb9af 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:17px;max-width:880px;margin:0 0 18px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin:18px 0 6px;font-size:13px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .flowhead{margin:64px 0 6px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#8b90a0}
+  .flowtitle{font-size:26px;font-weight:750;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:900px;margin:0 0 30px;font-size:15px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 38px;align-items:flex-start}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--coral);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,90,77,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .arrow{font-size:30px;color:#4a4f5e;align-self:center;margin-top:300px}
+
+  /* ---------- device ---------- */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 4px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px;flex:0 0 auto;font-size:15px}
+  .nav .ttl{font-weight:700}
+  .content{flex:1 1 auto;overflow:hidden;padding:4px 14px 8px;position:relative}
+  .cmdbar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:13px;font-weight:650;
+    border-top:1px solid var(--hair)}
+  .cmdbar .grow{flex:1}
+
+  /* light / dark surfaces */
+  .light{background:var(--paper);color:var(--ink)}
+  .light .nav{color:var(--ink)} .light .statusbar{color:var(--ink)}
+  .light .cmdbar{background:#fff;border-top-color:var(--hair)}
+  .dark{background:var(--paper-d);color:var(--ink-d)}
+  .dark .cmdbar{background:#17171b;border-top-color:var(--hair-d)}
+  .muteline{color:var(--t2)} .dark .muteline{color:var(--t2-d)}
+
+  /* ---------- components ---------- */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:13px 14px;margin:10px 0;
+    box-shadow:0 6px 16px -10px rgba(0,0,0,.18)}
+  .dark .card{background:var(--surface-d);border-color:var(--hair-d);box-shadow:none}
+  .tile{background:var(--muted);border-radius:var(--radius);padding:12px 14px}
+  .dark .tile{background:var(--muted-d)}
+
+  .cta{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--coral);color:#fff;font-weight:750;
+    border-radius:14px;padding:14px;font-size:15.5px;box-shadow:0 10px 24px -10px rgba(255,90,77,.6)}
+  .cta.outline{background:transparent;color:var(--coral);border:1.5px solid var(--coral);box-shadow:none}
+  .cta.sm{padding:11px;font-size:14px}
+
+  .seg{display:flex;background:var(--muted);border-radius:12px;padding:3px;gap:3px;font-size:13px;font-weight:600}
+  .dark .seg{background:var(--muted-d)}
+  .seg span{flex:1;text-align:center;padding:8px 4px;border-radius:9px;color:var(--t2)}
+  .seg span.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .dark .seg span.on{background:#3a3a42;color:#fff}
+
+  .chiprow{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}
+  .chip{background:var(--muted);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:650;color:var(--ink)}
+  .dark .chip{background:var(--muted-d);color:var(--ink-d)}
+  .chip.on{background:var(--ink);color:#fff} .dark .chip.on{background:#fff;color:#000}
+  .chip.ghost{background:transparent;border:1px dashed var(--hair);color:var(--t2)}
+
+  .gpill{display:inline-flex;align-items:center;font-weight:800;font-size:13px;border-radius:9px;padding:4px 9px;color:#fff;
+    background:var(--amber-band)}
+  .gpill.route{background:var(--route)}
+  .badge{font-size:11.5px;font-weight:750;letter-spacing:.02em}
+  .b-sent{color:var(--leaf)} .b-flash{color:var(--coral)} .b-proj{color:var(--ember)} .b-att{color:var(--t2)}
+
+  .hr{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px;padding:5px 10px;border-radius:999px;
+    background:var(--muted)}
+  .dark .hr{background:rgba(255,255,255,.08)}
+  .hrdot{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+  .seerow{display:flex;justify-content:space-between;font-size:12px;margin-top:2px}
+  .lbl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:700}
+  .dark .lbl{color:var(--t2-d)}
+  .big{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:800;letter-spacing:-.01em}
+  .rounded{font-family:ui-rounded,-apple-system,"SF Pro Rounded",sans-serif}
+
+  /* live ribbon */
+  .ribbon{background:linear-gradient(100deg,#fff,#fff7f3);border:1px solid var(--hair);border-radius:16px;padding:11px 13px;margin:6px 0 12px}
+  .dark .ribbon{background:linear-gradient(100deg,#1d1d22,#241c19);border-color:var(--hair-d)}
+  .minipyr{display:flex;gap:6px;align-items:flex-end;height:30px;margin-top:7px}
+  .minipyr .b{width:26px;background:var(--amber-band);border-radius:4px 4px 0 0;opacity:.92}
+  .minipyr .lab{font-size:10px;color:var(--t2);text-align:center}
+
+  /* big pyramid */
+  .pyr{display:flex;flex-direction:column;gap:7px;margin:8px 0}
+  .pyr .row{display:flex;align-items:center;gap:9px;font-size:12px}
+  .pyr .g{width:32px;font-weight:800}
+  .pyr .bar{height:14px;border-radius:5px;background:linear-gradient(90deg,var(--amber-band),var(--ember))}
+  .pyr .n{margin-left:auto;font-weight:700;color:var(--t2)}
+
+  /* zone bar */
+  .zonebar{display:flex;height:18px;border-radius:7px;overflow:hidden;font-size:9px;color:#fff;font-weight:700;text-align:center}
+  .zonebar div{display:flex;align-items:center;justify-content:center}
+
+  /* FOCUS timer */
+  .focus{background:radial-gradient(120% 90% at 50% 0%,#1a2230,#0c0e13);color:#eef1f6}
+  .focus .statusbar{color:#eef1f6}
+  .glasscard{background:var(--glass);border:1px solid var(--glasshair);border-radius:18px;padding:13px 15px;backdrop-filter:blur(8px)}
+  .ring{width:196px;height:196px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:8px auto;position:relative}
+  .ring.work{background:conic-gradient(var(--ember) 0 58%,rgba(255,255,255,.08) 58% 100%);}
+  .ring.rest{background:conic-gradient(#5b6172 0 70%,rgba(255,255,255,.07) 70% 100%);}
+  .ring.up{background:conic-gradient(var(--coral) 0 28%,rgba(255,255,255,.07) 28% 100%);}
+  .ring .inner{width:166px;height:166px;border-radius:50%;background:#0e1118;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .timer{font-size:50px;font-weight:800;letter-spacing:-.02em}
+  .stop{width:100%;background:#E5483D;color:#fff;font-weight:800;font-size:18px;border-radius:18px;padding:18px;text-align:center;
+    box-shadow:0 12px 30px -8px rgba(229,72,61,.6);letter-spacing:.04em}
+  .ghostbtn{flex:1;text-align:center;padding:14px;border-radius:14px;background:rgba(255,255,255,.08);font-weight:700;font-size:14px;color:#dfe3ea}
+
+  .drain{height:8px;border-radius:5px;background:rgba(255,255,255,.12);overflow:hidden;margin:14px 0 4px}
+  .drain i{display:block;height:100%;background:var(--ember);border-radius:5px}
+
+  /* type cards (entry) */
+  .typegrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+  .typecard{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:15px 13px;min-height:96px;display:flex;flex-direction:column;justify-content:space-between}
+  .dark .typecard{background:var(--surface-d);border-color:var(--hair-d)}
+  .typecard .ic{font-size:24px}
+  .typecard .nm{font-weight:750;font-size:16px}
+  .typecard .ds{font-size:11.5px;color:var(--t2)}
+  .resume{grid-column:1 / -1;background:linear-gradient(100deg,#fff,#fdf2ef);border:1px solid var(--hair);border-radius:16px;padding:13px;display:flex;align-items:center;gap:11px}
+  .dark .resume{background:linear-gradient(100deg,#211a18,#1b1b20);border-color:var(--hair-d)}
+
+  .footer{margin-top:70px;padding-top:26px;border-top:1px solid #23262f;color:#8b90a0;font-size:13.5px}
+  .footer code{background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd}
+  .small{font-size:11px;color:var(--t2)}
+  hr.div{border:none;border-top:1px solid var(--hair);margin:9px 0}
+  .dark hr.div{border-top-color:var(--hair-d)}
+  .twocol{display:flex;gap:10px}
+  .attlist .att{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:7px 2px;border-bottom:1px solid var(--hair)}
+  .dark .attlist .att{border-bottom-color:var(--hair-d)}
+  .att .num{width:18px;color:var(--t2);font-weight:700}
+  .att .time{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+  .footrow{display:flex;gap:9px;margin-top:11px}
+  .footrow > div{flex:1}
+  .outcomegrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:6px 0}
+  .ob{padding:14px;border-radius:13px;background:var(--muted);text-align:center;font-weight:750;font-size:14px}
+  .dark .ob{background:rgba(255,255,255,.07)}
+  .ob.sent{background:rgba(63,157,85,.16);color:var(--leaf)}
+  .ob.flash{background:rgba(255,90,77,.14);color:var(--coral)}
+  .listrow{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--hair);font-size:13.5px}
+  .dark .listrow{border-bottom-color:var(--hair-d)}
+  .listrow .meta{margin-left:auto;font-size:11px;color:var(--t2);font-weight:650}
+  .kbd{font-size:11px;color:var(--t2)}
+  @media(max-width:760px){.step{width:88vw;max-width:340px}.arrow{display:none}}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Quick Session — redesigned</h1>
+  <p class="sub">Real-looking wireframes for the climb-first / exercise-first Quick Session. Every attempt logs <b>underneath</b> a named, typed, graded climb (or a named timed exercise) instead of as a flat row. Derived from a 38-agent deep-research + design pass and mapped onto the real Snappet code. Read the full rationale in <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">README.md</code>.</p>
+  <div class="legend">
+    <span class="swatch"><span class="dot" style="background:#FF5A4D"></span><b>Pulse Coral</b> primary CTA</span>
+    <span class="swatch"><span class="dot" style="background:#F2761E"></span><b>Ember</b> work / open project</span>
+    <span class="swatch"><span class="dot" style="background:#B45309"></span><b>Kilter amber</b> boulder grade</span>
+    <span class="swatch"><span class="dot" style="background:#2A7DE1"></span><b>Blue</b> route (YDS) grade</span>
+    <span class="swatch"><span class="dot" style="background:#3F9D55"></span><b>Sent</b> · <span class="dot" style="background:#1592A6"></span>Z1 → <span class="dot" style="background:#E5483D"></span>Z5 HR zones</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============================ FLOW 1: CLIMBING ============================ -->
+<div class="flowhead">Flow 1</div>
+<h2 class="flowtitle">Climbing — add a climb, then log timed &amp; untimed attempts under it</h2>
+<p class="flowdesc">Tap <b>Climbing</b> → name a route (type · grade · gym) → log every go beneath it. A timed attempt opens a full-cover FOCUS timer with a giant Stop. Live stats (sends · hardest · pyramid) build as you climb. This is the fix for “you can’t group three tries on the same V4 project.”</p>
+
+<div class="gallery">
+
+  <!-- 1. Entry / type chooser -->
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span>⌄ Minimize</span><span class="ttl">Quick session</span><span>⋯</span></div>
+      <div class="content">
+        <div class="muteline" style="font-size:12px">Thu Jun 18 · 0:06 · <span style="color:var(--leaf)">live ●</span></div>
+        <div style="font-weight:750;font-size:19px;margin:8px 0 2px">What are you training?</div>
+        <div class="muteline" style="font-size:12.5px">Pick one to log your first effort — everything logs underneath it.</div>
+        <div class="typegrid">
+          <div class="resume">
+            <span style="font-size:22px">🧗</span>
+            <div><div style="font-size:10.5px;font-weight:800;color:var(--amber)">RESUME</div>
+            <div style="font-weight:700;font-size:14px">Climbing · boulder · The Front</div>
+            <div class="small">last: Cave Roof V6 · 2 days ago</div></div>
+            <span style="margin-left:auto;color:var(--t2)">›</span>
+          </div>
+          <div class="typecard"><span class="ic">🧗</span><div><div class="nm">Climbing</div><div class="ds">boulder · TR · lead</div></div></div>
+          <div class="typecard"><span class="ic">🏋️</span><div><div class="nm">Strength</div><div class="ds">reps × weight</div></div></div>
+          <div class="typecard"><span class="ic">⏱️</span><div><div class="nm">Timed</div><div class="ds">hangs · planks · intervals</div></div></div>
+          <div class="typecard"><span class="ic">🏃</span><div><div class="nm">Run</div><div class="ds">duration · distance</div></div></div>
+        </div>
+        <div class="chiprow" style="margin-top:11px"><span class="kbd">Recent</span><span class="chip">V-scale</span><span class="chip">The Front</span></div>
+      </div>
+      <div class="cmdbar"><span>⏱ 0:06</span><span class="hr"><span class="hrdot" style="background:var(--z1)"></span>88 · Z1</span><span class="grow"></span><span class="cta sm" style="padding:8px 16px">Finish</span></div>
+    </div></div>
+    <div class="caption"><b>Type chooser.</b> Auto-started session; returning users get a one-tap <b>Resume</b> card + sticky scale/gym chips. No setup wizard.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 2. Add a climb sheet -->
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="content" style="padding-top:6px">
+        <div style="text-align:center;color:var(--t2);font-size:20px;line-height:.4">···</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 2px">
+          <span style="font-weight:750;font-size:18px">Add a climb</span><span style="color:var(--t2)">✕</span></div>
+        <div class="muteline" style="font-size:12px;margin-bottom:12px">Bridge Climbing Co. — attempts log underneath</div>
+
+        <div class="lbl">Type</div>
+        <div class="seg" style="margin:6px 0 14px"><span class="on">Boulder</span><span>Top-rope</span><span>Lead</span><span>Sport</span></div>
+
+        <div style="display:flex;justify-content:space-between"><span class="lbl">Grade</span><span class="kbd">V · Font ⇄</span></div>
+        <div class="chiprow"><span class="kbd">Recent</span><span class="chip on">V5</span><span class="chip">V4</span><span class="chip">V6</span><span class="chip">V3</span></div>
+        <div class="tile" style="display:flex;gap:9px;justify-content:center;font-weight:700;font-size:14px;padding:10px">
+          <span class="muteline">V3</span><span class="muteline">V4</span><span class="gpill" style="font-size:14px">V5</span><span class="muteline">V6</span><span class="muteline">V7</span><span class="muteline">V8</span></div>
+
+        <div class="lbl" style="margin-top:14px">Name (optional)</div>
+        <div class="tile" style="margin-top:6px;display:flex;justify-content:space-between"><span>Blue #3</span><span class="muteline">🎙</span></div>
+        <div class="chiprow"><span class="kbd">Suggest</span><span class="chip">Cave Roof</span><span class="chip">Slab</span></div>
+
+        <div class="muteline" style="font-size:12px;margin:10px 0">⌄ More · gym · note</div>
+        <div class="cta">Add &amp; log first attempt</div>
+        <div class="cta outline sm" style="margin-top:9px">Add climb only</div>
+        <div class="muteline" style="font-size:11.5px;text-align:center;margin-top:9px">last here: V4 · sent · 3 tries</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Add-a-climb sheet.</b> <b>Type drives the scale</b> (boulder→V/Font, route→YDS). Grade is a discrete picker + recent chips — never free-text. Gym inherited, name optional.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 3. Session canvas (populated + live ribbon) -->
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 87%</span></div>
+      <div class="nav"><span>⌄</span><span class="ttl">Boulder Sesh</span><span class="muteline" style="font-size:12px">Movement RiNo</span></div>
+      <div class="content">
+        <div class="ribbon">
+          <div style="display:flex;align-items:center;gap:8px"><span class="lbl" style="color:var(--coral)">Live</span>
+            <span><b class="big" style="font-size:17px">3</b> sends</span>
+            <span class="muteline">·</span><span>hardest <span class="gpill">V5</span></span>
+            <span style="margin-left:auto;color:var(--t2)">tap ⌄</span></div>
+          <div class="minipyr">
+            <div style="text-align:center"><div class="b" style="height:10px"></div><div class="lab">V3</div></div>
+            <div style="text-align:center"><div class="b" style="height:20px"></div><div class="lab">V4</div></div>
+            <div style="text-align:center"><div class="b" style="height:28px"></div><div class="lab">V5</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:11px 13px">
+          <div style="display:flex;align-items:center;gap:8px"><span>△</span><b>Cave Roof</b><span class="gpill">V5</span>
+            <span style="margin-left:auto" class="badge b-sent">✓ Sent</span><span class="muteline">⌄</span></div>
+          <div class="muteline" style="font-size:11.5px;margin-top:3px">boulder · 4 attempts · 6:18 on climb</div>
+        </div>
+
+        <div class="card" style="padding:11px 13px">
+          <div style="display:flex;align-items:center;gap:8px"><span>◇</span><b>Yellow Arete</b><span class="gpill route">5.10a</span>
+            <span style="margin-left:auto" class="badge b-sent">✓ Sent</span><span class="muteline">⌄</span></div>
+          <div class="muteline" style="font-size:11.5px;margin-top:3px">top-rope · 2 attempts · 3:30</div>
+        </div>
+
+        <!-- expanded -->
+        <div class="card" style="border-color:var(--ember);padding:12px 13px">
+          <div style="display:flex;align-items:center;gap:8px"><span>△</span><b>Slab Project</b><span class="gpill">V4</span>
+            <span style="margin-left:auto" class="badge b-proj">◷ Project</span><span class="muteline">⌃</span></div>
+          <div class="muteline" style="font-size:11.5px;margin:3px 0 7px">boulder · 3 attempts · 4:05 · open</div>
+          <div class="attlist">
+            <div class="att"><span class="num">1</span>attempt<span class="time">0:42</span></div>
+            <div class="att"><span class="num">2</span>attempt<span class="time">1:10</span></div>
+            <div class="att" style="border:none"><span class="num">3</span>attempt<span class="time">2:13</span></div>
+          </div>
+          <div class="muteline" style="font-size:11px;margin:6px 0">◯ Time next go · rest 3:00 ⌄</div>
+          <div class="footrow"><div class="cta outline sm">+1 attempt</div><div class="cta sm">Send ⌄</div></div>
+        </div>
+      </div>
+      <div class="cmdbar"><span>⏱ 41:12</span><span class="hr"><span class="hrdot" style="background:var(--z3)"></span>142 · Z3</span><span class="grow"></span><span style="color:var(--coral);font-weight:750">＋ Add</span></div>
+    </div></div>
+    <div class="caption"><b>Session canvas.</b> Each climb is an expandable card; three tries on the project are <b>three children of one card</b>. Live-stats ribbon pinned on top. Add fans up in the thumb zone.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 4. Live timed attempt (FOCUS) -->
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device"><div class="island"></div><div class="screen focus">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 86%</span></div>
+      <div class="nav" style="color:#cfd4de"><span>⌄ Peek canvas</span><span></span><span style="font-size:12px">try 3 of 3</span></div>
+      <div class="content" style="display:flex;flex-direction:column">
+        <div class="glasscard" style="margin:2px 4px 6px">
+          <div style="font-size:10.5px;letter-spacing:.1em;color:#9aa2b4">▲ BOULDER · THE SPOT · BISHOP</div>
+          <div style="font-weight:750;font-size:18px;margin-top:2px">Cave Roof</div>
+          <div style="margin-top:4px"><span class="gpill">V4</span> <span style="color:#aeb4c2;font-size:12px">· Font 6c</span></div>
+        </div>
+        <div style="text-align:center;margin-top:10px">
+          <div style="font-size:10.5px;letter-spacing:.14em;color:#8d94a6">ATTEMPT ELAPSED</div>
+          <div class="timer rounded" style="margin:6px 0 2px">0:42</div>
+          <div style="font-size:11.5px;color:#8d94a6">started 9:40 AM · counting up</div>
+        </div>
+        <div class="glasscard" style="margin:16px auto 0;width:78%;display:flex;justify-content:center;gap:9px;align-items:center">
+          <span class="hrdot" style="background:var(--z3)"></span><b class="rounded">142 bpm</b><span style="color:#aeb4c2;font-size:12px">Z3</span>
+        </div>
+        <div style="flex:1"></div>
+        <div class="stop">⏹ &nbsp;S T O P</div>
+        <div style="text-align:center;font-size:11px;color:#7d8498;margin-top:8px">hold STOP to discard ⌫</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Live timed attempt (FOCUS).</b> Promotes the existing <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">StopwatchView</code> out of the cramped sheet into a full cover. The clock is the hero; HR is a chip; all session stats recede; Stop is ≥64pt, bottom-center.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 5. Stop -> outcome -->
+  <div class="step">
+    <div class="stepnum">5</div>
+    <div class="device"><div class="island"></div><div class="screen focus">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 86%</span></div>
+      <div class="content" style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:18px">
+        <div style="text-align:center;opacity:.45;margin-bottom:10px">
+          <div class="timer rounded" style="font-size:34px">0:51</div>
+          <div style="font-size:11px;color:#8d94a6">Cave Roof · V4 · attempt #3 · 9:40→9:41 AM</div>
+        </div>
+        <div class="glasscard">
+          <div style="font-weight:700;font-size:15px;margin-bottom:10px">How did it go?</div>
+          <div class="outcomegrid">
+            <div class="ob" style="color:#cfd4de">✗ Fall</div>
+            <div class="ob" style="color:var(--ember)">◷ Project</div>
+            <div class="ob sent">✓ Send</div>
+            <div class="ob flash">⚡ Flash</div>
+          </div>
+          <div style="font-size:11px;color:#9aa2b4;margin-top:4px">Send / Flash → close climb · Fall / Project → keep open ↻</div>
+        </div>
+        <div class="footrow"><div class="ghostbtn">Save as attempt</div><div class="ghostbtn" style="flex:0 0 90px">Undo</div></div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Stop → outcome.</b> Captured duration freezes; pick an outcome inline (closest-thumb = the common “close the climb” actions). Outcome implies count — Flash sets attempts=1. Then it auto-collapses back to the canvas. A genuine best fires <b>“First V4 send!”</b> + haptic.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 6. Live stats expanded -->
+  <div class="step">
+    <div class="stepnum">6</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 87%</span></div>
+      <div class="content" style="padding-top:8px">
+        <div style="text-align:center;color:var(--t2);font-size:20px;line-height:.4">···</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 12px"><b style="font-size:17px">Live stats</b><span class="muteline">✕</span></div>
+        <div class="twocol">
+          <div class="tile" style="flex:1;text-align:center"><div class="big" style="font-size:24px">7</div><div class="lbl">Sends</div></div>
+          <div class="tile" style="flex:1;text-align:center"><div class="big" style="font-size:24px;color:var(--amber)">V5</div><div class="lbl">Hardest</div></div>
+          <div class="tile" style="flex:1;text-align:center"><div class="big" style="font-size:24px">4.1</div><div class="lbl">Sends/hr</div></div>
+        </div>
+        <div class="lbl" style="margin:14px 0 4px">Grade pyramid · sends easy → hard</div>
+        <div class="pyr">
+          <div class="row"><span class="g">V5</span><span class="bar" style="width:18%"></span><span class="n">2 ★</span></div>
+          <div class="row"><span class="g">V4</span><span class="bar" style="width:50%"></span><span class="n">6</span></div>
+          <div class="row"><span class="g">V3</span><span class="bar" style="width:34%"></span><span class="n">4</span></div>
+          <div class="row"><span class="g">V2</span><span class="bar" style="width:22%"></span><span class="n">3</span></div>
+        </div>
+        <div class="lbl" style="margin:14px 0 5px">Time on wall vs rest · 2 of 4 climbs timed</div>
+        <div style="display:flex;height:18px;border-radius:7px;overflow:hidden;font-size:9px;color:#fff;font-weight:700">
+          <div style="width:31%;background:var(--amber-band);display:flex;align-items:center;justify-content:center">31%</div>
+          <div style="width:69%;background:var(--muted);color:var(--t2);display:flex;align-items:center;justify-content:center">rest 69%</div></div>
+        <div class="lbl" style="margin:14px 0 5px">Effort · via Apple Watch</div>
+        <div class="zonebar">
+          <div style="width:12%;background:var(--z1)">Z1</div><div style="width:18%;background:var(--z2)">Z2</div>
+          <div style="width:34%;background:var(--z3)">Z3</div><div style="width:28%;background:var(--z4)">Z4</div>
+          <div style="width:8%;background:var(--z5)">Z5</div></div>
+        <div class="muteline" style="font-size:11.5px;margin-top:6px">avg 138 · max 171 · redline 18% · recovery ● 72% Ready</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Live stats (expanded).</b> Tap the ribbon to read the full read-only sheet — pyramid, sends/hr, time-on-wall, zone bar — all from the existing pure <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">KilterSessionStats</code>. Logging stays on the cards below; honest degradation when untimed / no-HR.</div>
+  </div>
+
+</div>
+
+<!-- ============================ FLOW 2: TIMED ============================ -->
+<div class="flowhead">Flow 2</div>
+<h2 class="flowtitle">Timed exercises — pick from a catalog or create one, then run it live</h2>
+<p class="flowdesc">Same hierarchy as climbing, for hangs/planks/intervals. Lead with a searchable catalog (“7s max hang”, “Dead hang”, “Plank”) + a pinned <b>Create new</b>. The live runner telegraphs WORK vs REST before the beep; the measurement <b>is</b> the log — one-tap confirm, no manual min/sec entry.</p>
+
+<div class="gallery">
+
+  <!-- 7. Timed catalog -->
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="content" style="padding-top:6px">
+        <div style="text-align:center;color:var(--t2);font-size:20px;line-height:.4">···</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px"><b style="font-size:17px">Add a timed exercise</b><span class="muteline">✕</span></div>
+        <div class="tile" style="display:flex;gap:8px;color:var(--t2);margin-bottom:10px">🔍 <span>Search or name an exercise…</span></div>
+        <div class="cta" style="justify-content:space-between"><span>＋ Create new timed exercise</span><span>›</span></div>
+        <div class="lbl" style="margin:14px 0 4px">Recents</div>
+        <div class="listrow"><span>⏱️</span><div><b>7s max hang</b><div class="small">last 7.4s · best 8.1s ★</div></div><span class="meta">DOWN 7s ›</span></div>
+        <div class="listrow"><span>⏱️</span><div><b>Dead hang</b><div class="small">last 0:42 · yesterday</div></div><span class="meta">UP — ›</span></div>
+        <div class="lbl" style="margin:12px 0 4px">Hangboard</div>
+        <div class="listrow"><span>▦</span><div><b>7:3 repeaters</b></div><span class="meta">7:3×6 ›</span></div>
+        <div class="listrow"><span>▦</span><div><b>Bar hang</b></div><span class="meta">UP — ›</span></div>
+        <div class="lbl" style="margin:12px 0 4px">Core</div>
+        <div class="listrow"><span>🧍</span><div><b>Plank</b></div><span class="meta">DOWN 1:00 ›</span></div>
+        <div class="listrow" style="border:none"><span>🧍</span><div><b>Hollow hold</b></div><span class="meta">DOWN 0:30 ›</span></div>
+      </div>
+      <div class="cmdbar"><span>⏱ 12:30</span><span class="hr"><span class="hrdot" style="background:var(--z2)"></span>138 · Z2</span><span class="grow"></span><span class="cta sm" style="padding:8px 16px">Finish</span></div>
+    </div></div>
+    <div class="caption"><b>Pick or create.</b> Catalog-first (the 90% path), <b>Create new</b> pinned at top, recents/favorites first. Persists as a small <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">TimedExerciseCatalog</code> so holds stop being retyped every session.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 8. Create new (repeaters) -->
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="content" style="padding-top:6px">
+        <div style="text-align:center;color:var(--t2);font-size:20px;line-height:.4">════</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px"><span>‹ <b style="font-size:16px">New timed exercise</b></span><span class="muteline">✕</span></div>
+        <div class="lbl">Name</div>
+        <div class="tile" style="margin:6px 0 12px">10s max hang → <b>7:3 repeaters</b></div>
+        <div class="lbl">Structure</div>
+        <div class="seg" style="margin:6px 0 10px"><span>Count up</span><span>Count down</span><span class="on">Repeaters</span></div>
+        <div class="chiprow"><span class="kbd">Preset</span><span class="chip on">Repeaters 7:3×6</span><span class="chip">Tabata</span><span class="chip">Custom</span></div>
+        <div class="card" style="padding:10px 13px">
+          <div class="seerow"><span>Work <span class="kbd">ember</span></span><span class="big">– &nbsp;7s&nbsp; +</span></div><hr class="div">
+          <div class="seerow"><span>Rest</span><span class="big">– &nbsp;3s&nbsp; +</span></div><hr class="div">
+          <div class="seerow"><span>Rounds</span><span class="big">– &nbsp;6&nbsp; +</span></div><hr class="div">
+          <div class="seerow"><span>Sets</span><span class="big">– &nbsp;3&nbsp; +</span></div><hr class="div">
+          <div class="seerow"><span>Rest / set</span><span class="big">– &nbsp;60s&nbsp; +</span></div>
+        </div>
+        <div class="seerow" style="margin:8px 2px"><span>Lead-in &nbsp;– 3s +</span><span>Cue ◖Haptic◗ ▾</span></div>
+        <div class="tile" style="text-align:center;font-weight:700">Total 5:00 · 6 reps × 3 sets · ↻ runner</div>
+        <div class="muteline" style="font-size:12px;margin:9px 0 9px">☑ Save to my exercises (reuse later)</div>
+        <div class="cta">Add to session</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Create new (repeaters).</b> Protocol-preset chips pre-fill 7:3×6 — never assemble from scratch, never silently snap a value (the Tindeq failure). Live “Total 5:00” readout. Fields morph by structure.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 9. Live timed set (work phase) -->
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device"><div class="island"></div><div class="screen focus">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav" style="color:#cfd4de"><span>✕ Close</span><span class="ttl" style="font-size:14px">7s Max Hang</span><span class="hr" style="background:rgba(255,255,255,.08)"><span class="hrdot" style="background:var(--z3)"></span>142</span></div>
+      <div class="content" style="display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#aeb4c2;padding:2px 4px">
+          <span>Set 2/3 · Rep 3/6</span><span>next ▸ REST 3s</span></div>
+        <div class="ring work" style="margin-top:14px"><div class="inner">
+          <div style="font-size:13px;letter-spacing:.18em;color:var(--ember);font-weight:800">HANG</div>
+          <div class="timer rounded" style="font-size:46px">0:04</div></div></div>
+        <div class="drain" style="margin-top:18px"><i style="width:62%"></i></div>
+        <div style="text-align:center;font-size:11.5px;color:#9aa2b4">total 1:18 left</div>
+        <div class="glasscard" style="margin:14px 4px 0;display:flex;align-items:center;gap:8px;justify-content:center">
+          <span class="hrdot" style="background:var(--z3)"></span>142 · Z3 Aerobic<span style="color:#8d94a6">· 🔊 cues</span></div>
+        <div style="flex:1"></div>
+        <div class="footrow"><div class="ghostbtn">‖ Pause</div><div class="stop" style="flex:2">■ STOP</div></div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Structured runner.</b> A now/next/progress instrument: big phase label, draining count-down, Set·Rep counter, NEXT-phase chip. <b>WORK = ember</b>, REST = muted — so you read the phase peripherally, before the beep. 3-2-1 lead-in + per-phase haptics.</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- 10. Capture card -->
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device"><div class="island"></div><div class="screen focus">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav" style="color:#cfd4de"><span>✕ Close</span><span class="ttl" style="font-size:14px">7s Max Hang</span><span></span></div>
+      <div class="content" style="display:flex;flex-direction:column;justify-content:center">
+        <div style="text-align:center;color:var(--ember);font-weight:750;margin-bottom:12px">✦ Done — 6 × 7s · Set 3/3</div>
+        <div class="glasscard">
+          <div class="seerow" style="font-size:13px"><span style="color:#9aa2b4">TUT</span><b class="rounded">0:42</b><span style="color:#9aa2b4">best rep</span><b class="rounded">7.1s</b></div>
+          <hr class="div" style="border-top-color:rgba(255,255,255,.1)">
+          <div class="seerow" style="font-size:13px"><span style="color:#9aa2b4">Reps×set</span><b>6 × 7s</b><span style="color:#9aa2b4">done</span><b>6/6</b></div>
+          <hr class="div" style="border-top-color:rgba(255,255,255,.1)">
+          <div class="seerow" style="font-size:13px"><span style="color:#9aa2b4">♥ avg</span><b>144</b><span style="color:#9aa2b4">peak</span><b>158 · Z4</b></div>
+          <div style="margin-top:12px;font-size:12px;color:#9aa2b4">RPE ◀ 1 ·· <b style="color:#fff">7</b> ·· 10 ▶ <span style="float:right">skip</span></div>
+          <div style="margin-top:10px;font-size:12px;color:#9aa2b4">＋ Add note</div>
+        </div>
+        <div class="footrow"><div class="ghostbtn">↺ Redo</div><div class="cta" style="flex:2">Log set</div></div>
+      </div>
+      <div class="cmdbar" style="background:#17171b;border-top-color:var(--hair-d);color:#cdd2dd"><span>↩ Logged “7s Max Hang” · rest 0:18</span><span class="grow"></span><span style="color:var(--coral);font-weight:700">Undo</span></div>
+    </div></div>
+    <div class="caption"><b>The measurement is the log.</b> On Stop the SetLog is pre-filled with measured TUT / reps·sets — one-tap confirm, no manual entry. Optional RPE + note. A rest timer auto-starts in the command bar; an Undo snackbar keeps it forgiving.</div>
+  </div>
+
+</div>
+
+<!-- ============================ SUMMARY ============================ -->
+<div class="flowhead">Both flows land here</div>
+<h2 class="flowtitle">Type-adaptive completion summary</h2>
+<p class="flowdesc">Finish lands on a recap whose hero adapts to what you did — Sends + pyramid for climbing, Hold-time for timed, Volume + PRs for strength — with a milestone seal, a zone-bar effort recap, and a path to turn clips into a Studio reel. Degrades honestly when there’s no HR or no per-climb timing.</p>
+
+<div class="gallery">
+  <div class="step">
+    <div class="stepnum">✓</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 84%</span></div>
+      <div class="nav"><span>‹ Keep going</span><span class="ttl">Recap</span><span style="color:var(--coral)">↑ Share</span></div>
+      <div class="content">
+        <div style="text-align:center;margin:4px 0 10px">
+          <div style="font-size:30px">✦</div>
+          <div style="font-weight:800;font-size:20px;color:var(--ember)">First V5 send!</div>
+          <div class="muteline" style="font-size:12px">Boulder · Tue Jun 18 · 1h 02m</div></div>
+        <div class="card" style="display:flex;text-align:center;padding:14px 6px">
+          <div style="flex:1"><div class="big rounded" style="font-size:26px">8</div><div class="lbl">Sends</div></div>
+          <div style="flex:1"><div class="big rounded" style="font-size:26px;color:var(--amber)">V5</div><div class="lbl">Hardest</div></div>
+          <div style="flex:1"><div class="big rounded" style="font-size:26px">42m</div><div class="lbl">On wall</div></div>
+        </div>
+        <div class="seerow" style="margin:2px 2px"><span class="lbl">Grade pyramid</span><span class="kbd">11 climbs</span></div>
+        <div class="pyr">
+          <div class="row"><span class="g">V5</span><span class="bar" style="width:18%"></span><span class="n">2</span></div>
+          <div class="row"><span class="g">V4</span><span class="bar" style="width:52%"></span><span class="n">6</span></div>
+          <div class="row"><span class="g">V3</span><span class="bar" style="width:36%"></span><span class="n">4</span></div>
+          <div class="row"><span class="g">V2</span><span class="bar" style="width:26%"></span><span class="n">3</span></div>
+        </div>
+        <div class="muteline" style="font-size:11.5px;margin:2px 0 12px">7.8 sends/hr · 2:10 median · 18 tries</div>
+        <div class="seerow" style="margin:2px 2px"><span class="lbl">Effort</span><span class="kbd">peak 92% ▾</span></div>
+        <div class="zonebar" style="margin-top:6px">
+          <div style="width:10%;background:var(--z1)">Z1</div><div style="width:16%;background:var(--z2)">Z2</div>
+          <div style="width:34%;background:var(--z3)">Z3</div><div style="width:32%;background:var(--z4)">Z4</div>
+          <div style="width:8%;background:var(--z5)">Z5</div></div>
+        <div class="muteline" style="font-size:11.5px;margin-top:6px">12m in Z4+ · recovery ▭▭▭▭▭ ample</div>
+        <div class="cta" style="margin-top:14px;justify-content:space-between"><span>▶ Turn 4 clips into a reel</span><span>›</span></div>
+      </div>
+      <div class="cmdbar"><span class="cta" style="flex:1">Save session</span><span class="muteline" style="font-weight:650">Discard</span></div>
+    </div></div>
+    <div class="caption"><b>Climbing recap.</b> Hero = Sends · Hardest · On-the-wall; full pyramid + zone bar + timeline; <b>“First V5 send!”</b> seal (Reduce-Motion → haptic only). All from the pure <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">FreeformSummary</code> — no model migration.</div>
+  </div>
+
+  <div class="caption" style="width:330px;align-self:center;font-size:13.5px">
+    <b style="color:#fff;font-size:15px">Why this works</b><br><br>
+    • <b>One form, then one-tap logging.</b> The expensive type/name/grade step happens once per climb; every later go is a single gesture.<br><br>
+    • <b>~1:1 code reuse.</b> The climb-parent + attempts shape already exists as <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">KilterLogEntry</code>; stats as <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">KilterSessionStats</code>; the timer as <code style="color:#cdd2dd;background:#1b1e27;padding:0 4px;border-radius:4px">StopwatchView</code>. They just need wiring into the freeform flow.<br><br>
+    • <b>The one net-new model:</b> route types (TR/lead/sport) + YDS/French scales. Isolate it in its own phase.<br><br>
+    • <b>Honest states everywhere.</b> No-HR, untimed, first-ever, 2-hour, and Reduce-Motion variants are designed, not afterthoughts.
+  </div>
+</div>
+
+<div class="footer">
+  <b style="color:#fff">Snappet Mobile · Quick Session UX redesign</b> — wireframes for research/discussion, not shipped UI.
+  Generated 2026-06-18 by a 38-agent deep-research + design workflow (~2.1M tokens), grounded against the live codebase
+  (<code>FreeformPlayerView</code>, <code>KilterLogEntry</code>, <code>KilterSessionStats</code>, <code>StopwatchView</code>, the Glass-HUD kit).
+  Full research synthesis, all 12 ASCII wireframe surfaces, the flow map, and a phased implementation plan are in
+  <code>README.md</code> beside this file. Use this to seed PDD feature prompts — one prompt = one job = one PR.
+  <div class="small" style="margin-top:10px">Sources distilled (verified): KAYA · Stokt · Kilter · TopLogger · 8a.nu/Vertical-Life · Bould · Strong · Hevy · Fitbod · Crimpd · Tindeq · Seconds Pro · HangTight · WHOOP · Strava · Zwift · Garmin · Apple Fitness · Gentler Streak · David Smith “Fresh Workouts”. Fabricated citations surfaced during research were detected and removed.</div>
+</div>
+
+</div>
+</body>
+</html>

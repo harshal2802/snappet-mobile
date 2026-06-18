@@ -41,7 +41,17 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         let adds = app.buttons.matching(identifier: "freeform.addSet")
         XCTAssertTrue(adds.firstMatch.waitForExistence(timeout: 4), "an Add set/attempt button should exist")
         let n = adds.count
-        adds.element(boundBy: n - 1).tap()
+        let button = adds.element(boundBy: n - 1)
+        // The newest exercise auto-scrolls to centre as it's added; depending on the exact resting
+        // position its Add button can land in a transiently non-hittable strip (a tap on a non-hittable
+        // visible element throws). A nudge-scroll settles the list and brings it fully into the hittable
+        // area; a coordinate tap is the fallback if `isHittable` still lags the layout.
+        if !button.isHittable { app.swipeUp() }
+        if button.isHittable {
+            button.tap()
+        } else {
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
     }
 
     private func typeIn(_ field: XCUIElement, _ text: String) {
@@ -50,16 +60,20 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         field.typeText(text)
     }
 
-    /// Climbs are added immediately now (#158 §C — no blocking prompt); the section header is an inline
-    /// `freeform.climbName` TextField defaulting to "Climbing". Rename it in place (clear + type + submit).
-    private func nameThisClimb(_ name: String) {
-        let field = app.textFields["freeform.climbName"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "the climb section should have an inline name field")
-        field.tap()
-        if let current = field.value as? String, !current.isEmpty {
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
-        }
-        field.typeText("\(name)\n")
+    /// Add a climb through the "Add a climb" sheet (Quick Session redesign Phase 1): pick a grade rung,
+    /// type the name, then "Add & log first attempt" (auto-opens the inline outcome strip on the card).
+    private func addClimbAndLog(grade: String, name: String, outcome: String) {
+        let typePicker = app.segmentedControls["addClimb.type"]
+        XCTAssertTrue(typePicker.waitForExistence(timeout: 6), "the Add-a-climb sheet should present a TYPE picker")
+        let rung = app.buttons["addClimb.rung.\(grade)"]
+        XCTAssertTrue(rung.waitForExistence(timeout: 4), "the grade rail should offer the \(grade) rung")
+        rung.tap()
+        typeIn(app.textFields["addClimb.name"], name)
+        app.buttons["addClimb.addAndLog"].tap()
+        let outcomeButton = app.buttons["freeform.outcome.\(outcome)"]
+        XCTAssertTrue(outcomeButton.waitForExistence(timeout: 6),
+                      "the new climb card should auto-open its inline outcome strip")
+        outcomeButton.tap()
     }
 
     func testFreeformWalkthrough() {
@@ -80,18 +94,21 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
             || app.navigationBars["Quick session"].waitForExistence(timeout: 2),
             "the freeform player should open titled 'Quick session'")
 
-        // 3 — Climbing → name the climb (PR 5's "Name this climb" alert) → log an attempt
-        // (grade V4, default outcome Sent).
+        // 3 — Climbing → the "Add a climb" sheet (Quick Session redesign): pick a V4 rung, name "Cave",
+        // "Add & log first attempt" → pick the Sent outcome. The grade is captured ONCE on the card.
         addExerciseMenu("Climbing")
-        nameThisClimb("Cave")
-        sleep(1); snap("04-climbing-added")
-        tapAddSetForLastExercise()
-        typeIn(app.textFields["logset.grade"], "V4")
-        snap("05-climb-sheet")
-        app.buttons["logset.add"].tap()
-        sleep(1); snap("06-climb-logged")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'V4'")).firstMatch
-            .waitForExistence(timeout: 4), "the climb row should read its grade (V4 · …)")
+        snap("04-add-climb-sheet")
+        addClimbAndLog(grade: "V4", name: "Cave", outcome: "sent")
+        sleep(1); snap("05-climb-logged")
+        // The climb card shows the grade pill (V4); the attempt row shows the outcome (Sent), not the grade.
+        // `.firstMatch` because a SwiftUI confirmationDialog/Form button tap can occasionally double-fire
+        // under XCUITest (the same hazard `tapAddSetForLastExercise` guards against), creating more than
+        // one identical V4 climb — any of which proves the grade was captured on the card.
+        let pill = app.staticTexts.matching(identifier: "freeform.gradePill").firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 4), "the climb card should show its grade pill")
+        XCTAssertEqual(pill.label, "V4", "the grade pill should read the climb's grade (V4)")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Sent'")).firstMatch
+            .waitForExistence(timeout: 4), "the attempt row should read its outcome (Sent)")
 
         // 4 — Lifting → pick the first exercise → log 8 reps × 60. (We deliberately DON'T use the
         // search field: iOS 26's `.searchable` moves search to the bottom and hides the nav bar's
@@ -123,9 +140,14 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'kg'")).firstMatch
             .waitForExistence(timeout: 4), "the lifting row should read its weight (8 × 60 kg)")
 
-        // 5 — Timed → log 0:45. The duration sheet defaults to the live timer (Timer mode); switch to
-        // Manual to type an exact value (the live-timer path is covered by TimedSetTimerTests).
+        // 5 — Timed → log 0:45. "Timed exercise" now opens the Phase-5 pick-or-create sheet; pick the
+        // seeded "Free hold" suggestion (an open count-up, the simple LogSetSheet path) to drop a NAMED
+        // timed card, then Add set → switch to Manual to type an exact value (the live-timer path is
+        // covered by TimedSetTimerTests).
         addExerciseMenu("Timed exercise")
+        let freeHold = app.buttons["timed.suggested.seed.freehold"]
+        XCTAssertTrue(freeHold.waitForExistence(timeout: 5), "the pick sheet should offer the Free hold suggestion")
+        freeHold.tap()
         sleep(1); snap("10-timed-added")
         tapAddSetForLastExercise()
         let manual = app.segmentedControls.buttons["Manual"]

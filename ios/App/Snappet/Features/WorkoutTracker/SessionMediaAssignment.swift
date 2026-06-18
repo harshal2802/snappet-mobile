@@ -65,3 +65,30 @@ enum SessionMediaAssignment {
         return result
     }
 }
+
+/// One destination a clip can be **moved to** within a climb — i.e. one of the climb's attempts (prompt
+/// 11). The live `SetMediaStrip` deep-tap menu's "Move to attempt…" submenu lists these; selecting one
+/// reassigns the clip to that `(exerciseID, setIndex)` and pins it `.manual` (sticky vs auto-reconcile).
+/// Pure value (Foundation-only) so the target list is unit-tested without a device.
+struct ClipMoveTarget: Identifiable, Equatable, Sendable {
+    /// Stable id (`"<exerciseID>-<setIndex>"`) — drives the `ForEach` and the per-item a11y suffix.
+    let id: String
+    /// The menu label, e.g. "Attempt 3" (1-based, matching the attempt rows shown on the card).
+    let title: String
+    /// The owning climb's `SessionExercise.id`.
+    let exerciseID: UUID
+    /// The 0-based index into the climb's `sets` (the attempt) this target reassigns to.
+    let setIndex: Int
+}
+
+/// The clip move-targets for ONE climb = its logged attempts, in order (prompt 11). A climb's `sets` ARE
+/// its attempts (the climb-first hierarchy), so each attempt is a reassignment destination titled
+/// "Attempt N" (1-based). Pure (Foundation-only) → unit-tested. An attempt-less climb yields no targets
+/// (the deep-tap "Move to attempt…" submenu is then empty — the strip only renders once a clip exists,
+/// which means at least one attempt was logged, so this is a defensive empty).
+func climbClipMoveTargets(for ex: SessionExercise) -> [ClipMoveTarget] {
+    ex.sets.indices.map { i in
+        ClipMoveTarget(id: "\(ex.id)-\(i)", title: "Attempt \(i + 1)",
+                       exerciseID: ex.id, setIndex: i)
+    }
+}
