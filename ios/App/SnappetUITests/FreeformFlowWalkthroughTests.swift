@@ -50,16 +50,16 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
         field.typeText(text)
     }
 
-    /// Tapping "Climbing" first presents the "Name this climb" alert (PR 5). On iOS 26 a SwiftUI
-    /// `.alert` TextField is NOT exposed under `app.alerts.textFields`, so query it UNSCOPED via
-    /// `app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch`; the alert's "Add" button is likewise reached unscoped.
+    /// Climbs are added immediately now (#158 §C — no blocking prompt); the section header is an inline
+    /// `freeform.climbName` TextField defaulting to "Climbing". Rename it in place (clear + type + submit).
     private func nameThisClimb(_ name: String) {
-        let nameField = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Climb name (e.g. Cave Project)")).firstMatch
-        XCTAssertTrue(nameField.waitForExistence(timeout: 5),
-                      "tapping Climbing should present a 'Name this climb' prompt with a name field")
-        nameField.tap()
-        nameField.typeText(name)
-        app.buttons["Add"].tap()
+        let field = app.textFields["freeform.climbName"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "the climb section should have an inline name field")
+        field.tap()
+        if let current = field.value as? String, !current.isEmpty {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+        }
+        field.typeText("\(name)\n")
     }
 
     func testFreeformWalkthrough() {
@@ -140,11 +140,15 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
             || app.staticTexts.matching(NSPredicate(format: "label CONTAINS '0:45'")).firstMatch.exists,
             "the timed row should read 0:45")
 
-        // 6 — Finish → land back on the dashboard; the session is in History.
+        // 6 — Finish → completion summary (#158 §D) → Done saves & exits; the session is in History.
         let finish = app.buttons["freeform.finish"]
         if !finish.exists { app.swipeUp() }
         XCTAssertTrue(finish.waitForExistence(timeout: 4), "Finish workout should be available")
         finish.tap()
+        let done = app.buttons["freeform.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "the completion summary should appear")
+        snap("12b-summary")
+        done.tap()
         sleep(2); snap("13-after-finish")
 
         if app.segmentedControls.buttons["History"].waitForExistence(timeout: 4) {

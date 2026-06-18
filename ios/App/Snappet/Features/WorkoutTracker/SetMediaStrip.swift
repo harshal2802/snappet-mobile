@@ -12,16 +12,21 @@ struct SetMediaStrip: View {
     let session: WorkoutSession
     let exerciseID: UUID
     let setIndex: Int
+    /// Tap a VIDEO clip → open it in the shared Studio editor (#158 §G). `nil` ⇒ thumbnails aren't
+    /// tappable (e.g. the guided player, which doesn't wire an editor entry).
+    var onEdit: ((SessionMedia) -> Void)? = nil
 
     @Environment(AppModel.self) private var app
     @Environment(\.modelContext) private var context
     @Query private var media: [SessionMedia]
     @State private var showingPicker = false
 
-    init(session: WorkoutSession, exerciseID: UUID, setIndex: Int) {
+    init(session: WorkoutSession, exerciseID: UUID, setIndex: Int,
+         onEdit: ((SessionMedia) -> Void)? = nil) {
         self.session = session
         self.exerciseID = exerciseID
         self.setIndex = setIndex
+        self.onEdit = onEdit
         let sid = session.id
         // Compare against optionals explicitly (the stored fields are UUID? / Int?).
         let exID: UUID? = exerciseID
@@ -36,7 +41,17 @@ struct SetMediaStrip: View {
             if !media.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(media) { SessionMediaThumb(item: $0) }
+                        ForEach(media) { clip in
+                            // Videos open the scoped Studio editor on tap (#158 §G); photos aren't
+                            // clip-editable, so they stay plain thumbnails.
+                            if clip.kind == .video, let onEdit {
+                                Button { onEdit(clip) } label: { SessionMediaThumb(item: clip) }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("freeform.editClip")
+                            } else {
+                                SessionMediaThumb(item: clip)
+                            }
+                        }
                     }
                     .padding(.horizontal, 2)
                 }

@@ -94,10 +94,11 @@ final class RepeatSetTests: XCTestCase {
         sleep(1); snap("04-one-set")
 
         // PRIMARY assertion: gate on the distinctive logged value's static text, not the row
-        // element COUNT. `SetMeasure.summary` renders reps×weight as "8 × 60 kg"; that string is the
-        // reliable per-set witness (an .accessibilityIdentifier on a non-leaf row HStack may not surface
-        // as exactly one queryable element per row). Exactly one such value before Repeat.
-        let loggedValue = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '8 × 60 kg'"))
+        // element COUNT. `SetMeasure.summary` renders reps×weight as "8 × 60 kg"; the set-row Text is
+        // EXACTLY that string (the reliable per-set witness). We match it exactly — not CONTAINS —
+        // because the value-labelled Repeat control (#158 §B) also renders "Repeat 8 × 60 kg", which a
+        // CONTAINS query would double-count. Exactly one set-row value before Repeat.
+        let loggedValue = app.staticTexts.matching(NSPredicate(format: "label == '8 × 60 kg'"))
         XCTAssertTrue(loggedValue.firstMatch.waitForExistence(timeout: 6),
                       "the logged set's value (8 × 60 kg) should appear")
         XCTAssertEqual(loggedValue.count, 1, "exactly one set logged before Repeat")

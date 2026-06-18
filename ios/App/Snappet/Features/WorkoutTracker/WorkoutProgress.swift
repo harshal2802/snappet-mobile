@@ -49,6 +49,30 @@ enum WorkoutMath {
         return result
     }
 
+    /// The best **weighted** set for an exercise across history, ranked by `weightKg × reps`. Unlike
+    /// `topSet`, bodyweight sets (no weight logged) are EXCLUDED entirely — so the result always carries
+    /// a real `bestKg` and a high-rep bodyweight set can neither mask nor zero-out a genuine weighted PR.
+    /// `nil` when the exercise has no weighted set. (#158 §D milestone PR detection.)
+    static func topWeightedSet(history: [WorkoutSession], exerciseId: String) -> TopSet? {
+        var bestScore = 0.0
+        var result: TopSet?
+        for session in history {
+            for ex in session.exercises where ex.exerciseId == exerciseId {
+                for set in ex.sets {
+                    guard set.completedAt != nil, let reps = set.actualReps, reps > 0,
+                          let weight = set.actualWeight else { continue }
+                    let weightKg = toKg(weight, set.weightUnit)
+                    let score = weightKg * Double(reps)
+                    if score > bestScore {
+                        bestScore = score
+                        result = TopSet(bestKg: weightKg, bestReps: reps, date: session.startedAt)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
     /// Total completed volume (Σ weightKg × reps) for an exercise, in kg. Only sets with both
     /// a weight and reps logged contribute.
     static func totalVolumeKg(history: [WorkoutSession], exerciseId: String) -> Double {
