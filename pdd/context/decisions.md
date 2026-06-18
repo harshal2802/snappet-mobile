@@ -4,6 +4,65 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-17] Quick Sessions UX rework — freeform player: canvas · faster entry · inline climb naming · completion moment · live metrics · live clips · clip→Studio (issue #158)
+
+**Decision**: reworked the routineless **`FreeformPlayerView`** end-to-end (issue #158, one combined PR;
+the guided `WorkoutPlayerView` is reused read-only, never modified). Shape:
+- **Pure helpers first** (shipped no-callers, the `StopwatchTiming` precedent): `FreeformSummary`
+  (value-labelled Repeat label · completion stats with a dominant-kind headline Volume/Sends/Hold-time ·
+  the milestone decision composing `WorkoutMath.topSet` + `KilterMilestones.isFirstSend`) and
+  `LiveMetricsSummary` (current bpm+zone · running avg/max/redline over the live buffer via
+  `WorkoutHRStats` · recovery via `RecoveryReadiness`). Both unit-tested (`FreeformSummaryTests`,
+  `LiveMetricsSummaryTests`); no SwiftUI/SwiftData/device.
+- **§A canvas + command bar**: empty-state three `.snappetTile()` type cards; inline-editable session
+  title (`freeform.sessionTitle` → `routineName`); a persistent bottom command bar
+  (`safeAreaInset(.bottom)`: wall-clock timer · live-HR chip · always-present Finish), retiring the
+  toolbar "End".
+- **§B faster entry**: cross-session prefill (cached `LastSetLookup`, never re-scanned per render);
+  keyboard-free inline `[−] value [+]` quick-add (custom leaf buttons, not a native `Stepper` — see
+  below) through the one `appendLog`; value-labelled Repeat via `FreeformSummary.repeatLabel`.
+- **§C inline climb naming** — *reverses the [2026-06-16] "Named free-flow climb: prompt-on-tap"
+  decision*: tapping Climbing now **adds immediately** (named "Climbing"); the section header is an
+  inline `TextField` (`freeform.climbName`, a directly-queryable leaf) committing via the same tested
+  `SetMeasure.climbName` on return/blur. Model impact is identical to PR-5 (zero — reuses `displayName`).
+- **§D completion moment**: Finish opens an in-cover summary (seal + the three `FreeformSummary.stats`)
+  with a milestone `.celebrates(on:)` burst (haptic always, confetti suppressed under Reduce Motion);
+  CTAs Done / View detail (`onViewDetail` → finish+save then push `SessionRoute`) / Keep going / Discard.
+- **§E live HR/metrics/recovery**: the command-bar chip (bpm+zone+recovery dot) opens `LiveMetricsPanel`
+  (HR chart, time-in-zone, avg/max/redline, calories, a recovery ring from the engine's recovery
+  `fraction`, an optional wall-clock rest timer), throttled ~2 s.
+- **§F live clips**: wired the existing `SetMediaStrip` per exercise (latest set) + a ~20 s discovery
+  cadence (`SessionMediaService.discover` → insert auto rows → reconcile via the pure
+  `SessionMediaAssignment`, sticky manual/general untouched).
+- **§G clip→Studio**: a freeform video thumbnail opens the shared `StudioEditorView` scoped to the clip
+  (`StudioEntry.resolveProject`, one project per `sessionID`); the editor's own HR load falls back to the
+  live watch+BLE buffer, so a mid-workout clip keeps its overlay (no separate flush).
+
+**Why** (the non-obvious build choices, each forced by a real failure during the rework):
+- **Add-exercise is a toolbar `Button` + `confirmationDialog`, not a `Menu`.** A bottom-of-list `Menu`
+  became unreachable as the logbook grew; a *toolbar* `Menu`'s item action then fired **unreliably** under
+  XCUITest (the Timed add silently no-op'd). `confirmationDialog` buttons are dependable. Its trigger
+  label is "New exercise" (not "Add …") so it doesn't collide with the picker's nav-bar "Add (N)" commit
+  that the UITests match by `BEGINSWITH 'Add'`. Kept the `freeform.addExercise` id + the option labels.
+- **`ScrollViewReader` auto-scrolls to a newly-added exercise.** A `List` renders off-screen rows
+  lazily, so with the taller sections (quick-add, media strip) a new exercise landed off the bottom,
+  **unrendered** — invisible to the user *and* absent from the a11y tree (`adds.count` undercounts). Auto
+  -scrolling fixes both; `contentMargins(.bottom)` keeps the last row clear of the floating command bar.
+- **Quick-add uses custom leaf `+/−` buttons, not a native `Stepper`** — a SwiftUI `Stepper`'s
+  increment/decrement aren't reliably addressable in XCUITest; leaf buttons get their own ids
+  (`freeform.quickReps.plus`, …). The quick-add **Log** label stays plain; only **Repeat** is value
+  -labelled — and tests match a set row's value **exactly** (`== '8 × 60 kg'`), since the value-labelled
+  Repeat ("Repeat 8 × 60 kg") leaks into `staticTexts` and a `CONTAINS` query would double-count.
+
+**Supersedes**: the [2026-06-16] "**Deferred (device-pending): photo attachment to a free-flow climb**"
+note — now in scope via the shipped `SessionMedia` + `Studio` (§F/§G). Capture/discovery/Studio remain
+**device-verified, not CI** (no Photos/HR on the simulator); the pure assignment/summary logic is
+unit-tested and the affordances render everywhere.
+
+**Rules out**: modifying the guided `WorkoutPlayerView`; any SwiftData model change (all figures are
+derived; clip naming reuses `displayName`; clip storage is the existing `SessionMedia`); a SwiftUI `Menu`
+for add-exercise; a native `Stepper` for quick-add; treating a clean type-check as device verification.
+
 ## [2026-06-17] CI: path-gate the ~30-min UI suite to `ios/**` PRs (PR #173, follow-up)
 
 **Decision**: the slow `SnappetUITests` leg (~30 min, 33 tests) no longer runs on every PR push — only
