@@ -1,15 +1,17 @@
 import XCTest
 
-/// UI coverage for the **timed climb attempt** under the climb-first hierarchy (Quick Session redesign
-/// Phase 1): a created climb card's footer offers a **"Timed attempt"** button that opens a minimal sheet
-/// hosting a count-up `StopwatchView` (PR 1). Its Stop captures the elapsed seconds; an inline outcome
-/// then logs the attempt with that duration into `SetLog.durationSec`. The grade is captured ONCE on the
-/// climb card, so the timed-attempt sheet asks only duration + outcome — and the per-attempt row reads
-/// the outcome + the captured M:SS (NOT the grade — `SetMeasure.attemptRow`).
+/// UI coverage for the **timed climb attempt** under the climb-first hierarchy. The card footer's
+/// **"Timed attempt"** button now opens the full-screen `TimedAttemptCover` (Quick Session redesign
+/// Phase 2): a dark glass FOCUS surface whose hero timer (`timedAttempt.timer`) ticks off the wall clock
+/// and auto-starts on appear. A full-width STOP (`timedAttempt.stop`) freezes it and reveals a 2×2 outcome
+/// grid; picking Send (`timedAttempt.outcome.sent`) commits the attempt with the captured duration into
+/// `SetLog.durationSec` and dismisses. The grade is captured ONCE on the climb card, so the cover only
+/// times duration + picks an outcome — and the per-attempt row reads the outcome + the captured M:SS (NOT
+/// the grade — `SetMeasure.attemptRow`).
 ///
 /// Drives the real path — Quick Start → tap Climbing → Add-a-climb sheet → pick a V4 rung → "Add climb"
-/// (card collapsed) → expand → "Timed attempt" → `stopwatch.toggle` Start, let it run, Stop captures the
-/// elapsed → pick the Sent outcome → assert a `freeform.setRow` shows the captured M:SS.
+/// (card collapsed) → expand → "Timed attempt" → the cover auto-starts; let it run → STOP → pick Send →
+/// assert a `freeform.setRow` attempt row appears under the card.
 ///
 /// Same fresh-store launch as the rest of SnappetUITests so the run never inherits a leftover active
 /// session. Extract shots with `xcrun xcresulttool export attachments`.
@@ -65,7 +67,7 @@ final class ClimbAttemptTimerTests: XCTestCase {
         app.buttons["addClimb.add"].tap()
     }
 
-    func testTimedAttemptCapturesDurationWithTheLiveStopwatch() {
+    func testTimedAttemptCapturesDurationWithTheLiveCover() {
         openFreeformPlayer()
         snap("01-freeform")
 
@@ -83,45 +85,40 @@ final class ClimbAttemptTimerTests: XCTestCase {
                       "an expanded climb card should offer a 'Timed attempt' footer button")
         timed.tap()
 
-        // The timed-attempt sheet hosts the count-up stopwatch. Start → run a beat → Stop captures.
-        let toggle = app.buttons["stopwatch.toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 6),
-                      "the timed-attempt sheet should host a live stopwatch")
-        XCTAssertEqual(toggle.label, "Start", "the stopwatch should start in its idle 'Start' state")
-        toggle.tap()
-        XCTAssertTrue(waitForLabel(toggle, "Stop"), "tapping Start should flip the control to 'Stop'")
+        // The FOCUS cover auto-starts the wall-clock timer on appear — no Start tap. Wait for the hero
+        // timer, let it run a beat, then STOP captures the elapsed and reveals the outcome grid.
+        let timer = app.staticTexts["timedAttempt.timer"]
+        XCTAssertTrue(timer.waitForExistence(timeout: 6),
+                      "the timed-attempt cover should host an auto-started hero timer")
         sleep(2)   // wall-clock elapsed so the capture is a real, non-zero duration
         snap("03-timer-running")
-        toggle.tap()
-        XCTAssertTrue(waitForLabel(toggle, "Start"), "tapping Stop should flip the control back to 'Start'")
 
-        // Read the FROZEN readout after Stop: it renders the captured elapsed through the same
-        // SetMeasure rounding the attempt row will use, so the two must match exactly.
-        let captured = app.staticTexts["stopwatch.elapsed"].label
+        let stop = app.buttons["timedAttempt.stop"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 4), "the running cover should offer a STOP button")
+        stop.tap()
+
+        // After STOP the frozen readout renders the captured elapsed through the same SetMeasure rounding
+        // the attempt row will use, so the two must match exactly.
+        XCTAssertTrue(timer.waitForExistence(timeout: 4))
+        let captured = timer.label
         XCTAssertTrue(captured.range(of: "^[0-9]+:[0-9]{2}$", options: .regularExpression) != nil,
-                      "the stopwatch should read a captured M:SS duration after Stop (got \(captured))")
+                      "the cover timer should read a captured M:SS duration after Stop (got \(captured))")
         snap("04-captured")
 
-        // Pick the Sent outcome → the timed attempt logs with the captured duration and the sheet dismisses.
-        let sent = app.buttons["freeform.timedOutcome.sent"]
-        XCTAssertTrue(sent.waitForExistence(timeout: 4), "the timed-attempt sheet should offer an outcome")
+        // Pick the Send outcome → the timed attempt logs with the captured duration and the cover dismisses.
+        let sent = app.buttons["timedAttempt.outcome.sent"]
+        XCTAssertTrue(sent.waitForExistence(timeout: 4), "the stopped cover should reveal a Send outcome")
         sent.tap()
         sleep(1); snap("05-logged")
 
         // The logged attempt row renders via SetMeasure.attemptRow — "Sent · M:SS" (the captured
-        // duration, NOT the grade). Assert one leaf static text carries the captured time, proving the
-        // live capture was persisted into durationSec.
+        // duration, NOT the grade). Assert a `freeform.setRow` exists and one leaf static text carries the
+        // captured time, proving the live capture was persisted into durationSec.
         let row = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 6), "a logged climb attempt row should appear")
         let summary = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", captured)).firstMatch
         XCTAssertTrue(summary.waitForExistence(timeout: 6),
                       "the attempt row should show the captured attempt time (\(captured))")
-    }
-
-    /// Wait until `el`'s accessibility label equals `expected` (the Start↔Stop flip).
-    private func waitForLabel(_ el: XCUIElement, _ expected: String, timeout: TimeInterval = 5) -> Bool {
-        let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: el)
-        return XCTWaiter().wait(for: [exp], timeout: timeout) == .completed
     }
 }

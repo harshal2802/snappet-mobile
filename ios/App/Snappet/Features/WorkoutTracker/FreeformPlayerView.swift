@@ -142,12 +142,18 @@ struct FreeformPlayerView: View {
                 addClimbFromSheet(params, logFirstAttempt: logFirst)
             }
         }
-        // A minimal timed-attempt sheet (Phase 2 replaces this with a full-screen FOCUS cover): a
-        // count-up StopwatchView whose Stop captures the duration, then an inline outcome to log it.
-        .sheet(item: $timingAttemptFor) { target in
-            TimedAttemptSheet(type: target.type) { status, duration in
-                logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
-            }
+        // The live timed-attempt FOCUS cover (Quick Session redesign Phase 2): a dark, glass, full-screen
+        // moment that times ONE attempt off the wall clock, then reveals a 2×2 outcome grid. Replaces the
+        // old half-sheet; commits through the same `logAttempt` funnel (stamps grade + completedAt + haptic).
+        .fullScreenCover(item: $timingAttemptFor) { target in
+            let climb = session.exercises.first { $0.id == target.exerciseID }
+            TimedAttemptCover(
+                climbName: resolver.name(for: climb?.exerciseId ?? "", override: climb?.displayName),
+                climbType: target.type,
+                gradeLabel: climb?.climbGradeLabel,
+                attemptNumber: (climb?.sets.count ?? 0) + 1) { status, duration in
+                    logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
+                }
         }
         // Tap a freeform clip → the shared scoped Studio editor (§G). Hosted on the (stable) logging
         // screen — the cover must not live inside a re-rendering subview or it collapses on a clip tap.
@@ -903,8 +909,9 @@ private struct LogTarget: Identifiable {
     var id: UUID { exerciseID }
 }
 
-/// Which climb a timed attempt is being logged into (drives the minimal `TimedAttemptSheet`). Carries
-/// the climb's type so the inline outcome buttons relabel for routes. (Quick Session redesign Phase 1)
+/// Which climb a timed attempt is being logged into (drives the `TimedAttemptCover`). Carries the
+/// climb's type so the cover's outcome buttons relabel for routes; the name/grade/attempt-number are
+/// resolved from the session at presentation. (Quick Session redesign Phase 2)
 private struct TimedAttemptTarget: Identifiable {
     let exerciseID: UUID
     let type: ClimbType
@@ -938,57 +945,6 @@ private struct ClimbNameHeader: View {
         let normalized = SetMeasure.climbName(draft)
         draft = normalized
         onCommit(normalized)
-    }
-}
-
-/// A minimal **timed-attempt** sheet for a climb (Quick Session redesign Phase 1): a count-up
-/// `StopwatchView` whose Stop captures the duration, then a type-aware inline outcome strip to log the
-/// attempt with that time. Phase 2 replaces this with a full-screen FOCUS cover; this keeps it simple
-/// but working. The captured grade lives on the climb card, so this sheet only asks duration + outcome.
-private struct TimedAttemptSheet: View {
-    let type: ClimbType
-    let onLog: (_ status: KilterAscentStatus, _ durationSec: Double?) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var capturedSec: Double?
-    @State private var running = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Time the attempt") {
-                    // Stop captures the elapsed seconds. NOTE: no .accessibilityIdentifier on the
-                    // StopwatchView itself — on iOS 26 that collapses the composite and hides its inner
-                    // `stopwatch.toggle`; tests query the child ids directly.
-                    StopwatchView(mode: .countUp) { elapsed in
-                        capturedSec = elapsed > 0 ? elapsed : nil
-                    } onRunningChange: { running = $0 }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
-                }
-                Section("Outcome") {
-                    // The four type-aware outcome buttons — tapping one logs the timed attempt and
-                    // dismisses. Disabled while the stopwatch runs so a capture can't be dropped mid-run.
-                    ForEach(KilterAscentStatus.allCases, id: \.self) { status in
-                        Button {
-                            onLog(status, capturedSec)
-                            dismiss()
-                        } label: {
-                            Text(type.statusLabel(status)).frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(running)
-                        .accessibilityIdentifier("freeform.timedOutcome.\(status.rawValue)")
-                    }
-                }
-            }
-            .navigationTitle("Timed attempt")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            }
-            .presentationDetents([.medium, .large])
-        }
     }
 }
 

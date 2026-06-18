@@ -4,6 +4,47 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-18] Quick Session redesign Phase 2 — live timed-attempt FOCUS cover
+
+**Decision**: replaced Phase 1's minimal `TimedAttemptSheet` (a `.sheet(item:)`) with a full-screen
+**`TimedAttemptCover`** presented via `.fullScreenCover(item: $timingAttemptFor)` — a dark, glass FOCUS
+surface that times ONE climbing attempt. RUNNING state: near-black gradient · "Peek canvas"
+(`timedAttempt.cancel`) + "try N" · a glass climb card (type chip · name · grade pill) · a big
+SF-Rounded tabular hero timer (`timedAttempt.timer`) · an optional glass HR chip (`timedAttempt.hr`) ·
+a full-width ≥64pt STOP (`timedAttempt.stop`). STOP freezes/greys the timer and cross-fades in a **2×2
+outcome grid** — thumb-nearest BOTTOM row = the "close the climb" Send/Flash pair, TOP row =
+Fall/Project (`timedAttempt.outcome.<status>`) — plus a "Save as attempt" (`timedAttempt.saveAsAttempt`).
+Commits through the SAME `logAttempt(toExerciseID:status:durationSec:)` funnel (stamps grade +
+completedAt + haptic) — no model change.
+
+**Why these specifics**:
+- **`StopwatchViewModel(.countUp)` driven DIRECTLY**, NOT the packaged `StopwatchView`. The packaged
+  view's composite collapses under XCUITest on iOS 26 (hides its inner `stopwatch.toggle`); driving the
+  `@Observable` VM directly lets the cover own its OWN leaf ids (`timedAttempt.timer`, `.stop`,
+  `.outcome.*`) — one a11y id per interactive leaf, the iOS-26 rule. The VM is still the single
+  wall-clock-backed timing source: auto-`start()` `onAppear`, `endTicking()` `onDisappear`,
+  `syncToWallClock()` on scenePhase `.active` (correct across backgrounding, no drift).
+- **Never silently drop a captured effort**: a dismissal (Peek / swipe-down) AFTER a Stop save-as-attempt
+  via `onDisappear` (commit `.attempt` + the captured duration); BEFORE a Stop logs nothing. The
+  outcome-tap path clears `capturedSeconds` first so the `onDisappear` guard can't double-log the same
+  effort.
+- **HR chip OMITTED entirely (not "♥ --") when `latestHR == nil`** — a missing sample never renders as a
+  misleading inert chip; zone via `HeartRateZone.forBpm(bpm, maxHR: resolvedMaxHR ?? defaultMaxHR)`.
+- The hero timer renders `SetMeasure.formatDuration(vm.reading.elapsed)` so the captured value matches
+  the attempt row EXACTLY and a long attempt rolls to H:MM:SS (formatDuration already handles it).
+- **No milestone celebration here** — Phase 3 owns that.
+
+**Rules out**: a half-sheet timed attempt; counting ticks instead of the wall clock; an id on the
+packaged StopwatchView (collapses the composite). The `ClimbAttemptTimerTests` UITest was rewired to
+drive the cover (tap `freeform.timedAttempt` → wait the auto-started `timedAttempt.timer` →
+`timedAttempt.stop` → `timedAttempt.outcome.sent` → assert a `freeform.setRow` shows the captured M:SS).
+
+**Verified**: `xcodegen generate` + `xcodebuild build-for-testing` clean (0 errors, 0 new warnings —
+the test-target actor-isolation warnings are pre-existing across the whole suite); `SnappetTests` green
+(829, 2 skipped); `ClimbAttemptTimerTests` green (1 test, ~44 s). **Device-only / deferred**: the live
+HR chip needs a real watch/BLE HR source (the simulator has none, so the chip is exercised only via its
+nil path); the glass/material rendering feel.
+
 ## [2026-06-18] Quick Session redesign Phase 1 — climb-first hierarchy (Add-a-climb sheet · expandable climb cards · attempts under climbs)
 
 **Decision**: turned the freeform **Climbing** flow from flat attempt rows into a **climb-first
