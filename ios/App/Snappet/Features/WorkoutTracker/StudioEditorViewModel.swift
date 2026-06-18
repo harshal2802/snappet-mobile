@@ -371,15 +371,12 @@ final class StudioEditorViewModel {
 
     func select(_ id: UUID?) {
         selectedClipID = id
-        // Prompt 12 STEP 5: repoint the selected overlay to the climb tag OWNED by the newly-selected clip
-        // (by clipID), or nil if it has none — so the Attempt#/Setter toggles act on the RIGHT per-clip
-        // tag, not the last-selected one. Only repoints among climb tags (leave a selected text/sticker
-        // alone): if the current selection is a climb tag (or nothing), point at this clip's tag.
-        if selectedOverlay == nil || selectedOverlay?.kind == .climbName {
-            selectedOverlayID = climbOverlayForSelectedClip?.id
-        }
-        // Prompt 11/12: a tag whose "Attempt #" line is ON re-derives to the newly-focused clip's number.
-        refreshAttemptLineForSelection()
+        // Tapping a CLIP shows the CLIP editor (trim/speed/filter/split). It must NOT also select the
+        // clip's climb tag — that popped the OVERLAY editor and hid the clip's options (prompt 14). The
+        // climb tag is selected only by tapping the tag itself (its overlay-lane bar / the canvas chip →
+        // `selectOverlay`). Each tag is a per-clip property (clipID), so its Attempt# is intrinsic to its
+        // own clip (see `effectiveAttemptNumber`) — the old "follow the selected clip" coupling is gone.
+        selectedOverlayID = nil
     }
 
     func deleteSelected() {
@@ -554,22 +551,24 @@ final class StudioEditorViewModel {
         editOverlaysOnly { StudioProjectEditor.setOverlayClimbFlags($0, id: ov.id, showsSetter: on) }
     }
 
-    /// The 1-based attempt number the **currently selected** clip belongs to (prompt 11): the selected
-    /// clip's backing `SessionMedia.assignedSetIndex + 1`. `nil` when the selection has no media link or
-    /// isn't tied to a specific attempt. Drives a DYNAMIC "Attempt #" — in the combined "Edit all clips"
-    /// view (where `suggestedAttemptNumber` is nil because the scope spans many attempts), the tag follows
-    /// whichever clip is selected; in single-clip mode it agrees with the threaded `suggestedAttemptNumber`.
-    var selectedClipAttemptNumber: Int? {
-        guard let mediaID = selectedClip?.sessionMediaID else { return nil }
+    /// The 1-based attempt number a timeline clip belongs to — its backing `SessionMedia.assignedSetIndex
+    /// + 1`. `nil` when the clip has no media link or isn't tied to a specific attempt. (prompt 11/14)
+    private func attemptNumber(forClipID clipID: UUID?) -> Int? {
+        guard let clipID,
+              let mediaID = snapshot.clips.first(where: { $0.id == clipID })?.sessionMediaID else { return nil }
         var d = FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.id == mediaID })
         d.fetchLimit = 1
         return (try? context.fetch(d))?.first?.assignedSetIndex.map { $0 + 1 }
     }
 
-    /// The attempt number the "Attempt #" tag uses/shows — the SELECTED clip's, falling back to the static
-    /// number threaded at open (prompt 11). So the tag tracks the focused clip in "Edit all clips" and the
-    /// single clip in single-clip mode. `nil` (neither available) ⇒ no attempt to tag.
-    var effectiveAttemptNumber: Int? { selectedClipAttemptNumber ?? suggestedAttemptNumber }
+    /// The attempt number the "Attempt #" tag uses/shows. A climb tag is a PER-CLIP property, so its
+    /// attempt is its OWN clip's (`overlay.clipID`) — NOT "whichever clip is selected" (that coupling made
+    /// tapping a clip pop the overlay editor, prompt 14). When ADDING a tag (none selected yet) it's the
+    /// clip being tagged; the threaded `suggestedAttemptNumber` is the final fallback (single-clip open).
+    var effectiveAttemptNumber: Int? {
+        let clipID = (selectedOverlay?.kind == .climbName ? selectedOverlay?.clipID : nil) ?? selectedClip?.id
+        return attemptNumber(forClipID: clipID) ?? suggestedAttemptNumber
+    }
 
     /// Whether the "Attempt #" option is available for the selected overlay: a `.climbName` overlay exists
     /// AND an attempt number resolves for the current selection (prompt 11 — the SELECTED clip's, else the
@@ -593,18 +592,6 @@ final class StudioEditorViewModel {
         editOverlaysOnly {
             StudioProjectEditor.setOverlayClimbFlags($0, id: ov.id, showsAttempt: on,
                                                      attemptNumber: on ? attempt : nil)
-        }
-    }
-
-    /// Re-derive the selected `.climbName` tag's attempt number to the **newly-selected** clip's number
-    /// (prompt 11/12). Called from `select(_:)` after the selected overlay is repointed to the focused
-    /// clip's tag, so an "Attempt #"-ON tag follows the focused clip ("Attempt 2" → "Attempt 4"). Only
-    /// restamps the number on an already-ON tag; never wipes the base caption.
-    func refreshAttemptLineForSelection() {
-        guard let ov = selectedOverlay, ov.kind == .climbName, ov.showsAttempt,
-              let attempt = effectiveAttemptNumber, attempt != ov.attemptNumber else { return }
-        editOverlaysOnly {
-            StudioProjectEditor.setOverlayClimbFlags($0, id: ov.id, attemptNumber: attempt)
         }
     }
 

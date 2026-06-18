@@ -5586,3 +5586,22 @@ list that has a visible-subset must filter BOTH the entities and anything keyed 
 
 **Verified:** `build-for-testing` clean (0 errors / 0 warnings in changed files); `SnappetTests` green
 (**889**, +2 new `filterOverlays` cases).
+
+## 2026-06-18 — Studio editor: tapping a clip shows the CLIP editor, not the climb-tag editor (prompt 14)
+
+Bug (user): with a climb tag on, tapping the video clip in the timeline popped the climb-tag OVERLAY editor
+(Attempt#/opacity) instead of the clip editor, hiding the clip's trim/speed/filter options.
+
+- **Root cause:** prompt 12 STEP 5 coupled clip selection to overlay selection — `select(_:)` repointed
+  `selectedOverlayID` to the clip's climb tag so the dynamic Attempt# could "follow the selected clip." But
+  the bottom panel is `selectedOverlay != nil ? overlayBar : actionBar`, so selecting a CLIP showed the
+  OVERLAY editor. Now that every tag is a per-clip property (`clipID`, prompt 12), that coupling is obsolete.
+- **Fix:** `select(_:)` now sets `selectedOverlayID = nil` (clip tap → clip editor); the climb tag is
+  selected only by tapping the tag (overlay-lane bar / canvas chip → `selectOverlay`). `effectiveAttemptNumber`
+  now derives from the SELECTED OVERLAY's own `clipID` (a tag's attempt is intrinsic to its clip), falling
+  back to `selectedClip?.id` (the add-a-tag moment) then `suggestedAttemptNumber`. Removed the now-obsolete
+  `selectedClipAttemptNumber` + `refreshAttemptLineForSelection`. `hasClimbOverlay`/"Climb ✓" read
+  `climbOverlayForSelectedClip` (clip HAS a tag), independent of selection — unaffected.
+
+**Verified:** build clean (0 errors / 0 warnings in changed files); `SnappetTests` green (**889**);
+`LiveWorkoutStudioWalkthroughTests` + `NamedClimbTests` pass.
