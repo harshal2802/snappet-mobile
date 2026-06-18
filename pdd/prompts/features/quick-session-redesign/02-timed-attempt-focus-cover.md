@@ -3,7 +3,7 @@
 **File**: pdd/prompts/features/quick-session-redesign/02-timed-attempt-focus-cover.md
 **Created**: 2026-06-18
 **Chain**: `quick-session-redesign/PLAN.md` → Phase 2 (builds on Phase 1 `04ce896`)
-**Context**: `pdd/context/*`; design in `docs/ux-research/quick-session-redesign/wireframes.md` **surface #4 (Live timed attempt screen)**.
+**Context**: `pdd/context/*`; design reference is the section titled **"Climbing — Live timed attempt screen (full-cover FOCUS)"** in `docs/ux-research/quick-session-redesign/wireframes.md` (find it by title — do not rely on a section number). The spec below is authoritative; the wireframe is illustrative only — do not block hunting for an exact match.
 
 ## Goal
 
