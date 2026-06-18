@@ -49,6 +49,17 @@ final class LiveMetricsSummaryTests: XCTestCase {
         XCTAssertEqual(m.redlineFraction, 0)
     }
 
+    func testNonPositiveReadingIsTreatedAsNoReading() {
+        // A transient 0 / negative bpm must degrade consistently — not show "0 bpm" with a "—" zone.
+        for bad in [0.0, -5] {
+            let m = LiveMetricsSummary.make(from: [], currentBpm: bad, maxHR: 200, restHR: 50)
+            XCTAssertNil(m.currentBpm, "≤0 bpm should read as no reading")
+            XCTAssertFalse(m.hasData, "an empty buffer + ≤0 reading is no data")
+            XCTAssertEqual(m.zone, .none)
+            XCTAssertEqual(m.recovery, .unknown)
+        }
+    }
+
     func testRedlineFractionReflectsHardZones() {
         // 180 bpm at default max 190 = 0.947 → Z5 (max); a full 10s dwell there ⇒ redline = 1.
         let samples = [HRSample(t: 0, bpm: 180), HRSample(t: 10, bpm: 180)]

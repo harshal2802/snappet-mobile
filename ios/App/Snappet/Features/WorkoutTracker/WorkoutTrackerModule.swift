@@ -166,8 +166,13 @@ struct WorkoutHomeView: View {
                                        onClose: { saved in finishWorkout(session, saved: saved) },
                                        onMinimize: { minimizeWorkout() },
                                        onViewDetail: { s in
-                                           finishWorkout(s, saved: true)
-                                           router.push(SessionRoute(id: s.id))
+                                           finishWorkout(s, saved: true)   // sets playing = nil (dismiss cover)
+                                           // Defer the push one runloop tick: dismissing the fullScreenCover
+                                           // and appending to the NavigationStack path in the same
+                                           // transaction can drop the push (the SwiftUI hazard the
+                                           // pendingWorkoutResume/Kilter deferrals already work around).
+                                           let id = s.id
+                                           Task { @MainActor in router.push(SessionRoute(id: id)) }
                                        })
                 } else {
                     WorkoutPlayerView(session: session, resolver: resolver, history: history,

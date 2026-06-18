@@ -190,6 +190,10 @@ private struct RestTimerView: View {
                 }
             }
         }
+        // Cancel the countdown's fire Task when the panel/subtree goes away (Done, or hasData→false),
+        // so a stray success haptic can't fire after the timer view is gone — an unstructured Task is
+        // not auto-cancelled when its @State handle is released (mirrors WorkoutPlayerView's onDisappear).
+        .onDisappear { stop() }
     }
 
     private func countdown(_ remaining: Int) -> some View {

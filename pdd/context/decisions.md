@@ -10,7 +10,8 @@ or accidentally reverse them.
 the guided `WorkoutPlayerView` is reused read-only, never modified). Shape:
 - **Pure helpers first** (shipped no-callers, the `StopwatchTiming` precedent): `FreeformSummary`
   (value-labelled Repeat label · completion stats with a dominant-kind headline Volume/Sends/Hold-time ·
-  the milestone decision composing `WorkoutMath.topSet` + `KilterMilestones.isFirstSend`) and
+  the milestone decision composing `WorkoutMath.topWeightedSet` [a weighted-only top set added so a
+  high-rep bodyweight set can't mask or zero-out a real weighted PR] + `KilterMilestones.isFirstSend`) and
   `LiveMetricsSummary` (current bpm+zone · running avg/max/redline over the live buffer via
   `WorkoutHRStats` · recovery via `RecoveryReadiness`). Both unit-tested (`FreeformSummaryTests`,
   `LiveMetricsSummaryTests`); no SwiftUI/SwiftData/device.

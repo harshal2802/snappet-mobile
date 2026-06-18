@@ -166,7 +166,9 @@ struct FreeformPlayerView: View {
     // MARK: - Sections
 
     /// Inline-editable session title (§A). Commits to `WorkoutSession.routineName` (default "Quick
-    /// session") and pushes the Live Activity so the Lock-Screen label updates. A leaf TextField.
+    /// session") and refreshes the Live Activity's live state. NOTE: the Lock-Screen session title is an
+    /// immutable ActivityKit *attribute* fixed at start — it won't change mid-session; only the live
+    /// fields (HR / current exercise / paused) refresh here. A leaf TextField.
     private var titleSection: some View {
         Section {
             TextField("Session name", text: $session.routineName)
@@ -206,6 +208,22 @@ struct FreeformPlayerView: View {
         }
     }
 
+    /// Seed values for an exercise's inline quick-add (§B). The weight AND its unit come from the SAME
+    /// source (this session's last set, else the cross-session prefill, else bodyweight) so the pair
+    /// never crosses — e.g. a prefill weight recorded in lb is never shown beside this session's kg.
+    private func quickAddSeed(for ex: SessionExercise) -> (reps: Int, weight: Double, unit: WeightUnit, hint: String?) {
+        let last = ex.sets.last
+        let pf = prefills[ex.exerciseId]
+        let reps = last?.actualReps ?? pf?.reps ?? 8
+        let hint = last == nil ? pf?.hint : nil
+        if let w = last?.actualWeight {
+            return (reps, w, last?.weightUnit ?? unit, hint)
+        } else if let w = pf?.weight {
+            return (reps, w, pf?.unit ?? unit, hint)
+        }
+        return (reps, 0, last?.weightUnit ?? pf?.unit ?? unit, hint)
+    }
+
     private func typeCard(_ title: String, symbol: String, id: String,
                           accLabel: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -240,12 +258,8 @@ struct FreeformPlayerView: View {
             // funnel. `.id(ex.sets.count)` re-seeds them to the latest after each log/delete. The sheet
             // ("Log something different") stays for precise / non-default entry.
             if ex.kind == .repsWeight {
-                let last = ex.sets.last
-                let pf = prefills[ex.exerciseId]
-                QuickAddRow(reps: last?.actualReps ?? pf?.reps ?? 8,
-                            weight: last?.actualWeight ?? pf?.weight ?? 0,
-                            unitSel: last?.weightUnit ?? pf?.unit ?? unit,
-                            hint: last == nil ? pf?.hint : nil) { log in
+                let seed = quickAddSeed(for: ex)
+                QuickAddRow(reps: seed.reps, weight: seed.weight, unitSel: seed.unit, hint: seed.hint) { log in
                     appendLog(log, toExerciseID: ex.id)
                 }
                 .id(ex.sets.count)

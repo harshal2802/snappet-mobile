@@ -48,7 +48,10 @@ struct LiveMetricsSummary: Equatable, Sendable {
         let zoneMax = maxHR ?? HeartRateZone.defaultMaxHR
         let stats = WorkoutHRStats.make(from: WorkoutHRStats.points(from: samples), maxHR: zoneMax)
         return LiveMetricsSummary(
-            currentBpm: currentBpm.map { Int($0.rounded()) },
+            // Treat a 0/negative reading as "no reading" so currentBpm/hasData degrade consistently with
+            // zone (.none) and recovery (.unknown) — otherwise a transient 0 bpm shows "0 bpm" beside a
+            // "—" zone and suppresses the no-source state.
+            currentBpm: currentBpm.flatMap { $0 > 0 ? Int($0.rounded()) : nil },
             zone: HeartRateZone.forBpm(currentBpm, maxHR: zoneMax),
             stats: stats,
             recovery: RecoveryReadiness.evaluate(currentBpm: currentBpm, restBpm: restHR, maxBpm: maxHR))

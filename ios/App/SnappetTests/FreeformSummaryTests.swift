@@ -125,6 +125,22 @@ final class FreeformSummaryTests: XCTestCase {
         XCTAssertTrue(FreeformSummary.milestones(for: current, history: []).isEmpty)
     }
 
+    func testWeightedPRNotMaskedByAHigherRepBodyweightSetInTheSameExercise() {
+        // dips: a 20-rep bodyweight set (topSet would rank it 1×20=20, bestKg 0) co-exists with a real
+        // weighted 5 kg × 3 PR (score 15). The weighted PR must STILL fire — bodyweight can't mask it.
+        let current = session([exercise("dip", .repsWeight, [lift(20, nil), lift(3, 5)])])
+        XCTAssertEqual(FreeformSummary.milestones(for: current, history: []),
+                       [.personalRecord(exerciseId: "dip", bestKg: 5, reps: 3)])
+    }
+
+    func testNoPRWhenPriorWeightedIsHeavierDespiteBodyweightNoise() {
+        // Prior weighted best 10 kg × 3 (30); this session's weighted best 5 kg × 2 (10) plus a 50-rep
+        // bodyweight set — the bodyweight set must not zero the prior baseline and fire a false PR.
+        let prior = session([exercise("dip", .repsWeight, [lift(3, 10)])])
+        let current = session([exercise("dip", .repsWeight, [lift(50, nil), lift(2, 5)])])
+        XCTAssertTrue(FreeformSummary.milestones(for: current, history: [prior]).isEmpty)
+    }
+
     func testFirstSendFiresWithNoPriorSendAtGrade() {
         let current = session([exercise("proj", .climbAttempt, [climb("V4", .flash)])])
         XCTAssertEqual(FreeformSummary.milestones(for: current, history: []),

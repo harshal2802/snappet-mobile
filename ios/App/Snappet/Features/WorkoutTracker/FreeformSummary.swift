@@ -123,13 +123,15 @@ enum FreeformSummary {
     static func milestones(for session: WorkoutSession, history: [WorkoutSession]) -> [Milestone] {
         var out: [Milestone] = []
 
-        // Personal records — one per exercise id, weighted only.
+        // Personal records — one per exercise id, weighted only. Uses topWeightedSet (not topSet) on
+        // BOTH sides so a high-rep bodyweight set can't mask the session's weighted PR, nor zero-out the
+        // prior weighted baseline (topSet ranks bodyweight as 1×reps but reports bestKg == 0).
         var seen = Set<String>()
         for ex in session.exercises where ex.kind == .repsWeight {
             let id = ex.exerciseId
             guard seen.insert(id).inserted else { continue }
-            guard let best = WorkoutMath.topSet(history: [session], exerciseId: id), best.bestKg > 0 else { continue }
-            let prior = WorkoutMath.topSet(history: history, exerciseId: id)
+            guard let best = WorkoutMath.topWeightedSet(history: [session], exerciseId: id) else { continue }
+            let prior = WorkoutMath.topWeightedSet(history: history, exerciseId: id)
             let thisScore = best.bestKg * Double(best.bestReps)
             let priorScore = prior.map { $0.bestKg * Double($0.bestReps) } ?? 0
             if thisScore > priorScore {
