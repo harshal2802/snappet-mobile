@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="coral" data-depth="balanced">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet · Soft Pulse — Neumorphic design exploration</title>
+<style>
+/* =========================================================================
+   SNAPPET · "SOFT PULSE"  — dark neumorphic / soft-UI exploration
+   Interactive wireframes. One file, no build, fully offline.
+   Theming = three independent axes set as data-* on <html>:
+     data-appearance : dark | light
+     data-accent     : coral | ember | indigo | teal
+     data-depth      : soft | balanced | high
+   Everything below is driven by CSS custom properties so the same markup
+   re-skins instantly. No app logic / navigation flow is changed.
+   ========================================================================= */
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --r-sm:12px; --r-md:20px; --r-lg:28px; --r-pill:999px;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+
+/* ---- Appearance: the neutral ramp (neumorphism needs surface≈bg) -------- */
+html[data-appearance="dark"]{
+  --bg:#1b1b21; --surface:#1b1b21; --surface-2:#202027; --raised:#1d1d24;
+  --shadow-dark:#0d0d11; --shadow-light:#2b2b35;
+  --text:#f3f2f0; --text-2:#9b9aa1; --text-3:#6c6b73;
+  --hairline:#34343d; --track:#141418; --chip:#23232b;
+  --scrim:rgba(0,0,0,.55);
+}
+html[data-appearance="light"]{
+  --bg:#e8eaf0; --surface:#e8eaf0; --surface-2:#eef0f6; --raised:#ecedf3;
+  --shadow-dark:#c3c5d0; --shadow-light:#ffffff;
+  --text:#23232b; --text-2:#73737e; --text-3:#9a9aa4;
+  --hairline:#d6d8e1; --track:#dde0e9; --chip:#e3e5ee;
+  --scrim:rgba(40,40,60,.32);
+}
+
+/* ---- Accent (appearance-aware) ----------------------------------------- */
+html[data-accent="coral"][data-appearance="dark"]  {--accent:#FF7A6B;--accent-2:#FF9C8F}
+html[data-accent="coral"][data-appearance="light"] {--accent:#FF5A4D;--accent-2:#FF7468}
+html[data-accent="ember"][data-appearance="dark"]  {--accent:#FF9645;--accent-2:#FFB070}
+html[data-accent="ember"][data-appearance="light"] {--accent:#F2761E;--accent-2:#FF8F43}
+html[data-accent="indigo"][data-appearance="dark"] {--accent:#9D82F0;--accent-2:#B7A2F6}
+html[data-accent="indigo"][data-appearance="light"]{--accent:#7C5CD6;--accent-2:#9277E0}
+html[data-accent="teal"][data-appearance="dark"]   {--accent:#44CBA9;--accent-2:#6BDCC0}
+html[data-accent="teal"][data-appearance="light"]  {--accent:#1FAE8E;--accent-2:#2FC4A2}
+:root{--on-accent:#fff}
+
+/* ---- Depth: the extrusion strength (the "contrast" axis) ---------------- */
+html[data-depth="soft"]     {--nd:4px; --nb:9px;  --neu-bd:0px; --inset-k:.75}
+html[data-depth="balanced"] {--nd:6px; --nb:13px; --neu-bd:0px; --inset-k:.9}
+html[data-depth="high"]     {--nd:7px; --nb:15px; --neu-bd:1px; --inset-k:1}
+
+:root{
+  --neu-out:
+     var(--nd) var(--nd) var(--nb) var(--shadow-dark),
+     calc(-1*var(--nd)) calc(-1*var(--nd)) var(--nb) var(--shadow-light);
+  --neu-out-sm:
+     calc(var(--nd)*.6) calc(var(--nd)*.6) calc(var(--nb)*.7) var(--shadow-dark),
+     calc(-.6*var(--nd)) calc(-.6*var(--nd)) calc(var(--nb)*.7) var(--shadow-light);
+  --neu-in:
+     inset calc(var(--nd)*var(--inset-k)) calc(var(--nd)*var(--inset-k)) calc(var(--nb)*var(--inset-k)) var(--shadow-dark),
+     inset calc(-1*var(--nd)*var(--inset-k)) calc(-1*var(--nd)*var(--inset-k)) calc(var(--nb)*var(--inset-k)) var(--shadow-light);
+}
+
+body{margin:0;background:
+   radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb,var(--accent) 7%, var(--bg)), var(--bg) 60%);
+   color:var(--text);
+   font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+   min-height:100vh;padding:24px 16px 64px}
+
+/* ============================ CONTROL BAR ================================ */
+.controls{max-width:1040px;margin:0 auto 22px;background:var(--surface);
+  box-shadow:var(--neu-out);border:var(--neu-bd) solid var(--hairline);
+  border-radius:var(--r-lg);padding:16px 18px;display:flex;flex-wrap:wrap;
+  gap:18px 26px;align-items:center}
+.controls h1{font-size:16px;margin:0;font-weight:800;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+.controls h1 .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+.ctl{display:flex;flex-direction:column;gap:7px}
+.ctl > span{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-2);font-weight:700}
+.seg{display:flex;background:var(--surface);box-shadow:var(--neu-in);border-radius:var(--r-pill);padding:4px;gap:2px}
+.seg button{border:0;background:transparent;color:var(--text-2);font:600 12.5px/1 inherit;padding:8px 13px;border-radius:var(--r-pill);cursor:pointer;transition:.18s var(--ease)}
+.seg button[aria-pressed="true"]{color:var(--text);background:var(--surface);box-shadow:var(--neu-out-sm)}
+.swatches{display:flex;gap:9px}
+.swatch{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2px solid transparent;
+  box-shadow:var(--neu-out-sm);position:relative;transition:.18s var(--ease)}
+.swatch[aria-pressed="true"]{border-color:var(--text);transform:translateY(-1px)}
+.swatch.coral{background:#FF6F5F}.swatch.ember{background:#FF8C3C}
+.swatch.indigo{background:#8E72E8}.swatch.teal{background:#34C2A0}
+.screen-pick{margin-left:auto}
+.screen-pick select{appearance:none;background:var(--surface);color:var(--text);border:var(--neu-bd) solid var(--hairline);
+  box-shadow:var(--neu-out-sm);border-radius:var(--r-pill);padding:10px 38px 10px 16px;font:600 13px inherit;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,var(--text-2) 50%),linear-gradient(135deg,var(--text-2) 50%,transparent 50%);
+  background-position:right 18px center,right 13px center;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.themelabel{font-size:12px;color:var(--text-2);max-width:1040px;margin:0 auto 18px;text-align:center}
+.themelabel b{color:var(--text)}
+
+/* ============================== PHONE ==================================== */
+.stage{display:flex;justify-content:center}
+.phone{width:392px;height:830px;border-radius:54px;background:var(--bg);position:relative;
+  box-shadow:var(--neu-out), 0 40px 90px -30px rgba(0,0,0,.7);
+  border:var(--neu-bd) solid var(--hairline);padding:0;overflow:hidden}
+html[data-appearance="light"] .phone{box-shadow:var(--neu-out), 0 40px 80px -34px rgba(60,60,90,.45)}
+.island{position:absolute;top:13px;left:50%;transform:translateX(-50%);width:118px;height:34px;background:#000;border-radius:var(--r-pill);z-index:40}
+.statusbar{position:absolute;top:0;left:0;right:0;height:54px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 30px;font-size:14px;font-weight:700;z-index:30;pointer-events:none}
+.statusbar .r{display:flex;gap:7px;align-items:center}
+.statusbar svg{width:17px;height:17px}
+
+.screen{position:absolute;inset:0;padding:62px 0 0;display:none;flex-direction:column}
+.screen.active{display:flex}
+.scroll{flex:1;overflow-y:auto;padding:6px 20px 120px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+
+/* large title (iOS) */
+.lt{font-size:33px;font-weight:800;letter-spacing:-.5px;margin:6px 0 18px}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:2px 0 8px}
+.nav .title{font-size:17px;font-weight:700}
+.sect{font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--text-2);text-transform:uppercase;margin:22px 4px 12px}
+.sect:first-child{margin-top:6px}
+
+/* ---- neumorphic primitives --------------------------------------------- */
+.neu{background:var(--surface);box-shadow:var(--neu-out);border:var(--neu-bd) solid var(--hairline);border-radius:var(--r-md)}
+.neu-in{background:var(--surface);box-shadow:var(--neu-in);border-radius:var(--r-md)}
+.card{padding:18px}
+.pressable{cursor:pointer;transition:.12s var(--ease)}
+.pressable:active{box-shadow:var(--neu-in)}
+.iconbtn{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:var(--neu-out);border:var(--neu-bd) solid var(--hairline);cursor:pointer;color:var(--text)}
+.iconbtn svg{width:20px;height:20px}
+.icn{color:var(--accent)}
+svg.ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+/* primary button */
+.btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;border:0;cursor:pointer;
+  font:700 16px inherit;color:var(--on-accent);padding:16px;border-radius:var(--r-pill);
+  background:linear-gradient(180deg,var(--accent-2),var(--accent));
+  box-shadow:var(--neu-out-sm), inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.ghost{color:var(--accent);background:var(--surface);box-shadow:var(--neu-out)}
+.btn svg{width:18px;height:18px}
+.row-btns{display:flex;gap:14px;margin:6px 0}
+
+/* tiles row */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.tile{padding:16px 10px;border-radius:var(--r-md);text-align:center;display:flex;flex-direction:column;align-items:center;gap:7px}
+.tile .big{font-size:26px;font-weight:800;color:var(--accent);line-height:1}
+.tile .lbl{font-size:11.5px;color:var(--text-2)}
+.tile .gico{width:30px;height:30px;display:grid;place-items:center;color:var(--accent)}
+
+/* ring / dial */
+.dial{position:relative;width:84px;height:84px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:var(--neu-out)}
+.dial svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.dial .dnum{font-size:20px;font-weight:800}
+.dial .ring-track{stroke:var(--track);stroke-width:7;fill:none}
+.dial .ring-fill{stroke:var(--accent);stroke-width:7;fill:none;stroke-linecap:round}
+
+/* list rows */
+.list{padding:4px 0}
+.lrow{display:flex;align-items:center;gap:14px;padding:15px 18px}
+.lrow + .lrow{border-top:1px solid var(--hairline)}
+.lrow .lmain{flex:1;min-width:0}
+.lrow .lt1{font-weight:700;font-size:15.5px}
+.lrow .lt2{font-size:12.5px;color:var(--text-2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .lval{font-weight:700;color:var(--accent);white-space:nowrap}
+.lrow .chev{color:var(--text-3)}
+.badge-ic{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--surface);box-shadow:var(--neu-out-sm);color:var(--accent);flex:none}
+
+/* module grid (App Library) */
+.appgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.appcard{padding:18px;border-radius:var(--r-md);min-height:118px;display:flex;flex-direction:column;gap:8px;cursor:pointer}
+.appcard .gico{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--surface);box-shadow:var(--neu-out-sm);color:var(--accent)}
+.appcard .at{font-weight:800;font-size:16px;margin-top:auto}
+.appcard .as{font-size:12px;color:var(--text-2)}
+
+/* chips / segmented in-screen */
+.chip{display:inline-flex;align-items:center;gap:7px;padding:8px 15px;border-radius:var(--r-pill);background:var(--surface);box-shadow:var(--neu-in);font-weight:700;font-size:13px;color:var(--accent)}
+.segbar{display:flex;background:var(--surface);box-shadow:var(--neu-in);border-radius:var(--r-pill);padding:5px;gap:3px;margin:4px 0 4px}
+.segbar button{flex:1;border:0;background:transparent;color:var(--text-2);padding:9px;border-radius:var(--r-pill);cursor:pointer;display:grid;place-items:center}
+.segbar button.on{background:var(--surface);box-shadow:var(--neu-out-sm);color:var(--text)}
+.segbar svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+
+/* inputs */
+.field{display:flex;align-items:center;gap:8px;padding:16px 18px;border-radius:var(--r-md);font-size:18px;font-weight:700}
+.field .pre{color:var(--text-3)}
+.stepper{display:flex;align-items:center;gap:2px;background:var(--surface);box-shadow:var(--neu-in);border-radius:var(--r-pill);padding:3px}
+.stepper button{width:34px;height:30px;border:0;background:var(--surface);box-shadow:var(--neu-out-sm);border-radius:var(--r-pill);color:var(--text);font-size:18px;cursor:pointer}
+.toggle{width:50px;height:30px;border-radius:var(--r-pill);background:var(--surface);box-shadow:var(--neu-in);position:relative;cursor:pointer;flex:none}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--surface);box-shadow:var(--neu-out-sm);transition:.2s var(--ease)}
+.toggle.on{background:linear-gradient(180deg,var(--accent-2),var(--accent))}
+.toggle.on::after{left:23px}
+.slider{height:30px;border-radius:var(--r-pill);background:var(--surface);box-shadow:var(--neu-in);position:relative;margin:8px 0}
+.slider .fill{position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-pill);background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+.slider .knob{position:absolute;top:50%;width:26px;height:26px;border-radius:50%;background:var(--surface);box-shadow:var(--neu-out-sm);transform:translate(-50%,-50%)}
+
+/* week dots (habits) */
+.week{display:flex;gap:7px}
+.wd{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:10px;color:var(--text-3);background:var(--surface);box-shadow:var(--neu-in)}
+.wd.done{color:var(--on-accent);background:linear-gradient(180deg,var(--accent-2),var(--accent));box-shadow:var(--neu-out-sm)}
+.checkbtn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:var(--neu-out-sm);color:var(--accent);cursor:pointer;flex:none}
+.checkbtn.done{color:var(--on-accent);background:linear-gradient(180deg,var(--accent-2),var(--accent))}
+
+/* tags */
+.tag{font-size:11px;font-weight:700;color:var(--accent);background:var(--surface);box-shadow:var(--neu-in);padding:4px 10px;border-radius:var(--r-pill)}
+
+/* bottom nav */
+.tabbar{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);display:flex;gap:8px;
+  background:var(--surface);box-shadow:var(--neu-out);border:var(--neu-bd) solid var(--hairline);
+  border-radius:var(--r-pill);padding:8px;z-index:25}
+.tabbar button{border:0;background:transparent;color:var(--text-2);display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 22px;border-radius:var(--r-pill);font:700 11px inherit;cursor:pointer}
+.tabbar button.on{color:var(--accent);background:var(--surface);box-shadow:var(--neu-in)}
+.tabbar svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.9}
+
+/* charts */
+.bars{display:flex;align-items:flex-end;gap:10px;height:120px;padding-top:10px}
+.bars .b{flex:1;border-radius:8px 8px 4px 4px;background:linear-gradient(180deg,var(--accent-2),var(--accent));box-shadow:var(--neu-out-sm);min-height:6px}
+.bars .lbls{}
+.axis{display:flex;justify-content:space-between;font-size:10px;color:var(--text-3);margin-top:6px}
+
+.zonebar{display:flex;height:12px;border-radius:var(--r-pill);overflow:hidden;box-shadow:var(--neu-in);margin:14px 0 4px}
+.zonebar span{display:block;height:100%}
+.statline{display:flex;justify-content:space-around;text-align:center;margin:6px 0}
+.statline .v{font-size:22px;font-weight:800}
+.statline .k{font-size:11px;color:var(--text-2)}
+
+.muted{color:var(--text-2)}
+.center{text-align:center}
+.empty{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:34px}
+.empty .eico{width:78px;height:78px;border-radius:50%;display:grid;place-items:center;background:var(--surface);box-shadow:var(--neu-in);color:var(--text-3)}
+.empty .eico svg{width:34px;height:34px}
+.donut{width:150px;height:150px;margin:6px auto 14px;position:relative}
+.donut .hole{position:absolute;inset:34px;border-radius:50%;background:var(--surface);box-shadow:var(--neu-in);display:grid;place-items:center;text-align:center}
+.prog{height:10px;border-radius:var(--r-pill);background:var(--surface);box-shadow:var(--neu-in);overflow:hidden;margin-top:8px}
+.prog i{display:block;height:100%;border-radius:var(--r-pill);background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+.sheetgrip{width:40px;height:5px;border-radius:3px;background:var(--hairline);margin:6px auto 12px}
+
+.footnote{max-width:1040px;margin:26px auto 0;color:var(--text-2);font-size:12.5px;line-height:1.7;text-align:center}
+.footnote code{background:var(--chip);padding:2px 6px;border-radius:6px;color:var(--text)}
+</style>
+</head>
+<body>
+
+<!-- ============================ ICON SPRITE ============================== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <defs>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 3-2 4-2 7a2 2 0 0 0 4 0c2 1 3 3 3 5a5 5 0 1 1-10 0c0-4 5-6 5-12z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1.5" fill="currentColor" stroke="none"/><rect x="14" y="4" width="4" height="16" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M4 10a8 8 0 1 1 2 8"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M18.5 5.5l-2 2M7.5 16.5l-2 2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><rect x="4" y="11" width="4" height="9" rx="1"/><rect x="10" y="6" width="4" height="14" rx="1"/><rect x="16" y="3" width="4" height="17" rx="1"/></symbol>
+  <symbol id="i-figure" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><path d="M5 10h14M12 8v8M12 16l-3 5M12 16l3 5"/></symbol>
+  <symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10"/></symbol>
+  <symbol id="i-run" viewBox="0 0 24 24"><circle cx="14" cy="5" r="2"/><path d="M11 9l-3 3 2 3-1 5M14 8l2 3 3 1M9 12l-4 1"/></symbol>
+  <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-1 5 3 3 0 0 0 2 4 3 3 0 0 0 5 1V5a3 3 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 1 5 3 3 0 0 1-2 4 3 3 0 0 1-5 1"/></symbol>
+  <symbol id="i-check-badge" viewBox="0 0 24 24"><path d="M12 2l2.3 1.6 2.8-.2 1.1 2.6 2.3 1.6-.6 2.7.9 2.7-2 1.9.1 2.8-2.7.6-1.7 2.2-2.6-1-2.6 1-1.7-2.2-2.7-.6.1-2.8-2-1.9.9-2.7-.6-2.7L6.8 6l1.1-2.6 2.8.2z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M6 4h11a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 18a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-calc" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 6.5a3 3 0 0 1 0 5.7M16.5 20a5.5 5.5 0 0 0-2.2-4.4"/></symbol>
+  <symbol id="i-pie" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M12 3v9"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.6-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.4-7 10-7 10z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chev-l" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="M8 4h8l1 4H7zM5 20h14a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M9 8l-1 10M15 8l1 10"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M4 10h16"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0M8 15.5a6 6 0 0 1 8 0M11 18.5a1.5 1.5 0 0 1 2 0"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="8" width="16" height="9" rx="2"/><rect x="5" y="10" width="11" height="5" rx="1" fill="currentColor" stroke="none"/><path d="M21 11v3"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 24 24"><path d="M5 5v14l9-7zM18 5v14"/></symbol>
+  <symbol id="i-watch" viewBox="0 0 24 24"><rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6l1-3h4l1 3M9 18l1 3h4l1-3"/></symbol>
+ </defs>
+</svg>
+
+<!-- ============================ CONTROL BAR ============================== -->
+<div class="controls">
+  <h1><span class="dot"></span> Snappet · Soft&nbsp;Pulse</h1>
+
+  <div class="ctl"><span>Appearance</span>
+    <div class="seg" data-axis="appearance">
+      <button data-v="dark" aria-pressed="true">Dark</button>
+      <button data-v="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+
+  <div class="ctl"><span>Color scheme</span>
+    <div class="swatches" data-axis="accent">
+      <div class="swatch coral"  data-v="coral"  aria-pressed="true"  title="Pulse Coral"></div>
+      <div class="swatch ember"  data-v="ember"  aria-pressed="false" title="Ember"></div>
+      <div class="swatch indigo" data-v="indigo" aria-pressed="false" title="Indigo"></div>
+      <div class="swatch teal"   data-v="teal"   aria-pressed="false" title="Teal"></div>
+    </div>
+  </div>
+
+  <div class="ctl"><span>Depth / contrast</span>
+    <div class="seg" data-axis="depth">
+      <button data-v="soft" aria-pressed="false">Soft</button>
+      <button data-v="balanced" aria-pressed="true">Balanced</button>
+      <button data-v="high" aria-pressed="false">High</button>
+    </div>
+  </div>
+
+  <div class="ctl screen-pick"><span>Screen</span>
+    <select id="screenSelect"></select>
+  </div>
+</div>
+<div class="themelabel" id="themeLabel"></div>
+
+<!-- ================================ PHONE ================================ -->
+<div class="stage">
+<div class="phone" id="phone">
+  <div class="island"></div>
+  <div class="statusbar"><span id="clock">9:41</span>
+    <span class="r"><svg class="ic"><use href="#i-wifi"/></svg><svg class="ic"><use href="#i-battery"/></svg></span>
+  </div>
+
+  <!-- ============================ HOME =============================== -->
+  <section class="screen active" id="s-home" data-name="Home · Today">
+    <div class="scroll">
+      <div class="lt">Today</div>
+
+      <div class="sect" style="margin-top:0">Today</div>
+      <div class="tiles">
+        <div class="neu tile"><div class="dial"><svg viewBox="0 0 84 84"><circle class="ring-track" cx="42" cy="42" r="34"/><circle class="ring-fill" cx="42" cy="42" r="34" stroke-dasharray="214" stroke-dashoffset="40"/></svg><span class="dnum">19</span></div><div class="lbl">actions</div></div>
+        <div class="neu tile"><div class="dial"><svg viewBox="0 0 84 84"><circle class="ring-track" cx="42" cy="42" r="34"/><circle class="ring-fill" cx="42" cy="42" r="34" stroke-dasharray="214" stroke-dashoffset="110"/></svg><span class="dnum">8</span></div><div class="lbl">apps used</div></div>
+        <div class="neu tile"><div class="dial"><svg viewBox="0 0 84 84"><circle class="ring-track" cx="42" cy="42" r="34"/><circle class="ring-fill" cx="42" cy="42" r="34" stroke-dasharray="214" stroke-dashoffset="160"/></svg><span class="dnum">2</span></div><div class="lbl">day streak</div></div>
+      </div>
+
+      <div class="sect">Last 7 days</div>
+      <div class="neu card">
+        <div class="bars">
+          <div class="b" style="height:18%"></div><div class="b" style="height:30%"></div>
+          <div class="b" style="height:12%"></div><div class="b" style="height:26%"></div>
+          <div class="b" style="height:8%"></div><div class="b" style="height:55%"></div>
+          <div class="b" style="height:92%"></div>
+        </div>
+        <div class="axis"><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span><span>M</span><span>T</span></div>
+      </div>
+
+      <div class="sect">Recent activity</div>
+      <div class="neu list">
+        <div class="lrow"><div class="lmain"><div class="lt1">Opened Pomodoro</div><div class="lt2">Pomodoro</div></div><div class="muted" style="font-size:12px">5 min ago</div></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">Opened Budget</div><div class="lt2">Budget</div></div><div class="muted" style="font-size:12px">21 min ago</div></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">Opened Split Expenses</div><div class="lt2">Expense</div></div><div class="muted" style="font-size:12px">22 min ago</div></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">Opened Tip Calculator</div><div class="lt2">Tip</div></div><div class="muted" style="font-size:12px">22 min ago</div></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button class="on" onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ============================ APPS ============================== -->
+  <section class="screen" id="s-apps" data-name="App Library">
+    <div class="scroll">
+      <div class="lt">Apps</div>
+      <div class="sect" style="margin-top:0">Fitness</div>
+      <div class="appgrid">
+        <div class="neu appcard pressable" onclick="go('workout-dashboard')"><div class="gico"><svg class="ic"><use href="#i-run"/></svg></div><div class="at">Workout Reels</div><div class="as">Auto-highlight reels from your heart rate</div></div>
+        <div class="neu appcard pressable" onclick="go('workout-dashboard')"><div class="gico"><svg class="ic"><use href="#i-dumbbell"/></svg></div><div class="at">Gym Tracker</div><div class="as">Routines, set tracking &amp; PRs</div></div>
+      </div>
+      <div class="sect">Productivity</div>
+      <div class="appgrid">
+        <div class="neu appcard pressable" onclick="go('pomodoro')"><div class="gico"><svg class="ic"><use href="#i-clock"/></svg></div><div class="at">Pomodoro</div><div class="as">Focus timer</div></div>
+        <div class="neu appcard pressable" onclick="go('habits')"><div class="gico"><svg class="ic"><use href="#i-check-badge"/></svg></div><div class="at">Habits</div><div class="as">Daily streaks</div></div>
+        <div class="neu appcard pressable" onclick="go('journal')"><div class="gico"><svg class="ic"><use href="#i-book"/></svg></div><div class="at">Journal</div><div class="as">Quick notes &amp; entries</div></div>
+      </div>
+      <div class="sect">Finance</div>
+      <div class="appgrid">
+        <div class="neu appcard pressable" onclick="go('tip')"><div class="gico"><svg class="ic"><use href="#i-calc"/></svg></div><div class="at">Tip</div><div class="as">Tip &amp; split a bill</div></div>
+        <div class="neu appcard pressable" onclick="go('expenses')"><div class="gico"><svg class="ic"><use href="#i-people"/></svg></div><div class="at">Split Expenses</div><div class="as">Shared group costs</div></div>
+        <div class="neu appcard pressable" onclick="go('budget')"><div class="gico"><svg class="ic"><use href="#i-pie"/></svg></div><div class="at">Budget</div><div class="as">Monthly spending</div></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ============================ POMODORO ========================== -->
+  <section class="screen" id="s-pomodoro" data-name="Pomodoro">
+    <div class="scroll">
+      <div class="nav"><div></div><div style="display:flex;gap:10px"><div class="iconbtn"><svg class="ic"><use href="#i-reset"/></svg></div><div class="iconbtn"><svg class="ic"><use href="#i-gear"/></svg></div></div></div>
+      <div class="lt" style="margin-bottom:8px">Pomodoro</div>
+      <div class="center" style="margin:6px 0 18px"><span class="chip"><svg class="ic" style="width:16px;height:16px"><use href="#i-brain"/></svg> Focus</span></div>
+
+      <div style="display:grid;place-items:center;margin:8px 0 22px">
+        <div class="dial" style="width:230px;height:230px">
+          <svg viewBox="0 0 230 230"><circle class="ring-track" cx="115" cy="115" r="100" style="stroke-width:14"/><circle class="ring-fill" cx="115" cy="115" r="100" style="stroke-width:14" stroke-dasharray="628" stroke-dashoffset="180"/></svg>
+          <span style="font-size:48px;font-weight:800;letter-spacing:-1px">40:00</span>
+        </div>
+      </div>
+
+      <div class="row-btns">
+        <button class="btn ghost" style="flex:1"><svg class="ic" style="width:18px;height:18px"><use href="#i-reset"/></svg> Reset</button>
+        <button class="btn" style="flex:1.4"><svg><use href="#i-play"/></svg> Start</button>
+      </div>
+
+      <div class="sect">Today's focus</div>
+      <div class="neu card">
+        <div class="statline"><div><div class="v">3</div><div class="k">sessions</div></div><div><div class="v">120<span style="font-size:13px"> m</span></div><div class="k">focused</div></div><div><div class="v">2</div><div class="k">day streak</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ HABITS ============================ -->
+  <section class="screen" id="s-habits" data-name="Habits">
+    <div class="scroll">
+      <div class="nav"><div></div><div class="iconbtn"><svg class="ic"><use href="#i-plus"/></svg></div></div>
+      <div class="lt" style="margin-bottom:14px">Habits</div>
+
+      <div class="neu card" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="lmain"><div class="lt1">Drink water</div><div class="lt2">🔥 6-day streak</div></div>
+          <div class="checkbtn done"><svg class="ic" style="width:20px;height:20px"><polyline points="5 12 10 17 19 7" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></div>
+        </div>
+        <div class="week" style="margin-top:14px"><div class="wd done">M</div><div class="wd done">T</div><div class="wd done">W</div><div class="wd done">T</div><div class="wd done">F</div><div class="wd done">S</div><div class="wd">S</div></div>
+      </div>
+
+      <div class="neu card" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="lmain"><div class="lt1">Read 20 min</div><div class="lt2">🔥 3-day streak</div></div>
+          <div class="checkbtn"><svg class="ic" style="width:20px;height:20px"><use href="#i-plus"/></svg></div>
+        </div>
+        <div class="week" style="margin-top:14px"><div class="wd">M</div><div class="wd done">T</div><div class="wd done">W</div><div class="wd done">T</div><div class="wd">F</div><div class="wd">S</div><div class="wd">S</div></div>
+      </div>
+
+      <div class="neu card">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="lmain"><div class="lt1">Meditate</div><div class="lt2">Build a daily streak</div></div>
+          <div class="checkbtn"><svg class="ic" style="width:20px;height:20px"><use href="#i-plus"/></svg></div>
+        </div>
+        <div class="week" style="margin-top:14px"><div class="wd done">M</div><div class="wd">T</div><div class="wd done">W</div><div class="wd">T</div><div class="wd">F</div><div class="wd">S</div><div class="wd">S</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ JOURNAL =========================== -->
+  <section class="screen" id="s-journal" data-name="Journal">
+    <div class="scroll">
+      <div class="nav"><div></div><div class="iconbtn"><svg class="ic"><use href="#i-plus"/></svg></div></div>
+      <div class="lt" style="margin-bottom:14px">Journal</div>
+
+      <div class="neu card pressable" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;gap:10px"><div class="lt1">Morning pages</div><div class="muted" style="font-size:12px">Today</div></div>
+        <div class="muted" style="margin:8px 0 12px;font-size:13.5px">Slept well, felt clear-headed. Planned the climbing session for the weekend and…</div>
+        <div style="display:flex;gap:8px"><span class="tag">#mood</span><span class="tag">#plan</span></div>
+      </div>
+
+      <div class="neu card pressable" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;gap:10px"><div class="lt1">Post-workout note</div><div class="muted" style="font-size:12px">Yesterday</div></div>
+        <div class="muted" style="margin:8px 0 12px;font-size:13.5px">New PR on bicep curls. HR stayed in Z3 most of the session — felt sustainable.</div>
+        <div style="display:flex;gap:8px"><span class="tag">#fitness</span></div>
+      </div>
+
+      <div class="neu card pressable">
+        <div style="display:flex;justify-content:space-between;gap:10px"><div class="lt1">Trip ideas</div><div class="muted" style="font-size:12px">Jun 14</div></div>
+        <div class="muted" style="margin:8px 0 12px;font-size:13.5px">Goa with the group — split the villa cost, settle expenses in the app.</div>
+        <div style="display:flex;gap:8px"><span class="tag">#travel</span><span class="tag">#ideas</span></div>
+      </div>
+    </div>
+    <div style="position:absolute;left:20px;right:20px;bottom:24px"><div class="neu-in field"><svg class="ic" style="color:var(--text-3)"><use href="#i-search"/></svg><span class="muted" style="font-size:15px;font-weight:500">Search title, body, or tag</span></div></div>
+  </section>
+
+  <!-- ============================ TIP =============================== -->
+  <section class="screen" id="s-tip" data-name="Tip Calculator">
+    <div class="scroll">
+      <div class="nav"><div></div><div class="iconbtn"><svg class="ic"><use href="#i-clock"/></svg></div></div>
+      <div class="lt" style="margin-bottom:6px">Tip Calculator</div>
+
+      <div class="sect">Bill</div>
+      <div class="neu-in field"><span class="pre">$</span><span>84.50</span></div>
+
+      <div class="sect" style="display:flex;justify-content:space-between"><span>Tip</span><span style="color:var(--accent);text-transform:none;letter-spacing:0">Edit presets</span></div>
+      <div class="neu card">
+        <div class="segbar" style="margin-top:0"><button class="on" style="font-weight:700;color:var(--text)">18%</button><button>20%</button><button>25%</button></div>
+        <div style="display:flex;justify-content:space-between;margin:16px 4px 4px"><span style="font-weight:700">Custom</span><span class="muted">18%</span></div>
+        <div class="slider"><div class="fill" style="width:46%"></div><div class="knob" style="left:46%"></div></div>
+      </div>
+
+      <div class="sect">Split</div>
+      <div class="neu card" style="padding:6px 18px">
+        <div class="lrow" style="padding:14px 0"><div class="lmain lt1">People</div><div class="stepper"><button>−</button><span style="width:30px;text-align:center;font-weight:700">2</span><button>+</button></div></div>
+        <div class="lrow" style="padding:14px 0;border-top:1px solid var(--hairline)"><div class="lmain lt1">Round up total</div><div class="toggle on"></div></div>
+      </div>
+
+      <div class="sect">Results</div>
+      <div class="neu card" style="padding:4px 18px">
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Tip</div><div style="font-weight:700">$15.21</div></div>
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Total</div><div style="font-weight:700">$100.00</div></div>
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Per person</div><div class="lval" style="font-size:17px">$50.00</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ EXPENSES ========================== -->
+  <section class="screen" id="s-expenses" data-name="Split Expenses">
+    <div class="scroll">
+      <div class="nav"><div></div><div class="iconbtn"><svg class="ic"><use href="#i-plus"/></svg></div></div>
+      <div class="lt" style="margin-bottom:14px">Split Expenses</div>
+
+      <div class="neu card pressable" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:14px"><div class="badge-ic"><svg class="ic" style="width:20px;height:20px"><use href="#i-people"/></svg></div>
+          <div class="lmain"><div class="lt1">Trip to Goa</div><div class="lt2">4 people · 7 expenses</div></div>
+          <div style="text-align:right"><div class="muted" style="font-size:11px">you are owed</div><div style="font-weight:800;color:var(--accent)">$128.40</div></div>
+        </div>
+      </div>
+
+      <div class="neu card pressable" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:14px"><div class="badge-ic"><svg class="ic" style="width:20px;height:20px"><use href="#i-people"/></svg></div>
+          <div class="lmain"><div class="lt1">Flat utilities</div><div class="lt2">3 people · 12 expenses</div></div>
+          <div style="text-align:right"><div class="muted" style="font-size:11px">you owe</div><div style="font-weight:800">$36.10</div></div>
+        </div>
+      </div>
+
+      <div class="neu card pressable">
+        <div style="display:flex;align-items:center;gap:14px"><div class="badge-ic"><svg class="ic" style="width:20px;height:20px"><use href="#i-people"/></svg></div>
+          <div class="lmain"><div class="lt1">Dinner club</div><div class="lt2">5 people · settled up</div></div>
+          <div style="text-align:right"><div class="muted" style="font-size:11px">balance</div><div style="font-weight:800">$0.00</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ BUDGET ============================ -->
+  <section class="screen" id="s-budget" data-name="Budget">
+    <div class="scroll">
+      <div class="nav"><div></div><div class="iconbtn"><svg class="ic"><use href="#i-plus"/></svg></div></div>
+      <div class="lt" style="margin-bottom:6px">Budget</div>
+
+      <div class="center" style="margin:6px 0 10px"><span class="chip" style="color:var(--text)"><svg class="ic" style="width:16px;height:16px"><use href="#i-chev-l"/></svg> June 2026 <svg class="ic" style="width:16px;height:16px"><use href="#i-chev-r"/></svg></span></div>
+
+      <div class="neu card">
+        <div class="donut">
+          <svg viewBox="0 0 150 150" style="transform:rotate(-90deg)">
+            <circle cx="75" cy="75" r="60" fill="none" stroke="var(--track)" stroke-width="22"/>
+            <circle cx="75" cy="75" r="60" fill="none" stroke="var(--accent)" stroke-width="22" stroke-dasharray="377" stroke-dashoffset="132" stroke-linecap="round"/>
+          </svg>
+          <div class="hole"><div><div style="font-size:22px;font-weight:800">65%</div><div class="muted" style="font-size:11px">of $2,400</div></div></div>
+        </div>
+        <div class="statline"><div><div class="v" style="font-size:18px">$1,560</div><div class="k">spent</div></div><div><div class="v" style="font-size:18px">$840</div><div class="k">left</div></div></div>
+      </div>
+
+      <div class="sect">Categories</div>
+      <div class="neu card" style="padding:6px 18px">
+        <div style="padding:15px 0"><div style="display:flex;justify-content:space-between"><span class="lt1">Groceries</span><span class="muted">$420 / $500</span></div><div class="prog"><i style="width:84%"></i></div></div>
+        <div style="padding:15px 0;border-top:1px solid var(--hairline)"><div style="display:flex;justify-content:space-between"><span class="lt1">Dining out</span><span class="muted">$310 / $300</span></div><div class="prog"><i style="width:100%"></i></div></div>
+        <div style="padding:15px 0;border-top:1px solid var(--hairline)"><div style="display:flex;justify-content:space-between"><span class="lt1">Transport</span><span class="muted">$140 / $250</span></div><div class="prog"><i style="width:56%"></i></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WORKOUT · DASHBOARD ====================== -->
+  <section class="screen" id="s-workout-dashboard" data-name="Workout · Dashboard">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('apps')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">Workout</div><div style="width:42px"></div></div>
+      <div class="segbar" id="wtabs">
+        <button class="on" data-w="workout-dashboard"><svg><use href="#i-bars"/></svg></button>
+        <button data-w="workout-exercises"><svg><use href="#i-figure"/></svg></button>
+        <button data-w="workout-routines"><svg><use href="#i-list"/></svg></button>
+        <button data-w="workout-history"><svg><use href="#i-clock"/></svg></button>
+        <button data-w="workout-settings"><svg><use href="#i-gear"/></svg></button>
+      </div>
+
+      <div class="appgrid" style="margin-top:14px">
+        <div class="neu tile" style="align-items:flex-start;padding:18px"><div class="gico" style="margin-bottom:4px"><svg class="ic"><use href="#i-check-badge"/></svg></div><div class="big" style="color:var(--text);font-size:28px">1</div><div class="lbl">Workouts</div></div>
+        <div class="neu tile" style="align-items:flex-start;padding:18px"><div class="gico" style="margin-bottom:4px"><svg class="ic"><use href="#i-flame"/></svg></div><div class="big" style="color:var(--text);font-size:28px">1</div><div class="lbl">Day streak</div></div>
+        <div class="neu tile" style="align-items:flex-start;padding:18px"><div class="gico" style="margin-bottom:4px"><svg class="ic"><use href="#i-cal"/></svg></div><div class="big" style="color:var(--text);font-size:28px">1</div><div class="lbl">This week</div></div>
+        <div class="neu tile" style="align-items:flex-start;padding:18px"><div class="gico" style="margin-bottom:4px"><svg class="ic"><use href="#i-scale"/></svg></div><div class="big" style="color:var(--text);font-size:24px">352&nbsp;kg</div><div class="lbl">Total volume</div></div>
+      </div>
+
+      <div class="sect">Weekly volume</div>
+      <div class="neu card">
+        <div class="bars" style="height:130px"><div class="b" style="height:10%"></div><div class="b" style="height:10%"></div><div class="b" style="height:10%"></div><div class="b" style="height:88%"></div><div class="b" style="height:10%"></div><div class="b" style="height:10%"></div><div class="b" style="height:10%"></div></div>
+        <div class="axis"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+      </div>
+
+      <div class="sect">Personal records</div>
+      <div class="neu list">
+        <div class="lrow"><div class="lmain"><div class="lt1">Dumbbell Bicep Curl</div><div class="lt2">1 session</div></div><div class="lval">12 kg × 10</div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">Bodyweight Squat</div><div class="lt2">1 session</div></div><div class="lval">12 reps</div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ===================== WORKOUT · EXERCISES ====================== -->
+  <section class="screen" id="s-workout-exercises" data-name="Workout · Exercises">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('apps')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">Workout</div><div style="width:42px"></div></div>
+      <div class="segbar wtabs-clone"></div>
+      <div class="neu-in field" style="margin-top:14px"><svg class="ic" style="color:var(--text-3)"><use href="#i-search"/></svg><span class="muted" style="font-size:15px;font-weight:500">Search exercises</span></div>
+      <div class="sect">Chest</div>
+      <div class="neu list">
+        <div class="lrow"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-dumbbell"/></svg></div><div class="lmain"><div class="lt1">Bench Press</div><div class="lt2">Barbell · compound</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-dumbbell"/></svg></div><div class="lmain"><div class="lt1">Incline Push-Up</div><div class="lt2">Bodyweight</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+      </div>
+      <div class="sect">Arms</div>
+      <div class="neu list">
+        <div class="lrow"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-dumbbell"/></svg></div><div class="lmain"><div class="lt1">Dumbbell Bicep Curl</div><div class="lt2">Dumbbell · isolation</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-dumbbell"/></svg></div><div class="lmain"><div class="lt1">Triceps Dip</div><div class="lt2">Bodyweight</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ===================== WORKOUT · ROUTINES ======================= -->
+  <section class="screen" id="s-workout-routines" data-name="Workout · Routines">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('apps')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">Routines</div><div class="iconbtn"><svg class="ic"><use href="#i-plus"/></svg></div></div>
+      <div class="segbar wtabs-clone"></div>
+      <div class="sect">Starter Routines</div>
+      <div class="neu list">
+        <div class="lrow pressable" onclick="go('routine-detail')"><div class="lmain"><div class="lt1">5-Minute Mobility</div><div class="lt2">4 exercises · 4 sets · Cat Stretch, Hamstring…</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow pressable"><div class="lmain"><div class="lt1">Beginner Full Body</div><div class="lt2">5 exercises · 15 sets · Bodyweight Squat…</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow pressable"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-dumbbell"/></svg></div><div class="lmain"><div class="lt1">Calisthenics — Pull</div><div class="lt2">5 exercises · 18 sets · Intermediate</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow pressable"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-dumbbell"/></svg></div><div class="lmain"><div class="lt1">Calisthenics — Push</div><div class="lt2">5 exercises · 17 sets · Intermediate</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ===================== ROUTINE DETAIL =========================== -->
+  <section class="screen" id="s-routine-detail" data-name="Routine detail">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('workout-routines')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">5-Minute Mobility</div><div class="chip" style="padding:8px 14px">Edit</div></div>
+      <div class="muted" style="margin:10px 4px 6px;font-weight:600">4 exercises · 4 sets</div>
+      <div class="neu list">
+        <div class="lrow"><div class="lmain"><div class="lt1">Cat Stretch</div><div class="lt2">1 × 60s</div></div></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">World's Greatest Stretch</div><div class="lt2">1 × 30s each side</div></div></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">Hamstring Stretch</div><div class="lt2">1 × 30s each leg</div></div></div>
+        <div class="lrow"><div class="lmain"><div class="lt1">Arm Circles</div><div class="lt2">1 × 60s</div></div></div>
+      </div>
+      <div class="sect">About</div>
+      <div class="neu card"><div class="lrow" style="padding:6px 0"><div class="lmain lt1">Sport</div><div style="display:flex;gap:8px;align-items:center;color:var(--accent);font-weight:700"><svg class="ic" style="width:18px;height:18px"><use href="#i-figure"/></svg> General</div></div></div>
+    </div>
+    <div style="position:absolute;left:20px;right:20px;bottom:24px"><button class="btn"><svg><use href="#i-play"/></svg> Start Workout</button></div>
+  </section>
+
+  <!-- ===================== WORKOUT · HISTORY ======================== -->
+  <section class="screen" id="s-workout-history" data-name="Workout · History">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('apps')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">History</div><div style="width:42px"></div></div>
+      <div class="segbar wtabs-clone"></div>
+      <div class="sect">June 2026</div>
+      <div class="neu list">
+        <div class="lrow pressable" onclick="go('workout-summary')"><div class="lmain"><div class="lt1">5-Minute Mobility</div><div class="lt2">Tue, Jun 2 · 1m · 4 sets</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow pressable" onclick="go('workout-summary')"><div class="lmain"><div class="lt1">Studio Demo — Full Body</div><div class="lt2">Tue, Jun 2 · 30m · 9 sets · 352 kg</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ===================== WORKOUT · SETTINGS ======================= -->
+  <section class="screen" id="s-workout-settings" data-name="Workout · Settings">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('apps')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">Settings</div><div style="width:42px"></div></div>
+      <div class="segbar wtabs-clone"></div>
+      <div class="sect">Units</div>
+      <div class="neu card" style="padding:6px 18px">
+        <div class="lrow" style="padding:14px 0"><div class="lmain lt1">Weight unit</div><div class="segbar" style="margin:0;width:120px"><button class="on" style="color:var(--text)">kg</button><button>lb</button></div></div>
+        <div class="lrow" style="padding:14px 0;border-top:1px solid var(--hairline)"><div class="lmain lt1">Rest timer</div><div class="toggle on"></div></div>
+      </div>
+      <div class="sect">Heart rate</div>
+      <div class="neu card" style="padding:6px 18px">
+        <div class="lrow pressable" style="padding:15px 0" onclick="openSheet('hr-source')"><div class="lmain"><div class="lt1">Heart-rate source</div><div class="lt2">Polar H10 · auto-reconnects</div></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div>
+        <div class="lrow" style="padding:15px 0;border-top:1px solid var(--hairline)"><div class="lmain"><div class="lt1">Max HR</div><div class="lt2">Used for zones</div></div><div style="font-weight:700">190</div></div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ===================== WORKOUT · SUMMARY (HR) =================== -->
+  <section class="screen" id="s-workout-summary" data-name="Workout · HR Summary">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('workout-history')"><svg class="ic"><use href="#i-chev-l"/></svg></div><div class="title">Session</div><div style="width:42px"></div></div>
+
+      <div class="neu card" style="padding:4px 18px;margin-top:8px">
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Date</div><div class="muted">Tue, Jun 2 · 1:25 AM</div></div>
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Duration</div><div class="muted">30 min</div></div>
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Sets completed</div><div class="muted">9</div></div>
+        <div class="lrow" style="padding:15px 0"><div class="lmain lt1">Total volume</div><div class="muted">352 kg</div></div>
+      </div>
+
+      <div class="sect">Heart rate</div>
+      <div class="neu card">
+        <svg viewBox="0 0 300 130" style="width:100%;height:130px">
+          <g stroke="var(--hairline)" stroke-width="1" opacity=".6"><line x1="0" y1="20" x2="300" y2="20"/><line x1="0" y1="55" x2="300" y2="55"/><line x1="0" y1="90" x2="300" y2="90"/></g>
+          <polyline fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+            points="0,80 30,62 60,40 90,52 120,58 150,46 180,60 210,42 240,55 270,70 300,78"/>
+        </svg>
+        <div class="statline" style="margin-top:14px"><div><div class="v">146</div><div class="k">Avg</div></div><div><div class="v">172</div><div class="k">Max</div></div><div><div class="v">120</div><div class="k">Min</div></div></div>
+        <div class="zonebar"><span style="width:28%;background:#19c3e6"></span><span style="width:40%;background:#3fb155"></span><span style="width:22%;background:#ff9645"></span><span style="width:10%;background:#ff5a4d"></span></div>
+        <div class="list" style="padding-top:6px">
+          <div class="lrow" style="padding:9px 0"><span style="width:10px;height:10px;border-radius:50%;background:#19c3e6"></span><div class="lmain lt1" style="font-size:14px">Z2 · Easy</div><div class="muted">8 min</div></div>
+          <div class="lrow" style="padding:9px 0;border:0"><span style="width:10px;height:10px;border-radius:50%;background:#3fb155"></span><div class="lmain lt1" style="font-size:14px">Z3 · Aerobic</div><div class="muted">12 min</div></div>
+          <div class="lrow" style="padding:9px 0;border:0"><span style="width:10px;height:10px;border-radius:50%;background:#ff9645"></span><div class="lmain lt1" style="font-size:14px">Z4 · Threshold</div><div class="muted">8 min</div></div>
+        </div>
+      </div>
+    </div>
+    <nav class="tabbar"><button onclick="go('home')"><svg><use href="#i-grid"/></svg>Home</button><button class="on" onclick="go('apps')"><svg><use href="#i-grid"/></svg>Apps</button></nav>
+  </section>
+
+  <!-- ===================== LIVE PLAYER ============================== -->
+  <section class="screen" id="s-live-player" data-name="Live Player">
+    <div class="scroll">
+      <div class="nav"><div class="iconbtn" onclick="go('routine-detail')"><svg class="ic"><use href="#i-chev-d"/></svg></div><div class="title">5-Minute Mobility</div>
+        <div style="display:flex;gap:8px"><div class="iconbtn"><svg class="ic"><use href="#i-pause"/></svg></div><div class="chip" style="color:var(--accent)">End</div></div></div>
+      <div class="center muted" style="font-weight:700;margin:4px 0 14px"><svg class="ic" style="width:15px;height:15px;color:var(--accent);vertical-align:-2px"><use href="#i-clock"/></svg> Total 0:02</div>
+
+      <div class="neu-in field" style="font-size:14px;font-weight:600;justify-content:center;color:var(--text-2)"><svg class="ic" style="width:18px;height:18px"><use href="#i-watch"/></svg> Open the workout on your watch</div>
+
+      <div class="center" style="margin:22px 0 6px"><span style="color:var(--accent);font-weight:800;font-size:13px">EXERCISE 1 OF 4</span></div>
+      <div class="center" style="font-size:28px;font-weight:800">Cat Stretch</div>
+      <div class="center muted" style="margin:6px 0 2px;font-weight:700">Set 1 of 1</div>
+      <div class="center muted" style="font-size:13px">Target: 60s reps</div>
+
+      <div class="tiles" style="margin-top:18px">
+        <div class="neu-in tile" style="padding:14px 8px"><div class="lbl">Reps</div><div style="font-size:24px;font-weight:800">60</div></div>
+        <div class="neu-in tile" style="padding:14px 8px"><div class="lbl">Weight</div><div style="font-size:24px;font-weight:800;color:var(--text-3)">0</div></div>
+        <div class="neu tile" style="padding:14px 8px"><div class="lbl">Unit</div><div class="segbar" style="margin:4px 0 0;width:90px"><button class="on" style="color:var(--text);padding:6px">kg</button><button style="padding:6px">lb</button></div></div>
+      </div>
+
+      <div style="margin-top:18px"><button class="btn">Complete set</button></div>
+      <div class="center" style="margin:14px 0"><span style="color:var(--accent);font-weight:700;font-size:14px"><svg class="ic" style="width:15px;height:15px;vertical-align:-2px"><use href="#i-skip"/></svg> Skip exercise</span></div>
+
+      <div class="neu card">
+        <div class="lt1" style="margin-bottom:10px">How to</div>
+        <div style="display:flex;gap:12px;margin-bottom:10px"><span style="color:var(--accent);font-weight:800">1</span><span class="muted" style="font-size:13.5px">Position yourself on the floor on your hands and knees.</span></div>
+        <div style="display:flex;gap:12px;margin-bottom:10px"><span style="color:var(--accent);font-weight:800">2</span><span class="muted" style="font-size:13.5px">Pull your belly in and round your spine, letting your head drop.</span></div>
+        <div style="display:flex;gap:12px"><span style="color:var(--accent);font-weight:800">3</span><span class="muted" style="font-size:13.5px">Hold for 15 seconds.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== HR SOURCE (sheet) ======================== -->
+  <div class="sheet-scrim" id="scrim" onclick="closeSheet()" style="display:none;position:absolute;inset:0;background:var(--scrim);z-index:50"></div>
+  <section class="sheet" id="sheet-hr-source" style="display:none;position:absolute;left:0;right:0;bottom:0;z-index:60;background:var(--bg);border-radius:var(--r-lg) var(--r-lg) 0 0;box-shadow:0 -20px 50px -20px rgba(0,0,0,.6);padding:8px 20px 28px;max-height:78%;overflow:auto">
+    <div class="sheetgrip"></div>
+    <div class="nav"><div style="width:42px"></div><div class="title">Heart-rate source</div><div class="chip" style="color:var(--accent)" onclick="closeSheet()">Done</div></div>
+    <div class="sect" style="margin-top:14px">Source</div>
+    <div class="neu-in card pressable" style="border-radius:var(--r-md)"><div style="display:flex;align-items:center;gap:14px"><div class="badge-ic"><svg class="ic" style="width:18px;height:18px"><use href="#i-watch"/></svg></div><div class="lmain"><div class="lt1">Apple Watch</div><div class="lt2">No paired watch with Snappet installed</div></div></div></div>
+    <div class="muted" style="font-size:12.5px;margin:12px 4px">Live heart rate during a workout can come from your Apple Watch or a Bluetooth heart-rate band. Everything stays on your device — no accounts, no cloud.</div>
+    <div class="sect">Bluetooth heart-rate bands</div>
+    <div class="neu card pressable"><div style="display:flex;align-items:center;gap:14px"><div class="badge-ic" style="color:#ff5a4d"><svg class="ic" style="width:18px;height:18px"><use href="#i-heart"/></svg></div><div class="lmain"><div class="lt1">Polar H10</div><div class="lt2">Saved · reconnects automatically</div></div><svg class="ic" style="color:var(--accent)"><polyline points="5 12 10 17 19 7" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></div></div>
+  </section>
+
+</div><!-- /phone -->
+</div><!-- /stage -->
+
+<div class="footnote">
+  Interactive wireframes for the <b>Snappet · Soft&nbsp;Pulse</b> neumorphic exploration — no app logic or
+  navigation flow is changed. Use the controls to switch <b>appearance</b>, <b>color scheme</b> and
+  <b>depth/contrast</b>; tap inside the phone (App Library cards, the Workout tab bar, list rows,
+  Home/Apps) to move between screens. Read the design rationale in
+  <code>docs/design-exploration/neumorphic/README.md</code>.
+</div>
+
+<script>
+const SCREENS = ["home","apps","pomodoro","habits","journal","tip","expenses","budget",
+  "workout-dashboard","workout-exercises","workout-routines","routine-detail",
+  "workout-history","workout-settings","workout-summary","live-player"];
+
+const root = document.documentElement;
+
+/* ---- screen navigation (no flow change — just shows the same screens) --- */
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el = document.getElementById('s-'+id);
+  if(el){ el.classList.add('active'); el.querySelector('.scroll')?.scrollTo(0,0); }
+  const sel = document.getElementById('screenSelect'); if(sel) sel.value = id;
+}
+/* sheet */
+function openSheet(){ document.getElementById('scrim').style.display='block'; document.getElementById('sheet-hr-source').style.display='block'; }
+function closeSheet(){ document.getElementById('scrim').style.display='none'; document.getElementById('sheet-hr-source').style.display='none'; }
+
+/* ---- build the screen <select> --------------------------------------- */
+const sel = document.getElementById('screenSelect');
+SCREENS.forEach(id=>{
+  const name = document.getElementById('s-'+id).dataset.name;
+  const o = document.createElement('option'); o.value=id; o.textContent=name; sel.appendChild(o);
+});
+sel.addEventListener('change', e=>go(e.target.value));
+
+/* ---- workout tab bar (shared across the 5 workout sub-screens) -------- */
+const WTABS = `
+  <button data-w="workout-dashboard"><svg viewBox="0 0 24 24"><use href="#i-bars"/></svg></button>
+  <button data-w="workout-exercises"><svg viewBox="0 0 24 24"><use href="#i-figure"/></svg></button>
+  <button data-w="workout-routines"><svg viewBox="0 0 24 24"><use href="#i-list"/></svg></button>
+  <button data-w="workout-history"><svg viewBox="0 0 24 24"><use href="#i-clock"/></svg></button>
+  <button data-w="workout-settings"><svg viewBox="0 0 24 24"><use href="#i-gear"/></svg></button>`;
+document.querySelectorAll('.wtabs-clone').forEach(c=>c.innerHTML=WTABS);
+document.querySelectorAll('.segbar [data-w]').forEach(b=>{
+  b.addEventListener('click',()=>go(b.dataset.w));
+});
+function syncWTabs(active){
+  document.querySelectorAll('.segbar [data-w]').forEach(b=>{
+    b.classList.toggle('on', b.dataset.w===active);
+  });
+}
+const _go = go;
+go = function(id){ _go(id); if(id.startsWith('workout-')||id==='routine-detail'){ syncWTabs(id.startsWith('workout-')?id:'workout-routines'); } };
+
+/* ---- theme controls --------------------------------------------------- */
+const NAMES = {appearance:{dark:'Dark',light:'Light'},
+  accent:{coral:'Pulse Coral',ember:'Ember',indigo:'Indigo',teal:'Teal'},
+  depth:{soft:'Soft',balanced:'Balanced',high:'High-contrast'}};
+function label(){
+  const a=root.dataset.appearance,c=root.dataset.accent,d=root.dataset.depth;
+  document.getElementById('themeLabel').innerHTML =
+    `Now showing: <b>${NAMES.accent[c]}</b> · <b>${NAMES.appearance[a]}</b> · <b>${NAMES.depth[d]} depth</b>`;
+}
+function setAxis(axis,val,group){
+  root.dataset[axis]=val;
+  group.forEach(el=>el.setAttribute('aria-pressed', el.dataset.v===val));
+  label();
+}
+document.querySelectorAll('.controls [data-axis]').forEach(grp=>{
+  const axis = grp.dataset.axis;
+  const items = [...grp.children];
+  items.forEach(it=> it.addEventListener('click', ()=>setAxis(axis, it.dataset.v, items)));
+});
+label();
+
+/* live clock for the status bar */
+function tick(){ const d=new Date(); document.getElementById('clock').textContent =
+  d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+tick(); setInterval(tick,15000);
+</script>
+</body>
+</html>
