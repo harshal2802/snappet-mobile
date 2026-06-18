@@ -5558,3 +5558,31 @@ both pass (sim-wedge "hung before establishing connection" cleared by `simctl sh
 Device-only / deferred: the actual Photos asset deletion (the system confirm + on-disk removal), the PHPicker
 pick, and the context-menu long-press feel — a focused unit test for the pure helper + the green climb
 UITests cover the rest (a context-menu + Photos-deletion XCUITest is too device-y/flaky to force here).
+
+## 2026-06-18 — Studio editor: scope overlays to the visible clips (prompt 13)
+
+Bug (user, single-clip editor): opening ONE climb clip showed the NEXT attempt's tag too (two overlay-lane
+bars over one clip), and "the default climb tag (Attempt# ON) always shows even though I set it once."
+
+- **Root cause (one):** `visibleClipMediaIDs` scoped the CLIPS (`StudioGeometry.filterByMedia`) but NEVER
+  the OVERLAYS — `canvasOverlays`/`timelineOverlays`/`scopedSnapshot.overlays` all returned the full
+  project set. A foreign clip's per-clip tag (clipID owned by a non-visible clip) leaked into the canvas,
+  the overlay lane, AND the export (its `outputWindow` fell back to a stored ~[0,clipDur] window that
+  overlaps the single visible clip's [0,2], passing the time-gate). The "default tag that won't stick"
+  was the SAME leak wearing a different hat — the other clip's persisted tag (with its flags) bleeding in;
+  NOT a persistence/default bug. (11-agent review confirmed nothing auto-adds a tag and the flags persist;
+  it explicitly warned NOT to "fix" the toggles — that would have been a misdiagnosis.)
+- **Fix (minimal):** a pure `StudioGeometry.filterOverlays(_:clips:to:)` bridging the key mismatch
+  (`OverlayItem.clipID` = a `TimelineClip.id`, not the `SessionMedia.id` that `visibleClipMediaIDs` holds):
+  nil scope → all; `clipID == nil` (whole-project overlay) → kept in every scope; else `clipID → owning
+  clip → sessionMediaID → membership`; orphan dropped while scoping. A VM `scopedOverlays` routes the
+  three render surfaces (`canvasOverlays`, `timelineOverlays`, `scopedSnapshot.overlays`) through it.
+  `overlays`/`selectedOverlay`/`climbOverlayForSelectedClip` deliberately KEEP reading the full set so a
+  scoped edit still persists to the shared project and add-or-select stays idempotent.
+
+**Process note (why this recurred):** prompt 12 made overlays per-clip but only scoped the CLIP list, not
+the overlay list — a "what's scoped vs not" gap. Folding an explicit *scope-parity* check (every per-entity
+list that has a visible-subset must filter BOTH the entities and anything keyed to them) into the review lens.
+
+**Verified:** `build-for-testing` clean (0 errors / 0 warnings in changed files); `SnappetTests` green
+(**889**, +2 new `filterOverlays` cases).

@@ -24,6 +24,26 @@ enum StudioGeometry {
         return clips.filter { $0.sessionMediaID.map(mediaIDs.contains) ?? false }
     }
 
+    /// Restrict an OVERLAY list to the overlays whose owning clip is in scope — the overlay analogue of
+    /// `filterByMedia`. Overlays key on `clipID` (a `TimelineClip.id`), NOT `sessionMediaID`, so they
+    /// can't reuse `filterByMedia`; this bridges `clipID → owning clip → sessionMediaID → membership`.
+    /// `nil` = no filter (the whole-workout view). A `clipID == nil` overlay (a whole-project text/sticker,
+    /// or an unbound climb tag) is kept in EVERY scope; a clip-bound overlay is kept iff its owning clip
+    /// (looked up in the FULL `clips`) is backed by one of `mediaIDs`; an orphan (clip gone / no media id)
+    /// is dropped while scoping. Pure → unit-tested. (prompt 13: the single-clip editor + overlay lane +
+    /// export were showing OTHER clips' per-clip climb tags because overlays were never scoped with clips.)
+    static func filterOverlays(_ overlays: [OverlayItem], clips: [TimelineClip],
+                               to mediaIDs: Set<UUID>?) -> [OverlayItem] {
+        guard let mediaIDs else { return overlays }
+        let visibleClipIDs = Set(clips.compactMap { clip in
+            (clip.sessionMediaID.map(mediaIDs.contains) ?? false) ? clip.id : nil
+        })
+        return overlays.filter { ov in
+            guard let clipID = ov.clipID else { return true }   // whole-project overlay → shows in every scope
+            return visibleClipIDs.contains(clipID)
+        }
+    }
+
     /// Destination index in the **full** ordered list for moving `id` by `delta` positions among the
     /// *visible* subset — so a reorder inside a scoped studio swaps with the adjacent **visible**
     /// neighbor without disturbing the hidden clips' order. `visible` and `full` must already be

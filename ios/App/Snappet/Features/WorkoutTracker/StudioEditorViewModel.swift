@@ -140,6 +140,14 @@ final class StudioEditorViewModel {
     private var visibleSnapshotClips: [TimelineClip] {
         StudioGeometry.filterByMedia(snapshot.clips, to: visibleClipMediaIDs)
     }
+    /// Overlays restricted to the current scope — the OVERLAY analogue of `visibleSnapshotClips`. Without
+    /// it the single-clip editor (and the overlay-timeline lane, and the export) showed OTHER clips'
+    /// per-clip climb tags, since `visibleClipMediaIDs` scoped only the clips (prompt 13). Resolves
+    /// `clipID → owning clip → sessionMediaID` against the FULL `snapshot.clips`; whole-project overlays
+    /// (`clipID == nil`) always pass; unscoped (`visibleClipMediaIDs == nil`) returns all.
+    private var scopedOverlays: [OverlayItem] {
+        StudioGeometry.filterOverlays(snapshot.overlays, clips: snapshot.clips, to: visibleClipMediaIDs)
+    }
     /// The snapshot handed to the composer for preview/export — scoped to the visible clips, with every
     /// `.climbName` tag RENDER-RESOLVED (composed string + per-clip window) so the exported file matches
     /// the editor (prompt 12). Unscoped (`visibleClipMediaIDs == nil`) keeps all clips; either way the
@@ -147,7 +155,7 @@ final class StudioEditorViewModel {
     private var scopedSnapshot: StudioProjectSnapshot {
         var s = snapshot
         if visibleClipMediaIDs != nil { s.clips = visibleSnapshotClips }
-        s.overlays = renderedOverlays(s.overlays)
+        s.overlays = renderedOverlays(scopedOverlays)   // scope overlays too (prompt 13), then resolve
         return s
     }
     var clips: [TimelineClip] { StudioGeometry.ordered(visibleSnapshotClips) }
@@ -159,7 +167,7 @@ final class StudioEditorViewModel {
     /// Overlays prepared for the WYSIWYG canvas: `.climbName` tags carry their composed string + their
     /// clip-resolved window (so the canvas time-gate matches export). Selection/ids are preserved (the
     /// resolution keeps each overlay's `id`), so dragging/selecting still target the right overlay.
-    var canvasOverlays: [OverlayItem] { renderedOverlays(snapshot.overlays) }
+    var canvasOverlays: [OverlayItem] { renderedOverlays(scopedOverlays) }
     var aspect: ClipEditGeometry.OutputAspect { snapshot.aspect }
     /// Canvas width:height for placing the overlay layer over the preview. `.original` has no fixed
     /// ratio (it follows the source) — fall back to the studio's 9:16 default for the editing rect.
@@ -664,8 +672,9 @@ final class StudioEditorViewModel {
 
     // MARK: - Overlay timeline (how long an overlay stays on screen — the timeline lane)
 
-    /// Overlays shown as bars in the timeline lane (every overlay carries a `[startSec, endSec]`).
-    var timelineOverlays: [OverlayItem] { overlays }
+    /// Overlays shown as bars in the timeline lane (every overlay carries a `[startSec, endSec]`). Scoped
+    /// to the visible clips (prompt 13) so a single-clip editor doesn't show another clip's tag as a bar.
+    var timelineOverlays: [OverlayItem] { scopedOverlays }
 
     /// Set an overlay's on-screen window (output seconds) — the timeline lane's move/trim commit. A
     /// `.video` PiP is in the playback composition (rebuild); text/sticker/climbName are not.
