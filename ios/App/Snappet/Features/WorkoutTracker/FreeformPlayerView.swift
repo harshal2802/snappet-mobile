@@ -50,6 +50,10 @@ struct FreeformPlayerView: View {
     @State private var loggingAttemptFor: Set<UUID> = []
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
     @State private var timingAttemptFor: TimedAttemptTarget?
+    /// The structured timed exercise the interval runner cover is open for (Quick Session redesign Phase 6):
+    /// a `.repeaters` / `.tabata` / `.emom` spec runs the full-cover `StructuredTimedRunner` instead of the
+    /// simple `LogSetSheet` stopwatch. `nil` when no runner is open.
+    @State private var runningInterval: IntervalRunTarget?
     /// Cross-session prefill per exerciseId, cached so the ~1 Hz body re-render never re-scans history
     /// (history is fixed for the live session). Recomputed on appear + when an exercise is added. (§B)
     @State private var prefills: [String: LastSetLookup.LastTime] = [:]
@@ -187,6 +191,14 @@ struct FreeformPlayerView: View {
                 attemptNumber: (climb?.sets.count ?? 0) + 1) { status, duration in
                     logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
                 }
+        }
+        // The structured interval runner cover (Quick Session redesign Phase 6): a repeaters/tabata/emom
+        // timed exercise runs its `IntervalSchedule` full-screen (lead-in → WORK/REST phases → capture
+        // card). "Log set" commits a `SetLog(durationSec: TUT)` through the same `appendLog` funnel.
+        .fullScreenCover(item: $runningInterval) { target in
+            StructuredTimedRunner(exerciseName: target.name, spec: target.spec) { setLog in
+                appendLog(setLog, toExerciseID: target.exerciseID)
+            }
         }
         // Tap a freeform clip → the shared scoped Studio editor (§G). Hosted on the (stable) logging
         // screen — the cover must not live inside a re-rendering subview or it collapses on a clip tap.
@@ -435,8 +447,15 @@ struct FreeformPlayerView: View {
             .onDelete { offsets in deleteSets(ex, at: offsets) }
 
             Button {
-                logging = LogTarget(exerciseID: ex.id, kind: .duration, exerciseId: ex.exerciseId,
-                                    timedSpec: ex.timedSpec)
+                // Quick Session redesign Phase 6: a structured spec (repeaters/tabata/emom) runs the
+                // full-cover interval runner; the simple modes keep the Phase-5 `LogSetSheet` stopwatch.
+                if let spec = ex.timedSpec, spec.mode.isStructured {
+                    runningInterval = IntervalRunTarget(exerciseID: ex.id, spec: spec,
+                                                        name: resolver.name(for: ex.exerciseId, override: ex.displayName))
+                } else {
+                    logging = LogTarget(exerciseID: ex.id, kind: .duration, exerciseId: ex.exerciseId,
+                                        timedSpec: ex.timedSpec)
+                }
             } label: {
                 Label("Add set", systemImage: "plus.circle.fill")
             }
@@ -1185,6 +1204,15 @@ private struct LogTarget: Identifiable {
     /// The timed exercise's structure (Phase 5) — lets the `.duration` log sheet arm the stopwatch to
     /// count DOWN for a max-hang / count-down target instead of always counting up. `nil` for non-timed.
     var timedSpec: TimedExerciseSpec? = nil
+    var id: UUID { exerciseID }
+}
+
+/// Which structured timed exercise the interval runner is open for (drives `StructuredTimedRunner`, Quick
+/// Session redesign Phase 6). Carries the resolved display name + the spec the runner unrolls.
+private struct IntervalRunTarget: Identifiable {
+    let exerciseID: UUID
+    let spec: TimedExerciseSpec
+    let name: String
     var id: UUID { exerciseID }
 }
 

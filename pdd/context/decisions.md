@@ -5241,3 +5241,39 @@ changed files); full `SnappetTests` green incl. new `TimedExerciseSpecTests` and
 drift+round-trip tripwire; `SnappetUITests/TimedSetTimerTests` (pick a seeded suggestion → named card → log
 a timed set with the live timer; AND create "10s hang" count-down + preset → named card → log a set) on the
 simulator. Structured interval runner deferred to Phase 6.
+
+### Quick Session redesign — Phase 6 (structured interval runner: repeaters/tabata/emom)
+
+- **Pure `IntervalSchedule` in `Shared/`, mirroring `StopwatchTiming`.** A `.repeaters`/`.tabata`/`.emom`
+  `TimedExerciseSpec` unrolls into an ordered `[Phase]` (`kind: leadIn/work/rest/restBetweenSets/done`,
+  each with `durationSec`, 1-based `setIndex`/`repIndex`, a big `label`, and the **next** phase's `nextLabel`
+  for the preview chip). A pure `state(at elapsed) -> (phase, remainingInPhase, overallRemaining, setRep,
+  isDone)` walks the phases off a wall-clock anchor, so the running view is a thin read that can't drift and
+  survives backgrounding. Unit-tested exhaustively (`IntervalScheduleTests`, 18 cases): total ==
+  `spec.totalSeconds`, phase counts/boundaries, the multi-set set/rep counter, next-phase labels, and edges
+  (lead-in 0, single rep/set). Lives in `Shared/` so the same schedule is available on every target.
+- **EMOM is 60-second work windows.** `.emom` carries `workSec/restSec == 0` in the preset, so the schedule
+  models each rep as a **60 s work phase** (one effort at the top of every minute, no inter-rep rest) — its
+  schedule `totalSeconds` is `leadIn + reps*60` and so deliberately does NOT equal `spec.totalSeconds`
+  (which is the spec's raw-field math). For repeaters/tabata the two agree (asserted).
+- **`StructuredTimedRunner` drives a wall-clock `RunnerViewModel` directly** (the `StopwatchViewModel`
+  freeze idiom, NOT the packaged `StopwatchView` — its composite collapses under XCUITest). A ~200 ms ticker
+  recomputes `state(at:)`, fires the per-phase + final-3s cues, and auto-finishes at the `done` marker.
+  **Pause** folds the running segment into `accumulated`; **Skip** jumps the anchor to the next phase
+  boundary. **"The timer is the log":** on finish/STOP a capture card pre-fills the **time-under-tension**
+  (Σ completed work seconds, partial when stopped mid-work), completed reps·sets, and avg/peak HR; "Log set"
+  commits `SetLog(durationSec: TUT)` through the same freeform `appendLog` funnel.
+- **Cues are a light system sound + the shared `Haptics`, gated by a tri-state toggle.** Per-phase
+  work/rest tones (`AudioServicesPlaySystemSound`, no bundled asset → revertible) + a final-3s tick + a
+  completion tone, with a **sound + haptic / haptic only / silent** toggle persisted via `@AppStorage`. The
+  phase background telegraphs the phase before the beep (WORK = `SnappetColor.workout` ember / REST = muted)
+  and Reduce Motion snaps the ring instead of animating. (Audio/haptic + keep-awake are **device-only**.)
+- **Wire-in is a one-line branch in the named timed card.** "Add set" presents `StructuredTimedRunner`
+  (`.fullScreenCover`) when `ex.timedSpec?.mode.isStructured`, else keeps the Phase-5 `LogSetSheet`
+  stopwatch — Phases 1–5 untouched.
+
+**Verified:** `xcodegen generate` + `build-for-testing` clean (0 errors / 0 new warnings in the changed
+files); full `SnappetTests` green incl. new `IntervalScheduleTests` (18 cases); a new
+`SnappetUITests/StructuredIntervalRunnerTests` (create a Repeaters exercise → named card → "Add set" opens
+the runner → asserts `intervalRunner.phase` + `.timer` are live → lead-in elapses into WORK → STOP →
+capture card → `intervalRunner.logSet` → a set row appears) passes on the simulator.
