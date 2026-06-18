@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 21, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 22, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -355,6 +355,11 @@ final class SnappetBackupTests: XCTestCase {
                                  assignedClimbUUID: "climb-uuid",
                                  source: .manual)
         context.insert(media)
+
+        context.insert(TimedExerciseCatalog(name: "7s max hang", category: .hangboard,
+                                            spec: .maxHang7,
+                                            createdAt: Date(timeIntervalSince1970: 1_700_006_500),
+                                            lastUsedAt: Date(timeIntervalSince1970: 1_700_006_800)))
 
         context.insert(makeStudioProject(sessionID: session.id))
 

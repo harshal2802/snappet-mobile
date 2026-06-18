@@ -40,6 +40,9 @@ struct FreeformPlayerView: View {
     /// The "Add a climb" sheet (Quick Session redesign Phase 1): the climb-first entry point both the
     /// empty-state Climbing card and the add-menu's Climbing button now present.
     @State private var addingClimb = false
+    /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
+    /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
+    @State private var addingTimed = false
     /// Which climb cards are expanded (by `SessionExercise.id`) to their attempt list + footer. A new
     /// climb auto-expands; "Add & log first attempt" also auto-opens its inline outcome strip.
     @State private var expandedClimbs: Set<UUID> = []
@@ -148,7 +151,8 @@ struct FreeformPlayerView: View {
             ExercisePickerView(resolver: resolver) { picked in addLifting(picked) }
         }
         .sheet(item: $logging) { target in
-            LogSetSheet(kind: target.kind, unit: unit, prefill: prefills[target.exerciseId]) { log in
+            LogSetSheet(kind: target.kind, unit: unit, prefill: prefills[target.exerciseId],
+                        timedSpec: target.timedSpec) { log in
                 appendLog(log, toExerciseID: target.exerciseID)
             }
         }
@@ -165,6 +169,11 @@ struct FreeformPlayerView: View {
             AddClimbSheet(inheritedGym: lastClimbGym) { params, logFirst in
                 addClimbFromSheet(params, logFirstAttempt: logFirst)
             }
+        }
+        // Quick Session redesign Phase 5: tapping Timed opens the pick-or-create sheet (searchable catalog
+        // · Create new · recents · seeded suggestions) instead of dropping a bare, unnamed timed row.
+        .sheet(isPresented: $addingTimed) {
+            PickTimedExerciseSheet { params in addTimedFromSheet(params) }
         }
         // The live timed-attempt FOCUS cover (Quick Session redesign Phase 2): a dark, glass, full-screen
         // moment that times ONE attempt off the wall clock, then reveals a 2×2 outcome grid. Replaces the
@@ -191,7 +200,7 @@ struct FreeformPlayerView: View {
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
             Button("Lifting exercise") { pickingLift = true }
             Button("Climbing") { addingClimb = true }
-            Button("Timed exercise") { addExercise(kind: .duration, name: "Timed exercise") }
+            Button("Timed exercise") { addingTimed = true }
             Button("Cancel", role: .cancel) {}
         }
         .onAppear {
@@ -347,7 +356,7 @@ struct FreeformPlayerView: View {
                     }
                     typeCard("Timed", symbol: "timer",
                              id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
-                        addExercise(kind: .duration, name: "Timed exercise")
+                        addingTimed = true
                     }
                 }
             }
@@ -395,9 +404,94 @@ struct FreeformPlayerView: View {
         // lifting / timed flows keep the flat set-list rendering below.
         if ex.kind == .climbAttempt {
             climbSection(ex)
+        } else if ex.kind == .duration {
+            // Timed exercises are a timed-first hierarchy (Quick Session redesign Phase 5): the `.duration`
+            // exercise IS the named timed exercise, its `sets` are the timed holds logged underneath a
+            // climb-style card. The lifting flow keeps the flat set-list rendering below.
+            timedSection(ex)
         } else {
             liftingOrTimedSection(ex)
         }
+    }
+
+    // MARK: - Timed card (Quick Session redesign Phase 5)
+
+    /// A named timed exercise renders like a climb card: a header (timer icon · name · the spec's
+    /// structure summary · "N sets" · total hold time) with its timed sets underneath; "Add set" runs the
+    /// timer (the simple `StopwatchView` Timer path — the structured repeaters/tabata/emom runner is
+    /// Phase 6, armed to count down for max-hang / count-down targets), and a one-tap Repeat.
+    private func timedSection(_ ex: SessionExercise) -> some View {
+        Section {
+            ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
+                HStack {
+                    Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .frame(width: 20, alignment: .leading)
+                    Text(SetMeasure.summary(set, kind: .duration, unit: unit))
+                        .font(.body.weight(.medium))
+                    Spacer()
+                }
+                .accessibilityIdentifier("freeform.setRow")
+            }
+            .onDelete { offsets in deleteSets(ex, at: offsets) }
+
+            Button {
+                logging = LogTarget(exerciseID: ex.id, kind: .duration, exerciseId: ex.exerciseId,
+                                    timedSpec: ex.timedSpec)
+            } label: {
+                Label("Add set", systemImage: "plus.circle.fill")
+            }
+            .accessibilityIdentifier("freeform.addSet")
+
+            // One-tap repeat of the most recent timed hold (re-logs its duration), via the shared funnel.
+            if let last = ex.sets.last {
+                Button {
+                    repeatLastSet(ex)
+                } label: {
+                    Label(FreeformSummary.repeatLabel(for: last, kind: .duration, unit: unit),
+                          systemImage: "arrow.clockwise")
+                }
+                .accessibilityIdentifier("freeform.repeatSet")
+            }
+
+            if let lastIndex = ex.sets.indices.last {
+                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex,
+                              onEdit: { presentStudio($0) })
+                    .id("set-media-\(ex.id)-\(lastIndex)")
+            }
+        } header: {
+            timedHeader(ex)
+        }
+    }
+
+    /// The timed card header: timer icon · name · the spec's structure summary · "N sets" · total hold time.
+    private func timedHeader(_ ex: SessionExercise) -> some View {
+        let spec = ex.timedSpec
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Image(systemName: "timer").foregroundStyle(SnappetColor.workout)
+                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                    .accessibilityIdentifier("freeform.timedName")
+                Spacer()
+                Menu {
+                    Button(role: .destructive) { removeExercise(ex) } label: {
+                        Label("Remove exercise", systemImage: "trash")
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }
+            }
+            HStack(spacing: 6) {
+                if let spec { Text(spec.summary) }
+                Text("· \(ex.sets.count) \(ex.sets.count == 1 ? "set" : "sets")")
+                if let hold = timedHoldTotal(ex) { Text("· \(hold)") }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        .textCase(nil)
+    }
+
+    /// Total logged hold time across this timed exercise's sets — the timed analogue of time-on-climb.
+    private func timedHoldTotal(_ ex: SessionExercise) -> String? {
+        let total = ex.sets.compactMap { $0.durationSec }.reduce(0, +)
+        return total > 0 ? SetMeasure.formatDuration(total) : nil
     }
 
     private func liftingOrTimedSection(_ ex: SessionExercise) -> some View {
@@ -811,14 +905,6 @@ struct FreeformPlayerView: View {
         pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
     }
 
-    private func addExercise(kind: SetKind, name: String) {
-        session.exercises.append(SessionExercise(
-            exerciseId: "adhoc-\(kind.rawValue)", targetSets: 0, targetReps: "", targetRestSeconds: 0,
-            sets: [], displayName: name, kindRaw: kind.rawValue))
-        persist()
-        pushLiveActivity()
-    }
-
     /// The most recent climb's gym in this session — inherited as the default for the next "Add a climb"
     /// sheet (captured once, never re-entered per climb).
     private var lastClimbGym: String? {
@@ -840,6 +926,22 @@ struct FreeformPlayerView: View {
         session.exercises.append(climb)
         expandedClimbs.insert(climb.id)
         if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
+        persist()
+        pushLiveActivity()
+    }
+
+    /// Create a timed exercise from the "Pick or create" sheet (Quick Session redesign Phase 5): a named
+    /// `.duration` `SessionExercise` carrying the chosen structure (`timedSpec`) and category. Its timed
+    /// sets log underneath it like a climb's attempts. Every Timed entry point (the empty-state card + the
+    /// add-menu item) now routes through the pick sheet → here, so a timed card is always named.
+    private func addTimedFromSheet(_ params: AddTimedParams) {
+        var timed = SessionExercise(
+            exerciseId: "adhoc-\(SetKind.duration.rawValue)", targetSets: 0, targetReps: "",
+            targetRestSeconds: 0, sets: [], displayName: params.name,
+            kindRaw: SetKind.duration.rawValue)
+        timed.timedSpec = params.spec
+        timed.timedCategory = params.category.rawValue
+        session.exercises.append(timed)
         persist()
         pushLiveActivity()
     }
@@ -1080,6 +1182,9 @@ private struct LogTarget: Identifiable {
     let exerciseID: UUID
     let kind: SetKind
     let exerciseId: String
+    /// The timed exercise's structure (Phase 5) — lets the `.duration` log sheet arm the stopwatch to
+    /// count DOWN for a max-hang / count-down target instead of always counting up. `nil` for non-timed.
+    var timedSpec: TimedExerciseSpec? = nil
     var id: UUID { exerciseID }
 }
 
@@ -1208,6 +1313,9 @@ private enum DurationInputMode: String, CaseIterable, Identifiable {
 private struct LogSetSheet: View {
     let kind: SetKind
     let unit: WeightUnit
+    /// The timed exercise's structure (Phase 5) — arms the duration stopwatch to count DOWN for a
+    /// max-hang / count-down target; `nil` (or an open count-up) keeps the count-up behavior.
+    let timedSpec: TimedExerciseSpec?
     let onAdd: (SetLog) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -1236,9 +1344,11 @@ private struct LogSetSheet: View {
     @State private var climbDurationSec: Double?
 
     init(kind: SetKind, unit: WeightUnit, prefill: LastSetLookup.LastTime?,
+         timedSpec: TimedExerciseSpec? = nil,
          onAdd: @escaping (SetLog) -> Void) {
         self.kind = kind
         self.unit = unit
+        self.timedSpec = timedSpec
         self.onAdd = onAdd
         // Prefill the reps/weight/unit from the last time this exercise was done (§B) so the "log
         // something different" sheet opens on the user's last values to tweak, not blank.
@@ -1248,6 +1358,14 @@ private struct LogSetSheet: View {
     }
 
     @FocusState private var keypadFocused: Bool
+
+    /// The stopwatch mode for the duration timer: count DOWN from the target for a max-hang / count-down
+    /// spec (so the dial shows the prescribed hold draining), else count up (the open default).
+    private var durationStopwatchMode: StopwatchTiming.Mode {
+        guard let spec = timedSpec, spec.mode == .maxHang || spec.mode == .countDown, spec.workSec > 0
+        else { return .countUp }
+        return .countDown(targetSec: TimeInterval(spec.workSec))
+    }
 
     var body: some View {
         NavigationStack {
@@ -1278,9 +1396,12 @@ private struct LogSetSheet: View {
                     .accessibilityIdentifier("logset.durationMode")
                     switch durationMode {
                     case .timer:
-                        // Press Start → do the hold → Stop captures the elapsed seconds into the same
-                        // minutes/seconds the save path reads (PR 1's StopwatchView, first real consumer).
-                        StopwatchView(mode: .countUp) { elapsed in
+                        // Press Start → do the hold → Stop captures the ELAPSED seconds held into the same
+                        // minutes/seconds the save path reads (PR 1's StopwatchView). For a max-hang /
+                        // count-down target the dial counts DOWN from `workSec` (Phase 5) — the captured
+                        // value is still the elapsed time held, so logging is unchanged; the structured
+                        // repeaters/tabata/emom runner is Phase 6.
+                        StopwatchView(mode: durationStopwatchMode) { elapsed in
                             let split = SetMeasure.splitDuration(elapsed)
                             minutes = split.minutes
                             seconds = split.seconds

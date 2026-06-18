@@ -57,6 +57,7 @@ enum SnappetBackup {
         ExpenseGroup.self, ExpenseRecord.self,
         BudgetCategory.self, BudgetTransaction.self,
         Routine.self, WorkoutSession.self, CustomExercise.self, SessionMedia.self,
+        TimedExerciseCatalog.self,
         StudioProject.self,
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
@@ -87,6 +88,7 @@ enum SnappetBackup {
         var workoutSessions: [WorkoutSessionRow] = []
         var customExercises: [CustomExerciseRow] = []
         var sessionMedia: [SessionMediaRow] = []
+        var timedExerciseCatalog: [TimedExerciseCatalogRow] = []
         var studioProjects: [StudioProjectRow] = []
         var tipCalculations: [TipCalculationRow] = []
         var kilterLogEntries: [KilterLogEntryRow] = []
@@ -118,6 +120,7 @@ enum SnappetBackup {
             n += workoutSessions.count
             n += customExercises.count
             n += sessionMedia.count
+            n += timedExerciseCatalog.count
             n += studioProjects.count
             n += tipCalculations.count
             n += kilterLogEntries.count
@@ -186,6 +189,7 @@ enum SnappetBackup {
         file.workoutSessions = try all(WorkoutSession.self).map(WorkoutSessionRow.init).sorted(by: rowKey)
         file.customExercises = try all(CustomExercise.self).map(CustomExerciseRow.init).sorted(by: rowKey)
         file.sessionMedia = try all(SessionMedia.self).map(SessionMediaRow.init).sorted(by: rowKey)
+        file.timedExerciseCatalog = try all(TimedExerciseCatalog.self).map(TimedExerciseCatalogRow.init).sorted(by: rowKey)
         file.studioProjects = try all(StudioProject.self).map(StudioProjectRow.init).sorted(by: rowKey)
         file.tipCalculations = try all(TipCalculation.self).map(TipCalculationRow.init).sorted(by: rowKey)
         file.kilterLogEntries = try all(KilterLogEntry.self).map(KilterLogEntryRow.init).sorted(by: rowKey)
@@ -254,6 +258,8 @@ enum SnappetBackup {
             uniqued(file.customExercises, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(SessionMedia.self)
             uniqued(file.sessionMedia, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(TimedExerciseCatalog.self)
+            uniqued(file.timedExerciseCatalog, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(StudioProject.self)
             uniqued(file.studioProjects, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(TipCalculation.self)
@@ -555,6 +561,28 @@ extension SnappetBackup {
             media.kindRaw = kindRaw
             media.assignmentSourceRaw = assignmentSourceRaw
             return media
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    struct TimedExerciseCatalogRow: BackupRow {
+        var id: UUID
+        var name: String
+        var categoryRaw: String
+        var specData: Data?
+        var createdAt: Date
+        var lastUsedAt: Date?
+
+        init(_ m: TimedExerciseCatalog) {
+            id = m.id; name = m.name; categoryRaw = m.categoryRaw
+            specData = m.specData; createdAt = m.createdAt; lastUsedAt = m.lastUsedAt
+        }
+        func make() -> TimedExerciseCatalog {
+            let c = TimedExerciseCatalog(id: id, name: name, createdAt: createdAt, lastUsedAt: lastUsedAt)
+            // Raw, not via the enum/spec init: stored bytes survive verbatim (the raws-stay-raw rule).
+            c.categoryRaw = categoryRaw
+            c.specData = specData
+            return c
         }
         var sortKey: String { id.uuidString }
     }

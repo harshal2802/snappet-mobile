@@ -5195,3 +5195,49 @@ the changed files); full `SnappetTests` green (829, 2 skipped, 0 failures); new
 the `freeform.statsExpand` sheet shows the `freeform.statsPyramid`) passed on the simulator. The HR
 **Effort** block is HR-data-gated, so it's exercised only on a session that carries `hrSeries` (a
 device/recorded session) — the ribbon, pyramid, counts, and milestone paths are all sim-verified.
+
+## [2026-06-18] iOS — Quick Session redesign Phase 5: timed-exercise hierarchy + catalog (pick or create)
+
+**Decision** (`pdd/prompts/features/quick-session-redesign/05-timed-exercise-catalog.md`): give timed
+exercises the same first-class, *named* hierarchy climbs got in Phase 1. Tapping **Timed** (the empty-state
+`freeform.cardTimed` card OR the add-menu "Timed exercise") now opens a **`PickTimedExerciseSheet`**
+(searchable catalog · "Create new" pinned · recents · category groups · seeded suggestions) instead of
+dropping a bare unnamed `.duration` row; selecting/creating one drops a **named timed card** whose timed
+sets log underneath it like a climb's attempts. Named exercises **persist** for reuse.
+
+- **`TimedExerciseSpec` is a pure `Shared/` value type, presets only PRE-FILL.** The structure
+  (`mode` ∈ openCountUp/maxHang/countDown/repeaters/tabata/emom + work/rest/reps/sets/restBetweenSets/
+  leadInSec) lives in `ios/App/Shared/TimedExerciseSpec.swift` (Codable/Sendable/Hashable, compiled into
+  every target via the `project.yml` `Shared` glob, like `HeartRateZone`). Pure `totalSeconds` (lead-in +
+  all work + inter-rep rest + between-set rest, NO trailing rest) and one-line `summary` ("7:3 × 6 · 6
+  sets" / "10s hold" / "Count up"); protocol-preset static factories (`.repeaters7x3x6`, `.maxHang10/7`,
+  `.tabata`, `.emom`, `.hold(_)`). **A user-edited value is NEVER snapped back to a preset** (the Tindeq
+  antipattern) — chips pre-fill the form, nothing more. Unit-tested (`TimedExerciseSpecTests`).
+
+- **`TimedExerciseCatalog` is the persisted `@Model`; suggestions are in-memory.** New `@Model`
+  (`id/name/categoryRaw/specData/createdAt/lastUsedAt`) registered in **`SnappetSchema.models`** AND
+  mirrored by a `TimedExerciseCatalogRow` in **`SnappetBackup`** (the enforced invariant — `SnappetBackupTests`
+  now seeds one row and asserts `recordCount == 22`). The **structure rides `specData`** (an encoded
+  `TimedExerciseSpec`), not a fan of columns, so the value type stays the single source of truth and adding
+  a mode never migrates the model. Built-in starters (`7s max hang`, `Dead hang`, `Repeaters`, `Plank`,
+  `Wall sit`, `Tabata`) are **in-memory `Suggestion`s**, not seeded rows — the catalog is never an empty
+  void without writing rows the user didn't ask for; "Save to my exercises" is how a pick graduates into a
+  persisted row. Recents = saved rows with a `lastUsedAt`, newest-first (`@Query` sort).
+
+- **`SessionExercise` gains additive `timedSpecData`/`timedCategory` (migration-safe).** Mirrors the
+  Phase-1 climb fields — additive Optionals decode `nil` on legacy data (an old unnamed "Timed exercise"
+  renders as a plain open count-up), and the `WorkoutSessionRow` already snapshots `exercises` wholesale so
+  backup round-trips them with no codec change. `timedSpec` is the computed Codable bridge.
+
+- **Phase 5 reuses the simple `StopwatchView` timer; the structured runner is Phase 6.** The named card's
+  "Add set" opens the existing `LogSetSheet(.duration)` Timer path (the timer measurement IS the log →
+  `SetLog(durationSec:)`; Manual stays as a fallback; one-tap Repeat kept). For a **max-hang / count-down**
+  spec the dial is armed to count **down** from `workSec` (`StopwatchTiming.Mode.countDown`) — the captured
+  value is still the *elapsed time held*, so logging is unchanged. The structured repeaters/tabata/emom
+  interval runner is **deferred to Phase 6** (the spec already carries the parameters it will read).
+
+**Verified:** `xcodegen generate` + `xcodebuild build-for-testing` clean (0 errors / 0 new warnings in the
+changed files); full `SnappetTests` green incl. new `TimedExerciseSpecTests` and the `SnappetBackupTests`
+drift+round-trip tripwire; `SnappetUITests/TimedSetTimerTests` (pick a seeded suggestion → named card → log
+a timed set with the live timer; AND create "10s hang" count-down + preset → named card → log a set) on the
+simulator. Structured interval runner deferred to Phase 6.

@@ -268,10 +268,26 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     /// Gym / location — captured once and inherited by later climbs in the session; free text.
     var gym: String?
 
+    // MARK: - Timed metadata (Quick Session redesign Phase 5). A `.duration` exercise IS the timed
+    // exercise (the timed analogue of the climb-first hierarchy); its `sets` are the timed holds logged
+    // underneath it. Captured once in the pick-or-create sheet, inherited by every set. Additive
+    // Optionals → SwiftData lightweight migration (the climb-fields precedent); legacy unnamed "Timed
+    // exercise" rows decode with `nil` and render as a plain open count-up.
+    /// An encoded `TimedExerciseSpec` — the structure (mode/work/rest/reps/sets). `nil` ⇒ open count-up.
+    var timedSpecData: Data?
+    /// `TimedExerciseCategory.rawValue`; `nil` ⇒ `.other` (legacy/default).
+    var timedCategory: String?
+
     var completedSetCount: Int { sets.filter { $0.completedAt != nil }.count }
 
     /// What each set in this exercise measures (defaults to reps & weight for legacy/routine data).
     var kind: SetKind { kindRaw.flatMap(SetKind.init) ?? .repsWeight }
+
+    /// The timed exercise's structure (decoded from `timedSpecData`); `nil` ⇒ a plain open count-up.
+    var timedSpec: TimedExerciseSpec? {
+        get { timedSpecData.flatMap { try? JSONDecoder().decode(TimedExerciseSpec.self, from: $0) } }
+        set { timedSpecData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
 
     /// The climb's discipline (defaults to boulder for legacy/unset climbs).
     var climbType: ClimbType { climbTypeRaw.flatMap(ClimbType.init) ?? .boulder }
