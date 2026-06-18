@@ -59,6 +59,18 @@ struct FreeformPlayerView: View {
     @State private var showingDiscard = false
     /// The expandable live-metrics & recovery panel (§E), opened from the command-bar HR chip.
     @State private var showingMetrics = false
+    /// The expanded live climbing-stats sheet (Phase 3), opened from the stat ribbon.
+    @State private var showingClimbStats = false
+    /// Cached climbing stats for the docked ribbon, recomputed on `session.exercises` change (like
+    /// `prefills`) so the ~1 Hz body re-render never re-derives the pyramid. (Phase 3)
+    @State private var climbStats: KilterSessionStats?
+    /// Milestones already celebrated **this session** (by a stable string key), so the at-logging
+    /// celebration fires once per genuine new best — never on every attempt. (Phase 3 §3)
+    @State private var celebratedMilestones: Set<String> = []
+    /// The headline of the most recent at-logging milestone — shown briefly as a banner; its
+    /// `.celebrates(on:)` trigger is `milestoneTrigger`. (Phase 3 §3)
+    @State private var liveMilestoneHeadline: String?
+    @State private var milestoneTrigger = 0
     /// A freeform clip opened in the shared Studio editor (§G).
     @State private var studioClip: FreeformStudioPresentation?
     @ScaledMetric(relativeTo: .largeTitle) private var doneSealSize: CGFloat = 72
@@ -78,6 +90,9 @@ struct FreeformPlayerView: View {
             ScrollViewReader { proxy in
             List {
                 titleSection
+                // Live climbing stats ribbon (Phase 3): docked above the climb cards, only once any
+                // climbing has been logged. A full-width tappable row → the expanded stats sheet.
+                if FreeformClimbStats.hasClimbing(session) { statsRibbonSection }
                 if session.exercises.isEmpty { emptyStateHero }
                 ForEach(session.exercises) { ex in exerciseSection(ex) }
             }
@@ -122,7 +137,12 @@ struct FreeformPlayerView: View {
                 }
             }
             }
+            // At-logging milestone banner (Phase 3 §3): a brief glass headline over the top of the
+            // logbook for a genuine new best (first-of-grade send / new hardest / flash). The burst +
+            // haptic fire via `.celebrates(on:)`; Reduce Motion shows the static text + haptic only.
+            .overlay(alignment: .top) { milestoneBanner }
         }
+        .celebrates(on: milestoneTrigger)
         .interactiveDismissDisabled()
         .sheet(isPresented: $pickingLift) {
             ExercisePickerView(resolver: resolver) { picked in addLifting(picked) }
@@ -134,6 +154,10 @@ struct FreeformPlayerView: View {
         }
         .sheet(isPresented: $showingMetrics) {
             LiveMetricsPanel(session: session)
+        }
+        // The expanded live climbing-stats sheet (Phase 3), presented from the stat ribbon.
+        .sheet(isPresented: $showingClimbStats) {
+            LiveClimbStatsSheet(session: session, maxHR: zoneMaxHR)
         }
         // Quick Session redesign Phase 1: tapping Climbing opens the climb-first "Add a climb" sheet
         // (type → scale-aware grade → name → gym) instead of dropping a bare attempt row.
@@ -173,9 +197,13 @@ struct FreeformPlayerView: View {
         .onAppear {
             app.workoutNotifications.requestAuthorization()
             recomputePrefills()
+            recomputeClimbStats()
             pushLiveActivity()
         }
-        .onChange(of: session.exercises.count) { _, _ in recomputePrefills() }
+        .onChange(of: session.exercises.count) { _, _ in
+            recomputePrefills()
+            recomputeClimbStats()
+        }
         // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
         // live HR and the paused state push as they change. The overall timer self-ticks off
         // `startedAt`; these refresh HR + the exercise line + the paused flag. Mirrors `WorkoutPlayerView`.
@@ -206,6 +234,97 @@ struct FreeformPlayerView: View {
                 .submitLabel(.done)
                 .onSubmit { persist(); pushLiveActivity() }
                 .accessibilityIdentifier("freeform.sessionTitle")
+        }
+    }
+
+    // MARK: - Live stats ribbon (Phase 3)
+
+    /// The docked climbing stats ribbon: a full-width tappable row — hero "N sends", "hardest <grade>"
+    /// (omitted until a send exists), and an inline mini-pyramid (bars by grade). Before the first send
+    /// it teaches ("Send one to start your pyramid"). Reads the cached `climbStats` (recomputed on
+    /// `session.exercises` change). Tapping presents the expanded `LiveClimbStatsSheet`.
+    private var statsRibbonSection: some View {
+        Section {
+            Button { showingClimbStats = true } label: { statsRibbonContent }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.statsRibbon")
+                .accessibilityLabel(statsRibbonAccessibilityLabel)
+        }
+    }
+
+    private var statsRibbonContent: some View {
+        let s = climbStats
+        let sends = s?.sends ?? 0
+        return HStack(spacing: 12) {
+            Image(systemName: "chart.bar.xaxis").foregroundStyle(SnappetColor.moduleAccent("kilter"))
+            VStack(alignment: .leading, spacing: 4) {
+                if sends == 0 {
+                    // Pre-send teaching variant: there's logged climbing but no send yet.
+                    Text("Send one to start your pyramid")
+                        .font(.subheadline.weight(.medium))
+                } else {
+                    HStack(spacing: 8) {
+                        Text("\(sends) \(sends == 1 ? "send" : "sends")")
+                            .font(.headline.monospacedDigit())
+                        if let hardest = s?.hardestSendGrade {
+                            Text("· hardest \(hardest)")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let s, !s.pyramid.isEmpty { miniPyramid(s.pyramid) }
+                }
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 2)
+    }
+
+    /// A compact inline pyramid: a tiny bar per grade (height ∝ sends), easiest→hardest. Purely a
+    /// glanceable teaser of the full pyramid in the sheet.
+    private func miniPyramid(_ pyramid: [KilterSessionStats.GradeCount]) -> some View {
+        let maxSends = max(1, pyramid.map(\.sends).max() ?? 1)
+        return HStack(alignment: .bottom, spacing: 4) {
+            ForEach(pyramid) { g in
+                VStack(spacing: 2) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(SnappetColor.moduleAccent("kilter"))
+                        .frame(width: 10, height: 6 + 18 * CGFloat(g.sends) / CGFloat(maxSends))
+                    Text(g.gradeLabel)
+                        .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var statsRibbonAccessibilityLabel: String {
+        let sends = climbStats?.sends ?? 0
+        guard sends > 0 else { return "Climbing stats. Send a climb to start your pyramid." }
+        var label = "Climbing stats. \(sends) \(sends == 1 ? "send" : "sends")"
+        if let hardest = climbStats?.hardestSendGrade { label += ", hardest \(hardest)" }
+        return label
+    }
+
+    /// The transient at-logging milestone banner (Phase 3 §3) — a glass headline pinned to the top of
+    /// the logbook for a few seconds after a genuine new best. The `CelebrationBurst`/haptic fire via
+    /// the screen-level `.celebrates(on:)`; this is just the text. Reduce Motion → static (no burst).
+    @ViewBuilder
+    private var milestoneBanner: some View {
+        if let headline = liveMilestoneHeadline {
+            HStack(spacing: 8) {
+                Image(systemName: "trophy.fill").foregroundStyle(SnappetColor.kilter)
+                Text(headline).font(.headline)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(SnappetColor.kilter.opacity(0.4)))
+            .padding(.top, 8)
+            .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityIdentifier("freeform.liveMilestone")
         }
     }
 
@@ -755,8 +874,47 @@ struct FreeformPlayerView: View {
         entry.completedAt = .now
         session.exercises[idx].sets.append(entry)
         persist()
+        recomputeClimbStats()
         pushLiveActivity()
         Haptics.success()
+        // At-logging milestone (Phase 3 §3): after the append, diff the session's milestones against
+        // the prior history and celebrate any NEW genuine best (first-of-grade send / new hardest /
+        // flash). Fires once per milestone — never on every attempt. Reduce Motion → haptic + static
+        // text only (handled by `.celebrates(on:)`).
+        checkLiveMilestones()
+    }
+
+    /// Recompute milestones against prior history and celebrate each one not yet celebrated this
+    /// session. `FreeformSummary.milestones` already gates to genuine new bests (a first weighted PR / a
+    /// first send of a grade with no prior send in history); the `celebratedMilestones` set dedupes so a
+    /// repeated send of an already-celebrated grade is silent. The most recent fresh headline shows as a
+    /// banner (auto-dismissed) and bumps the burst/haptic trigger.
+    private func checkLiveMilestones() {
+        let milestones = FreeformSummary.milestones(for: session, history: history)
+        var fresh: FreeformSummary.Milestone?
+        for m in milestones {
+            let key = milestoneKey(m)
+            if celebratedMilestones.insert(key).inserted { fresh = m }
+        }
+        guard let fresh else { return }
+        withAnimation { liveMilestoneHeadline = FreeformSummary.milestoneHeadline(fresh) }
+        milestoneTrigger += 1   // drives `.celebrates(on:)` (burst + Haptics.success, RM-aware)
+        // Auto-dismiss the banner after a beat so it doesn't linger over the logbook.
+        let shown = fresh
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
+            if liveMilestoneHeadline == FreeformSummary.milestoneHeadline(shown) {
+                withAnimation { liveMilestoneHeadline = nil }
+            }
+        }
+    }
+
+    /// A stable string key per milestone so `celebratedMilestones` dedupes across re-derivations.
+    private func milestoneKey(_ milestone: FreeformSummary.Milestone) -> String {
+        switch milestone {
+        case .personalRecord(let exerciseId, _, _): return "pr:\(exerciseId)"
+        case .firstSend(let grade):                 return "send:\(grade)"
+        }
     }
 
     /// One-tap "Repeat set": append a copy of `ex`'s most recent set (all kind-specific fields via the
@@ -791,6 +949,22 @@ struct FreeformPlayerView: View {
             }
         }
         prefills = map
+    }
+
+    /// Cache the climbing stats for the ribbon (Phase 3). Pure + cheap, but cached the same way as
+    /// `prefills` so the ~1 Hz command-bar re-render (HR/timer) never re-derives the pyramid. `nil` when
+    /// there's no climbing yet (the ribbon is hidden via `hasClimbing`). Live "end" = now; the ribbon
+    /// shows sends/hardest/pyramid only (no HR), so the empty `hrSeries` default is fine here.
+    private func recomputeClimbStats() {
+        climbStats = FreeformClimbStats.hasClimbing(session)
+            ? FreeformClimbStats.stats(for: session, now: .now)
+            : nil
+    }
+
+    /// The zone ceiling for the live stats sheet's Effort block: the session's own snapshot, else the
+    /// live profile, else the fixed default. Mirrors `KilterSessionDetailView.zoneMaxHR`.
+    private var zoneMaxHR: Double {
+        session.maxHR ?? app.userProfile.profile.resolvedMaxHR ?? HeartRateZone.defaultMaxHR
     }
 
     // MARK: - Live clips (§F)

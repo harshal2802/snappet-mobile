@@ -5153,3 +5153,45 @@ exists because Core Animation can't redraw text per frame) and the drag/corner-r
 (774, incl. new `HRTileLayoutTests` / `HRTileTests` / `HRTileCodableTests` / `HRTileMigrationTests` /
 `HRTileResolveTests` + the determinism regression); the studio walkthrough XCUITest now drives the tile
 builder (enable → pick Bento → toggle a metric → dismiss).
+
+## [2026-06-18] iOS — Quick Session redesign Phase 3: live climbing stats ribbon + at-logging milestones
+
+**Decision** (`pdd/prompts/features/quick-session-redesign/03-...`): the freeform player gets a docked
+**stat ribbon** above the climb cards (shown only when `FreeformClimbStats.hasClimbing`) — hero "N
+sends" · "hardest <grade>" (omitted pre-send) · an inline mini-pyramid, with a pre-send teaching
+variant — tapping it presents a read-only **`LiveClimbStatsSheet`** (hero Sends/Hardest/Sends-hr tiles,
+the full grade pyramid, projects/attempts, median time, time-on-wall-vs-rest, and an Effort block when
+HR is present). And after every log, a **milestone celebration** fires for a genuine new best.
+
+- **Reuse the pure helpers, don't re-derive.** The ribbon + sheet read `FreeformClimbStats.stats`
+  (which bridges the freeform climbs into the exact `KilterSessionStats` the Kilter board flow
+  computes) and `WorkoutHRStats` for the HR roll-up; the views do **no** stats math. The milestone
+  diff reuses `FreeformSummary.milestones(for:history:)` — the same gate the done-screen uses — so
+  "new hardest" for climbing falls out naturally as a `firstSend` of a harder grade (the existing
+  `Milestone` enum is `firstSend` + weighted `personalRecord`; not expanded).
+
+- **Cache the ribbon stats like `prefills`.** `climbStats` is `@State`, recomputed on `session.exercises`
+  change (and on append), NOT per render — the command bar re-renders ~1 Hz off the HR/timer, and
+  re-deriving the pyramid each tick would be wasteful. `hasClimbing` (cheap) still gates the ribbon
+  inline per render so the row appears the instant the first attempt lands.
+
+- **Pyramid is a local `BarMark`, not a shared view.** The Kilter summary's pyramid (`pyramidSection`)
+  is a **private** func on `KilterSessionDetailView` (depends on its private `kilterGrade` helper), so
+  it can't be reused across files; per the prompt, `LiveClimbStatsSheet` carries its own small Swift
+  Charts `BarMark` pyramid (`freeform.statsPyramid`, `chartYScale` pinned to the easiest→hardest order).
+  The **`ZoneBar`** (heart-rate zone bar) IS a shared `struct` view, so that's reused as-is.
+
+- **At-logging celebration fires once per milestone, never per attempt.** `appendLog` (the single funnel
+  both `logAttempt` and the inline outcome strip route through) calls `checkLiveMilestones()`, which
+  diffs the freeform milestones against a `celebratedMilestones: Set<String>` (stable key: `pr:<id>` /
+  `send:<grade>`). A new key → a transient `freeform.liveMilestone` banner + a `milestoneTrigger` bump
+  driving the screen-level `.celebrates(on:)` (`CelebrationBurst` + `Haptics.success`, already
+  Reduce-Motion-aware: haptic + static text, no confetti). A repeat send of an already-celebrated grade
+  is silent. The done-screen milestone burst (Phase D) is unchanged and independent.
+
+**Verified:** `xcodegen generate` + `xcodebuild build-for-testing` clean (0 errors / 0 new warnings in
+the changed files); full `SnappetTests` green (829, 2 skipped, 0 failures); new
+`SnappetUITests/LiveClimbStatsTests` (add a climb → log a Sent attempt → ribbon reads "1 send" → tap →
+the `freeform.statsExpand` sheet shows the `freeform.statsPyramid`) passed on the simulator. The HR
+**Effort** block is HR-data-gated, so it's exercised only on a session that carries `hrSeries` (a
+device/recorded session) — the ribbon, pyramid, counts, and milestone paths are all sim-verified.
