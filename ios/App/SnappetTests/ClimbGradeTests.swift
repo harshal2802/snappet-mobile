@@ -92,4 +92,40 @@ final class ClimbGradeTests: XCTestCase {
                           "\(scale).defaultGrade (\(scale.defaultGrade)) is a real rung")
         }
     }
+
+    // MARK: - ClimbColor
+
+    func testClimbColorPaletteIsDistinctAndLabelled() {
+        let all = ClimbColor.allCases
+        XCTAssertGreaterThanOrEqual(all.count, 10)
+        // Every colour has a distinct hex + a capitalised label, and round-trips through its rawValue.
+        XCTAssertEqual(Set(all.map(\.hexValue)).count, all.count, "swatch hexes are distinct")
+        for c in all {
+            XCTAssertEqual(c.label, c.rawValue.capitalized)
+            XCTAssertEqual(ClimbColor(rawValue: c.rawValue), c)
+        }
+        XCTAssertTrue(ClimbColor.white.needsRing, "white needs a ring to read on a light card")
+        XCTAssertFalse(ClimbColor.blue.needsRing)
+        XCTAssertNil(ClimbColor(rawValue: "chartreuse"))
+    }
+
+    // MARK: - Per-gym wall / recents merge (AddClimbSheet.mergedRecents)
+
+    func testMergedRecentsIsMostRecentFirstDedupedAndCapped() {
+        // most-recent-first, case-insensitive dedupe, capped.
+        var r = AddClimbSheet.mergedRecents([], adding: "Cave", cap: 6)
+        XCTAssertEqual(r, ["Cave"])
+        r = AddClimbSheet.mergedRecents(r, adding: "Slab", cap: 6)
+        XCTAssertEqual(r, ["Slab", "Cave"])
+        r = AddClimbSheet.mergedRecents(r, adding: "cave", cap: 6)        // dedupe case-insensitively, re-promote
+        XCTAssertEqual(r, ["cave", "Slab"])
+        // blank is ignored; trims whitespace.
+        XCTAssertEqual(AddClimbSheet.mergedRecents(["A"], adding: "   ", cap: 6), ["A"])
+        XCTAssertEqual(AddClimbSheet.mergedRecents([], adding: "  Roof  ", cap: 6), ["Roof"])
+        // cap holds the newest.
+        let capped = ["e", "d", "c", "b", "a"].reduce(into: [String]()) { acc, x in
+            acc = AddClimbSheet.mergedRecents(acc, adding: x, cap: 3)
+        }
+        XCTAssertEqual(capped, ["a", "b", "c"])
+    }
 }

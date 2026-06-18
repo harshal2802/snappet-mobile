@@ -654,6 +654,7 @@ struct FreeformPlayerView: View {
                 }
                 .id(ex.id)
                 Spacer(minLength: 4)
+                colorSwatch(ex)
                 gradePill(ex)
                 Button {
                     toggleExpanded(ex)
@@ -670,6 +671,7 @@ struct FreeformPlayerView: View {
                     }
                 } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
             }
+            climbLocationLine(ex)
             HStack(spacing: 8) {
                 statusBadge(ex)
                 Text(attemptCountLabel(ex))
@@ -681,6 +683,32 @@ struct FreeformPlayerView: View {
         }
         .textCase(nil)
         .padding(.vertical, 2)
+    }
+
+    /// A small colour swatch (the climb's hold/tape colour) shown next to the grade pill; hidden when the
+    /// climb has no colour tagged. A near-white swatch gets a hairline ring so it reads on the card.
+    @ViewBuilder
+    private func colorSwatch(_ ex: SessionExercise) -> some View {
+        if let c = ex.climbColor {
+            Circle()
+                .fill(Color(hex: c.hexValue))
+                .frame(width: 14, height: 14)
+                .overlay(Circle().stroke(Color.primary.opacity(c.needsRing ? 0.3 : 0.12), lineWidth: 1))
+                .accessibilityIdentifier("freeform.colorSwatch")
+                .accessibilityLabel("\(c.label) climb")
+        }
+    }
+
+    /// The "📍 gym · wall" caption under the climb name; shown only when a gym and/or wall was captured.
+    @ViewBuilder
+    private func climbLocationLine(_ ex: SessionExercise) -> some View {
+        let parts = [ex.gym, ex.wall].compactMap { $0?.isEmpty == false ? $0 : nil }
+        if !parts.isEmpty {
+            Label(parts.joined(separator: " · "), systemImage: "mappin.and.ellipse")
+                .font(.caption2).foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+                .accessibilityIdentifier("freeform.climbLocation")
+        }
     }
 
     /// The footer of an expanded climb card: "+ Log attempt" → an inline outcome strip (four type-aware
@@ -971,6 +999,8 @@ struct FreeformPlayerView: View {
         climb.climbGradeLabel = params.grade
         climb.climbGradeScaleRaw = params.scale.rawValue
         climb.gym = params.gym
+        climb.wall = params.wall
+        climb.climbColorRaw = params.color?.rawValue
         session.exercises.append(climb)
         expandedClimbs.insert(climb.id)
         if logFirstAttempt { loggingAttemptFor.insert(climb.id) }

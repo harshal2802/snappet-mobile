@@ -25,8 +25,12 @@ struct AddClimbSheet: View {
     @State private var type: ClimbType = .boulder
     @State private var scale: GradeScale = .vScale
     @State private var grade: String = GradeScale.vScale.defaultGrade
+    /// The route's hold/tape colour, picked next to the grade; optional (`nil` ⇒ untagged).
+    @State private var color: ClimbColor?
     @State private var name: String = ""
     @State private var gym: String = ""
+    /// The wall within the gym — free text, suggested per-gym (a gym has many walls).
+    @State private var wall: String = ""
     @State private var showMore = false
 
     /// The last ~5 grades picked per scale, surfaced as a one-tap chip rail. Keyed per scale so the V
@@ -36,6 +40,9 @@ struct AddClimbSheet: View {
     /// The last ~5 gyms entered, surfaced as a one-tap chip rail under "More · gym" (Phase 7) — so a gym
     /// is one tap, never re-typed. Persisted in `UserDefaults` like the recent grades; not scale-keyed.
     @State private var recentGyms: [String] = []
+    /// The walls previously logged at the CURRENTLY-selected gym, surfaced as one-tap chips (a gym has
+    /// many walls). Reloaded whenever the gym changes; empty until a gym is set. Persisted per-gym.
+    @State private var recentWalls: [String] = []
     /// One-shot guard so a double/triple-tapped CTA (a user mash, or XCUITest delivering the tap more
     /// than once as the sheet settles — the documented double-fire hazard) creates exactly ONE climb.
     @State private var committed = false
@@ -52,9 +59,12 @@ struct AddClimbSheet: View {
         return trimmed.isEmpty ? type.label : trimmed
     }
 
+    private var trimmedGym: String? { gym.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+    private var trimmedWall: String? { wall.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+
     private var params: AddClimbParams {
         AddClimbParams(type: type, scale: scale, grade: grade, name: resolvedName,
-                       gym: gym.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty)
+                       gym: trimmedGym, wall: trimmedWall, color: color)
     }
 
     var body: some View {
@@ -81,6 +91,7 @@ struct AddClimbSheet: View {
             grade = scale.defaultGrade
             recentGrades = Self.loadRecents(scale: scale)
             recentGyms = Self.loadRecentGyms()
+            recentWalls = Self.loadWalls(forGym: trimmedGym)   // walls for the inherited gym, if any
             // Surface the gym affordance when there's a remembered gym to one-tap (recents OR inherited),
             // so the chip rail / prefilled gym is discoverable without hunting under the disclosure.
             if !recentGyms.isEmpty || (inheritedGym?.isEmpty == false) { showMore = true }
@@ -173,11 +184,60 @@ struct AddClimbSheet: View {
                 .onAppear { proxy.scrollTo(grade, anchor: .center) }
                 .onChange(of: grade) { _, g in withAnimation { proxy.scrollTo(g, anchor: .center) } }
             }
+
+            colorRow
         } header: {
             Text("Grade · \(scale.label)")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("addClimb.grade")
+    }
+
+    /// The climb-colour picker — a horizontal swatch rail next to the grade (the gym sets routes by hold
+    /// colour). Optional: a "None" chip clears it; tapping the selected colour again also clears. The
+    /// chosen colour name is mirrored on a queryable `addClimb.colorValue` ("none" when unset).
+    private var colorRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Colour").font(.subheadline.weight(.medium))
+                Text(color?.label ?? "None")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("addClimb.colorValue")
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    // "None" clear chip.
+                    Button { color = nil } label: {
+                        Image(systemName: "slash.circle")
+                            .font(.title3)
+                            .foregroundStyle(color == nil ? SnappetColor.workout : .secondary)
+                            .frame(width: 30, height: 30)
+                            .overlay(Circle().stroke(color == nil ? SnappetColor.workout : Color.clear, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("addClimb.color.none")
+                    .accessibilityLabel("No colour")
+
+                    ForEach(ClimbColor.allCases) { c in
+                        Button { color = (color == c) ? nil : c } label: {
+                            Circle()
+                                .fill(Color(hex: c.hexValue))
+                                .frame(width: 30, height: 30)
+                                .overlay(
+                                    Circle().stroke(Color.primary.opacity(c.needsRing ? 0.3 : 0),
+                                                    lineWidth: 1))
+                                .overlay(
+                                    Circle().stroke(SnappetColor.workout, lineWidth: color == c ? 3 : 0)
+                                        .padding(-3))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("addClimb.color.\(c.rawValue)")
+                        .accessibilityLabel(c.label)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
     }
 
     private var nameSection: some View {
@@ -190,10 +250,13 @@ struct AddClimbSheet: View {
 
     private var moreSection: some View {
         Section {
-            DisclosureGroup("More · gym", isExpanded: $showMore) {
+            DisclosureGroup("More · gym · wall", isExpanded: $showMore) {
                 TextField("Gym / location", text: $gym)
                     .submitLabel(.done)
                     .accessibilityIdentifier("addClimb.gym")
+                    // A gym has many walls, so the wall suggestions are scoped to the gym: whenever the gym
+                    // changes (typed or chip-tapped), reload that gym's previously-logged walls.
+                    .onChange(of: gym) { _, _ in recentWalls = Self.loadWalls(forGym: trimmedGym) }
                 // Recent-gym chips (Phase 7): a one-tap rail of the last few gyms so a gym is never
                 // re-typed. Same persisted-recents idiom as the grade rail.
                 if !recentGyms.isEmpty {
@@ -208,6 +271,29 @@ struct AddClimbSheet: View {
                         }
                         .padding(.vertical, 2)
                     }
+                }
+
+                // Wall (within the gym). Free text + a chip rail of walls previously logged AT THE
+                // SELECTED GYM — so once you pick a gym, its walls are one tap (and a new wall typed here
+                // becomes a future suggestion for that gym).
+                TextField("Wall (optional)", text: $wall)
+                    .submitLabel(.done)
+                    .accessibilityIdentifier("addClimb.wall")
+                if !recentWalls.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(recentWalls, id: \.self) { w in
+                                chip(w, selected: w == wall.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                                    wall = w
+                                }
+                                .accessibilityIdentifier("addClimb.recentWall.\(w)")
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                } else if trimmedGym != nil {
+                    Text("New walls you log at this gym will show up here.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -269,7 +355,10 @@ struct AddClimbSheet: View {
         guard !committed else { return }   // ignore a double/triple-fired CTA → exactly one climb
         committed = true
         Self.rememberRecent(grade, scale: scale)
-        if let g = params.gym { Self.rememberRecentGym(g) }   // remember the gym for the one-tap rail (Phase 7)
+        if let g = params.gym {
+            Self.rememberRecentGym(g)                 // remember the gym for the one-tap rail (Phase 7)
+            if let w = params.wall { Self.rememberWall(w, forGym: g) }   // remember the wall PER gym
+        }
         onAdd(params, logFirstAttempt)
         dismiss()
     }
@@ -300,12 +389,49 @@ struct AddClimbSheet: View {
 
     /// Most-recent-first, de-duplicated (case-insensitively), capped at 5 — the gym chip-rail order.
     private static func rememberRecentGym(_ gym: String) {
-        let trimmed = gym.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        var recents = loadRecentGyms()
-        recents.removeAll { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
-        recents.insert(trimmed, at: 0)
-        UserDefaults.standard.set(Array(recents.prefix(5)), forKey: recentGymsKey)
+        UserDefaults.standard.set(mergedRecents(loadRecentGyms(), adding: gym, cap: 5), forKey: recentGymsKey)
+    }
+
+    // MARK: - Per-gym wall store (a gym has many walls; suggestions are scoped to the selected gym)
+
+    private static let gymWallsKey = "freeform.gymWalls"
+
+    /// Pure: most-recent-first, case-insensitively de-duplicated, capped — the recents-rail order. Shared
+    /// by the wall (and gym) rails so the ordering rule is one tested definition.
+    static func mergedRecents(_ existing: [String], adding value: String, cap: Int) -> [String] {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !v.isEmpty else { return existing }
+        var out = existing.filter { $0.caseInsensitiveCompare(v) != .orderedSame }
+        out.insert(v, at: 0)
+        return Array(out.prefix(cap))
+    }
+
+    /// Map key for a gym (trim + lowercase) so "The Front" and "the front " share their wall list.
+    private static func gymKey(_ gym: String) -> String {
+        gym.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func loadGymWalls() -> [String: [String]] {
+        guard let data = UserDefaults.standard.data(forKey: gymWallsKey),
+              let map = try? JSONDecoder().decode([String: [String]].self, from: data) else { return [:] }
+        return map
+    }
+
+    /// The walls previously logged at `gym` (most-recent-first); empty when the gym is unset/unknown.
+    static func loadWalls(forGym gym: String?) -> [String] {
+        guard let gym, !gymKey(gym).isEmpty else { return [] }
+        return loadGymWalls()[gymKey(gym)] ?? []
+    }
+
+    /// Record `wall` under `gym` — scoped per gym, so a wall suggested for one gym never bleeds to another.
+    static func rememberWall(_ wall: String, forGym gym: String) {
+        let key = gymKey(gym)
+        guard !key.isEmpty, !wall.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        var map = loadGymWalls()
+        map[key] = mergedRecents(map[key] ?? [], adding: wall, cap: 6)
+        if let data = try? JSONEncoder().encode(map) {
+            UserDefaults.standard.set(data, forKey: gymWallsKey)
+        }
     }
 }
 
@@ -316,6 +442,8 @@ struct AddClimbParams {
     let grade: String
     let name: String
     let gym: String?
+    let wall: String?
+    let color: ClimbColor?
 }
 
 private extension String {

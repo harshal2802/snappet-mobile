@@ -137,3 +137,35 @@ enum GradeScale: String, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 }
+
+/// A climbing route/problem **colour** — the hold or tape colour a gym sets the climb in. A small curated
+/// palette (gyms set in a fixed-ish set of colours); an OPTIONAL tag on a climb, shown as a swatch next to
+/// the grade. Stored by name (rawValue) so it's Codable + migration-safe; the swatch colour is derived
+/// from `hexValue` via the existing `Color(hex:)`. Pure (Foundation only, no SwiftUI) → unit-tested.
+enum ClimbColor: String, Codable, CaseIterable, Sendable, Identifiable {
+    case red, orange, yellow, green, blue, purple, pink, white, black, teal, gray, brown
+    var id: String { rawValue }
+
+    var label: String { rawValue.capitalized }
+
+    /// `0xRRGGBB` swatch colour for `Color(hex:)` / `UIColor(rgb:)`.
+    var hexValue: UInt32 {
+        switch self {
+        case .red:    return 0xE5483D
+        case .orange: return 0xF2761E
+        case .yellow: return 0xF4C20D
+        case .green:  return 0x3F9D55
+        case .blue:   return 0x2A7DE1
+        case .purple: return 0x7C5CD6
+        case .pink:   return 0xEC4E8C
+        case .white:  return 0xF4F3F1
+        case .black:  return 0x1A1A1E
+        case .teal:   return 0x1592A6
+        case .gray:   return 0x9AA0A6
+        case .brown:  return 0x8B5A2B
+        }
+    }
+
+    /// Whether the swatch needs a visible hairline ring to read against a light card (the near-white one).
+    var needsRing: Bool { self == .white }
+}

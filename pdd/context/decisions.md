@@ -5334,3 +5334,27 @@ files); full `SnappetTests` green (866 tests, 2 skipped) incl. new `RestTimerDef
 timed → Finish → the type-adaptive summary with the climbing pyramid + Effort + New-PR milestone → Done) — a
 test that was already RED on the clean Phase-6 baseline (pre-existing CTA double-fire) and is green after this
 phase. Device-only: the keep-awake, the rest-timer at-zero haptic, and the clips→reel pipeline.
+
+## 2026-06-18 — Add-a-climb: wall name (gym→wall suggestions) + climb colour (prompt 08)
+
+On-device-feedback iteration on `AddClimbSheet` (Quick Session redesign):
+
+- **Wall is scoped to the gym, not global.** A gym has many walls, so wall suggestions live in a
+  per-gym map (`UserDefaults` key `freeform.gymWalls`, JSON `[gymKey: [wall]]`, gymKey = trimmed+lowercased
+  so "The Front"/"the front " share walls) — reloaded whenever the gym changes (typed or chip-tapped), and
+  empty until a gym is set. A newly-typed wall is remembered only under the current gym. Deliberately
+  mirrors the recent-gym rail but keyed per gym; the recents ordering (most-recent-first, case-insensitive
+  dedupe, capped) is now ONE pure tested helper `AddClimbSheet.mergedRecents`. `SessionExercise.wall` is an
+  additive optional; shown in the card's "📍 gym · wall" caption (new `freeform.climbLocation`).
+- **Colour is a curated palette, stored by name, swatch derived.** New pure `ClimbColor` enum (12 gym
+  hold/tape colours) with `hexValue: UInt32` so the swatch reuses the existing `Color(hex:)` — keeping
+  `ClimbColor` Foundation-only + unit-tested (no SwiftUI in the value type). Optional (a "None" clear chip;
+  re-tapping the selected colour clears it). Picked **next to the grade** (the user's placement), value
+  mirrored on `addClimb.colorValue`; shown as a 14pt swatch next to the grade pill on the card
+  (`freeform.colorSwatch`, near-white gets a hairline ring). `SessionExercise.climbColorRaw` additive
+  optional. Both fields migration-safe (no new @Model, no non-optional stored field).
+
+**Verified:** `build-for-testing` clean (0 errors / 0 warnings in changed files); `SnappetTests` green
+(**868**, +2 new: ClimbColor palette + mergedRecents); `SnappetUITests/NamedClimbTests` green. Sim note:
+the iPhone 17 Pro runner wedged ("hung before establishing connection") after a device build left MrRobot
+connected+locked — an `xcrun simctl erase` + a different sim model (iPhone 17) cleared it.

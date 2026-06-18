@@ -267,6 +267,10 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var climbGradeScaleRaw: String?
     /// Gym / location — captured once and inherited by later climbs in the session; free text.
     var gym: String?
+    /// The wall within the gym (a gym has many walls) — free text, suggested per-gym in the sheet.
+    var wall: String?
+    /// `ClimbColor.rawValue` — the route's hold/tape colour; `nil` ⇒ no colour tagged. Additive optional.
+    var climbColorRaw: String?
 
     // MARK: - Timed metadata (Quick Session redesign Phase 5). A `.duration` exercise IS the timed
     // exercise (the timed analogue of the climb-first hierarchy); its `sets` are the timed holds logged
@@ -293,6 +297,8 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var climbType: ClimbType { climbTypeRaw.flatMap(ClimbType.init) ?? .boulder }
     /// The grade scale the climb's grade is in (falls back to the type's default scale).
     var climbGradeScale: GradeScale { climbGradeScaleRaw.flatMap(GradeScale.init) ?? climbType.defaultScale }
+    /// The climb's tagged hold/tape colour, if any.
+    var climbColor: ClimbColor? { climbColorRaw.flatMap(ClimbColor.init) }
     /// The resolved outcome for the climb = the "best" status across its logged attempts (flash > sent >
     /// project > attempt), or `nil` when no attempt is logged yet. Drives the rolled-up card badge.
     var resolvedClimbStatus: KilterAscentStatus? {
