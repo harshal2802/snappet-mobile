@@ -253,10 +253,39 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     /// `SetKind.rawValue`; `nil` ⇒ `.repsWeight` (legacy/routine exercises). Additive → migration-safe.
     var kindRaw: String?
 
+    // MARK: - Climb metadata (Quick Session redesign). A `.climbAttempt` exercise IS the climb; its
+    // `sets` are the attempts logged underneath it. These describe the climb itself — captured once in
+    // the "Add a climb" sheet, inherited by every attempt. All additive Optionals → SwiftData lightweight
+    // migration (the `SetLog`/`hrSeries` precedent); legacy climbs decode with `nil` and render as a
+    // boulder with no grade.
+    /// `ClimbType.rawValue` (boulder/topRope/lead/sport); `nil` ⇒ boulder (legacy/default).
+    var climbTypeRaw: String?
+    /// The climb's grade label — the source of truth, edited at the climb level. Each logged attempt is
+    /// **stamped** with this so the pure send/pyramid/milestone reads stay per-`SetLog` and old data works.
+    var climbGradeLabel: String?
+    /// `GradeScale.rawValue` the grade is expressed in; `nil` ⇒ the type's default scale.
+    var climbGradeScaleRaw: String?
+    /// Gym / location — captured once and inherited by later climbs in the session; free text.
+    var gym: String?
+
     var completedSetCount: Int { sets.filter { $0.completedAt != nil }.count }
 
     /// What each set in this exercise measures (defaults to reps & weight for legacy/routine data).
     var kind: SetKind { kindRaw.flatMap(SetKind.init) ?? .repsWeight }
+
+    /// The climb's discipline (defaults to boulder for legacy/unset climbs).
+    var climbType: ClimbType { climbTypeRaw.flatMap(ClimbType.init) ?? .boulder }
+    /// The grade scale the climb's grade is in (falls back to the type's default scale).
+    var climbGradeScale: GradeScale { climbGradeScaleRaw.flatMap(GradeScale.init) ?? climbType.defaultScale }
+    /// The resolved outcome for the climb = the "best" status across its logged attempts (flash > sent >
+    /// project > attempt), or `nil` when no attempt is logged yet. Drives the rolled-up card badge.
+    var resolvedClimbStatus: KilterAscentStatus? {
+        let statuses = sets.compactMap { $0.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:)) }
+        let rank: (KilterAscentStatus) -> Int = {
+            switch $0 { case .flash: return 3; case .sent: return 2; case .project: return 1; case .attempt: return 0 }
+        }
+        return statuses.max { rank($0) < rank($1) }
+    }
 }
 
 /// One persisted heart-rate sample of a session's live HR series. `t` is seconds from
