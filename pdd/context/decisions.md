@@ -4,6 +4,62 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-18] Quick Session redesign Phase 1 — climb-first hierarchy (Add-a-climb sheet · expandable climb cards · attempts under climbs)
+
+**Decision**: turned the freeform **Climbing** flow from flat attempt rows into a **climb-first
+hierarchy** (`quick-session-redesign/PLAN.md` → Phase 1). Tapping Climbing (the empty-state
+`freeform.cardClimbing` card OR the add-menu "Climbing" button) now presents a new **`AddClimbSheet`**
+that captures the climb's identity ONCE — TYPE (drives the grade scale) → a scale-aware DISCRETE grade
+rung picker + recent-grade chips + V/Font·YDS/French toggle → optional NAME → optional GYM under a
+"More" disclosure (inherited from the session's most recent climb). The created climb is an
+**expandable card** (`climbSection`): a rolled-up header (type icon · inline-editable name
+`freeform.climbName` · grade pill · status badge · "N attempts" · time-on-climb) that toggles open to
+the attempt list + a footer ("+ Log attempt" → an inline outcome strip · "Timed attempt" · "Repeat
+last"). This fixes "you can't group three tries on the same V4 project". Lifting + Timed flows are
+unchanged this phase (`liftingOrTimedSection` keeps the flat set-list rendering + `LogSetSheet`).
+
+**Why these specific choices**:
+- **Grade is stamped onto each attempt `SetLog` (`climbGradeLabel`), captured once on the climb card.**
+  The pure `FreeformSummary` / `KilterMilestones` reads are per-`SetLog`, so stamping the climb grade
+  onto every attempt keeps sends/pyramid/milestones working **unchanged** and old flat data still
+  renders — no rewrite of the stats engines, no migration. The per-attempt **row** (`SetMeasure.attemptRow`)
+  shows only outcome (+ optional duration + tries), NOT the grade (the grade lives once on the header,
+  so repeating it per row would be noise). The existing `SetMeasure.summary(.climbAttempt)` is kept
+  verbatim for History / back-compat.
+- **Ember, not coral.** Primary CTAs/accents stay `SnappetColor.workout` (the module's established
+  ember) — NOT the research doc's "Pulse Coral" — for native consistency with the rest of the player.
+  Boulder grade pills use `SnappetColor.kilter` (amber); route pills a cool tint (`SnappetColor.budget`).
+- **Route status relabels reuse `KilterAscentStatus`** (no enum change): `ClimbType.statusLabel` only
+  **relabels** the four states for display (flash→Onsight, sent→Redpoint, project→Project, attempt→Fell)
+  so the outcome strip + status badge read naturally for ropes without touching the persisted vocabulary
+  or the send/pyramid math. Boulder uses the plain labels.
+- **`AddClimbSheet` a11y ids** (one per interactive leaf, the iOS-26 rule): `addClimb.type`,
+  `addClimb.grade` (container) + `addClimb.gradeValue` (the picked label, queryable), `addClimb.rung.<G>`
+  per rung, `addClimb.recent.<G>`, `addClimb.scaleToggle`, `addClimb.name`, `addClimb.gym`,
+  `addClimb.add` / `addClimb.addAndLog`. The card footer: `freeform.logAttempt`,
+  `freeform.outcome.<status>`, `freeform.timedAttempt` (+ the in-sheet `freeform.timedOutcome.<status>`),
+  `freeform.climbExpand`, `freeform.gradePill`, `freeform.climbStatus`; attempt rows keep `freeform.setRow`
+  and the climb name keeps `freeform.climbName`.
+- **Recent grades** persist per scale in `UserDefaults` (key `freeform.recentGrades.<scale>`), most-
+  recent-first, de-duplicated, capped at 5 — the warm path is two taps (recent chip → CTA).
+- **Timed attempt stays a minimal sheet for now** (`TimedAttemptSheet`: a count-up `StopwatchView`
+  whose Stop captures `durationSec`, then an inline outcome) — Phase 2 replaces it with a full-screen
+  FOCUS cover. The StopwatchView carries no `accessibilityIdentifier` itself (it would collapse the
+  composite and hide the inner `stopwatch.toggle` on iOS 26); the outcome buttons are disabled while the
+  stopwatch runs so a capture can't be dropped mid-run.
+
+**Tests**: `SetMeasureTests` extended for `attemptRow` (boulder/route relabels, duration appended, tries
+> 1, grade never present, no-outcome dash). The three climb UITests rewritten to the new flow
+(`NamedClimbTests` = Add-a-climb sheet → graded card + attempt + inline rename; `ClimbAttemptTimerTests`
+= card footer "Timed attempt" → stopwatch capture → outcome → duration in the attempt row;
+`FreeformFlowWalkthroughTests` climbing leg → Add-a-climb sheet → grade pill + outcome). `TrackingTypeFilterTests`
+is Timed-only and unchanged. Verified: `xcodegen generate` + `build-for-testing` clean (Swift 6,
+0 warnings in the changed files); full `SnappetTests` green (829, incl. the 5 new `attemptRow` tests).
+
+**Rules out**: per-attempt grade entry (the old `LogSetSheet(.climbAttempt)` free-text grade path is no
+longer reached for new climbs — kept only for legacy decode); a separate `@Model` for the climb (it
+stays a `SessionExercise(.climbAttempt)`, attempts stay its `sets`, all new fields additive Optionals).
+
 ## [2026-06-17] Quick Sessions UX rework — freeform player: canvas · faster entry · inline climb naming · completion moment · live metrics · live clips · clip→Studio (issue #158)
 
 **Decision**: reworked the routineless **`FreeformPlayerView`** end-to-end (issue #158, one combined PR;

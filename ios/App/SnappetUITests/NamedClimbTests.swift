@@ -1,14 +1,14 @@
 import XCTest
 
-/// UI coverage for the **frictionless free-flow climb naming** (issue #158 §C, reversing
-/// workout-with-timer PR 5's blocking prompt): in the freeform player, tapping "Climbing" adds the climb
-/// IMMEDIATELY (no "Name this climb" alert), named "Climbing" by default. The section header is an inline
-/// TextField (`freeform.climbName`) you can rename anytime; the typed name persists on the
-/// SessionExercise's `displayName`, blank → "Climbing" (the pure `SetMeasure.climbName`).
+/// UI coverage for the **climb-first hierarchy** (Quick Session redesign Phase 1): tapping "Climbing"
+/// now opens an **"Add a climb"** sheet (TYPE → scale-aware GRADE → optional NAME → optional GYM) — NOT a
+/// bare attempt row. The created climb is an **expandable card** whose attempts log underneath it (grade
+/// captured ONCE on the card, never re-entered per attempt). The section header keeps the inline
+/// `freeform.climbName` TextField for renaming.
 ///
-/// Drives the real path — Quick Start → tap Climbing (added immediately, no alert) → assert the inline
-/// name field defaults to "Climbing" → rename inline to "Cave Project" → Add attempt → grade "V3" → Add →
-/// assert the attempt logs under the renamed climb.
+/// Drives the real path — Quick Start → tap Climbing → Add-a-climb sheet → pick a grade rung → name
+/// "Cave Project" → "Add & log first attempt" → pick the Sent outcome → assert the climb card shows the
+/// grade pill (V3), the Sent status, and the attempt row — and that the inline name is "Cave Project".
 ///
 /// Same fresh-store launch as the rest of SnappetUITests so the run never inherits a leftover active
 /// session. Extract shots with `xcrun xcresulttool export attachments`.
@@ -43,7 +43,7 @@ final class NamedClimbTests: XCTestCase {
             "the freeform player should open")
     }
 
-    /// Open the add-exercise menu and tap "Climbing" (which now adds the climb immediately — #158 §C).
+    /// Open the add-exercise menu and tap "Climbing" (which now presents the "Add a climb" sheet).
     private func tapAddClimbingMenuItem() {
         let menu = app.buttons["freeform.addExercise"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5), "Add exercise menu should exist")
@@ -53,62 +53,63 @@ final class NamedClimbTests: XCTestCase {
         opt.tap()
     }
 
-    /// Tap the "Add set" button for the most recently added exercise (robust to a SwiftUI `Menu` tap
-    /// occasionally double-firing under XCUITest — always log into the newest exercise).
-    private func tapAddSetForLastExercise() {
-        let adds = app.buttons.matching(identifier: "freeform.addSet")
-        XCTAssertTrue(adds.firstMatch.waitForExistence(timeout: 4), "an Add set button should exist")
-        adds.element(boundBy: adds.count - 1).tap()
-    }
-
     private func typeIn(_ field: XCUIElement, _ text: String) {
         XCTAssertTrue(field.waitForExistence(timeout: 4), "field should exist before typing")
         field.tap()
         field.typeText(text)
     }
 
-    func testClimbAddsImmediatelyAndRenamesInline() {
+    func testAddClimbSheetCreatesAnExpandableCardWithAttempts() {
         openFreeformPlayer()
         snap("01-freeform")
 
-        // Tap "Climbing" → the climb is added IMMEDIATELY; the old blocking "Name this climb" alert is
-        // gone (#158 §C). Assert the alert's name field never appears.
+        // Tap "Climbing" → the "Add a climb" sheet appears (the new climb-first entry point).
         tapAddClimbingMenuItem()
-        XCTAssertFalse(app.textFields.matching(NSPredicate(format: "placeholderValue == %@",
-                                                           "Climb name (e.g. Cave Project)")).firstMatch
-                        .waitForExistence(timeout: 2),
-                       "tapping Climbing must NOT present a blocking name prompt anymore")
+        let typePicker = app.segmentedControls["addClimb.type"]
+        XCTAssertTrue(typePicker.waitForExistence(timeout: 6), "the Add-a-climb sheet should present a TYPE picker")
+        snap("02-add-sheet")
 
-        // The climb is added with a directly-editable inline name field defaulting to "Climbing".
-        let nameField = app.textFields["freeform.climbName"]
-        XCTAssertTrue(nameField.waitForExistence(timeout: 6), "an inline climb-name field should appear")
-        XCTAssertEqual(nameField.value as? String, "Climbing", "a new climb defaults to 'Climbing'")
-        snap("02-added")
+        // Pick a grade RUNG (a discrete picker, never free-text). V3 is distinctive and easy to assert.
+        let rung = app.buttons["addClimb.rung.V3"]
+        XCTAssertTrue(rung.waitForExistence(timeout: 4), "the scale-aware grade rail should offer V-scale rungs")
+        rung.tap()
+        XCTAssertEqual(app.staticTexts["addClimb.gradeValue"].label, "V3",
+                       "tapping a rung should select that grade")
 
-        // Rename inline to a custom name; it persists as the field's value (SessionExercise.displayName).
-        clearAndType(nameField, "Cave Project\n")
-        XCTAssertEqual(nameField.value as? String, "Cave Project",
-                       "the custom climb name should persist inline")
-        snap("03-renamed")
+        // Name the climb, then "Add & log first attempt" (auto-opens the inline outcome strip).
+        typeIn(app.textFields["addClimb.name"], "Cave Project")
+        snap("03-graded-named")
+        let addAndLog = app.buttons["addClimb.addAndLog"]
+        XCTAssertTrue(addAndLog.waitForExistence(timeout: 4), "the prominent CTA should be present")
+        addAndLog.tap()
 
-        // Log an attempt under the named climb.
-        tapAddSetForLastExercise()
-        let grade = app.textFields["logset.grade"]
-        XCTAssertTrue(grade.waitForExistence(timeout: 6), "the climb attempt log sheet should open")
-        typeIn(grade, "V3")
-        let add = app.buttons["logset.add"]
-        XCTAssertTrue(add.waitForExistence(timeout: 4) && add.isEnabled,
-                      "a graded attempt should enable the Add button")
-        add.tap()
-
-        // The attempt logs as a row reading its distinctive grade ("V3 · Sent" via SetMeasure.summary).
+        // The card auto-expands to its inline outcome strip — pick "Sent" (a boulder outcome).
+        let sent = app.buttons["freeform.outcome.sent"]
+        XCTAssertTrue(sent.waitForExistence(timeout: 6),
+                      "'Add & log first attempt' should open the inline outcome strip on the new card")
+        sent.tap()
         sleep(1); snap("04-logged")
-        let summary = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "V3")).firstMatch
-        XCTAssertTrue(summary.waitForExistence(timeout: 6),
-                      "the attempt row should show the distinctive grade (V3) under the named climb")
-        // …and the named-climb field is still present alongside the logged attempt.
-        XCTAssertEqual(app.textFields["freeform.climbName"].value as? String, "Cave Project",
-                       "the named-climb field should remain while its attempts are logged")
+
+        // The climb card shows the grade pill (V3), the Sent status, and the attempt row (outcome only,
+        // not the grade — the per-attempt SetMeasure.attemptRow).
+        let pill = app.staticTexts["freeform.gradePill"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 6), "the climb card should show its grade pill")
+        XCTAssertEqual(pill.label, "V3", "the grade pill should read the climb's grade (V3)")
+        XCTAssertTrue(app.staticTexts["freeform.climbStatus"].waitForExistence(timeout: 4),
+                      "the climb card should show a rolled-up status badge once an attempt is logged")
+        let row = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 4), "the logged attempt should appear as a row under the card")
+
+        // The inline name field reads the name captured in the sheet (Cave Project), and is renameable.
+        let nameField = app.textFields["freeform.climbName"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 4), "the climb card should keep an inline name field")
+        XCTAssertEqual(nameField.value as? String, "Cave Project",
+                       "the climb keeps the name captured in the Add-a-climb sheet")
+
+        // Rename inline — it persists as the field's value (SessionExercise.displayName).
+        clearAndType(nameField, "Slab\n")
+        XCTAssertEqual(nameField.value as? String, "Slab", "the renamed climb name should persist inline")
+        snap("05-renamed")
     }
 
     /// Clear a text field's current value, then type `text` (which may end in "\n" to submit).

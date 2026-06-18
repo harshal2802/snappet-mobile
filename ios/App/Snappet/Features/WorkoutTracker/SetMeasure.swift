@@ -38,6 +38,22 @@ enum SetMeasure {
         }
     }
 
+    /// A one-line summary of a single **attempt** under a climb card (Quick Session redesign): the
+    /// type-aware outcome (`ClimbType.statusLabel` — boulder "Sent", a route "Redpoint"), an optional
+    /// captured duration, and the try count when > 1 — but **never** the grade. The grade lives once on
+    /// the climb-card header (attempts are stamped with it for the pure stats), so repeating it on every
+    /// row would be noise. e.g. "Sent · 0:42", "Onsight", "Project · 2 tries". Pure → unit-tested.
+    static func attemptRow(_ set: SetLog, type: ClimbType) -> String {
+        var parts: [String] = []
+        if let status = set.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:)) {
+            parts.append(type.statusLabel(status))
+        }
+        if let secs = set.durationSec, secs > 0 { parts.append(formatDuration(secs)) }
+        let tries = set.climbAttempts ?? 1
+        if tries > 1 { parts.append("\(tries) tries") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
     /// Whether a (filled-in) set is worth logging for its kind — guards the "Add" action so an empty
     /// entry isn't saved. A set is always "loggable" once it carries its kind's minimum input.
     static func hasInput(_ set: SetLog, kind: SetKind) -> Bool {

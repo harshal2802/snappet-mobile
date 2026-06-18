@@ -127,6 +127,42 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertEqual(SetMeasure.summary(zero, kind: .climbAttempt, unit: .kg), "V4 · Sent · 3 tries")
     }
 
+    // MARK: - attemptRow (per-attempt row under a climb card — Quick Session redesign)
+
+    func testAttemptRowBoulderOutcomeOnly() {
+        // The grade is NEVER in the row (it's on the card header); a single try omits the count.
+        let s = SetLog(climbStatusRaw: KilterAscentStatus.sent.rawValue, climbAttempts: 1)
+        XCTAssertEqual(SetMeasure.attemptRow(s, type: .boulder), "Sent")
+    }
+
+    func testAttemptRowAppendsDurationButNeverGrade() {
+        // Even though the attempt is stamped with the climb grade, the row shows outcome + time only.
+        let s = SetLog(durationSec: 42, climbGradeLabel: "V4",
+                       climbStatusRaw: KilterAscentStatus.sent.rawValue, climbAttempts: 1)
+        XCTAssertEqual(SetMeasure.attemptRow(s, type: .boulder), "Sent · 0:42")
+        XCTAssertFalse(SetMeasure.attemptRow(s, type: .boulder).contains("V4"))
+    }
+
+    func testAttemptRowShowsTriesWhenAboveOne() {
+        let s = SetLog(climbStatusRaw: KilterAscentStatus.project.rawValue, climbAttempts: 2)
+        XCTAssertEqual(SetMeasure.attemptRow(s, type: .boulder), "Project · 2 tries")
+    }
+
+    func testAttemptRowRelabelsRouteOutcomes() {
+        // A route relabels the same KilterAscentStatus via ClimbType.statusLabel (flash→Onsight, …).
+        let flash = SetLog(climbStatusRaw: KilterAscentStatus.flash.rawValue, climbAttempts: 1)
+        XCTAssertEqual(SetMeasure.attemptRow(flash, type: .lead), "Onsight")
+        let sent = SetLog(durationSec: 90, climbStatusRaw: KilterAscentStatus.sent.rawValue,
+                          climbAttempts: 1)
+        XCTAssertEqual(SetMeasure.attemptRow(sent, type: .sport), "Redpoint · 1:30")
+        let fell = SetLog(climbStatusRaw: KilterAscentStatus.attempt.rawValue, climbAttempts: 3)
+        XCTAssertEqual(SetMeasure.attemptRow(fell, type: .topRope), "Fell · 3 tries")
+    }
+
+    func testAttemptRowWithNoOutcomeIsDash() {
+        XCTAssertEqual(SetMeasure.attemptRow(SetLog(), type: .boulder), "—")
+    }
+
     // MARK: - climbName (named free-flow climb session — PR 5)
 
     func testClimbNameTrimsSurroundingWhitespace() {

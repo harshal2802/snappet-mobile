@@ -37,6 +37,16 @@ struct FreeformPlayerView: View {
     @State private var pickingLift = false
     @State private var logging: LogTarget?
     @State private var showingAddMenu = false
+    /// The "Add a climb" sheet (Quick Session redesign Phase 1): the climb-first entry point both the
+    /// empty-state Climbing card and the add-menu's Climbing button now present.
+    @State private var addingClimb = false
+    /// Which climb cards are expanded (by `SessionExercise.id`) to their attempt list + footer. A new
+    /// climb auto-expands; "Add & log first attempt" also auto-opens its inline outcome strip.
+    @State private var expandedClimbs: Set<UUID> = []
+    /// Climbs showing their inline outcome strip (the "+ Log attempt" footer toggled open).
+    @State private var loggingAttemptFor: Set<UUID> = []
+    /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
+    @State private var timingAttemptFor: TimedAttemptTarget?
     /// Cross-session prefill per exerciseId, cached so the ~1 Hz body re-render never re-scans history
     /// (history is fixed for the live session). Recomputed on appear + when an exercise is added. (§B)
     @State private var prefills: [String: LastSetLookup.LastTime] = [:]
@@ -125,6 +135,20 @@ struct FreeformPlayerView: View {
         .sheet(isPresented: $showingMetrics) {
             LiveMetricsPanel(session: session)
         }
+        // Quick Session redesign Phase 1: tapping Climbing opens the climb-first "Add a climb" sheet
+        // (type → scale-aware grade → name → gym) instead of dropping a bare attempt row.
+        .sheet(isPresented: $addingClimb) {
+            AddClimbSheet(inheritedGym: lastClimbGym) { params, logFirst in
+                addClimbFromSheet(params, logFirstAttempt: logFirst)
+            }
+        }
+        // A minimal timed-attempt sheet (Phase 2 replaces this with a full-screen FOCUS cover): a
+        // count-up StopwatchView whose Stop captures the duration, then an inline outcome to log it.
+        .sheet(item: $timingAttemptFor) { target in
+            TimedAttemptSheet(type: target.type) { status, duration in
+                logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
+            }
+        }
         // Tap a freeform clip → the shared scoped Studio editor (§G). Hosted on the (stable) logging
         // screen — the cover must not live inside a re-rendering subview or it collapses on a clip tap.
         // The editor loads HR once on open and falls back to the live watch+BLE buffer for a still-live
@@ -136,7 +160,7 @@ struct FreeformPlayerView: View {
         // Add-exercise options (§A). The button titles are the labels the freeform UITests drive.
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
             Button("Lifting exercise") { pickingLift = true }
-            Button("Climbing") { addExercise(kind: .climbAttempt, name: SetMeasure.climbName("")) }
+            Button("Climbing") { addingClimb = true }
             Button("Timed exercise") { addExercise(kind: .duration, name: "Timed exercise") }
             Button("Cancel", role: .cancel) {}
         }
@@ -194,7 +218,7 @@ struct FreeformPlayerView: View {
                              id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
                     typeCard("Climbing", symbol: "figure.climbing",
                              id: "freeform.cardClimbing", accLabel: "Start climbing") {
-                        addExercise(kind: .climbAttempt, name: SetMeasure.climbName(""))
+                        addingClimb = true
                     }
                     typeCard("Timed", symbol: "timer",
                              id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
@@ -239,7 +263,19 @@ struct FreeformPlayerView: View {
         .accessibilityLabel(accLabel)
     }
 
+    @ViewBuilder
     private func exerciseSection(_ ex: SessionExercise) -> some View {
+        // Climbs are a climb-first hierarchy (Quick Session redesign Phase 1): the `.climbAttempt`
+        // exercise IS the climb, its `sets` are the attempts logged underneath an expandable card. The
+        // lifting / timed flows keep the flat set-list rendering below.
+        if ex.kind == .climbAttempt {
+            climbSection(ex)
+        } else {
+            liftingOrTimedSection(ex)
+        }
+    }
+
+    private func liftingOrTimedSection(_ ex: SessionExercise) -> some View {
         Section {
             ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
                 HStack {
@@ -272,6 +308,7 @@ struct FreeformPlayerView: View {
                       systemImage: "plus.circle.fill")
             }
             .accessibilityIdentifier("freeform.addSet")
+            // Reuse the existing repeat affordance for timed sets (climbs have their own card footer).
 
             // One-tap repeat of the most recent set — duplicates it (all kind-specific fields, fresh
             // completedAt) without opening the sheet. Only shown once there's a set to repeat. A sibling
@@ -299,20 +336,7 @@ struct FreeformPlayerView: View {
         } header: {
             HStack {
                 Image(systemName: ex.kind.symbol).foregroundStyle(.secondary)
-                // Climbs name inline (§C): rename anytime, no blocking prompt. Commits via the one tested
-                // SetMeasure.climbName trim/"Climbing" fallback. The TextField is a directly-queryable leaf
-                // (freeform.climbName) — simpler than the iOS-26 alert-TextField workaround it replaces.
-                if ex.kind == .climbAttempt {
-                    ClimbNameHeader(initialName: ex.displayName ?? SetMeasure.climbName("")) { name in
-                        guard let idx = indexOf(ex) else { return }
-                        session.exercises[idx].displayName = name
-                        persist()
-                        pushLiveActivity()
-                    }
-                    .id(ex.id)
-                } else {
-                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
-                }
+                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
                 Spacer()
                 Menu {
                     Button(role: .destructive) { removeExercise(ex) } label: {
@@ -322,6 +346,187 @@ struct FreeformPlayerView: View {
             }
             .textCase(nil)
         }
+    }
+
+    // MARK: - Climb card (Quick Session redesign Phase 1)
+
+    /// A climb renders as an **expandable card**: a rolled-up header (type icon · inline-editable name ·
+    /// grade pill · status badge · "N attempts" · time-on-climb) that toggles open to the attempt list +
+    /// a footer ("+ Log attempt" → inline outcome strip · "Timed attempt" · one-tap "Repeat last").
+    /// Attempts are stamped with the climb's grade so the pure send/pyramid/milestone reads stay
+    /// per-`SetLog`; the per-attempt row (`SetMeasure.attemptRow`) shows only the outcome + duration.
+    @ViewBuilder
+    private func climbSection(_ ex: SessionExercise) -> some View {
+        let expanded = expandedClimbs.contains(ex.id)
+        Section {
+            climbHeader(ex, expanded: expanded)
+
+            if expanded {
+                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
+                    HStack {
+                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .leading)
+                        Text(SetMeasure.attemptRow(set, type: ex.climbType))
+                            .font(.body.weight(.medium))
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("freeform.setRow")
+                }
+                .onDelete { offsets in deleteSets(ex, at: offsets) }
+
+                climbFooter(ex)
+            }
+        } header: {
+            EmptyView()
+        }
+    }
+
+    /// The rolled-up climb header: type icon · inline-editable name (`freeform.climbName`) · grade pill ·
+    /// status badge · "N attempts" · time-on-climb. Tapping the row toggles the card; the name TextField
+    /// and the remove menu stay individually tappable leaves.
+    private func climbHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: ex.climbType.symbol).foregroundStyle(SnappetColor.workout)
+                // Inline-editable name (reuse the tested SetMeasure.climbName trim/fallback). A directly
+                // queryable leaf (freeform.climbName), kept alongside the toggle/remove leaves.
+                ClimbNameHeader(initialName: ex.displayName ?? SetMeasure.climbName("")) { name in
+                    guard let idx = indexOf(ex) else { return }
+                    session.exercises[idx].displayName = name
+                    persist()
+                    pushLiveActivity()
+                }
+                .id(ex.id)
+                Spacer(minLength: 4)
+                gradePill(ex)
+                Button {
+                    toggleExpanded(ex)
+                } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.climbExpand")
+                .accessibilityLabel(expanded ? "Collapse climb" : "Expand climb")
+                Menu {
+                    Button(role: .destructive) { removeExercise(ex) } label: {
+                        Label("Remove climb", systemImage: "trash")
+                    }
+                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+            }
+            HStack(spacing: 8) {
+                statusBadge(ex)
+                Text(attemptCountLabel(ex))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let time = climbTimeOnWall(ex) {
+                    Text("· \(time)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .textCase(nil)
+        .padding(.vertical, 2)
+    }
+
+    /// The footer of an expanded climb card: "+ Log attempt" → an inline outcome strip (four type-aware
+    /// buttons, NO grade prompt), a "Timed attempt" button, and a one-tap "Repeat last".
+    @ViewBuilder
+    private func climbFooter(_ ex: SessionExercise) -> some View {
+        if loggingAttemptFor.contains(ex.id) {
+            // The inline outcome strip — four type-aware outcome buttons. Each appends an attempt stamped
+            // with the climb's grade (no per-attempt grade entry); a leaf button per outcome.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Outcome").font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    ForEach(KilterAscentStatus.allCases, id: \.self) { status in
+                        Button {
+                            logAttempt(toExerciseID: ex.id, status: status, durationSec: nil)
+                            loggingAttemptFor.remove(ex.id)
+                        } label: {
+                            Text(ex.climbType.statusLabel(status))
+                                .font(.caption.weight(.medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(SnappetColor.surfaceMuted, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("freeform.outcome.\(status.rawValue)")
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } else {
+            Button {
+                loggingAttemptFor.insert(ex.id)
+            } label: {
+                Label("Log attempt", systemImage: "plus.circle.fill")
+            }
+            .accessibilityIdentifier("freeform.logAttempt")
+        }
+
+        Button {
+            timingAttemptFor = TimedAttemptTarget(exerciseID: ex.id, type: ex.climbType)
+        } label: {
+            Label("Timed attempt", systemImage: "stopwatch")
+        }
+        .accessibilityIdentifier("freeform.timedAttempt")
+
+        // One-tap repeat of the most recent attempt (re-logs its outcome + duration, stamped grade).
+        if let last = ex.sets.last {
+            Button {
+                appendLog(SetMeasure.duplicate(last), toExerciseID: ex.id)
+            } label: {
+                Label("Repeat \(SetMeasure.attemptRow(last, type: ex.climbType))",
+                      systemImage: "arrow.clockwise")
+            }
+            .accessibilityIdentifier("freeform.repeatSet")
+        }
+    }
+
+    /// The grade pill: the climb's grade label on a `SnappetColor.kilter` (boulder) / cool (route) capsule.
+    private func gradePill(_ ex: SessionExercise) -> some View {
+        let isBoulder = !ex.climbType.isRoute
+        return Text(ex.climbGradeLabel ?? "—")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(isBoulder ? SnappetColor.kilter : SnappetColor.budget, in: Capsule())
+            .accessibilityIdentifier("freeform.gradePill")
+    }
+
+    /// The rolled-up status badge from the climb's resolved (best) outcome, type-relabelled. Hidden
+    /// until an attempt is logged.
+    @ViewBuilder
+    private func statusBadge(_ ex: SessionExercise) -> some View {
+        if let status = ex.resolvedClimbStatus {
+            let (symbol, tint): (String, Color) = {
+                switch status {
+                case .flash:   return ("bolt.fill", SnappetColor.kilter)
+                case .sent:    return ("checkmark.seal.fill", SnappetColor.habits)
+                case .project: return ("hourglass", SnappetColor.workout)
+                case .attempt: return ("circle", SnappetColor.textSecondary)
+                }
+            }()
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                Text(ex.climbType.statusLabel(status))
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .accessibilityIdentifier("freeform.climbStatus")
+        }
+    }
+
+    private func attemptCountLabel(_ ex: SessionExercise) -> String {
+        let n = ex.sets.count
+        return n == 1 ? "1 attempt" : "\(n) attempts"
+    }
+
+    /// Total time-on-climb = span of the attempt completion stamps (first→last), or `nil` when there
+    /// aren't two stamps to span. Mirrors the `FreeformClimbStats` time-on-climb convention (Phase 3).
+    private func climbTimeOnWall(_ ex: SessionExercise) -> String? {
+        let stamps = ex.sets.compactMap(\.completedAt).sorted()
+        guard let first = stamps.first, let last = stamps.last, last > first else { return nil }
+        return SetMeasure.formatDuration(last.timeIntervalSince(first))
     }
 
     /// The persistent bottom command bar (§A): wall-clock total timer · compact live-HR chip · the
@@ -487,6 +692,48 @@ struct FreeformPlayerView: View {
             sets: [], displayName: name, kindRaw: kind.rawValue))
         persist()
         pushLiveActivity()
+    }
+
+    /// The most recent climb's gym in this session — inherited as the default for the next "Add a climb"
+    /// sheet (captured once, never re-entered per climb).
+    private var lastClimbGym: String? {
+        session.exercises.last { $0.kind == .climbAttempt && ($0.gym?.isEmpty == false) }?.gym
+    }
+
+    /// Create a climb from the "Add a climb" sheet (Quick Session redesign Phase 1): a `.climbAttempt`
+    /// `SessionExercise` carrying the captured type/grade/scale/gym, auto-expanded; when `logFirstAttempt`
+    /// the card also opens its inline outcome strip so the first attempt is one tap away.
+    private func addClimbFromSheet(_ params: AddClimbParams, logFirstAttempt: Bool) {
+        var climb = SessionExercise(
+            exerciseId: "adhoc-\(SetKind.climbAttempt.rawValue)", targetSets: 0, targetReps: "",
+            targetRestSeconds: 0, sets: [], displayName: params.name,
+            kindRaw: SetKind.climbAttempt.rawValue)
+        climb.climbTypeRaw = params.type.rawValue
+        climb.climbGradeLabel = params.grade
+        climb.climbGradeScaleRaw = params.scale.rawValue
+        climb.gym = params.gym
+        session.exercises.append(climb)
+        expandedClimbs.insert(climb.id)
+        if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
+        persist()
+        pushLiveActivity()
+    }
+
+    /// Append an attempt under a climb: a `SetLog` carrying the chosen outcome, optional captured
+    /// duration, and **stamped with the climb's grade** (so the pure send/pyramid/milestone reads stay
+    /// per-`SetLog` and old data still renders). Routed through the one `appendLog` funnel (stamp + haptic).
+    private func logAttempt(toExerciseID id: UUID, status: KilterAscentStatus, durationSec: Double?) {
+        guard let ex = session.exercises.first(where: { $0.id == id }) else { return }
+        appendLog(SetLog(durationSec: (durationSec ?? 0) > 0 ? durationSec : nil,
+                         climbGradeLabel: ex.climbGradeLabel,
+                         climbStatusRaw: status.rawValue, climbAttempts: 1),
+                  toExerciseID: id)
+        expandedClimbs.insert(id)
+    }
+
+    private func toggleExpanded(_ ex: SessionExercise) {
+        if expandedClimbs.contains(ex.id) { expandedClimbs.remove(ex.id) }
+        else { expandedClimbs.insert(ex.id) }
     }
 
     private func removeExercise(_ ex: SessionExercise) {
@@ -656,6 +903,14 @@ private struct LogTarget: Identifiable {
     var id: UUID { exerciseID }
 }
 
+/// Which climb a timed attempt is being logged into (drives the minimal `TimedAttemptSheet`). Carries
+/// the climb's type so the inline outcome buttons relabel for routes. (Quick Session redesign Phase 1)
+private struct TimedAttemptTarget: Identifiable {
+    let exerciseID: UUID
+    let type: ClimbType
+    var id: UUID { exerciseID }
+}
+
 /// Inline-editable climb name (§C): replaces the blocking "Name this climb" alert. Seeds from the
 /// climb's current `displayName`, commits on return/blur through `SetMeasure.climbName` (trim, blank →
 /// "Climbing"). A leaf TextField with its own id (`freeform.climbName`) so it's directly queryable.
@@ -683,6 +938,57 @@ private struct ClimbNameHeader: View {
         let normalized = SetMeasure.climbName(draft)
         draft = normalized
         onCommit(normalized)
+    }
+}
+
+/// A minimal **timed-attempt** sheet for a climb (Quick Session redesign Phase 1): a count-up
+/// `StopwatchView` whose Stop captures the duration, then a type-aware inline outcome strip to log the
+/// attempt with that time. Phase 2 replaces this with a full-screen FOCUS cover; this keeps it simple
+/// but working. The captured grade lives on the climb card, so this sheet only asks duration + outcome.
+private struct TimedAttemptSheet: View {
+    let type: ClimbType
+    let onLog: (_ status: KilterAscentStatus, _ durationSec: Double?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var capturedSec: Double?
+    @State private var running = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Time the attempt") {
+                    // Stop captures the elapsed seconds. NOTE: no .accessibilityIdentifier on the
+                    // StopwatchView itself — on iOS 26 that collapses the composite and hides its inner
+                    // `stopwatch.toggle`; tests query the child ids directly.
+                    StopwatchView(mode: .countUp) { elapsed in
+                        capturedSec = elapsed > 0 ? elapsed : nil
+                    } onRunningChange: { running = $0 }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                }
+                Section("Outcome") {
+                    // The four type-aware outcome buttons — tapping one logs the timed attempt and
+                    // dismisses. Disabled while the stopwatch runs so a capture can't be dropped mid-run.
+                    ForEach(KilterAscentStatus.allCases, id: \.self) { status in
+                        Button {
+                            onLog(status, capturedSec)
+                            dismiss()
+                        } label: {
+                            Text(type.statusLabel(status)).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(running)
+                        .accessibilityIdentifier("freeform.timedOutcome.\(status.rawValue)")
+                    }
+                }
+            }
+            .navigationTitle("Timed attempt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 }
 
