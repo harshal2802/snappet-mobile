@@ -40,12 +40,15 @@ final class WorkoutWalkthroughTests: XCTestCase {
 
         // Sections — text-labelled segments (#74). Settings is no longer a segment; it pushes
         // from the toolbar gear and is visited at the end (snap 11).
-        for s in ["Exercises", "Routines", "History"] {
+        // The "Exercises" segment is now "Library" (workout-redesign E3 — a discipline-spined library of
+        // all workout types). The `browse` case id + the `workout.sectionPicker` a11y id are unchanged.
+        for s in ["Library", "Routines", "History"] {
             if section(s).waitForExistence(timeout: 4) { section(s).tap(); sleep(1); snap("04-\(s)") }
         }
 
-        // Browse → exercise detail (now reachable via Button row).
-        section("Exercises").tap(); sleep(1)
+        // Library → exercise detail. The first library row is a strength exercise (the catalog leads), so
+        // tapping it pushes the discipline-adaptive detail in its strength form (shows "Category").
+        section("Library").tap(); sleep(1)
         let exRow = app.buttons.matching(identifier: "exerciseRow").firstMatch
         if exRow.waitForExistence(timeout: 4) {
             exRow.tap(); sleep(1); snap("05-exercise-detail")

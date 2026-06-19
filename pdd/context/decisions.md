@@ -4,6 +4,58 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-19] Workout redesign E3 — Workout Library (discipline-spined `LibraryItem`; in-memory climb/run templates; "Exercises → Library" rename)
+
+**Decision**: the flat, strength-only "Exercises" tab becomes a **library organized by workout TYPE as the
+top facet** (Apple-Fitness+-style). One polymorphic, pure `LibraryItem` value type wraps every source, the
+faceted filter swaps its facets by active discipline, a "Recent across all types" band crosses disciplines,
+and the detail is discipline-adaptive. PR for issue #183 (part of epic #179), depends on E0, feeds E4.
+
+- **`LibraryItem` WRAPS the `exerciseId` contract, never replaces it.** Its `id` is the verbatim
+  `exerciseId` for a strength item (bundled or `custom-…`), `timed:<uuid>` / `timed.seed:<key>` for a timed
+  exercise, and the starter key for a climb/run template. A `Source` enum holds the backing value
+  (strength `Exercise`, timed spec+category+catalogID, climb/run starter) so the detail + E4's routine
+  builder can seed a block without re-resolving. Routines/history persist nothing new.
+- **NEW-@MODEL-vs-TEMPLATES CALL → in-memory templates, NO new `@Model`** (README §9/§10 Q5). Climb/run
+  starters are pure in-memory value types (`ClimbStarter`/`RunStarter`/`RunTerrain` in `Library.swift`),
+  mirroring `TimedExerciseCatalog.suggestions`. **Why:** a saved climb/run template `@Model` would have to be
+  registered in BOTH `SnappetSchema.models` AND `SnappetBackup` with a golden-byte `BackupRow` mirror (the
+  `SnappetBackupTests` tripwire) — out of proportion to seeding a handful of style/terrain suggestions, and a
+  *real* saved climb is already the freeform "Add a climb" `SessionExercise` (persisted inside
+  `WorkoutSession`). So E3 ships **zero schema/backup change**; the backup golden bytes are untouched.
+- **Faceted filter SWAPS by discipline** via one `LibraryFacets` value type. Strength → muscle + equipment +
+  "no equipment"; climb → style (`ClimbType`); timed → protocol (`TimedExerciseCategory`); run → terrain
+  (`RunTerrain`). The discipline chip's `keepOnly(_:)` drops now-irrelevant facets on switch so a stale
+  strength-muscle filter never silently hides every climb. "All types" keeps all facets (cross-search).
+- **Two "type" vocabularies reconciled** (README §10 Q6): `LibraryBuilder.discipline(for: ExerciseCategory)`
+  maps `cardio → .run`, everything else (strength/powerlifting/olympic/strongman/plyo/stretch) → `.strength`
+  — the bundled Free-Exercise-DB is a strength catalog, so we don't over-fragment it.
+- **Detail is discipline-adaptive; muscle map is STRENGTH-ONLY.** Strength routes to the existing, well-
+  tested `ExerciseDetailView` (keeps Edit/Delete for custom). Climb/run/timed render `AdaptiveItemDetail`
+  (discipline header → metadata/how-to → records `StatRibbon`). We deliberately do **not** fake anatomy for a
+  climb or a run. Records (`LibraryRecords`) are **best-effort from session blobs** — the per-movement
+  cross-session history `@Model` is DEFERRED (README §9), so climb/run/timed records are discipline-wide
+  aggregates (no per-template id in the blobs yet), stamped with a "best-effort from your logged sessions"
+  caption so the limitation is honest.
+- **"Exercises → Library" rename done here** (deferred from E0). `WorkoutSection.browse.title` → "Library";
+  the `browse` **case id** + the `workout.sectionPicker` a11y id are unchanged (the #74 id-vs-display rule, so
+  historical state / deep links / the XCUITest segment query never orphan). `WorkoutWalkthroughTests` was
+  re-pointed from `section("Exercises")` to `section("Library")`.
+- **Pure-logic-at-a-thin-edge**: `LibraryItem`/`LibraryBuilder`/`LibraryFacets`/`LibraryRecords` are
+  Foundation-only value types, unit-tested in `SnappetTests/LibraryTests`; `ExerciseResolver.library(timed:)`
+  is the only `@MainActor`/SwiftData edge (maps live `TimedExerciseCatalog` rows to value snapshots). Views
+  (`WorkoutLibraryView`, `LibraryItemDetailView`) stay thin. `RecentSessions.rows` (E1) is reused verbatim for
+  the cross-type band. `ExerciseBrowserView.swift` was trimmed to the still-shared `ExerciseRow` + the
+  `ExerciseFilters` chip-source extension (the routine picker/builder/settings still use them); the old flat
+  browser view + its private filter sheet are superseded by `WorkoutLibraryView`.
+
+**Verified**: `xcodegen generate` + `build-for-testing` (iPhone 17 Pro sim, Swift 6) **SUCCEEDED**, 0 errors.
+Unit: `LibraryTests` **13/13**, `WorkoutDisciplineTests` 10/10, `WorkoutMathTests` 7/7, `SessionRecapTests`
+5/5, `WorkoutDashboardStatsTests` 6/6 — all 0 failures. UITest: `WorkoutWalkthroughTests` **1/1** (the Library
+rename, 59s). Knowledge graph: `wt-library` / `wt-library-detail` nodes + edges added, `node --check` passes.
+Deferred (carried to E4 / a follow-up): per-movement cross-session history `@Model`; the climb/run templates
+are not yet selectable into a routine block (that's E4's builder, which consumes `LibraryItem.Source`).
+
 ## [2026-06-18] Quick Session redesign — climb-name overlay is a PER-CLIP property (prompt 12)
 
 **Decision**: the Studio's freeform climb-name tag is now a **property of its clip**, not a whole-project

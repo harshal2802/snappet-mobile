@@ -36,11 +36,14 @@ enum WorkoutTrackerModule {
 enum WorkoutSection: String, CaseIterable, Identifiable {
     case dashboard, browse, routines, history
     var id: String { rawValue }
-    /// The navigation-bar title while the section is showing.
+    /// The navigation-bar title while the section is showing. The `browse` segment now reads **Library**
+    /// (workout-redesign E3 — it's no longer a flat strength catalog but a discipline-spined library of all
+    /// workout types); the `browse` *case id* and the `workout.sectionPicker` a11y id stay stable so
+    /// historical state / deep links / the XCUITest segment query never orphan (the #74 id-vs-display rule).
     var title: String {
         switch self {
         case .dashboard: return "Gym Tracker"
-        case .browse: return "Exercises"
+        case .browse: return "Library"
         case .routines: return "Routines"
         case .history: return "History"
         }
@@ -57,6 +60,12 @@ struct WorkoutSettingsRoute: Hashable {}
 /// Routing payload for pushing an exercise's progress screen (kept distinct from pushing
 /// the exercise detail, which routes on `Exercise` itself).
 struct ProgressRoute: Hashable { let exerciseId: String }
+
+/// Routing payload for a workout **library** item's discipline-adaptive detail (workout-redesign E3). A
+/// `LibraryItem` is `Hashable` on its `id`, so it pushes directly; the destination renders the strength
+/// detail or the climb/run/timed adaptive detail. Kept distinct from pushing `Exercise` (which the routine
+/// builder / progress still use) so both routes coexist.
+struct LibraryItemRoute: Hashable { let item: LibraryItem }
 
 /// Routing payload for a completed session's detail. Pushed by id rather than the `WorkoutSession`
 /// object so it never collides with the live-player `fullScreenCover(item:)`, which is also keyed on
@@ -124,6 +133,9 @@ struct WorkoutHomeView: View {
         .toolbar { toolbarContent }
         .navigationDestination(for: Exercise.self) { ex in
             ExerciseDetailView(exercise: ex, history: history, unit: unit)
+        }
+        .navigationDestination(for: LibraryItemRoute.self) { route in
+            LibraryItemDetailView(item: route.item, history: history, unit: unit)
         }
         .navigationDestination(for: Routine.self) { r in
             RoutineDetailView(routine: r, resolver: resolver, unit: unit,
@@ -256,7 +268,9 @@ struct WorkoutHomeView: View {
                                     openSession: { id in router.push(SessionRoute(id: id)) },
                                     startQuick: { startFreeform() })
         case .browse:
-            ExerciseBrowserView(resolver: resolver, open: { router.push($0) })
+            WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
+                               open: { router.push(LibraryItemRoute(item: $0)) },
+                               openSession: { id in router.push(SessionRoute(id: id)) })
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
                                 open: { router.push($0) },
