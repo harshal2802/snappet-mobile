@@ -283,6 +283,8 @@ struct FreeformPlayerView: View {
             Button("Climbing") { rebuildPreviousClimbs(); addingClimb = true }
             Button("Running") { addRun() }
             Button("Timed exercise") { addingTimed = true }
+            Button("Dance") { addOpenEffort(.dance) }
+            Button("Other") { addOpenEffort(.other) }
             Button("Cancel", role: .cancel) {}
         }
         // Deep-tap clip deletion (prompt 11), ported VERBATIM from `SessionDetailView` (incl. the Photos
@@ -452,18 +454,27 @@ struct FreeformPlayerView: View {
                 Text("Pick what you're tracking — add more as you go.")
                     .font(.subheadline).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                HStack(spacing: 12) {
-                    typeCard("Lifting", symbol: "dumbbell.fill",
+                // The six-discipline chooser (Workout-Type Parity Phase 5): a 2-column grid so every type
+                // reads at a glance. Existing card ids are preserved for the UITests; new disciplines add
+                // their own. Each card calls the same mutator as its add-menu item.
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    typeCard("Lifting", symbol: WorkoutDiscipline.strength.symbol,
                              id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
-                    typeCard("Climbing", symbol: "figure.climbing",
+                    typeCard("Climbing", symbol: WorkoutDiscipline.climb.symbol,
                              id: "freeform.cardClimbing", accLabel: "Start climbing") {
                         rebuildPreviousClimbs()   // fresh previews/counts on open (media added mid-session)
                         addingClimb = true
                     }
-                    typeCard("Timed", symbol: "timer",
+                    typeCard("Running", symbol: WorkoutDiscipline.run.symbol,
+                             id: "freeform.cardRunning", accLabel: "Start a run") { addRun() }
+                    typeCard("Timed", symbol: WorkoutDiscipline.timed.symbol,
                              id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
                         addingTimed = true
                     }
+                    typeCard("Dance", symbol: WorkoutDiscipline.dance.symbol,
+                             id: "freeform.cardDance", accLabel: "Start a dance session") { addOpenEffort(.dance) }
+                    typeCard("Other", symbol: WorkoutDiscipline.other.symbol,
+                             id: "freeform.cardOther", accLabel: "Start another activity") { addOpenEffort(.other) }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -578,7 +589,7 @@ struct FreeformPlayerView: View {
         let spec = ex.timedSpec
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Image(systemName: "timer").foregroundStyle(SnappetColor.workout)
+                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
                 Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
                     .accessibilityIdentifier("freeform.timedName")
                 Spacer()
@@ -1265,6 +1276,20 @@ struct FreeformPlayerView: View {
             exerciseId: "adhoc-run", targetSets: 0, targetReps: "", targetRestSeconds: 0,
             sets: [], displayName: "Run", kindRaw: SetKind.duration.rawValue)
         entity.disciplineRaw = WorkoutDiscipline.run.rawValue
+        session.exercises.append(entity)
+        expandedEntities.insert(entity.id)
+        persist()
+        pushLiveActivity()
+    }
+
+    /// Create a lightweight open-effort entity for the Dance / Other disciplines (Workout-Type Parity
+    /// Phase 5): a `.duration`-kind `SessionExercise` tagged with the discipline. Renders via the
+    /// (discipline-aware) timed card — its efforts are open count-up durations logged with "Add set".
+    private func addOpenEffort(_ discipline: WorkoutDiscipline) {
+        var entity = SessionExercise(
+            exerciseId: "adhoc-\(discipline.rawValue)", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+            sets: [], displayName: discipline.label, kindRaw: SetKind.duration.rawValue)
+        entity.disciplineRaw = discipline.rawValue
         session.exercises.append(entity)
         expandedEntities.insert(entity.id)
         persist()
