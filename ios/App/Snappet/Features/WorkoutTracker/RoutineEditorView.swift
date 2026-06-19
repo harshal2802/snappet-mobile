@@ -9,9 +9,19 @@ import SwiftData
 /// typed block via `RoutineSessionBuilder.block(from:)`. Presented as a sheet with its own NavigationStack;
 /// changes are staged locally and only written on Save (Cancel is clean). The reorder (`.onMove`) keeps the
 /// hard-won lazy-List pattern (#158).
+///
+/// **Save-as-routine (workout-redesign E5).** A third entry mode: an optional `prefill` `RoutineDraft`
+/// (`routine == nil` + `prefill != nil`) seeds the editor's local state from a finished Quick Session that
+/// `SessionToRoutine` converted (actuals → prescription), so the user **reviews** it — trims warm-ups,
+/// renames it, adjusts targets — before it's inserted. The `prefill` is NOT inserted; Save takes the same
+/// new-routine INSERT path (a brand-new `Routine` with a fresh UUID), so the loop never silently writes a
+/// routine and the saved routine round-trips through E4's `makeSession`.
 struct RoutineEditorView: View {
     /// nil → new routine; non-nil → edit this one.
     let routine: Routine?
+    /// A pre-filled draft (save-as-routine, E5). Used only when `routine == nil`: seeds the local state for
+    /// review, then Save INSERTS a new routine from the (reviewed) state.
+    var prefill: RoutineDraft? = nil
     let resolver: ExerciseResolver
     let defaultUnit: WeightUnit
 
@@ -112,12 +122,22 @@ struct RoutineEditorView: View {
     private func loadExisting() {
         guard !loaded else { return }
         loaded = true
-        guard let routine else { return }
-        name = routine.name
-        sport = routine.sport ?? .general
-        level = routine.level
-        detail = routine.detail ?? ""
-        items = routine.exercises
+        if let routine {
+            name = routine.name
+            sport = routine.sport ?? .general
+            level = routine.level
+            detail = routine.detail ?? ""
+            items = routine.exercises
+        } else if let prefill {
+            // Save-as-routine (E5): seed the editor for REVIEW from the converted draft. Nothing is
+            // inserted here — Save takes the new-routine path below (a fresh UUID), so the user trims /
+            // renames / adjusts first.
+            name = prefill.name
+            sport = prefill.sport ?? .general
+            level = prefill.level
+            detail = prefill.detail ?? ""
+            items = prefill.exercises
+        }
     }
 
     private func save() {
