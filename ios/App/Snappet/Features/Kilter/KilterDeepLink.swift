@@ -55,10 +55,15 @@ enum SnappetDeepLink: Equatable, Sendable {
     case startFocus
     /// `snappet://exercise/<id>` — open a catalog exercise's detail (the #81 Phase-4 Spotlight tap).
     case exercise(id: String)
+    /// `snappet://routine/v1/<blob>` — a shared workout routine (workout-redesign E6's QR/link payload).
+    /// The shell routes to the gym tracker + a one-shot `pendingRoutineImport` (the `pendingKilterClimb`
+    /// pattern), which the tracker root consumes into an import-confirm preview (NEW local UUID).
+    case routine(SharedRoutine)
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
         if let link = KilterClimbLink(decoding: url.absoluteString) { return .kilterClimb(link) }
+        if let routine = SharedRoutine(decoding: url.absoluteString) { return .routine(routine) }
         if isStartFocus(url) { return .startFocus }
         if let id = exerciseID(url) { return .exercise(id: id) }
         return nil

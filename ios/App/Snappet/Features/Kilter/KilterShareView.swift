@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import CoreImage.CIFilterBuiltins
 
 /// A sheet that turns the current climb into a scannable QR code (and a shareable link), so a friend
 /// with Snappet can scan it and jump straight to the same climb — fully offline, since both apps
@@ -23,7 +22,7 @@ struct KilterShareView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
 
-                if let image = Self.qrImage(for: link.encoded) {
+                if let image = QRCodeImage.make(for: link.encoded) {
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable().scaledToFit()
@@ -75,19 +74,5 @@ struct KilterShareView: View {
             }
             .presentationDetents([.medium, .large])
         }
-    }
-
-    /// Render a string into a crisp QR `UIImage` (the CoreImage generator emits a tiny bitmap, so
-    /// scale up with nearest-neighbor interpolation to keep the modules sharp).
-    static func qrImage(for string: String) -> UIImage? {
-        guard !string.isEmpty else { return nil }
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(string.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage else { return nil }
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
-        let context = CIContext()
-        guard let cg = context.createCGImage(scaled, from: scaled.extent) else { return nil }
-        return UIImage(cgImage: cg)
     }
 }

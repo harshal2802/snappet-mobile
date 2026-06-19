@@ -35,6 +35,15 @@ final class SuiteRouter {
     /// cold-start window where the root hasn't been built yet.
     var pendingKilterClimb: KilterClimbLink?
 
+    /// One-shot routine-import intent (workout-redesign E6, the `pendingKilterClimb` pattern): the shell's
+    /// `onOpenURL` sets this from a scanned/opened `snappet://routine/v1/<blob>` before `open(module:
+    /// "workout-log")`, and `WorkoutHomeView` consumes it on appear/change — the shell can't insert the
+    /// routine itself because import is user-confirmed (an import-confirm preview with the "these N aren't
+    /// in your library" landing) and inserts a NEW local `Routine` (new UUID, never overwrite) into the
+    /// tracker's model context. Self-clearing on consume; survives the cold-start window before the root
+    /// is built (`initial: true` on the consumer, the Kilter precedent).
+    var pendingRoutineImport: SharedRoutine?
+
     /// One-shot "start a focus timer" intent (#81 Phase 2): the Today widget's Start-focus button
     /// (`snappet://pomodoro/start`) and the shell's `onOpenURL` set this before `open(module:
     /// "pomodoro")`, and `PomodoroRootView` consumes it on appear/change to call `timer.start()` —
