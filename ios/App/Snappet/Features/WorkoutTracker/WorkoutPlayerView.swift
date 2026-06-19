@@ -35,10 +35,29 @@ struct WorkoutPlayerView: View {
     @State private var exerciseIndex = 0
     @State private var setIndex = 0
 
-    // Per-set input.
+    // Per-set input (strength — reps × weight).
     @State private var repsText = ""
     @State private var weightText = ""
     @State private var unit: WeightUnit = .kg
+    // Per-set input — discipline-aware fields (workout-redesign E4). The guided player now logs any
+    // discipline's effort, not just reps×weight: a climb grade+outcome, a timed/TUT duration (captured via
+    // the shared StopwatchView), a run distance+duration, an RPE. These hold the in-progress entry for the
+    // current set; `completeSet()` reads the right ones for `current.discipline`.
+    /// Climb attempt (climb discipline): the picked outcome + the climb's prescribed grade/type/scale.
+    @State private var climbStatus: KilterAscentStatus = .sent
+    @State private var climbGrade = ""
+    @State private var climbType: ClimbType = .boulder
+    @State private var climbScale: GradeScale = .vScale
+    /// Captured duration in seconds (timed/duration sets, and an optional time-under-tension on strength).
+    @State private var capturedDuration: Double = 0
+    /// Run leg (run discipline): distance text in the user's distance unit + minutes/seconds.
+    @State private var runDistanceText = ""
+    @State private var runMinutes = ""
+    @State private var runSeconds = ""
+    /// Optional RPE (1–10) for strength/timed/run efforts; 0 ⇒ unrated.
+    @State private var rpe = 0
+    /// The user's preferred distance unit, derived from the weight unit (km for kg, mi for lb).
+    private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
     // The current exercise's cross-session "last time" (issue #73), cached by `prefillInputs()` /
     // `prefillEditing()` — the body re-renders every live HR sample (~1 Hz), so the hint must not
     // re-scan all history per render.
@@ -271,14 +290,15 @@ struct WorkoutPlayerView: View {
                     header(ex)
 
                     VStack(spacing: 4) {
-                        Text("Set \(setIndex + 1) of \(ex.sets.count)")
+                        Text(ex.discipline == .climb ? "Attempt \(setIndex + 1) of \(ex.sets.count)"
+                                                     : "Set \(setIndex + 1) of \(ex.sets.count)")
                             .font(.title3.weight(.semibold))
-                        Text("Target: \(ex.targetReps) reps" + (ex.targetRestSeconds > 0
-                             ? " · \(restText(ex.targetRestSeconds)) rest" : ""))
+                        Text(targetLine(ex))
                             .font(.subheadline).foregroundStyle(.secondary)
                         // What the user actually lifted last session — shown right where they
-                        // decide today's weight (issue #73).
-                        if let hint = lastSetHint?.hint {
+                        // decide today's weight (issue #73). Strength-only (the cross-session prefill is
+                        // reps×weight); other disciplines drive their own prefill from the prescription.
+                        if ex.discipline == .strength, let hint = lastSetHint?.hint {
                             Text(hint)
                                 .font(.footnote).foregroundStyle(.secondary)
                                 .accessibilityIdentifier("lastTimeHint")
@@ -286,13 +306,14 @@ struct WorkoutPlayerView: View {
                         setPips(ex)
                     }
 
-                    inputs
+                    disciplineInputs(ex)
 
                     Button { completeSet() } label: {
-                        Text(isLastSetOfWorkout ? "Complete & finish" : "Complete set")
+                        Text(completeButtonTitle(ex))
                             .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
                     }
                     .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
+                    .accessibilityIdentifier("completeSet")
 
                     Button(role: .destructive) { confirmingSkip = true } label: {
                         Label("Skip exercise", systemImage: "forward.end")
@@ -386,7 +407,53 @@ struct WorkoutPlayerView: View {
     /// key, so the keypad Done toolbar is the only way to dismiss it (issue #82).
     @FocusState private var keypadFocused: Bool
 
-    private var inputs: some View {
+    // MARK: - Discipline-aware input + labels (workout-redesign E4)
+
+    /// The target/prescription line under the set count, per discipline.
+    private func targetLine(_ ex: SessionExercise) -> String {
+        let rest = ex.targetRestSeconds > 0 ? " · \(restText(ex.targetRestSeconds)) rest" : ""
+        switch ex.discipline {
+        case .strength:
+            return "Target: \(ex.targetReps) reps" + rest
+        case .climb:
+            let grade = ex.climbGradeLabel.map { "\($0)" } ?? ex.climbType.label
+            return "Target: \(grade)" + rest
+        case .timed:
+            if let spec = ex.timedSpec { return "Target: \(spec.summary)" + rest }
+            return "Time your effort" + rest
+        case .run:
+            return "Log your run" + rest
+        case .dance, .other:
+            return "Time your effort" + rest
+        }
+    }
+
+    /// The "Complete set" CTA title, per discipline (the last effort finishes the workout).
+    private func completeButtonTitle(_ ex: SessionExercise) -> String {
+        let last = isLastSetOfWorkout
+        switch ex.discipline {
+        case .climb:                    return last ? "Log attempt & finish" : "Log attempt"
+        case .run:                      return last ? "Log run & finish" : "Log run"
+        case .strength, .timed, .dance, .other:
+            return last ? "Complete & finish" : "Complete set"
+        }
+    }
+
+    /// The per-set input block, switched on the entity's discipline. Each reuses the freeform side's
+    /// proven input vocabulary (the grade rail, the StopwatchView, the run distance+time fields) so a
+    /// guided routine logs the SAME shape a freeform session does — the keystone parity. Strength keeps
+    /// the original reps×weight keypad untouched.
+    @ViewBuilder private func disciplineInputs(_ ex: SessionExercise) -> some View {
+        switch ex.discipline {
+        case .strength:          strengthInputs
+        case .climb:             climbInputs
+        case .timed, .dance, .other: timedInputs
+        case .run:               runInputs
+        }
+    }
+
+    /// Strength: the original reps × weight × unit keypad (unchanged behavior).
+    private var strengthInputs: some View {
         HStack(spacing: 16) {
             field(title: "Reps", text: $repsText, keyboard: .numberPad, suffix: nil)
             field(title: "Weight", text: $weightText, keyboard: .decimalPad, suffix: unit.display)
@@ -399,6 +466,114 @@ struct WorkoutPlayerView: View {
             }
         }
         .keypadDoneToolbar($keypadFocused)
+    }
+
+    /// Climb: a discrete scale-aware grade rail + an outcome segmented control (reuses the freeform
+    /// climb vocabulary — `GradeScale.rungs` + the type-aware `KilterAscentStatus` relabels).
+    private var climbInputs: some View {
+        VStack(spacing: 14) {
+            // Outcome (type-relabelled — boulder "Sent", a route "Redpoint").
+            Picker("Outcome", selection: $climbStatus) {
+                ForEach([KilterAscentStatus.flash, .sent, .project, .attempt], id: \.self) { st in
+                    Text(climbType.statusLabel(st)).tag(st)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("player.climbOutcome")
+
+            // The grade rail (the prescription pre-selects the prescribed grade; the user can adjust).
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Grade").font(.caption).foregroundStyle(.secondary)
+                    Text(climbGrade).font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.workout)
+                        .accessibilityIdentifier("player.climbGradeValue")
+                }
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(climbScale.rungs, id: \.self) { rung in
+                                gradeChip(rung, selected: rung == climbGrade) { climbGrade = rung }
+                                    .id(rung)
+                                    .accessibilityIdentifier("player.rung.\(rung)")
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .onChange(of: climbGrade) { _, g in withAnimation { proxy.scrollTo(g, anchor: .center) } }
+                    .onAppear { proxy.scrollTo(climbGrade, anchor: .center) }
+                }
+            }
+        }
+    }
+
+    /// Timed (and dance/other): the shared StopwatchView captures the effort duration. Count down from the
+    /// prescribed hold when there is one (a `.countDown`/`.maxHang` spec), else count up.
+    private var timedInputs: some View {
+        VStack(spacing: 12) {
+            StopwatchView(mode: timedStopwatchMode) { elapsed in
+                capturedDuration = elapsed
+            }
+            if capturedDuration > 0 {
+                Text("Captured: \(SetMeasure.formatDuration(capturedDuration))")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.workout)
+                    .accessibilityIdentifier("player.capturedDuration")
+            }
+        }
+    }
+
+    /// Run: manual distance + duration (pace derived), reusing the freeform run-leg vocabulary.
+    private var runInputs: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                field(title: "Distance", text: $runDistanceText, keyboard: .decimalPad,
+                      suffix: distanceUnit.display)
+                field(title: "Min", text: $runMinutes, keyboard: .numberPad, suffix: nil)
+                field(title: "Sec", text: $runSeconds, keyboard: .numberPad, suffix: nil)
+            }
+            .keypadDoneToolbar($keypadFocused)
+            if let pace = runPacePreview {
+                Text("Pace: \(pace)").font(.subheadline).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("player.runPace")
+            }
+        }
+    }
+
+    /// The stopwatch mode for the current timed exercise: armed to a count-down when the prescription has a
+    /// fixed work target, else a free count-up.
+    private var timedStopwatchMode: StopwatchTiming.Mode {
+        guard let ex = current else { return .countUp }
+        if let spec = ex.timedSpec, !spec.mode.isStructured, spec.workSec > 0 {
+            return .countDown(targetSec: Double(spec.workSec))
+        }
+        return .countUp
+    }
+
+    /// Parsed run distance in metres (accepts a decimal comma); nil when blank/non-positive.
+    private var runDistanceMeters: Double? {
+        let cleaned = runDistanceText.replacingOccurrences(of: ",", with: ".")
+            .trimmingCharacters(in: .whitespaces)
+        guard let v = Double(cleaned), v.isFinite, v > 0, v < 100_000 else { return nil }
+        return distanceUnit == .km ? v * 1000 : v * 1609.344
+    }
+    private var runDurationSec: Double {
+        let m = Double(runMinutes) ?? 0, s = Double(runSeconds) ?? 0
+        return max(0, m) * 60 + max(0, s)
+    }
+    private var runPacePreview: String? {
+        guard let d = runDistanceMeters, d > 0, runDurationSec > 0 else { return nil }
+        return SetMeasure.formatPace(secPerKm: runDurationSec / (d / 1000), unit: distanceUnit)
+    }
+
+    /// A grade-rail chip (matches AddClimbSheet's rung pill — fill + bold for the selected rung).
+    private func gradeChip(_ text: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text)
+                .font(.subheadline.weight(selected ? .bold : .regular))
+                .foregroundStyle(selected ? Color.white : .primary)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(selected ? SnappetColor.workout : SnappetColor.surfaceMuted, in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func field(title: String, text: Binding<String>, keyboard: UIKeyboardType, suffix: String?) -> some View {
@@ -549,9 +724,30 @@ struct WorkoutPlayerView: View {
 
     private func prefillInputs() {
         guard let ex = current else { return }
+        // Reset the per-set transient inputs every advance so one discipline's entry never bleeds into the
+        // next set/exercise (workout-redesign E4).
+        capturedDuration = 0
+        runDistanceText = ""; runMinutes = ""; runSeconds = ""
+        rpe = 0
+        switch ex.discipline {
+        case .strength:
+            prefillStrength(ex)
+        case .climb:
+            // Seed the grade rail from the prescription / the previous attempt's grade so the warm path is
+            // "pick outcome → log". The outcome defaults to a send.
+            climbType = ex.climbType
+            climbScale = ex.climbGradeScale
+            let previousGrade = ex.sets.prefix(setIndex).last { $0.completedAt != nil }?.climbGradeLabel
+            climbGrade = previousGrade ?? ex.climbGradeLabel ?? ex.climbGradeScale.defaultGrade
+            climbStatus = .sent
+        case .timed, .run, .dance, .other:
+            break   // these capture live (stopwatch / typed fields); nothing to pre-fill
+        }
+    }
+
+    /// The original strength prefill: previous logged set → cross-session "last time" → routine target.
+    private func prefillStrength(_ ex: SessionExercise) {
         lastSetHint = lastTime(ex)
-        // Prefer the previous logged set in this exercise; then what the user lifted last
-        // session (issue #73); finally the routine target.
         let previous = ex.sets.prefix(setIndex).last(where: { $0.completedAt != nil })
         if let previous {
             repsText = previous.actualReps.map(String.init) ?? leadingNumber(ex.targetReps)
@@ -569,11 +765,11 @@ struct WorkoutPlayerView: View {
     }
 
     private func completeSet() {
-        guard current != nil else { return }
-        let reps = SetMeasure.parseReps(repsText)
-        let weight = SetMeasure.parseWeight(weightText)
-        session.exercises[exerciseIndex].sets[setIndex] = SetLog(
-            actualReps: reps, actualWeight: weight, weightUnit: unit, completedAt: .now)
+        guard let ex0 = current else { return }
+        // Build the logged set from the right axes for this discipline (workout-redesign E4): a climb logs
+        // grade+outcome, a timed/dance/other set its captured duration, a run distance+duration (+optional
+        // RPE), strength its reps×weight (unchanged). `completedAt` stamps it done for every discipline.
+        session.exercises[exerciseIndex].sets[setIndex] = loggedSet(for: ex0)
         persist()
         Haptics.success()
 
@@ -584,6 +780,33 @@ struct WorkoutPlayerView: View {
             else { setIndex += 1; prefillInputs() }
         } else {
             advanceExercise()
+        }
+    }
+
+    /// Compose the `SetLog` for the current set from the active input fields, per discipline. Pure-ish
+    /// assembly (the parsing funnels through `SetMeasure`/the run parser); the only side input is `Date.now`.
+    private func loggedSet(for ex: SessionExercise) -> SetLog {
+        switch ex.discipline {
+        case .strength:
+            return SetLog(actualReps: SetMeasure.parseReps(repsText),
+                          actualWeight: SetMeasure.parseWeight(weightText),
+                          weightUnit: unit, completedAt: .now,
+                          durationSec: capturedDuration > 0 ? capturedDuration : nil,
+                          rpe: rpe > 0 ? rpe : nil)
+        case .climb:
+            return SetLog(completedAt: .now,
+                          durationSec: capturedDuration > 0 ? capturedDuration : nil,
+                          climbGradeLabel: climbGrade.isEmpty ? ex.climbGradeLabel : climbGrade,
+                          climbStatusRaw: climbStatus.rawValue, climbAttempts: 1)
+        case .run:
+            return SetLog(completedAt: .now,
+                          durationSec: runDurationSec > 0 ? runDurationSec : nil,
+                          distanceMeters: runDistanceMeters,
+                          rpe: rpe > 0 ? rpe : nil)
+        case .timed, .dance, .other:
+            return SetLog(completedAt: .now,
+                          durationSec: capturedDuration > 0 ? capturedDuration : nil,
+                          rpe: rpe > 0 ? rpe : nil)
         }
     }
 
@@ -636,16 +859,38 @@ struct WorkoutPlayerView: View {
     /// back to the normal forward prefill.
     private func prefillEditing() {
         guard let ex = current, ex.sets.indices.contains(setIndex) else { prefillInputs(); return }
-        // Stepping back can land on another exercise — refresh the cached hint for it.
-        lastSetHint = lastTime(ex)
         let set = ex.sets[setIndex]
-        if set.completedAt != nil {
+        guard set.completedAt != nil else { prefillInputs(); return }
+        // Restore the discipline's logged values so the user can correct a previously-logged effort.
+        capturedDuration = set.durationSec ?? 0
+        rpe = set.rpe ?? 0
+        switch ex.discipline {
+        case .strength:
+            lastSetHint = lastTime(ex)
             repsText = set.actualReps.map(String.init) ?? ""
             weightText = set.actualWeight.map(SetMeasure.formatWeight) ?? ""
             unit = set.weightUnit ?? unit
-        } else {
-            prefillInputs()
+        case .climb:
+            climbType = ex.climbType
+            climbScale = ex.climbGradeScale
+            climbGrade = set.climbGradeLabel ?? ex.climbGradeLabel ?? ex.climbGradeScale.defaultGrade
+            climbStatus = set.climbStatusRaw.flatMap(KilterAscentStatus.init(rawValue:)) ?? .sent
+        case .run:
+            runDistanceText = (set.distanceMeters).map { distanceUnit == .km ? Self.trimNum($0 / 1000)
+                                                                            : Self.trimNum($0 / 1609.344) } ?? ""
+            let total = Int((set.durationSec ?? 0).rounded())
+            runMinutes = total > 0 ? String(total / 60) : ""
+            runSeconds = total > 0 ? String(total % 60) : ""
+        case .timed, .dance, .other:
+            break   // capturedDuration restored above; the stopwatch starts fresh on re-log
         }
+    }
+
+    /// A decimal trimmed of trailing zeros for the run distance field (5.20 → "5.2", 5.00 → "5").
+    private static func trimNum(_ value: Double) -> String {
+        var s = String(format: "%.2f", value)
+        if s.contains(".") { while s.hasSuffix("0") { s.removeLast() }; if s.hasSuffix(".") { s.removeLast() } }
+        return s
     }
 
     // MARK: - Rest timer

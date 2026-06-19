@@ -213,6 +213,17 @@ enum SetKind: String, Codable, CaseIterable, Sendable {
 
 /// One exercise slot inside a routine: a target prescription (sets × reps, rest, optional
 /// starting weight and notes). `reps` is free text ("12", "8-12", "30s", "max") like the web app.
+///
+/// **The keystone change (workout-redesign E4).** This composite gained the entity-level `disciplineRaw`
+/// axis + per-axis target prescription so a routine can mix a strength block, a timed circuit, a graded
+/// climb, and a run — mirroring the shape `SessionExercise`/`SetLog` already carry on the session side, so
+/// `makeSession(from:)` can reconstruct the right card type instead of always strength. **Every new field
+/// is an additive `Optional`** — `RoutineExercise` is a nested `Codable` composite (inside `Routine.exercises`
+/// / `RoutineRow`), not an `@Model`, so SwiftData lightweight migration doesn't reach inside the blob: a
+/// non-optional new key would throw on decode of an old `Routine`, whereas synthesized `Codable` decodes a
+/// *missing* optional key as `nil` AND omits a nil optional on encode (so the `SnappetBackup` golden bytes
+/// stay stable — the documented `SetLog`/`SessionExercise` invariant). A legacy `RoutineExercise` therefore
+/// decodes with `disciplineRaw == nil` and every target `nil`, and `discipline` derives `.strength`.
 struct RoutineExercise: Codable, Hashable, Identifiable, Sendable {
     var id = UUID()
     var exerciseId: String
@@ -223,6 +234,78 @@ struct RoutineExercise: Codable, Hashable, Identifiable, Sendable {
     var weightUnit: WeightUnit?
     var notes: String?
     var displayName: String?
+
+    /// `WorkoutDiscipline.rawValue` — the entity-level discipline axis (E4 keystone). `nil` ⇒ derive
+    /// `.strength` (mirrors `SessionExercise.discipline`'s legacy fallback), so a pre-E4 routine keeps its
+    /// identity with no migration. Additive optional.
+    var disciplineRaw: String?
+
+    // MARK: - Per-axis targets (the prescription for a non-strength block). All additive Optionals.
+    /// Target hold/work duration in seconds for a timed (or timed-strength / running) prescription.
+    var targetDurationSec: Double?
+    /// Target distance in metres for a running prescription. Pace is derived (distance + duration).
+    var targetDistanceMeters: Double?
+    /// Target rate-of-perceived-exertion (1–10) — the non-climb effort target.
+    var targetRPE: Int?
+
+    // MARK: - Graded-climb prescription (mirrors `SessionExercise`'s climb metadata shape).
+    /// `ClimbType.rawValue` (boulder/topRope/lead/sport); `nil` ⇒ boulder (default).
+    var climbTypeRaw: String?
+    /// The prescribed climb grade label (e.g. "V4" / "5.10c"); the source of truth for the routine.
+    var climbGradeLabel: String?
+    /// `GradeScale.rawValue` the grade is expressed in; `nil` ⇒ the type's default scale.
+    var climbGradeScaleRaw: String?
+
+    // MARK: - Timed prescription (reuses `TimedExerciseSpec`, like `SessionExercise`).
+    /// An encoded `TimedExerciseSpec` — the structure (mode/work/rest/reps/sets). `nil` ⇒ open count-up.
+    var timedSpecData: Data?
+    /// `TimedExerciseCategory.rawValue`; `nil` ⇒ `.other` (default).
+    var timedCategory: String?
+
+    /// The block's discipline (E4). Falls back to `.strength` for legacy/pre-E4 routine exercises — the
+    /// same identity-preserving fallback `SessionExercise.discipline` uses for legacy data.
+    var discipline: WorkoutDiscipline {
+        disciplineRaw.flatMap(WorkoutDiscipline.init(rawValue:)) ?? .strength
+    }
+
+    /// The climb's prescribed type (defaults to boulder for legacy/unset).
+    var climbType: ClimbType { climbTypeRaw.flatMap(ClimbType.init) ?? .boulder }
+    /// The grade scale the climb's grade is in (falls back to the type's default scale).
+    var climbGradeScale: GradeScale { climbGradeScaleRaw.flatMap(GradeScale.init) ?? climbType.defaultScale }
+
+    /// The prescribed timed structure (decoded from `timedSpecData`); `nil` ⇒ a plain open count-up.
+    var timedSpec: TimedExerciseSpec? {
+        get { timedSpecData.flatMap { try? JSONDecoder().decode(TimedExerciseSpec.self, from: $0) } }
+        set { timedSpecData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
+
+    init(id: UUID = UUID(), exerciseId: String, sets: Int, reps: String, restSeconds: Int,
+         weight: Double? = nil, weightUnit: WeightUnit? = nil, notes: String? = nil,
+         displayName: String? = nil, discipline: WorkoutDiscipline? = nil,
+         targetDurationSec: Double? = nil, targetDistanceMeters: Double? = nil, targetRPE: Int? = nil,
+         climbTypeRaw: String? = nil, climbGradeLabel: String? = nil, climbGradeScaleRaw: String? = nil,
+         timedSpecData: Data? = nil, timedCategory: String? = nil) {
+        self.id = id
+        self.exerciseId = exerciseId
+        self.sets = sets
+        self.reps = reps
+        self.restSeconds = restSeconds
+        self.weight = weight
+        self.weightUnit = weightUnit
+        self.notes = notes
+        self.displayName = displayName
+        // Strength is the implicit default — keep `disciplineRaw` nil for a strength block so its bytes
+        // match a legacy `RoutineExercise` (additive-nil-Optional invariant; the round-trip stays stable).
+        self.disciplineRaw = (discipline == nil || discipline == .strength) ? nil : discipline?.rawValue
+        self.targetDurationSec = targetDurationSec
+        self.targetDistanceMeters = targetDistanceMeters
+        self.targetRPE = targetRPE
+        self.climbTypeRaw = climbTypeRaw
+        self.climbGradeLabel = climbGradeLabel
+        self.climbGradeScaleRaw = climbGradeScaleRaw
+        self.timedSpecData = timedSpecData
+        self.timedCategory = timedCategory
+    }
 }
 
 /// One logged set during a live/finished session. The `actual*` fields cover a `.repsWeight` set; the
