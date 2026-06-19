@@ -5693,3 +5693,50 @@ exhaustive (running→Distance, dance/other→Active).
 
 **Verified:** see the build/test run stamped on the commit (Swift 6, 0 warnings; new
 `WorkoutDisciplineTests` + extended `SetMeasureTests`/`FreeformSummaryTests` green).
+
+## 2026-06-19 — Workout-Type Parity — Phases 1–6 (all disciplines log like climbing)
+
+Built on the P0 two-axis model. Each phase shipped build-green + unit-tests-green + a per-phase
+review agent + a commit (branch `claude/workout-type-parity`). Wireframe/plan in
+`docs/ux-research/workout-type-parity/`; phase prompts in `pdd/prompts/features/workout-type-parity/`.
+
+**P1 — shared foundation.** Renamed `expandedClimbs` → `expandedEntities` (one expand-state for all
+disciplines); added `EntityCard.swift` (`WorkoutDiscipline.accent` view-layer color kept OUT of the pure
+enum; `EntityRollupChip` — the strength/run/timed analogue of the climb grade pill). No behavior change to
+the climb card (kept as the template).
+
+**P2 — strength as an expandable card.** Replaced the flat `liftingOrTimedSection` with
+`strengthSection`/`strengthHeader`/`strengthRollup` (rolled-up top set · N sets · e1RM via the pure
+`StrengthStats` Epley; set list + quick-add + per-set media + footer). **`addLifting` auto-expands** the new
+card so quick-add stays immediately reachable (preserves `QuickAddSetTests`). New header a11y ids
+`freeform.entityName`/`.expand`/`.entityMenu`; the quick-add/setRow/addSet/repeatSet ids preserved
+(UITest contract). Hybrid ⚙ add + inline edit deferred (task #10).
+
+**P3 — timing is an orthogonal axis.** `TimedSetCover` (count-up FOCUS cover with reps/weight steppers,
+no outcome grid — the strength analogue of `TimedAttemptCover`) + 'Time this set' footer
+(`freeform.timeThisSet`) → commits `SetLog(reps,weight,durationSec)` → the combined "8 × 60 kg · 0:42" row.
+STOP commits once (no double-log); empty effort isn't logged.
+
+**P4 — running discipline.** `exerciseSection` now switches on `ex.discipline` (cleaner + forward-
+compatible). `addRun` (a `.run`/`.duration` entity) + `runSection` (total distance · avg pace · N legs via
+the pure `RunStats`) + `AddRunLegSheet` (manual distance+duration → derived pace; `SetMeasure.runSummary`).
+**`distanceUnit` derives from the weight unit** (lb→mi) — a v1 simplification; a sticky toggle + Watch/GPS
+distance are deferred (issue #177).
+
+**P5 — Dance/Other + six-type chooser.** `addOpenEffort` (lightweight `.duration` dance/other entities) on
+the now **discipline-aware timed card** (icon/accent from `ex.discipline`, so the one card serves
+timed/dance/other). Empty-state restructured from a 3-card HStack to a **2-column grid of all six**
+(existing card ids preserved, `freeform.cardRunning/Dance/Other` added) + add-menu items.
+
+**P6 — cross-type clip menu.** `climbClipMoveTargets` generalized to `clipMoveTargets(for:)` — titles by
+discipline noun (Attempt/Leg/Set); `SetMediaStrip` gains `moveTargetsLabel`; the strength + run per-set
+strips now wire the move/remove/delete deep-tap menu (was climb-only). The analytics half (pure session
+stats bridges → live ribbon for all disciplines + a mixed-session roll-up summary) is **deferred** (task
+#8 follow-up); the completion summary already type-adapts its headline from P0.
+
+**Deferred / tracked (not regressions):** the "Remove from attempt" clip-menu wording stays climb-worded
+for strength/run (functionally correct); hybrid ⚙ strength add + inline edit + recent chips (#10); the
+analytics ribbon/mixed-summary; and the cross-cutting items — watch `HKWorkoutActivityType` per discipline,
+the saved-session `SessionDetailView` SetTileRow second kind-switch, the `HistorySectionView` discipline
+facet, and the `SnappetBackup` golden + Android `BackupRoundTripTest` (no new non-nil fields in old data →
+golden stays stable until those are exercised). Android is its own wave.
