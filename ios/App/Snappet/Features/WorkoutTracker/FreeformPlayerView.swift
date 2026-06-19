@@ -46,6 +46,8 @@ struct FreeformPlayerView: View {
     /// The climb being EDITED (prompt 09): when set, the same `AddClimbSheet` opens PREFILLED in edit mode
     /// and Save overwrites that climb's fields in place (no duplicate). `nil` ⇒ no edit in flight.
     @State private var editingClimb: EditClimbTarget?
+    /// The strength exercise an "Edit details" sheet is open for (Workout-Type Parity, strength polish).
+    @State private var editingStrength: EditStrengthTarget?
     /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
     /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
     @State private var addingTimed = false
@@ -217,6 +219,15 @@ struct FreeformPlayerView: View {
         .sheet(item: $editingClimb) { target in
             AddClimbSheet(inheritedGym: lastClimbGym, initial: target.initial) { params, _ in
                 updateClimb(target.exerciseID, params)
+            }
+        }
+        // Strength "Edit details" (Workout-Type Parity polish): rename + set the default sets×reps×weight
+        // (seeds the quick-add); the hybrid-add payoff after a fast bulk pick, reused for later edits.
+        .sheet(item: $editingStrength) { target in
+            StrengthEditSheet(catalogName: target.catalogName, initial: target.initial,
+                              lastReps: target.lastReps, lastWeight: target.lastWeight,
+                              lastUnit: target.lastUnit) { params in
+                updateStrength(target.exerciseID, params)
             }
         }
         // Quick Session redesign Phase 5: tapping Timed opens the pick-or-create sheet (searchable catalog
@@ -542,14 +553,19 @@ struct FreeformPlayerView: View {
     private func quickAddSeed(for ex: SessionExercise) -> (reps: Int, weight: Double, unit: WeightUnit, hint: String?) {
         let last = ex.sets.last
         let pf = prefills[ex.exerciseId]
-        let reps = last?.actualReps ?? pf?.reps ?? 8
+        // Fall back to the exercise's default prescription (target*, set via "Edit details") before the
+        // hardcoded default — so the hybrid-add default seeds the first set (Workout-Type Parity polish).
+        let targetReps = Int(ex.targetReps)
+        let reps = last?.actualReps ?? pf?.reps ?? targetReps ?? 8
         let hint = last == nil ? pf?.hint : nil
         if let w = last?.actualWeight {
             return (reps, w, last?.weightUnit ?? unit, hint)
         } else if let w = pf?.weight {
             return (reps, w, pf?.unit ?? unit, hint)
+        } else if let w = ex.targetWeight, w > 0 {
+            return (reps, w, ex.targetWeightUnit ?? unit, hint)
         }
-        return (reps, 0, last?.weightUnit ?? pf?.unit ?? unit, hint)
+        return (reps, 0, last?.weightUnit ?? pf?.unit ?? ex.targetWeightUnit ?? unit, hint)
     }
 
     private func typeCard(_ title: String, symbol: String, id: String,
@@ -771,6 +787,17 @@ struct FreeformPlayerView: View {
                 .accessibilityIdentifier("freeform.expand")
                 .accessibilityLabel(expanded ? "Collapse exercise" : "Expand exercise")
                 Menu {
+                    Button {
+                        let pf = prefills[ex.exerciseId]
+                        editingStrength = EditStrengthTarget(
+                            exerciseID: ex.id,
+                            catalogName: resolver.name(for: ex.exerciseId),
+                            initial: AddStrengthParams(from: ex),
+                            lastReps: pf?.reps, lastWeight: pf?.weight, lastUnit: pf?.unit)
+                    } label: {
+                        Label("Edit details", systemImage: "pencil")
+                    }
+                    .accessibilityIdentifier("freeform.editEntity")
                     Button(role: .destructive) { removeExercise(ex) } label: {
                         Label("Remove exercise", systemImage: "trash")
                     }
@@ -1429,6 +1456,20 @@ struct FreeformPlayerView: View {
         pushLiveActivity()
     }
 
+    /// Apply the strength "Edit details" sheet (Workout-Type Parity polish): overwrite the display-name
+    /// override + the default prescription (`target*`) in place. An empty name clears the override (the
+    /// catalog name shows); the default seeds the card's quick-add for a fresh exercise.
+    private func updateStrength(_ exID: UUID, _ params: AddStrengthParams) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        session.exercises[idx].displayName = params.name.isEmpty ? nil : params.name
+        session.exercises[idx].targetSets = params.sets
+        session.exercises[idx].targetReps = "\(params.reps)"
+        session.exercises[idx].targetWeight = params.weight
+        session.exercises[idx].targetWeightUnit = params.unit
+        persist()
+        pushLiveActivity()
+    }
+
     /// Create a timed exercise from the "Pick or create" sheet (Quick Session redesign Phase 5): a named
     /// `.duration` `SessionExercise` carrying the chosen structure (`timedSpec`) and category. Its timed
     /// sets log underneath it like a climb's attempts. Every Timed entry point (the empty-state card + the
@@ -1860,6 +1901,18 @@ private struct FreeformStudioPresentation: Identifiable {
 private struct EditClimbTarget: Identifiable {
     let exerciseID: UUID
     let initial: AddClimbParams
+    var id: UUID { exerciseID }
+}
+
+/// The "Edit details" target for a strength exercise (Workout-Type Parity, strength polish) — the catalog
+/// name (placeholder), the prefilled params, and the cross-session last set (the "Last time" chip).
+private struct EditStrengthTarget: Identifiable {
+    let exerciseID: UUID
+    let catalogName: String
+    let initial: AddStrengthParams
+    let lastReps: Int?
+    let lastWeight: Double?
+    let lastUnit: WeightUnit?
     var id: UUID { exerciseID }
 }
 
