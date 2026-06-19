@@ -238,6 +238,9 @@ struct FreeformPlayerView: View {
             TimedSetCover(
                 exerciseName: resolver.name(for: ex?.exerciseId ?? "", override: ex?.displayName),
                 initialReps: target.reps, initialWeight: target.weight, initialUnit: target.unit) { reps, weight, unit, duration in
+                    // Don't log a completely-empty effort (instant STOP with reps/weight zeroed) — that
+                    // would render a meaningless "—" row.
+                    guard reps != nil || weight != nil || duration > 0 else { return }
                     appendLog(SetLog(actualReps: reps, actualWeight: weight, weightUnit: unit,
                                      durationSec: duration > 0 ? duration : nil),
                               toExerciseID: target.exerciseID)
