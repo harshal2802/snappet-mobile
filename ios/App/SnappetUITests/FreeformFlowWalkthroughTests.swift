@@ -180,4 +180,78 @@ final class FreeformFlowWalkthroughTests: XCTestCase {
                 "the finished freeform session should appear in History")
         }
     }
+
+    /// Save-as-routine (workout-redesign E5): Quick Start → log a lift → Finish → the completion summary's
+    /// coral "Save as routine" opens the PRE-FILLED routine editor (the converter's actuals→prescription
+    /// draft) → review → Save → the new routine appears in Routines and can be started.
+    func testSaveQuickSessionAsRoutine() {
+        // 1 — Suite home → WorkoutTracker dashboard → Quick Start.
+        XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 6))
+        app.tabBars.buttons["Apps"].tap()
+        XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
+        app.buttons["moduleCard.workout-log"].tap()
+        let quick = app.buttons["workout.quickStart"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 5), "Quick Start should be on the dashboard")
+        quick.tap()
+        snap("e5-01-freeform-empty")
+
+        // 2 — Lifting → pick the first exercise → log 8 × 60 (one completed set is enough to convert).
+        addExerciseMenu("Lifting exercise")
+        let row = app.buttons.matching(NSPredicate(
+            format: "label CONTAINS 'Beginner' OR label CONTAINS 'Intermediate' OR label CONTAINS 'Expert'"
+        )).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the picker should list exercises")
+        row.tap()
+        let addLift = app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Add'")).firstMatch
+        XCTAssertTrue(addLift.waitForExistence(timeout: 4), "the picker's Add commit button should appear")
+        addLift.tap()
+        tapAddSetForLastExercise()
+        typeIn(app.textFields["logset.reps"], "8")
+        typeIn(app.textFields["logset.weight"], "60")
+        app.buttons["logset.add"].tap()
+        sleep(1); snap("e5-02-logged")
+
+        // 3 — Finish → the completion summary; the coral "Save as routine" affordance is present.
+        let finish = app.buttons["freeform.finish"]
+        if !finish.exists { app.swipeUp() }
+        XCTAssertTrue(finish.waitForExistence(timeout: 4), "Finish should be available")
+        finish.tap()
+        let saveAsRoutine = app.buttons["freeform.saveAsRoutine"]
+        XCTAssertTrue(saveAsRoutine.waitForExistence(timeout: 5),
+                      "the completion summary should offer 'Save as routine' (a logged session converts)")
+        snap("e5-03-summary-with-save")
+        saveAsRoutine.tap()
+
+        // 4 — The PRE-FILLED routine editor opens: name suggested, ≥ 1 block already present (no empty
+        // editor — the converter pre-filled it for review). Rename it, then Save.
+        let nameField = app.textFields["Name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5), "the routine editor should open pre-filled")
+        // The editor's Save is enabled only when the name is non-empty AND there's ≥ 1 block → its enabled
+        // state proves the converter pre-filled at least one block.
+        let saveRoutine = app.navigationBars.buttons["Save"]
+        XCTAssertTrue(saveRoutine.waitForExistence(timeout: 4), "the editor should offer Save")
+        XCTAssertTrue(saveRoutine.isEnabled,
+                      "Save is enabled → the editor was pre-filled with a name + at least one block")
+        nameField.tap()
+        // Clear any suggested text and type a distinctive name we can find in the list.
+        nameField.press(forDuration: 1.0)
+        if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+        nameField.typeText("My Saved Routine")
+        snap("e5-04-editor-prefilled")
+        saveRoutine.tap()
+
+        // 5 — Back on the summary; tap Done to finish & exit, then go to Routines: the new routine is there.
+        let done = app.buttons["freeform.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "the summary should still be showing after the editor")
+        done.tap()
+        sleep(1)
+        let routinesTab = app.segmentedControls.buttons["Routines"]
+        XCTAssertTrue(routinesTab.waitForExistence(timeout: 5), "the Routines section should be reachable")
+        routinesTab.tap()
+        sleep(1); snap("e5-05-routines")
+        XCTAssertTrue(app.staticTexts["My Saved Routine"].waitForExistence(timeout: 5)
+            || app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'My Saved Routine'")).firstMatch
+                .waitForExistence(timeout: 2),
+            "the saved routine should appear in Routines")
+    }
 }

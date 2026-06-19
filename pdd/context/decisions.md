@@ -5994,3 +5994,122 @@ branch), `TodayDigest.swift` (added `workoutPlan`), and `HomeDashboardView.swift
 card in the `else` of the resume-workout card). E5 (save-as-routine from the freeform summary) and E6 (QR
 share) also touch `WorkoutTrackerModule`/`RoutineEditorView` — the additions here are all new members at the
 ends of their sections, so conflicts should be small and mechanical.
+## 2026-06-19 — Workout redesign E6: share a routine via QR (#186)
+
+**The reuse, generalized.** Kilter already had an offline QR stack (a `KilterClimbLink` codec + a CoreImage
+QR renderer + an AVFoundation scanner + the `SnappetDeepLink` route table + the `SuiteRouter` one-shot +
+`KilterDeepLinkRouting.explainMissing`). E6 lifts that into reusable pieces rather than forking it:
+- **`SnappetShareable`** (`Core/SnappetShareable.swift`) — a tiny protocol (`url` + `init?(decoding:)`,
+  default `encoded`). `KilterClimbLink` and the new `SharedRoutine` both conform, so ONE QR renderer
+  (`QRCodeImage.make(for:)`, the lifted `qrImage`) and ONE scanner serve both.
+- **`SnappetScannerView`** (`Core/SnappetScannerView.swift`) — the AVFoundation plumbing (the old private
+  `QRScannerRepresentable`/controller) lifted into a generic scanner taking a `decode:` closure.
+  `KilterScannerView` is now a thin wrapper over it (passing the climb decoder), so the climb + routine
+  scanners share one camera path and can't drift. The Kilter scanner's a11y id (`kilter.scanner`) is
+  preserved; the full-bleed look became a rounded-rect preview (cosmetic).
+
+**`SharedRoutine` codec — reference-not-payload, then squeeze.** A user routine is on no shared catalog, so
+unlike a climb (a single uuid reference) it must carry the routine. We keep it small by carrying **`exerciseId`
+references** (both phones ship the same 870-row catalog + the same timed/climb structures) — NOT full
+`Exercise` defs — in a **terse `Codable`** (1–3-char `CodingKeys`, omit-nil/omit-default on encode), then
+**raw DEFLATE** (Apple `Compression`, `COMPRESSION_ZLIB` = the raw stream, no zlib/gzip header — smallest form;
+distinct from the gzip *inflate* the Kilter catalog download does via the `zlib` C lib) → **base64url** (RFC
+4648 §5, no padding) → `snappet://routine/v1/<blob>`. Pure value + codec → unit-tested without a camera.
+
+**Measured size + the QR-vs-link threshold (README §10 Q4).** The realistic case is comfortably small:
+- A realistic **11-block mixed routine (strength + timed + climb + run) = 519 encoded URL bytes**.
+- `scannableURLByteCap = 900` bytes (conservative — a QR v40 at ECC-M holds ~2300 alphanumeric chars, so 900
+  URL bytes scans easily at arm's length). `fitsInScannableQR` gates the QR; past it the sheet hides the QR
+  and leans on the always-present `ShareLink` (link/file) — the honest size handling the design calls for.
+- **Surprise from the tests, worth recording:** deflate crushes repetitive content so hard that a 60-block
+  routine of *repeated* notes was only 755 bytes. A routine only really exceeds the cap when its content is
+  genuinely **diverse/high-entropy** (many custom names + distinct notes) — a 40-block routine of unique
+  `custom-<uuid>` ids + per-block notes clears it. So the fallback is correctly reserved for the rare large,
+  diverse routine, and the common case is always a QR.
+
+**Custom-exercise handling (the documented call).** A `custom-…` exercise id won't resolve on the other
+phone (it's not in the shared catalog). We **inline the block's `displayName`** (already a terse field) so an
+imported custom block stays legible with its real name, AND flag the id via
+`SharedRoutine.unresolvableExerciseIds(resolving:)` — the `KilterDeepLinkRouting.explainMissing` analog — so
+the import-confirm preview shows a graceful *"N exercises aren't in your library"* line. The block still
+imports (never dropped, never silent). We deliberately did NOT inline a full minimal `Exercise` definition:
+it would bloat the blob and a custom strength move needs no catalog metadata to be logged as reps×weight.
+
+**Route + import — additive, never silent, never overwrite.** `SnappetDeepLink.route(for:)` gained
+`case routine(SharedRoutine)`, tried **after** the climb decode so a climb URL still routes to Kilter (no
+regression — locked by `testClimbStillRoutesToKilterNotRoutine`). `RootShell.handle` stages
+`SuiteRouter.pendingRoutineImport` (the `pendingKilterClimb` pattern) + `open(module: "workout-log")`;
+`WorkoutHomeView` consumes it (`onChange initial:true`, self-clearing) into a **`RoutineImportSheet`** preview
+(name + blocks + the missing-ids line) → on confirm `importRoutine` inserts a **NEW `Routine` (new UUID)** with
+fresh-id blocks (`SharedRoutine.routineExercises()`) — never overwrites an existing routine. The
+`RoutineDetailView` qrcode toolbar button opens a segmented **My Code / Scan** `RoutineShareView`; a scan there
+routes through the SAME router one-shot (one import brain), popping to root so the preview surfaces on the
+tracker root that owns the model context.
+
+**Testing.** Pure: codec round-trip (every block field), fresh-id-never-overwrite, byte-stable strength block,
+measured size + threshold, `unresolvableExerciseIds`, custom-name survival, version/scheme rejection, the
+base64url + raw-deflate primitives, and the **open path** (URL → route → one-shot → new-UUID insert) — all
+device-free. The camera scan is the only device-pending half (the Kilter precedent). Build + the codec/routing
+suites + the existing Kilter deep-link suite green on iPhone 17.
+
+**Android (wave H, tracked).** The Android Kilter share loop (#91) already proves the cross-platform
+`snappet://` shape; the routine-share mirror (a `SharedRoutine` Kotlin codec + the same deflate/base64url +
+the import sheet) is deferred to the hardening wave — iOS is the lead platform and the Android tree was not
+touched.
+---
+
+## 2026-06-19 — E5: Save a Quick Session as a repeatable routine (workout-redesign, wave 3)
+
+> (Appended at the END, out of reverse-chronological order, to minimize merge conflicts with the parallel
+> wave-3 agents E6/E7 — per the E5 orchestration brief.)
+
+**Actuals→prescription is a pure, lossy, USER-REVIEWED converter — `SessionToRoutine` (the inverse of E4's
+`RoutineSessionBuilder`).** A finished session is a *record* (1 set here, 6 attempts there, an open hold); a
+routine is a *plan*. Collapsing one to the other discards detail and makes judgement calls, so the conversion
+is pure + device-free (Foundation only, unit-tested in `SessionToRoutineTests`) and its output is **reviewed in
+the editor before anything is inserted** (README §10 Q3). We keep it the deliberate inverse of
+`RoutineSessionBuilder` (same per-discipline `switch`) so a freeform → routine → freeform round-trip preserves
+discipline — pinned by a round-trip test through both seams.
+
+**Per-discipline prescription rules (defensible + overridable):**
+- **strength** → completed-set count × **modal** completed reps (most-frequent working reps; ties → the
+  higher reps) × the **top weighted set** (heaviest by `weightKg × reps`, the PR ranking) in its OWN logged
+  unit (not converted — show what was lifted). `disciplineRaw` stays nil (the additive-nil strength default,
+  so a strength-only saved routine is byte-identical to a hand-built one).
+- **climb** → the climb is the slot: type + grade + scale carried through; `sets` = the logged attempt count.
+- **timed** → the `TimedExerciseSpec` + category verbatim. A **structured** protocol (repeaters/tabata/emom)
+  keeps its own set count + NO extra `targetDurationSec` (the spec already carries work seconds); a **simple**
+  hold uses the completed-set count + a **median** hold target (median, not mean, so one outlier hold doesn't
+  skew the prescription).
+- **run** → a single block targeting Σ completed distance (pace is derived, never prescribed). Never a weight.
+- **dance / other** → a duration block with a median active-duration target.
+- An exercise with **no completed set is dropped** (prescribing zero sets is meaningless — the lossy-but-clean
+  call; warm-ups the user didn't log fall away, and the rest is trimmable in the editor).
+
+**The editor is pre-filled for REVIEW, not silently inserted.** Added an additive optional `prefill:
+RoutineDraft?` to `RoutineEditorView` (used only when `routine == nil`): it seeds the local staged state, then
+Save takes the EXISTING new-routine INSERT path (a brand-new `Routine` with a fresh UUID + the "Created
+routine" activity log). So save-as-routine reuses one editor + one insert+log path; the user trims warm-ups /
+renames / adjusts targets first, and the loop never writes a routine behind the user's back. `RoutineDraft` is
+a pure value type (`Identifiable`, drives the `.sheet(item:)`), not a new `@Model`.
+
+**The CTA is the screen's single brand-coral moment (the two-axis color contract).** "Save as routine"
+(`freeform.saveAsRoutine`) on `FreeformDoneSummaryView.actionBar` is tinted `SnappetColor.brand` (coral) — the
+one "make this repeatable" CTA — while Done stays `SnappetColor.workout` (the discipline accent) and View
+detail / Discard stay neutral. Shown only when `SessionToRoutine.canConvert` (≥ 1 completed set), so it never
+offers to save an empty plan.
+
+**Name/sport suggestion (lossy, overridable).** The suggested routine name reuses the session's name unless
+it's the generic "Quick session" placeholder, in which case it's a dominant-discipline label ("Climbing
+session" / "Strength session" / …). `suggestedSport` maps the dominant discipline to a back-compat `SportTag`
+(climbing → `.climbing`, else `.general`) — lossy (3 tags vs 6 disciplines, README §10 Q2); the per-block
+discipline is the real identity axis the routine carries.
+
+**Verification.** `build-for-testing` SUCCEEDED (iPhone 17 Pro Max); `SessionToRoutineTests` (18) +
+`RoutineSessionBuilderTests` (5) + `FreeformSummaryTests` (9) + `RoutineExerciseMigrationTests` (17) = 54 tests,
+0 failures; `FreeformFlowWalkthroughTests/testSaveQuickSessionAsRoutine` (Quick Start → log → Finish → Save as
+routine → review → Save → routine appears in Routines) green.
+
+**Android (wave H, tracked).** No Android tree touched — save-as-routine is an iOS-only UI/converter wave; the
+Kotlin mirror rides the E4 keystone wave.
+

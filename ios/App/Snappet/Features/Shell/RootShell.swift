@@ -69,6 +69,12 @@ struct RootShell: View {
         case .startFocus:
             router.pendingPomodoroStart = true
             router.open(module: "pomodoro")
+        case .routine(let shared):
+            // A shared routine (workout-redesign E6): open the gym tracker + a one-shot import intent.
+            // The tracker root owns the model context (and the catalog knowledge for the "not in your
+            // library" landing), so it shows the import-confirm preview and inserts a NEW Routine.
+            router.pendingRoutineImport = shared
+            router.open(module: "workout-log")
         case .exercise(let id):
             // Two-level deep link: open the gym tracker, then push the exercise's detail (the
             // navigationDestination(for: Exercise.self) the tracker root registers).

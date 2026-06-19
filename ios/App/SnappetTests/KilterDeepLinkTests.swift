@@ -79,10 +79,33 @@ final class SnappetDeepLinkRouteTests: XCTestCase {
             "snappet://pomodoro",                      // pomodoro, but not /start
             "snappet://pomodoro/history",              // pomodoro, wrong path
             "snappet://pomodoro/start/extra",          // pomodoro/start with trailing junk
+            "snappet://routine/v1/",                   // routine, missing blob
+            "snappet://routine/v9/abc",                // routine, unknown version
         ] {
             let url = try XCTUnwrap(URL(string: bad))
             XCTAssertNil(SnappetDeepLink.route(for: url), "should not route \(bad)")
         }
+    }
+
+    // MARK: - Routine share route (workout-redesign E6) — additive, doesn't regress climb scanning
+
+    func testRoutineURLRoutesToRoutineImport() throws {
+        let shared = SharedRoutine(name: "Leg Day", detail: nil,
+                                   exercises: [RoutineExercise(exerciseId: "barbell_squat", sets: 5,
+                                                               reps: "5", restSeconds: 120)])
+        let url = try XCTUnwrap(shared.url)
+        guard case .routine(let decoded) = SnappetDeepLink.route(for: url) else {
+            return XCTFail("expected .routine route")
+        }
+        XCTAssertEqual(decoded.name, "Leg Day")
+        XCTAssertEqual(decoded.exercises.count, 1)
+    }
+
+    func testClimbStillRoutesToKilterNotRoutine() throws {
+        // The additive routine decode must be tried in a way that DOESN'T swallow a climb link.
+        let url = try XCTUnwrap(URL(string: "snappet://kilter/climb/abc123?angle=40"))
+        XCTAssertEqual(SnappetDeepLink.route(for: url),
+                       .kilterClimb(KilterClimbLink(uuid: "abc123", angle: 40)))
     }
 
     // MARK: - Climb link → landing

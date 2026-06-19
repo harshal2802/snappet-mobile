@@ -13,7 +13,9 @@ struct RoutineDetailView: View {
     let start: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(SuiteRouter.self) private var router
     @State private var editing = false
+    @State private var sharing = false
 
     /// The disciplines present, in canonical order — drives the "mixed rhythm" summary chips.
     private var disciplines: [WorkoutDiscipline] {
@@ -78,10 +80,25 @@ struct RoutineDetailView: View {
             .disabled(routine.exercises.isEmpty)
         }
         .toolbar {
+            // Share-via-QR (workout-redesign E6) — mirrors KilterClimbDetailView's qrcode toolbar button.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { sharing = true } label: { Image(systemName: "qrcode") }
+                    .accessibilityLabel("Share routine")
+                    .accessibilityIdentifier("routine.share")
+            }
             ToolbarItem(placement: .primaryAction) { Button("Edit") { editing = true } }
         }
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine, resolver: resolver, defaultUnit: unit)
+        }
+        .sheet(isPresented: $sharing) {
+            // Scanning a routine here routes it through the same router one-shot the snappet:// link path
+            // uses, so WorkoutHomeView shows the one import-confirm preview (one import brain). Pop this
+            // detail off first so the preview surfaces on the tracker root (where the import sheet lives).
+            RoutineShareView(routine: routine, onScan: { scanned in
+                router.popToRoot()
+                router.pendingRoutineImport = scanned
+            })
         }
     }
 }

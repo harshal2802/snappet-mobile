@@ -106,6 +106,9 @@ struct WorkoutHomeView: View {
     @State private var plannerPrefill: PlannerRoutinePrefill?
     @State private var playing: WorkoutSession?
     @State private var startConflict: Routine?
+    /// A routine arriving over QR / a `snappet://routine/v1/…` link (E6) awaiting the import-confirm
+    /// preview. Set by `consumePendingImport` from the router one-shot; cleared when the sheet closes.
+    @State private var importingRoutine: SharedRoutine?
     /// The Video Studio opened from the module level (#74) — dashboard candidates or a History
     /// row's swipe shortcut. Same find-or-create + full-screen presentation as the session detail.
     @State private var studioProject: StudioProject?
@@ -194,6 +197,12 @@ struct WorkoutHomeView: View {
         .sheet(isPresented: $showingNewExercise) {
             ExerciseEditorView(existing: nil)
         }
+        // The import-confirm preview for a routine arriving over QR / a snappet:// link (E6). Never
+        // silent: the user reviews it (incl. the "not in your library" landing) and confirms an insert.
+        .sheet(item: $importingRoutine) { shared in
+            RoutineImportSheet(shared: shared, resolver: resolver, unit: unit,
+                               onImport: { blocks in importRoutine(shared, blocks: blocks) })
+        }
         .fullScreenCover(item: $playing) { session in
             Group {
                 // Routineless sessions use the grow-as-you-go freeform logbook; routine sessions keep
@@ -245,6 +254,16 @@ struct WorkoutHomeView: View {
             seedStarters()
             consumePendingResume()
         }
+        // Consume the one-shot routine-import intent (E6, the `pendingKilterClimb` pattern): `initial: true`
+        // covers cold start (the intent was set before this view existed), the change closure the warm case
+        // (the shell replaced the path with this root, then set a new intent). Clearing the router flag
+        // before presenting makes it one-shot even if the sheet re-renders us.
+        .onChange(of: router.pendingRoutineImport, initial: true) { _, pending in
+            guard let pending else { return }
+            router.pendingRoutineImport = nil
+            section = .routines
+            importingRoutine = pending
+        }
     }
 
     /// Consume the router's one-shot resume intent (#71 review fix): Home's "Resume <routine>" card
@@ -255,6 +274,19 @@ struct WorkoutHomeView: View {
         guard router.pendingWorkoutResume else { return }
         router.pendingWorkoutResume = false
         if let s = activeSession { resume(s) }
+    }
+
+    /// Insert a NEW local `Routine` from a confirmed import (E6). A fresh UUID — it NEVER overwrites an
+    /// existing routine (the design's "new local UUID, never overwrite" rule); the blocks already carry
+    /// fresh ids from `SharedRoutine.routineExercises()`.
+    private func importRoutine(_ shared: SharedRoutine, blocks: [RoutineExercise]) {
+        let routine = Routine(name: shared.name, exercises: blocks, isStarter: false,
+                              detail: (shared.detail?.isEmpty == false) ? shared.detail : nil)
+        context.insert(routine)
+        try? context.save()
+        core.log(module: WorkoutTrackerModule.id, action: "routine",
+                 summary: "Imported routine: \(shared.name)")
+        section = .routines
     }
 
     /// The live-workout banner — shown only while a workout is active *and* the player is
