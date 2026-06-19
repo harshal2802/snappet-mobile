@@ -119,6 +119,9 @@ struct SessionRecapCards: View {
     let unit: WeightUnit
     let maxHR: Double
     var milestones: [FreeformSummary.Milestone] = []
+    /// Whether to render the HR Effort block (climb/run). The Finish summary shows it here (default);
+    /// the session detail passes `false` because it already has a dedicated Heart-rate section (E2).
+    var showsHR: Bool = true
 
     private var stats: FreeformSummary.Stats { FreeformSummary.stats(for: session, unit: unit) }
     private var dominant: FreeformSummary.Dominant { stats.dominant }
@@ -160,7 +163,7 @@ struct SessionRecapCards: View {
 
         ClimbGradePyramid(pyramid: s.pyramid)
         ClimbTimelineList(timeline: s.timeline)
-        if let hrStats { ClimbEffortSection(hr: hrStats) }
+        if showsHR, let hrStats { ClimbEffortSection(hr: hrStats) }
     }
 
     @ViewBuilder private var timedCards: some View {
@@ -223,7 +226,7 @@ struct SessionRecapCards: View {
             .padding()
             .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         }
-        if let hrStats { ClimbEffortSection(hr: hrStats) }
+        if showsHR, let hrStats { ClimbEffortSection(hr: hrStats) }
     }
 
     @ViewBuilder private var strengthCards: some View {

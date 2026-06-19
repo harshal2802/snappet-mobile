@@ -135,7 +135,8 @@ struct WorkoutHomeView: View {
                 // have since been deleted → nil, then the bridge falls back to the dominant
                 // exercise category / a generic gym default).
                 let sport = routines.first(where: { $0.id == s.routineID })?.sport
-                SessionDetailView(session: s, resolver: resolver, unit: unit, sport: sport)
+                SessionDetailView(session: s, resolver: resolver, unit: unit, sport: sport,
+                                  history: history.filter { $0.id != s.id })
             }
         }
         .navigationDestination(for: ProgressRoute.self) { route in
