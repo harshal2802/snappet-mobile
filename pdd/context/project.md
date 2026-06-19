@@ -355,7 +355,9 @@ fitness cards are disambiguated: the gym tracker's display title is now **"Gym T
 caption with registry display titles), its subtitle advertises the video studio, and the two
 modules cross-link ("Looking for your Apple Watch workouts?" on the tracker dashboard — empty
 state included — and a Gym Tracker footer row in the Reels list). The tracker's section control
-is **text-labelled** (Dashboard / Exercises / Routines / History; native segmented style kept so
+is **text-labelled** (Dashboard / Library / Routines / History; the "Exercises" segment was renamed
+**Library** in workout-redesign E3 — a discipline-spined library of all workout types — with the
+`browse` case id + the `workout.sectionPicker` a11y id unchanged; native segmented style kept so
 XCUITest `segmentedControls` queries still resolve) with Settings moved to a toolbar gear that
 pushes `WorkoutSettingsRoute`. The multi-clip studio is surfaced at module level: a dashboard
 **Video Studio** card (Open-in-Studio rows for recent video-bearing sessions, a how-to hint

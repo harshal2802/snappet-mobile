@@ -138,4 +138,16 @@ struct ExerciseResolver {
         if let ex = exercise(id: id) { return ex.name }
         return id.replacingOccurrences(of: "_", with: " ")
     }
+
+    /// Build the discipline-spined **workout library** (E3) from the live sources at this I/O edge: the
+    /// merged strength catalog (bundled + custom) + value snapshots of the saved timed exercises. The pure
+    /// `LibraryBuilder` does the actual merge/sort so it stays unit-testable without a store. Climb/run
+    /// starters + timed suggestions are seeded inside the builder.
+    func library(timed: [TimedExerciseCatalog]) -> [LibraryItem] {
+        let snapshots = timed.map {
+            LibraryBuilder.TimedSnapshot(id: $0.id, name: $0.name, category: $0.category,
+                                         specData: $0.specData, lastUsedAt: $0.lastUsedAt)
+        }
+        return LibraryBuilder.items(strength: allMerged, timed: snapshots)
+    }
 }
