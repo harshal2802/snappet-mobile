@@ -5919,3 +5919,78 @@ deferred to the hardening wave — iOS is the lead platform and the Android tree
 `block(from:)` are the pure, tested round-trip seams. E5 (save-as-routine) writes the inverse of
 `RoutineSessionBuilder` (actuals → a `RoutineExercise` per discipline); E6 (QR share) serializes the
 `RoutineExercise` composite (exerciseId references); E7 (planner) emits a `[RoutineExercise]`.
+
+## 2026-06-19 — Workout redesign E7: smart workout planning (heuristic + on-device Apple Intelligence) (#187)
+
+**Shipped.** A pure `WorkoutRecommender` (modelled 1:1 on `KilterRecommender`) + a per-muscle extension of
+`WorkoutHistoryStats` + a `WorkoutPlanLogic` readiness verb + an editable-draft screen (`WorkoutPlanView`),
+with an **optional on-device Foundation Models sharpener** behind a degrade-to-heuristic seam. Files:
+`Features/WorkoutTracker/WorkoutRecommender.swift`, `WorkoutPlanLogic.swift`, `WorkoutPlanTweak.swift`,
+`WorkoutPlanView.swift`, extended `WorkoutHistoryStats.swift`; `Services/WorkoutPlanIntelligence.swift`;
+`TodayDigest.workoutPlan`; dashboard `Plan a session` entry. Tests: `WorkoutRecommenderTests` (14),
+`WorkoutPlanLogicTests` (12), `WorkoutPlanTweakTests` (11), `WorkoutHistoryStatsTests` (+5 per-muscle),
+`WorkoutPlanFlowTests` (UI). All green on iPhone 17e.
+
+**The recommender mirrors Kilter exactly.** `Strategy` (balanced/hypertrophy/strength/recovery/timeCapped) →
+`StrategyConfig` (count + `Mix` + a rep/rest `Scheme`) → `Options` → largest-remainder `allocation` →
+`recommend`, deterministic with stable tie-breaks + a `rerollSeed` rotation. `Goal` =
+warmUp/main/accessory/finisher. The same "the view does the I/O, the core is pure value types" contract.
+
+**The per-muscle signal — join at the I/O edge.** `WorkoutHistoryStats.make(history:resolved:)` takes
+`ResolvedSession`/`ResolvedSet` value snapshots whose `Exercise.primaryMuscles` were joined *in the view*
+(`WorkoutPlanView`, where the `@MainActor ExerciseResolver` lives) — the pure core never touches SwiftData
+or the resolver. It emits `daysSinceByMuscle` / `lastTrainedByMuscle` / `weeklyVolumeByMuscle` (rolling
+7-day completed-set count). The old `make(history:)` stays for E0 callers (muscle maps empty).
+
+**Decision — never-trained muscle freshness is *moderate*, not maximal.** `focusMuscles` biases toward the
+least-recently-trained muscle, but treats a never-trained muscle as `untrainedFreshnessDays = 6` (not ∞).
+Otherwise the 14 muscles a lifter has never logged would always crowd out a genuinely-rested trained one
+(the first failing test surfaced this — focus came back `[abdominals, abductors, adductors]`). 6 days sits
+*below* a well-rested trained muscle (7+ days leads) but *above* a recently-trained one, so the plan biases
+toward what the user actually trains while still giving a beginner sensible variety.
+
+**Decision — fill the `main` block FIRST.** Warm-up also ranks by muscle-freshness, so running it before
+`main` let it steal the prime compound off the freshest muscle. We fill `main` first (it's the anchor), then
+warm-up/accessory/finisher draw from what's left; the *display* order (warm-up → main → …) is restored by a
+final sort. (A second failing test surfaced this.)
+
+**Decision — Apple Intelligence parses *inputs*, not the *plan*.** The locked decision is "AI is a
+sharpener, never required." Rather than have the LLM emit a whole workout (untrustworthy / unexplainable),
+`WorkoutPlanIntelligence.resolve(phrase:)` asks Apple's Foundation Models system model to structure a
+natural-language tweak into the **same** deterministic `WorkoutPlanTweak` the heuristic parser produces —
+then the **pure `WorkoutRecommender` still builds the plan** from those constraints. The plan stays
+deterministic, auditable, and explainable; the AI only fills in the inputs. `WorkoutPlanTweak.apply(to:)` is
+the single place a tweak becomes recommender inputs, shared by both paths so they can't diverge.
+
+**FoundationModels seam status — REAL call, SDK/device-gated, degrades silently.** The iOS 26 SDK ships
+`FoundationModels`; the deployment target is iOS 18. So the import is behind `#if canImport(FoundationModels)`
++ `@available(iOS 26.0, *)` + a runtime `SystemLanguageModel.default.isAvailable` gate. The real call uses a
+`@Generable PlanTweakSchema` + `LanguageModelSession.respond(to:generating:)` with an 8-second `withTimeout`
+race; **any** unavailability/error/timeout returns the heuristic floor (`resolve` always computes the
+heuristic first and only *replaces* it on AI success). On the simulator the model is unavailable, so the
+seam is verified to return `.heuristic` (`WorkoutPlanTweakTests`). **On-device only — no network, no server
+LLM** (the hard constraint). The `@Generable` macro forced `PlanTweakSchema` to be `fileprivate` (not
+`private`) so the macro-expanded conformance can reach it — the one non-obvious compile gotcha.
+
+**`@Generable` gotcha.** A `@Generable private struct` fails to compile ("inaccessible due to 'private'") —
+the macro expands a conformance in a separate synthesized file that can't see a `private` type. Use
+`fileprivate` (or `internal`) for any `@Generable` type nested in an enum.
+
+**Started session = a freeform session.** "Start this session" seeds a *routineless* `WorkoutSession` from
+the plan's `[RoutineExercise]` (via `RoutineSessionBuilder.sessionExercise(from:)`) so it uses the
+grow-as-you-go `FreeformPlayerView` — the user can add/swap on the fly. "Save as routine" hands the
+`[RoutineExercise]` + a verb-folded default name to a pre-filled `RoutineEditorView` (new
+`prefillExercises`/`prefillName` params, used only for a new routine) for review/rename before saving.
+
+**Scope.** v1 plans **strength** sessions only (the candidate pool filters to strength/powerlifting; emitted
+blocks are strength → `disciplineRaw == nil`, the additive-nil invariant). The `Plan → [RoutineExercise]`
+bridge already returns the routine shape, so a later tier can widen it to discipline-mixed plans.
+
+**Merge-conflict anticipation with E5/E6.** This phase touched `WorkoutTrackerModule.swift` (added a
+`WorkoutPlanRoute` destination, a `PlannerRoutinePrefill` sheet, `startPlannedSession`, and the dashboard
+`openPlan` wiring), `WorkoutDashboardSection.swift` (added an `openPlan` param + a `planEntry` row in both
+the populated and empty states), `RoutineEditorView.swift` (added `prefill*` params + a `loadExisting`
+branch), `TodayDigest.swift` (added `workoutPlan`), and `HomeDashboardView.swift` (added a `workoutPlan`
+card in the `else` of the resume-workout card). E5 (save-as-routine from the freeform summary) and E6 (QR
+share) also touch `WorkoutTrackerModule`/`RoutineEditorView` — the additions here are all new members at the
+ends of their sections, so conflicts should be small and mechanical.

@@ -126,6 +126,35 @@ enum TodayDigest {
         return ClimbPlan(loggedClimbs: history.count, workingGradeLabel: label)
     }
 
+    // MARK: - Workout plan (smart planning — E7)
+
+    struct WorkoutPlan: Equatable {
+        /// The "Today" readiness verb (REST / EASY / TRAIN / PUSH).
+        var readiness: WorkoutPlanLogic.Readiness
+        /// The plain-language *why* the verb chose this — the card subtitle.
+        var why: String
+    }
+
+    /// The "Plan a session" hook for the Gym Tracker, sibling to `climbPlan`. `nil` until the user has at
+    /// least one workout session (the card render gate — an unused module shouldn't advertise). The verb
+    /// comes from the pure `WorkoutPlanLogic`, so this card and `WorkoutPlanView` agree on today's read.
+    /// `resolved` is the I/O-edge-joined per-muscle history (mirrors `sessions`); pass `[]` for the
+    /// discipline-only signal when the join isn't worth doing for a single card.
+    static func workoutPlan(sessions: [WorkoutSession],
+                            resolved: [WorkoutHistoryStats.ResolvedSession] = [],
+                            now: Date, calendar: Calendar) -> WorkoutPlan? {
+        let completed = sessions.filter { $0.completedAt != nil }
+        guard !completed.isEmpty else { return nil }
+        let signal = WorkoutHistoryStats.make(history: completed, resolved: resolved, now: now, calendar: calendar)
+        let last = completed.map(\.startedAt).max()
+        let daysSince = last.map {
+            calendar.dateComponents([.day], from: calendar.startOfDay(for: $0),
+                                    to: calendar.startOfDay(for: now)).day ?? 0
+        }
+        let today = WorkoutPlanLogic.today(signal: signal, daysSinceLastSession: daysSince)
+        return WorkoutPlan(readiness: today.readiness, why: today.why)
+    }
+
     // MARK: - Activity streak
 
     /// Consecutive days **ending today** with at least one logged action — the suite-engagement

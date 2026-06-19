@@ -72,6 +72,14 @@ struct LibraryItemRoute: Hashable { let item: LibraryItem }
 /// `WorkoutSession` — pushing the model type directly while that cover exists wedges the push.
 struct SessionRoute: Hashable { let id: UUID }
 
+/// A pending "Save as routine" pre-fill handed from the smart planner (E7) to the routine editor sheet —
+/// the plan's `[RoutineExercise]` + a suggested name. `Identifiable` so it drives a `sheet(item:)`.
+struct PlannerRoutinePrefill: Identifiable {
+    let id = UUID()
+    let name: String
+    let exercises: [RoutineExercise]
+}
+
 struct WorkoutHomeView: View {
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
@@ -93,6 +101,9 @@ struct WorkoutHomeView: View {
     @State private var section: WorkoutSection = .dashboard
     @State private var showingNewRoutine = false
     @State private var showingNewExercise = false
+    /// A planner "Save as routine" pre-fill — opens the routine editor seeded with the plan (E7). `nil` ⇒
+    /// the plain "New Routine" path (no pre-fill).
+    @State private var plannerPrefill: PlannerRoutinePrefill?
     @State private var playing: WorkoutSession?
     @State private var startConflict: Routine?
     /// The Video Studio opened from the module level (#74) — dashboard candidates or a History
@@ -155,6 +166,15 @@ struct WorkoutHomeView: View {
             ExerciseProgressView(exerciseId: route.exerciseId, resolver: resolver,
                                  history: history, unit: unit)
         }
+        // Smart workout planning (workout-redesign E7): the pure WorkoutRecommender + per-muscle
+        // WorkoutHistoryStats fed by the @MainActor resolver join, surfaced as an editable draft.
+        .navigationDestination(for: WorkoutPlanRoute.self) { _ in
+            WorkoutPlanView(history: history, resolver: resolver, unit: unit,
+                            start: { exercises, name in startPlannedSession(exercises, name: name) },
+                            saveAsRoutine: { exercises, name in
+                                plannerPrefill = PlannerRoutinePrefill(name: name, exercises: exercises)
+                            })
+        }
         // Settings is pushed from the toolbar gear (#74) — it used to be a fifth segment.
         .navigationDestination(for: WorkoutSettingsRoute.self) { _ in
             WorkoutSettingsView(unitRaw: $preferredUnitRaw, customExercises: customExercises,
@@ -165,6 +185,11 @@ struct WorkoutHomeView: View {
         }
         .sheet(isPresented: $showingNewRoutine) {
             RoutineEditorView(routine: nil, resolver: resolver, defaultUnit: unit)
+        }
+        // The planner's "Save as routine" → the routine editor pre-filled with the plan for review/rename (E7).
+        .sheet(item: $plannerPrefill) { prefill in
+            RoutineEditorView(routine: nil, resolver: resolver, defaultUnit: unit,
+                              prefillExercises: prefill.exercises, prefillName: prefill.name)
         }
         .sheet(isPresented: $showingNewExercise) {
             ExerciseEditorView(existing: nil)
@@ -266,7 +291,8 @@ struct WorkoutHomeView: View {
                                     },
                                     openReels: { router.open(module: "workout") },
                                     openSession: { id in router.push(SessionRoute(id: id)) },
-                                    startQuick: { startFreeform() })
+                                    startQuick: { startFreeform() },
+                                    openPlan: { router.push(WorkoutPlanRoute()) })
         case .browse:
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
@@ -339,6 +365,23 @@ struct WorkoutHomeView: View {
     private func startFreeform() {
         if let active = activeSession { resume(active); return }
         let session = WorkoutSession(routineID: nil, routineName: "Quick session", exercises: [])
+        context.insert(session)
+        try? context.save()
+        app.liveWorkout.start(for: session, sport: nil, category: nil,
+                              maxHR: app.userProfile.profile.resolvedMaxHR,
+                              restHR: app.userProfile.profile.restingBound)
+        startLiveActivity(for: session)
+        playing = session
+    }
+
+    /// Start a session from the smart planner's draft (workout-redesign E7). The plan is a `[RoutineExercise]`;
+    /// we seed a freeform (routineless) session from it via the same `RoutineSessionBuilder` the guided player
+    /// uses, so the planned exercises arrive as proper session entities and the user grows/edits them in the
+    /// freeform logbook. If a workout is already active, resume it instead of stacking a second one.
+    private func startPlannedSession(_ exercises: [RoutineExercise], name: String) {
+        if let active = activeSession { resume(active); return }
+        let sessionExercises = exercises.map { RoutineSessionBuilder.sessionExercise(from: $0, defaultUnit: unit) }
+        let session = WorkoutSession(routineID: nil, routineName: name, exercises: sessionExercises)
         context.insert(session)
         try? context.save()
         app.liveWorkout.start(for: session, sport: nil, category: nil,

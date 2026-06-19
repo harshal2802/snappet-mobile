@@ -163,6 +163,18 @@ struct HomeDashboardView: View {
                     router.pendingWorkoutResume = true
                     router.open(module: WorkoutTrackerModule.id)
                 })
+        } else if let wp = TodayDigest.workoutPlan(sessions: workoutSessions, now: now, calendar: cal) {
+            // No workout in flight → offer the smart planner's verb read (E7), sibling to the climb plan.
+            // Two-level deep link: the gym tracker module root, then its plan screen.
+            cards.append(TodayCard(
+                id: "workoutPlan",
+                title: "Plan a session · \(wp.readiness.headline)",
+                detail: wp.why,
+                systemImage: "sparkles",
+                tint: SnappetColor.workout) {
+                    router.open(module: WorkoutTrackerModule.id)
+                    router.push(WorkoutPlanRoute())
+                })
         }
         if let f = TodayDigest.focusToday(sessions: focusSessions, now: now, calendar: cal) {
             cards.append(TodayCard(

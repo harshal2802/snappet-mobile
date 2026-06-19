@@ -43,4 +43,43 @@ final class WorkoutHistoryStatsTests: XCTestCase {
         let s = WorkoutHistoryStats.make(history: h, now: now, calendar: cal)
         XCTAssertEqual(s.daysSinceByDiscipline[.strength], 1)   // the more recent one wins
     }
+
+    // MARK: - Per-muscle signals (E7)
+
+    /// A resolved session: N completed sets, each carrying `muscles`.
+    private func resolved(_ muscles: [Muscle], sets: Int, at startedAt: Date) -> WorkoutHistoryStats.ResolvedSession {
+        let s = Array(repeating: WorkoutHistoryStats.ResolvedSet(muscles: muscles), count: sets)
+        return WorkoutHistoryStats.ResolvedSession(startedAt: startedAt, completedSets: s)
+    }
+
+    func testPerMuscleRecency() {
+        let r = [resolved([.chest], sets: 3, at: day(-1)),
+                 resolved([.quadriceps], sets: 4, at: day(-6))]
+        let s = WorkoutHistoryStats.make(history: [], resolved: r, now: now, calendar: cal)
+        XCTAssertEqual(s.daysSinceByMuscle[.chest], 1)
+        XCTAssertEqual(s.daysSinceByMuscle[.quadriceps], 6)
+        XCTAssertNil(s.daysSinceByMuscle[.biceps], "A never-trained muscle is absent (treated as fresh)")
+    }
+
+    func testPerMuscleWeeklyVolumeCountsOnlyLast7Days() {
+        let r = [resolved([.chest], sets: 3, at: day(-1)),     // in window
+                 resolved([.chest], sets: 5, at: day(-9))]     // out of the 7-day window
+        let s = WorkoutHistoryStats.make(history: [], resolved: r, now: now, calendar: cal)
+        XCTAssertEqual(s.weeklyVolumeByMuscle[.chest], 3, "Only the in-window 3 sets count toward weekly volume")
+    }
+
+    func testPerMuscleKeepsMostRecentDate() {
+        let r = [resolved([.lats], sets: 2, at: day(-2)),
+                 resolved([.lats], sets: 2, at: day(-5))]
+        let s = WorkoutHistoryStats.make(history: [], resolved: r, now: now, calendar: cal)
+        XCTAssertEqual(s.daysSinceByMuscle[.lats], 2, "Most-recent training date per muscle wins")
+        XCTAssertEqual(s.weeklyVolumeByMuscle[.lats], 4, "Both in-window sessions sum")
+    }
+
+    func testDisciplineOnlyMakeLeavesMuscleMapsEmpty() {
+        let h = [session(.strength, startedAt: day(0))]
+        let s = WorkoutHistoryStats.make(history: h, now: now, calendar: cal)
+        XCTAssertTrue(s.daysSinceByMuscle.isEmpty)
+        XCTAssertTrue(s.weeklyVolumeByMuscle.isEmpty)
+    }
 }

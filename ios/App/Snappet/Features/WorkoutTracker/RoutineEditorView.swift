@@ -14,6 +14,11 @@ struct RoutineEditorView: View {
     let routine: Routine?
     let resolver: ExerciseResolver
     let defaultUnit: WeightUnit
+    /// Optional pre-fill for a NEW routine (workout-redesign E7 "Save as routine" — the smart planner hands
+    /// the editor its `[RoutineExercise]` + a suggested name so the user reviews/renames before saving). Only
+    /// used when `routine == nil`; ignored when editing an existing routine.
+    var prefillExercises: [RoutineExercise] = []
+    var prefillName: String = ""
 
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
@@ -112,7 +117,14 @@ struct RoutineEditorView: View {
     private func loadExisting() {
         guard !loaded else { return }
         loaded = true
-        guard let routine else { return }
+        guard let routine else {
+            // New routine: seed from a planner pre-fill if one was handed in (E7 "Save as routine").
+            if !prefillExercises.isEmpty {
+                name = prefillName
+                items = prefillExercises
+            }
+            return
+        }
         name = routine.name
         sport = routine.sport ?? .general
         level = routine.level
