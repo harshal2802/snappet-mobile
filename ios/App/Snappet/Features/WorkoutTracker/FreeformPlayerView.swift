@@ -484,7 +484,9 @@ struct FreeformPlayerView: View {
             // climb-style card. The lifting flow keeps the flat set-list rendering below.
             timedSection(ex)
         } else {
-            liftingOrTimedSection(ex)
+            // Strength is now an expandable entity card (Workout-Type Parity Phase 2) — same structure as
+            // the climb card: rolled-up header (top set · sets · e1RM) → set list + quick-add + footer.
+            strengthSection(ex)
         }
     }
 
@@ -575,76 +577,122 @@ struct FreeformPlayerView: View {
         return total > 0 ? SetMeasure.formatDuration(total) : nil
     }
 
-    private func liftingOrTimedSection(_ ex: SessionExercise) -> some View {
-        Section {
-            ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                HStack {
-                    Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .frame(width: 20, alignment: .leading)
-                    Text(SetMeasure.summary(set, kind: ex.kind, unit: unit))
-                        .font(.body.weight(.medium))
-                    Spacer()
-                }
-                .accessibilityIdentifier("freeform.setRow")
-            }
-            .onDelete { offsets in deleteSets(ex, at: offsets) }
+    // MARK: - Strength card (Workout-Type Parity Phase 2)
 
-            // Faster entry (§B): keyboard-free inline steppers for reps & weight, seeded from this
-            // session's last set or the cached cross-session prefill, logging through the one `appendLog`
-            // funnel. `.id(ex.sets.count)` re-seeds them to the latest after each log/delete. The sheet
-            // ("Log something different") stays for precise / non-default entry.
-            if ex.kind == .repsWeight {
+    /// A strength exercise renders as an **expandable card** mirroring the climb card: a rolled-up header
+    /// (discipline icon · tap-to-expand name · chevron · ⋯) with rolled-up chips (top set · N sets · e1RM)
+    /// that toggles open to the set list + the keyboard-free quick-add + footer. A newly-added exercise
+    /// auto-expands (`addLifting`) so quick-add is immediately reachable. Each set carries its own media
+    /// strip (per-set clips, like the climb card's per-attempt strip).
+    @ViewBuilder
+    private func strengthSection(_ ex: SessionExercise) -> some View {
+        let expanded = expandedEntities.contains(ex.id)
+        Section {
+            strengthHeader(ex, expanded: expanded)
+
+            if expanded {
+                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
+                    HStack {
+                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .leading)
+                        Text(SetMeasure.summary(set, kind: .repsWeight, unit: unit))
+                            .font(.body.weight(.medium))
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("freeform.setRow")
+                    // Per-set media (parity): a clip filmed during / attached to THIS set shows under it,
+                    // keyed by exercise+set so its @Query re-scopes. The climb card already does this per
+                    // attempt; strength now gets the strip on EVERY set, not just the last.
+                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
+                                  onEdit: { presentStudio($0) })
+                        .id("strength-media-\(ex.id)-\(i)")
+                }
+                .onDelete { offsets in deleteSets(ex, at: offsets) }
+
+                // Faster entry (§B): keyboard-free inline steppers seeded from this session's last set or
+                // the cross-session prefill, logging through the one `appendLog` funnel. `.id(ex.sets.count)`
+                // re-seeds to the latest after each log/delete. The sheet ("Log something different") stays
+                // for precise / non-default entry.
                 let seed = quickAddSeed(for: ex)
                 QuickAddRow(reps: seed.reps, weight: seed.weight, unitSel: seed.unit, hint: seed.hint) { log in
                     appendLog(log, toExerciseID: ex.id)
                 }
                 .id(ex.sets.count)
-            }
 
-            Button {
-                logging = LogTarget(exerciseID: ex.id, kind: ex.kind, exerciseId: ex.exerciseId)
-            } label: {
-                Label(ex.kind == .repsWeight ? "Log something different" : ex.kind.addLabel,
-                      systemImage: "plus.circle.fill")
-            }
-            .accessibilityIdentifier("freeform.addSet")
-            // Reuse the existing repeat affordance for timed sets (climbs have their own card footer).
-
-            // One-tap repeat of the most recent set — duplicates it (all kind-specific fields, fresh
-            // completedAt) without opening the sheet. Only shown once there's a set to repeat. A sibling
-            // leaf Button (NOT wrapped in a composite); value-labelled via the pure FreeformSummary (§B)
-            // so it reads like the set it duplicates ("Repeat 8 × 60 kg"). Matched by id in tests.
-            if let last = ex.sets.last {
                 Button {
-                    repeatLastSet(ex)
+                    logging = LogTarget(exerciseID: ex.id, kind: .repsWeight, exerciseId: ex.exerciseId)
                 } label: {
-                    Label(FreeformSummary.repeatLabel(for: last, kind: ex.kind, unit: unit),
-                          systemImage: "arrow.clockwise")
+                    Label("Log something different", systemImage: "plus.circle.fill")
                 }
-                .accessibilityIdentifier("freeform.repeatSet")
-            }
+                .accessibilityIdentifier("freeform.addSet")
 
-            // Live clips (§F): a per-set media strip for the latest set — auto-discovered clips appear
-            // here seconds after you film them, and you can attach more by hand. Keyed by exercise+set so
-            // its @Query re-scopes as sets are logged. Device-only (Photos/PHPicker); the affordance
-            // renders everywhere, the pick/discovery is on-device.
-            if let lastIndex = ex.sets.indices.last {
-                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex,
-                              onEdit: { presentStudio($0) })
-                    .id("set-media-\(ex.id)-\(lastIndex)")
+                // One-tap repeat of the most recent set — duplicates it (fresh completedAt) without opening
+                // the sheet. Value-labelled via the pure FreeformSummary so it reads like the set it
+                // duplicates ("Repeat 8 × 60 kg"). Matched by id in tests.
+                if let last = ex.sets.last {
+                    Button {
+                        repeatLastSet(ex)
+                    } label: {
+                        Label(FreeformSummary.repeatLabel(for: last, kind: .repsWeight, unit: unit),
+                              systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityIdentifier("freeform.repeatSet")
+                }
             }
         } header: {
-            HStack {
-                Image(systemName: ex.kind.symbol).foregroundStyle(.secondary)
-                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
-                Spacer()
+            EmptyView()
+        }
+    }
+
+    /// The rolled-up strength header: discipline icon · tap-to-expand name (`freeform.entityName`) ·
+    /// chevron (`freeform.expand`) · ⋯ menu (`freeform.entityMenu`), plus a rolled-up chip line
+    /// (top set · N sets · e1RM) — the strength analogue of the climb header.
+    private func strengthHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
+                Button { toggleExpanded(ex) } label: {
+                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        .font(.headline).foregroundStyle(.primary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.entityName")
+                Spacer(minLength: 4)
+                Button { toggleExpanded(ex) } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.expand")
+                .accessibilityLabel(expanded ? "Collapse exercise" : "Expand exercise")
                 Menu {
                     Button(role: .destructive) { removeExercise(ex) } label: {
                         Label("Remove exercise", systemImage: "trash")
                     }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("freeform.entityMenu")
+                    .accessibilityLabel("Exercise options")
             }
-            .textCase(nil)
+            strengthRollup(ex)
+        }
+        .textCase(nil)
+        .padding(.vertical, 2)
+    }
+
+    /// The rolled-up chips for a collapsed strength card — top set · set count · e1RM. Hidden until a set
+    /// is logged (a fresh card auto-expands to its quick-add, so an empty collapsed header is transient).
+    @ViewBuilder
+    private func strengthRollup(_ ex: SessionExercise) -> some View {
+        if let top = StrengthStats.topSet(ex) {
+            HStack(spacing: 6) {
+                EntityRollupChip("top \(SetMeasure.summary(top, kind: .repsWeight, unit: unit))",
+                                 tint: ex.discipline.accent)
+                EntityRollupChip("\(ex.sets.count) \(ex.sets.count == 1 ? "set" : "sets")")
+                if let orm = StrengthStats.estimatedOneRepMax(ex) {
+                    EntityRollupChip("e1RM \(SetMeasure.formatWeight(orm.value.rounded())) \(orm.unit.display)",
+                                     tint: ex.discipline.accent, systemImage: "trophy.fill")
+                }
+            }
         }
     }
 
@@ -1070,9 +1118,13 @@ struct FreeformPlayerView: View {
 
     private func addLifting(_ exercises: [Exercise]) {
         for ex in exercises {
-            session.exercises.append(SessionExercise(
+            let entity = SessionExercise(
                 exerciseId: ex.id, targetSets: 0, targetReps: "", targetRestSeconds: 0,
-                sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue))
+                sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue)
+            session.exercises.append(entity)
+            // Auto-expand the new strength card so its quick-add is immediately reachable (parity with the
+            // climb card's auto-expand). The card is expandable from this phase on.
+            expandedEntities.insert(entity.id)
         }
         persist()
         pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
