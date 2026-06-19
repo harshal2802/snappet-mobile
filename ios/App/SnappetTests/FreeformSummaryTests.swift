@@ -221,4 +221,11 @@ final class FreeformSummaryTests: XCTestCase {
         XCTAssertEqual(stats.dominant, .dance)
         XCTAssertEqual(stats.headline.value, "10:00")   // 300 + 300 dance only, not + 1500 run
     }
+
+    func testHoldTimeExcludesRunLegs() {
+        // A run is a .duration entity too — but its leg time is distance/pace, not time-under-tension,
+        // so TUT must count only the timed hold (45s), never the 1500s run leg.
+        let s = session([entity("t", .timed, [timed(45)]), entity("r", .run, [run(5000, sec: 1500)])])
+        XCTAssertEqual(FreeformSummary.holdTimeSeconds(s), 45)
+    }
 }

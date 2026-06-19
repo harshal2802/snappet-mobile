@@ -115,10 +115,12 @@ enum FreeformSummary {
         return n
     }
 
-    /// Total hold-time (Σ `durationSec`) across completed timed sets — the timed headline figure.
+    /// Total hold-time (Σ `durationSec`) across completed timed sets — the timed headline figure. Excludes
+    /// running legs: a run is a `.duration`-kind entity too (Workout-Type Parity), but its leg time is
+    /// distance/pace, not time-under-tension, so it must not inflate a timed session's TUT.
     static func holdTimeSeconds(_ session: WorkoutSession) -> Double {
         var total = 0.0
-        for ex in session.exercises where ex.kind == .duration {
+        for ex in session.exercises where ex.kind == .duration && ex.discipline != .run {
             for set in ex.sets where set.completedAt != nil { total += set.durationSec ?? 0 }
         }
         return total

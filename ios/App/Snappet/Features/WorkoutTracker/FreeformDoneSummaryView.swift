@@ -449,7 +449,7 @@ struct FreeformDoneSummaryView: View {
 
     private var bestHoldLabel: String {
         let best = session.exercises
-            .filter { $0.kind == .duration }
+            .filter { $0.kind == .duration && $0.discipline != .run }   // a run leg's time isn't a "hold"
             .flatMap { $0.sets.filter { $0.completedAt != nil } }
             .compactMap(\.durationSec)
             .max() ?? 0
