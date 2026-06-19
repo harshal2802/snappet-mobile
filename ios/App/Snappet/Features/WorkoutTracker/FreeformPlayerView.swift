@@ -49,9 +49,10 @@ struct FreeformPlayerView: View {
     /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
     /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
     @State private var addingTimed = false
-    /// Which climb cards are expanded (by `SessionExercise.id`) to their attempt list + footer. A new
-    /// climb auto-expands; "Add & log first attempt" also auto-opens its inline outcome strip.
-    @State private var expandedClimbs: Set<UUID> = []
+    /// Which entity cards are expanded (by `SessionExercise.id`) to their effort list + footer — shared
+    /// across disciplines (Workout-Type Parity). A new climb/exercise auto-expands; "Add & log first
+    /// attempt" also auto-opens its inline outcome strip.
+    @State private var expandedEntities: Set<UUID> = []
     /// Climbs showing their inline outcome strip (the "+ Log attempt" footer toggled open).
     @State private var loggingAttemptFor: Set<UUID> = []
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
@@ -656,7 +657,7 @@ struct FreeformPlayerView: View {
     /// per-`SetLog`; the per-attempt row (`SetMeasure.attemptRow`) shows only the outcome + duration.
     @ViewBuilder
     private func climbSection(_ ex: SessionExercise) -> some View {
-        let expanded = expandedClimbs.contains(ex.id)
+        let expanded = expandedEntities.contains(ex.id)
         Section {
             climbHeader(ex, expanded: expanded)
 
@@ -1099,7 +1100,7 @@ struct FreeformPlayerView: View {
         climb.climbColorRaw = params.color?.rawValue
         climb.setter = params.setter
         session.exercises.append(climb)
-        expandedClimbs.insert(climb.id)
+        expandedEntities.insert(climb.id)
         if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
         // File the photos the user attached in the sheet as climb-level media now that the climb has an id.
         // The sheet can't mint the id, so it returned `localIdentifier`s; resolve kind/offset via the same
@@ -1176,12 +1177,12 @@ struct FreeformPlayerView: View {
                          climbGradeLabel: ex.climbGradeLabel,
                          climbStatusRaw: status.rawValue, climbAttempts: 1),
                   toExerciseID: id)
-        expandedClimbs.insert(id)
+        expandedEntities.insert(id)
     }
 
     private func toggleExpanded(_ ex: SessionExercise) {
-        if expandedClimbs.contains(ex.id) { expandedClimbs.remove(ex.id) }
-        else { expandedClimbs.insert(ex.id) }
+        if expandedEntities.contains(ex.id) { expandedEntities.remove(ex.id) }
+        else { expandedEntities.insert(ex.id) }
     }
 
     private func removeExercise(_ ex: SessionExercise) {
