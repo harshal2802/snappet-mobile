@@ -1,7 +1,7 @@
 import XCTest
 @testable import Snappet
 
-/// Unit tests for the **pure** `climbClipMoveTargets(for:)` helper (no device, no SwiftData): the
+/// Unit tests for the **pure** `clipMoveTargets(for:)` helper (no device, no SwiftData): the
 /// deep-tap "Move to attempt…" submenu's destinations for a climb = its logged attempts, titled
 /// "Attempt N" (1-based) and carrying the climb's `exerciseID` + the 0-based attempt index (prompt 11).
 final class ClipMoveTargetTests: XCTestCase {
@@ -23,7 +23,7 @@ final class ClipMoveTargetTests: XCTestCase {
 
     func testOneTargetPerAttemptOneBasedTitles() {
         let id = UUID()
-        let targets = climbClipMoveTargets(for: climb(id: id, attempts: 3))
+        let targets = clipMoveTargets(for: climb(id: id, attempts: 3))
         XCTAssertEqual(targets.count, 3)
         XCTAssertEqual(targets.map(\.title), ["Attempt 1", "Attempt 2", "Attempt 3"])
         // setIndex is 0-based (the index into `sets`); title is 1-based.
@@ -34,19 +34,39 @@ final class ClipMoveTargetTests: XCTestCase {
 
     func testTargetIdsAreStableAndUniquePerAttempt() {
         let id = UUID()
-        let targets = climbClipMoveTargets(for: climb(id: id, attempts: 4))
+        let targets = clipMoveTargets(for: climb(id: id, attempts: 4))
         XCTAssertEqual(targets.map(\.id), (0..<4).map { "\(id)-\($0)" })
         XCTAssertEqual(Set(targets.map(\.id)).count, 4)   // no duplicate ids → the ForEach is stable
     }
 
     func testNoAttemptsYieldsNoTargets() {
-        XCTAssertTrue(climbClipMoveTargets(for: climb(attempts: 0)).isEmpty)
+        XCTAssertTrue(clipMoveTargets(for: climb(attempts: 0)).isEmpty)
     }
 
     func testSingleAttempt() {
-        let targets = climbClipMoveTargets(for: climb(attempts: 1))
+        let targets = clipMoveTargets(for: climb(attempts: 1))
         XCTAssertEqual(targets.count, 1)
         XCTAssertEqual(targets.first?.title, "Attempt 1")
         XCTAssertEqual(targets.first?.setIndex, 0)
+    }
+
+    // MARK: - Discipline-aware nouns (Workout-Type Parity)
+
+    private func entity(_ discipline: WorkoutDiscipline, efforts count: Int) -> SessionExercise {
+        var ex = SessionExercise(
+            exerciseId: "adhoc-\(discipline.rawValue)", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+            sets: (0..<count).map { _ in SetLog(completedAt: t0) },
+            kindRaw: discipline.defaultSetKind.rawValue)
+        ex.disciplineRaw = discipline.rawValue
+        return ex
+    }
+
+    func testRunUsesLegNoun() {
+        XCTAssertEqual(clipMoveTargets(for: entity(.run, efforts: 2)).map(\.title), ["Leg 1", "Leg 2"])
+    }
+
+    func testStrengthAndOtherUseSetNoun() {
+        XCTAssertEqual(clipMoveTargets(for: entity(.strength, efforts: 2)).map(\.title), ["Set 1", "Set 2"])
+        XCTAssertEqual(clipMoveTargets(for: entity(.dance, efforts: 1)).map(\.title), ["Set 1"])
     }
 }

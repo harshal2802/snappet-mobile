@@ -81,14 +81,20 @@ struct ClipMoveTarget: Identifiable, Equatable, Sendable {
     let setIndex: Int
 }
 
-/// The clip move-targets for ONE climb = its logged attempts, in order (prompt 11). A climb's `sets` ARE
-/// its attempts (the climb-first hierarchy), so each attempt is a reassignment destination titled
-/// "Attempt N" (1-based). Pure (Foundation-only) → unit-tested. An attempt-less climb yields no targets
-/// (the deep-tap "Move to attempt…" submenu is then empty — the strip only renders once a clip exists,
-/// which means at least one attempt was logged, so this is a defensive empty).
-func climbClipMoveTargets(for ex: SessionExercise) -> [ClipMoveTarget] {
-    ex.sets.indices.map { i in
-        ClipMoveTarget(id: "\(ex.id)-\(i)", title: "Attempt \(i + 1)",
+/// The clip move-targets for ONE entity = its logged efforts, in order (prompt 11; generalized in
+/// Workout-Type Parity). An entity's `sets` ARE its efforts, so each is a reassignment destination titled
+/// by the discipline's noun — "Attempt N" (climb), "Leg N" (run), or "Set N" (strength/timed/dance/other),
+/// 1-based. Pure (Foundation-only) → unit-tested. An effort-less entity yields no targets (the strip only
+/// renders once a clip exists, which means ≥1 effort was logged, so this is a defensive empty).
+func clipMoveTargets(for ex: SessionExercise) -> [ClipMoveTarget] {
+    let noun: String
+    switch ex.discipline {
+    case .climb: noun = "Attempt"
+    case .run:   noun = "Leg"
+    default:     noun = "Set"
+    }
+    return ex.sets.indices.map { i in
+        ClipMoveTarget(id: "\(ex.id)-\(i)", title: "\(noun) \(i + 1)",
                        exerciseID: ex.id, setIndex: i)
     }
 }

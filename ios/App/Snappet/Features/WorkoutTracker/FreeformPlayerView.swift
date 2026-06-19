@@ -642,7 +642,10 @@ struct FreeformPlayerView: View {
                     // keyed by exercise+set so its @Query re-scopes. The climb card already does this per
                     // attempt; strength now gets the strip on EVERY set, not just the last.
                     SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
-                                  onEdit: { presentStudio($0) })
+                                  onEdit: { presentStudio($0) },
+                                  moveTargets: clipMoveTargets(for: ex), moveTargetsLabel: "Move to set…",
+                                  onReassign: { reassignClip($0, to: $1, set: $2) },
+                                  onRequestDelete: { pendingClipDeletion = $0 })
                         .id("strength-media-\(ex.id)-\(i)")
                 }
                 .onDelete { offsets in deleteSets(ex, at: offsets) }
@@ -767,7 +770,10 @@ struct FreeformPlayerView: View {
                     }
                     .accessibilityIdentifier("freeform.setRow")
                     SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
-                                  onEdit: { presentStudio($0) })
+                                  onEdit: { presentStudio($0) },
+                                  moveTargets: clipMoveTargets(for: ex), moveTargetsLabel: "Move to leg…",
+                                  onReassign: { reassignClip($0, to: $1, set: $2) },
+                                  onRequestDelete: { pendingClipDeletion = $0 })
                         .id("run-media-\(ex.id)-\(i)")
                 }
                 .onDelete { offsets in deleteSets(ex, at: offsets) }
@@ -867,7 +873,7 @@ struct FreeformPlayerView: View {
                     // delete confirmation.
                     SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
                                   onEdit: { presentStudio($0) },
-                                  moveTargets: climbClipMoveTargets(for: ex),
+                                  moveTargets: clipMoveTargets(for: ex),
                                   onReassign: { reassignClip($0, to: $1, set: $2) },
                                   onRequestDelete: { pendingClipDeletion = $0 })
                         .id("climb-media-\(ex.id)-\(i)")
