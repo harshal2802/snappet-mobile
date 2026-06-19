@@ -394,7 +394,12 @@ struct WorkoutHomeView: View {
     private func startLiveMetrics(for session: WorkoutSession, routine: Routine) {
         let category = WorkoutActivityMapping.dominantCategory(
             of: routine.exercises.compactMap { resolver.exercise(id: $0.exerciseId)?.category })
-        app.liveWorkout.start(for: session, sport: routine.sport, category: category,
+        // E4: the routine's per-block disciplines are the strongest signal for the watch activity type —
+        // a run records `.running`, a mixed routine `.mixedCardio` — falling back to sport/category for an
+        // all-strength / pre-E4 routine (see `WorkoutActivityMapping.activityType(disciplines:…)`).
+        let disciplines = routine.exercises.map(\.discipline)
+        app.liveWorkout.start(for: session, disciplines: disciplines,
+                              sport: routine.sport, category: category,
                               maxHR: app.userProfile.profile.resolvedMaxHR,
                               restHR: app.userProfile.profile.restingBound)
         startLiveActivity(for: session)
@@ -418,19 +423,8 @@ struct WorkoutHomeView: View {
     }
 
     private func makeSession(from routine: Routine) -> WorkoutSession {
-        let exercises = routine.exercises.map { re in
-            SessionExercise(
-                exerciseId: re.exerciseId,
-                targetSets: re.sets,
-                targetReps: re.reps,
-                targetRestSeconds: re.restSeconds,
-                targetWeight: re.weight,
-                targetWeightUnit: re.weightUnit ?? unit,
-                sets: Array(repeating: SetLog(weightUnit: re.weightUnit ?? unit), count: max(1, re.sets)),
-                displayName: re.displayName
-            )
-        }
-        return WorkoutSession(routineID: routine.id, routineName: routine.name, exercises: exercises)
+        WorkoutSession(routineID: routine.id, routineName: routine.name,
+                       exercises: RoutineSessionBuilder.exercises(from: routine, defaultUnit: unit))
     }
 
     /// Minimize the player without ending the workout: just drop the full-screen cover. The

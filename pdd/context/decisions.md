@@ -5856,3 +5856,66 @@ store mirror are the not-free parts (the Workout-Type-Parity §8 caveat).
    `KilterRecommender`) **plus** an optional on-device **Foundation Models** pass for natural-language tweaks
    ("15 min, no barbell"), gated to capable devices and **degrading silently to the heuristic**. No server
    LLM (on-device-only). Extends the [[receipt-ocr-apple-intelligence-followup]] direction.
+
+## 2026-06-19 — Workout redesign E4 — Routine parity (THE KEYSTONE), iOS
+
+The spine of the redesign (`docs/ux-research/workout-redesign/README.md` §2/§5; PDD prompt
+`pdd/prompts/features/workout-redesign/E4-routine-parity.md`; issue #184). Propagated the two-axis discipline
+model the freeform side already proved to the routine side, so a routine can mix a strength block, a timed
+circuit, a graded climb, and a run — and the guided player logs each like the freeform canvas does.
+
+**Migration approach (the critical bit).** `RoutineExercise` is a nested `Codable` composite (inside
+`Routine.exercises` / `SnappetBackup.RoutineRow`), NOT an `@Model` — SwiftData lightweight migration doesn't
+reach inside the blob. The keystone fields (`disciplineRaw`, `targetDurationSec/DistanceMeters/RPE`,
+`climbTypeRaw/climbGradeLabel/climbGradeScaleRaw`, `timedSpecData/timedCategory`) are therefore added as
+**additive `Optional`s**: synthesized `Codable` decodes a *missing* key as `nil` AND **omits a nil optional
+on encode** (verified empirically before relying on it — a `swift` repro showed `New(nil optionals)` encodes
+byte-identically to the legacy struct). So a pre-E4 `Routine` decodes with `disciplineRaw == nil` (→
+`discipline` derives `.strength`, every target nil) and **`SnappetBackupTests`' golden round-trip +
+determinism stayed green** — the additive nils did NOT shift the bytes (the documented
+`SetLog`/`SessionExercise` invariant). Pinned by `RoutineExerciseMigrationTests` (legacy-blob decode +
+byte-omission assertions) so a future non-additive field fails the test instead of silently corrupting old
+routines or shifting golden bytes. The `RoutineExercise` init keeps `disciplineRaw` nil for a strength block
+(strength is the implicit default) so a strength routine session is byte-identical to a pre-E4 one.
+
+**`makeSession` discipline propagation.** Extracted the mapping into a pure, device-free
+`RoutineSessionBuilder` (unit-tested without a simulator): each block → a `SessionExercise` with
+`se.disciplineRaw = re.disciplineRaw` + `se.kindRaw = discipline.defaultSetKind.rawValue` + the
+climb/timed/distance metadata carried through; a fresh climb attempt is stamped with the prescribed grade so
+the pyramid reads. `block(from: LibraryItem)` is the inverse — the E3→E4 builder pipeline that seeds a typed
+block from a picked library item.
+
+**Mixed-session HK decision (README §10 Q1, resolved).** Added `WorkoutDiscipline → HKWorkoutActivityType`
+(run→`.running`, climb→`.climbing`, dance→`.cardioDance`, timed→`.highIntensityIntervalTraining`,
+strength→`.traditionalStrengthTraining`, other→`.other`) and `activityType(disciplines:sport:category:)`. A
+**single-discipline** routine records that discipline's type (a run is NEVER silently logged as strength). A
+**mixed** routine records `.mixedCardio` — one `HKWorkoutSession` holds one activity type, so a mixed session
+can't faithfully be any single one; `.mixedCardio` is the honest umbrella. An all-strength / pre-E4 routine
+falls back to the legacy `sport`/`category` path unchanged. `LiveMetricsCoordinator.start(for:disciplines:…)`
+threads the routine's per-block disciplines.
+
+**Actuals→prescription (README §10 Q3) — deferred to E5** as designed (save-as-routine). E4 only carries the
+prescription *forward* (routine → session); the inverse (session actuals → a reviewable prescription) is E5's
+pure converter.
+
+**Scope call — the guided player LANDED** (not descoped to E4b). The discipline-aware input block +
+`completeSet` switch on `current.discipline` (climb outcome+grade rail · timed/dance/other via the shared
+`StopwatchView` · run distance+duration · strength reps×weight unchanged), composing the right `SetLog` axes
+per discipline. The 826-line player's stateful machinery (resume/prefill/step-back/rest/Live-Activity) is
+untouched — only the per-set input + the logged-set write were threaded. This was necessary, not optional:
+the re-authored starters now include an all-`.timed` "5-Minute Mobility" (which sorts first alphabetically),
+so the `WorkoutWalkthroughTests` routine flow drives a timed routine end-to-end through the player.
+
+**Starter re-author.** Two genuine climb-discipline starters (a boulder Session Pyramid + a Routes Volume
+Night) prescribe real climbing; every timed hold (planks, stretches, mountain climbers, wall sits) is now a
+`.timed` block with a `targetDurationSec` + a `TimedExerciseSpec.hold(_)`, not a faked `"30s"`/`"60s"` reps
+string.
+
+**Android (wave H, tracked).** The parallel `WorkoutModels.kt` / Room store + `BackupRoundTripTest` mirror is
+deferred to the hardening wave — iOS is the lead platform and the Android tree was not touched.
+
+**What E5/E6/E7 build on.** `RoutineExercise` now carries the full per-block prescription shape
+(`discipline` + per-axis targets + climb/timed metadata) and `RoutineSessionBuilder.exercises(from:)` /
+`block(from:)` are the pure, tested round-trip seams. E5 (save-as-routine) writes the inverse of
+`RoutineSessionBuilder` (actuals → a `RoutineExercise` per discipline); E6 (QR share) serializes the
+`RoutineExercise` composite (exerciseId references); E7 (planner) emits a `[RoutineExercise]`.

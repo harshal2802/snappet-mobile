@@ -48,6 +48,42 @@ enum WorkoutActivityMapping {
         }
     }
 
+    /// **`WorkoutDiscipline` → `HKWorkoutActivityType`** (workout-redesign E4). The discipline axis is now
+    /// the identity axis (it sits on every `RoutineExercise`/`SessionExercise`), so the live watch type
+    /// follows it directly: a running block records `.running`, a climb `.climbing`, a dance `.cardioDance`,
+    /// a timed circuit `.highIntensityIntervalTraining`. Strength stays `.traditionalStrengthTraining`;
+    /// `.other` is the honest fallback. This NEVER silently logs a run as strength (README §10 Q1).
+    static func activityType(for discipline: WorkoutDiscipline) -> HKWorkoutActivityType {
+        switch discipline {
+        case .strength: return .traditionalStrengthTraining
+        case .climb:    return .climbing
+        case .run:      return .running
+        case .dance:    return .cardioDance
+        case .timed:    return .highIntensityIntervalTraining
+        case .other:    return .other
+        }
+    }
+
+    /// Resolve the activity type for a **discipline-aware** routine (E4). Prefers the routine's own
+    /// disciplines over the legacy `SportTag`/category signals — the discipline is the explicit per-block
+    /// label the user chose. A single-discipline routine records that discipline's type; a **mixed** routine
+    /// (a strength block + a timed circuit + a run) records `.mixedCardio` — one `HKWorkoutSession` holds one
+    /// activity type, so a mixed session can't faithfully be any single one, and `.mixedCardio` is the honest
+    /// umbrella (never silently a run-as-strength). Falls back to the `sport`/`category` path when a routine
+    /// carries no discipline tags (a pre-E4 / all-strength routine).
+    static func activityType(disciplines: [WorkoutDiscipline],
+                             sport: SportTag?, category: ExerciseCategory?) -> HKWorkoutActivityType {
+        let distinct = Set(disciplines)
+        if distinct.count == 1, let only = distinct.first, only != .strength {
+            return activityType(for: only)
+        }
+        if distinct.count > 1 {
+            return .mixedCardio   // mixed-session: one HK type can't be all → the honest umbrella (§10 Q1)
+        }
+        // Empty, or a single all-strength routine → the legacy sport/category resolution (unchanged).
+        return activityType(sport: sport, category: category)
+    }
+
     /// The dominant category across a set of exercises (the most common one), or
     /// `nil` when the list is empty. Lets a routine without a `SportTag` still pick
     /// a sensible type from what the user is actually doing.

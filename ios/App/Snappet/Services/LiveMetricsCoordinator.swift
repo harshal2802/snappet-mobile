@@ -126,6 +126,20 @@ final class LiveMetricsCoordinator: MetricsSource {
                                  maxHR: maxHR, restHR: restHR))
     }
 
+    /// Discipline-aware start (workout-redesign E4): a routine now tags each block with a
+    /// `WorkoutDiscipline`, which is the strongest signal for the watch's `HKWorkoutActivityType`. A
+    /// single-discipline routine records that type (a run → `.running`, never strength); a mixed routine
+    /// records `.mixedCardio`; an all-strength / pre-E4 routine falls back to the `sport`/`category` path.
+    func start(for session: WorkoutSession, disciplines: [WorkoutDiscipline],
+               sport: SportTag?, category: ExerciseCategory?,
+               maxHR: Double? = nil, restHR: Double? = nil) {
+        start(LiveMetricsContext(
+            startedAt: session.startedAt,
+            activityType: WorkoutActivityMapping.activityType(disciplines: disciplines,
+                                                              sport: sport, category: category),
+            maxHR: maxHR, restHR: restHR))
+    }
+
     func stop() {
         isSessionActive = false
         bleDisplayPaused = false

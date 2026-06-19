@@ -34,19 +34,63 @@ final class WorkoutActivityMappingTests: XCTestCase {
     // MARK: - Category mapping + fallback
 
     func testCategoryMapping() {
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .strength), .traditionalStrengthTraining)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .powerlifting), .traditionalStrengthTraining)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .cardio), .mixedCardio)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .plyometrics), .jumpRope)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .stretching), .flexibility)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .olympicWeightlifting), .functionalStrengthTraining)
-        XCTAssertEqual(WorkoutActivityMapping.activityType(for: .strongman), .functionalStrengthTraining)
+        // Explicit `ExerciseCategory` — `activityType(for:)` now also has a `WorkoutDiscipline` overload (E4),
+        // so the bare `.strength` member literal would be ambiguous.
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.strength), .traditionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.powerlifting), .traditionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.cardio), .mixedCardio)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.plyometrics), .jumpRope)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.stretching), .flexibility)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.olympicWeightlifting), .functionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: ExerciseCategory.strongman), .functionalStrengthTraining)
     }
 
     func testNoSportNoCategoryFallsBackToStrengthTraining() {
         XCTAssertEqual(
             WorkoutActivityMapping.activityType(sport: nil, category: nil),
             .traditionalStrengthTraining)
+    }
+
+    // MARK: - Discipline → HKWorkoutActivityType (workout-redesign E4)
+
+    func testDisciplineMapping() {
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: WorkoutDiscipline.strength), .traditionalStrengthTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: WorkoutDiscipline.climb), .climbing)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: WorkoutDiscipline.run), .running)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: WorkoutDiscipline.dance), .cardioDance)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: WorkoutDiscipline.timed), .highIntensityIntervalTraining)
+        XCTAssertEqual(WorkoutActivityMapping.activityType(for: WorkoutDiscipline.other), .other)
+    }
+
+    /// A single-discipline routine records that discipline's type — a run is `.running`, NEVER strength.
+    func testSingleDisciplineRoutineRecordsThatType() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(disciplines: [.run, .run], sport: nil, category: nil),
+            .running, "a run-only routine must never silently log as strength")
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(disciplines: [.climb], sport: nil, category: nil),
+            .climbing)
+    }
+
+    /// A mixed routine (a strength block + a timed circuit + a run) records `.mixedCardio` — one HK session
+    /// can't be all of them, so the honest umbrella is used (README §10 Q1).
+    func testMixedDisciplineRoutineRecordsMixedCardio() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(disciplines: [.strength, .timed, .run],
+                                                sport: nil, category: nil),
+            .mixedCardio)
+    }
+
+    /// An all-strength / pre-E4 routine (no non-strength disciplines) falls back to the legacy sport/category
+    /// resolution unchanged — a strength routine keeps `.traditionalStrengthTraining`, a sport wins.
+    func testAllStrengthRoutineFallsBackToSportCategory() {
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(disciplines: [.strength, .strength],
+                                                sport: nil, category: .strength),
+            .traditionalStrengthTraining)
+        XCTAssertEqual(
+            WorkoutActivityMapping.activityType(disciplines: [], sport: .climbing, category: nil),
+            .climbing, "empty disciplines + a sport tag → the legacy sport path")
     }
 
     // MARK: - Dominant category
