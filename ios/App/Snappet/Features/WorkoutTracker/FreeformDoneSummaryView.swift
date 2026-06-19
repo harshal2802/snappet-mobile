@@ -156,6 +156,10 @@ struct FreeformDoneSummaryView: View {
             ]
         case .lifting:
             return [stats.headline, stats.sets, FreeformSummary.Stat(value: "\(prCount)", label: "PRs")]
+        case .running, .dance, .other:
+            // Workout-Type Parity Phase 0: the discipline-aware headline (Distance / Active) leads;
+            // rich per-discipline hero cells land with the stats bridges in a later phase.
+            return [stats.headline, stats.duration, stats.sets]
         case .none:
             return [stats.duration, stats.sets, stats.headline]
         }
@@ -181,6 +185,7 @@ struct FreeformDoneSummaryView: View {
         case .climbing: climbingCards
         case .timed:    timedCards
         case .lifting:  strengthCards
+        case .running, .dance, .other: EmptyView()   // rich per-discipline cards land in a later phase
         case .none:     EmptyView()
         }
     }

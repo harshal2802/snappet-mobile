@@ -5658,3 +5658,38 @@ case); (c) **no duplicate media** — `attachClimbPhotos` passes the session's e
 (d) **fresh previews** — `rebuildPreviousClimbs()` also runs on sheet-open so the picker's photo
 thumbnails/counts aren't stale within a session. The 5th (setter-search misses a merged-away older setter,
 low) is accepted as a design tradeoff — setter is non-identity and the most-recent setter stays searchable.
+
+## 2026-06-19 — Workout-Type Parity — Phase 0 (two-axis model: discipline + measurement axes)
+
+Foundation for bringing **Strength, Running, Dance, Other** to climbing's entity→effort structure
+(`docs/ux-research/workout-type-parity/`). Pure-logic only — **no new UI, no SwiftData migration.**
+
+**Two orthogonal axes instead of the monolithic `SetKind`.** A new `WorkoutDiscipline`
+(`strength/climb/run/dance/timed/other`) on the entity (`SessionExercise.disciplineRaw`, computed
+`discipline`); the *measurement axes* (reps · weight · `durationSec` · `distanceMeters` · outcome) stay
+independent on each `SetLog`. `WorkoutDiscipline.swift` is pure (Foundation only) — `label`/`symbol`/
+`defaultSetKind`/`primaryAxis` + a `legacyKind` init; the accent `Color` and the `HKWorkoutActivityType`
+map are deliberately **not** on the enum (view / HealthKit concerns, added in later phases).
+
+**`SetKind` is NOT extended.** Run/dance/other entities are `kind == .duration`, distinguished by
+`discipline` (run also fills `distanceMeters`). This keeps the existing 3-case kind switches valid and
+avoids a churny migration; the discipline axis carries the new types.
+
+**Migration- and backup-safe by construction.** `disciplineRaw`/`distanceMeters`/`rpe` are additive
+`Optional`s on the Codable composites (`SetLog`/`SessionExercise`) — old blobs decode them as `nil`
+(`discipline` then derives from `kind`), and because synthesized `Codable` omits a nil optional via
+`encodeIfPresent`, the encoded form (and the backup golden bytes) is unchanged for existing data. No
+`@Model`, no `SnappetSchema` change. Tests assert the encoded JSON does **not** contain the new keys when nil.
+
+**Pace is derived, never stored** (distance + duration) to avoid drift; `DistanceUnit` (km/mi) added next
+to `WeightUnit`, sticky per user (threaded into `FreeformSummary.stats` in a later phase — Phase 0 defaults
+distance to km).
+
+**`SetMeasure`** gained the combined reps×weight×time row ("8 × 60 kg · 0:42", mirroring the climb branch's
+existing precedent) + pure `formatDistance`/`formatPace`/`runSummary` (wired by the running phase).
+**`FreeformSummary.dominant`** now counts by `discipline` (regression-safe — legacy kinds derive to the same
+`.lifting`/`.climbing`/`.timed`) with `running`/`dance`/`other` added and the `stats` headline made
+exhaustive (running→Distance, dance/other→Active).
+
+**Verified:** see the build/test run stamped on the commit (Swift 6, 0 warnings; new
+`WorkoutDisciplineTests` + extended `SetMeasureTests`/`FreeformSummaryTests` green).

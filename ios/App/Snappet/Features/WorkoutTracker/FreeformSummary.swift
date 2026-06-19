@@ -20,8 +20,12 @@ enum FreeformSummary {
 
     // MARK: - Completion stats (workstream D)
 
-    /// Which exercise kind a session is "about" — drives the headline stat on the completion screen.
-    enum Dominant: String, Equatable, Sendable { case lifting, climbing, timed, none }
+    /// Which discipline a session is "about" — drives the headline stat on the completion screen.
+    /// (`lifting`/`climbing`/`timed` keep their names for back-compat with the done-screen; `running`/
+    /// `dance`/`other` are the Workout-Type Parity additions.)
+    enum Dominant: String, Equatable, Sendable {
+        case lifting, climbing, timed, running, dance, other, none
+    }
 
     /// One value+label cell for the completion summary (mirrors the guided done-screen `stat(_:_:)`).
     struct Stat: Equatable, Sendable {
@@ -38,24 +42,30 @@ enum FreeformSummary {
         var dominant: Dominant
     }
 
-    /// The session's dominant kind = the `SetKind` with the most **completed** sets. Ties resolve
-    /// lifting → climbing → timed (a fixed, deterministic order). `.none` when nothing is logged.
+    /// The session's dominant discipline = the `WorkoutDiscipline` with the most **completed** efforts.
+    /// Ties resolve in a fixed, deterministic order (lifting → climbing → running → timed → dance →
+    /// other). `.none` when nothing is logged. Counting by `discipline` (not `kind`) is regression-safe:
+    /// a legacy `.repsWeight`/`.climbAttempt`/`.duration` entity derives to strength/climb/timed and maps
+    /// back to the same `.lifting`/`.climbing`/`.timed` result as before.
     static func dominant(for session: WorkoutSession) -> Dominant {
-        var lifting = 0, climbing = 0, timed = 0
+        var counts: [WorkoutDiscipline: Int] = [:]
         for ex in session.exercises {
             for set in ex.sets where set.completedAt != nil {
-                switch ex.kind {
-                case .repsWeight:   lifting += 1
-                case .climbAttempt: climbing += 1
-                case .duration:     timed += 1
-                }
+                counts[ex.discipline, default: 0] += 1
             }
         }
-        let top = max(lifting, max(climbing, timed))
-        guard top > 0 else { return .none }
-        if lifting == top { return .lifting }
-        if climbing == top { return .climbing }
-        return .timed
+        let order: [(WorkoutDiscipline, Dominant)] = [
+            (.strength, .lifting), (.climb, .climbing), (.run, .running),
+            (.timed, .timed), (.dance, .dance), (.other, .other),
+        ]
+        // First discipline in `order` with a strictly-greater count wins → deterministic ties in the
+        // documented order; `.none` when nothing is logged (best.count stays 0).
+        var best: (dom: Dominant, count: Int) = (.none, 0)
+        for (disc, dom) in order {
+            let c = counts[disc] ?? 0
+            if c > best.count { best = (dom, c) }
+        }
+        return best.dom
     }
 
     /// Completion-summary stats for any session, with the third stat adapting to the dominant kind:
@@ -75,6 +85,16 @@ enum FreeformSummary {
             headline = Stat(value: "\(sendCount(session))", label: "Sends")
         case .timed:
             headline = Stat(value: SetMeasure.formatDuration(holdTimeSeconds(session)), label: "Hold time")
+        case .running:
+            // Distance defaults to km here; a later phase threads the user's sticky `DistanceUnit`.
+            headline = Stat(value: SetMeasure.formatDistance(totalDistanceMeters(session), unit: .km),
+                            label: "Distance")
+        case .dance:
+            headline = Stat(value: SetMeasure.formatDuration(activeSeconds(session, discipline: .dance)),
+                            label: "Active")
+        case .other:
+            headline = Stat(value: SetMeasure.formatDuration(activeSeconds(session, discipline: .other)),
+                            label: "Active")
         case .none:
             headline = Stat(value: "—", label: "—")
         }
@@ -99,6 +119,26 @@ enum FreeformSummary {
     static func holdTimeSeconds(_ session: WorkoutSession) -> Double {
         var total = 0.0
         for ex in session.exercises where ex.kind == .duration {
+            for set in ex.sets where set.completedAt != nil { total += set.durationSec ?? 0 }
+        }
+        return total
+    }
+
+    /// Total distance (Σ `distanceMeters`) across completed running efforts — the running headline figure.
+    static func totalDistanceMeters(_ session: WorkoutSession) -> Double {
+        var total = 0.0
+        for ex in session.exercises where ex.discipline == .run {
+            for set in ex.sets where set.completedAt != nil { total += set.distanceMeters ?? 0 }
+        }
+        return total
+    }
+
+    /// Total active time (Σ `durationSec`) across completed efforts, optionally scoped to one discipline.
+    /// The dance/other headline scopes to its own discipline so a mixed session (e.g. dance + a run leg)
+    /// doesn't fold another discipline's time into the headline.
+    static func activeSeconds(_ session: WorkoutSession, discipline: WorkoutDiscipline? = nil) -> Double {
+        var total = 0.0
+        for ex in session.exercises where discipline == nil || ex.discipline == discipline {
             for set in ex.sets where set.completedAt != nil { total += set.durationSec ?? 0 }
         }
         return total
