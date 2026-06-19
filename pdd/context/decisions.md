@@ -5740,3 +5740,33 @@ analytics ribbon/mixed-summary; and the cross-cutting items — watch `HKWorkout
 the saved-session `SessionDetailView` SetTileRow second kind-switch, the `HistorySectionView` discipline
 facet, and the `SnappetBackup` golden + Android `BackupRoundTripTest` (no new non-nil fields in old data →
 golden stays stable until those are exercised). Android is its own wave.
+
+## 2026-06-19 — Workout-Type Parity — completion cards, live ribbon, saved detail, strength polish
+
+Post-device-build follow-ups (the two "worth doing now" items + the strength polish), shipped on
+`claude/workout-type-parity` (PR #178), each build-green + unit/UITest-green + a review agent.
+
+**P7 — completion-summary cards** for the new disciplines (were EmptyView): RUNNING → hero
+Distance·Pace·Duration + a Runs card (per-run legs·distance·avg-pace via `RunStats`) + the type-agnostic
+time-in-zone Effort block; DANCE/OTHER → routed to the timed recap (they're `.duration`); `timedExerciseRows`
+excludes `.run` so a run leg never lists as a timed hold.
+
+**P8 — live aggregate stats ribbon** for non-climbing sessions (`disciplineRibbonSection`): strength
+Volume·sets, running distance·pace, timed TUT·sets; climbing keeps its rich tappable ribbon. New id
+`freeform.disciplineRibbon`.
+
+**P9 — saved-session detail** (`SessionDetailView.SetTileRow`): a `.run` leg renders distance·time·pace
+(`SetMeasure.runSummary`) and a timed-strength set appends its duration; the row is now discipline-aware
+(the second kind-switch the review flagged).
+
+**Review fix:** `holdTimeSeconds`/`bestHoldLabel` excluded `.run` — a run is a `.duration` entity, so it was
+over-counting a timed session's TUT (regression test added).
+
+**Strength polish (closes the hybrid-add intent):** one `StrengthEditSheet` reached from the card ⋯ →
+"Edit details" (`freeform.editEntity`) does rename + a default sets×reps×weight×unit (the `target*` columns)
++ a one-tap "Last time" chip; `quickAddSeed` now falls back to `target*` before the hardcoded 8/bodyweight,
+so a fast bulk pick + a per-card default carries into the first set. `updateStrength` overwrites in place.
+*Recents* ships as the single "Last time" chip (multi-entry history rail deferred).
+
+**Device:** built + installed + launched on MrRobot (iPhone 13 Pro Max) via `-allowProvisioningUpdates`
+(team NFUS5W8QC6 auto-provisioned; no entitlement strip needed).
