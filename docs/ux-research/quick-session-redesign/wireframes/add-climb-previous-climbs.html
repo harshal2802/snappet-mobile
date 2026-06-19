@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add a climb — redesign mockup</title>
+<style>
+  :root{
+    --ink:#F4F3F1; --textSecondary:#A6A5A1; --hairline:#34343A;
+    --surface:#1E1E22; --paper:#121214; --surfaceMuted:#26262B;
+    --workout:#FF9645; --kilter:#F59E0B; --budget:#589BF2; --habits:#5BC074; --blue:#0A84FF;
+    --c-red:#E5483D; --c-orange:#F2761E; --c-yellow:#F4C20D; --c-green:#3F9D55;
+    --c-blue:#2A7DE1; --c-purple:#7C5CD6; --c-pink:#EC4E8C; --c-white:#F4F3F1;
+    --c-black:#1A1A1E; --c-teal:#1592A6; --c-gray:#9AA0A6; --c-brown:#8B5A2B;
+  }
+  *{box-sizing:border-box; -webkit-font-smoothing:antialiased;}
+  html,body{margin:0;background:#0A0A0C;color:var(--ink);
+    font-family:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;}
+  .page{max-width:1180px;margin:0 auto;padding:40px 24px 80px;}
+  h1.title{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px;}
+  .sub{color:#8b8b90;font-size:15px;margin:0 0 34px;max-width:780px;line-height:1.5;}
+  .sub b{color:var(--workout);font-weight:600;}
+  code{color:#c4c4ca;background:#1c1c20;border-radius:4px;padding:1px 5px;font-size:.9em;}
+  .stage{display:flex;gap:54px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+  .col{display:flex;flex-direction:column;align-items:center;width:393px;}
+  .cap{margin-top:18px;width:393px;}
+  .cap .ct{font-size:15px;font-weight:650;margin:0 0 8px;color:var(--ink);}
+  .cap ul{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:7px;}
+  .cap li{font-size:13px;color:#9a9aa0;line-height:1.45;padding-left:24px;position:relative;}
+  .cap li::before{content:"";position:absolute;left:0;top:4px;width:14px;height:14px;border-radius:5px;
+    background:var(--workout);box-shadow:0 0 0 3px rgba(255,150,69,.16);}
+  .cap li.keep::before{background:#48484e;box-shadow:none;border-radius:3px;width:10px;height:10px;left:2px;top:6px;}
+  .cap li b{color:var(--ink);font-weight:600;}
+  .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;color:#1a1208;
+    background:var(--workout);border-radius:5px;padding:1px 5px;margin-right:6px;vertical-align:1px;}
+
+  /* ---------- phone (content-height) ---------- */
+  .phone{width:393px;background:#000;border-radius:56px;padding:11px;
+    box-shadow:0 0 0 12px #1b1b1d,0 30px 80px rgba(0,0,0,.6);}
+  .screen{border-radius:46px;overflow:hidden;background:#0c0c0e;display:flex;flex-direction:column;position:relative;}
+  .status{position:absolute;top:0;left:0;right:0;height:54px;z-index:40;display:flex;align-items:flex-end;
+    justify-content:space-between;padding:0 32px 9px;font-size:15px;font-weight:600;color:#fff;}
+  .status .r{display:flex;gap:7px;align-items:center;}
+  .bars{display:flex;gap:2px;align-items:flex-end;height:12px;}
+  .bars i{width:3px;background:#fff;border-radius:1px;}
+  .bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:7px}.bars i:nth-child(3){height:9px}.bars i:nth-child(4){height:12px}
+  .batt{width:25px;height:12px;border:1.6px solid rgba(255,255,255,.6);border-radius:3px;position:relative;padding:1.5px;}
+  .batt::after{content:"";position:absolute;right:-3px;top:3.5px;width:2px;height:5px;background:rgba(255,255,255,.5);border-radius:0 1px 1px 0;}
+  .batt i{display:block;height:100%;width:78%;background:#fff;border-radius:1px;}
+
+  .topcap{position:relative;height:96px;flex:0 0 auto;background:linear-gradient(#17171a,#0c0c0e);}
+  .peek{position:absolute;top:60px;left:0;right:0;text-align:center;}
+  .peek .pt{font-size:19px;font-weight:700;color:#54545a;}
+  .peek .ps{font-size:12.5px;margin-top:2px;color:#46464c;}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.4);}
+
+  .sheet{position:relative;flex:1 1 auto;background:var(--paper);border-radius:14px 14px 0 0;
+    display:flex;flex-direction:column;margin-top:-2px;}
+  .grabber{height:5px;width:36px;border-radius:3px;background:rgba(235,235,245,.3);margin:7px auto 0;}
+  .navbar{height:46px;display:flex;align-items:center;justify-content:center;position:relative;flex:0 0 auto;}
+  .navbar .ttl{font-size:17px;font-weight:600;}
+  .navbar .cancel{position:absolute;left:18px;color:var(--blue);font-size:17px;font-weight:400;}
+  .form{padding:4px 18px 26px;}
+
+  .sec{margin-top:20px;}
+  .sec:first-child{margin-top:8px;}
+  .hdr{font-size:13px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--textSecondary);
+    padding:0 6px 7px;display:flex;align-items:center;justify-content:space-between;}
+  .hdr .right{color:var(--blue);text-transform:none;letter-spacing:0;font-weight:400;font-size:14px;}
+  .card{background:var(--surface);border-radius:13px;overflow:hidden;}
+  .row{padding:12px 14px;display:flex;align-items:center;gap:10px;min-height:46px;}
+  .row + .row{border-top:.5px solid var(--hairline);}
+  .row .lbl{font-size:16px;color:var(--ink);}
+  .row .lbl.sub{font-size:15px;font-weight:500;}
+  .row .val{margin-left:auto;font-size:16px;color:var(--textSecondary);}
+  .row .val.ember{color:var(--workout);font-weight:600;}
+
+  .ddrow{padding:14px;display:flex;align-items:center;gap:12px;}
+  .ddrow .ic{width:30px;height:30px;border-radius:8px;background:rgba(255,150,69,.14);display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .ddrow .tx{display:flex;flex-direction:column;gap:2px;}
+  .ddrow .tx .a{font-size:16px;font-weight:500;color:var(--ink);}
+  .ddrow .tx .b{font-size:12.5px;color:var(--textSecondary);}
+  .chev{margin-left:auto;color:#6a6a70;flex:0 0 auto;}
+
+  .seg{display:flex;background:#2a2a2e;border-radius:9px;padding:2px;margin:10px 0 2px;}
+  .seg div{flex:1;text-align:center;font-size:13px;font-weight:500;color:#c7c7cc;padding:7px 2px;border-radius:7px;}
+  .seg div.on{background:#5a5a60;color:#fff;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.3);}
+
+  .rail{display:flex;gap:8px;overflow-x:auto;padding:10px 14px;}
+  .rail::-webkit-scrollbar{height:0;}
+  .chip{flex:0 0 auto;background:var(--surfaceMuted);color:var(--ink);font-size:14px;
+    padding:7px 13px;border-radius:16px;white-space:nowrap;}
+  .chip.on{background:var(--workout);color:#fff;font-weight:700;}
+  .chip.recent{display:flex;align-items:center;gap:5px;}
+  .railwrap{border-top:.5px solid var(--hairline);}
+  .raillbl{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#6a6a70;padding:9px 14px 0;}
+
+  .sw{flex:0 0 auto;width:30px;height:30px;border-radius:50%;position:relative;}
+  .sw.none{background:transparent;border:1.5px dashed #55555c;display:flex;align-items:center;justify-content:center;color:#6a6a70;}
+  .sw.ring{box-shadow:0 0 0 3px var(--workout);}
+  .sw.hair{box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);}
+  .sw.hair.ring{box-shadow:0 0 0 3px var(--workout),inset 0 0 0 1px rgba(255,255,255,.18);}
+
+  .tf{font-size:16px;color:var(--ink);}
+  .tf.empty{color:#5b5b61;}
+  .disc{display:flex;align-items:center;gap:8px;}
+  .disc .arw{margin-left:auto;color:#6a6a70;transform:rotate(90deg);}
+
+  .photos{display:flex;gap:10px;padding:13px 14px;overflow-x:auto;align-items:center;}
+  .photos::-webkit-scrollbar{height:0;}
+  .thumb{flex:0 0 auto;width:64px;height:64px;border-radius:11px;position:relative;overflow:hidden;
+    box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08);}
+  .thumb.p1{background:linear-gradient(135deg,#3a4a63,#1f2a3d);}
+  .thumb.p2{background:linear-gradient(135deg,#5a3f2a,#2e2016);}
+  .thumb .vid{position:absolute;left:5px;bottom:4px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+  .thumb .dur{position:absolute;right:5px;bottom:4px;font-size:10px;font-weight:600;color:#fff;
+    background:rgba(0,0,0,.4);border-radius:4px;padding:0 4px;}
+  .attach{flex:0 0 auto;width:64px;height:64px;border-radius:11px;border:1.5px dashed #4a4a52;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--workout);}
+  .attach .t{font-size:10px;font-weight:600;}
+
+  .cta{margin-top:26px;display:flex;flex-direction:column;gap:11px;padding-bottom:8px;}
+  .btn{height:50px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;}
+  .btn.primary{background:var(--workout);color:#231405;}
+  .btn.secondary{background:transparent;color:var(--workout);box-shadow:inset 0 0 0 1.5px var(--workout);}
+
+  .search{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--surfaceMuted);
+    border-radius:10px;color:#7a7a80;font-size:15px;}
+  .pcRow{padding:11px 14px;display:flex;align-items:center;gap:11px;}
+  .pcRow + .pcRow{border-top:.5px solid var(--hairline);}
+  .pcRow .tIcon{width:26px;height:26px;border-radius:7px;background:var(--surfaceMuted);display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .pcRow .nm{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .pcRow .nm .a{font-size:16px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pcRow .nm .b{font-size:12.5px;color:var(--textSecondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pill{flex:0 0 auto;margin-left:auto;font-size:13px;font-weight:700;padding:4px 9px;border-radius:9px;}
+  .pill.boulder{background:rgba(245,158,11,.18);color:var(--kilter);}
+  .pill.route{background:rgba(88,155,242,.18);color:var(--budget);}
+  .cdot{flex:0 0 auto;width:11px;height:11px;border-radius:50%;}
+  .filters{display:flex;gap:7px;overflow-x:auto;padding:10px 0 2px;}
+  .filters::-webkit-scrollbar{height:0;}
+  .fchip{flex:0 0 auto;font-size:13px;font-weight:500;padding:6px 12px;border-radius:15px;background:var(--surfaceMuted);color:#c7c7cc;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+  .fchip.on{background:var(--workout);color:#fff;font-weight:600;}
+  .pcThumb{width:46px;height:46px;border-radius:11px;position:relative;flex:0 0 auto;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08);}
+  .pcThumb.noimg{background:var(--surfaceMuted);display:flex;align-items:center;justify-content:center;color:#8a8a90;box-shadow:none;}
+  .pcThumb.ph-a{background:linear-gradient(135deg,#3a4a63,#1f2a3d);}
+  .pcThumb.ph-b{background:linear-gradient(135deg,#5a3f2a,#2e2016);}
+  .pcThumb.ph-c{background:linear-gradient(135deg,#2f5141,#16291f);}
+  .cdot2{position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:50%;box-shadow:0 0 0 2.5px var(--surface);}
+  .pcCount{position:absolute;right:3px;top:3px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,.5);border-radius:6px;padding:0 4px;}
+  .pcNew{padding:13px 14px;display:flex;align-items:center;gap:11px;color:var(--workout);font-size:16px;font-weight:500;}
+  .pcNew .plus{width:26px;height:26px;border-radius:7px;background:rgba(255,150,69,.14);display:flex;align-items:center;justify-content:center;}
+  .hint{text-align:center;color:#55555c;font-size:12.5px;margin-top:22px;line-height:1.5;}
+  svg{display:block;}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1 class="title">Add a climb — redesign</h1>
+  <p class="sub">High-fidelity mockup of the reworked <b>Add a climb</b> sheet, drawn with the app's real
+  dark-mode tokens (ember <b>#FF9645</b>, grouped <code>Form</code> chrome). Three new pieces:
+  a <b>“Log a previous climb”</b> dropdown above Type, an optional <b>Setter</b> field, and optional <b>Photos</b>.
+  Everything else is the shipped flow (Type → Grade → Colour → Name → gym/wall → CTA), untouched.</p>
+
+  <div class="stage">
+
+    <!-- ============ FRAME A ============ -->
+    <div class="col">
+      <div class="phone"><div class="screen">
+        <div class="topcap">
+          <div class="status"><div>9:41</div>
+            <div class="r"><div class="bars"><i></i><i></i><i></i><i></i></div>
+              <svg width="17" height="13" viewBox="0 0 17 13" fill="none"><path d="M8.5 2.5C10.7 2.5 12.7 3.4 14.1 4.8L15.4 3.4C13.6 1.7 11.2 0.6 8.5 0.6C5.8 0.6 3.4 1.7 1.6 3.4L2.9 4.8C4.3 3.4 6.3 2.5 8.5 2.5Z" fill="white"/><path d="M8.5 6.2C9.7 6.2 10.8 6.7 11.6 7.5L12.9 6.1C11.8 5 10.2 4.3 8.5 4.3C6.8 4.3 5.2 5 4.1 6.1L5.4 7.5C6.2 6.7 7.3 6.2 8.5 6.2Z" fill="white"/><circle cx="8.5" cy="10.3" r="1.9" fill="white"/></svg>
+              <div class="batt"><i></i></div></div>
+          </div>
+          <div class="peek"><div class="pt">Quick Session</div><div class="ps">02:14 · Movement RiNo</div></div>
+          <div class="dim"></div>
+        </div>
+
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="navbar"><div class="cancel">Cancel</div><div class="ttl">Add a climb</div></div>
+          <div class="form">
+
+            <div class="sec">
+              <div class="hdr">Log a previous climb</div>
+              <div class="card">
+                <div class="ddrow">
+                  <div class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FF9645" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg></div>
+                  <div class="tx"><div class="a">Select a previous climb</div><div class="b">Re-log one you’ve already done</div></div>
+                  <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="hdr">Type</div>
+              <div class="card" style="padding:8px 12px;">
+                <div class="seg"><div class="on">Boulder</div><div>Top-rope</div><div>Lead</div><div>Sport</div></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="hdr">Grade · V-scale</div>
+              <div class="card">
+                <div class="row"><span class="lbl sub">Grade</span><span class="val ember" style="margin-left:auto;">V5</span>
+                  <span class="chip" style="padding:4px 10px;font-size:12px;font-weight:600;color:var(--textSecondary);background:var(--surfaceMuted);">Font</span></div>
+                <div class="railwrap"><div class="raillbl">Recent</div>
+                  <div class="rail" style="padding-top:7px;">
+                    <span class="chip recent"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#9a9aa0" stroke-width="2.4"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>V3</span>
+                    <span class="chip recent">V4</span><span class="chip recent">V6</span><span class="chip recent">V2</span></div></div>
+                <div class="railwrap"><div class="rail">
+                    <span class="chip">V0</span><span class="chip">V1</span><span class="chip">V2</span><span class="chip">V3</span>
+                    <span class="chip">V4</span><span class="chip on">V5</span><span class="chip">V6</span><span class="chip">V7</span><span class="chip">V8</span></div></div>
+                <div class="railwrap">
+                  <div class="row" style="padding-bottom:2px;"><span class="lbl sub">Colour</span><span class="val" style="color:var(--c-blue);font-weight:600;">Blue</span></div>
+                  <div class="rail" style="padding-top:6px;">
+                    <span class="sw none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg></span>
+                    <span class="sw" style="background:var(--c-red)"></span><span class="sw" style="background:var(--c-orange)"></span>
+                    <span class="sw" style="background:var(--c-yellow)"></span><span class="sw" style="background:var(--c-green)"></span>
+                    <span class="sw ring" style="background:var(--c-blue)"></span><span class="sw" style="background:var(--c-purple)"></span>
+                    <span class="sw" style="background:var(--c-pink)"></span><span class="sw hair" style="background:var(--c-white)"></span></div></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="hdr">Name (optional)</div>
+              <div class="card"><div class="row"><span class="tf">Crimp Master</span></div></div>
+            </div>
+
+            <div class="sec">
+              <div class="hdr">Setter (optional)</div>
+              <div class="card"><div class="row"><span class="tf empty">e.g. Alex H.</span></div></div>
+            </div>
+
+            <div class="sec">
+              <div class="hdr">More</div>
+              <div class="card">
+                <div class="row disc"><span class="lbl">Gym · wall</span><svg class="arw" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></div>
+                <div class="row"><span class="tf">Movement RiNo</span></div>
+                <div class="railwrap"><div class="rail"><span class="chip on">Movement RiNo</span><span class="chip">Earth Treks</span><span class="chip">The Spot</span></div></div>
+                <div class="row"><span class="tf">Cave</span></div>
+                <div class="railwrap"><div class="rail"><span class="chip on">Cave</span><span class="chip">Overhang</span><span class="chip">Slab wall</span></div></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="hdr">Photos (optional)</div>
+              <div class="card">
+                <div class="photos">
+                  <div class="thumb p1"></div>
+                  <div class="thumb p2"></div>
+                  <div class="attach">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF9645" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg>
+                    <span class="t">Attach</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cta">
+              <div class="btn primary">Add &amp; log first attempt</div>
+              <div class="btn secondary">Add climb</div>
+            </div>
+
+          </div>
+        </div>
+      </div></div>
+
+      <div class="cap">
+        <div class="ct">① Sheet at rest — new climb</div>
+        <ul>
+          <li><span class="tag">NEW</span><b>“Log a previous climb”</b> dropdown sits as the very top section, above Type. Tap → list (screen ②).</li>
+          <li><span class="tag">NEW</span><b>Setter (optional)</b> field — its own section, free text, falls back to nil when empty.</li>
+          <li><span class="tag">NEW</span><b>Photos (optional)</b> — thumbnail strip + paperclip attach (reuses the existing <code>MediaPicker</code> / <code>SessionMedia</code> stack).</li>
+          <li class="keep">Type → Grade (discrete rung rail) → Colour → Name → gym/wall → CTA — the shipped flow, unchanged.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============ FRAME B ============ -->
+    <div class="col">
+      <div class="phone"><div class="screen">
+        <div class="topcap">
+          <div class="status"><div>9:41</div>
+            <div class="r"><div class="bars"><i></i><i></i><i></i><i></i></div>
+              <svg width="17" height="13" viewBox="0 0 17 13" fill="none"><path d="M8.5 2.5C10.7 2.5 12.7 3.4 14.1 4.8L15.4 3.4C13.6 1.7 11.2 0.6 8.5 0.6C5.8 0.6 3.4 1.7 1.6 3.4L2.9 4.8C4.3 3.4 6.3 2.5 8.5 2.5Z" fill="white"/><path d="M8.5 6.2C9.7 6.2 10.8 6.7 11.6 7.5L12.9 6.1C11.8 5 10.2 4.3 8.5 4.3C6.8 4.3 5.2 5 4.1 6.1L5.4 7.5C6.2 6.7 7.3 6.2 8.5 6.2Z" fill="white"/><circle cx="8.5" cy="10.3" r="1.9" fill="white"/></svg>
+              <div class="batt"><i></i></div></div>
+          </div>
+          <div class="peek"><div class="pt">Quick Session</div><div class="ps">02:14 · Movement RiNo</div></div>
+          <div class="dim"></div>
+        </div>
+
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="navbar"><div class="cancel">Cancel</div><div class="ttl">Add a climb</div></div>
+          <div class="form">
+
+            <div class="sec">
+              <div class="hdr">Log a previous climb <span class="right">Done</span></div>
+              <div class="card" style="padding:9px 10px;"><div class="search">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7a7a80" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  Search your climbs</div></div>
+              <div class="filters">
+                <span class="fchip on">All</span>
+                <span class="fchip">Boulder</span>
+                <span class="fchip">Routes</span>
+                <span class="fchip"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg>This gym</span>
+                <span class="fchip">Sent</span>
+              </div>
+              <div class="card">
+                <div class="pcRow">
+                  <div class="pcThumb ph-a"><span class="pcCount">2</span><span class="cdot2" style="background:var(--c-blue)"></span></div>
+                  <span class="nm"><span class="a">Crimp Master</span><span class="b">Movement RiNo · Cave · 2d ago</span></span><span class="pill boulder">V5</span></div>
+                <div class="pcRow">
+                  <div class="pcThumb ph-b"><span class="cdot2" style="background:var(--c-red)"></span></div>
+                  <span class="nm"><span class="a">Sunset Arête</span><span class="b">Earth Treks · Lead · 5d ago</span></span><span class="pill route">5.11a</span></div>
+                <div class="pcRow">
+                  <div class="pcThumb noimg"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20l5-9 4 5 3-4 6 8z"/></svg><span class="cdot2" style="background:var(--c-yellow)"></span></div>
+                  <span class="nm"><span class="a">The Prow</span><span class="b">Movement RiNo · Overhang · 1w ago</span></span><span class="pill boulder">V7</span></div>
+                <div class="pcRow">
+                  <div class="pcThumb ph-c"><span class="pcCount">3</span><span class="cdot2" style="background:var(--c-green)"></span></div>
+                  <span class="nm"><span class="a">Slab Dancer</span><span class="b">The Spot · Slab wall · 2w ago</span></span><span class="pill boulder">V3</span></div>
+                <div class="pcRow">
+                  <div class="pcThumb noimg"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M7 6l5-4 5 4M7 12l5-3 5 3"/></svg><span class="cdot2" style="background:var(--c-purple)"></span></div>
+                  <span class="nm"><span class="a">Roof Traverse</span><span class="b">Earth Treks · Top-rope · 3w ago</span></span><span class="pill route">5.10c</span></div>
+              </div>
+              <div class="card" style="margin-top:8px;"><div class="pcNew">
+                  <span class="plus"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF9645" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+                  Add a new climb instead</div></div>
+            </div>
+
+            <div class="hint">Photo preview · grade pill · gym &amp; when per row.<br>Filter by type / gym / send, or search by name.</div>
+
+          </div>
+        </div>
+      </div></div>
+
+      <div class="cap">
+        <div class="ct">② Dropdown opened — pick a previous climb</div>
+        <ul>
+          <li><span class="tag">NEW</span><b>Photo preview</b> per row (first attached photo + count badge); falls back to the type glyph when a climb has none.</li>
+          <li><span class="tag">NEW</span><b>Filter chips</b> — All · Boulder · Routes · This gym · Sent — work alongside the search bar to narrow a long history.</li>
+          <li><span class="tag">NEW</span>Distinct climbs flattened from <b>session history</b> (+ this session), most-recent-first. Selecting one <b>prefills every field</b> of the new-climb form.</li>
+          <li class="keep">Row = colour dot · name · <b>gym · wall · when</b> · grade pill (amber=boulder, azure=route). <b>“Add a new climb instead”</b> returns to screen ①.</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

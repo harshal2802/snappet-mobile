@@ -271,6 +271,9 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var wall: String?
     /// `ClimbColor.rawValue` — the route's hold/tape colour; `nil` ⇒ no colour tagged. Additive optional.
     var climbColorRaw: String?
+    /// The route-setter's name — captured once in the "Add a climb" sheet, an optional climb-level tag
+    /// (like `gym`/`wall`). `nil` ⇒ unset. Additive optional → SwiftData lightweight migration.
+    var setter: String?
 
     // MARK: - Timed metadata (Quick Session redesign Phase 5). A `.duration` exercise IS the timed
     // exercise (the timed analogue of the climb-first hierarchy); its `sets` are the timed holds logged

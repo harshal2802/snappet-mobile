@@ -10,12 +10,17 @@ import PhotosUI
 /// `PhotoLibraryService.media(forIdentifiers:)` maps back to engine `MediaItem`s using the
 /// same creationDate→offset alignment.
 struct MediaPicker: UIViewControllerRepresentable {
+    /// Asset types offered. The default keeps the all-media behaviour every existing caller relies on; the
+    /// climb photo-attach control passes `.images` for a photos-only pick (additive — no caller changes).
+    /// Declared before `onPicked` so the trailing-closure forms `MediaPicker { … }` and
+    /// `MediaPicker(filter: .images) { … }` both resolve.
+    var filter: PHPickerFilter = .any(of: [.videos, .images])
     /// Called with the picked asset identifiers (empty if the user cancels).
     let onPicked: ([String]) -> Void
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var config = PHPickerConfiguration(photoLibrary: .shared())
-        config.filter = .any(of: [.videos, .images])
+        config.filter = filter
         config.selectionLimit = 0            // 0 = no limit
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator

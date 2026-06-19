@@ -1,4 +1,5 @@
 import SwiftUI
+import Photos
 
 /// The **"Add a climb"** sheet (Quick Session redesign Phase 1): the climb-first entry point that
 /// replaces dropping a bare `.climbAttempt` row. It captures the climb's identity ONCE — TYPE first
@@ -17,6 +18,10 @@ import SwiftUI
 struct AddClimbSheet: View {
     /// The session's most recent climb gym, inherited as the default (free text, no catalog gate).
     let inheritedGym: String?
+    /// The user's distinct previously-logged climbs (derived in `FreeformPlayerView` from history + the live
+    /// session), offered as a one-tap **re-log** above Type. Empty ⇒ the section is omitted (the first-ever
+    /// session; edit mode never passes any). Selecting one prefills the form via `seed(from:)`.
+    var previousClimbs: [PreviousClimb] = []
     /// EDIT mode (prompt 09): when non-nil, the sheet opens PREFILLED from an existing climb and the CTA
     /// becomes a single "Save" (no "Add & log first attempt"). `nil` ⇒ the original add-a-climb flow.
     var initial: AddClimbParams? = nil
@@ -25,6 +30,8 @@ struct AddClimbSheet: View {
     let onAdd: (_ params: AddClimbParams, _ logFirstAttempt: Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    /// Photos access for the optional photo-attach control (mirrors `SetMediaStrip.ensureAccessThenPick`).
+    @Environment(AppModel.self) private var app
 
     @State private var type: ClimbType = .boulder
     @State private var scale: GradeScale = .vScale
@@ -35,7 +42,35 @@ struct AddClimbSheet: View {
     @State private var gym: String = ""
     /// The wall within the gym — free text, suggested per-gym (a gym has many walls).
     @State private var wall: String = ""
+    /// The route-setter (optional) — its own section under Name. Empty ⇒ `nil` on the params.
+    @State private var setter: String = ""
     @State private var showMore = false
+
+    // MARK: - Previous-climb picker (ADD mode) state
+    /// Whether the "Log a previous climb" disclosure is expanded into its searchable / filterable list.
+    @State private var showPrevious = false
+    @State private var previousQuery = ""
+    @State private var previousScope: PreviousClimb.Scope = .all
+    /// The "This gym" toggle — restricts the list to the inherited gym (only offered when one exists).
+    @State private var previousThisGym = false
+    /// The "Sent" toggle — restricts to climbs whose best outcome is a send.
+    @State private var previousSent = false
+    /// The `id` of the previous climb the form was last prefilled from (the selected cue + a test handle).
+    @State private var prefilledFromPreviousID: String?
+    /// One-shot guard so a re-log selection's `type` change doesn't trigger the auto grade-snap that would
+    /// clobber the prefilled scale/grade (the snap is for a manual type pick; a prefill sets them exactly).
+    @State private var suppressTypeSnap = false
+
+    // MARK: - Photo attach (ADD mode) state
+    /// PHAsset `localIdentifier`s of photos picked for the NEW climb (photos only). Returned on the params;
+    /// the player files them as climb-level `SessionMedia` once it mints the climb's id.
+    @State private var photoIdentifiers: [String] = []
+    @State private var showingPhotoPicker = false
+
+    /// The sheet opens at `.large` (still draggable down to `.medium`): the form now carries the
+    /// previous-climb picker, Setter, and Photos in addition to type/grade/colour/name/gym/wall, so the
+    /// full capture surface is on-screen rather than below a half-sheet fold (the approved wireframe shape).
+    @State private var detent: PresentationDetent = .large
 
     /// The last ~5 grades picked per scale, surfaced as a one-tap chip rail. Keyed per scale so the V
     /// rail and the YDS rail don't bleed into each other. Persisted in `UserDefaults` (the lightweight
@@ -68,27 +103,35 @@ struct AddClimbSheet: View {
 
     private var trimmedGym: String? { gym.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
     private var trimmedWall: String? { wall.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+    private var trimmedSetter: String? { setter.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
 
     private var params: AddClimbParams {
         AddClimbParams(type: type, scale: scale, grade: grade, name: resolvedName,
-                       gym: trimmedGym, wall: trimmedWall, color: color)
+                       gym: trimmedGym, wall: trimmedWall, color: color,
+                       setter: trimmedSetter, photoLocalIdentifiers: photoIdentifiers)
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                if initial == nil && !previousClimbs.isEmpty { previousSection }
                 typeSection
                 gradeSection
                 nameSection
+                setterSection
                 moreSection
-                ctaSection
+                if initial == nil { photosSection }
             }
+            // Pin the primary action(s) to the bottom: the form now carries the previous-climb picker,
+            // Setter, and Photos, so an in-form bottom CTA would sit below the fold — pinning keeps "commit"
+            // always visible (and reliably reachable) regardless of scroll. (prompt 81)
+            .safeAreaInset(edge: .bottom) { ctaBar }
             .navigationTitle(initial == nil ? "Add a climb" : "Edit climb")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.medium, .large], selection: $detent)
         }
         .onAppear {
             if let initial {
@@ -123,6 +166,7 @@ struct AddClimbSheet: View {
         name = (p.name == p.type.label) ? "" : p.name
         gym = p.gym ?? ""
         wall = p.wall ?? ""
+        setter = p.setter ?? ""
     }
 
     /// The scale remembered for a discipline (Phase 7), falling back to the type's default if the stored
@@ -152,6 +196,9 @@ struct AddClimbSheet: View {
             // grade to that scale's default — a route can't carry a V grade. Recents re-load for the scale.
             .onChange(of: type) { _, newType in
                 guard didSeed else { return }   // don't clobber an EDIT-mode prefill as `seed` sets the type
+                // A re-log prefill sets type+scale+grade together; skip the auto-snap once so the prefilled
+                // scale/grade survive (the snap is only for a MANUAL discipline switch).
+                if suppressTypeSnap { suppressTypeSnap = false; return }
                 scale = rememberedScale(for: newType)
                 grade = scale.defaultGrade
                 recentGrades = Self.loadRecents(scale: scale)
@@ -327,8 +374,11 @@ struct AddClimbSheet: View {
         }
     }
 
-    @ViewBuilder private var ctaSection: some View {
-        Section {
+    /// The primary action(s), pinned to the sheet bottom via `.safeAreaInset` so they stay visible above a
+    /// long, scrollable form (and above the keyboard). Same identifiers/behaviour as the former in-form CTA
+    /// section — only relocated. ADD mode shows the two original CTAs; EDIT mode a single "Save".
+    @ViewBuilder private var ctaBar: some View {
+        VStack(spacing: 10) {
             if initial == nil {
                 // ADD mode: the two original CTAs (prominent "Add & log first attempt" · bordered "Add climb").
                 Button {
@@ -346,6 +396,7 @@ struct AddClimbSheet: View {
                     Text("Add climb").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .tint(SnappetColor.workout)
                 .accessibilityIdentifier("addClimb.add")
             } else {
                 // EDIT mode (prompt 09): a single "Save" that overwrites the climb's fields in place.
@@ -359,7 +410,259 @@ struct AddClimbSheet: View {
                 .accessibilityIdentifier("addClimb.save")
             }
         }
-        .listRowBackground(Color.clear)
+        .controlSize(.large)
+        .padding(.horizontal)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+        .background(.bar)
+    }
+
+    // MARK: - Setter & Photos sections (Quick Session redesign follow-up)
+
+    private var setterSection: some View {
+        Section("Setter (optional)") {
+            TextField("e.g. Alex H.", text: $setter)
+                .submitLabel(.done)
+                .accessibilityIdentifier("addClimb.setter")
+        }
+    }
+
+    /// Optional photos for a NEW climb (ADD mode only): a removable thumbnail strip + a "paperclip" attach
+    /// button presenting the photos-only `MediaPicker`. Picks are kept as `localIdentifier`s and filed as
+    /// climb-level `SessionMedia` by the player after it creates the climb. On the simulator (no Photos) the
+    /// picker resolves nothing and thumbnails render placeholders — the affordance still reaches XCUITests.
+    private var photosSection: some View {
+        Section("Photos (optional)") {
+            if !photoIdentifiers.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(photoIdentifiers.enumerated()), id: \.element) { i, lid in
+                            ClimbPhotoThumb(localIdentifier: lid, side: 64)
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        photoIdentifiers.removeAll { $0 == lid }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, .black.opacity(0.55))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(3)
+                                    .accessibilityIdentifier("addClimb.photoRemove.\(i)")
+                                }
+                                .accessibilityIdentifier("addClimb.photo.\(i)")
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            Button {
+                Task { await ensureAccessThenPickPhotos() }
+            } label: {
+                Label(photoIdentifiers.isEmpty ? "Attach photos" : "Attach more photos",
+                      systemImage: "paperclip")
+                    .font(.subheadline)
+            }
+            .accessibilityIdentifier("addClimb.attachPhoto")
+        }
+        .sheet(isPresented: $showingPhotoPicker) {
+            MediaPicker(filter: .images) { ids in
+                for id in ids where !photoIdentifiers.contains(id) { photoIdentifiers.append(id) }
+            }
+        }
+    }
+
+    @MainActor private func ensureAccessThenPickPhotos() async {
+        if app.sessionMedia.currentStatus == .notDetermined {
+            app.photoAccess = await app.sessionMedia.requestAccess()
+        }
+        showingPhotoPicker = true
+    }
+
+    // MARK: - "Log a previous climb" section (ADD mode only)
+
+    /// The inherited gym normalized for the "This gym" filter; `nil` when unset.
+    private var scopeGym: String? { inheritedGym?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+
+    private var filteredPrevious: [PreviousClimb] {
+        PreviousClimb.filtered(previousClimbs, query: previousQuery, scope: previousScope,
+                               gym: previousThisGym ? scopeGym : nil, sentOnly: previousSent)
+    }
+
+    private var selectedPreviousName: String? {
+        guard let id = prefilledFromPreviousID else { return nil }
+        return previousClimbs.first { $0.id == id }?.params.name
+    }
+
+    /// The literal first section in ADD mode (omitted when there's no history): a disclosure that expands to
+    /// a search field, the `All · Boulder · Routes · This gym · Sent` filter rail, the distinct past climbs,
+    /// and an "Add a new climb instead" escape. Selecting a row prefills the whole form.
+    private var previousSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showPrevious) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search your climbs", text: $previousQuery)
+                        .submitLabel(.search)
+                        .accessibilityIdentifier("addClimb.previousSearch")
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(PreviousClimb.Scope.allCases, id: \.self) { s in
+                            chip(scopeLabel(s), selected: previousScope == s) { previousScope = s }
+                                .accessibilityIdentifier("addClimb.previousFilter.\(s.rawValue)")
+                        }
+                        if scopeGym != nil {
+                            chip("This gym", selected: previousThisGym) { previousThisGym.toggle() }
+                                .accessibilityIdentifier("addClimb.previousFilter.thisGym")
+                        }
+                        chip("Sent", selected: previousSent) { previousSent.toggle() }
+                            .accessibilityIdentifier("addClimb.previousFilter.sent")
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                if filteredPrevious.isEmpty {
+                    Text("No climbs match.").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(filteredPrevious.enumerated()), id: \.element.id) { i, pc in
+                        Button { selectPrevious(pc) } label: { previousRow(pc) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("addClimb.previousRow.\(i)")
+                    }
+                }
+
+                Button { startFreshClimb() } label: {
+                    Label("Add a new climb instead", systemImage: "plus")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(SnappetColor.workout)
+                }
+                .accessibilityIdentifier("addClimb.previousNew")
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(SnappetColor.workout)
+                    Text("Log a previous climb").font(.subheadline.weight(.medium))
+                    Spacer(minLength: 8)
+                    if let name = selectedPreviousName {
+                        Text(name).font(.caption.weight(.semibold))
+                            .foregroundStyle(SnappetColor.workout).lineLimit(1)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("addClimb.previousDisclosure")
+                .accessibilityValue(selectedPreviousName ?? "none")
+            }
+        } header: {
+            Text("Log a previous climb")
+        }
+    }
+
+    /// One previous-climb row: a photo-preview thumb (or the type glyph) with a colour-dot + count badge,
+    /// the climb name, a `gym · wall · when` subtitle, and the grade pill (amber boulder / azure route).
+    private func previousRow(_ pc: PreviousClimb) -> some View {
+        HStack(spacing: 11) {
+            previousThumb(pc)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pc.params.name).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
+                Text(previousSubtitle(pc)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(pc.params.grade)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(pc.params.type.isRoute ? SnappetColor.budget : SnappetColor.kilter)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background((pc.params.type.isRoute ? SnappetColor.budget : SnappetColor.kilter).opacity(0.18),
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private func previousThumb(_ pc: PreviousClimb) -> some View {
+        Group {
+            if let lid = pc.photoLocalIdentifier {
+                ClimbPhotoThumb(localIdentifier: lid, side: 46)
+            } else {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(SnappetColor.surfaceMuted)
+                    .frame(width: 46, height: 46)
+                    .overlay(Image(systemName: pc.params.type.symbol).foregroundStyle(.secondary))
+            }
+        }
+        .frame(width: 46, height: 46)
+        .overlay(alignment: .topTrailing) {
+            if pc.photoCount > 1 {
+                Text("\(pc.photoCount)")
+                    .font(.caption2.weight(.bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(3)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let c = pc.params.color {
+                Circle().fill(Color(hex: c.hexValue))
+                    .frame(width: 13, height: 13)
+                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                    .offset(x: 3, y: 3)
+            }
+        }
+    }
+
+    private func previousSubtitle(_ pc: PreviousClimb) -> String {
+        var parts: [String] = []
+        if let g = pc.params.gym { parts.append(g) }
+        if let w = pc.params.wall { parts.append(w) }
+        if parts.isEmpty { parts.append(pc.params.type.label) }
+        parts.append(Self.relativeWhen(pc.lastLoggedAt))
+        return parts.joined(separator: " · ")
+    }
+
+    private func scopeLabel(_ s: PreviousClimb.Scope) -> String {
+        switch s {
+        case .all:     return "All"
+        case .boulder: return "Boulder"
+        case .routes:  return "Routes"
+        }
+    }
+
+    /// Prefill the whole form from a previous climb and collapse the picker. The grade/scale are set
+    /// exactly (the type-snap is suppressed when the discipline changes); recents reload for the new scale.
+    private func selectPrevious(_ pc: PreviousClimb) {
+        if pc.params.type != type { suppressTypeSnap = true }
+        seed(from: pc.params)
+        // A re-log adopts the previous climb's IDENTITY only — never its (or an abandoned new-climb's)
+        // photos. Clear any picked photos so they don't leak onto the re-logged climb (the documented
+        // "old photos/attempts are not copied" contract; mirrors startFreshClimb).
+        photoIdentifiers = []
+        recentGrades = Self.loadRecents(scale: scale)
+        recentWalls = Self.loadWalls(forGym: trimmedGym)
+        prefilledFromPreviousID = pc.id
+        withAnimation { showPrevious = false }
+    }
+
+    /// "Add a new climb instead": clear a prefill back to a blank new climb (if one was selected), then
+    /// collapse. If nothing was prefilled, the user's in-progress entry is left untouched — just collapse.
+    private func startFreshClimb() {
+        if prefilledFromPreviousID != nil {
+            type = .boulder
+            scale = rememberedScale(for: .boulder)
+            grade = scale.defaultGrade
+            color = nil; name = ""; setter = ""; gym = inheritedGym ?? ""; wall = ""
+            photoIdentifiers = []
+            recentGrades = Self.loadRecents(scale: scale)
+            recentWalls = Self.loadWalls(forGym: trimmedGym)
+            prefilledFromPreviousID = nil
+        }
+        withAnimation { showPrevious = false }
+    }
+
+    /// Abbreviated relative "when" for a previous-climb row (e.g. "2d ago"). Single shared formatter.
+    private static let relFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated; return f
+    }()
+    static func relativeWhen(_ date: Date) -> String {
+        relFormatter.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: - Controls
@@ -477,7 +780,8 @@ struct AddClimbSheet: View {
 }
 
 /// The climb identity captured by `AddClimbSheet`, handed to the player to build a `SessionExercise`.
-struct AddClimbParams {
+/// `Equatable` so the previous-climb dedup + tests can compare two captured identities cheaply.
+struct AddClimbParams: Equatable {
     let type: ClimbType
     let scale: GradeScale
     let grade: String
@@ -485,16 +789,25 @@ struct AddClimbParams {
     let gym: String?
     let wall: String?
     let color: ClimbColor?
+    /// The route-setter's name (optional). Persisted on `SessionExercise.setter`; `nil` ⇒ unset.
+    let setter: String?
+    /// PHAsset `localIdentifier`s of photos the user attached to a NEW climb in the sheet. The sheet can't
+    /// mint the `SessionExercise.id` to file `SessionMedia` against, so it returns the picks here and the
+    /// player inserts the climb-level media after creating the climb. Empty in edit mode (section hidden).
+    let photoLocalIdentifiers: [String]
 
     init(type: ClimbType, scale: GradeScale, grade: String, name: String,
-         gym: String?, wall: String?, color: ClimbColor?) {
+         gym: String?, wall: String?, color: ClimbColor?,
+         setter: String? = nil, photoLocalIdentifiers: [String] = []) {
         self.type = type; self.scale = scale; self.grade = grade; self.name = name
         self.gym = gym; self.wall = wall; self.color = color
+        self.setter = setter; self.photoLocalIdentifiers = photoLocalIdentifiers
     }
 
-    /// Build a prefill from an existing climb `SessionExercise` (EDIT mode, prompt 09). The grade falls
-    /// back to the scale's default when the climb has none, and the NAME to the type label so the sheet
-    /// always opens on a valid grade rung and shows the climb's identity.
+    /// Build a prefill from an existing climb `SessionExercise` (EDIT mode, prompt 09; also the re-log
+    /// prefill source). The grade falls back to the scale's default when the climb has none, and the NAME
+    /// to the type label so the sheet always opens on a valid grade rung and shows the climb's identity.
+    /// Photos are never copied — a re-log starts with no attachments.
     init(from ex: SessionExercise) {
         self.type = ex.climbType
         self.scale = ex.climbGradeScale
@@ -503,9 +816,52 @@ struct AddClimbParams {
         self.gym = ex.gym?.isEmpty == false ? ex.gym : nil
         self.wall = ex.wall?.isEmpty == false ? ex.wall : nil
         self.color = ex.climbColor
+        self.setter = ex.setter?.isEmpty == false ? ex.setter : nil
+        self.photoLocalIdentifiers = []
     }
 }
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+/// A small rounded thumbnail for a PHAsset `localIdentifier` — used for the photos picked for a
+/// not-yet-created climb and the previous-climb row previews. Loads via `PHImageManager`, on-device only
+/// (`isNetworkAccessAllowed = false`); renders a placeholder where the asset is missing (e.g. the simulator
+/// has no Photos), so the affordance is always reachable. Mirrors `SessionMediaThumb`'s loader without its
+/// session-offset badge (a freshly-picked / cross-session photo has no offset to show).
+private struct ClimbPhotoThumb: View {
+    let localIdentifier: String
+    var side: CGFloat = 56
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Rectangle().fill(.quaternary)
+                    .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task(id: localIdentifier) { await load() }
+    }
+
+    private func load() async {
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = assets.firstObject else { return }
+        let target = CGSize(width: side * 3, height: side * 3)
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = false   // on-device only
+        let loaded: UIImage? = await withCheckedContinuation { cont in
+            PHImageManager.default().requestImage(for: asset, targetSize: target,
+                                                  contentMode: .aspectFill, options: options) { img, _ in
+                cont.resume(returning: img)
+            }
+        }
+        if let loaded { image = loaded }
+    }
 }

@@ -74,6 +74,10 @@ struct FreeformPlayerView: View {
     /// Cached climbing stats for the docked ribbon, recomputed on `session.exercises` change (like
     /// `prefills`) so the ~1 Hz body re-render never re-derives the pyramid. (Phase 3)
     @State private var climbStats: KilterSessionStats?
+    /// The user's distinct previously-logged climbs (history + this session), built for the "Add a climb"
+    /// sheet's one-tap re-log picker. Cached + recomputed alongside `climbStats` (on appear / exercises
+    /// change) so the ~1 Hz body re-render never re-scans history or `SessionMedia`. (prompt 81)
+    @State private var previousClimbs: [PreviousClimb] = []
     /// Milestones already celebrated **this session** (by a stable string key), so the at-logging
     /// celebration fires once per genuine new best — never on every attempt. (Phase 3 §3)
     @State private var celebratedMilestones: Set<String> = []
@@ -194,7 +198,7 @@ struct FreeformPlayerView: View {
         // Quick Session redesign Phase 1: tapping Climbing opens the climb-first "Add a climb" sheet
         // (type → scale-aware grade → name → gym) instead of dropping a bare attempt row.
         .sheet(isPresented: $addingClimb) {
-            AddClimbSheet(inheritedGym: lastClimbGym) { params, logFirst in
+            AddClimbSheet(inheritedGym: lastClimbGym, previousClimbs: previousClimbs) { params, logFirst in
                 addClimbFromSheet(params, logFirstAttempt: logFirst)
             }
         }
@@ -244,7 +248,7 @@ struct FreeformPlayerView: View {
         // Add-exercise options (§A). The button titles are the labels the freeform UITests drive.
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
             Button("Lifting exercise") { pickingLift = true }
-            Button("Climbing") { addingClimb = true }
+            Button("Climbing") { rebuildPreviousClimbs(); addingClimb = true }
             Button("Timed exercise") { addingTimed = true }
             Button("Cancel", role: .cancel) {}
         }
@@ -269,11 +273,13 @@ struct FreeformPlayerView: View {
             app.workoutNotifications.requestAuthorization()
             recomputePrefills()
             recomputeClimbStats()
+            rebuildPreviousClimbs()
             pushLiveActivity()
         }
         .onChange(of: session.exercises.count) { _, _ in
             recomputePrefills()
             recomputeClimbStats()
+            rebuildPreviousClimbs()
         }
         // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
         // live HR and the paused state push as they change. The overall timer self-ticks off
@@ -418,6 +424,7 @@ struct FreeformPlayerView: View {
                              id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
                     typeCard("Climbing", symbol: "figure.climbing",
                              id: "freeform.cardClimbing", accLabel: "Start climbing") {
+                        rebuildPreviousClimbs()   // fresh previews/counts on open (media added mid-session)
                         addingClimb = true
                     }
                     typeCard("Timed", symbol: "timer",
@@ -1090,11 +1097,38 @@ struct FreeformPlayerView: View {
         climb.gym = params.gym
         climb.wall = params.wall
         climb.climbColorRaw = params.color?.rawValue
+        climb.setter = params.setter
         session.exercises.append(climb)
         expandedClimbs.insert(climb.id)
         if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
+        // File the photos the user attached in the sheet as climb-level media now that the climb has an id.
+        // The sheet can't mint the id, so it returned `localIdentifier`s; resolve kind/offset via the same
+        // mapping the per-set strip uses, and pin `.manual` so the post-session auto-assigner leaves them put.
+        attachClimbPhotos(params.photoLocalIdentifiers, toExerciseID: climb.id)
         persist()
         pushLiveActivity()
+    }
+
+    /// File `localIdentifier`s as climb-level `SessionMedia` (`assignedExerciseID == climb.id`,
+    /// `assignedSetIndex == nil` — the whole climb, not a specific attempt; `source == .manual`). Only photos
+    /// resolve (the sheet's picker is `.images`); the bytes stay in Photos (only the id is stored). No-op on
+    /// the simulator / when nothing resolves.
+    private func attachClimbPhotos(_ identifiers: [String], toExerciseID exID: UUID) {
+        guard !identifiers.isEmpty else { return }
+        // Dedup against media already tagged to this session (auto-discovered clips + per-attempt picks) so
+        // re-picking an asset that's already on the session is a no-op, not a duplicate row — mirrors
+        // `SetMediaStrip.attach`.
+        let sid = session.id
+        let existing = Set((try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid })))?.map(\.localIdentifier) ?? [])
+        let cands = app.sessionMedia.candidates(
+            forIdentifiers: identifiers, startedAt: session.startedAt, existingIdentifiers: existing)
+        for c in cands where c.kind == .photo {
+            context.insert(SessionMedia(
+                sessionID: session.id, localIdentifier: c.localIdentifier, kind: .photo,
+                offsetSec: c.offsetSec, durationSec: nil, addedManually: true,
+                assignedExerciseID: exID, assignedSetIndex: nil, source: .manual))
+        }
     }
 
     /// Overwrite an existing climb's identity fields IN PLACE from the edit sheet (prompt 09): the same
@@ -1112,6 +1146,7 @@ struct FreeformPlayerView: View {
         session.exercises[idx].gym = params.gym
         session.exercises[idx].wall = params.wall
         session.exercises[idx].climbColorRaw = params.color?.rawValue
+        session.exercises[idx].setter = params.setter
         persist()
         pushLiveActivity()
     }
@@ -1300,6 +1335,36 @@ struct FreeformPlayerView: View {
         climbStats = FreeformClimbStats.hasClimbing(session)
             ? FreeformClimbStats.stats(for: session, now: .now)
             : nil
+    }
+
+    /// Rebuild the distinct previous-climbs catalog for the "Add a climb" re-log picker. Flattens the live
+    /// session's climbs (most-recent first) then completed history (already reverse-sorted), pairing each
+    /// climb with the time it was logged (its session's `startedAt`), and resolves a photo map (any climb's
+    /// attached photos, grouped by `assignedExerciseID`) for the row previews. Pure dedup/ordering lives in
+    /// `PreviousClimb.catalog`. Runs on appear + exercises-change only (never the ~1 Hz re-render). (prompt 81)
+    private func rebuildPreviousClimbs() {
+        var entries: [(exercise: SessionExercise, loggedAt: Date)] = []
+        for ex in session.exercises.reversed() where ex.kind == .climbAttempt {
+            entries.append((ex, session.startedAt))
+        }
+        for past in history where !past.isActive {
+            for ex in past.exercises.reversed() where ex.kind == .climbAttempt {
+                entries.append((ex, past.startedAt))
+            }
+        }
+        // Photo map: a climb's attached photos, keyed by its `SessionExercise.id`, most-relevant first.
+        var photoMap: [UUID: [String]] = [:]
+        let photoRaw = SessionMedia.Kind.photo.rawValue
+        let descriptor = FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.kindRaw == photoRaw && $0.assignedExerciseID != nil },
+            sortBy: [SortDescriptor(\SessionMedia.offsetSec, order: .forward)])
+        if let media = try? context.fetch(descriptor) {
+            for m in media {
+                guard let exID = m.assignedExerciseID else { continue }
+                photoMap[exID, default: []].append(m.localIdentifier)
+            }
+        }
+        previousClimbs = PreviousClimb.catalog(from: entries, photoLookup: { photoMap[$0] ?? [] })
     }
 
     /// The zone ceiling for the live stats sheet's Effort block: the session's own snapshot, else the
