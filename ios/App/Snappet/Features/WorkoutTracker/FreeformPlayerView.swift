@@ -59,6 +59,8 @@ struct FreeformPlayerView: View {
     @State private var timingAttemptFor: TimedAttemptTarget?
     /// The strength/generic exercise a "Time this set" FOCUS cover is open for (Workout-Type Parity P3).
     @State private var timingSetFor: TimedSetTarget?
+    /// The running entity a "Log a leg" sheet is open for (Workout-Type Parity P4).
+    @State private var loggingRunLeg: RunLegTarget?
     /// The structured timed exercise the interval runner cover is open for (Quick Session redesign Phase 6):
     /// a `.repeaters` / `.tabata` / `.emom` spec runs the full-cover `StructuredTimedRunner` instead of the
     /// simple `LogSetSheet` stopwatch. `nil` when no runner is open.
@@ -111,6 +113,9 @@ struct FreeformPlayerView: View {
     @State private var restRunning = false
 
     private var unit: WeightUnit { defaultUnit }
+    /// Distance unit for the running discipline (Workout-Type Parity), derived from the weight-unit
+    /// preference (lb users → miles). A dedicated km/mi toggle is a later refinement.
+    private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
 
     /// The decoded remembered-rest map.
     private var restDefaults: [String: Int] { RestTimerDefaults.decode(restDefaultsJSON) }
@@ -246,6 +251,14 @@ struct FreeformPlayerView: View {
                               toExerciseID: target.exerciseID)
                 }
         }
+        // "Log a leg" sheet (Workout-Type Parity Phase 4): manual distance + duration → a SetLog carrying
+        // distanceMeters + durationSec (pace derived in the row via SetMeasure.runSummary).
+        .sheet(item: $loggingRunLeg) { target in
+            AddRunLegSheet(unit: distanceUnit) { meters, duration in
+                appendLog(SetLog(durationSec: duration > 0 ? duration : nil, distanceMeters: meters),
+                          toExerciseID: target.exerciseID)
+            }
+        }
         // The structured interval runner cover (Quick Session redesign Phase 6): a repeaters/tabata/emom
         // timed exercise runs its `IntervalSchedule` full-screen (lead-in → WORK/REST phases → capture
         // card). "Log set" commits a `SetLog(durationSec: TUT)` through the same `appendLog` funnel.
@@ -268,6 +281,7 @@ struct FreeformPlayerView: View {
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
             Button("Lifting exercise") { pickingLift = true }
             Button("Climbing") { rebuildPreviousClimbs(); addingClimb = true }
+            Button("Running") { addRun() }
             Button("Timed exercise") { addingTimed = true }
             Button("Cancel", role: .cancel) {}
         }
@@ -491,20 +505,15 @@ struct FreeformPlayerView: View {
 
     @ViewBuilder
     private func exerciseSection(_ ex: SessionExercise) -> some View {
-        // Climbs are a climb-first hierarchy (Quick Session redesign Phase 1): the `.climbAttempt`
-        // exercise IS the climb, its `sets` are the attempts logged underneath an expandable card. The
-        // lifting / timed flows keep the flat set-list rendering below.
-        if ex.kind == .climbAttempt {
-            climbSection(ex)
-        } else if ex.kind == .duration {
-            // Timed exercises are a timed-first hierarchy (Quick Session redesign Phase 5): the `.duration`
-            // exercise IS the named timed exercise, its `sets` are the timed holds logged underneath a
-            // climb-style card. The lifting flow keeps the flat set-list rendering below.
-            timedSection(ex)
-        } else {
-            // Strength is now an expandable entity card (Workout-Type Parity Phase 2) — same structure as
-            // the climb card: rolled-up header (top set · sets · e1RM) → set list + quick-add + footer.
-            strengthSection(ex)
+        // Route by DISCIPLINE (Workout-Type Parity): each discipline renders its own expandable entity
+        // card. Legacy entities derive their discipline from `kind` (repsWeight→strength, duration→timed,
+        // climbAttempt→climb), so this stays back-compatible. Dance/Other fall back to the timed card until
+        // they get their own light card (Phase 5).
+        switch ex.discipline {
+        case .climb:    climbSection(ex)
+        case .strength: strengthSection(ex)
+        case .run:      runSection(ex)
+        case .timed, .dance, .other: timedSection(ex)
         }
     }
 
@@ -721,6 +730,95 @@ struct FreeformPlayerView: View {
                     EntityRollupChip("e1RM \(SetMeasure.formatWeight(orm.value.rounded())) \(orm.unit.display)",
                                      tint: ex.discipline.accent, systemImage: "trophy.fill")
                 }
+            }
+        }
+    }
+
+    // MARK: - Run card (Workout-Type Parity Phase 4)
+
+    /// A running exercise renders as an **expandable card** like the others: a rolled-up header (icon ·
+    /// tap-to-expand name · chevron · ⋯) with rolled-up chips (total distance · avg pace · N legs) that
+    /// expands to the leg list (distance · time · derived pace per leg) + per-leg media + "Log a leg".
+    @ViewBuilder
+    private func runSection(_ ex: SessionExercise) -> some View {
+        let expanded = expandedEntities.contains(ex.id)
+        Section {
+            runHeader(ex, expanded: expanded)
+
+            if expanded {
+                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
+                    HStack {
+                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .leading)
+                        Text(SetMeasure.runSummary(set, unit: distanceUnit))
+                            .font(.body.weight(.medium))
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("freeform.setRow")
+                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
+                                  onEdit: { presentStudio($0) })
+                        .id("run-media-\(ex.id)-\(i)")
+                }
+                .onDelete { offsets in deleteSets(ex, at: offsets) }
+
+                Button {
+                    loggingRunLeg = RunLegTarget(exerciseID: ex.id)
+                } label: {
+                    Label("Log a leg", systemImage: "plus.circle.fill")
+                }
+                .accessibilityIdentifier("freeform.logLeg")
+            }
+        } header: {
+            EmptyView()
+        }
+    }
+
+    private func runHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
+                Button { toggleExpanded(ex) } label: {
+                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        .font(.headline).foregroundStyle(.primary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.entityName")
+                Spacer(minLength: 4)
+                Button { toggleExpanded(ex) } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.expand")
+                .accessibilityLabel(expanded ? "Collapse run" : "Expand run")
+                Menu {
+                    Button(role: .destructive) { removeExercise(ex) } label: {
+                        Label("Remove run", systemImage: "trash")
+                    }
+                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("freeform.entityMenu")
+                    .accessibilityLabel("Run options")
+            }
+            runRollup(ex)
+        }
+        .textCase(nil)
+        .padding(.vertical, 2)
+    }
+
+    /// The rolled-up chips for a collapsed run card — total distance · avg pace · N legs. Hidden until a
+    /// leg is logged.
+    @ViewBuilder
+    private func runRollup(_ ex: SessionExercise) -> some View {
+        let meters = RunStats.totalDistanceMeters(ex)
+        if meters > 0 {
+            HStack(spacing: 6) {
+                EntityRollupChip(SetMeasure.formatDistance(meters, unit: distanceUnit),
+                                 tint: ex.discipline.accent)
+                if let pace = RunStats.avgPaceSecPerKm(ex) {
+                    EntityRollupChip(SetMeasure.formatPace(secPerKm: pace, unit: distanceUnit),
+                                     tint: ex.discipline.accent)
+                }
+                EntityRollupChip("\(ex.sets.count) \(ex.sets.count == 1 ? "leg" : "legs")")
             }
         }
     }
@@ -1157,6 +1255,20 @@ struct FreeformPlayerView: View {
         }
         persist()
         pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
+    }
+
+    /// Create a running entity (Workout-Type Parity Phase 4): a `.duration`-kind `SessionExercise` tagged
+    /// with the `.run` discipline (so it routes to the run card and its legs carry `distanceMeters`).
+    /// Auto-expanded like the other cards; legs are logged via the run card's "Log a leg".
+    private func addRun() {
+        var entity = SessionExercise(
+            exerciseId: "adhoc-run", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+            sets: [], displayName: "Run", kindRaw: SetKind.duration.rawValue)
+        entity.disciplineRaw = WorkoutDiscipline.run.rawValue
+        session.exercises.append(entity)
+        expandedEntities.insert(entity.id)
+        persist()
+        pushLiveActivity()
     }
 
     /// The most recent climb's gym in this session — inherited as the default for the next "Add a climb"
@@ -1706,6 +1818,12 @@ private struct TimedSetTarget: Identifiable {
     let reps: Int
     let weight: Double
     let unit: WeightUnit
+}
+
+/// The "Log a leg" target for a running entity (Workout-Type Parity Phase 4).
+private struct RunLegTarget: Identifiable {
+    let id = UUID()
+    let exerciseID: UUID
 }
 
 /// Keyboard-free inline quick-add for reps & weight (§B): `[−] value [+]` steppers + a one-tap Log that
