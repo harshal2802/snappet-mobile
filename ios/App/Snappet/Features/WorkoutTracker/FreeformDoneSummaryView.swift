@@ -6,9 +6,14 @@ import HighlightEngine
 /// freeform player shows on Finish. Since workout-redesign E0 the hero + per-discipline cards are the
 /// SHARED `SessionRecapHero` + `SessionRecapCards` (so the completed-session detail, E2, renders the same
 /// recap instead of a poorer flat list). This view keeps the Finish-specific chrome: the milestone seal +
-/// `CelebrationBurst`, the "Keep going" top bar, the "Turn N clips into a reel" Studio CTA, and the
-/// Done / View detail / Discard action bar — all with the same a11y ids as before. **No behavior change**
-/// from the pre-E0 screen: it composes the exact hero cells + cards that used to live here inline.
+/// `CelebrationBurst`, the "Keep going" top bar, the "Turn N clips into a reel" Studio CTA, the
+/// **"Save as routine"** affordance (E5), and the Done / View detail / Discard action bar — all with the
+/// same a11y ids as before.
+///
+/// **Save as routine (workout-redesign E5).** A coral affordance (`freeform.saveAsRoutine`) — shown only
+/// when the session has ≥ 1 completed set — presents a `RoutineEditorView` PRE-FILLED from the pure
+/// `SessionToRoutine` converter (actuals → a per-discipline prescription draft). The user reviews/trims/
+/// renames before the editor's own Save INSERTS a new routine; this view never writes the routine itself.
 struct FreeformDoneSummaryView: View {
     @Bindable var session: WorkoutSession
     let resolver: ExerciseResolver
@@ -31,6 +36,8 @@ struct FreeformDoneSummaryView: View {
     @State private var doneBounce = 0
     @State private var celebrationTrigger = 0
     @State private var showingDiscard = false
+    /// The pre-filled save-as-routine editor draft (E5); non-nil → the editor sheet is presented.
+    @State private var savingRoutineDraft: RoutineDraft?
     @ScaledMetric(relativeTo: .largeTitle) private var sealSize: CGFloat = 64
 
     /// Video clips filmed during this session — gate the "Turn N clips into a reel" CTA. Counted on
@@ -70,6 +77,12 @@ struct FreeformDoneSummaryView: View {
         .confirmationDialog("Discard this workout?", isPresented: $showingDiscard, titleVisibility: .visible) {
             Button("Discard (don't save)", role: .destructive) { onDiscard() }
             Button("Keep going", role: .cancel) { onKeepGoing() }
+        }
+        // Save as routine (E5): the pre-filled editor for review — its own Save inserts a new routine. The
+        // recap stays put underneath (the workout is still saved on Done), so the user can dismiss the
+        // editor and continue.
+        .sheet(item: $savingRoutineDraft) { draft in
+            RoutineEditorView(routine: nil, prefill: draft, resolver: resolver, defaultUnit: unit)
         }
         .onAppear {
             doneBounce += 1
@@ -141,6 +154,20 @@ struct FreeformDoneSummaryView: View {
             .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
             .accessibilityIdentifier("freeform.done")
 
+            // Save as routine (E5): close the runtime→template loop. The single coral (brand) affordance on
+            // this screen — the type-aware "make this repeatable" moment — shown only when there's something
+            // to prescribe (≥ 1 completed set). Opens the pre-filled editor for review (it never silently
+            // inserts). The neutral Done/View-detail stay bordered so the coral reads as the one CTA.
+            if SessionToRoutine.canConvert(session) {
+                Button { saveAsRoutineTapped() } label: {
+                    Label("Save as routine", systemImage: "square.and.arrow.down.on.square")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).tint(SnappetColor.brand)
+                .accessibilityIdentifier("freeform.saveAsRoutine")
+            }
+
             Button { onViewDetail() } label: {
                 Text("View detail").frame(maxWidth: .infinity)
             }
@@ -153,6 +180,13 @@ struct FreeformDoneSummaryView: View {
         }
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+
+    /// Build the reviewable draft from the finished session (pure `SessionToRoutine`) and present the
+    /// pre-filled editor. The conversion is lossy by design — the user trims warm-ups / renames / adjusts
+    /// targets before the editor's Save inserts a new routine.
+    private func saveAsRoutineTapped() {
+        savingRoutineDraft = SessionToRoutine.draft(from: session, defaultUnit: unit)
     }
 
     // MARK: - Video clip count
