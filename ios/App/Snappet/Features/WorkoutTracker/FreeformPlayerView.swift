@@ -57,6 +57,8 @@ struct FreeformPlayerView: View {
     @State private var loggingAttemptFor: Set<UUID> = []
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
     @State private var timingAttemptFor: TimedAttemptTarget?
+    /// The strength/generic exercise a "Time this set" FOCUS cover is open for (Workout-Type Parity P3).
+    @State private var timingSetFor: TimedSetTarget?
     /// The structured timed exercise the interval runner cover is open for (Quick Session redesign Phase 6):
     /// a `.repeaters` / `.tabata` / `.emom` spec runs the full-cover `StructuredTimedRunner` instead of the
     /// simple `LogSetSheet` stopwatch. `nil` when no runner is open.
@@ -226,6 +228,19 @@ struct FreeformPlayerView: View {
                 gradeLabel: climb?.climbGradeLabel,
                 attemptNumber: (climb?.sets.count ?? 0) + 1) { status, duration in
                     logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
+                }
+        }
+        // "Time this set" FOCUS cover (Workout-Type Parity Phase 3): times a strength/generic set off the
+        // wall clock and commits a SetLog carrying reps × weight AND the captured duration → the combined
+        // "8 × 60 kg · 0:42" row. Same `appendLog` funnel + count-up StopwatchViewModel as the climb cover.
+        .fullScreenCover(item: $timingSetFor) { target in
+            let ex = session.exercises.first { $0.id == target.exerciseID }
+            TimedSetCover(
+                exerciseName: resolver.name(for: ex?.exerciseId ?? "", override: ex?.displayName),
+                initialReps: target.reps, initialWeight: target.weight, initialUnit: target.unit) { reps, weight, unit, duration in
+                    appendLog(SetLog(actualReps: reps, actualWeight: weight, weightUnit: unit,
+                                     durationSec: duration > 0 ? duration : nil),
+                              toExerciseID: target.exerciseID)
                 }
         }
         // The structured interval runner cover (Quick Session redesign Phase 6): a repeaters/tabata/emom
@@ -625,6 +640,17 @@ struct FreeformPlayerView: View {
                     Label("Log something different", systemImage: "plus.circle.fill")
                 }
                 .accessibilityIdentifier("freeform.addSet")
+
+                // Timing is an orthogonal axis (Workout-Type Parity Phase 3): "Time this set" opens the
+                // count-up FOCUS cover and logs a set carrying reps × weight AND the measured duration.
+                Button {
+                    let seed = quickAddSeed(for: ex)
+                    timingSetFor = TimedSetTarget(exerciseID: ex.id, reps: seed.reps,
+                                                  weight: seed.weight, unit: seed.unit)
+                } label: {
+                    Label("Time this set", systemImage: "stopwatch")
+                }
+                .accessibilityIdentifier("freeform.timeThisSet")
 
                 // One-tap repeat of the most recent set — duplicates it (fresh completedAt) without opening
                 // the sheet. Value-labelled via the pure FreeformSummary so it reads like the set it
@@ -1666,6 +1692,17 @@ private struct TimedAttemptTarget: Identifiable {
     let exerciseID: UUID
     let type: ClimbType
     var id: UUID { exerciseID }
+}
+
+/// The "Time this set" target for a strength/generic exercise (Workout-Type Parity Phase 3) — the
+/// exercise to time + the reps/weight seed the `TimedSetCover` opens with. `id` is per-presentation (not
+/// the exercise id) so re-timing the same exercise re-presents the cover.
+private struct TimedSetTarget: Identifiable {
+    let id = UUID()
+    let exerciseID: UUID
+    let reps: Int
+    let weight: Double
+    let unit: WeightUnit
 }
 
 /// Keyboard-free inline quick-add for reps & weight (§B): `[−] value [+]` steppers + a one-tap Log that
