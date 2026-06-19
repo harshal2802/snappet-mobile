@@ -58,6 +58,47 @@ enum SnappetColor {
     /// Kilter Board — amber/sandstone (warm, earthy; distinct from reels-coral and workout-ember).
     static let kilter = dynamic(light: 0xB45309, dark: 0xF59E0B)
 
+    // MARK: - Performance ramp (the SECOND color axis — Pulse Pro, workout-redesign E0)
+    //
+    // **The two-axis color contract.** Snappet now uses colour on two orthogonal axes that must NOT
+    // bleed into each other:
+    //   1. **Discipline accent = WAYFINDING / IDENTITY** — the curated module accents above
+    //      (workout ember, kilter amber, …). Answers *who / where am I*.
+    //   2. **Performance ramp = EFFORT / ZONE / STATE** — the three stops below. Answers *how hard /
+    //      how recovered / is this a PR*. green → amber → red, low-saturation so it reads as data.
+    // And `brand` (coral) is reserved for the **single primary CTA / brand moment** per surface.
+    // Never use a discipline accent to mean effort, and never use the perf ramp for wayfinding.
+
+    /// Performance state — low / fresh / recovered / easy.
+    static let perfFresh = dynamic(light: 0x3F9D55, dark: 0x5BC074)
+    /// Performance state — moderate / working.
+    static let perfModerate = dynamic(light: 0xB45309, dark: 0xF59E0B)
+    /// Performance state — high / hard / redline / fatigued.
+    static let perfHard = dynamic(light: 0xE5483D, dark: 0xFF6A5C)
+
+    /// Map a 0…1 intensity fraction onto the performance ramp (fresh → moderate → hard). Values
+    /// outside [0,1] clamp. The single source of truth for "how hard / how recovered" colour, used by
+    /// readiness verbs, effort gauges, and zone tints (kept distinct from `HeartRateZone.color`, which
+    /// is the live HR pill's cool→hot ramp).
+    static func performance(for fraction: Double) -> Color {
+        switch max(0, min(1, fraction)) {
+        case ..<0.34: return perfFresh
+        case ..<0.67: return perfModerate
+        default:      return perfHard
+        }
+    }
+
+    /// Map a heart-rate zone onto the performance ramp (recovery/easy → fresh, aerobic → moderate,
+    /// threshold/max → hard). `.none` falls back to `textSecondary` so a no-data state reads inert.
+    static func performance(forZone zone: HeartRateZone) -> Color {
+        switch zone {
+        case .none:                 return textSecondary
+        case .recovery, .easy:      return perfFresh
+        case .aerobic:              return perfModerate
+        case .threshold, .max:      return perfHard
+        }
+    }
+
     /// Resolve a module accent from its registry `id`. Falls back to `brand` for
     /// unknown ids. Note the two fitness apps: id `workout` is "Workout Reels" (coral),
     /// id `workout-log` is the strength tracker (ember-orange).
