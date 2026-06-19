@@ -251,7 +251,9 @@ struct WorkoutHomeView: View {
                                             openStudio(for: s)
                                         }
                                     },
-                                    openReels: { router.open(module: "workout") })
+                                    openReels: { router.open(module: "workout") },
+                                    openSession: { id in router.push(SessionRoute(id: id)) },
+                                    startQuick: { startFreeform() })
         case .browse:
             ExerciseBrowserView(resolver: resolver, open: { router.push($0) })
         case .routines:

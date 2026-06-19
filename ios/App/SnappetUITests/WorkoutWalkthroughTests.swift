@@ -74,8 +74,10 @@ final class WorkoutWalkthroughTests: XCTestCase {
                 || app.staticTexts["liveMetricsOverlay"].waitForExistence(timeout: 1),
                 "the player should show the live-metrics overlay (no-source state in the sim)")
             drivePlayerToDone(); sleep(2); snap("08-after-finish")
-            let onDash = app.staticTexts["Day streak"].waitForExistence(timeout: 5)
-                || app.staticTexts["Workouts"].waitForExistence(timeout: 2)
+            // E1 (Pulse Pro): the dashboard's stat grid was replaced by a hero + type-aware Start CTA +
+            // a recent-sessions feed. After a saved finish (history non-empty) the Start CTA always shows.
+            let onDash = app.buttons["workout.dashboardStart"].waitForExistence(timeout: 5)
+                || app.staticTexts["Active days this week"].waitForExistence(timeout: 2)
             XCTAssertTrue(onDash, "finishing a saved workout should land on the Dashboard")
         }
 
