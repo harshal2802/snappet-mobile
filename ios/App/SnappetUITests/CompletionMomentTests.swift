@@ -82,4 +82,24 @@ final class CompletionMomentTests: XCTestCase {
         XCTAssertTrue(app.buttons["workout.quickStart"].waitForExistence(timeout: 8),
                       "Done should save & exit to the dashboard")
     }
+
+    /// E2: "View detail" pushes the redesigned, type-adaptive session detail (the shared `SessionRecap`
+    /// hero + per-discipline cards), not the old flat LabeledContent list.
+    func testViewDetailOpensTypeAdaptiveRecap() {
+        openFreeformPlayer()
+        addLiftingExercise()
+        app.buttons["freeform.quickWeight.plus"].tap()
+        app.buttons["freeform.quickWeight.plus"].tap()
+        app.buttons["freeform.quickLog"].tap()
+        tapFinish()
+        let viewDetail = app.buttons["freeform.viewDetail"]
+        XCTAssertTrue(viewDetail.waitForExistence(timeout: 6), "the summary's View detail button should appear")
+        viewDetail.tap()
+        XCTAssertTrue(app.navigationBars["Session"].waitForExistence(timeout: 6),
+                      "View detail should push the session detail")
+        // The type-adaptive recap hero for a strength session shows Volume / Sets / PRs cells.
+        XCTAssertTrue(app.staticTexts["Volume"].waitForExistence(timeout: 4)
+            || app.staticTexts["Sets"].waitForExistence(timeout: 2),
+            "the session detail should render the type-adaptive recap hero")
+    }
 }

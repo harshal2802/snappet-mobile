@@ -31,6 +31,8 @@ struct SessionDetailView: View {
     /// The routine's sport, used by B4 highlight generation's activity mapping (`nil` if the
     /// routine was deleted — the bridge then falls back to the dominant exercise category).
     var sport: SportTag? = nil
+    /// Prior completed sessions (used by the type-adaptive recap's PR detection, E2). Empty ⇒ no PR card.
+    var history: [WorkoutSession] = []
 
     /// Dominant exercise category across the session (B4 activity-mapping fallback when there's
     /// no sport). Resolved from the session's exercises via the `resolver`.
@@ -55,19 +57,36 @@ struct SessionDetailView: View {
     @Environment(\.modelContext) private var context
     private let mediaLibrary = MediaLibraryService()
 
+    // The type-adaptive recap header (E2) — shared with the post-Finish summary via `SessionRecap`.
+    private var maxHR: Double { session.maxHR ?? HeartRateZone.defaultMaxHR }
+    private var recapStats: FreeformSummary.Stats { FreeformSummary.stats(for: session, unit: unit) }
+    private var recapClimbStats: KilterSessionStats {
+        FreeformClimbStats.stats(for: session, now: session.completedAt ?? .now,
+                                 hrSeries: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) })
+    }
+    private var recapMilestones: [FreeformSummary.Milestone] {
+        FreeformSummary.milestones(for: session, history: history.filter { $0.startedAt < session.startedAt })
+    }
+
     var body: some View {
         List {
+            // Type-adaptive recap (E2): the same hero + per-discipline cards the Finish summary shows, so
+            // "View detail" is richer — not poorer — than the completion screen. HR is shown by the
+            // dedicated Heart-rate section below (showsHR: false here to avoid duplicating it).
             Section {
-                LabeledContent("Date") {
-                    Text(session.startedAt, format: .dateTime.weekday().month().day().hour().minute())
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(session.startedAt.formatted(.dateTime.weekday().month().day())) · \(max(1, Int(session.duration / 60))) min")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    SessionRecapHero(cells: SessionRecap.heroCells(stats: recapStats, climbStats: recapClimbStats,
+                                                                   session: session, unit: unit, milestones: recapMilestones))
+                    SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
+                                      milestones: recapMilestones, showsHR: false)
                 }
-                LabeledContent("Duration", value: "\(max(1, Int(session.duration / 60))) min")
-                LabeledContent("Sets completed", value: "\(session.completedSetCount)")
-                let vol = WorkoutMath.sessionVolumeKg(session)
-                if vol > 0 {
-                    LabeledContent("Total volume", value: WorkoutMath.formatVolume(kg: vol, unit: unit))
-                }
+                .padding(.vertical, 4)
             }
+            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 6, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
 
             if let stats = WorkoutHRStats.make(from: session.hrSeries,
                                                maxHR: session.maxHR ?? HeartRateZone.defaultMaxHR) {
@@ -773,33 +792,12 @@ private struct SetTileRow: View {
         }
     }
 
+    /// The one funnel for the per-set display string (workout-redesign E2): discipline-aware +
+    /// unit-converting. Moved into the pure, unit-tested `SetMeasure.displaySummary` so the per-set
+    /// grammar has exactly one source (it preserves the kg→display-unit conversion + the timed-strength
+    /// "· 0:42" append + the running distance·time·pace row exactly as before).
     private var detailText: String {
-        // Render by the exercise's authoritative `kind` (not by sniffing which fields are populated),
-        // so this matches the freeform player's `SetMeasure.summary(_:kind:)`. The repsWeight branch
-        // keeps its kg conversion (which `SetMeasure.summary` doesn't do), so lifting sets — including
-        // all legacy/routine data, where `kind` defaults to `.repsWeight` — render exactly as before.
-        // A running leg renders distance · time · derived pace (Workout-Type Parity), not just its time —
-        // run entities are `.duration` kind but `.run` discipline.
-        if discipline == .run {
-            return SetMeasure.runSummary(set, unit: distanceUnit)
-        }
-        switch kind {
-        case .climbAttempt, .duration:
-            return SetMeasure.summary(set, kind: kind, unit: unit)
-        case .repsWeight:
-            var base: String
-            if let w = set.actualWeight, w > 0 {
-                let kg = WorkoutMath.toKg(w, set.weightUnit)
-                base = "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
-            } else {
-                base = set.actualReps.map { "\($0) reps" } ?? "done"
-            }
-            // A timed strength set carries a duration too (Workout-Type Parity) → append it ("… · 0:42").
-            if base != "done", let secs = set.durationSec, secs > 0 {
-                base += " · " + SetMeasure.formatDuration(secs)
-            }
-            return base
-        }
+        SetMeasure.displaySummary(set, discipline: discipline, kind: kind, unit: unit, distanceUnit: distanceUnit)
     }
 }
 

@@ -46,6 +46,34 @@ enum SetMeasure {
         }
     }
 
+    /// A one-line set summary for **display** surfaces (session detail, recents) — workout-redesign E2.
+    /// Like `summary`, but discipline-aware and **unit-converting**: the weight is shown in the user's
+    /// preferred display `unit` (the detail view shows the user's unit, not the set's stored unit), and a
+    /// running leg renders distance · time · derived pace. This is the ONE funnel for the per-set display
+    /// string (the `SetTileRow.detailText` logic moved here verbatim so it's unit-tested). The freeform
+    /// player's live rows keep using `summary` (raw stored unit, no conversion).
+    static func displaySummary(_ set: SetLog, discipline: WorkoutDiscipline, kind: SetKind,
+                               unit: WeightUnit, distanceUnit: DistanceUnit) -> String {
+        if discipline == .run { return runSummary(set, unit: distanceUnit) }
+        switch kind {
+        case .climbAttempt, .duration:
+            return summary(set, kind: kind, unit: unit)
+        case .repsWeight:
+            var base: String
+            if let w = set.actualWeight, w > 0 {
+                let kg = WorkoutMath.toKg(w, set.weightUnit)
+                base = "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
+            } else {
+                base = set.actualReps.map { "\($0) reps" } ?? "done"
+            }
+            // A timed strength set carries a duration too → append it ("8 × 60 kg · 0:42").
+            if base != "done", let secs = set.durationSec, secs > 0 {
+                base += " · " + formatDuration(secs)
+            }
+            return base
+        }
+    }
+
     /// A one-line summary of a single **attempt** under a climb card (Quick Session redesign): the
     /// type-aware outcome (`ClimbType.statusLabel` — boulder "Sent", a route "Redpoint"), an optional
     /// captured duration, and the try count when > 1 — but **never** the grade. The grade lives once on
