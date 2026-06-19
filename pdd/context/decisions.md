@@ -5605,3 +5605,56 @@ Bug (user): with a climb tag on, tapping the video clip in the timeline popped t
 
 **Verified:** build clean (0 errors / 0 warnings in changed files); `SnappetTests` green (**889**);
 `LiveWorkoutStudioWalkthroughTests` + `NamedClimbTests` pass.
+
+## 2026-06-18 — Add-a-climb: re-log a previous climb, setter, photos (prompt 81)
+
+Made `AddClimbSheet` a complete capture surface: a **"Log a previous climb"** picker above Type, an
+optional **Setter** field, and optional **Photos** (photos-only).
+
+- **Previous climbs are DERIVED, not stored.** Quick Session climbs have no content identity
+  (`SessionExercise.id` is per-instance; the UUIDv5 `KilterClimbIdentity` is a different feature). The new
+  pure `PreviousClimb` (`PreviousClimb.swift`, Foundation-only, unit-tested) flattens `.climbAttempt`
+  exercises from `history` + the live session, **dedups on a normalized key** (type·scale·grade·name·gym·
+  wall·colour — case/whitespace-insensitive on free text), keeps the most-recent instance, caps at 12, and
+  filters (All/Boulder/Routes · This gym · Sent · search). `FreeformPlayerView` builds the catalog (+ a
+  photo map from a `FetchDescriptor<SessionMedia>` over photos by `assignedExerciseID`) and caches it like
+  `climbStats`/`prefills` (rebuilt on appear / exercises-change, never the ~1 Hz re-render); the sheet stays
+  a pure capture surface.
+- **Re-log = a brand-new climb.** Selecting a previous climb calls the existing `seed(from:)` to prefill
+  every field, then commit creates a fresh `SessionExercise` — history is never mutated and old
+  photos/attempts are **not** copied. A one-shot `suppressTypeSnap` stops the type `.onChange` grade-snap
+  from clobbering the prefilled scale/grade when the discipline differs.
+- **Setter** is one additive `String?` on `SessionExercise` (next to gym/wall/colour — lightweight
+  migration) + `AddClimbParams`; persisted in `addClimbFromSheet`/`updateClimb`. Its own section (per the
+  approved wireframe), not tucked in "More".
+- **Photos reuse the shipped media stack, no schema change.** The sheet can't mint the climb's
+  `SessionExercise.id`, so it collects picked `localIdentifier`s into `@State` (photos-only `MediaPicker`,
+  via a new additive `filter` param) and returns them on `AddClimbParams.photoLocalIdentifiers`;
+  `addClimbFromSheet` files them as climb-level `SessionMedia` (`assignedExerciseID == climb.id`,
+  `assignedSetIndex == nil`, `source == .manual`, `kind == .photo`) via
+  `SessionMediaService.candidates(forIdentifiers:)` after the climb exists. Bytes never copied (on-device,
+  PHAsset id only); the previous-climb rows show a first-photo preview via a `localIdentifier`→thumbnail
+  `ClimbPhotoThumb`. Photos + the previous-climb picker are **ADD-mode only**; Setter shows in both modes.
+- **Sheet opens at `.large` with a pinned CTA bar.** The richer form (previous-climb + setter + photos on
+  top of type/grade/colour/name/gym/wall) no longer fits a `.medium` half-sheet, so the sheet opens at
+  `.large` (still draggable to `.medium`) and the primary CTA(s) move out of the form into a
+  `.safeAreaInset(.bottom)` bar — always visible above the scroll and the keyboard. This also fixed an
+  XCUITest reachability regression (the old in-form bottom CTA fell below the longer form's fold).
+
+**Verified:** `build-for-testing` clean (0 errors / 0 warnings in changed files); `SnappetTests` green
+(**904**, +15 new `PreviousClimbTests`); the new `PreviousClimbSetterPhotosTests` (re-log prefills the form,
+setter round-trips, photos affordance present) + `NamedClimbTests`/`EditClimbTests`/`ClimbAttemptTimerTests`
+pass on the iPhone 17 Pro sim. (`TrackingTypeFilterTests` fails identically on baseline — a pre-existing,
+unrelated sim issue.)
+
+**Adversarial review fixes (same day, prompt 81):** a 3-dimension review (find → independently verify) of
+the diff surfaced 5 confirmed items; 4 folded in: (a) **photo leak** — `selectPrevious` now clears
+`photoIdentifiers` so a re-log can't inherit photos picked for an abandoned new-climb entry (the "old
+photos not copied" contract); (b) **truthful Sent filter** — `PreviousClimb.catalog` now FOLDS `bestStatus`
+across all deduped instances (flash>sent>project>attempt) so a climb sent in an earlier session still
+passes "Sent" when the latest session was only attempts (+ a `testCatalogFoldsBestStatusAcrossSessions`
+case); (c) **no duplicate media** — `attachClimbPhotos` passes the session's existing `localIdentifier`s as
+`existingIdentifiers` (mirrors `SetMediaStrip.attach`) so re-picking an auto-discovered asset is a no-op;
+(d) **fresh previews** — `rebuildPreviousClimbs()` also runs on sheet-open so the picker's photo
+thumbnails/counts aren't stale within a session. The 5th (setter-search misses a merged-away older setter,
+low) is accepted as a design tradeoff — setter is non-identity and the most-recent setter stays searchable.
