@@ -156,9 +156,16 @@ struct FreeformDoneSummaryView: View {
             ]
         case .lifting:
             return [stats.headline, stats.sets, FreeformSummary.Stat(value: "\(prCount)", label: "PRs")]
-        case .running, .dance, .other:
-            // Workout-Type Parity Phase 0: the discipline-aware headline (Distance / Active) leads;
-            // rich per-discipline hero cells land with the stats bridges in a later phase.
+        case .running:
+            let t = runTotals
+            let pace = (t.meters > 0 && t.seconds > 0)
+                ? SetMeasure.formatPace(secPerKm: t.seconds / (t.meters / 1000), unit: distanceUnit) : "—"
+            return [
+                FreeformSummary.Stat(value: SetMeasure.formatDistance(t.meters, unit: distanceUnit), label: "Distance"),
+                FreeformSummary.Stat(value: pace, label: "Pace"),
+                stats.duration,
+            ]
+        case .dance, .other:
             return [stats.headline, stats.duration, stats.sets]
         case .none:
             return [stats.duration, stats.sets, stats.headline]
@@ -185,7 +192,8 @@ struct FreeformDoneSummaryView: View {
         case .climbing: climbingCards
         case .timed:    timedCards
         case .lifting:  strengthCards
-        case .running, .dance, .other: EmptyView()   // rich per-discipline cards land in a later phase
+        case .running:  runningCards
+        case .dance, .other: timedCards   // open-effort entities are .duration → the timed recap fits
         case .none:     EmptyView()
         }
     }
@@ -246,6 +254,43 @@ struct FreeformDoneSummaryView: View {
             .padding()
             .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
         }
+    }
+
+    // MARK: Running cards (Workout-Type Parity)
+
+    /// Per-run rows (name · legs · distance · avg pace) + the time-in-zone Effort block when the session
+    /// carries HR. Reuses the pure RunStats + the type-agnostic ClimbEffortSection (HR zones).
+    @ViewBuilder
+    private var runningCards: some View {
+        let rows = runExerciseRows
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                ClimbSummarySectionTitle("Runs", systemImage: "figure.run")
+                ForEach(rows) { row in
+                    HStack(spacing: 10) {
+                        Image(systemName: "figure.run").font(.caption).foregroundStyle(SnappetColor.budget)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.name).font(.subheadline.weight(.medium)).lineLimit(1)
+                            Text("\(row.legs) \(row.legs == 1 ? "leg" : "legs") · \(SetMeasure.formatDistance(row.meters, unit: distanceUnit))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 4)
+                        if let pace = row.pace {
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(SetMeasure.formatPace(secPerKm: pace, unit: distanceUnit))
+                                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                                Text("pace").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("freeform.summaryRunRow")
+                }
+            }
+            .padding()
+            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        }
+        if let hrStats { ClimbEffortSection(hr: hrStats) }
     }
 
     // MARK: Strength cards
@@ -350,7 +395,9 @@ struct FreeformDoneSummaryView: View {
 
     private var timedExerciseRows: [TimedRow] {
         session.exercises.compactMap { ex -> TimedRow? in
-            guard ex.kind == .duration else { return nil }
+            // Run entities are also .duration but recap as runs (excluded here so a dance/timed recap
+            // doesn't list a run leg as a timed hold).
+            guard ex.kind == .duration, ex.discipline != .run else { return nil }
             let completed = ex.sets.filter { $0.completedAt != nil }
             guard !completed.isEmpty else { return nil }
             let durations = completed.compactMap(\.durationSec)
@@ -359,6 +406,44 @@ struct FreeformDoneSummaryView: View {
                             sets: completed.count,
                             tut: durations.reduce(0, +),
                             best: durations.max())
+        }
+    }
+
+    // MARK: Running derivations (Workout-Type Parity)
+
+    /// Distance unit for the recap, derived from the weight-unit preference (lb→mi), matching the player.
+    private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
+
+    /// Session-wide running totals (Σ distance / Σ time across all completed run legs) — the hero figures.
+    private var runTotals: (meters: Double, seconds: Double) {
+        var m = 0.0, s = 0.0
+        for ex in session.exercises where ex.discipline == .run {
+            for set in ex.sets where set.completedAt != nil {
+                m += set.distanceMeters ?? 0
+                s += set.durationSec ?? 0
+            }
+        }
+        return (m, s)
+    }
+
+    private struct RunRow: Identifiable {
+        let id: UUID
+        let name: String
+        let legs: Int
+        let meters: Double
+        let pace: Double?
+    }
+
+    private var runExerciseRows: [RunRow] {
+        session.exercises.compactMap { ex -> RunRow? in
+            guard ex.discipline == .run else { return nil }
+            let completed = ex.sets.filter { $0.completedAt != nil }
+            guard !completed.isEmpty else { return nil }
+            return RunRow(id: ex.id,
+                          name: resolver.name(for: ex.exerciseId, override: ex.displayName),
+                          legs: completed.count,
+                          meters: RunStats.totalDistanceMeters(ex),
+                          pace: RunStats.avgPaceSecPerKm(ex))
         }
     }
 
