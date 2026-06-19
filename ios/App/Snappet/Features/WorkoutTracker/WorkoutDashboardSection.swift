@@ -26,6 +26,8 @@ struct WorkoutDashboardSection: View {
     let openSession: (UUID) -> Void
     /// Start a freeform Quick Session — the type-aware Start CTA. (#181)
     let startQuick: () -> Void
+    /// Open the smart-planning screen — the "Plan a session" entry (workout-redesign E7). (#187)
+    let openPlan: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chartDrawn = false
@@ -46,6 +48,7 @@ struct WorkoutDashboardSection: View {
                 } else {
                     heroCard
                     startCTA
+                    planEntry
                     if !recents.isEmpty { recentSection }
                     if weeklyVolume.contains(where: { $0.volumeKg > 0 }) { volumeChart }
                     if !personalRecords.isEmpty { recordsSection }
@@ -92,6 +95,9 @@ struct WorkoutDashboardSection: View {
                 Button("Browse routines", action: goToRoutines).buttonStyle(.borderedProminent).tint(SnappetColor.workout)
                 Button("Exercises", action: goToBrowse).buttonStyle(.bordered).tint(SnappetColor.workout)
             }
+            // The planner works from a cold start (candidates come from the catalog, focusing untrained
+            // muscles for variety) — so invite a beginner to plan a first session here too (#187, E7).
+            planEntry.padding(.top, 4)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 24)
     }
@@ -154,6 +160,28 @@ struct WorkoutDashboardSection: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("workout.dashboardStart")
+    }
+
+    // MARK: - Smart-planning entry (#187 — E7)
+
+    /// A calm "Plan a session" row that opens the smart planner — a verb read of today + an editable
+    /// suggested session. Not a coral CTA (Start owns that); a quiet wayfinding row on `surfaceMuted`.
+    private var planEntry: some View {
+        Button(action: openPlan) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles").font(.title3).foregroundStyle(SnappetColor.workout)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Plan a session").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text("A suggested workout for what you've rested").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("workout.dashboardPlan")
     }
 
     // MARK: - Recent sessions feed (#181 — the previously-missing surface)
