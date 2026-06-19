@@ -5982,3 +5982,60 @@ suites + the existing Kilter deep-link suite green on iPhone 17.
 `snappet://` shape; the routine-share mirror (a `SharedRoutine` Kotlin codec + the same deflate/base64url +
 the import sheet) is deferred to the hardening wave — iOS is the lead platform and the Android tree was not
 touched.
+---
+
+## 2026-06-19 — E5: Save a Quick Session as a repeatable routine (workout-redesign, wave 3)
+
+> (Appended at the END, out of reverse-chronological order, to minimize merge conflicts with the parallel
+> wave-3 agents E6/E7 — per the E5 orchestration brief.)
+
+**Actuals→prescription is a pure, lossy, USER-REVIEWED converter — `SessionToRoutine` (the inverse of E4's
+`RoutineSessionBuilder`).** A finished session is a *record* (1 set here, 6 attempts there, an open hold); a
+routine is a *plan*. Collapsing one to the other discards detail and makes judgement calls, so the conversion
+is pure + device-free (Foundation only, unit-tested in `SessionToRoutineTests`) and its output is **reviewed in
+the editor before anything is inserted** (README §10 Q3). We keep it the deliberate inverse of
+`RoutineSessionBuilder` (same per-discipline `switch`) so a freeform → routine → freeform round-trip preserves
+discipline — pinned by a round-trip test through both seams.
+
+**Per-discipline prescription rules (defensible + overridable):**
+- **strength** → completed-set count × **modal** completed reps (most-frequent working reps; ties → the
+  higher reps) × the **top weighted set** (heaviest by `weightKg × reps`, the PR ranking) in its OWN logged
+  unit (not converted — show what was lifted). `disciplineRaw` stays nil (the additive-nil strength default,
+  so a strength-only saved routine is byte-identical to a hand-built one).
+- **climb** → the climb is the slot: type + grade + scale carried through; `sets` = the logged attempt count.
+- **timed** → the `TimedExerciseSpec` + category verbatim. A **structured** protocol (repeaters/tabata/emom)
+  keeps its own set count + NO extra `targetDurationSec` (the spec already carries work seconds); a **simple**
+  hold uses the completed-set count + a **median** hold target (median, not mean, so one outlier hold doesn't
+  skew the prescription).
+- **run** → a single block targeting Σ completed distance (pace is derived, never prescribed). Never a weight.
+- **dance / other** → a duration block with a median active-duration target.
+- An exercise with **no completed set is dropped** (prescribing zero sets is meaningless — the lossy-but-clean
+  call; warm-ups the user didn't log fall away, and the rest is trimmable in the editor).
+
+**The editor is pre-filled for REVIEW, not silently inserted.** Added an additive optional `prefill:
+RoutineDraft?` to `RoutineEditorView` (used only when `routine == nil`): it seeds the local staged state, then
+Save takes the EXISTING new-routine INSERT path (a brand-new `Routine` with a fresh UUID + the "Created
+routine" activity log). So save-as-routine reuses one editor + one insert+log path; the user trims warm-ups /
+renames / adjusts targets first, and the loop never writes a routine behind the user's back. `RoutineDraft` is
+a pure value type (`Identifiable`, drives the `.sheet(item:)`), not a new `@Model`.
+
+**The CTA is the screen's single brand-coral moment (the two-axis color contract).** "Save as routine"
+(`freeform.saveAsRoutine`) on `FreeformDoneSummaryView.actionBar` is tinted `SnappetColor.brand` (coral) — the
+one "make this repeatable" CTA — while Done stays `SnappetColor.workout` (the discipline accent) and View
+detail / Discard stay neutral. Shown only when `SessionToRoutine.canConvert` (≥ 1 completed set), so it never
+offers to save an empty plan.
+
+**Name/sport suggestion (lossy, overridable).** The suggested routine name reuses the session's name unless
+it's the generic "Quick session" placeholder, in which case it's a dominant-discipline label ("Climbing
+session" / "Strength session" / …). `suggestedSport` maps the dominant discipline to a back-compat `SportTag`
+(climbing → `.climbing`, else `.general`) — lossy (3 tags vs 6 disciplines, README §10 Q2); the per-block
+discipline is the real identity axis the routine carries.
+
+**Verification.** `build-for-testing` SUCCEEDED (iPhone 17 Pro Max); `SessionToRoutineTests` (18) +
+`RoutineSessionBuilderTests` (5) + `FreeformSummaryTests` (9) + `RoutineExerciseMigrationTests` (17) = 54 tests,
+0 failures; `FreeformFlowWalkthroughTests/testSaveQuickSessionAsRoutine` (Quick Start → log → Finish → Save as
+routine → review → Save → routine appears in Routines) green.
+
+**Android (wave H, tracked).** No Android tree touched — save-as-routine is an iOS-only UI/converter wave; the
+Kotlin mirror rides the E4 keystone wave.
+
