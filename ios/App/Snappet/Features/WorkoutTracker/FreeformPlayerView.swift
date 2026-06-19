@@ -133,9 +133,11 @@ struct FreeformPlayerView: View {
             ScrollViewReader { proxy in
             List {
                 titleSection
-                // Live climbing stats ribbon (Phase 3): docked above the climb cards, only once any
-                // climbing has been logged. A full-width tappable row → the expanded stats sheet.
+                // Live stats ribbon docked above the cards. Climbing keeps its rich tappable ribbon (Phase
+                // 3 → LiveClimbStatsSheet); other disciplines get a lean aggregate ribbon (Workout-Type
+                // Parity P8): strength volume·sets, running distance·pace, timed TUT·sets.
                 if FreeformClimbStats.hasClimbing(session) { statsRibbonSection }
+                else { disciplineRibbonSection }
                 if session.exercises.isEmpty { emptyStateHero }
                 ForEach(session.exercises) { ex in exerciseSection(ex) }
             }
@@ -365,6 +367,57 @@ struct FreeformPlayerView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("freeform.statsRibbon")
                 .accessibilityLabel(statsRibbonAccessibilityLabel)
+        }
+    }
+
+    /// The lean aggregate stats ribbon for a non-climbing session (Workout-Type Parity P8) — a one-line
+    /// glanceable total for the dominant discipline (strength volume·sets / running distance·pace / timed
+    /// TUT·sets). Non-tappable (the full breakdown is the completion summary); hidden until there's a
+    /// logged effort. Climbing keeps its own rich tappable ribbon.
+    @ViewBuilder
+    private var disciplineRibbonSection: some View {
+        if let r = disciplineRibbon {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: r.icon).foregroundStyle(r.accent)
+                    Text(r.text).font(.subheadline.weight(.medium)).monospacedDigit()
+                    Spacer(minLength: 4)
+                }
+                .padding(.vertical, 2)
+                .accessibilityIdentifier("freeform.disciplineRibbon")
+            }
+        }
+    }
+
+    /// The dominant non-climbing discipline's aggregate line, or `nil` when nothing's logged yet.
+    private var disciplineRibbon: (icon: String, accent: Color, text: String)? {
+        switch FreeformSummary.dominant(for: session) {
+        case .lifting:
+            let sets = session.completedSetCount
+            guard sets > 0 else { return nil }
+            let vol = WorkoutMath.formatVolume(kg: WorkoutMath.sessionVolumeKg(session), unit: unit)
+            return ("scalemass.fill", WorkoutDiscipline.strength.accent,
+                    "\(vol) · \(sets) \(sets == 1 ? "set" : "sets")")
+        case .running:
+            var meters = 0.0, seconds = 0.0
+            for ex in session.exercises where ex.discipline == .run {
+                for set in ex.sets where set.completedAt != nil {
+                    meters += set.distanceMeters ?? 0; seconds += set.durationSec ?? 0
+                }
+            }
+            guard meters > 0 else { return nil }
+            let pace = seconds > 0
+                ? " · " + SetMeasure.formatPace(secPerKm: seconds / (meters / 1000), unit: distanceUnit) : ""
+            return ("figure.run", WorkoutDiscipline.run.accent,
+                    SetMeasure.formatDistance(meters, unit: distanceUnit) + pace)
+        case .timed:
+            let tut = FreeformSummary.holdTimeSeconds(session)
+            guard tut > 0 else { return nil }
+            let sets = session.completedSetCount
+            return ("timer", WorkoutDiscipline.timed.accent,
+                    "TUT \(SetMeasure.formatDuration(tut)) · \(sets) \(sets == 1 ? "set" : "sets")")
+        default:
+            return nil   // climbing has its own ribbon; dance/other rely on the command-bar duration
         }
     }
 
