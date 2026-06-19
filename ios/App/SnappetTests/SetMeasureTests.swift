@@ -271,4 +271,59 @@ final class SetMeasureTests: XCTestCase {
         XCTAssertNil(SetMeasure.parseWeight("inf"))
         XCTAssertNil(SetMeasure.parseWeight("nan"))
     }
+
+    // MARK: - Combined reps×weight×time (Workout-Type Parity, Phase 0)
+
+    func testRepsWeightAppendsDurationWhenTimed() {
+        let s = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg,
+                       completedAt: .now, durationSec: 42)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .repsWeight, unit: .kg), "8 × 60 kg · 0:42")
+    }
+
+    func testRepsWeightNoDurationIsUnchanged() {
+        let s = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg, completedAt: .now, durationSec: 0)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .repsWeight, unit: .kg), "8 × 60 kg")
+    }
+
+    func testEmptyRepsWeightStaysDashEvenWithDuration() {
+        let s = SetLog(completedAt: .now, durationSec: 30)
+        XCTAssertEqual(SetMeasure.summary(s, kind: .repsWeight, unit: .kg), "—")
+    }
+
+    // MARK: - Distance / pace / run summary (Workout-Type Parity, Phase 0)
+
+    func testFormatDistanceKm() {
+        XCTAssertEqual(SetMeasure.formatDistance(5200, unit: .km), "5.2 km")
+        XCTAssertEqual(SetMeasure.formatDistance(5000, unit: .km), "5 km")
+        XCTAssertEqual(SetMeasure.formatDistance(0, unit: .km), "—")
+    }
+
+    func testFormatDistanceMi() {
+        XCTAssertEqual(SetMeasure.formatDistance(1609.344, unit: .mi), "1 mi")
+        XCTAssertEqual(SetMeasure.formatDistance(8046.72, unit: .mi), "5 mi")
+    }
+
+    func testFormatPace() {
+        XCTAssertEqual(SetMeasure.formatPace(secPerKm: 300, unit: .km), "5:00/km")
+        XCTAssertEqual(SetMeasure.formatPace(secPerKm: 301, unit: .km), "5:01/km")
+        XCTAssertEqual(SetMeasure.formatPace(secPerKm: 0, unit: .km), "—")
+        // 300 s/km → 300 × 1.609344 ≈ 482.8 s/mi → 8:03/mi
+        XCTAssertEqual(SetMeasure.formatPace(secPerKm: 300, unit: .mi), "8:03/mi")
+    }
+
+    func testRunSummaryAllAxes() {
+        var s = SetLog(completedAt: .now, durationSec: 1564)
+        s.distanceMeters = 5200
+        XCTAssertEqual(SetMeasure.runSummary(s, unit: .km), "5.2 km · 26:04 · 5:01/km")
+    }
+
+    func testRunSummaryDistanceOnly() {
+        var s = SetLog(completedAt: .now)
+        s.distanceMeters = 5000
+        XCTAssertEqual(SetMeasure.runSummary(s, unit: .km), "5 km")
+    }
+
+    func testRunSummaryEmptyIsDash() {
+        XCTAssertEqual(SetMeasure.runSummary(SetLog(), unit: .km), "—")
+    }
 }

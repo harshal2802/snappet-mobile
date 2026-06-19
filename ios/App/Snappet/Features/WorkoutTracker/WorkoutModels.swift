@@ -154,6 +154,14 @@ enum WeightUnit: String, Codable, CaseIterable, Identifiable, Sendable {
     var display: String { rawValue }
 }
 
+/// Distance unit for the running/cardio discipline (Workout-Type Parity). Sticky per user, like
+/// `WeightUnit`. Pace is **derived** (distance + duration), never stored.
+enum DistanceUnit: String, Codable, CaseIterable, Identifiable, Sendable {
+    case km, mi
+    var id: String { rawValue }
+    var display: String { rawValue }
+}
+
 enum SportTag: String, Codable, CaseIterable, Identifiable, Sendable {
     case general, climbing, calisthenics
     var id: String { rawValue }
@@ -235,6 +243,16 @@ struct SetLog: Codable, Hashable, Sendable {
     var climbGradeLabel: String?
     var climbStatusRaw: String?
     var climbAttempts: Int?
+
+    // Workout-Type Parity effort axes — both additive Optionals (same migration-safety rationale as the
+    // fields above; old `SetLog` blobs decode them as `nil` and synthesized `Codable` omits a nil optional
+    // so backup golden bytes stay stable).
+    /// Distance covered, in metres, for a running/cardio effort. Pace is **derived** (distance + duration),
+    /// never stored, to avoid drift.
+    var distanceMeters: Double?
+    /// Optional rate-of-perceived-exertion (1–10) for a strength/timed effort — the non-climb analogue of a
+    /// climb's outcome. Drives later milestone/quality reads; `nil` ⇒ unrated.
+    var rpe: Int?
 }
 
 /// An exercise as it appears in a session: a snapshot of the routine target plus the
@@ -252,6 +270,11 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     var displayName: String?
     /// `SetKind.rawValue`; `nil` ⇒ `.repsWeight` (legacy/routine exercises). Additive → migration-safe.
     var kindRaw: String?
+
+    /// `WorkoutDiscipline.rawValue` — the entity-level discipline axis (Workout-Type Parity). `nil` ⇒
+    /// derive from `kind` (`repsWeight→strength`, `duration→timed`, `climbAttempt→climb`) so legacy data
+    /// and the three existing kinds keep their identity with no migration. Additive optional.
+    var disciplineRaw: String?
 
     // MARK: - Climb metadata (Quick Session redesign). A `.climbAttempt` exercise IS the climb; its
     // `sets` are the attempts logged underneath it. These describe the climb itself — captured once in
@@ -289,6 +312,12 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
 
     /// What each set in this exercise measures (defaults to reps & weight for legacy/routine data).
     var kind: SetKind { kindRaw.flatMap(SetKind.init) ?? .repsWeight }
+
+    /// The entity's discipline (Workout-Type Parity). Falls back to deriving from `kind` for legacy
+    /// entities and the three pre-parity kinds.
+    var discipline: WorkoutDiscipline {
+        disciplineRaw.flatMap(WorkoutDiscipline.init(rawValue:)) ?? WorkoutDiscipline(legacyKind: kind)
+    }
 
     /// The timed exercise's structure (decoded from `timedSpecData`); `nil` ⇒ a plain open count-up.
     var timedSpec: TimedExerciseSpec? {

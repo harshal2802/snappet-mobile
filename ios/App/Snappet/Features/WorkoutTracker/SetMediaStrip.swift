@@ -18,8 +18,11 @@ struct SetMediaStrip: View {
     /// Deep-tap (long-press) clip-lifecycle wiring (prompt 11), threaded from `FreeformPlayerView` for the
     /// climb-attempt strips. `nil` (the default, e.g. lifting/timed strips + the guided player) ⇒ no
     /// context menu, so those strips are unchanged.
-    /// — `moveTargets`: the CLIMB's attempts a clip can be reassigned to ("Move to attempt…").
+    /// — `moveTargets`: the entity's efforts a clip can be reassigned to.
     var moveTargets: [ClipMoveTarget] = []
+    /// The discipline-aware "Move to …" submenu label ("Move to attempt…" climb / "Move to set…" strength /
+    /// "Move to leg…" run). Defaults to the climb wording so the climb strips are unchanged.
+    var moveTargetsLabel: String = "Move to attempt…"
     /// Reassign a clip to `(exerciseID, setIndex)` — `nil` exerciseID = the General bucket (untie it,
     /// keep the file). The owner pins `.manual` / `.general` so the move is sticky vs auto-reconcile.
     var onReassign: ((SessionMedia, UUID?, Int?) -> Void)? = nil
@@ -37,6 +40,7 @@ struct SetMediaStrip: View {
     init(session: WorkoutSession, exerciseID: UUID, setIndex: Int,
          onEdit: ((SessionMedia) -> Void)? = nil,
          moveTargets: [ClipMoveTarget] = [],
+         moveTargetsLabel: String = "Move to attempt…",
          onReassign: ((SessionMedia, UUID?, Int?) -> Void)? = nil,
          onRequestDelete: ((SessionMedia) -> Void)? = nil) {
         self.session = session
@@ -44,6 +48,7 @@ struct SetMediaStrip: View {
         self.setIndex = setIndex
         self.onEdit = onEdit
         self.moveTargets = moveTargets
+        self.moveTargetsLabel = moveTargetsLabel
         self.onReassign = onReassign
         self.onRequestDelete = onRequestDelete
         let sid = session.id
@@ -75,7 +80,7 @@ struct SetMediaStrip: View {
                                 }
                             }
                             .modifier(ClipContextMenu(clip: clip, enabled: hasClipMenu,
-                                                      moveTargets: moveTargets,
+                                                      moveTargets: moveTargets, moveTargetsLabel: moveTargetsLabel,
                                                       onReassign: onReassign, onRequestDelete: onRequestDelete))
                         }
                     }
@@ -131,6 +136,7 @@ private struct ClipContextMenu: ViewModifier {
     let clip: SessionMedia
     let enabled: Bool
     let moveTargets: [ClipMoveTarget]
+    var moveTargetsLabel: String = "Move to attempt…"
     let onReassign: ((SessionMedia, UUID?, Int?) -> Void)?
     let onRequestDelete: ((SessionMedia) -> Void)?
 
@@ -145,7 +151,7 @@ private struct ClipContextMenu: ViewModifier {
                                 .accessibilityIdentifier("freeform.clipMove.\(i)")
                         }
                     } label: {
-                        Label("Move to attempt…", systemImage: "arrow.left.arrow.right")
+                        Label(moveTargetsLabel, systemImage: "arrow.left.arrow.right")
                     }
                     Button { onReassign?(clip, nil, nil) } label: {
                         Label("Remove from attempt", systemImage: "rectangle.badge.minus")

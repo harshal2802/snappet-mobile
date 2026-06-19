@@ -29,6 +29,18 @@ final class FreeformSummaryTests: XCTestCase {
         return WorkoutSession(routineID: nil, routineName: "Quick session", startedAt: start,
                               completedAt: start.addingTimeInterval(minutes * 60), exercises: exercises)
     }
+    // Workout-Type Parity builders: an entity carrying an explicit discipline + a running effort leaf.
+    private func entity(_ id: String, _ discipline: WorkoutDiscipline, _ sets: [SetLog]) -> SessionExercise {
+        var ex = SessionExercise(exerciseId: id, targetSets: 0, targetReps: "", targetRestSeconds: 0,
+                                 sets: sets, kindRaw: discipline.defaultSetKind.rawValue)
+        ex.disciplineRaw = discipline.rawValue
+        return ex
+    }
+    private func run(_ meters: Double, sec: Double, done: Bool = true) -> SetLog {
+        var s = SetLog(completedAt: done ? Date(timeIntervalSince1970: 0) : nil, durationSec: sec)
+        s.distanceMeters = meters
+        return s
+    }
 
     // MARK: - Repeat label (workstream B)
 
@@ -163,5 +175,57 @@ final class FreeformSummaryTests: XCTestCase {
         XCTAssertEqual(FreeformSummary.milestoneHeadline(.personalRecord(exerciseId: "x", bestKg: 1, reps: 1)),
                        "New PR!")
         XCTAssertEqual(FreeformSummary.milestoneHeadline(.firstSend(grade: "V4")), "First V4 send!")
+    }
+
+    // MARK: - Discipline-aware dominant + headline (Workout-Type Parity, Phase 0)
+
+    func testDominantClassifiesByDiscipline() {
+        XCTAssertEqual(FreeformSummary.dominant(for: session([entity("r", .run, [run(5000, sec: 1500)])])),
+                       .running)
+        XCTAssertEqual(FreeformSummary.dominant(for: session([entity("d", .dance, [timed(600)])])), .dance)
+        XCTAssertEqual(FreeformSummary.dominant(for: session([entity("o", .other, [timed(600)])])), .other)
+    }
+
+    func testDominantRegressionForLegacyKinds() {
+        // Counting by discipline must not change the pre-parity lifting/climbing/timed results.
+        XCTAssertEqual(FreeformSummary.dominant(for: session([exercise("l", .repsWeight, [lift(8, 60)])])),
+                       .lifting)
+        XCTAssertEqual(FreeformSummary.dominant(for: session([exercise("c", .climbAttempt, [climb("V4", .sent)])])),
+                       .climbing)
+        XCTAssertEqual(FreeformSummary.dominant(for: session([exercise("t", .duration, [timed(30)])])), .timed)
+        XCTAssertEqual(FreeformSummary.dominant(for: session([])), .none)
+    }
+
+    func testStatsRunningHeadlineIsDistance() {
+        let s = session([entity("r", .run, [run(5200, sec: 1564)])], minutes: 30)
+        let stats = FreeformSummary.stats(for: s, unit: .kg)
+        XCTAssertEqual(stats.dominant, .running)
+        XCTAssertEqual(stats.headline.label, "Distance")
+        XCTAssertEqual(stats.headline.value, "5.2 km")
+    }
+
+    func testStatsDanceHeadlineIsActiveTime() {
+        let s = session([entity("d", .dance, [timed(1110)])], minutes: 20)   // 1110s → 18:30
+        let stats = FreeformSummary.stats(for: s, unit: .kg)
+        XCTAssertEqual(stats.dominant, .dance)
+        XCTAssertEqual(stats.headline.label, "Active")
+        XCTAssertEqual(stats.headline.value, "18:30")
+    }
+
+    func testActiveHeadlineScopesToDominantDisciplineInMixedSession() {
+        // Dance is dominant (2 efforts vs the run leg's 1). The "Active" headline must count ONLY dance
+        // time — NOT fold in the run leg's 1500s (the activeSeconds discipline-scope fix).
+        let s = session([entity("r", .run, [run(5000, sec: 1500)]),
+                         entity("d", .dance, [timed(300), timed(300)])], minutes: 30)
+        let stats = FreeformSummary.stats(for: s, unit: .kg)
+        XCTAssertEqual(stats.dominant, .dance)
+        XCTAssertEqual(stats.headline.value, "10:00")   // 300 + 300 dance only, not + 1500 run
+    }
+
+    func testHoldTimeExcludesRunLegs() {
+        // A run is a .duration entity too — but its leg time is distance/pace, not time-under-tension,
+        // so TUT must count only the timed hold (45s), never the 1500s run leg.
+        let s = session([entity("t", .timed, [timed(45)]), entity("r", .run, [run(5000, sec: 1500)])])
+        XCTAssertEqual(FreeformSummary.holdTimeSeconds(s), 45)
     }
 }

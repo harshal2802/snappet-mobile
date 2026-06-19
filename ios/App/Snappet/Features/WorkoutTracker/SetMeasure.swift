@@ -11,12 +11,20 @@ enum SetMeasure {
         case .repsWeight:
             let reps = set.actualReps.map { "\($0)" }
             let weight = set.actualWeight.map { "\(formatWeight($0)) \((set.weightUnit ?? unit).display)" }
+            let base: String
             switch (reps, weight) {
-            case let (r?, w?): return "\(r) × \(w)"
-            case let (r?, nil): return "\(r) reps"
-            case let (nil, w?): return w
-            default: return "—"
+            case let (r?, w?): base = "\(r) × \(w)"
+            case let (r?, nil): base = "\(r) reps"
+            case let (nil, w?): base = w
+            default: base = "—"
             }
+            // A strength set MAY also be timed (Workout-Type Parity: time-under-tension / a timed hold).
+            // Append the captured duration ("8 × 60 kg · 0:42") reusing the one duration funnel, mirroring
+            // the `.climbAttempt` branch below. No change when there's no duration (the common case).
+            if base != "—", let secs = set.durationSec, secs > 0 {
+                return base + " · " + formatDuration(secs)
+            }
+            return base
 
         case .duration:
             guard let secs = set.durationSec, secs > 0 else { return "—" }
@@ -126,6 +134,49 @@ enum SetMeasure {
         let total = Int(seconds.rounded())
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
+    // MARK: - Distance / pace / run (Workout-Type Parity) — pure formatters; wired by the running phase.
+
+    private static let metersPerMile = 1609.344
+
+    /// A decimal trimmed of trailing zeros: 5.20 → "5.2", 5.00 → "5", 3.23 → "3.23".
+    private static func trimmedDecimal(_ value: Double, decimals: Int) -> String {
+        var s = String(format: "%.\(decimals)f", value)
+        if s.contains(".") {
+            while s.hasSuffix("0") { s.removeLast() }
+            if s.hasSuffix(".") { s.removeLast() }
+        }
+        return s
+    }
+
+    /// Metres → a unit-aware distance string ("5.2 km" / "3.23 mi"); non-finite / ≤ 0 → "—".
+    static func formatDistance(_ meters: Double, unit: DistanceUnit) -> String {
+        guard meters.isFinite, meters > 0 else { return "—" }
+        switch unit {
+        case .km: return "\(trimmedDecimal(meters / 1000, decimals: 2)) km"
+        case .mi: return "\(trimmedDecimal(meters / metersPerMile, decimals: 2)) mi"
+        }
+    }
+
+    /// Seconds-per-kilometre → a unit-aware pace string ("5:01/km" / "8:04/mi"); non-finite / ≤ 0 → "—".
+    static func formatPace(secPerKm: Double, unit: DistanceUnit) -> String {
+        guard secPerKm.isFinite, secPerKm > 0 else { return "—" }
+        let perUnit = unit == .km ? secPerKm : secPerKm * (metersPerMile / 1000)
+        let total = Int(perUnit.rounded())
+        return String(format: "%d:%02d/%@", total / 60, total % 60, unit.display)
+    }
+
+    /// A one-line summary of a running effort: "5.2 km · 26:04 · 5:01/km" (distance · duration · derived
+    /// pace). Pace is computed from distance + duration and omitted when either is missing. Pure → tested.
+    static func runSummary(_ set: SetLog, unit: DistanceUnit) -> String {
+        var parts: [String] = []
+        let dist = set.distanceMeters ?? 0
+        let dur = set.durationSec ?? 0
+        if dist > 0 { parts.append(formatDistance(dist, unit: unit)) }
+        if dur > 0 { parts.append(formatDuration(dur)) }
+        if dist > 0, dur > 0 { parts.append(formatPace(secPerKm: dur / (dist / 1000), unit: unit)) }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 
     /// Seconds → the `(minutes, seconds)` strings the timed-set sheet's Min/Sec fields hold — the inverse

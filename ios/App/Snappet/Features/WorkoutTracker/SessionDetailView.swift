@@ -363,7 +363,9 @@ private struct SessionMediaSection: View {
                         // ignores `skipped`), so they must stay visible — and editable — here.
                         ForEach(Array(ex.sets.enumerated()).filter { $0.element.completedAt != nil },
                                 id: \.offset) { i, set in
-                            SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
+                            SetTileRow(index: i + 1, set: set, kind: ex.kind,
+                                       discipline: ex.discipline, unit: unit,
+                                       distanceUnit: unit == .lb ? .mi : .km,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
@@ -373,7 +375,9 @@ private struct SessionMediaSection: View {
                         }
                     } else {
                         ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                            SetTileRow(index: i + 1, set: set, kind: ex.kind, unit: unit,
+                            SetTileRow(index: i + 1, set: set, kind: ex.kind,
+                                       discipline: ex.discipline, unit: unit,
+                                       distanceUnit: unit == .lb ? .mi : .km,
                                        bpm: bpm(forSetCompletedAt: set.completedAt),
                                        effort: efforts[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
                                        restHRV: restHRV[.init(exerciseID: ex.id, setIndex: i)] ?? .empty,
@@ -718,7 +722,11 @@ private struct SetTileRow: View {
     /// The owning exercise's authoritative measure kind (from `SessionExercise.kind`), so a climb/
     /// timed/reps-weight set renders the way the freeform player wrote it — no field-sniffing.
     let kind: SetKind
+    /// The owning exercise's discipline (Workout-Type Parity) — a `.run` leg renders distance · time · pace.
+    var discipline: WorkoutDiscipline = .strength
     let unit: WeightUnit
+    /// Distance unit for a running leg's pace/distance rendering.
+    var distanceUnit: DistanceUnit = .km
     let bpm: Double?
     /// Per-set HR effort/recovery (peak, %HRR-or-bpm, recovery) over the set's window; `.empty` for
     /// HR-less sessions or sets with no completion → the effort row is hidden.
@@ -770,15 +778,27 @@ private struct SetTileRow: View {
         // so this matches the freeform player's `SetMeasure.summary(_:kind:)`. The repsWeight branch
         // keeps its kg conversion (which `SetMeasure.summary` doesn't do), so lifting sets — including
         // all legacy/routine data, where `kind` defaults to `.repsWeight` — render exactly as before.
+        // A running leg renders distance · time · derived pace (Workout-Type Parity), not just its time —
+        // run entities are `.duration` kind but `.run` discipline.
+        if discipline == .run {
+            return SetMeasure.runSummary(set, unit: distanceUnit)
+        }
         switch kind {
         case .climbAttempt, .duration:
             return SetMeasure.summary(set, kind: kind, unit: unit)
         case .repsWeight:
+            var base: String
             if let w = set.actualWeight, w > 0 {
                 let kg = WorkoutMath.toKg(w, set.weightUnit)
-                return "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
+                base = "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
+            } else {
+                base = set.actualReps.map { "\($0) reps" } ?? "done"
             }
-            return set.actualReps.map { "\($0) reps" } ?? "done"
+            // A timed strength set carries a duration too (Workout-Type Parity) → append it ("… · 0:42").
+            if base != "done", let secs = set.durationSec, secs > 0 {
+                base += " · " + SetMeasure.formatDuration(secs)
+            }
+            return base
         }
     }
 }

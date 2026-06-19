@@ -5658,3 +5658,115 @@ case); (c) **no duplicate media** — `attachClimbPhotos` passes the session's e
 (d) **fresh previews** — `rebuildPreviousClimbs()` also runs on sheet-open so the picker's photo
 thumbnails/counts aren't stale within a session. The 5th (setter-search misses a merged-away older setter,
 low) is accepted as a design tradeoff — setter is non-identity and the most-recent setter stays searchable.
+
+## 2026-06-19 — Workout-Type Parity — Phase 0 (two-axis model: discipline + measurement axes)
+
+Foundation for bringing **Strength, Running, Dance, Other** to climbing's entity→effort structure
+(`docs/ux-research/workout-type-parity/`). Pure-logic only — **no new UI, no SwiftData migration.**
+
+**Two orthogonal axes instead of the monolithic `SetKind`.** A new `WorkoutDiscipline`
+(`strength/climb/run/dance/timed/other`) on the entity (`SessionExercise.disciplineRaw`, computed
+`discipline`); the *measurement axes* (reps · weight · `durationSec` · `distanceMeters` · outcome) stay
+independent on each `SetLog`. `WorkoutDiscipline.swift` is pure (Foundation only) — `label`/`symbol`/
+`defaultSetKind`/`primaryAxis` + a `legacyKind` init; the accent `Color` and the `HKWorkoutActivityType`
+map are deliberately **not** on the enum (view / HealthKit concerns, added in later phases).
+
+**`SetKind` is NOT extended.** Run/dance/other entities are `kind == .duration`, distinguished by
+`discipline` (run also fills `distanceMeters`). This keeps the existing 3-case kind switches valid and
+avoids a churny migration; the discipline axis carries the new types.
+
+**Migration- and backup-safe by construction.** `disciplineRaw`/`distanceMeters`/`rpe` are additive
+`Optional`s on the Codable composites (`SetLog`/`SessionExercise`) — old blobs decode them as `nil`
+(`discipline` then derives from `kind`), and because synthesized `Codable` omits a nil optional via
+`encodeIfPresent`, the encoded form (and the backup golden bytes) is unchanged for existing data. No
+`@Model`, no `SnappetSchema` change. Tests assert the encoded JSON does **not** contain the new keys when nil.
+
+**Pace is derived, never stored** (distance + duration) to avoid drift; `DistanceUnit` (km/mi) added next
+to `WeightUnit`, sticky per user (threaded into `FreeformSummary.stats` in a later phase — Phase 0 defaults
+distance to km).
+
+**`SetMeasure`** gained the combined reps×weight×time row ("8 × 60 kg · 0:42", mirroring the climb branch's
+existing precedent) + pure `formatDistance`/`formatPace`/`runSummary` (wired by the running phase).
+**`FreeformSummary.dominant`** now counts by `discipline` (regression-safe — legacy kinds derive to the same
+`.lifting`/`.climbing`/`.timed`) with `running`/`dance`/`other` added and the `stats` headline made
+exhaustive (running→Distance, dance/other→Active).
+
+**Verified:** see the build/test run stamped on the commit (Swift 6, 0 warnings; new
+`WorkoutDisciplineTests` + extended `SetMeasureTests`/`FreeformSummaryTests` green).
+
+## 2026-06-19 — Workout-Type Parity — Phases 1–6 (all disciplines log like climbing)
+
+Built on the P0 two-axis model. Each phase shipped build-green + unit-tests-green + a per-phase
+review agent + a commit (branch `claude/workout-type-parity`). Wireframe/plan in
+`docs/ux-research/workout-type-parity/`; phase prompts in `pdd/prompts/features/workout-type-parity/`.
+
+**P1 — shared foundation.** Renamed `expandedClimbs` → `expandedEntities` (one expand-state for all
+disciplines); added `EntityCard.swift` (`WorkoutDiscipline.accent` view-layer color kept OUT of the pure
+enum; `EntityRollupChip` — the strength/run/timed analogue of the climb grade pill). No behavior change to
+the climb card (kept as the template).
+
+**P2 — strength as an expandable card.** Replaced the flat `liftingOrTimedSection` with
+`strengthSection`/`strengthHeader`/`strengthRollup` (rolled-up top set · N sets · e1RM via the pure
+`StrengthStats` Epley; set list + quick-add + per-set media + footer). **`addLifting` auto-expands** the new
+card so quick-add stays immediately reachable (preserves `QuickAddSetTests`). New header a11y ids
+`freeform.entityName`/`.expand`/`.entityMenu`; the quick-add/setRow/addSet/repeatSet ids preserved
+(UITest contract). Hybrid ⚙ add + inline edit deferred (task #10).
+
+**P3 — timing is an orthogonal axis.** `TimedSetCover` (count-up FOCUS cover with reps/weight steppers,
+no outcome grid — the strength analogue of `TimedAttemptCover`) + 'Time this set' footer
+(`freeform.timeThisSet`) → commits `SetLog(reps,weight,durationSec)` → the combined "8 × 60 kg · 0:42" row.
+STOP commits once (no double-log); empty effort isn't logged.
+
+**P4 — running discipline.** `exerciseSection` now switches on `ex.discipline` (cleaner + forward-
+compatible). `addRun` (a `.run`/`.duration` entity) + `runSection` (total distance · avg pace · N legs via
+the pure `RunStats`) + `AddRunLegSheet` (manual distance+duration → derived pace; `SetMeasure.runSummary`).
+**`distanceUnit` derives from the weight unit** (lb→mi) — a v1 simplification; a sticky toggle + Watch/GPS
+distance are deferred (issue #177).
+
+**P5 — Dance/Other + six-type chooser.** `addOpenEffort` (lightweight `.duration` dance/other entities) on
+the now **discipline-aware timed card** (icon/accent from `ex.discipline`, so the one card serves
+timed/dance/other). Empty-state restructured from a 3-card HStack to a **2-column grid of all six**
+(existing card ids preserved, `freeform.cardRunning/Dance/Other` added) + add-menu items.
+
+**P6 — cross-type clip menu.** `climbClipMoveTargets` generalized to `clipMoveTargets(for:)` — titles by
+discipline noun (Attempt/Leg/Set); `SetMediaStrip` gains `moveTargetsLabel`; the strength + run per-set
+strips now wire the move/remove/delete deep-tap menu (was climb-only). The analytics half (pure session
+stats bridges → live ribbon for all disciplines + a mixed-session roll-up summary) is **deferred** (task
+#8 follow-up); the completion summary already type-adapts its headline from P0.
+
+**Deferred / tracked (not regressions):** the "Remove from attempt" clip-menu wording stays climb-worded
+for strength/run (functionally correct); hybrid ⚙ strength add + inline edit + recent chips (#10); the
+analytics ribbon/mixed-summary; and the cross-cutting items — watch `HKWorkoutActivityType` per discipline,
+the saved-session `SessionDetailView` SetTileRow second kind-switch, the `HistorySectionView` discipline
+facet, and the `SnappetBackup` golden + Android `BackupRoundTripTest` (no new non-nil fields in old data →
+golden stays stable until those are exercised). Android is its own wave.
+
+## 2026-06-19 — Workout-Type Parity — completion cards, live ribbon, saved detail, strength polish
+
+Post-device-build follow-ups (the two "worth doing now" items + the strength polish), shipped on
+`claude/workout-type-parity` (PR #178), each build-green + unit/UITest-green + a review agent.
+
+**P7 — completion-summary cards** for the new disciplines (were EmptyView): RUNNING → hero
+Distance·Pace·Duration + a Runs card (per-run legs·distance·avg-pace via `RunStats`) + the type-agnostic
+time-in-zone Effort block; DANCE/OTHER → routed to the timed recap (they're `.duration`); `timedExerciseRows`
+excludes `.run` so a run leg never lists as a timed hold.
+
+**P8 — live aggregate stats ribbon** for non-climbing sessions (`disciplineRibbonSection`): strength
+Volume·sets, running distance·pace, timed TUT·sets; climbing keeps its rich tappable ribbon. New id
+`freeform.disciplineRibbon`.
+
+**P9 — saved-session detail** (`SessionDetailView.SetTileRow`): a `.run` leg renders distance·time·pace
+(`SetMeasure.runSummary`) and a timed-strength set appends its duration; the row is now discipline-aware
+(the second kind-switch the review flagged).
+
+**Review fix:** `holdTimeSeconds`/`bestHoldLabel` excluded `.run` — a run is a `.duration` entity, so it was
+over-counting a timed session's TUT (regression test added).
+
+**Strength polish (closes the hybrid-add intent):** one `StrengthEditSheet` reached from the card ⋯ →
+"Edit details" (`freeform.editEntity`) does rename + a default sets×reps×weight×unit (the `target*` columns)
++ a one-tap "Last time" chip; `quickAddSeed` now falls back to `target*` before the hardcoded 8/bodyweight,
+so a fast bulk pick + a per-card default carries into the first set. `updateStrength` overwrites in place.
+*Recents* ships as the single "Last time" chip (multi-entry history rail deferred).
+
+**Device:** built + installed + launched on MrRobot (iPhone 13 Pro Max) via `-allowProvisioningUpdates`
+(team NFUS5W8QC6 auto-provisioned; no entitlement strip needed).

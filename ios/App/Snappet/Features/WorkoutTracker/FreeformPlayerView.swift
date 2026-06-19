@@ -46,16 +46,23 @@ struct FreeformPlayerView: View {
     /// The climb being EDITED (prompt 09): when set, the same `AddClimbSheet` opens PREFILLED in edit mode
     /// and Save overwrites that climb's fields in place (no duplicate). `nil` ⇒ no edit in flight.
     @State private var editingClimb: EditClimbTarget?
+    /// The strength exercise an "Edit details" sheet is open for (Workout-Type Parity, strength polish).
+    @State private var editingStrength: EditStrengthTarget?
     /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
     /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
     @State private var addingTimed = false
-    /// Which climb cards are expanded (by `SessionExercise.id`) to their attempt list + footer. A new
-    /// climb auto-expands; "Add & log first attempt" also auto-opens its inline outcome strip.
-    @State private var expandedClimbs: Set<UUID> = []
+    /// Which entity cards are expanded (by `SessionExercise.id`) to their effort list + footer — shared
+    /// across disciplines (Workout-Type Parity). A new climb/exercise auto-expands; "Add & log first
+    /// attempt" also auto-opens its inline outcome strip.
+    @State private var expandedEntities: Set<UUID> = []
     /// Climbs showing their inline outcome strip (the "+ Log attempt" footer toggled open).
     @State private var loggingAttemptFor: Set<UUID> = []
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
     @State private var timingAttemptFor: TimedAttemptTarget?
+    /// The strength/generic exercise a "Time this set" FOCUS cover is open for (Workout-Type Parity P3).
+    @State private var timingSetFor: TimedSetTarget?
+    /// The running entity a "Log a leg" sheet is open for (Workout-Type Parity P4).
+    @State private var loggingRunLeg: RunLegTarget?
     /// The structured timed exercise the interval runner cover is open for (Quick Session redesign Phase 6):
     /// a `.repeaters` / `.tabata` / `.emom` spec runs the full-cover `StructuredTimedRunner` instead of the
     /// simple `LogSetSheet` stopwatch. `nil` when no runner is open.
@@ -108,6 +115,9 @@ struct FreeformPlayerView: View {
     @State private var restRunning = false
 
     private var unit: WeightUnit { defaultUnit }
+    /// Distance unit for the running discipline (Workout-Type Parity), derived from the weight-unit
+    /// preference (lb users → miles). A dedicated km/mi toggle is a later refinement.
+    private var distanceUnit: DistanceUnit { unit == .lb ? .mi : .km }
 
     /// The decoded remembered-rest map.
     private var restDefaults: [String: Int] { RestTimerDefaults.decode(restDefaultsJSON) }
@@ -125,9 +135,11 @@ struct FreeformPlayerView: View {
             ScrollViewReader { proxy in
             List {
                 titleSection
-                // Live climbing stats ribbon (Phase 3): docked above the climb cards, only once any
-                // climbing has been logged. A full-width tappable row → the expanded stats sheet.
+                // Live stats ribbon docked above the cards. Climbing keeps its rich tappable ribbon (Phase
+                // 3 → LiveClimbStatsSheet); other disciplines get a lean aggregate ribbon (Workout-Type
+                // Parity P8): strength volume·sets, running distance·pace, timed TUT·sets.
                 if FreeformClimbStats.hasClimbing(session) { statsRibbonSection }
+                else { disciplineRibbonSection }
                 if session.exercises.isEmpty { emptyStateHero }
                 ForEach(session.exercises) { ex in exerciseSection(ex) }
             }
@@ -209,6 +221,15 @@ struct FreeformPlayerView: View {
                 updateClimb(target.exerciseID, params)
             }
         }
+        // Strength "Edit details" (Workout-Type Parity polish): rename + set the default sets×reps×weight
+        // (seeds the quick-add); the hybrid-add payoff after a fast bulk pick, reused for later edits.
+        .sheet(item: $editingStrength) { target in
+            StrengthEditSheet(catalogName: target.catalogName, initial: target.initial,
+                              lastReps: target.lastReps, lastWeight: target.lastWeight,
+                              lastUnit: target.lastUnit) { params in
+                updateStrength(target.exerciseID, params)
+            }
+        }
         // Quick Session redesign Phase 5: tapping Timed opens the pick-or-create sheet (searchable catalog
         // · Create new · recents · seeded suggestions) instead of dropping a bare, unnamed timed row.
         .sheet(isPresented: $addingTimed) {
@@ -226,6 +247,30 @@ struct FreeformPlayerView: View {
                 attemptNumber: (climb?.sets.count ?? 0) + 1) { status, duration in
                     logAttempt(toExerciseID: target.exerciseID, status: status, durationSec: duration)
                 }
+        }
+        // "Time this set" FOCUS cover (Workout-Type Parity Phase 3): times a strength/generic set off the
+        // wall clock and commits a SetLog carrying reps × weight AND the captured duration → the combined
+        // "8 × 60 kg · 0:42" row. Same `appendLog` funnel + count-up StopwatchViewModel as the climb cover.
+        .fullScreenCover(item: $timingSetFor) { target in
+            let ex = session.exercises.first { $0.id == target.exerciseID }
+            TimedSetCover(
+                exerciseName: resolver.name(for: ex?.exerciseId ?? "", override: ex?.displayName),
+                initialReps: target.reps, initialWeight: target.weight, initialUnit: target.unit) { reps, weight, unit, duration in
+                    // Don't log a completely-empty effort (instant STOP with reps/weight zeroed) — that
+                    // would render a meaningless "—" row.
+                    guard reps != nil || weight != nil || duration > 0 else { return }
+                    appendLog(SetLog(actualReps: reps, actualWeight: weight, weightUnit: unit,
+                                     durationSec: duration > 0 ? duration : nil),
+                              toExerciseID: target.exerciseID)
+                }
+        }
+        // "Log a leg" sheet (Workout-Type Parity Phase 4): manual distance + duration → a SetLog carrying
+        // distanceMeters + durationSec (pace derived in the row via SetMeasure.runSummary).
+        .sheet(item: $loggingRunLeg) { target in
+            AddRunLegSheet(unit: distanceUnit) { meters, duration in
+                appendLog(SetLog(durationSec: duration > 0 ? duration : nil, distanceMeters: meters),
+                          toExerciseID: target.exerciseID)
+            }
         }
         // The structured interval runner cover (Quick Session redesign Phase 6): a repeaters/tabata/emom
         // timed exercise runs its `IntervalSchedule` full-screen (lead-in → WORK/REST phases → capture
@@ -249,7 +294,10 @@ struct FreeformPlayerView: View {
         .confirmationDialog("Add exercise", isPresented: $showingAddMenu, titleVisibility: .visible) {
             Button("Lifting exercise") { pickingLift = true }
             Button("Climbing") { rebuildPreviousClimbs(); addingClimb = true }
+            Button("Running") { addRun() }
             Button("Timed exercise") { addingTimed = true }
+            Button("Dance") { addOpenEffort(.dance) }
+            Button("Other") { addOpenEffort(.other) }
             Button("Cancel", role: .cancel) {}
         }
         // Deep-tap clip deletion (prompt 11), ported VERBATIM from `SessionDetailView` (incl. the Photos
@@ -330,6 +378,57 @@ struct FreeformPlayerView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("freeform.statsRibbon")
                 .accessibilityLabel(statsRibbonAccessibilityLabel)
+        }
+    }
+
+    /// The lean aggregate stats ribbon for a non-climbing session (Workout-Type Parity P8) — a one-line
+    /// glanceable total for the dominant discipline (strength volume·sets / running distance·pace / timed
+    /// TUT·sets). Non-tappable (the full breakdown is the completion summary); hidden until there's a
+    /// logged effort. Climbing keeps its own rich tappable ribbon.
+    @ViewBuilder
+    private var disciplineRibbonSection: some View {
+        if let r = disciplineRibbon {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: r.icon).foregroundStyle(r.accent)
+                    Text(r.text).font(.subheadline.weight(.medium)).monospacedDigit()
+                    Spacer(minLength: 4)
+                }
+                .padding(.vertical, 2)
+                .accessibilityIdentifier("freeform.disciplineRibbon")
+            }
+        }
+    }
+
+    /// The dominant non-climbing discipline's aggregate line, or `nil` when nothing's logged yet.
+    private var disciplineRibbon: (icon: String, accent: Color, text: String)? {
+        switch FreeformSummary.dominant(for: session) {
+        case .lifting:
+            let sets = session.completedSetCount
+            guard sets > 0 else { return nil }
+            let vol = WorkoutMath.formatVolume(kg: WorkoutMath.sessionVolumeKg(session), unit: unit)
+            return ("scalemass.fill", WorkoutDiscipline.strength.accent,
+                    "\(vol) · \(sets) \(sets == 1 ? "set" : "sets")")
+        case .running:
+            var meters = 0.0, seconds = 0.0
+            for ex in session.exercises where ex.discipline == .run {
+                for set in ex.sets where set.completedAt != nil {
+                    meters += set.distanceMeters ?? 0; seconds += set.durationSec ?? 0
+                }
+            }
+            guard meters > 0 else { return nil }
+            let pace = seconds > 0
+                ? " · " + SetMeasure.formatPace(secPerKm: seconds / (meters / 1000), unit: distanceUnit) : ""
+            return ("figure.run", WorkoutDiscipline.run.accent,
+                    SetMeasure.formatDistance(meters, unit: distanceUnit) + pace)
+        case .timed:
+            let tut = FreeformSummary.holdTimeSeconds(session)
+            guard tut > 0 else { return nil }
+            let sets = session.completedSetCount
+            return ("timer", WorkoutDiscipline.timed.accent,
+                    "TUT \(SetMeasure.formatDuration(tut)) · \(sets) \(sets == 1 ? "set" : "sets")")
+        default:
+            return nil   // climbing has its own ribbon; dance/other rely on the command-bar duration
         }
     }
 
@@ -419,18 +518,27 @@ struct FreeformPlayerView: View {
                 Text("Pick what you're tracking — add more as you go.")
                     .font(.subheadline).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                HStack(spacing: 12) {
-                    typeCard("Lifting", symbol: "dumbbell.fill",
+                // The six-discipline chooser (Workout-Type Parity Phase 5): a 2-column grid so every type
+                // reads at a glance. Existing card ids are preserved for the UITests; new disciplines add
+                // their own. Each card calls the same mutator as its add-menu item.
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    typeCard("Lifting", symbol: WorkoutDiscipline.strength.symbol,
                              id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
-                    typeCard("Climbing", symbol: "figure.climbing",
+                    typeCard("Climbing", symbol: WorkoutDiscipline.climb.symbol,
                              id: "freeform.cardClimbing", accLabel: "Start climbing") {
                         rebuildPreviousClimbs()   // fresh previews/counts on open (media added mid-session)
                         addingClimb = true
                     }
-                    typeCard("Timed", symbol: "timer",
+                    typeCard("Running", symbol: WorkoutDiscipline.run.symbol,
+                             id: "freeform.cardRunning", accLabel: "Start a run") { addRun() }
+                    typeCard("Timed", symbol: WorkoutDiscipline.timed.symbol,
                              id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
                         addingTimed = true
                     }
+                    typeCard("Dance", symbol: WorkoutDiscipline.dance.symbol,
+                             id: "freeform.cardDance", accLabel: "Start a dance session") { addOpenEffort(.dance) }
+                    typeCard("Other", symbol: WorkoutDiscipline.other.symbol,
+                             id: "freeform.cardOther", accLabel: "Start another activity") { addOpenEffort(.other) }
                 }
             }
             .frame(maxWidth: .infinity)
@@ -445,14 +553,19 @@ struct FreeformPlayerView: View {
     private func quickAddSeed(for ex: SessionExercise) -> (reps: Int, weight: Double, unit: WeightUnit, hint: String?) {
         let last = ex.sets.last
         let pf = prefills[ex.exerciseId]
-        let reps = last?.actualReps ?? pf?.reps ?? 8
+        // Fall back to the exercise's default prescription (target*, set via "Edit details") before the
+        // hardcoded default — so the hybrid-add default seeds the first set (Workout-Type Parity polish).
+        let targetReps = Int(ex.targetReps)
+        let reps = last?.actualReps ?? pf?.reps ?? targetReps ?? 8
         let hint = last == nil ? pf?.hint : nil
         if let w = last?.actualWeight {
             return (reps, w, last?.weightUnit ?? unit, hint)
         } else if let w = pf?.weight {
             return (reps, w, pf?.unit ?? unit, hint)
+        } else if let w = ex.targetWeight, w > 0 {
+            return (reps, w, ex.targetWeightUnit ?? unit, hint)
         }
-        return (reps, 0, last?.weightUnit ?? pf?.unit ?? unit, hint)
+        return (reps, 0, last?.weightUnit ?? pf?.unit ?? ex.targetWeightUnit ?? unit, hint)
     }
 
     private func typeCard(_ title: String, symbol: String, id: String,
@@ -472,18 +585,15 @@ struct FreeformPlayerView: View {
 
     @ViewBuilder
     private func exerciseSection(_ ex: SessionExercise) -> some View {
-        // Climbs are a climb-first hierarchy (Quick Session redesign Phase 1): the `.climbAttempt`
-        // exercise IS the climb, its `sets` are the attempts logged underneath an expandable card. The
-        // lifting / timed flows keep the flat set-list rendering below.
-        if ex.kind == .climbAttempt {
-            climbSection(ex)
-        } else if ex.kind == .duration {
-            // Timed exercises are a timed-first hierarchy (Quick Session redesign Phase 5): the `.duration`
-            // exercise IS the named timed exercise, its `sets` are the timed holds logged underneath a
-            // climb-style card. The lifting flow keeps the flat set-list rendering below.
-            timedSection(ex)
-        } else {
-            liftingOrTimedSection(ex)
+        // Route by DISCIPLINE (Workout-Type Parity): each discipline renders its own expandable entity
+        // card. Legacy entities derive their discipline from `kind` (repsWeight→strength, duration→timed,
+        // climbAttempt→climb), so this stays back-compatible. Dance/Other fall back to the timed card until
+        // they get their own light card (Phase 5).
+        switch ex.discipline {
+        case .climb:    climbSection(ex)
+        case .strength: strengthSection(ex)
+        case .run:      runSection(ex)
+        case .timed, .dance, .other: timedSection(ex)
         }
     }
 
@@ -548,7 +658,7 @@ struct FreeformPlayerView: View {
         let spec = ex.timedSpec
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Image(systemName: "timer").foregroundStyle(SnappetColor.workout)
+                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
                 Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
                     .accessibilityIdentifier("freeform.timedName")
                 Spacer()
@@ -574,76 +684,239 @@ struct FreeformPlayerView: View {
         return total > 0 ? SetMeasure.formatDuration(total) : nil
     }
 
-    private func liftingOrTimedSection(_ ex: SessionExercise) -> some View {
-        Section {
-            ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                HStack {
-                    Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .frame(width: 20, alignment: .leading)
-                    Text(SetMeasure.summary(set, kind: ex.kind, unit: unit))
-                        .font(.body.weight(.medium))
-                    Spacer()
-                }
-                .accessibilityIdentifier("freeform.setRow")
-            }
-            .onDelete { offsets in deleteSets(ex, at: offsets) }
+    // MARK: - Strength card (Workout-Type Parity Phase 2)
 
-            // Faster entry (§B): keyboard-free inline steppers for reps & weight, seeded from this
-            // session's last set or the cached cross-session prefill, logging through the one `appendLog`
-            // funnel. `.id(ex.sets.count)` re-seeds them to the latest after each log/delete. The sheet
-            // ("Log something different") stays for precise / non-default entry.
-            if ex.kind == .repsWeight {
+    /// A strength exercise renders as an **expandable card** mirroring the climb card: a rolled-up header
+    /// (discipline icon · tap-to-expand name · chevron · ⋯) with rolled-up chips (top set · N sets · e1RM)
+    /// that toggles open to the set list + the keyboard-free quick-add + footer. A newly-added exercise
+    /// auto-expands (`addLifting`) so quick-add is immediately reachable. Each set carries its own media
+    /// strip (per-set clips, like the climb card's per-attempt strip).
+    @ViewBuilder
+    private func strengthSection(_ ex: SessionExercise) -> some View {
+        let expanded = expandedEntities.contains(ex.id)
+        Section {
+            strengthHeader(ex, expanded: expanded)
+
+            if expanded {
+                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
+                    HStack {
+                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .leading)
+                        Text(SetMeasure.summary(set, kind: .repsWeight, unit: unit))
+                            .font(.body.weight(.medium))
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("freeform.setRow")
+                    // Per-set media (parity): a clip filmed during / attached to THIS set shows under it,
+                    // keyed by exercise+set so its @Query re-scopes. The climb card already does this per
+                    // attempt; strength now gets the strip on EVERY set, not just the last.
+                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
+                                  onEdit: { presentStudio($0) },
+                                  moveTargets: clipMoveTargets(for: ex), moveTargetsLabel: "Move to set…",
+                                  onReassign: { reassignClip($0, to: $1, set: $2) },
+                                  onRequestDelete: { pendingClipDeletion = $0 })
+                        .id("strength-media-\(ex.id)-\(i)")
+                }
+                .onDelete { offsets in deleteSets(ex, at: offsets) }
+
+                // Faster entry (§B): keyboard-free inline steppers seeded from this session's last set or
+                // the cross-session prefill, logging through the one `appendLog` funnel. `.id(ex.sets.count)`
+                // re-seeds to the latest after each log/delete. The sheet ("Log something different") stays
+                // for precise / non-default entry.
                 let seed = quickAddSeed(for: ex)
                 QuickAddRow(reps: seed.reps, weight: seed.weight, unitSel: seed.unit, hint: seed.hint) { log in
                     appendLog(log, toExerciseID: ex.id)
                 }
                 .id(ex.sets.count)
-            }
 
-            Button {
-                logging = LogTarget(exerciseID: ex.id, kind: ex.kind, exerciseId: ex.exerciseId)
-            } label: {
-                Label(ex.kind == .repsWeight ? "Log something different" : ex.kind.addLabel,
-                      systemImage: "plus.circle.fill")
-            }
-            .accessibilityIdentifier("freeform.addSet")
-            // Reuse the existing repeat affordance for timed sets (climbs have their own card footer).
-
-            // One-tap repeat of the most recent set — duplicates it (all kind-specific fields, fresh
-            // completedAt) without opening the sheet. Only shown once there's a set to repeat. A sibling
-            // leaf Button (NOT wrapped in a composite); value-labelled via the pure FreeformSummary (§B)
-            // so it reads like the set it duplicates ("Repeat 8 × 60 kg"). Matched by id in tests.
-            if let last = ex.sets.last {
                 Button {
-                    repeatLastSet(ex)
+                    logging = LogTarget(exerciseID: ex.id, kind: .repsWeight, exerciseId: ex.exerciseId)
                 } label: {
-                    Label(FreeformSummary.repeatLabel(for: last, kind: ex.kind, unit: unit),
-                          systemImage: "arrow.clockwise")
+                    Label("Log something different", systemImage: "plus.circle.fill")
                 }
-                .accessibilityIdentifier("freeform.repeatSet")
-            }
+                .accessibilityIdentifier("freeform.addSet")
 
-            // Live clips (§F): a per-set media strip for the latest set — auto-discovered clips appear
-            // here seconds after you film them, and you can attach more by hand. Keyed by exercise+set so
-            // its @Query re-scopes as sets are logged. Device-only (Photos/PHPicker); the affordance
-            // renders everywhere, the pick/discovery is on-device.
-            if let lastIndex = ex.sets.indices.last {
-                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex,
-                              onEdit: { presentStudio($0) })
-                    .id("set-media-\(ex.id)-\(lastIndex)")
+                // Timing is an orthogonal axis (Workout-Type Parity Phase 3): "Time this set" opens the
+                // count-up FOCUS cover and logs a set carrying reps × weight AND the measured duration.
+                Button {
+                    let seed = quickAddSeed(for: ex)
+                    timingSetFor = TimedSetTarget(exerciseID: ex.id, reps: seed.reps,
+                                                  weight: seed.weight, unit: seed.unit)
+                } label: {
+                    Label("Time this set", systemImage: "stopwatch")
+                }
+                .accessibilityIdentifier("freeform.timeThisSet")
+
+                // One-tap repeat of the most recent set — duplicates it (fresh completedAt) without opening
+                // the sheet. Value-labelled via the pure FreeformSummary so it reads like the set it
+                // duplicates ("Repeat 8 × 60 kg"). Matched by id in tests.
+                if let last = ex.sets.last {
+                    Button {
+                        repeatLastSet(ex)
+                    } label: {
+                        Label(FreeformSummary.repeatLabel(for: last, kind: .repsWeight, unit: unit),
+                              systemImage: "arrow.clockwise")
+                    }
+                    .accessibilityIdentifier("freeform.repeatSet")
+                }
             }
         } header: {
-            HStack {
-                Image(systemName: ex.kind.symbol).foregroundStyle(.secondary)
-                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
-                Spacer()
+            EmptyView()
+        }
+    }
+
+    /// The rolled-up strength header: discipline icon · tap-to-expand name (`freeform.entityName`) ·
+    /// chevron (`freeform.expand`) · ⋯ menu (`freeform.entityMenu`), plus a rolled-up chip line
+    /// (top set · N sets · e1RM) — the strength analogue of the climb header.
+    private func strengthHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
+                Button { toggleExpanded(ex) } label: {
+                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        .font(.headline).foregroundStyle(.primary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.entityName")
+                Spacer(minLength: 4)
+                Button { toggleExpanded(ex) } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.expand")
+                .accessibilityLabel(expanded ? "Collapse exercise" : "Expand exercise")
                 Menu {
+                    Button {
+                        let pf = prefills[ex.exerciseId]
+                        editingStrength = EditStrengthTarget(
+                            exerciseID: ex.id,
+                            catalogName: resolver.name(for: ex.exerciseId),
+                            initial: AddStrengthParams(from: ex),
+                            lastReps: pf?.reps, lastWeight: pf?.weight, lastUnit: pf?.unit)
+                    } label: {
+                        Label("Edit details", systemImage: "pencil")
+                    }
+                    .accessibilityIdentifier("freeform.editEntity")
                     Button(role: .destructive) { removeExercise(ex) } label: {
                         Label("Remove exercise", systemImage: "trash")
                     }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("freeform.entityMenu")
+                    .accessibilityLabel("Exercise options")
             }
-            .textCase(nil)
+            strengthRollup(ex)
+        }
+        .textCase(nil)
+        .padding(.vertical, 2)
+    }
+
+    /// The rolled-up chips for a collapsed strength card — top set · set count · e1RM. Hidden until a set
+    /// is logged (a fresh card auto-expands to its quick-add, so an empty collapsed header is transient).
+    @ViewBuilder
+    private func strengthRollup(_ ex: SessionExercise) -> some View {
+        if let top = StrengthStats.topSet(ex) {
+            HStack(spacing: 6) {
+                EntityRollupChip("top \(SetMeasure.summary(top, kind: .repsWeight, unit: unit))",
+                                 tint: ex.discipline.accent)
+                EntityRollupChip("\(ex.sets.count) \(ex.sets.count == 1 ? "set" : "sets")")
+                if let orm = StrengthStats.estimatedOneRepMax(ex) {
+                    EntityRollupChip("e1RM \(SetMeasure.formatWeight(orm.value.rounded())) \(orm.unit.display)",
+                                     tint: ex.discipline.accent, systemImage: "trophy.fill")
+                }
+            }
+        }
+    }
+
+    // MARK: - Run card (Workout-Type Parity Phase 4)
+
+    /// A running exercise renders as an **expandable card** like the others: a rolled-up header (icon ·
+    /// tap-to-expand name · chevron · ⋯) with rolled-up chips (total distance · avg pace · N legs) that
+    /// expands to the leg list (distance · time · derived pace per leg) + per-leg media + "Log a leg".
+    @ViewBuilder
+    private func runSection(_ ex: SessionExercise) -> some View {
+        let expanded = expandedEntities.contains(ex.id)
+        Section {
+            runHeader(ex, expanded: expanded)
+
+            if expanded {
+                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
+                    HStack {
+                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .frame(width: 20, alignment: .leading)
+                        Text(SetMeasure.runSummary(set, unit: distanceUnit))
+                            .font(.body.weight(.medium))
+                        Spacer()
+                    }
+                    .accessibilityIdentifier("freeform.setRow")
+                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
+                                  onEdit: { presentStudio($0) },
+                                  moveTargets: clipMoveTargets(for: ex), moveTargetsLabel: "Move to leg…",
+                                  onReassign: { reassignClip($0, to: $1, set: $2) },
+                                  onRequestDelete: { pendingClipDeletion = $0 })
+                        .id("run-media-\(ex.id)-\(i)")
+                }
+                .onDelete { offsets in deleteSets(ex, at: offsets) }
+
+                Button {
+                    loggingRunLeg = RunLegTarget(exerciseID: ex.id)
+                } label: {
+                    Label("Log a leg", systemImage: "plus.circle.fill")
+                }
+                .accessibilityIdentifier("freeform.logLeg")
+            }
+        } header: {
+            EmptyView()
+        }
+    }
+
+    private func runHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
+                Button { toggleExpanded(ex) } label: {
+                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        .font(.headline).foregroundStyle(.primary).lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.entityName")
+                Spacer(minLength: 4)
+                Button { toggleExpanded(ex) } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("freeform.expand")
+                .accessibilityLabel(expanded ? "Collapse run" : "Expand run")
+                Menu {
+                    Button(role: .destructive) { removeExercise(ex) } label: {
+                        Label("Remove run", systemImage: "trash")
+                    }
+                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                    .accessibilityIdentifier("freeform.entityMenu")
+                    .accessibilityLabel("Run options")
+            }
+            runRollup(ex)
+        }
+        .textCase(nil)
+        .padding(.vertical, 2)
+    }
+
+    /// The rolled-up chips for a collapsed run card — total distance · avg pace · N legs. Hidden until a
+    /// leg is logged.
+    @ViewBuilder
+    private func runRollup(_ ex: SessionExercise) -> some View {
+        let meters = RunStats.totalDistanceMeters(ex)
+        if meters > 0 {
+            HStack(spacing: 6) {
+                EntityRollupChip(SetMeasure.formatDistance(meters, unit: distanceUnit),
+                                 tint: ex.discipline.accent)
+                if let pace = RunStats.avgPaceSecPerKm(ex) {
+                    EntityRollupChip(SetMeasure.formatPace(secPerKm: pace, unit: distanceUnit),
+                                     tint: ex.discipline.accent)
+                }
+                EntityRollupChip("\(ex.sets.count) \(ex.sets.count == 1 ? "leg" : "legs")")
+            }
         }
     }
 
@@ -656,7 +929,7 @@ struct FreeformPlayerView: View {
     /// per-`SetLog`; the per-attempt row (`SetMeasure.attemptRow`) shows only the outcome + duration.
     @ViewBuilder
     private func climbSection(_ ex: SessionExercise) -> some View {
-        let expanded = expandedClimbs.contains(ex.id)
+        let expanded = expandedEntities.contains(ex.id)
         Section {
             climbHeader(ex, expanded: expanded)
 
@@ -680,7 +953,7 @@ struct FreeformPlayerView: View {
                     // delete confirmation.
                     SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
                                   onEdit: { presentStudio($0) },
-                                  moveTargets: climbClipMoveTargets(for: ex),
+                                  moveTargets: clipMoveTargets(for: ex),
                                   onReassign: { reassignClip($0, to: $1, set: $2) },
                                   onRequestDelete: { pendingClipDeletion = $0 })
                         .id("climb-media-\(ex.id)-\(i)")
@@ -1069,12 +1342,44 @@ struct FreeformPlayerView: View {
 
     private func addLifting(_ exercises: [Exercise]) {
         for ex in exercises {
-            session.exercises.append(SessionExercise(
+            let entity = SessionExercise(
                 exerciseId: ex.id, targetSets: 0, targetReps: "", targetRestSeconds: 0,
-                sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue))
+                sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue)
+            session.exercises.append(entity)
+            // Auto-expand the new strength card so its quick-add is immediately reachable (parity with the
+            // climb card's auto-expand). The card is expandable from this phase on.
+            expandedEntities.insert(entity.id)
         }
         persist()
         pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
+    }
+
+    /// Create a running entity (Workout-Type Parity Phase 4): a `.duration`-kind `SessionExercise` tagged
+    /// with the `.run` discipline (so it routes to the run card and its legs carry `distanceMeters`).
+    /// Auto-expanded like the other cards; legs are logged via the run card's "Log a leg".
+    private func addRun() {
+        var entity = SessionExercise(
+            exerciseId: "adhoc-run", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+            sets: [], displayName: "Run", kindRaw: SetKind.duration.rawValue)
+        entity.disciplineRaw = WorkoutDiscipline.run.rawValue
+        session.exercises.append(entity)
+        expandedEntities.insert(entity.id)
+        persist()
+        pushLiveActivity()
+    }
+
+    /// Create a lightweight open-effort entity for the Dance / Other disciplines (Workout-Type Parity
+    /// Phase 5): a `.duration`-kind `SessionExercise` tagged with the discipline. Renders via the
+    /// (discipline-aware) timed card — its efforts are open count-up durations logged with "Add set".
+    private func addOpenEffort(_ discipline: WorkoutDiscipline) {
+        var entity = SessionExercise(
+            exerciseId: "adhoc-\(discipline.rawValue)", targetSets: 0, targetReps: "", targetRestSeconds: 0,
+            sets: [], displayName: discipline.label, kindRaw: SetKind.duration.rawValue)
+        entity.disciplineRaw = discipline.rawValue
+        session.exercises.append(entity)
+        expandedEntities.insert(entity.id)
+        persist()
+        pushLiveActivity()
     }
 
     /// The most recent climb's gym in this session — inherited as the default for the next "Add a climb"
@@ -1099,7 +1404,7 @@ struct FreeformPlayerView: View {
         climb.climbColorRaw = params.color?.rawValue
         climb.setter = params.setter
         session.exercises.append(climb)
-        expandedClimbs.insert(climb.id)
+        expandedEntities.insert(climb.id)
         if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
         // File the photos the user attached in the sheet as climb-level media now that the climb has an id.
         // The sheet can't mint the id, so it returned `localIdentifier`s; resolve kind/offset via the same
@@ -1151,6 +1456,20 @@ struct FreeformPlayerView: View {
         pushLiveActivity()
     }
 
+    /// Apply the strength "Edit details" sheet (Workout-Type Parity polish): overwrite the display-name
+    /// override + the default prescription (`target*`) in place. An empty name clears the override (the
+    /// catalog name shows); the default seeds the card's quick-add for a fresh exercise.
+    private func updateStrength(_ exID: UUID, _ params: AddStrengthParams) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        session.exercises[idx].displayName = params.name.isEmpty ? nil : params.name
+        session.exercises[idx].targetSets = params.sets
+        session.exercises[idx].targetReps = "\(params.reps)"
+        session.exercises[idx].targetWeight = params.weight
+        session.exercises[idx].targetWeightUnit = params.unit
+        persist()
+        pushLiveActivity()
+    }
+
     /// Create a timed exercise from the "Pick or create" sheet (Quick Session redesign Phase 5): a named
     /// `.duration` `SessionExercise` carrying the chosen structure (`timedSpec`) and category. Its timed
     /// sets log underneath it like a climb's attempts. Every Timed entry point (the empty-state card + the
@@ -1176,12 +1495,12 @@ struct FreeformPlayerView: View {
                          climbGradeLabel: ex.climbGradeLabel,
                          climbStatusRaw: status.rawValue, climbAttempts: 1),
                   toExerciseID: id)
-        expandedClimbs.insert(id)
+        expandedEntities.insert(id)
     }
 
     private func toggleExpanded(_ ex: SessionExercise) {
-        if expandedClimbs.contains(ex.id) { expandedClimbs.remove(ex.id) }
-        else { expandedClimbs.insert(ex.id) }
+        if expandedEntities.contains(ex.id) { expandedEntities.remove(ex.id) }
+        else { expandedEntities.insert(ex.id) }
     }
 
     private func removeExercise(_ ex: SessionExercise) {
@@ -1585,6 +1904,18 @@ private struct EditClimbTarget: Identifiable {
     var id: UUID { exerciseID }
 }
 
+/// The "Edit details" target for a strength exercise (Workout-Type Parity, strength polish) — the catalog
+/// name (placeholder), the prefilled params, and the cross-session last set (the "Last time" chip).
+private struct EditStrengthTarget: Identifiable {
+    let exerciseID: UUID
+    let catalogName: String
+    let initial: AddStrengthParams
+    let lastReps: Int?
+    let lastWeight: Double?
+    let lastUnit: WeightUnit?
+    var id: UUID { exerciseID }
+}
+
 /// Which exercise a new set/attempt is being logged into (drives the `LogSetSheet`). Carries the
 /// catalog `exerciseId` too so the sheet can pull the cross-session prefill for that exercise. (§B)
 private struct LogTarget: Identifiable {
@@ -1613,6 +1944,23 @@ private struct TimedAttemptTarget: Identifiable {
     let exerciseID: UUID
     let type: ClimbType
     var id: UUID { exerciseID }
+}
+
+/// The "Time this set" target for a strength/generic exercise (Workout-Type Parity Phase 3) — the
+/// exercise to time + the reps/weight seed the `TimedSetCover` opens with. `id` is per-presentation (not
+/// the exercise id) so re-timing the same exercise re-presents the cover.
+private struct TimedSetTarget: Identifiable {
+    let id = UUID()
+    let exerciseID: UUID
+    let reps: Int
+    let weight: Double
+    let unit: WeightUnit
+}
+
+/// The "Log a leg" target for a running entity (Workout-Type Parity Phase 4).
+private struct RunLegTarget: Identifiable {
+    let id = UUID()
+    let exerciseID: UUID
 }
 
 /// Keyboard-free inline quick-add for reps & weight (§B): `[−] value [+]` steppers + a one-tap Log that
