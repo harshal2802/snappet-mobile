@@ -5770,3 +5770,37 @@ so a fast bulk pick + a per-card default carries into the first set. `updateStre
 
 **Device:** built + installed + launched on MrRobot (iPhone 13 Pro Max) via `-allowProvisioningUpdates`
 (team NFUS5W8QC6 auto-provisioned; no entitlement strip needed).
+
+## 2026-06-19 — Workout (Gym Tracker) redesign — direction + keystone locked (planning; impl gated on wireframe review)
+
+Planning for a broad Gym-Tracker redesign (more intuitive app; creative dashboard + session detail; a library
+of all workout types; routines with full type parity; QR routine sharing; smart planning; save-a-quick-session
+as a routine). Full design + phased plan in `docs/ux-research/workout-redesign/README.md`
+(+ `wireframes.html`, `research-appendix.md`); PDD chain in `pdd/prompts/features/workout-redesign/PLAN.md`
+(E0–E7 + hardening). Driven by a 14-agent research workflow (8 file:line code maps + 6 design sweeps) and an
+8-agent wireframe pass. Implementation is **gated on the user reviewing the wireframes first**
+([[wireframe-before-implementation]]).
+
+**Keystone architecture decision.** The freeform Quick Session already carries the rich two-axis model
+(`WorkoutDiscipline` + measurement axes on `SessionExercise`/`SetLog`), but **`RoutineExercise`
+(`WorkoutModels.swift:216-226`) has no discipline field** — so routines, the guided `WorkoutPlayerView`, and
+the builder are reps×weight-locked. The redesign's spine is to **add `disciplineRaw` + per-axis target
+Optionals to `RoutineExercise`** (additive Optionals on a Codable composite ⇒ migration-free, the documented
+`:220-225` invariant) and make `makeSession(from:)` (`WorkoutTrackerModule.swift:403-417`) propagate it. That
+one change unblocks routine parity, save-as-routine, QR-share, and smart planning — all routine-shaped. **No
+new `@Model` in the keystone** (per-entity history `@Model` stays deferred); backup golden bytes + the Android
+store mirror are the not-free parts (the Workout-Type-Parity §8 caveat).
+
+**Three calls locked with the user:**
+1. **Visual direction = "Pulse Pro" evolution** (not a bolder departure, not minimal cleanup): score-first
+   hero numerals; a **two-axis color contract** — discipline accent = wayfinding, a NEW performance ramp
+   (leaf `0x3F9D55` → amber `0xB45309` → tomato `0xE5483D`) = effort/zone/PR state, `brand` coral reserved
+   for the single primary CTA; a type-adaptive recap scaffold; glass-on-chrome only; dark-mode-first; earned
+   PR celebrations. **Elevates the existing `SnappetColor` tokens — no rebrand.**
+2. **First build wave = Foundation → Dashboard → Session detail** (E0→E1→E2): the two visible wins need **no**
+   model change, so they ship before the routine-parity spine (E3→E4) and the share/plan/save phases.
+3. **Smart planner = heuristic core + on-device Apple Intelligence sharpener** (E7): a pure, deterministic,
+   always-available recommender (per-muscle recovery/volume/recency + strategy presets, modeled on
+   `KilterRecommender`) **plus** an optional on-device **Foundation Models** pass for natural-language tweaks
+   ("15 min, no barbell"), gated to capable devices and **degrading silently to the heuristic**. No server
+   LLM (on-device-only). Extends the [[receipt-ocr-apple-intelligence-followup]] direction.
