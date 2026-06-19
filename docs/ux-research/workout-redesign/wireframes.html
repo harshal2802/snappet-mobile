@@ -1,0 +1,1478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Workout (Gym Tracker) Redesign · Pulse Pro · Wireframes</title>
+<style>
+
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (light / dark) */
+    --coral:#FF5A4D; --coral-d:#FF7A6B;
+    --ember:#F2761E; --ember-d:#FF9645;          /* Workout (strength) */
+    --amber:#B45309; --amber-band:#C2750B;        /* Kilter (climb) */
+    --azure:#2A7DE1; --azure-d:#589BF2;           /* Budget → Running */
+    --tomato:#E5483D; --tomato-d:#FF6A5C;         /* Pomodoro → Timed */
+    --violet:#7C5CD6; --violet-d:#9D82F0;         /* Journal → Dance */
+    --teal:#1592A6; --teal-d:#3CB5C9;             /* Expenses → Other */
+    --leaf:#3F9D55;
+    --paper:#FBFAF8; --paper-d:#121214;
+    --surface:#FFFFFF; --surface-d:#1E1E22;
+    --muted:#F2F1EE; --muted-d:#26262B;
+    --hair:#E7E5E1; --hair-d:#34343A;
+    --ink:#1A1A1E; --ink-d:#F4F3F1;
+    --t2:#6B6A66; --t2-d:#A6A5A1;
+    --glass:rgba(17,25,40,.78); --glasshair:rgba(255,255,255,.14);
+    --z1:#1592A6; --z2:#3F9D55; --z3:#F2761E; --z4:#E5483D; --z5:#9B1C16;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{
+    margin:0;background:radial-gradient(1200px 800px at 70% -10%,#1b2030,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 80px;
+  }
+  .wrap{max-width:1360px;margin:0 auto;padding:0 28px}
+  header.page{padding:60px 28px 14px;max-width:1360px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc7a0 72%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:16.5px;max-width:940px;margin:0 0 16px}
+  .legend{display:flex;flex-wrap:wrap;gap:9px 16px;margin:14px 0 6px;font-size:13px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .flowhead{margin:58px 0 6px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#8b90a0}
+  .flowtitle{font-size:25px;font-weight:750;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:960px;margin:0 0 28px;font-size:14.5px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 36px;align-items:flex-start}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--coral);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,90,77,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+
+  /* ---------- device ---------- */
+  .device{width:330px;height:712px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 4px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 8px;flex:0 0 auto;font-size:15px}
+  .nav .ttl{font-weight:700}
+  .content{flex:1 1 auto;overflow:hidden;padding:4px 14px 8px;position:relative}
+  .cmdbar{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:11px 14px;font-size:12.5px;font-weight:650;
+    border-top:1px solid var(--hair)}
+  .cmdbar .grow{flex:1}
+
+  /* light / dark surfaces */
+  .light{background:var(--paper);color:var(--ink)}
+  .light .nav{color:var(--ink)} .light .statusbar{color:var(--ink)}
+  .light .cmdbar{background:#fff;border-top-color:var(--hair)}
+  .dark{background:var(--paper-d);color:var(--ink-d)}
+  .dark .cmdbar{background:#17171b;border-top-color:var(--hair-d)}
+  .muteline{color:var(--t2)} .dark .muteline{color:var(--t2-d)}
+
+  /* ---------- components ---------- */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:12px 13px;margin:9px 0;
+    box-shadow:0 6px 16px -10px rgba(0,0,0,.18)}
+  .dark .card{background:var(--surface-d);border-color:var(--hair-d);box-shadow:none}
+  .tile{background:var(--muted);border-radius:var(--radius);padding:12px 14px}
+  .dark .tile{background:var(--muted-d)}
+  .cardhead{display:flex;align-items:center;gap:8px;font-weight:750;font-size:15px}
+  .cardhead .ic{font-size:17px}
+  .cardhead .chev{margin-left:auto;color:var(--t2);font-size:14px}
+  .rollup{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+
+  .cta{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--coral);color:#fff;font-weight:750;
+    border-radius:14px;padding:13px;font-size:15px;box-shadow:0 10px 24px -10px rgba(255,90,77,.6)}
+  .cta.outline{background:transparent;color:var(--coral);border:1.5px solid var(--coral);box-shadow:none}
+  .cta.sm{padding:10px;font-size:13.5px}
+  .cta.ember{background:var(--ember);box-shadow:0 10px 24px -10px rgba(242,118,30,.6)}
+
+  .seg{display:flex;background:var(--muted);border-radius:12px;padding:3px;gap:3px;font-size:13px;font-weight:600}
+  .dark .seg{background:var(--muted-d)}
+  .seg span{flex:1;text-align:center;padding:8px 4px;border-radius:9px;color:var(--t2)}
+  .seg span.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .dark .seg span.on{background:#3a3a42;color:#fff}
+
+  .chiprow{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0}
+  .chip{background:var(--muted);border-radius:999px;padding:6px 11px;font-size:12.5px;font-weight:650;color:var(--ink)}
+  .dark .chip{background:var(--muted-d);color:var(--ink-d)}
+  .chip.on{background:var(--ink);color:#fff} .dark .chip.on{background:#fff;color:#000}
+  .chip.ghost{background:transparent;border:1px dashed var(--hair);color:var(--t2)}
+  .dark .chip.ghost{border-color:var(--hair-d);color:var(--t2-d)}
+
+  /* stat pill — the rolled-up rollup chips (volume / top set / pace / PR) */
+  .spill{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:12px;border-radius:9px;padding:4px 9px}
+  .spill.em{background:rgba(242,118,30,.15);color:var(--ember)} .dark .spill.em{color:var(--ember-d)}
+  .spill.az{background:rgba(42,125,225,.16);color:var(--azure)} .dark .spill.az{color:var(--azure-d)}
+  .spill.am{background:rgba(180,83,9,.16);color:var(--amber)} .dark .spill.am{color:#F59E0B}
+  .spill.vi{background:rgba(124,92,214,.16);color:var(--violet)} .dark .spill.vi{color:var(--violet-d)}
+  .spill.tl{background:rgba(21,146,166,.16);color:var(--teal)} .dark .spill.tl{color:var(--teal-d)}
+  .spill.pr{background:rgba(63,157,85,.18);color:var(--leaf)}
+  .spill.ghost{background:var(--muted);color:var(--t2)} .dark .spill.ghost{background:var(--muted-d);color:var(--t2-d)}
+
+  .badge{font-size:11.5px;font-weight:750;letter-spacing:.02em}
+  .b-sent{color:var(--leaf)} .b-done{color:var(--leaf)}
+
+  .hr{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;padding:5px 9px;border-radius:999px;
+    background:var(--muted)}
+  .dark .hr{background:rgba(255,255,255,.08)}
+  .hrdot{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+  .lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:700}
+  .dark .lbl{color:var(--t2-d)}
+  .big{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:800;letter-spacing:-.01em}
+  .rounded{font-family:ui-rounded,-apple-system,"SF Pro Rounded",sans-serif}
+
+  /* set / attempt rows */
+  .rows{margin:6px 0 2px}
+  .row{display:flex;align-items:center;gap:9px;font-size:13px;padding:8px 2px;border-bottom:1px solid var(--hair)}
+  .dark .row{border-bottom-color:var(--hair-d)}
+  .row .num{width:16px;color:var(--t2);font-weight:700;font-size:12px}
+  .row .val{font-weight:600}
+  .row .meta{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;color:var(--t2);font-size:12px}
+  .row .ok{color:var(--leaf);font-weight:800}
+  .row.top .val{color:var(--ember)} .dark .row.top .val{color:var(--ember-d)}
+  .prevline{font-size:11.5px;color:var(--t2);margin:2px 2px 4px} .dark .prevline{color:var(--t2-d)}
+
+  /* inline quick-add stepper */
+  .qadd{display:flex;align-items:center;gap:7px;margin:8px 0 2px;flex-wrap:nowrap}
+  .stp{display:flex;align-items:center;gap:6px;background:var(--muted);border-radius:11px;padding:5px 6px}
+  .dark .stp{background:var(--muted-d)}
+  .stp .sb{width:26px;height:26px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:var(--ink)}
+  .dark .stp .sb{background:#3a3a42;color:#fff}
+  .stp .sv{min-width:30px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums;font-size:14px}
+  .stp .su{font-size:11px;color:var(--t2);font-weight:700}
+  .qadd .logb{margin-left:auto;background:var(--ember);color:#fff;font-weight:800;border-radius:11px;padding:7px 12px;font-size:13px}
+
+  .footrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .fbtn{flex:1;min-width:92px;text-align:center;padding:11px;border-radius:12px;background:var(--muted);font-weight:700;font-size:13px;color:var(--ink)}
+  .dark .fbtn{background:var(--muted-d);color:var(--ink-d)}
+  .fbtn.prime{background:var(--ember);color:#fff;flex:1.3}
+  .fbtn.time{background:rgba(229,72,61,.14);color:var(--tomato)} .dark .fbtn.time{color:var(--tomato-d)}
+
+  /* catalog list rows */
+  .listrow{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--hair);font-size:13.5px}
+  .dark .listrow{border-bottom-color:var(--hair-d)}
+  .listrow .cb{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--hair);flex:0 0 auto}
+  .listrow .cb.on{background:var(--ember);border-color:var(--ember);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+  .listrow .sub{font-size:11px;color:var(--t2);font-weight:600}
+  .listrow .gear{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--ember)} .dark .listrow .gear{color:var(--ember-d)}
+  .listrow .gear.set{color:var(--t2)} .dark .listrow .gear.set{color:var(--t2-d)}
+  .inset{background:var(--muted);border-radius:13px;padding:10px 12px;margin:6px 0 2px}
+  .dark .inset{background:var(--muted-d)}
+
+  /* zone bar */
+  .zonebar{display:flex;height:16px;border-radius:7px;overflow:hidden;font-size:9px;color:#fff;font-weight:700;text-align:center;margin-top:6px}
+  .zonebar div{display:flex;align-items:center;justify-content:center}
+
+  /* mini bar chart (volume per exercise) */
+  .minibars{display:flex;gap:8px;align-items:flex-end;height:34px;margin-top:8px}
+  .minibars .b{width:30px;background:linear-gradient(180deg,var(--ember-d),var(--ember));border-radius:5px 5px 0 0;opacity:.94}
+  .minibars .lab{font-size:9.5px;color:var(--t2);text-align:center;margin-top:3px}
+
+  /* live ribbon */
+  .ribbon{background:linear-gradient(100deg,#fff,#fff5ec);border:1px solid var(--hair);border-radius:16px;padding:10px 12px;margin:6px 0 10px}
+  .dark .ribbon{background:linear-gradient(100deg,#1d1d22,#241d16);border-color:var(--hair-d)}
+  .ribbon .top{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:750}
+  .ribbon .top .more{margin-left:auto;color:var(--t2);font-size:11px;font-weight:700}
+
+  /* FOCUS timer */
+  .focus{background:radial-gradient(120% 90% at 50% 0%,#241a14,#0c0e13);color:#eef1f6}
+  .focus .statusbar{color:#eef1f6}
+  .glasscard{background:var(--glass);border:1px solid var(--glasshair);border-radius:18px;padding:12px 14px;backdrop-filter:blur(8px)}
+  .ring{width:188px;height:188px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:10px auto;position:relative}
+  .ring.up{background:conic-gradient(var(--ember) 0 64%,rgba(255,255,255,.08) 64% 100%)}
+  .ring.work{background:conic-gradient(var(--ember) 0 55%,rgba(255,255,255,.08) 55% 100%)}
+  .ring.rest{background:conic-gradient(#5b6172 0 72%,rgba(255,255,255,.07) 72% 100%)}
+  .ring .inner{width:158px;height:158px;border-radius:50%;background:#0e1118;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .timer{font-size:46px;font-weight:800;letter-spacing:-.02em}
+  .stop{width:100%;background:#E5483D;color:#fff;font-weight:800;font-size:18px;border-radius:18px;padding:17px;text-align:center;
+    box-shadow:0 12px 30px -8px rgba(229,72,61,.6);letter-spacing:.04em}
+  .ghostbtn{flex:1;text-align:center;padding:13px;border-radius:14px;background:rgba(255,255,255,.08);font-weight:700;font-size:14px;color:#dfe3ea}
+
+  /* type cards (entry) */
+  .typegrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:11px}
+  .typecard{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:13px 12px;min-height:84px;display:flex;flex-direction:column;justify-content:space-between}
+  .dark .typecard{background:var(--surface-d);border-color:var(--hair-d)}
+  .typecard .ic{font-size:22px}
+  .typecard .nm{font-weight:750;font-size:15px;margin-top:6px}
+  .typecard .ds{font-size:10.5px;color:var(--t2)} .dark .typecard .ds{color:var(--t2-d)}
+  .typecard .bar{height:3px;border-radius:3px;margin-top:8px}
+  .resume{grid-column:1 / -1;background:linear-gradient(100deg,#fff,#fdf3ec);border:1px solid var(--hair);border-radius:16px;padding:12px;display:flex;align-items:center;gap:11px}
+  .dark .resume{background:linear-gradient(100deg,#211c16,#1b1b20);border-color:var(--hair-d)}
+
+  /* discipline summary cards */
+  .disc{display:flex;gap:9px;align-items:center;border-radius:14px;padding:11px 12px;margin:7px 0}
+  .disc .ic{font-size:20px}
+  .disc .hd{font-weight:750;font-size:14px}
+  .disc .mt{font-size:11.5px;color:var(--t2)} .dark .disc .mt{color:var(--t2-d)}
+  .disc .big{margin-left:auto;font-size:17px}
+  .disc.em{background:rgba(242,118,30,.10)} .disc.az{background:rgba(42,125,225,.10)} .disc.am{background:rgba(180,83,9,.10)}
+  .herorow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:8px 0}
+  .herocell{background:var(--muted);border-radius:13px;padding:11px 8px;text-align:center}
+  .dark .herocell{background:var(--muted-d)}
+  .herocell .big{font-size:21px} .herocell .lbl{margin-top:2px}
+
+  .mile{display:flex;align-items:center;gap:9px;background:linear-gradient(100deg,rgba(63,157,85,.16),rgba(63,157,85,.06));
+    border:1px solid rgba(63,157,85,.3);border-radius:14px;padding:11px 12px;margin:7px 0;font-weight:750;font-size:13.5px;color:var(--leaf)}
+
+  hr.div{border:none;border-top:1px solid var(--hair);margin:9px 0} .dark hr.div{border-top-color:var(--hair-d)}
+  .small{font-size:11px;color:var(--t2)} .dark .small{color:var(--t2-d)}
+  .kbd{font-size:10.5px;color:var(--t2)}
+
+  /* ---------- media: per-set clip strip + deep-tap menu ---------- */
+  .clipstrip{display:flex;gap:7px;align-items:center;margin:7px 0 2px;flex-wrap:wrap}
+  .thumb{position:relative;width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,#2c2f38,#191b21);
+    border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;font-size:17px;color:#cfd3dd;flex:0 0 auto}
+  .dark .thumb{border-color:var(--hair-d)}
+  .light .thumb{background:linear-gradient(135deg,#e9e7e2,#d9d6cf);color:#6b6a66}
+  .thumb .dur{position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.66);color:#fff;font-size:8.5px;font-weight:800;
+    padding:1px 4px;border-radius:5px;font-variant-numeric:tabular-nums}
+  .thumb .auto{position:absolute;left:3px;top:3px;background:var(--leaf);color:#fff;font-size:7.5px;font-weight:800;
+    padding:1px 4px;border-radius:5px;letter-spacing:.03em}
+  .thumb .play{position:absolute;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff}
+  .attach{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:650;color:var(--azure)}
+  .dark .attach{color:var(--azure-d)}
+  .clipmenu{position:absolute;right:14px;top:118px;z-index:50;background:#26262b;border:1px solid #3a3a42;border-radius:14px;
+    padding:6px;width:188px;box-shadow:0 22px 50px -12px rgba(0,0,0,.7);font-size:13px}
+  .clipmenu .mi{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:9px;color:#eef1f6;font-weight:600}
+  .clipmenu .mi.sub{color:var(--azure-d)} .clipmenu .mi.del{color:var(--tomato-d)}
+  .clipmenu .mi .sf{width:16px;text-align:center;color:#9aa0ad}
+  .clipmenu hr{border:none;border-top:1px solid #3a3a42;margin:3px 6px}
+  .attachnote{display:flex;gap:8px;align-items:center;background:rgba(63,157,85,.12);border:1px solid rgba(63,157,85,.28);
+    border-radius:12px;padding:9px 11px;font-size:11.5px;color:#bfe6c9;margin:8px 0}
+  .light .attachnote{color:#2c6b3d}
+  .studiochip{display:inline-flex;align-items:center;gap:6px;background:rgba(124,92,214,.16);color:var(--violet-d);
+    font-weight:750;font-size:11.5px;border-radius:999px;padding:5px 10px}
+
+  /* model diagram (non-device explanatory) */
+  .diagram{background:#15171e;border:1px solid #262a35;border-radius:18px;padding:22px 24px;margin:18px 0 0;color:#cfd3dd;font-size:14px;max-width:1000px}
+  .diagram h3{margin:0 0 10px;color:#fff;font-size:17px}
+  .diagram code{background:#1f2330;padding:1px 6px;border-radius:5px;color:#ffd9c2;font-size:12.5px}
+  .axes{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .axis{flex:1;min-width:170px;background:#1b1e27;border:1px solid #2a2f3c;border-radius:12px;padding:12px 13px}
+  .axis b{color:#fff}
+
+  .footer{margin-top:64px;padding-top:24px;border-top:1px solid #23262f;color:#8b90a0;font-size:13.5px;max-width:1100px}
+  .footer code{background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd}
+  @media(max-width:760px){.step{width:90vw;max-width:340px}}
+
+
+  /* wireframes.html: widen the gallery so the whole deck renders to a compact single PNG */
+  .wrap{max-width:2280px}
+
+  /* ---- extraCSS from draw:dashboard ---- */
+  /* Flow-1 dashboard-only additions (wr- prefixed; no shared class redefined) */
+  .wr-hero{width:84px;height:84px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    background:conic-gradient(var(--coral-d) 0 80%,rgba(255,255,255,.10) 80% 100%)}
+  .wr-heroin{width:68px;height:68px;border-radius:50%;background:var(--surface-d);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center}
+  .light .wr-heroin{background:#fff}
+
+  .wr-strip{display:flex;justify-content:space-between;margin-top:9px}
+  .wr-day{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .wr-dot{width:18px;height:18px;border-radius:50%;background:var(--muted)}
+  .dark .wr-dot{background:var(--muted-d)}
+  .wr-dot.on{background:var(--t2)} .dark .wr-dot.on{background:var(--t2-d)}
+  .wr-dot.today{background:var(--coral-d);box-shadow:0 0 0 3px rgba(255,90,77,.22)}
+  .wr-dl{font-size:10px;font-weight:700;color:var(--t2)} .dark .wr-dl{color:var(--t2-d)}
+
+  /* recent-session feed: discipline accent lives only on the left edge */
+  .wr-feed{position:relative;overflow:hidden;padding-left:16px}
+  .wr-feed::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px}
+  .wr-em::before{background:var(--ember-d)}
+  .wr-am::before{background:#F59E0B}
+  .wr-az::before{background:var(--azure-d)}
+  .wr-tl::before{background:var(--teal-d)}
+
+  .wr-empty{text-align:center}
+  .wr-emptysym{width:88px;height:88px;border-radius:26px;margin:0 auto;display:flex;align-items:center;justify-content:center;
+    font-size:40px;background:rgba(242,118,30,.12)}
+  /* ---- extraCSS from draw:sessionDetail ---- */
+  /* lit pyramid bar — the session's hardest send tinted coral instead of the amber ramp */
+  .pyr .bar.wr-lit{background:linear-gradient(90deg,var(--coral),var(--coral-d))}
+  /* zone-banded HR sparkline (WorkoutHRStats curve) — bars carry the green→amber→tomato effort ramp */
+  .wr-spark{display:flex;align-items:flex-end;gap:3px;height:40px}
+  .wr-spark span{flex:1;border-radius:3px 3px 0 0;opacity:.92}
+  /* ---- extraCSS from draw:builder ---- */
+  /* Flow-4 routine builder — block rail + drag + A/B/C badges */
+  .wr-drag{color:var(--t2);font-size:15px;cursor:grab;flex:0 0 auto;line-height:1}
+  .dark .wr-drag{color:var(--t2-d)}
+  .wr-rail{position:absolute;left:4px;top:6px;bottom:40px;width:4px;border-radius:4px;opacity:.55}
+  .wr-bracketed{padding-left:16px}
+  .wr-ab{width:20px;height:20px;border-radius:7px;color:#fff;font-weight:800;font-size:11px;
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  /* ---- extraCSS from draw:routineShare ---- */
+  /* Flow 5 — QR illusion + scanner viewfinder (chrome-only; content cards stay flat) */
+  .wr-qr{position:relative;width:172px;height:172px;margin:0 auto;border-radius:8px;
+    background-image:
+      repeating-linear-gradient(90deg,#1A1A1E 0 7px,#fff 7px 14px),
+      repeating-linear-gradient(0deg,#1A1A1E 0 7px,#fff 7px 14px);
+    background-blend-mode:multiply;background-size:14px 14px}
+  .wr-qrfind{position:absolute;width:42px;height:42px;background:#fff;border:7px solid #1A1A1E;border-radius:6px}
+  .wr-qrfind::after{content:"";position:absolute;inset:6px;background:#1A1A1E;border-radius:2px}
+  .wr-tl{top:6px;left:6px}.wr-tr{top:6px;right:6px}.wr-bl{bottom:6px;left:6px}
+  .wr-pulse{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:40px;height:40px;border-radius:11px;background:#fff;display:flex;align-items:center;justify-content:center;
+    color:var(--coral);font-size:22px;font-weight:900;box-shadow:0 0 0 4px #fff}
+  .wr-finder{position:relative;height:208px;border-radius:18px;overflow:hidden;
+    background:radial-gradient(120% 90% at 50% 30%,#23262f,#0c0e13);display:flex;align-items:center;justify-content:center}
+  .wr-cnr{position:absolute;width:34px;height:34px;border:3px solid var(--coral-d)}
+  .wr-c1{top:18px;left:18px;border-right:none;border-bottom:none;border-radius:8px 0 0 0}
+  .wr-c2{top:18px;right:18px;border-left:none;border-bottom:none;border-radius:0 8px 0 0}
+  .wr-c3{bottom:18px;left:18px;border-right:none;border-top:none;border-radius:0 0 0 8px}
+  .wr-c4{bottom:18px;right:18px;border-left:none;border-top:none;border-radius:0 0 8px 0}
+  .wr-vftxt{font-size:12px;font-weight:700;color:#cfd3dd;background:rgba(0,0,0,.4);padding:6px 12px;border-radius:999px}
+  /* ---- extraCSS from draw:smartplan ---- */
+  /* Flow 6 — smart plan: recovery body map + Apple Intelligence chrome */
+  .wr-bodymap{position:relative;height:118px;margin:8px auto 2px;width:120px;
+    background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+    border:1px solid var(--hair-d);border-radius:46px 46px 30px 30px}
+  .wr-region{position:absolute;width:15px;height:15px;border-radius:50%;transform:translate(-50%,-50%);
+    box-shadow:0 0 0 3px rgba(255,255,255,.06)}
+  .wr-aibadge{display:inline-flex;align-items:center;gap:5px;font-weight:800;font-size:11.5px;
+    background:linear-gradient(100deg,rgba(124,92,214,.28),rgba(42,125,225,.22));color:#dcd6ff;
+    border:1px solid var(--glasshair);border-radius:999px;padding:4px 10px;letter-spacing:.01em}
+  .wr-aifield{margin-top:9px;font-size:13px;font-weight:600;color:#eef1f6;line-height:1.4}
+  .wr-shimmer{display:inline-block;color:var(--violet-d);
+    animation:wr-pulse 1.4s ease-in-out infinite}
+  @keyframes wr-pulse{0%,100%{opacity:.45}50%{opacity:1}}
+  /* ---- extraCSS from draw:foundation ---- */
+  /* E0 keystone — before/after tint on reused .axis (no shared class redefined) */
+  .wr-before{border-color:rgba(229,72,61,.42)!important;background:rgba(229,72,61,.07)!important}
+  .wr-after{border-color:rgba(63,157,85,.42)!important;background:rgba(63,157,85,.07)!important}
+
+  /* E0 dependency graph — additive explanatory nodes */
+  .wr-dep{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .wr-col{display:flex;flex-direction:column;gap:7px}
+  .wr-node{background:#1b1e27;border:1px solid #2a2f3c;border-radius:11px;padding:9px 12px;font-size:12.5px;font-weight:650;color:#cfd3dd}
+  .wr-node span{display:block;color:#9aa0ad;font-size:11px;font-weight:600;margin-top:2px}
+  .wr-node.wr-key{border-color:var(--ember);background:rgba(242,118,30,.12);color:#fff;font-weight:800}
+  .wr-node.wr-key2{border-color:var(--amber-band);background:rgba(180,83,9,.16);color:#fff;font-weight:800}
+  .wr-node.wr-mid{border-color:#3a4150}
+  .wr-arrow{color:#6f7585;font-size:20px;font-weight:800;flex:0 0 auto}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Workout (Gym Tracker) redesign — Pulse Pro</h1>
+  <p class="sub">Real-looking iPhone wireframes for bringing <b>every</b> Gym-Tracker surface up to the discipline model the freeform Quick Session already proved — a redesigned <b>dashboard</b> &amp; <b>session detail</b>, a <b>library of all workout types</b>, <b>routines with full type parity</b>, <b>QR routine sharing</b>, <b>save-a-session-as-routine</b>, and a <b>smart planner</b> (heuristic + on-device Apple Intelligence). Tokens are the real <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">SnappetColor</code> values; the iPhone scaffold matches the existing wireframes. Plan &amp; rationale in <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">README.md</code>.</p>
+  <div class="legend">
+    <span class="swatch"><span class="dot" style="background:#FF5A4D"></span><b>Pulse Coral</b> the one primary CTA</span>
+    <span class="swatch"><span class="dot" style="background:#F2761E"></span><b>Ember</b> Strength</span>
+    <span class="swatch"><span class="dot" style="background:#B45309"></span><b>Amber</b> Climb</span>
+    <span class="swatch"><span class="dot" style="background:#2A7DE1"></span><b>Azure</b> Run</span>
+    <span class="swatch"><span class="dot" style="background:#E5483D"></span><b>Tomato</b> Timed</span>
+    <span class="swatch"><span class="dot" style="background:#7C5CD6"></span><b>Violet</b> Dance</span>
+    <span class="swatch"><span class="dot" style="background:#1592A6"></span><b>Teal</b> Other</span>
+  </div>
+  <div class="legend" style="margin-top:2px">
+    <span style="color:#8b90a0">Performance ramp (effort / zone / PR — the 2nd color axis):</span>
+    <span class="swatch"><span class="dot" style="background:#3F9D55"></span>fresh</span>
+    <span class="swatch"><span class="dot" style="background:#B45309"></span>moderate</span>
+    <span class="swatch"><span class="dot" style="background:#E5483D"></span>hard</span>
+  </div>
+</header>
+
+
+<div class="wrap">
+
+<div class="flowhead">Flow 1 · the entry screen (E0 foundation + E1)</div>
+<h2 class="flowtitle">Dashboard — discipline-aware home with a recent-sessions feed</h2>
+<p class="flowdesc">Today the gym-tracker home (<code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">WorkoutDashboardSection</code>) is strength-only — a four-tile stat grid, a volume chart, PRs — so climbing, running &amp; timed sessions show <b>0 kg</b> and <i>never appear at all</i>: there is no recent-sessions feed. The redesign keeps every real ingredient (the resume banner, the streak/this-week math, the 8-week chart animation, <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">StudioEntry</code>'s recent-session pattern, the <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">WorkoutStatCard</code> tile) but reorganizes them <b>Pulse-Pro</b>: ONE hero consistency ring, a calm 7-day strip, a type-aware coral START, and a short <b>mixed-discipline</b> feed where each card wears its discipline accent on the left edge and rolls up three headline facts. The empty state mirrors that same restraint.</p>
+
+<div class="gallery">
+
+  <!-- A. POPULATED dashboard (dark) -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span>‹ Fitness</span><span class="ttl">Gym</span><span>⋯</span></div>
+      <div class="content" style="overflow:hidden">
+        <!-- the ONE coral-fill moment: resume, only when a session is live -->
+        <div class="cta" style="border-radius:16px;justify-content:flex-start;gap:11px;padding:12px 13px;margin:2px 0 12px">
+          <span style="font-size:21px">🧗</span>
+          <div style="text-align:left;line-height:1.25">
+            <div style="font-size:12px;font-weight:800;opacity:.85;letter-spacing:.04em">SESSION LIVE · 1:08:42</div>
+            <div style="font-size:14.5px;font-weight:750">Evening boulder · 7 sends so far</div>
+          </div>
+          <span class="grow"></span><span style="font-weight:800">Resume ›</span>
+        </div>
+
+        <!-- HERO: one coral ring around a big rounded numeral on warm paper -->
+        <div class="card" style="background:var(--surface-d);display:flex;align-items:center;gap:14px;padding:15px 14px">
+          <div class="wr-hero">
+            <div class="wr-heroin"><span class="big rounded" style="font-size:34px;line-height:1">4</span><span class="lbl" style="margin-top:1px">of 5 days</span></div>
+          </div>
+          <div style="flex:1">
+            <div class="lbl">This week</div>
+            <div style="font-weight:800;font-size:17px;letter-spacing:-.01em">Active 4 of 5 days</div>
+            <div class="muteline" style="font-size:12px;margin-top:2px">One more to hit your weekly goal.</div>
+            <div class="rollup" style="margin-top:9px">
+              <span class="spill em">2 lifts</span><span class="spill am">5 climbs</span><span class="spill az">1 run</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- calm 7-day consistency strip, today in coral -->
+        <div class="card" style="padding:11px 13px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="lbl">Last 7 days</span>
+            <span class="badge b-done">You're on track ✓</span>
+          </div>
+          <div class="wr-strip">
+            <div class="wr-day"><span class="wr-dot on"></span><span class="wr-dl">M</span></div>
+            <div class="wr-day"><span class="wr-dot"></span><span class="wr-dl">T</span></div>
+            <div class="wr-day"><span class="wr-dot on"></span><span class="wr-dl">W</span></div>
+            <div class="wr-day"><span class="wr-dot on"></span><span class="wr-dl">T</span></div>
+            <div class="wr-day"><span class="wr-dot"></span><span class="wr-dl">F</span></div>
+            <div class="wr-day"><span class="wr-dot on"></span><span class="wr-dl">S</span></div>
+            <div class="wr-day"><span class="wr-dot today"></span><span class="wr-dl" style="color:var(--coral-d);font-weight:800">S</span></div>
+          </div>
+        </div>
+
+        <!-- type-aware persistent START (label reads the dominant recent type) -->
+        <div class="cta" style="margin:12px 0 4px"><span>＋</span><span>Start climbing</span></div>
+        <div class="muteline" style="font-size:11px;text-align:center;margin-bottom:6px">Climbing is your go-to lately · tap to switch type</div>
+
+        <!-- RECENT SESSIONS feed — mixed type, accent left-edge + glyph + 3 facts -->
+        <div class="cardhead" style="margin:8px 2px 2px"><span>Recent sessions</span><span class="chev">See all ›</span></div>
+
+        <div class="card wr-feed wr-am" style="margin:7px 0">
+          <div class="cardhead" style="font-size:14px"><span class="ic">🧗</span><span>Sunset Sends · Kilter</span><span class="spill pr" style="margin-left:auto">★ PR V5</span></div>
+          <div class="rollup"><span class="spill am">V5 top</span><span class="spill ghost">8 sends</span><span class="spill ghost">1:02</span></div>
+          <div class="small" style="margin-top:4px">Yesterday · 18:20</div>
+        </div>
+
+        <div class="card wr-feed wr-em" style="margin:7px 0">
+          <div class="cardhead" style="font-size:14px"><span class="ic">🏋️</span><span>Push day</span><span class="chev">›</span></div>
+          <div class="rollup"><span class="spill em">4,250 kg</span><span class="spill ghost">22 sets</span><span class="spill ghost">top 100×5</span></div>
+          <div class="small" style="margin-top:4px">Mon · 07:05 · 58 min</div>
+        </div>
+
+        <div class="card wr-feed wr-az" style="margin:7px 0">
+          <div class="cardhead" style="font-size:14px"><span class="ic">🏃</span><span>Morning run</span><span class="chev">›</span></div>
+          <div class="rollup"><span class="spill az">5.2 km</span><span class="spill ghost">5:41/km</span><span class="spill ghost">⏱ 0:29</span></div>
+          <div class="rollup" style="margin-top:5px"><span class="hr"><span class="hrdot" style="background:var(--z3)"></span>142 bpm avg · Z3</span></div>
+          <div class="small" style="margin-top:4px">Sun · 06:48</div>
+        </div>
+
+        <div class="card wr-feed wr-tl" style="margin:7px 0 2px">
+          <div class="cardhead" style="font-size:14px"><span class="ic">⏱</span><span>Hangboard repeaters</span><span class="chev">›</span></div>
+          <div class="rollup"><span class="spill tl">6 sets</span><span class="spill ghost">7s/3s</span><span class="spill ghost">+15 kg</span></div>
+          <div class="small" style="margin-top:4px">Sat · 19:10</div>
+        </div>
+      </div>
+      <div class="cmdbar"><span style="color:var(--coral);font-weight:800">▦ Dashboard</span><span class="grow"></span><span class="muteline">History</span><span class="muteline">Routines</span><span class="muteline">Studio</span></div>
+    </div></div>
+    <div class="caption"><b>Score-first, type-aware home.</b> The lone coral-fill is the conditional <b>resume</b> (reuses <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">resumeBanner</code>, now glyph-keyed to the live type). The hero is ONE coral ring around a rounded numeral — consistency built from <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">currentStreak</code>/<code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">thisWeekCount</code> — with the old <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">WorkoutStatCard</code> grid demoted to per-discipline <b>.spill</b> chips. START reads the dominant recent type. The new feed reuses <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">StudioEntry</code>'s recent-session row (video filter dropped) so climb/run/timed finally appear, each with a discipline edge-bar + 3 facts; the earned <b>★ PR V5</b> uses <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">.spill.pr</code> (CelebrationBurst vibe), the green/amber/tomato performance axis stays on the HR pill only.</div>
+  </div>
+
+  <!-- B. FIRST-RUN / empty dashboard (light) -->
+  <div class="step">
+    <div class="stepnum">B</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span>‹ Fitness</span><span class="ttl">Gym</span><span>⋯</span></div>
+      <div class="content" style="display:flex;flex-direction:column">
+        <div style="flex:.5"></div>
+        <div class="wr-empty">
+          <div class="wr-emptysym">🏋️</div>
+          <div style="font-weight:800;font-size:21px;letter-spacing:-.01em;margin-top:14px">Log your first session</div>
+          <div class="muteline" style="font-size:13.5px;max-width:240px;margin:6px auto 0">Strength, climbing, a run, a timed circuit — they all live here, and they all log the same calm way.</div>
+        </div>
+
+        <div class="cta" style="margin:18px 0 6px"><span>＋</span><span>Start a session</span></div>
+        <div class="muteline" style="font-size:11px;text-align:center">…or pick what you're training</div>
+
+        <!-- type chooser mirrors the populated state's restraint -->
+        <div class="typegrid">
+          <div class="typecard"><div class="ic">🏋️</div><div class="nm">Strength</div><div class="ds">sets × reps × weight</div><div class="bar" style="background:var(--ember)"></div></div>
+          <div class="typecard"><div class="ic">🧗</div><div class="nm">Climbing</div><div class="ds">grade · sends · pyramid</div><div class="bar" style="background:var(--amber)"></div></div>
+          <div class="typecard"><div class="ic">🏃</div><div class="nm">Running</div><div class="ds">distance · pace · HR</div><div class="bar" style="background:var(--azure)"></div></div>
+          <div class="typecard"><div class="ic">⏱</div><div class="nm">Timed</div><div class="ds">hangboard · Tabata</div><div class="bar" style="background:var(--tomato)"></div></div>
+        </div>
+
+        <div style="flex:1"></div>
+        <div class="listrow" style="border-bottom:none;padding:12px 2px 4px">
+          <span style="font-size:17px">🏃</span>
+          <div><div style="font-weight:650;font-size:13px">Looking for your Apple Watch workouts?</div><div class="sub">Highlight reels live in Workout Reels.</div></div>
+          <span class="gear set" style="margin-left:auto">›</span>
+        </div>
+      </div>
+      <div class="cmdbar"><span style="color:var(--coral);font-weight:800">▦ Dashboard</span><span class="grow"></span><span class="muteline">History</span><span class="muteline">Routines</span><span class="muteline">Studio</span></div>
+    </div></div>
+    <div class="caption"><b>First-run mirrors the same restraint.</b> A single warm symbol + headline + ONE coral CTA — the empty-state analogue of the hero ring — over the four-type chooser (reuses the <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">typecard</code> grid, each accent = its discipline). It replaces the old strength-only "Let's get moving" copy so a watch-runner or climber sees themselves on day one. The Reels cross-link (<code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">reelsCrossLink</code>) stays pinned at the bottom, the one place this dashboard hands off to the suite.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 2 · the creative payoff (E2)</div>
+<h2 class="flowtitle">Session detail — type-adaptive recap (climbing &amp; strength variants)</h2>
+<p class="flowdesc">Today the saved <b>SessionDetailView</b> is a flat stack of <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">LabeledContent</code> rows — identical for every discipline and strictly poorer than the <b>FreeformDoneSummaryView</b> recap it follows. The redesign <b>unifies the two</b>: one shared scaffold — a score-first <b>hero slot</b>, a <b>secondary-viz slot</b>, an entity-then-attempt <b>breakdown</b>, and an <b>earned celebration</b> — re-skinned per discipline off <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">FreeformSummary.dominant</code>. Same components, different fillers. Discipline accent = who/where; a separate green→amber→tomato ramp = effort/PR; coral is the one CTA per screen.</p>
+
+<div class="gallery">
+
+  <!-- A. CLIMBING session detail (dark) -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 87%</span></div>
+      <div class="nav"><span>‹ Sessions</span><span class="ttl">Boulder · The Front</span><span style="color:var(--t2-d)">⋯</span></div>
+      <div class="content">
+        <div class="muteline" style="font-size:11.5px">Tue Jun 17 · 7:42 PM · 1h 06m · saved</div>
+
+        <!-- HERO SLOT — one oversized numeral, amber-haloed (FreeformDoneSummaryView.heroCell) -->
+        <div class="card" style="text-align:center;padding:18px 12px 14px;background:radial-gradient(120% 110% at 50% -10%,rgba(245,158,11,.14),var(--surface-d));border-color:rgba(245,158,11,.35)">
+          <div class="lbl" style="color:#F59E0B">🧗 HARDEST SEND</div>
+          <div class="big rounded" style="font-size:74px;line-height:1.02;color:#F59E0B;text-shadow:0 0 34px rgba(245,158,11,.45)">V5</div>
+          <div class="rollup" style="justify-content:center;margin-top:4px">
+            <span class="spill am">8 sends</span><span class="spill pr">⚡ 2 flashes</span><span class="spill ghost">11 climbs</span>
+          </div>
+        </div>
+
+        <!-- SECONDARY VIZ — grade pyramid (ClimbGradePyramid) w/ hardest send lit coral + intensity band -->
+        <div class="card">
+          <div class="cardhead" style="font-size:13px"><span>Grade pyramid</span><span class="small" style="margin-left:auto;text-transform:none;letter-spacing:0">sends easy → hard</span></div>
+          <div class="pyr" style="margin-top:9px">
+            <div class="row"><span class="g" style="color:var(--coral-d)">V5</span><span class="bar wr-lit" style="width:20%"></span><span class="n">2 ★</span></div>
+            <div class="row"><span class="g">V4</span><span class="bar" style="width:54%"></span><span class="n">6</span></div>
+            <div class="row"><span class="g">V3</span><span class="bar" style="width:36%"></span><span class="n">4</span></div>
+            <div class="row"><span class="g">V2</span><span class="bar" style="width:24%"></span><span class="n">3</span></div>
+          </div>
+          <hr class="div">
+          <div class="lbl" style="margin:2px 0 5px">Session intensity</div>
+          <div class="zonebar" style="height:14px"><div style="width:31%;background:var(--leaf)"></div><div style="width:44%;background:var(--amber-band)"></div><div style="width:25%;background:var(--tomato)"></div></div>
+          <span class="small" style="display:block;margin-top:5px">31% wall · 44% rest · 25% redline · 7.3 sends/hr</span>
+        </div>
+
+        <!-- BREAKDOWN — entity-then-attempt climb cards; prior attempt muted; coral PR pill on flash -->
+        <div class="lbl" style="margin:12px 2px 4px">Climbs — 11</div>
+        <div class="card" style="border-color:rgba(245,158,11,.4)">
+          <div class="cardhead" style="font-size:14px"><span class="ic">△</span><span>Cave Roof</span><span class="spill am" style="font-size:11px">V5</span><span class="spill pr" style="margin-left:auto">⚡ Flash · PR</span></div>
+          <div class="rows" style="margin-top:7px">
+            <div class="row top"><span class="num">1</span><span class="val">Flash · 0:48</span><span class="meta">Z4 · 158</span><span class="ok">✓</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardhead" style="font-size:14px"><span class="ic">△</span><span>Slab Project</span><span class="spill ghost" style="font-size:11px">V4</span><span class="badge b-sent" style="margin-left:auto">✓ Sent · try 3</span></div>
+          <div class="prevline">prior session: V4 · project · 5 tries · Jun 12</div>
+          <div class="rows">
+            <div class="row"><span class="num">1</span><span class="val">Fall · 0:42</span><span class="meta">Z3 · 141</span></div>
+            <div class="row"><span class="num">2</span><span class="val">Fall · 1:10</span><span class="meta">Z3 · 146</span></div>
+            <div class="row top"><span class="num">3</span><span class="val">Send · 2:13</span><span class="meta">Z4 · 162</span><span class="ok">✓</span></div>
+          </div>
+        </div>
+
+        <!-- HR / effort zone-banded sparkline in a glasscard (WorkoutHRStats + ZoneBar) -->
+        <div class="glasscard" style="margin:11px 0 2px;backdrop-filter:none;background:rgba(255,255,255,.05);border-color:var(--hair-d)">
+          <div style="display:flex;align-items:center;gap:8px"><span class="lbl" style="color:#9aa0ad">♥ EFFORT · APPLE WATCH</span><span class="small" style="margin-left:auto">avg 138 · max 171</span></div>
+          <div class="wr-spark" style="margin:9px 0 7px">
+            <span style="height:24%;background:var(--leaf)"></span><span style="height:38%;background:var(--leaf)"></span><span style="height:52%;background:var(--amber-band)"></span><span style="height:70%;background:var(--amber-band)"></span><span style="height:88%;background:var(--tomato)"></span><span style="height:64%;background:var(--amber-band)"></span><span style="height:46%;background:var(--leaf)"></span><span style="height:78%;background:var(--tomato)"></span><span style="height:58%;background:var(--amber-band)"></span><span style="height:34%;background:var(--leaf)"></span>
+          </div>
+          <div class="zonebar" style="height:9px"><div style="width:12%;background:var(--z1)"></div><div style="width:18%;background:var(--z2)"></div><div style="width:34%;background:var(--z3)"></div><div style="width:28%;background:var(--z4)"></div><div style="width:8%;background:var(--z5)"></div></div>
+        </div>
+
+        <!-- clip strip → Studio (SetMediaStrip / clipstrip) -->
+        <div class="lbl" style="margin:11px 2px 2px">Clips · 4</div>
+        <div class="clipstrip">
+          <div class="thumb"><span class="auto">AUTO</span>🎬<span class="dur">0:48</span></div>
+          <div class="thumb">🎬<span class="dur">0:12</span></div>
+          <div class="thumb"><span class="play">▶</span><span class="dur">2:13</span></div>
+          <span class="studiochip">✦ Open in Studio ›</span>
+        </div>
+      </div>
+      <div class="cmdbar"><span class="cta" style="flex:1;padding:11px">↑ Share recap</span><span class="cta outline sm" style="flex:1">↻ Save as routine</span></div>
+    </div></div>
+    <div class="caption"><b>Climbing, dark &amp; immersive.</b> One shared scaffold filled by the <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">FreeformSummary.dominant == .climbing</code> branch: hero = hardest grade (oversized amber-haloed numeral, the <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">heroCell</code> writ large) + flash/send count; secondary = the shared <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ClimbGradePyramid</code> with the session's hardest send lit <b>coral</b> + an intensity band. Breakdown = <b>entity-then-attempt</b> climb cards reusing the live canvas card; prior attempts sit in muted gray, a coral <b>⚡ Flash · PR</b> pill earns its place on the record. HR sparkline lives on the only <b>glass</b> chrome (<code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">WorkoutHRStats</code> + <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ZoneBar</code>); <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">SetMediaStrip</code> taps into Studio.</div>
+  </div>
+
+  <!-- B. STRENGTH session detail (light) -->
+  <div class="step">
+    <div class="stepnum">B</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral)">‹ Sessions</span><span class="ttl">Push day</span><span style="color:var(--ember)">Edit</span></div>
+      <div class="content">
+        <div class="muteline" style="font-size:11.5px">Mon Jun 16 · 6:10 AM · 1h 12m · saved</div>
+
+        <!-- HERO SLOT — total volume numeral, ember-haloed (SAME heroCell, ember skin) -->
+        <div class="card" style="text-align:center;padding:18px 12px 14px;background:radial-gradient(120% 110% at 50% -10%,rgba(242,118,30,.10),var(--surface));border-color:rgba(242,118,30,.32)">
+          <div class="lbl" style="color:var(--ember)">🏋️ TOTAL VOLUME</div>
+          <div class="big rounded" style="font-size:60px;line-height:1.04;color:var(--ember)">4,250<span style="font-size:22px;font-weight:700"> kg</span></div>
+          <div class="rollup" style="justify-content:center;margin-top:4px">
+            <span class="spill em">9 sets</span><span class="spill ghost">3 exercises</span><span class="spill pr">🏅 1 PR</span>
+          </div>
+        </div>
+
+        <!-- SECONDARY VIZ — per-exercise volume minibars + time-in-zone zonebar -->
+        <div class="card">
+          <div class="cardhead" style="font-size:13px"><span>Volume by exercise</span><span class="small" style="margin-left:auto;text-transform:none;letter-spacing:0">kg moved</span></div>
+          <div style="margin-top:10px">
+            <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:80px">Back Squat</span><div style="flex:1;height:13px;border-radius:5px;background:linear-gradient(90deg,var(--ember),var(--ember-d))"></div><b>2,150</b></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-top:8px"><span style="width:80px">Bench Press</span><div style="height:13px;border-radius:5px;width:62%;background:linear-gradient(90deg,var(--ember),var(--ember-d))"></div><b style="margin-left:auto">1,330</b></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-top:8px"><span style="width:80px">Pull-up</span><div style="height:13px;border-radius:5px;width:36%;background:linear-gradient(90deg,var(--ember),var(--ember-d))"></div><b style="margin-left:auto">770</b></div>
+          </div>
+          <hr class="div">
+          <div class="lbl" style="margin:2px 0 5px">Time in zone · avg 138 bpm</div>
+          <div class="zonebar"><div style="width:9%;background:var(--z1)">Z1</div><div style="width:21%;background:var(--z2)">Z2</div><div style="width:42%;background:var(--z3)">Z3</div><div style="width:23%;background:var(--z4)">Z4</div><div style="width:5%;background:var(--z5)">Z5</div></div>
+        </div>
+
+        <!-- BREAKDOWN — expandable exercise cards w/ set rows; top set highlighted; e1RM PR pill; per-set HR -->
+        <div class="lbl" style="margin:12px 2px 4px">Exercises — 3</div>
+        <div class="card" style="border-color:var(--ember)">
+          <div class="cardhead" style="font-size:14px"><span class="ic">🏋️</span><span>Back Squat</span><span class="spill pr" style="margin-left:auto">🏅 e1RM 117</span><span class="chev" style="color:var(--ember)">⌃</span></div>
+          <div class="prevline">prior session: top 5 × 95 kg · est. 1RM 112 · Jun 13</div>
+          <div class="rows">
+            <div class="row"><span class="num">1</span><span class="val">8 × 60 kg</span><span class="meta">Z2 · 124</span><span class="ok">✓</span></div>
+            <div class="row"><span class="num">2</span><span class="val">5 × 80 kg</span><span class="meta">Z3 · 137</span><span class="ok">✓</span></div>
+            <div class="row top"><span class="num">3</span><span class="val">5 × 100 kg · 0:42</span><span class="meta" style="color:var(--ember)">top · Z4 · 152</span><span class="ok">✓</span></div>
+          </div>
+          <span class="small" style="display:block;margin-top:6px">tap a set to edit reps · weight · time · RPE</span>
+        </div>
+        <div class="card">
+          <div class="cardhead" style="font-size:14px"><span class="ic">🏋️</span><span>Bench Press</span><span class="spill em" style="font-size:11px;margin-left:auto">top 82.5 × 5</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill ghost">3 sets · 1,330 kg</span><span class="spill ghost">⏱ 0:42 TUT</span></div>
+        </div>
+        <div class="card">
+          <div class="cardhead" style="font-size:14px"><span class="ic">🏋️</span><span>Pull-up</span><span class="spill em" style="font-size:11px;margin-left:auto">+15 × 8</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill ghost">3 sets · 770 kg</span></div>
+        </div>
+      </div>
+      <div class="cmdbar"><span class="cta ember" style="flex:1;padding:11px">↑ Share recap</span><span class="cta outline sm" style="flex:1;color:var(--ember);border-color:var(--ember)">↻ Save as routine</span></div>
+    </div></div>
+    <div class="caption"><b>Strength, light &amp; utilitarian — the SAME scaffold.</b> The <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">.strength</code> branch reskins it: hero = total volume numeral, <b>ember-haloed</b>; secondary = per-exercise volume minibars + a time-in-zone <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ZoneBar</code>. Breakdown = expandable exercise cards with the <b>one set-row grammar</b> (<code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">SetMeasure</code>) — top set highlighted ember, a green <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">e1RM</code> PR pill on the record, per-set HR badges, and the orthogonal <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">· 0:42</code> TUT folded into the row. An <b>Edit</b> affordance is now present for <i>all</i> axes (today edit is reps/weight-only), and the prior session prefills in muted gray exactly like climbing.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 3 · a library of all workout types (E3)</div>
+<h2 class="flowtitle">Workout Library — discipline-spined, replaces the flat Exercises tab</h2>
+<p class="flowdesc">The old <b>Exercises</b> tab was a flat strength-only catalog (873 Free-Exercise-DB rows); climbing, timed and running had no home. The Library makes <b>workout type the top facet</b>: a persistent search, a row of discipline cards in their module accents (each a glyph + live count), a cross-discipline <b>Recent across all types</b> band (the win no pure-strength app has), then a recents-first <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">listrow</code> catalog whose <b>filter facets swap by discipline</b>. Detail is one adaptive scroll: a hero demo, how-to steps, a muscle map (<b>strength only</b>), and a <b>type-adaptive history ribbon</b> reusing the stat-pill shape. Built by generalising <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ExerciseSearch</code> / <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ExerciseFilters</code> / <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">FlowChips</code> into a polymorphic <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">LibraryItem</code> over the <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">WorkoutDiscipline</code> taxonomy.</p>
+
+<div class="gallery">
+
+  <!-- ============ FRAME A: LIBRARY BROWSE (light) ============ -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span class="ttl">Library</span><span style="color:var(--ember);font-weight:750">＋ New climb</span></div>
+      <div class="content">
+
+        <!-- persistent search (generalized ExerciseSearch) -->
+        <div class="tile" style="display:flex;align-items:center;gap:8px;padding:9px 12px"><span>🔍</span><span class="muteline" style="font-size:12.5px">Search all types · 1,142 items</span></div>
+
+        <!-- discipline spine: glyph + count, module accents as edge-bars -->
+        <div class="lbl" style="margin:11px 2px 0">Browse by type</div>
+        <div class="chiprow" style="gap:8px;flex-wrap:nowrap;overflow:hidden">
+          <span class="chip on" style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 11px;border-bottom:2.5px solid var(--amber)">🧗 <b style="font-size:11px">Climb</b><span class="small" style="color:rgba(255,255,255,.7)">214</span></span>
+          <span class="chip" style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 11px;border-bottom:2.5px solid var(--ember)">🏋️ <b style="font-size:11px">Strength</b><span class="small">873</span></span>
+          <span class="chip" style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 11px;border-bottom:2.5px solid var(--azure)">🏃 <b style="font-size:11px">Run</b><span class="small">9</span></span>
+          <span class="chip" style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 11px;border-bottom:2.5px solid var(--tomato)">⏱ <b style="font-size:11px">Timed</b><span class="small">31</span></span>
+        </div>
+
+        <!-- cross-discipline recents band -->
+        <div class="lbl" style="margin:9px 2px 0">Recent across all types</div>
+        <div class="chiprow" style="gap:7px;margin-top:6px">
+          <span class="chip ghost" style="border-style:solid;border-color:var(--amber);color:var(--amber);display:flex;align-items:center;gap:5px">🧗 Tension · <b>V6</b></span>
+          <span class="chip ghost" style="border-style:solid;border-color:var(--ember);color:var(--ember);display:flex;align-items:center;gap:5px">🏋️ Back Squat</span>
+          <span class="chip ghost" style="border-style:solid;border-color:var(--tomato);color:var(--tomato);display:flex;align-items:center;gap:5px">⏱ 7s max hang</span>
+        </div>
+
+        <!-- swappable facet bar — Climb facets shown -->
+        <div class="lbl" style="margin:11px 2px 0">Climb filters</div>
+        <div class="chiprow"><span class="chip on">All</span><span class="chip">V4–V6</span><span class="chip">Overhang</span><span class="chip">Slab</span><span class="chip ghost">Wall ▾</span></div>
+
+        <!-- recents-first sectioned catalog (generalized ExerciseRow) -->
+        <div class="listrow"><span class="spill am" style="width:30px;justify-content:center;padding:6px 0">V6</span><div><div style="font-weight:650">Tension Board · "Crimp Lab"</div><div class="sub">Overhang 45° · 3 sends · logged today</div></div><span class="chev" style="margin-left:auto;color:var(--t2)">›</span></div>
+        <div class="listrow"><span class="spill am" style="width:30px;justify-content:center;padding:6px 0">V5</span><div><div style="font-weight:650">Kilter · "Sloper School"</div><div class="sub">Vertical · 12 attempts · 2 days ago</div></div><span class="chev" style="margin-left:auto;color:var(--t2)">›</span></div>
+        <div class="listrow"><span class="spill am" style="width:30px;justify-content:center;padding:6px 0">V7</span><div><div style="font-weight:650">Moonboard 2019 · "Comp Dyno"</div><div class="sub">Overhang 40° · project</div></div><span class="chev" style="margin-left:auto;color:var(--t2)">›</span></div>
+        <div class="listrow" style="border-bottom:none"><span class="spill ghost" style="width:30px;justify-content:center;padding:6px 0">5.10b</span><div><div style="font-weight:650">Gym Route · "Yellow Tape"</div><div class="sub">Slab · 1 send</div></div><span class="chev" style="margin-left:auto;color:var(--t2)">›</span></div>
+
+      </div>
+      <div class="cmdbar"><span>🏠 Home</span><span class="grow"></span><span style="color:var(--coral);font-weight:800">📚 Library</span><span class="grow"></span><span class="muteline">⚙ You</span></div>
+    </div></div>
+    <div class="caption"><b>Type is the top facet, not muscle group.</b> The discipline spine (<code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">FlowChips</code> generalized) carries each module accent as an under-bar + live count; selecting <b>Climb</b> swaps the filter facets to <b>grade · wall/style</b> (Strength would show muscle · equipment · "no equipment"; Timed = Tabata / EMOM / hangboard). The <b>Recent across all types</b> band mixes a V6 climb, a Back Squat lift and a 7s max hang — the cross-discipline view a pure-strength catalog can't show. Rows reuse <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ExerciseRow</code> over a polymorphic <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">LibraryItem</code>; <b>＋ New</b> is discipline-aware (here "New climb"). Accent = wayfinding only; the single coral moment is the active tab.</div>
+  </div>
+
+  <!-- ============ FRAME B: ADAPTIVE ITEM DETAIL (light) ============ -->
+  <div class="step">
+    <div class="stepnum">B</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--ember)">‹ Library</span><span class="ttl">Back Squat</span><span style="color:var(--t2)">⋯</span></div>
+      <div class="content">
+
+        <!-- hero demo media card -->
+        <div class="thumb" style="width:100%;height:118px;border-radius:16px;font-size:34px">🏋️<span class="dur">demo 0:18</span><span class="play">▶</span></div>
+        <div class="rollup" style="margin-top:9px"><span class="spill em">Barbell</span><span class="spill ghost">Compound</span><span class="spill ghost">Quads · Glutes</span></div>
+
+        <!-- how-to steps -->
+        <div class="lbl" style="margin:12px 2px 4px">How to</div>
+        <div class="rows">
+          <div class="row"><span class="num">1</span><span class="val" style="font-weight:600">Bar on upper traps, brace, unrack.</span></div>
+          <div class="row"><span class="num">2</span><span class="val" style="font-weight:600">Sit down &amp; back, knees tracking toes.</span></div>
+          <div class="row" style="border-bottom:none"><span class="num">3</span><span class="val" style="font-weight:600">Drive through mid-foot to lockout.</span></div>
+        </div>
+
+        <!-- muscle map — STRENGTH ONLY -->
+        <div class="lbl" style="margin:12px 2px 4px">Muscle map</div>
+        <div class="tile" style="display:flex;align-items:center;gap:12px;padding:11px 13px">
+          <span style="font-size:40px">🦵</span>
+          <div style="flex:1">
+            <div class="zonebar" style="height:13px"><div style="flex:5;background:var(--ember)">Quads</div><div style="flex:3;background:var(--ember-d)">Glutes</div><div style="flex:2;background:var(--amber)">Hams</div></div>
+            <div class="small" style="margin-top:5px">Primary <b style="color:var(--ember)">Quads</b> · secondary Glutes, Hamstrings, Erectors</div>
+          </div>
+        </div>
+
+        <!-- adaptive history: strength = Volume · Top set · e1RM PR (stat-ribbon shape) -->
+        <div class="lbl" style="margin:13px 2px 4px">Your history</div>
+        <div class="herorow">
+          <div class="herocell"><div class="rounded big" style="font-size:23px;color:var(--ember)">117</div><div class="lbl">e1RM PR · kg</div></div>
+          <div class="herocell"><div class="rounded big">100×5</div><div class="lbl">Top set</div></div>
+          <div class="herocell"><div class="rounded big">4,250</div><div class="lbl">Vol · kg</div></div>
+        </div>
+        <div class="rollup" style="margin-top:2px"><span class="spill pr">★ e1RM PR · Jun 15</span><span class="spill ghost">18 sessions</span></div>
+
+        <!-- per-movement history chart -->
+        <div class="minibars" style="height:46px;margin-top:11px">
+          <div class="b" style="height:54%"></div><div class="b" style="height:62%"></div><div class="b" style="height:71%"></div><div class="b" style="height:68%"></div><div class="b" style="height:88%"></div><div class="b" style="height:100%"></div>
+          <span class="small" style="align-self:flex-end;margin-left:6px">top set · last 6</span>
+        </div>
+        <div class="small" style="margin-top:8px;display:flex;align-items:center;gap:6px"><span style="color:var(--azure)">ⓘ</span> Cross-session trend needs the deferred per-entity history <b>@Model</b>.</div>
+
+      </div>
+      <div class="cmdbar"><div class="cta" style="flex:1">Add to session</div></div>
+    </div></div>
+    <div class="caption"><b>One adaptive scroll, hero metric first.</b> A demo media card (reuses <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">ExerciseDetailView</code>), how-to steps, then the <b>muscle map only for strength</b> — climb/run/timed swap it out rather than fake anatomy. <b>Your history</b> reuses the stat-ribbon shape but adapts its hero trio per discipline: strength = <b>e1RM PR · Top set · Volume</b> (climb = Hardest send · Attempts · pyramid; timed = Total TUT · Longest hold; run = Distance · Best pace). e1RM 117 kg is the score-first hero numeral; the <b>★ PR</b> rides the green→tomato performance ramp, not the wayfinding accent. The per-movement bars and full cross-session trend ride the deferred per-entity history <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">@Model</code> (marked).</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 4 · routines with full type parity (E4)</div>
+<h2 class="flowtitle">Routine builder — type-tagged blocks mix strength + circuit + run + climb</h2>
+<p class="flowdesc">Today the builder is a plain <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">Form</code> of reps×weight rows — <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RoutineExercise</code> has no discipline and holds are faked as reps strings like <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">"30s"</code>. The keystone is one model change: add <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">disciplineRaw</code> + per-axis targets to <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RoutineExercise</code> (mirroring the live <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">SetMeasure</code> work). Now a routine is an ordered list of type-tagged <b>blocks</b> — each a discipline-accented header pill — so one routine reads as a colored modality rhythm (ember strength → coral circuit → azure run → amber climb). Frame A is the block builder; Frame B is one adaptive target card where the <i>measure picks the columns</i>. The 4 climbing starters are re-authored as real grade-based climb routines, not pull-up lists.</p>
+
+<div class="gallery">
+
+  <!-- 1. BLOCK-BASED BUILDER -->
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral)">Cancel</span><span class="ttl">Edit routine</span><span style="color:var(--coral);font-weight:700">Save</span></div>
+      <div class="content">
+        <div style="font-weight:800;font-size:19px;letter-spacing:-.01em">Hybrid Hard Day</div>
+        <div class="muteline" style="font-size:11.5px;margin-bottom:4px">4 blocks · ~62 min · strength · circuit · run · climb</div>
+
+        <!-- STRENGTH block -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(242,118,30,.10);border-bottom:1px solid var(--hair)">
+            <span class="wr-drag">⠿</span><span style="font-size:15px">🏋️</span>
+            <span class="lbl" style="color:var(--ember);font-size:11px">Strength · 4 moves</span>
+            <span class="chev" style="margin-left:auto">⌄</span>
+          </div>
+          <div style="padding:6px 12px 10px">
+            <div class="listrow" style="padding:8px 0"><span class="wr-drag">⠿</span><div><div style="font-weight:650">Back Squat</div><div class="sub">Barbell · 4 × 6–8 · 100 kg · rest 2:30</div></div><span class="gear set">⚙</span></div>
+            <div class="listrow" style="padding:8px 0"><span class="wr-drag">⠿</span><div><div style="font-weight:650">Bench Press</div><div class="sub">Barbell · 4 × 5 · 82.5 kg · rest 2:00</div></div><span class="gear set">⚙</span></div>
+            <div class="listrow" style="padding:8px 0;border-bottom:none"><span class="wr-drag">⠿</span><div><div style="font-weight:650">Pendlay Row</div><div class="sub">Barbell · 3 × 8 · target optional</div></div><span class="gear set">⚙</span></div>
+            <div class="chip ghost" style="margin-top:8px;display:inline-flex">＋ Add exercise</div>
+          </div>
+        </div>
+
+        <!-- CIRCUIT block, with A/B/C rail -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(255,90,77,.10);border-bottom:1px solid var(--hair)">
+            <span class="wr-drag">⠿</span><span style="font-size:15px">🔁</span>
+            <span class="lbl" style="color:var(--coral);font-size:11px">Circuit · 3 rounds</span>
+            <span class="chev" style="margin-left:auto">⌄</span>
+          </div>
+          <div style="padding:6px 12px 10px;position:relative">
+            <div class="wr-rail" style="background:var(--coral)"></div>
+            <div class="wr-bracketed">
+              <div class="listrow" style="padding:7px 0"><span class="wr-ab" style="background:var(--coral)">A</span><div><div style="font-weight:650">Kettlebell Swing</div><div class="sub">20 reps · 24 kg</div></div></div>
+              <div class="listrow" style="padding:7px 0"><span class="wr-ab" style="background:var(--coral)">B</span><div><div style="font-weight:650">Box Jump</div><div class="sub">12 reps · 60 cm</div></div></div>
+              <div class="listrow" style="padding:7px 0;border-bottom:none"><span class="wr-ab" style="background:var(--coral)">C</span><div><div style="font-weight:650">Burpee</div><div class="sub">⏱ 0:40 work · 0:20 rest</div></div></div>
+            </div>
+            <div class="chip ghost" style="margin-top:8px;display:inline-flex">＋ Add to circuit</div>
+          </div>
+        </div>
+
+        <!-- RUN block (collapsed) -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(42,125,225,.10)">
+            <span class="wr-drag">⠿</span><span style="font-size:15px">🏃</span>
+            <span class="lbl" style="color:var(--azure);font-size:11px">Run · 5 km easy</span>
+            <span class="spill az" style="font-size:11px">Z2 · 5:30/km</span>
+            <span class="chev" style="margin-left:auto">›</span>
+          </div>
+        </div>
+
+        <!-- CLIMB block (collapsed) -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(180,83,9,.10)">
+            <span class="wr-drag">⠿</span><span style="font-size:15px">🧗</span>
+            <span class="lbl" style="color:var(--amber);font-size:11px">Climb · V4–V6 pyramid</span>
+            <span class="spill am" style="font-size:11px">6 problems</span>
+            <span class="chev" style="margin-left:auto">›</span>
+          </div>
+        </div>
+
+      </div>
+      <div class="cmdbar"><span class="cta outline sm grow" style="border-color:var(--t2);color:var(--t2)">＋ Add block</span><span class="cta sm" style="flex:1">Save routine</span></div>
+    </div></div>
+    <div class="caption"><b>A routine = an ordered list of type-tagged blocks.</b> Each block header is a discipline-accented pill (<b style="color:var(--ember)">STRENGTH</b> ember · <b style="color:var(--coral)">CIRCUIT</b> coral · <b style="color:var(--azure)">RUN</b> azure · <b style="color:var(--amber)">CLIMB</b> amber) — the routine reads as a colored modality rhythm. Inside, exercise rows render from each item's <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">disciplineRaw</code> + targets (the keystone field added to <b>RoutineExercise</b>). The circuit's leading <b>rounded rail + A/B/C badges</b> reuse the superset bracket; <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">⠿</code> drag handles use the #158 <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">.onMove</code> lazy-List reorder. Targets are optional (Pendlay Row shows "target optional"). Coral is held for the single primary <b>Save routine</b> CTA only.</div>
+  </div>
+
+  <!-- 2. ADAPTIVE TARGET CARD detail -->
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral)">‹ Routine</span><span class="ttl">Back Squat</span><span style="color:var(--t2)">⌄</span></div>
+      <div class="content">
+        <div class="lbl" style="color:var(--ember)">Strength block · SET | KG | REPS | RPE</div>
+
+        <!-- expanded strength target card -->
+        <div class="card" style="margin-top:7px">
+          <div class="cardhead"><span class="ic">🏋️</span><span>Back Squat</span><span class="spill em" style="margin-left:auto;font-size:11px">target ~118 e1RM</span></div>
+          <div class="prevline">Last time · top 100 × 5 · 11 days ago</div>
+
+          <div class="rows" style="margin-top:4px">
+            <div class="row"><span class="num">1</span><span class="chip on" style="padding:3px 8px;font-size:10.5px">Warmup</span><span class="val">60 × 8</span><span class="meta">rest 1:30</span></div>
+            <div class="row"><span class="num">2</span><span class="chip" style="padding:3px 8px;font-size:10.5px">Normal</span><span class="val">90 × 6–8</span><span class="meta">rest 2:30</span></div>
+            <div class="row top"><span class="num">3</span><span class="chip" style="padding:3px 8px;font-size:10.5px">Normal</span><span class="val">100 × 6–8</span><span class="meta">rest 2:30</span></div>
+            <div class="row" style="border-bottom:none"><span class="num">4</span><span class="chip" style="padding:3px 8px;font-size:10.5px;background:rgba(229,72,61,.14);color:var(--tomato)">Drop</span><span class="val">80 × max</span><span class="meta">rest —</span></div>
+          </div>
+
+          <!-- custom +/- steppers for the focused set -->
+          <div class="inset" style="margin-top:8px">
+            <div class="lbl">Set 3 target <span style="color:var(--t2);font-weight:600;text-transform:none;letter-spacing:0">(optional)</span></div>
+            <div class="qadd" style="margin-top:8px">
+              <div class="stp"><span class="sb">–</span><span class="sv">100</span><span class="sb">+</span><span class="su">kg</span></div>
+              <div class="stp"><span class="sb">–</span><span class="sv">6–8</span><span class="sb">+</span><span class="su">reps</span></div>
+            </div>
+            <div class="qadd" style="margin-top:7px">
+              <div class="stp"><span class="sb">–</span><span class="sv">8</span><span class="sb">+</span><span class="su">RPE</span></div>
+              <div class="stp"><span class="sb">–</span><span class="sv">2:30</span><span class="sb">+</span><span class="su">rest</span></div>
+            </div>
+          </div>
+          <div class="footrow">
+            <span class="fbtn prime">＋ Add set</span>
+            <span class="fbtn time">⏱ Time this set</span>
+            <span class="fbtn">↻ Repeat</span>
+          </div>
+        </div>
+
+        <hr class="div">
+
+        <!-- measure-picks-the-columns variant: RUN / TIMED -->
+        <div class="lbl">Same card, other measures pick other columns</div>
+        <div class="rollup" style="margin-top:6px">
+          <span class="spill az">RUN · DURATION | DISTANCE | PACE</span>
+          <span class="spill tl">TIMED · SET | TIME</span>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden;margin-top:7px">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(42,125,225,.10);border-bottom:1px solid var(--hair)">
+            <span style="font-size:15px">🏃</span><span style="font-weight:700;font-size:13.5px">Easy Run</span>
+            <span class="spill az" style="margin-left:auto;font-size:11px">Z2 target</span>
+          </div>
+          <div style="padding:8px 12px 10px">
+            <div class="row" style="border-bottom:none;padding:6px 0"><span class="val">30:00</span><span class="muteline" style="font-size:11px;margin-left:6px">·</span><span class="val">5.0 km</span><span class="meta">5:30 /km</span></div>
+            <div class="zonebar"><div style="flex:.5;background:var(--z1)">Z1</div><div style="flex:3;background:var(--z2)">Z2</div><div style="flex:.5;background:var(--z3)"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="cmdbar"><span class="grow muteline" style="font-size:12px">Skip targets to just prefill last time</span><span class="cta sm" style="flex:0 0 88px">Done</span></div>
+    </div></div>
+    <div class="caption"><b>The measure picks the columns.</b> One adaptive target card: a strength item draws <b>SET | KG | REPS | RPE</b> with set-type chips (<b>Warmup / Normal / Drop</b>), a rep <b>range</b> (6–8), and per-set rest; the custom <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">qadd/stp</code> steppers from #158 edit one set. Swap the <b>SetMeasure</b> and the same card re-renders run columns (DURATION | DISTANCE | PACE, with a Z2 <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">.zonebar</code> target) or timed (SET | TIME, driven by <b>StructuredTimedRunner / IntervalSchedule</b>). Reuses <b>EntityCard</b> primitives + <b>AddStrengthParams</b>; the green→amber→tomato ramp tags effort (RPE / drop), discipline accent stays wayfinding-only, coral stays off the content card.</div>
+  </div>
+
+  <!-- 3. RE-AUTHORED CLIMB STARTERS -->
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral)">‹</span><span class="ttl">Starter routines · Climb</span><span>⋯</span></div>
+      <div class="content">
+        <div class="muteline" style="font-size:11.5px;margin-bottom:2px">Re-authored as real climb-discipline routines (grades), not pull-up lists.</div>
+
+        <div class="card">
+          <div class="cardhead"><span class="ic">🧗</span><span>Bouldering — Volume Base</span><span class="chev">›</span></div>
+          <div class="prevline">Beginner · ~45 min · 1 climb block</div>
+          <div class="rollup"><span class="spill am">CLIMB · V1–V3</span><span class="spill ghost">12 problems</span><span class="spill ghost">flash focus</span></div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead"><span class="ic">🧗</span><span>Bouldering — Limit Pyramid</span><span class="chev">›</span></div>
+          <div class="prevline">Intermediate · ~60 min · climb + hang</div>
+          <div class="rollup"><span class="spill am">CLIMB · V4–V6</span><span class="spill ghost">6 problems</span><span class="spill tl">⏱ board hangs</span></div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead"><span class="ic">🧗</span><span>Lead — Endurance Laps</span><span class="chev">›</span></div>
+          <div class="prevline">Intermediate · ~70 min · 1 climb block</div>
+          <div class="rollup"><span class="spill am">CLIMB · 5.10b–5.11a</span><span class="spill ghost">4 × 2 laps</span><span class="spill az">Z2 base</span></div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead"><span class="ic">🧗</span><span>Project Day — Max Send</span><span class="chev">›</span></div>
+          <div class="prevline">Advanced · open time · climb + finger strength</div>
+          <div class="rollup"><span class="spill am">CLIMB · V7+ project</span><span class="spill pr">★ flash V5 PR</span><span class="spill tl">⏱ 7-3 repeaters</span></div>
+        </div>
+
+        <div class="muteline" style="font-size:11px;margin-top:10px">Grades come from <b style="color:var(--amber)">GradeScale</b> on each climb item; hangs are a timed block, not a "30s" reps string.</div>
+      </div>
+      <div class="cmdbar"><span class="cta ember grow" style="background:var(--amber)">Use this routine</span></div>
+    </div></div>
+    <div class="caption"><b>Climb starters, finally climbs.</b> The 4 shipped <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">starter-climbing-*</code> specs are today just pull-up/plank lists tagged <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">.climbing</code>. Re-authored to real climb-discipline routines carrying <b>grades</b> (V1–V3 volume, V4–V6 limit pyramid, 5.10b–5.11a lead laps, V7+ project) via <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">GradeScale</code>, with finger-strength hangs as a real <b>timed</b> block (<b>StructuredTimedRunner</b>), not a faked <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">reps:"30s"</code>. Amber accent = climb wayfinding; the lone PR pill earns a coral-adjacent <code style="background:#1b1e27;color:#cdd2dd;padding:0 3px;border-radius:4px">.spill.pr</code>.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 5 · routine detail + share a routine via QR (E4 + E6)</div>
+<h2 class="flowtitle">Routine detail + Share-via-QR (offline, peer-to-peer)</h2>
+<p class="flowdesc">A routine reads as its <b>modality rhythm</b> — type-accented blocks down the page, scored by ONE hero summary (blocks · est. duration · disciplines) and a single coral <b>Start</b> command bar. Sharing mirrors <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">KilterClimbDetailView</code>'s qrcode→sheet: but unlike a Kilter climb (a tiny shared-catalog uuid), a <i>user</i> routine isn't on the other phone — so the whole thing travels as a compact <b>SharedRoutine</b> codec (deflate + base64url → <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">snappet://routine/v1/<blob></code>, exerciseId references only, both phones ship the same catalog) inside the ~2KB QR cap, with an honest <b>Send link / file</b> fallback for big ones. Import is never silent — a preview card, a graceful "not in your library" line, and a fresh local UUID. Reuses <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">qrImage</code>, <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">QRScannerRepresentable</code>, <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">SnappetDeepLink</code> (+ <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">case routine</code>) and <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">SuiteRouter.pendingRoutineImport</code>.</p>
+
+<div class="gallery">
+
+  <!-- A. ROUTINE DETAIL (light) -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span>‹ Library</span><span class="ttl">Routine</span><span style="color:var(--coral);font-weight:700">⊡</span></div>
+      <div class="content">
+        <div style="font-weight:800;font-size:20px;letter-spacing:-.01em">Tuesday Push + Boulder</div>
+        <div class="muteline" style="font-size:11.5px;margin:2px 0 2px">Mixed · 4 blocks · made by you</div>
+
+        <!-- HERO summary: ONE oversized numeral, everything else demoted -->
+        <div class="herorow" style="margin:10px 0 4px">
+          <div class="herocell"><div class="big rounded" style="font-size:30px">4</div><div class="lbl">blocks</div></div>
+          <div class="herocell"><div class="big rounded" style="font-size:21px;color:var(--t2)">~52</div><div class="lbl">min est.</div></div>
+          <div class="herocell"><div class="big rounded" style="font-size:21px;color:var(--t2)">3</div><div class="lbl">disciplines</div></div>
+        </div>
+
+        <!-- type-accented blocks = the modality rhythm -->
+        <div class="card" style="padding:0;overflow:hidden;margin:9px 0">
+          <div class="row" style="padding:10px 12px;border-left:3px solid var(--ember)"><span class="num" style="color:var(--ember)">1</span><div><div class="val">Barbell Bench Press</div><div class="prevline">4 × 8 · 60 kg · rest 1:30</div></div><span class="meta">🏋️</span></div>
+          <div class="row" style="padding:10px 12px;border-left:3px solid var(--ember)"><span class="num" style="color:var(--ember)">2</span><div><div class="val">Overhead Press</div><div class="prevline">3 × 10 · 35 kg · rest 1:15</div></div><span class="meta">🏋️</span></div>
+          <div class="row" style="padding:10px 12px;border-left:3px solid var(--amber)"><span class="num" style="color:var(--amber)">3</span><div><div class="val">Boulder — 4 attempts</div><div class="prevline">target V4–V5 · Kilter @ 40°</div></div><span class="meta">🧗</span></div>
+          <div class="row" style="padding:10px 12px;border-left:3px solid var(--tomato);border-bottom:none"><span class="num" style="color:var(--tomato)">4</span><div><div class="val">Plank — timed finisher</div><div class="prevline">3 × 0:45 · rest 0:30</div></div><span class="meta">⏱</span></div>
+        </div>
+
+        <div class="rollup" style="margin:8px 2px"><span class="spill em">2 strength</span><span class="spill am">1 climb</span><span class="spill" style="background:rgba(229,72,61,.16);color:var(--tomato)">1 timed</span><span class="spill ghost">22 sets</span></div>
+        <div class="small" style="margin:2px 2px">Source · made by you · last run 3 days ago</div>
+      </div>
+      <div class="cmdbar"><div class="cta" style="flex:1">▶ Start routine</div><span class="hr" style="background:var(--muted)">⊡ Share</span></div>
+    </div></div>
+    <div class="caption"><b>Routine detail.</b> Mirrors the real <b>RoutineDetailView</b> (exercise rows · sets×reps · rest), but re-scored Pulse Pro: one hero numeral (<b>4 blocks</b>) over demoted secondaries, and a left edge-bar per row carries the discipline accent (ember/amber/tomato) as wayfinding — never a whole painted card. Coral <b>Start</b> owns the command bar; the <b>⊡ Share</b> toolbar action mirrors <b>KilterClimbDetailView</b>'s qrcode→sheet.</div>
+  </div>
+
+  <!-- B. SHARE SHEET — My Code (dark) -->
+  <div class="step">
+    <div class="stepnum">B</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--t2-d)">Cancel</span><span class="ttl">Share routine</span><span> </span></div>
+      <div class="content">
+        <div class="seg" style="margin:2px 0 12px"><span class="on">My Code</span><span>Scan</span></div>
+
+        <!-- white card, pure black QR for scannability, coral Pulse center-punch (ECC level H) -->
+        <div style="background:#fff;border-radius:20px;padding:18px 18px 14px;text-align:center;box-shadow:0 18px 40px -16px rgba(0,0,0,.6)">
+          <div class="wr-qr">
+            <div class="wr-qrfind wr-tl"></div><div class="wr-qrfind wr-tr"></div><div class="wr-qrfind wr-bl"></div>
+            <div class="wr-pulse">◔</div>
+          </div>
+          <div style="font-weight:800;font-size:15px;color:#1A1A1E;margin-top:12px">Tuesday Push + Boulder</div>
+          <div style="font-size:11.5px;color:#6B6A66;font-weight:600">4 exercises · ~7 min · 1.4 KB code</div>
+        </div>
+
+        <div class="listrow" style="margin-top:12px;border-bottom:none"><span style="font-size:17px">􀈂</span><div><div class="val" style="font-weight:700">Send link / file</div><div class="sub">snappet://routine/v1/…  · AirDrop · Messages</div></div><span class="gear" style="color:var(--coral-d)">Share</span></div>
+
+        <div class="attachnote">⌬ Large routines share as a <b>link or file</b> instead of a code — a QR caps near 2 KB.</div>
+      </div>
+      <div class="cmdbar"><span class="grow muteline" style="font-weight:600">Both phones share the exercise catalog — only the recipe travels.</span></div>
+    </div></div>
+    <div class="caption"><b>My Code sheet.</b> A white rounded card holds a <b>pure black-on-white</b> QR (max scannability) generated by the real <b>qrImage</b> CoreImage helper — bumped to correction level <b>H</b> so the center-punched coral Pulse mark stays decodable. The honest note is the truth: the <b>SharedRoutine</b> codec packs exerciseId refs + deflate + base64url into <code style="background:#1b1e27;padding:1px 4px;border-radius:4px;color:#ffd9c2">snappet://routine/v1/<blob></code>; oversized recipes fall back to the <b>ShareLink</b> file row.</div>
+  </div>
+
+  <!-- C. SCAN -> IMPORT CONFIRM (dark) -->
+  <div class="step">
+    <div class="stepnum">C</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--t2-d)">Cancel</span><span class="ttl">Share routine</span><span> </span></div>
+      <div class="content">
+        <div class="seg" style="margin:2px 0 10px"><span>My Code</span><span class="on">Scan</span></div>
+
+        <!-- viewfinder -->
+        <div class="wr-finder"><div class="wr-cnr wr-c1"></div><div class="wr-cnr wr-c2"></div><div class="wr-cnr wr-c3"></div><div class="wr-cnr wr-c4"></div><span class="wr-vftxt">Point at a Snappet code</span></div>
+
+        <!-- post-scan PREVIEW card, type-accented blocks -->
+        <div class="card" style="margin-top:10px;padding:0;overflow:hidden">
+          <div style="padding:11px 13px 4px"><div style="font-weight:800;font-size:15px">Incoming · “Tuesday Push + Boulder”</div><div class="small" style="margin-top:1px">from Maya · 4 blocks · ~7 min</div></div>
+          <div class="row" style="padding:8px 13px;border-left:3px solid var(--ember)"><span class="num" style="color:var(--ember-d)">1</span><div><div class="val">Barbell Bench Press</div><div class="prevline">4 × 8 · 60 kg</div></div><span class="meta">🏋️</span></div>
+          <div class="row" style="padding:8px 13px;border-left:3px solid var(--amber)"><span class="num" style="color:#F59E0B">3</span><div><div class="val">Boulder — 4 attempts</div><div class="prevline">V4–V5 · Kilter @ 40°</div></div><span class="meta">🧗</span></div>
+          <div class="row" style="padding:8px 13px;border-left:3px solid var(--tomato);border-bottom:none"><span class="num" style="color:var(--tomato-d)">4</span><div><div class="val">Plank — timed finisher</div><div class="prevline">3 × 0:45</div></div><span class="meta">⏱</span></div>
+        </div>
+
+        <div class="attachnote" style="background:rgba(180,83,9,.14);border-color:rgba(180,83,9,.32);color:#F0C088">⚠ 2 exercises aren't in your library — <b>Cable Crossover</b>, <b>Pendlay Row</b>. They'll import as named placeholders.</div>
+      </div>
+      <div class="cmdbar"><div class="cta" style="flex:1.4">＋ Add to my routines</div><div class="cta outline sm" style="flex:1">Cancel</div></div>
+    </div></div>
+    <div class="caption"><b>Scan → import confirm.</b> The Scan segment hosts <b>QRScannerRepresentable</b> in a viewfinder; a decoded <code style="background:#1b1e27;padding:1px 4px;border-radius:4px;color:#ffd9c2">snappet://routine/v1/</code> hits the <b>SnappetDeepLink</b> route table (<b>case routine</b>) and parks in <b>SuiteRouter.pendingRoutineImport</b> (one-shot). Following the <b>KilterDeepLinkRouting</b> graceful-landing pattern, it <i>never silent-imports</i>: a surface/hairline preview, the <b>explainMissing</b> analog for catalog gaps, then a fresh <b>local UUID</b> behind coral <b>Add</b>.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 6 · smart workout planning (E7)</div>
+<h2 class="flowtitle">Smart Plan — a suggested session you accept / swap / tweak</h2>
+<p class="flowdesc">Climbing already has <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">KilterRecommender</code> (Strategy · Options · goal-allocated Plan); strength has nothing yet. This brings the same <b>explainable, on-device heuristic</b> to the gym — per-muscle recency / volume / recovery feeding strategy presets and constraint chips that re-generate the draft. The draft renders as the <i>same expandable exercise cards</i> you already log into, each row a one-tap <b>swap</b> for a same-muscle alternative. An <b>optional Apple Intelligence sharpener</b> (Foundation Models, on-device) takes a plain-English tweak and re-shapes the plan, degrading cleanly to the rules engine on older iPhones. The whole thing shows its <b>why</b> — never a black box.</p>
+
+<div class="gallery">
+
+  <!-- A. TODAY / readiness -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span>‹ Home</span><span class="ttl">Today</span><span>⋯</span></div>
+      <div class="content">
+        <div class="lbl" style="margin:2px 0 4px">Fri Jun 19 · readiness</div>
+        <!-- SCORE-FIRST HERO: one verb, tinted on the performance ramp -->
+        <div style="text-align:center;margin:10px 0 2px">
+          <div class="big rounded" style="font-size:54px;line-height:1;color:var(--ember-d)">TRAIN</div>
+          <div class="muteline" style="font-size:12.5px;margin-top:6px;max-width:250px;display:inline-block">3 days since legs · recovery <b style="color:var(--leaf)">78%</b> — good day to train lower body.</div>
+        </div>
+        <div class="chiprow" style="justify-content:center;margin:10px 0 6px">
+          <span class="chip on">Target 45–55 min</span>
+          <span class="spill pr">RHR 52 · rested</span>
+        </div>
+        <!-- recovery body map -->
+        <div class="card">
+          <div class="cardhead"><span class="ic">🧍</span><span>Muscle freshness</span><span class="chev">feeling sore? ›</span></div>
+          <div class="wr-bodymap">
+            <div class="wr-region" style="left:50%;top:14%;background:var(--leaf)" title="shoulders"></div>
+            <div class="wr-region" style="left:38%;top:30%;background:var(--amber)" title="chest"></div>
+            <div class="wr-region" style="left:62%;top:30%;background:var(--leaf)" title="back"></div>
+            <div class="wr-region" style="left:42%;top:48%;background:var(--tomato)" title="arms L"></div>
+            <div class="wr-region" style="left:58%;top:48%;background:var(--amber)" title="core"></div>
+            <div class="wr-region" style="left:44%;top:70%;background:var(--leaf)" title="quads"></div>
+            <div class="wr-region" style="left:56%;top:70%;background:var(--leaf)" title="hams"></div>
+          </div>
+          <div class="rollup" style="justify-content:center;font-size:10.5px">
+            <span class="spill pr">Legs fresh</span>
+            <span class="spill em">Chest 1d</span>
+            <span class="spill ghost" style="background:rgba(229,72,61,.16);color:var(--tomato-d)">Arms sore</span>
+          </div>
+        </div>
+        <div class="small" style="margin:8px 2px 0">Heuristic from per-muscle recency · <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RecoveryReadiness</code> · last 14 days. No cloud.</div>
+      </div>
+      <div class="cmdbar"><span class="cta" style="flex:1">✨ Plan my workout</span></div>
+    </div></div>
+    <div class="caption"><b>One verb, earned from your data.</b> A single hero headline — <b>REST · EASY · TRAIN · PUSH</b> — tinted on the performance ramp (leaf→ember→tomato), with a plain-language <i>why</i> beneath. Reuses <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RecoveryReadiness.State/fraction</code> + <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">WorkoutHRStats</code>; surfaced via <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">TodayDigest.workoutPlan</code> sibling. The body map is wayfinding (muscle = where), the freshness ramp is performance (how recovered) — kept as two separate axes. Coral CTA is the only brand moment.</div>
+  </div>
+
+  <!-- B. SUGGESTED SESSION draft -->
+  <div class="step">
+    <div class="stepnum">B</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral)">‹ Today</span><span class="ttl">Suggested session</span><span>↻</span></div>
+      <div class="content">
+        <!-- strategy presets (KilterRecommender.Strategy parity) -->
+        <div class="chiprow" style="margin:2px 0 4px">
+          <span class="chip on">Balanced</span><span class="chip">Hypertrophy</span><span class="chip">Strength</span><span class="chip">Recovery</span><span class="chip">Time-capped</span>
+        </div>
+        <!-- constraints re-generate -->
+        <div class="chiprow" style="margin:0 0 8px">
+          <span class="chip" style="border:1px solid var(--ember);color:var(--ember-d)">15 min</span>
+          <span class="chip on">No barbell</span>
+          <span class="chip">Dumbbells only</span>
+          <span class="chip ghost">+ add</span>
+        </div>
+        <!-- glass ribbon: rolled-up draft summary -->
+        <div class="ribbon">
+          <div class="top"><span>🏋️</span><span class="rounded">Lower body · <b style="color:var(--ember-d)">5 moves</b> · ~48 min · est. vol 5,100 kg</span><span class="more">why? ›</span></div>
+        </div>
+        <!-- WARM-UP group -->
+        <div class="lbl" style="margin:6px 2px 2px">Warm-up</div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">🔥</span><span>Goblet Squat</span><span class="chev" style="margin-left:6px;color:var(--azure-d)">⇄ swap</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill ghost">2 × 12 · 16 kg</span><span class="spill ghost">light</span></div>
+        </div>
+        <!-- MAIN group -->
+        <div class="lbl" style="margin:8px 2px 2px">Main</div>
+        <div class="card" style="border-color:var(--ember)">
+          <div class="cardhead"><span class="ic">🏋️</span><span>Bulgarian Split Squat</span><span class="chev" style="margin-left:6px;color:var(--azure-d)">⇄ swap</span><span class="chev" style="color:var(--ember-d)">⌃</span></div>
+          <div class="prevline">picked: legs fresh · no-barbell DB variant · last hit Jun 8</div>
+          <div class="qadd">
+            <div class="stp"><span class="sb">–</span><span class="sv">4</span><span class="sb">+</span><span class="su">sets</span></div>
+            <div class="stp"><span class="sb">–</span><span class="sv">8</span><span class="sb">+</span><span class="su">reps</span></div>
+            <div class="stp"><span class="sb">–</span><span class="sv">24</span><span class="sb">+</span><span class="su">kg</span></div>
+          </div>
+          <div class="footrow">
+            <span class="fbtn" style="background:rgba(42,125,225,.14);color:var(--azure-d)">⇄ Romanian Deadlift</span>
+            <span class="fbtn">✕ Remove</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">🏋️</span><span>Leg Press</span><span class="chev" style="margin-left:6px;color:var(--azure-d)">⇄ swap</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill em">4 × 10 · 140 kg</span><span class="spill ghost">~vol 5,600</span></div>
+        </div>
+        <!-- ACCESSORY -->
+        <div class="lbl" style="margin:8px 2px 2px">Accessory</div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">🦵</span><span>Walking Lunge</span><span class="chev" style="margin-left:6px;color:var(--azure-d)">⇄ swap</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill ghost">3 × 12 · 20 kg</span></div>
+        </div>
+        <!-- FINISHER -->
+        <div class="lbl" style="margin:8px 2px 2px">Finisher</div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">⏱</span><span>Calf Raise</span><span class="chev" style="margin-left:6px;color:var(--azure-d)">⇄ swap</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill ghost">3 × 20 · BW</span><span class="spill ghost">⏱ to failure</span></div>
+        </div>
+      </div>
+      <div class="cmdbar"><span class="cta" style="flex:1.4">Start this session</span><span class="cta outline sm" style="flex:1">Save as routine</span></div>
+    </div></div>
+    <div class="caption"><b>The draft, in the cards you already log into.</b> Strategy presets mirror <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">KilterRecommender.Strategy</code> (balanced / hypertrophy / strength / recovery / time-capped); constraint chips drive <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">Options</code> and re-generate (the <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">↻</code>). The plan is allocated by <b>goal group</b> exactly like <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">Plan.picks(for:)</code> (warmup→Warm-up, send→Main, project→Accessory/Finisher), each rendered as the real <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">.snappetCard()</code> with a <b>⇄ swap</b> to a same-muscle alternative + inline ± + remove. <b>Start</b> freezes the draft via <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">KilterPlanLogic</code> freeze-on-Start. Ember = strength wayfinding; azure swap = the only non-strength accent (an alternate path).</div>
+  </div>
+
+  <!-- C. Apple Intelligence tweak -->
+  <div class="step">
+    <div class="stepnum">C</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral)">‹ Draft</span><span class="ttl">Tweak the plan</span><span>⋯</span></div>
+      <div class="content">
+        <!-- AI input as floating glass chrome -->
+        <div class="glasscard" style="margin:4px 0 2px">
+          <div style="display:flex;align-items:center;gap:7px">
+            <span class="wr-aibadge">✦ Apple Intelligence</span>
+            <span class="small" style="margin-left:auto;color:#9aa0ad">on-device</span>
+          </div>
+          <div class="wr-aifield">“make it 20 min, no overhead pressing — my shoulder is cranky”</div>
+        </div>
+        <!-- re-adapting state -->
+        <div class="ribbon">
+          <div class="top"><span class="wr-shimmer">✦</span><span class="rounded">Re-shaping plan… <b style="color:var(--violet-d)">on-device</b></span><span class="more">2.1 s</span></div>
+        </div>
+        <!-- what it changed, explainable -->
+        <div class="card">
+          <div class="cardhead"><span class="ic">✦</span><span>What changed</span><span class="chev">3 edits</span></div>
+          <div class="rows">
+            <div class="row"><span class="num">·</span><span class="val">Capped to <b>20 min</b></span><span class="meta" style="color:var(--leaf)">5 → 3 moves</span></div>
+            <div class="row"><span class="num">·</span><span class="val">Dropped <b>Overhead Press</b></span><span class="meta" style="color:var(--tomato-d)">shoulder</span></div>
+            <div class="row" style="border-bottom:none"><span class="num">·</span><span class="val">Added <b>Lateral Raise</b></span><span class="meta" style="color:var(--azure-d)">⇄ pain-free</span></div>
+          </div>
+        </div>
+        <!-- resulting condensed draft -->
+        <div class="lbl" style="margin:6px 2px 2px">New 20-min draft</div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">🏋️</span><span>Bulgarian Split Squat</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill em">3 × 8 · 24 kg</span><span class="spill ghost">Main</span></div>
+        </div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">🏋️</span><span>Leg Press</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill em">3 × 10 · 140 kg</span><span class="spill ghost">Main</span></div>
+        </div>
+        <div class="card">
+          <div class="cardhead"><span class="ic">🦵</span><span>Lateral Raise</span><span class="chev">⌄</span></div>
+          <div class="rollup"><span class="spill ghost">3 × 15 · 8 kg</span><span class="spill pr">shoulder-safe</span></div>
+        </div>
+        <div class="small" style="margin:8px 2px 0">On-device · falls back to the rules engine on older iPhones. Nothing leaves your phone.</div>
+      </div>
+      <div class="cmdbar"><span class="cta" style="flex:1.4">Apply &amp; start</span><span class="cta outline sm" style="flex:1">Keep original</span></div>
+    </div></div>
+    <div class="caption"><b>Plain English, sharpened on-device.</b> A natural-language field with an <b>Apple Intelligence</b> shimmer badge feeds the optional <b>Foundation Models</b> sharpener — it re-parameterizes the same heuristic (caps minutes → trims to fewer goal groups, removes an exercise by muscle, swaps in a pain-free same-muscle move). Floating chrome only uses <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">.glasscard</code>; content cards stay flat. Honest caption makes the gate explicit — capable devices only, degrading to the rules engine. The <b>What changed</b> list keeps it explainable, never a black box.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 7 · save a quick session as a repeatable routine (E5)</div>
+<h2 class="flowtitle">Save Quick Session → routine (actuals → prescription)</h2>
+<p class="flowdesc">Today the only path to a routine is hand-building one in <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RoutineEditorView</code> — a session you just crushed can't become one. This flow adds a <b>Save as routine</b> affordance to the seam at <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">FreeformDoneSummaryView.actionBar</code>: a pure converter reads the logged <b>actuals</b> the same way the summary's per-discipline recap rows do, then lossily distills each entity into a <b>prescription</b> (strength → sets×reps×weight from the top working sets, warm-ups trimmable; climb → type + grade band + attempts; timed → spec; run → distance) and pre-fills the routine editor for review before <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">save()</code>. The inverse of <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">makeSession</code>. Climb/timed blocks depend on the new <b>RoutineExercise</b> discipline fields landing first (E4 model parity).</p>
+
+<div class="gallery">
+
+  <!-- A. Finish summary with the new action (dark) -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--coral-d);font-weight:700">Done</span><span class="ttl">Session complete</span><span>⋯</span></div>
+      <div class="content">
+        <div class="muteline" style="font-size:12px">Thu Jun 18 · 1:12 · mixed session</div>
+        <div style="text-align:center;margin:8px 0 2px">
+          <div class="big rounded" style="font-size:62px;line-height:1;color:var(--ember-d)">14</div>
+          <div class="lbl" style="margin-top:2px">working sets · 3 disciplines</div>
+        </div>
+        <div class="herorow">
+          <div class="herocell"><div class="big rounded">1:12</div><div class="lbl">duration</div></div>
+          <div class="herocell"><div class="big rounded" style="color:var(--coral-d)">418</div><div class="lbl">kcal</div></div>
+          <div class="herocell"><div class="big rounded" style="color:var(--leaf)">142</div><div class="lbl">avg bpm</div></div>
+        </div>
+        <div class="mile">🏅 New PR — Back Squat est. 1RM 117 kg!</div>
+        <div class="lbl" style="margin:8px 2px 2px">This session — by discipline</div>
+        <div class="disc em"><span class="ic">🏋️</span><div><div class="hd">Strength</div><div class="mt">9 sets · top 100×5 · +1 PR</div></div><div class="big rounded" style="color:var(--ember-d)">4,250<span style="font-size:11px"> kg</span></div></div>
+        <div class="disc am"><span class="ic">🧗</span><div><div class="hd">Climbing</div><div class="mt">6 attempts · V4–V6 · 2 sends</div></div><div class="big rounded" style="color:#F59E0B">V6</div></div>
+      </div>
+      <div class="cmdbar" style="gap:7px">
+        <span class="spill em" style="font-weight:700">↻ Repeat</span>
+        <span class="grow"></span>
+        <span class="spill pr" style="background:rgba(255,90,77,.18);color:var(--coral-d);font-weight:800">＋ Save as routine</span>
+        <span style="color:var(--coral-d);font-weight:800">Done</span>
+      </div>
+    </div></div>
+    <div class="caption"><b>The seam, unchanged recap + one new verb.</b> Same type-adaptive completion screen (hero numeral + per-discipline <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">.disc</code> cards, read exactly as <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">FreeformDoneSummaryView</code> already does). <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">actionBar</code> grows from Done / View detail / Discard to add a small <b>coral</b> <b>Save as routine</b> — the screen's single brand moment, sitting beside Done. <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">↻ Repeat</code> (ember = wayfinding) is the discipline-tinted secondary.</div>
+  </div>
+
+  <!-- B. Review & save — pre-filled routine editor (light) -->
+  <div class="step">
+    <div class="stepnum">B</div>
+    <div class="device"><div class="island"></div><div class="screen light">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span>Cancel</span><span class="ttl">New routine</span><span style="color:var(--t2)">Review</span></div>
+      <div class="content">
+        <div class="inset" style="margin:4px 0 8px">
+          <div class="lbl">Routine name</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <div class="big" style="font-size:19px;font-weight:750">Push day</div>
+            <span class="spill ghost" style="font-size:10.5px">suggested</span>
+            <span class="grow" style="flex:1"></span><span style="color:var(--t2);font-size:13px">✎</span>
+          </div>
+          <div class="muteline" style="font-size:11px;margin-top:4px">From Quick session · Thu Jun 18 · prescription from your actuals</div>
+        </div>
+
+        <!-- strength: converted cleanly -->
+        <div class="card" style="border-left:3px solid var(--ember)">
+          <div class="cardhead"><span class="ic">🏋️</span>Back Squat<span class="chev">⋯</span></div>
+          <div class="rollup"><span class="spill em">3 × 5</span><span class="spill em">100 kg</span><span class="spill pr">★ from top sets</span></div>
+          <div class="prevline">Logged 5 sets · warm-ups 40·60·80 kg trimmed → 3 working sets prescribed</div>
+          <div class="rows">
+            <div class="row"><span class="num">1</span><span class="val">5 reps</span><span class="meta">100 kg</span></div>
+            <div class="row"><span class="num">2</span><span class="val">5 reps</span><span class="meta">100 kg</span></div>
+            <div class="row" style="border-bottom:none"><span class="num">3</span><span class="val">5 reps</span><span class="meta">100 kg</span></div>
+          </div>
+          <div class="chiprow" style="margin:6px 0 0"><span class="chip ghost">＋ add warm-ups back</span><span class="chip">rest 2:30</span></div>
+        </div>
+
+        <!-- climb: needs new RoutineExercise discipline fields -->
+        <div class="card" style="border-left:3px solid var(--amber-band)">
+          <div class="cardhead"><span class="ic">🧗</span>Boulder block<span class="chev">⋯</span></div>
+          <div class="rollup"><span class="spill am">V4–V6</span><span class="spill am">6 attempts</span><span class="spill ghost">grade band</span></div>
+          <div class="prevline">Logged 6 attempts · hardest send V6 → prescribed as a grade-band target</div>
+          <div class="seg" style="margin:6px 0 2px"><span>Exact grade</span><span class="on">Band</span><span>Open</span></div>
+          <div class="attach" style="margin-top:8px;color:var(--amber);font-weight:650"><span>ⓘ</span> Needs RoutineExercise climb fields (E4)</div>
+        </div>
+
+        <div class="footrow" style="margin-top:6px"><span class="fbtn">＋ Add block</span><span class="fbtn">Reorder</span></div>
+        <div class="muteline" style="font-size:11px;margin:8px 2px 0">Run &amp; timed efforts convert too (distance · spec) — none in this session.</div>
+      </div>
+      <div class="cmdbar">
+        <span class="muteline" style="font-size:12px">2 blocks · 1 needs review</span>
+        <span class="grow"></span>
+        <div class="cta sm" style="flex:0 0 auto;padding:11px 18px">Save routine</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Pre-filled editor, review then commit.</b> The converter output drops straight into <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RoutineEditorView</code> — a suggested <b>name</b> in its <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">name</code> field and one type-accented block per entity. <b>Strength converts cleanly</b>: top working sets become <b>3×5 · 100 kg</b>, warm-ups trimmed but re-addable. The <b>climb block</b> exercises the new <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">RoutineExercise</code> discipline fields (grade-band <b>V4–V6 · 6 attempts</b>) — flagged as the E4 dependency. <b>Save routine</b> (coral, the one CTA) calls <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">save()</code> unchanged; the converter is the inverse of <code style="background:#1b1e27;color:#cdd2dd;padding:0 4px;border-radius:4px">makeSession</code>.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 0 · the Pulse Pro system + the keystone model (E0)</div>
+<h2 class="flowtitle">Pulse Pro design system, new IA, and the discipline-propagation model</h2>
+<p class="flowdesc">Before any screen, lock the rules every later flow obeys. <b>Pulse Pro</b> is three constraints: a <b>score-first hero</b> (one oversized rounded numeral per surface), a <b>two-axis color contract</b> (discipline accent = <i>who/where</i>, a green&nbsp;→&nbsp;amber&nbsp;→&nbsp;tomato performance ramp = <i>how hard</i>, coral reserved for the single primary CTA), and <b>glass on chrome only</b> (floating bars/ribbons/timers get <code>.ultraThinMaterial</code>; content cards stay flat on <code>SnappetColor.surface</code> with a hairline). The <b>keystone</b> (E0) is one additive model move — give <code>RoutineExercise</code> the same <code>disciplineRaw</code> + per-axis targets that <code>SessionExercise</code> already carries — and <code>makeSession(from:)</code> propagates it so the guided player, builder, save-as-routine, QR-share and planner all turn type-aware for free, migration-free. Tokens are literal <code style="background:#1b1e27;padding:1px 6px;border-radius:5px;color:#cdd2dd">SnappetColor</code> values.</p>
+
+<div class="gallery">
+
+  <!-- A. TWO-AXIS COLOR CONTRACT -->
+  <div class="step" style="width:702px">
+    <div class="stepnum">A</div>
+    <div class="diagram" style="margin:0;max-width:702px">
+      <h3>The two-axis color contract — accent ≠ effort, and coral is sacred</h3>
+      <p style="margin:6px 0 0">Color carries <b>two independent meanings</b>. Mixing them is the one cardinal sin: a workout is never "redder" because it was hard, and a PR is never "ember" because it happened in the gym.</p>
+      <div class="axes">
+        <div class="axis">
+          <b>① Discipline accent — WAYFINDING (who / where)</b>
+          <div class="chiprow" style="margin:10px 0 2px">
+            <span class="spill em">● Strength · ember</span>
+            <span class="spill am">● Climb · amber</span>
+            <span class="spill az">● Run · azure</span>
+          </div>
+          <div class="chiprow" style="margin:2px 0 0">
+            <span class="spill tl" style="background:rgba(229,72,61,.16);color:var(--tomato-d)">● Timed · tomato</span>
+            <span class="spill vi">● Dance · violet</span>
+            <span class="spill tl">● Other · teal</span>
+          </div>
+          <span style="color:#9aa0ad;font-size:12.5px;display:block;margin-top:8px">Tints the entity glyph, <code>.disc</code> card edge, <code>.spill</code> value, ribbon icon. Surfaced as <b>dots / edge-bars / values</b> — <i>never</i> a fully painted card.</span>
+        </div>
+        <div class="axis">
+          <b>② Performance ramp — EFFORT / ZONE / PR (how hard)</b>
+          <div class="zonebar" style="margin-top:11px">
+            <div style="flex:1.4;background:var(--leaf)">easy</div>
+            <div style="flex:1.4;background:var(--amber-band)">working</div>
+            <div style="flex:1;background:var(--tomato)">max · PR</div>
+          </div>
+          <div class="chiprow" style="margin:9px 0 0">
+            <span class="spill pr">★ PR · leaf</span>
+            <span class="hr"><span class="hrdot" style="background:var(--amber-band)"></span>Z3 138</span>
+            <span class="hr"><span class="hrdot" style="background:var(--tomato)"></span>Z4 161</span>
+          </div>
+          <span style="color:#9aa0ad;font-size:12.5px;display:block;margin-top:8px">Same green→amber→tomato everywhere: HR zones (<code>HeartRateZone</code>), the Glass-HUD zone-banded curve, RPE, e1RM-PR state. <b>Discipline-agnostic</b> — a hard run and a hard squat ramp identically.</span>
+        </div>
+        <div class="axis" style="border-color:var(--coral)">
+          <b style="color:var(--coral-d)">③ Coral — the single primary CTA / brand moment</b>
+          <div style="display:flex;gap:8px;margin:11px 0 2px">
+            <div class="cta" style="flex:1;padding:10px;font-size:13px">Start session</div>
+          </div>
+          <span style="color:#9aa0ad;font-size:12.5px;display:block;margin-top:9px"><code>SnappetColor.coral</code> is reserved: <b>one</b> coral element per screen — the primary action or a brand flourish (<code>CelebrationBurst</code>). It is <i>not</i> a discipline and <i>not</i> the top of the effort ramp.</span>
+        </div>
+      </div>
+      <p style="margin:12px 0 0;color:#9aa0ad"><b style="color:#fff">The rule:</b> accent answers "what discipline is this?", ramp answers "how hard was it?", coral answers "what's the one thing to tap?". Never let one axis borrow another's color.</p>
+    </div>
+    <div class="caption"><b>Why two axes.</b> Earlier drafts painted whole cards in the discipline accent, so "hard" and "climbing" fought for the same red. Splitting <i>wayfinding</i> (accent) from <i>intensity</i> (ramp) lets a single glance read both. Reuses the live <code>HeartRateZone</code> <code>--z1..--z5</code> ramp and the Glass-HUD zone bands.</div>
+  </div>
+
+  <!-- B. HERO NUMERAL + GLASS RULE -->
+  <div class="step" style="width:702px">
+    <div class="stepnum">B</div>
+    <div class="diagram" style="margin:0;max-width:702px">
+      <h3>Score-first hero &amp; glass-on-chrome — the two layout laws</h3>
+      <div class="axes">
+        <div class="axis">
+          <b>① The hero numeral — one per surface</b>
+          <div style="display:flex;align-items:center;gap:16px;margin:12px 0 4px">
+            <div class="rounded big" style="font-size:64px;line-height:1;color:var(--amber-band)">V6</div>
+            <div>
+              <div class="lbl" style="color:#9aa0ad">hardest send · today</div>
+              <div style="font-size:12px;color:#9aa0ad;margin-top:4px">everything else demoted →</div>
+              <div class="rollup" style="margin-top:6px">
+                <span class="spill am">4 sends</span>
+                <span class="spill ghost">11 attempts</span>
+                <span class="spill pr">★ PR</span>
+              </div>
+            </div>
+          </div>
+          <span style="color:#9aa0ad;font-size:12.5px;display:block;margin-top:6px"><b>56–72&nbsp;pt</b>, <code>ui-rounded</code> (<code>.rounded</code>+<code>.big</code>), <b>discipline-tinted</b> — the type picks its own hero metric (climb→hardest grade, strength→top set / e1RM, run→distance, timed→total focus). All secondary stats become small <code>.spill</code> / <code>.lbl</code> text. <b>Not</b> a grid of co-equal tiles.</span>
+        </div>
+        <div class="axis">
+          <b>② Glass on chrome only</b>
+          <div class="glasscard" style="margin:11px 0 4px;display:flex;align-items:center;gap:9px">
+            <span class="rounded big" style="font-size:15px">23:14</span>
+            <span class="hr"><span class="hrdot" style="background:var(--z3)"></span>138</span>
+            <span style="flex:1"></span>
+            <span style="color:var(--coral-d);font-weight:800;font-size:13px">Finish</span>
+          </div>
+          <div class="card" style="margin:8px 0 0;background:var(--surface-d);border-color:var(--hair-d);box-shadow:none">
+            <div class="cardhead" style="font-size:13.5px"><span class="ic">🏋️</span><span>Back Squat</span><span class="chev">⌄</span></div>
+            <div class="rollup"><span class="spill em">top 100 × 5</span><span class="spill pr">★ e1RM 117</span></div>
+          </div>
+          <span style="color:#9aa0ad;font-size:12.5px;display:block;margin-top:8px">Glass (<code>.glasscard</code> / <code>.ultraThinMaterial</code>) only on <b>floating chrome</b>: tab/command bar, live ribbon, the FOCUS timer HUD. <b>Content cards stay flat</b> on <code>SnappetColor.surface</code> with a 1&nbsp;px <code>hairline</code> — built from <code>SnappetCard</code> / <code>.snappetCard()</code>.</span>
+        </div>
+      </div>
+      <p style="margin:12px 0 0;color:#9aa0ad">Motion comes from <code>SnappetMotion</code> (spring on expand/PR), never ad-hoc easing. The hero ring uses the same <code>conic-gradient</code> as the Glass-HUD <code>.ring</code>.</p>
+    </div>
+    <div class="caption"><b>One number to read across the room.</b> The hero is the "score" of the surface; glass floats above it so the content layer never competes with the chrome. <code>SnappetCard</code> stays flat by design — glass is a privilege of chrome, not decoration.</div>
+  </div>
+
+  <!-- C. KEYSTONE MODEL -->
+  <div class="step" style="width:702px">
+    <div class="stepnum">C</div>
+    <div class="diagram" style="margin:0;max-width:702px">
+      <h3>The keystone (E0) — propagate discipline from session → routine, migration-free</h3>
+      <p style="margin:6px 0 0">Today the discipline axis lives in <b>only one place</b>; lifting it one layer up is the single change that makes the whole product type-aware.</p>
+      <div class="axes">
+        <div class="axis wr-before">
+          <b style="color:#ff9a8a">BEFORE</b>
+          <div style="margin-top:9px;font-size:13px;line-height:1.7">
+            <code>SessionExercise.disciplineRaw</code> ✓<br>
+            <code>RoutineExercise</code> → <span style="color:#ff9a8a">no discipline</span><br>
+            <span style="color:#9aa0ad;font-size:12.5px">Guided routines collapse to plain sets × reps; a "Hangboard" routine forgets it's timed the moment you run it.</span>
+          </div>
+        </div>
+        <div class="axis wr-after">
+          <b style="color:#9ddcae">AFTER — additive Optionals, zero migration</b>
+          <div style="margin-top:9px;font-size:13px;line-height:1.7">
+            <code>RoutineExercise.disciplineRaw: String?</code><br>
+            <code>+ targetDuration / targetDistance · Optional</code><br>
+            <code>makeSession(from:)</code> copies them →<br>
+            <span style="color:#9ddcae;font-size:12.5px">old routines decode unchanged (nil → legacy <code>SetKind</code> derive, the documented golden-stable invariant).</span>
+          </div>
+        </div>
+      </div>
+      <div class="wr-dep">
+        <div class="wr-node wr-key">E0 · keystone<br><span>RoutineExercise + disciplineRaw</span></div>
+        <div class="wr-arrow">→</div>
+        <div class="wr-col">
+          <div class="wr-node">E1 · guided player type-aware</div>
+          <div class="wr-node">E2 · builder picks discipline</div>
+        </div>
+      </div>
+      <div class="wr-dep" style="margin-top:10px">
+        <div class="wr-node wr-key2">E3 · makeSession propagates</div>
+        <div class="wr-arrow">→</div>
+        <div class="wr-node wr-mid">E4 · save-as-routine round-trips</div>
+        <div class="wr-arrow">→</div>
+        <div class="wr-col">
+          <div class="wr-node">E5 · QR-share carries type</div>
+          <div class="wr-node">E6 · planner schedules by type</div>
+          <div class="wr-node">E7 · history splits by discipline</div>
+        </div>
+      </div>
+      <p style="margin:12px 0 0;color:#9aa0ad">Proof it's safe: <code>SessionExercise.disciplineRaw</code> already round-trips with nil omitted (<code>WorkoutDisciplineTests</code> golden vector), and <code>makeSession(from:)</code> (<code>WorkoutTrackerModule.swift:403</code>) is the one funnel routine→session must pass through — so one copy line lights up every downstream surface.</p>
+    </div>
+    <div class="caption"><b>One additive field, seven surfaces.</b> No SwiftData migration, no Codable break — <code>disciplineRaw</code> is an <code>Optional</code> that decodes to nil on legacy blobs and falls back to the legacy-<code>SetKind</code> derive. <code>makeSession(from:)</code> is the keystone; everything E1–E7 depends on it.</div>
+  </div>
+
+  <!-- D. GYM TRACKER IA — beauty shot -->
+  <div class="step">
+    <div class="stepnum">D</div>
+    <div class="device"><div class="island"></div><div class="screen dark">
+      <div class="statusbar"><span>9:41</span><span class="r">5G ▮▮▮ 100%</span></div>
+      <div class="nav"><span style="color:var(--t2-d)">⚙</span><span class="ttl">Gym</span><span style="color:var(--coral-d)">＋</span></div>
+      <div class="content">
+        <div class="seg" style="margin:2px 0 10px"><span class="on">Dashboard</span><span>Library</span><span>Routines</span><span>History</span></div>
+        <!-- score-first hero -->
+        <div style="text-align:center;margin:6px 0 2px">
+          <div class="lbl" style="color:var(--t2-d)">this week · training load</div>
+          <div class="rounded big" style="font-size:68px;line-height:1.04;color:var(--ember-d)">7,840<span style="font-size:22px;color:var(--t2-d);font-weight:700"> kg</span></div>
+          <div class="rollup" style="justify-content:center;margin-top:4px">
+            <span class="spill pr">★ +12% vs last wk</span>
+            <span class="spill ghost">4 sessions</span>
+          </div>
+        </div>
+        <!-- two-axis color in action: discipline strip -->
+        <div class="lbl" style="margin:12px 2px 2px;color:var(--t2-d)">by discipline</div>
+        <div class="disc em"><span class="ic">🏋️</span><div><div class="hd">Strength</div><div class="mt">Push day · top 100×5 squat</div></div><div class="big rounded" style="color:var(--ember-d)">3</div></div>
+        <div class="disc am"><span class="ic">🧗</span><div><div class="hd">Climbing</div><div class="mt">4 sends · hardest V6 <span style="color:var(--leaf);font-weight:800">★PR</span></div></div><div class="big rounded" style="color:#F59E0B">V6</div></div>
+        <div class="disc az"><span class="ic">🏃</span><div><div class="hd">Running</div><div class="mt">8.2 km · 5:18/km · Z3 avg</div></div><div class="big rounded" style="color:var(--azure-d)">8.2</div></div>
+      </div>
+      <!-- glass command bar -->
+      <div class="cmdbar"><span class="rounded big" style="font-size:14px;color:var(--t2-d)">Mon</span><span class="hr"><span class="hrdot" style="background:var(--z2)"></span>rest day</span><span class="grow"></span><span style="color:var(--coral-d);font-weight:800">Start session</span></div>
+    </div></div>
+    <div class="caption"><b>"This is the system."</b> The new Gym IA — a 4-section <code>.seg</code> control (Dashboard / Library / Routines / History). <b>Score-first hero</b>: one 68&nbsp;pt rounded <b>7,840&nbsp;kg</b> load numeral, everything else demoted. <b>Two-axis color in action</b>: each <code>.disc</code> row carries its discipline accent (wayfinding) while the green <b>★PR</b> spill rides the performance ramp. <b>Coral only</b> on <code>＋</code> and <b>Start session</b>. Glass <code>.cmdbar</code> floats; content cards stay flat <code>SnappetCard</code>.</div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <p><b>Pulse Pro</b> elevates the existing <code>SnappetColor</code> tokens — score-first hero numerals, a
+  two-axis color contract (discipline accent = wayfinding · a separate green→amber→red ramp = effort/zone/PR ·
+  coral = the single primary CTA), a type-adaptive recap scaffold, glass-on-chrome, dark-mode-first, and earned
+  PR celebrations. No rebrand. See <code>README.md</code> for the phased plan (E0–E7) and the keystone model
+  change (a discipline axis on <code>RoutineExercise</code>). Every surface above maps to a GitHub issue.</p>
+</div>
+</div>
+
+</body>
+</html>
