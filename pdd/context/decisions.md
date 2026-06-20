@@ -6357,3 +6357,91 @@ metres, exact kg). Pinned by tests. *Accepted follow-up:* no XCUITest yet drives
 per-discipline round-trips + the per-axis-guard regression pins + the unchanged strength path); UI green —
 `CompletionMomentTests` (incl. `testEditSetsFromSessionDetail` driving Edit→fields→Save),
 `FreeformFlowWalkthroughTests`, `WorkoutPlanFlowTests`.
+
+
+## 2026-06-20 — Kilter Improvement P4: redesigned session history
+
+Turns the flat reverse-chron Kilter session list into a grouped, scoped, filterable timeline with
+roll-up headers, two consistency surfaces, adaptive session cards, and a session detail that gains
+name/notes/date/angle editing. Prompt: `pdd/prompts/features/kilter-improvement/P4-session-history.md`.
+
+**Additive schema + backup mirror (no destructive change).** `KilterSession` gains three ADDITIVE
+optionals — `title: String?`, `notes: String?`, `layoutId: Int?` — all defaulted to nil in `init`, so it's
+a SwiftData *lightweight* migration (existing rows decode with nil). The backup `KilterSessionRow` mirrors
+them as `Codable` fields **defaulted to nil**: a PRE-CHANGE backup blob (no such JSON keys) still decodes
+(the synthesized `Decodable` skips an absent optional to its default) — the codec twin of the lightweight
+migration. They're set in the Row's `init(_ session:)` and applied in `make()`. `coveredModels` /
+`SnappetSchema.models` / `recordCount` are unchanged (no new model → the two `SnappetBackupTests` tripwires
+stay green; `KilterSessionBackupMigrationTests` adds a round-trip + a pre-change-blob decode). `layoutId` is
+stamped at `KilterSessionManager.start(angle:source:layoutId:)` (new optional arg, defaulted) at EVERY
+start path so a new session persists a real board (FC): the root's BLE-connect + manual-start (from
+`@AppStorage("kilter.layout")`), the **climb-detail auto-start** (the dominant path — logging a climb —
+from the climb's own `KilterClimb.layoutId`), and the **plan-start** (from the plan view's
+`@AppStorage("kilter.layout")`). No call site is left passing nil.
+
+**One pure brain, view does no math.** `KilterHistoryModel` (Foundation-only, tested) takes value-mirror
+`SessionItem`s + `[KilterClimbLog]` + scope/filter state and returns a `DisplayModel`: month/week/all
+buckets + `rollupSummary` headers ("7 sessions · 41 sent · hardest V7"), per-facet selectable values, an
+`isStaleFilter` flag, and adaptive `CardModel`s. Facet values + the PR baseline are computed over the FULL
+set (not the filtered/scoped subset) so a chip never vanishes mid-filter and a PR is GLOBAL/chronological.
+
+**Stale-filter recovery, not an empty dead-end — and scope-aware (FG).** Filters are AND-combined
+(board/layout · angle · grade · status · source) + a title/board/climb-name search. When they leave the
+current scope empty yet sessions exist, the model returns a `StaleFilterRecovery` that points at the control
+that actually helps: if the SAME filters still match a session somewhere in the full set, the matches are
+merely in another period → **widen scope** ("see all"); only if they match nothing anywhere → **clear
+filters**. (`isStaleFilter` is kept as a computed convenience = `recovery != .none`.)
+
+**Consistency surfaces — window-normalized, bucketed by the log's day, ad-hoc-inclusive (FE).** `countsByDay`
+buckets **sends by each log's `loggedAt` local day** (not the session's `startedAt`), so a post-midnight send
+lands on the correct cell, AND counts logs with `sessionId == nil` (ad-hoc ascents) so the heatmap/calendar
+don't under-report; sessions still contribute their per-day count + ids (for tap-to-day) by `startedAt`.
+`heatmap`/`monthDays` normalize intensity over the days **in the window** (not all logs), so an out-of-window
+busy day can't crush the visible cells. `Day.isEmpty` now means "no session AND no send", so a send-only
+ad-hoc day still reads as active.
+
+**Active session never renders a stale period header (FD).** `group()` buckets an active (`endedAt == nil`)
+session — and headlines its group — by the CURRENT period (`now`), not its possibly-old `startedAt`, so an
+open session left over from last week doesn't conjure a stale week/month header in Week/Month scope.
+
+**Deterministic tie-breaks (FF).** The grade-facet chip order and the roll-up "hardest" pick tie-break by
+`gradeLabel` (not unordered Dictionary/flatMap iteration); the chronological sort feeding the PR baseline
+tie-breaks by session id, so PR awarding is stable for sessions with identical `startedAt`.
+
+**Adaptive cards — ONE badge max (Strava rule).** Default facts Sends · Hardest · Duration, swapping in at
+most one notable badge with a fixed priority **PR > flash-rate (≥50% of sends) > # projects** — the rarest,
+most celebration-worthy signal wins the single slot; a BLE/Manual provenance glyph+label; a live pulse on an
+open session. Cards push the UNCHANGED `KilterSessionRoute`.
+
+**BOTH consistency surfaces (user decision).** A GitHub-style `KilterHeatmapView` (cell fill = sends/day,
+today ringed) AND a tappable `KilterMonthCalendarView` (send-dot per active day), each a dumb renderer over
+the pure `KilterConsistency` day buckets and each DOUBLING AS NAVIGATION (tap a day → that day's session).
+
+**Session-level metadata edit (NOT the gym per-set edit — doc-drift fix FH).** An Edit button opens
+`KilterSessionMetaEditSheet` editing name + notes (the new fields) and date + angle (`startedAt`/`angle`),
+written straight to the `@Model`. This is *session*-level metadata — it does NOT mirror the gym
+`SessionDetailView` edit, which corrects a completed *set's* fields; earlier comments/graph/decisions claimed
+that parity and were corrected. Two edits move more than one field to keep the session internally consistent:
+- **FA — Date shifts the whole session by a delta.** The HR `hrSeries` t-axis is rebased on the ORIGINAL
+  `startedAt` and per-climb HR/effort windows are `log.effectiveStart − session.startedAt`, so moving only
+  `startedAt` would desync every window against an unmoved HR axis (and could make `startedAt > endedAt`).
+  Instead the save computes `delta = newStart − startedAt` and shifts `startedAt`, `endedAt`, AND every child
+  `KilterLogEntry`'s `date`/`startedAt`/`endedAt`/`attemptTimestamps` by the same delta (all relative timing
+  preserved). The picker is clamped to `endedAt − 1s` for a finished session so the interval can't invert.
+- **FB — Angle RE-GRADES (path chosen: re-grade, not remove).** Editing `session.angle` alone left each
+  log's own `angle`/`difficulty`/`gradeLabel` (computed at log-time angle) stale, so the header angle
+  disagreed with the pyramid/ascent rows. On an angle change, every child log that was at the OLD session
+  angle is moved to the new angle and its `difficulty`+`gradeLabel` re-derived from `KilterCatalog.stats(uuid)`
+  at the new angle (→ `gradeLabel(difficulty)`); a log climbed at a different angle than the header is left
+  alone, and a climb with no catalog stat at the new angle keeps its grade snapshot (only the angle moves).
+
+Ascent rows gain swipe-to-EDIT (`KilterAscentEditSheet`: status/attempts/angle) alongside swipe-to-delete.
+The `KilterSessionManager.end/recover` lifecycle + the detail route are untouched — the editor only edits
+metadata, never closes/reopens the session.
+
+**Verification.** Target unit suites (`KilterHistoryTests`, `SnappetBackupTests`, `KilterAllTimeStatsTests`)
++ the full `build-for-testing` on iPhone 17 Pro; new `KilterHistoryP4Tests` XCUITest authored to compile.
+On-device only; Kilter-board data only.
+
+**Android (tracked).** No Android tree touched — P4 is an iOS-only UI/model wave; the Kotlin mirror rides a
+later Kilter Improvement Android wave.

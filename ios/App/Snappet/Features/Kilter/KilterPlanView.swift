@@ -136,7 +136,8 @@ struct KilterPlanView: View {
             items: KilterPlanProgress.items(from: preview))
         modelContext.insert(plan)
         if !sessions.isActive {
-            sessions.start(angle: angle, source: "manual", in: modelContext)
+            // Stamp the plan's board layout so History can facet this session by board/layout (FC).
+            sessions.start(angle: angle, source: "manual", layoutId: layoutId, in: modelContext)
         }
         sessions.attachPlan(plan, in: modelContext)   // pins sessionId, freezes, enforces one-open-plan
         try? modelContext.save()

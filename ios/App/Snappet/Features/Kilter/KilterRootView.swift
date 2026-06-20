@@ -327,7 +327,7 @@ struct KilterRootView: View {
             // disconnect does NOT end it — a brief BLE drop shouldn't kill an in-progress session (the
             // user ends it explicitly via the bar / summary / History).
             board.onConnectionChange = { connected in
-                if connected { sessions.start(angle: angle, source: "ble", in: modelContext) }
+                if connected { sessions.start(angle: angle, source: "ble", layoutId: layoutId, in: modelContext) }
             }
             // P1: on a confirmed connect, recognize the board and (if known) restore its layout/size +
             // pre-select the usual angle, then surface the one-tap confirm ribbon. An unknown board is
@@ -596,7 +596,7 @@ struct KilterRootView: View {
                 // Discard the created-fresh flag: the explicit Start button needs no undo capsule
                 // (that's the auto-log path only), and the non-Void return would otherwise conflict
                 // with this Void action closure.
-                withAnimation(.snappy) { _ = sessions.start(angle: angle, source: "manual", in: modelContext) }
+                withAnimation(.snappy) { _ = sessions.start(angle: angle, source: "manual", layoutId: layoutId, in: modelContext) }
             } label: {
                 Label("Start session", systemImage: "play.fill")
                     .font(.subheadline.weight(.semibold))

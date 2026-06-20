@@ -741,7 +741,11 @@ struct KilterClimbDetailView: View {
         // BLE-connect behavior (#75). `start` folds recovery, so an open session in the store is
         // adopted rather than forked; the undoable capsule is offered ONLY for a fresh creation.
         if !sessions.isActive {
-            let createdFresh = sessions.start(angle: selectedAngle, source: "auto", in: modelContext)
+            // Stamp the board layout this session ran on (the climb's own layout) so History can facet by
+            // board/layout — this is the most-common start path (logging a climb), which previously left
+            // `layoutId` nil (FC).
+            let createdFresh = sessions.start(angle: selectedAngle, source: "auto",
+                                              layoutId: climb.layoutId, in: modelContext)
             withAnimation(.snappy) { showingAutoStartUndo = createdFresh }
         }
         // Re-arm the active climb (a prior send may have closed it) so timing + the HUD are correct.

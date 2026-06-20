@@ -435,7 +435,7 @@ final class KilterSessionManager {
     /// "Session started · Undo" confirmation on this: undoing must only ever delete a session the
     /// log itself created, never one adopted from the store.
     @discardableResult
-    func start(angle: Int, source: String, in context: ModelContext) -> Bool {
+    func start(angle: Int, source: String, layoutId: Int? = nil, in context: ModelContext) -> Bool {
         guard current == nil else { return false }
         // Re-sync with the store BEFORE creating anything (#71 review): recovery adopts the newest
         // still-fresh open session instead of forking a duplicate (single-open invariant) and
@@ -445,7 +445,7 @@ final class KilterSessionManager {
         // (source "auto", #75), and deep links that skip `KilterRootView` (Home → plan, QR → climb).
         recover(in: context)
         if current != nil { return false }   // recovery adopted the open session — nothing to create
-        let session = KilterSession(angle: angle, source: source)
+        let session = KilterSession(angle: angle, source: source, layoutId: layoutId)
         context.insert(session)
         current = session
         resetActiveClimb()

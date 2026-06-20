@@ -336,9 +336,22 @@ final class KilterSession {
     /// (Phase 2). Additive Optional → lightweight migration, like the other live-metrics fields.
     var kcalEstimate: Double?
 
+    // MARK: - P4 history metadata (additive → SwiftData lightweight migration; existing sessions
+    // decode with nil and fall back to the date-derived title / no notes / unknown layout).
+    /// A user-given name for the session (e.g. "Comp prep", "Easy flash day"), editable from the
+    /// session detail. `nil` → History/detail fall back to the date label. Additive Optional.
+    var title: String?
+    /// A free-form note about the whole session (how it felt, conditions, goals), editable from the
+    /// session detail. `nil` for existing rows / sessions with no note. Additive Optional.
+    var notes: String?
+    /// The board layout this session ran on (`KilterLayout.id`), so History can facet by board/layout.
+    /// `nil` for sessions captured before this field existed (and ad-hoc ones where it wasn't recorded).
+    var layoutId: Int?
+
     init(id: UUID = UUID(), startedAt: Date = .now, endedAt: Date? = nil, angle: Int, source: String,
          hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil,
-         metricsSourceRaw: String? = nil, kcalEstimate: Double? = nil) {
+         metricsSourceRaw: String? = nil, kcalEstimate: Double? = nil,
+         title: String? = nil, notes: String? = nil, layoutId: Int? = nil) {
         self.id = id
         self.startedAt = startedAt
         self.endedAt = endedAt
@@ -349,6 +362,9 @@ final class KilterSession {
         self.restHR = restHR
         self.metricsSourceRaw = metricsSourceRaw
         self.kcalEstimate = kcalEstimate
+        self.title = title
+        self.notes = notes
+        self.layoutId = layoutId
     }
 
     /// Session length: `endedAt − startedAt`, or elapsed-so-far while still active.

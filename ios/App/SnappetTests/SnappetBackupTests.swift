@@ -373,7 +373,9 @@ final class SnappetBackupTests: XCTestCase {
                                           hrSeries: [HRPoint(t: 0, bpm: 110),
                                                      HRPoint(t: 1, bpm: 124, rrIntervalsMs: [488])],
                                           maxHR: 192, restHR: 52,
-                                          metricsSourceRaw: "ble", kcalEstimate: 240.5)
+                                          metricsSourceRaw: "ble", kcalEstimate: 240.5,
+                                          title: "Comp prep", notes: "Strong day; flashed warmups.",
+                                          layoutId: 1)
         context.insert(kilterSession)
 
         let log = KilterLogEntry(climbUUID: "abc123", climbName: "Crimpy",

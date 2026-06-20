@@ -688,17 +688,25 @@ extension SnappetBackup {
         var restHR: Double?
         var metricsSourceRaw: String?
         var kcalEstimate: Double?
+        // P4 history metadata — defaulted to nil so a PRE-CHANGE backup blob (with no such keys)
+        // still decodes (the synthesized `Decodable` skips an absent optional with a default), exactly
+        // mirroring the SwiftData lightweight migration on the @Model side.
+        var title: String? = nil
+        var notes: String? = nil
+        var layoutId: Int? = nil
 
         init(_ m: KilterSession) {
             id = m.id; startedAt = m.startedAt; endedAt = m.endedAt
             angle = m.angle; source = m.source; hrSeries = m.hrSeries
             maxHR = m.maxHR; restHR = m.restHR
             metricsSourceRaw = m.metricsSourceRaw; kcalEstimate = m.kcalEstimate
+            title = m.title; notes = m.notes; layoutId = m.layoutId
         }
         func make() -> KilterSession {
             KilterSession(id: id, startedAt: startedAt, endedAt: endedAt, angle: angle,
                           source: source, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR,
-                          metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate)
+                          metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate,
+                          title: title, notes: notes, layoutId: layoutId)
         }
         var sortKey: String { id.uuidString }
     }
