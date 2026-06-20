@@ -116,6 +116,77 @@ final class SessionSetEditingTests: XCTestCase {
         XCTAssertEqual(fixed[0].sets[0].climbAttempts, 1)
     }
 
+    func testEditingOnlyRunDistancePreservesExactFractionalDuration() {
+        // The per-axis guard: editing ONLY the distance must NOT re-quantize the untouched duration.
+        // A leg captured at 42.37s seeds "0:42"; a whole-Draft re-apply would drop it to 42.
+        var leg = SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 42.37); leg.distanceMeters = 5234
+        let run = entity("run", .run, [leg])
+        var drafts = SessionSetEditing.drafts(for: [run], unit: .kg)
+        drafts[key(run, 0)]?.distance = "6"   // edit distance only; leave the seeded "0:42" duration text
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [run], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].distanceMeters ?? 0, 6000, accuracy: 0.001, "distance edit applies")
+        XCTAssertEqual(fixed[0].sets[0].durationSec, 42.37, "untouched duration keeps its exact fractional value")
+    }
+
+    func testEditingOnlyRunDurationPreservesExactDistance() {
+        var leg = SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 1500); leg.distanceMeters = 5234
+        let run = entity("run", .run, [leg])
+        var drafts = SessionSetEditing.drafts(for: [run], unit: .kg)
+        drafts[key(run, 0)]?.duration = "24:00"   // edit duration only
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [run], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].durationSec, 1440, "duration edit applies")
+        XCTAssertEqual(fixed[0].sets[0].distanceMeters, 5234, "untouched distance keeps its exact un-rounded value")
+    }
+
+    func testEditingTimedStrengthRepsPreservesDuration() {
+        // A timed-strength set ("8 × 60 kg · 0:42"): editing reps must NOT drop the duration (strength edit
+        // = reps/weight only; the duration axis isn't seeded/rendered/written for a .repsWeight set).
+        let set = SetLog(actualReps: 8, actualWeight: 60, weightUnit: .kg,
+                         completedAt: Date(timeIntervalSince1970: 0), durationSec: 42)
+        let lift = entity("squat", .strength, [set])
+        var drafts = SessionSetEditing.drafts(for: [lift], unit: .kg)
+        XCTAssertEqual(drafts[key(lift, 0)], SessionSetEditing.Draft(reps: "8", weight: "60"),
+                       "a strength draft seeds reps/weight only — never the duration axis")
+        drafts[key(lift, 0)]?.reps = "9"
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [lift], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].actualReps, 9)
+        XCTAssertEqual(fixed[0].sets[0].durationSec, 42, "the timed-strength duration survives a reps edit")
+    }
+
+    func testStrengthEntityWithExplicitDisciplineSeedsRepsWeightNotRunBranch() {
+        // Pin the branch ordering: a .strength/.repsWeight entity must never fall into the run distance
+        // branch. Seed yields reps/weight (no distance/duration/grade); a reps-only edit touches only reps/weight.
+        let lift = entity("bench", .strength, [SetLog(actualReps: 5, actualWeight: 100, weightUnit: .kg,
+                                                      completedAt: Date(timeIntervalSince1970: 0))])
+        var drafts = SessionSetEditing.drafts(for: [lift], unit: .kg)
+        XCTAssertEqual(drafts[key(lift, 0)], SessionSetEditing.Draft(reps: "5", weight: "100"))
+        drafts[key(lift, 0)]?.reps = "6"
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [lift], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].actualReps, 6)
+        XCTAssertEqual(fixed[0].sets[0].actualWeight, 100, "weight byte-identical on a reps-only edit")
+        XCTAssertNil(fixed[0].sets[0].distanceMeters, "a strength set never gets a distance")
+        XCTAssertNil(fixed[0].sets[0].durationSec)
+    }
+
+    func testClearingNewAxisFieldsNilsThem() {
+        let climb = entity("climb", .climb, [SetLog(completedAt: Date(timeIntervalSince1970: 0),
+                                                    climbGradeLabel: "V4",
+                                                    climbStatusRaw: KilterAscentStatus.sent.rawValue,
+                                                    climbAttempts: 3)])
+        var drafts = SessionSetEditing.drafts(for: [climb], unit: .kg)
+        drafts[key(climb, 0)]?.grade = ""
+        drafts[key(climb, 0)]?.attempts = ""
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [climb], unit: .kg)
+        XCTAssertNil(fixed[0].sets[0].climbGradeLabel, "cleared grade → nil")
+        XCTAssertNil(fixed[0].sets[0].climbAttempts, "cleared attempts → nil")
+
+        let plank = entity("plank", .timed, [SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 45)])
+        var td = SessionSetEditing.drafts(for: [plank], unit: .kg)
+        td[key(plank, 0)]?.duration = "abc"
+        let tf = SessionSetEditing.apply(drafts: td, to: [plank], unit: .kg)
+        XCTAssertNil(tf[0].sets[0].durationSec, "malformed duration → nil (player's rule)")
+    }
+
     func testUntouchedNonStrengthDraftsAreIdentity() {
         var leg = SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 1500); leg.distanceMeters = 5000
         let run = entity("run", .run, [leg])

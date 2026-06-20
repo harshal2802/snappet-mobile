@@ -47,8 +47,8 @@ struct SessionDetailView: View {
     /// survives the media section's `Group` re-renders. `nil` = closed; the section requests it
     /// (session-wide from the button, or scoped to a clip on tap) via the `onOpenStudio` closure.
     @State private var studio: StudioPresentation?
-    /// Edit-sets mode (issue #73): while on, each completed reps/weight tile shows text fields
-    /// editing `drafts`; Save parses them back into the session, Cancel discards.
+    /// Edit-sets mode (issue #73; all-axis follow-up): while on, each completed set tile shows
+    /// discipline-adaptive text fields editing `drafts`; Save parses them back into the session, Cancel discards.
     @State private var editingSets = false
     @State private var setDrafts: [SessionSetEditing.Key: SessionSetEditing.Draft] = [:]
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
@@ -106,8 +106,9 @@ struct SessionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .keypadDoneToolbar($keypadFocused)
         .toolbar {
-            // Edit completed reps/weight sets in place (issue #73). Hidden when the session has
-            // nothing editable (e.g. duration/climb-only freeform sessions).
+            // Edit any completed set in place (issue #73; all-axis follow-up — strength reps/weight,
+            // timed duration, run distance+duration, climb grade/status/attempts). Hidden only when the
+            // session has no completed set to edit.
             if editingSets {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { cancelSetEdits() }
@@ -562,11 +563,12 @@ private struct SessionMediaSection: View {
     // MARK: Edit drafts (issue #73)
 
     /// A binding into the parent's draft dictionary for one set — nil (read-only tile) when edit
-    /// mode is off or the set isn't editable (never completed, or not a reps/weight set).
+    /// mode is off or the set isn't editable (never completed). All-axis: drafts exist for completed
+    /// sets of every discipline, not just reps/weight.
     private func draftBinding(exerciseID: UUID, setIndex: Int) -> Binding<SessionSetEditing.Draft>? {
         let key = SessionSetEditing.Key(exerciseID: exerciseID, setIndex: setIndex)
         guard setDrafts[key] != nil else { return nil }
-        return Binding(get: { setDrafts[key] ?? SessionSetEditing.Draft(reps: "", weight: "") },
+        return Binding(get: { setDrafts[key] ?? SessionSetEditing.Draft() },
                        set: { setDrafts[key] = $0 })
     }
 

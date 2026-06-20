@@ -91,40 +91,49 @@ enum SessionSetEditing {
             let discipline = ex.discipline, kind = ex.kind
             for i in ex.sets.indices {
                 let key = Key(exerciseID: ex.id, setIndex: i)
-                guard let draft = drafts[key], draft != seeded[key] else { continue }
-                apply(draft, to: &result[e].sets[i], discipline: discipline, kind: kind, unit: unit, distanceUnit: du)
+                guard let draft = drafts[key], let seed = seeded[key], draft != seed else { continue }
+                apply(draft, seed: seed, to: &result[e].sets[i],
+                      discipline: discipline, kind: kind, unit: unit, distanceUnit: du)
             }
         }
         return result
     }
 
-    /// Apply one edited draft to one set, per discipline/kind. Each branch writes ONLY its own axes, so a
-    /// climb edit never touches reps/weight and vice-versa (mirrors the seed).
-    static func apply(_ d: Draft, to set: inout SetLog, discipline: WorkoutDiscipline, kind: SetKind,
+    /// Apply one edited draft to one set, per discipline/kind. Each AXIS is written only when its field
+    /// actually changed from the `seed` — so editing one axis never re-quantizes or perturbs an untouched
+    /// sibling (a run distance edit preserves the leg's exact fractional `durationSec`; a reps-only edit
+    /// leaves the stored weight/unit byte-identical even cross-unit). Each branch still touches ONLY its own
+    /// axes (a climb edit never reaches reps/weight and vice-versa), mirroring the seed.
+    static func apply(_ d: Draft, seed: Draft, to set: inout SetLog,
+                      discipline: WorkoutDiscipline, kind: SetKind,
                       unit: WeightUnit, distanceUnit: DistanceUnit) {
         if discipline == .run {
-            set.distanceMeters = SetMeasure.parseDistance(d.distance, unit: distanceUnit)
-            set.durationSec = SetMeasure.parseDuration(d.duration)
+            if d.distance != seed.distance { set.distanceMeters = SetMeasure.parseDistance(d.distance, unit: distanceUnit) }
+            if d.duration != seed.duration { set.durationSec = SetMeasure.parseDuration(d.duration) }
             return
         }
         switch kind {
         case .repsWeight:
-            // Unchanged from the original reps/weight editor (regression-pinned): parse reps, and store the
-            // parsed weight together with `weightUnit = unit` (what the field displayed), else clear it.
-            set.actualReps = SetMeasure.parseReps(d.reps)
-            if let weight = SetMeasure.parseWeight(d.weight) {
-                set.actualWeight = weight
-                set.weightUnit = unit
-            } else {
-                set.actualWeight = nil
+            // The original reps/weight rules (regression-pinned), now per-axis: store the parsed weight with
+            // `weightUnit = unit` (what the field displayed) when the weight field changed, else clear it.
+            if d.reps != seed.reps { set.actualReps = SetMeasure.parseReps(d.reps) }
+            if d.weight != seed.weight {
+                if let weight = SetMeasure.parseWeight(d.weight) {
+                    set.actualWeight = weight
+                    set.weightUnit = unit
+                } else {
+                    set.actualWeight = nil
+                }
             }
         case .duration:
-            set.durationSec = SetMeasure.parseDuration(d.duration)
+            if d.duration != seed.duration { set.durationSec = SetMeasure.parseDuration(d.duration) }
         case .climbAttempt:
-            let g = d.grade.trimmingCharacters(in: .whitespaces)
-            set.climbGradeLabel = g.isEmpty ? nil : g
-            set.climbStatusRaw = d.statusRaw
-            set.climbAttempts = SetMeasure.parseReps(d.attempts)
+            if d.grade != seed.grade {
+                let g = d.grade.trimmingCharacters(in: .whitespaces)
+                set.climbGradeLabel = g.isEmpty ? nil : g
+            }
+            if d.statusRaw != seed.statusRaw { set.climbStatusRaw = d.statusRaw }
+            if d.attempts != seed.attempts { set.climbAttempts = SetMeasure.parseReps(d.attempts) }
         }
     }
 
