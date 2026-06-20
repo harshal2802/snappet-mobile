@@ -1,0 +1,1169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Kilter Improvement · Pulse Pro · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values lead; this deck is dark-mode-first) */
+    --coral:#FF7A6B; --coral-l:#FF5A4D;
+    --amber:#F59E0B; --amber-deep:#B45309;        /* Kilter (climb) — WAYFINDING accent */
+    --ember:#FF9645;                              /* Workout */
+    --azure:#589BF2; --violet:#9D82F0; --teal:#3CB5C9;
+    /* performance ramp — EFFORT / STATE only */
+    --fresh:#5BC074; --moderate:#F59E0B; --hard:#FF6A5C; --limit:#9B1C16;
+    /* ascent-style nominal palette (Wong/Okabe-Ito, colorblind-safe) — paired with glyph+label always */
+    --flash:#E6B422; --send:#5BC074; --proj:#F59E0B; --attempt:#8A8A90;
+    /* hold roles */
+    --h-start:#5BC074; --h-hand:#56A0FF; --h-finish:#C77DFF; --h-foot:#FF9645;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    --glass:rgba(20,20,24,.72); --glasshair:rgba(255,255,255,.12);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#241a10,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1380px;margin:0 auto;padding:0 28px}
+  header.page{padding:58px 28px 8px;max-width:1380px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffce8a 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16.5px;max-width:1000px;margin:0 0 14px}
+  .sub b{color:#fff}
+  .legend{display:flex;flex-wrap:wrap;gap:9px 18px;margin:14px 0 4px;font-size:12.5px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:12px;height:12px;border-radius:4px;display:inline-block}
+  .flowhead{margin:56px 0 4px;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+  .flowtitle{font-size:25px;font-weight:780;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:1000px;margin:0 0 12px;font-size:14.5px}
+  .flowsteps{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px;font-size:12.5px;color:#c4c7d0}
+  .fs{display:inline-flex;align-items:center;gap:7px;background:#16161b;border:1px solid #2a2a31;border-radius:999px;padding:5px 12px}
+  .fs i{width:18px;height:18px;border-radius:50%;background:var(--amber);color:#1a1208;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;font-style:normal}
+  .fs .arr{color:#54555c}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--amber);color:#1a1208;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(245,158,11,.45)}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--amber);font-weight:650}
+
+  /* ---------- device ---------- */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 4px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .nav{display:flex;align-items:center;gap:10px;padding:7px 16px 8px;flex:0 0 auto;font-size:15px}
+  .nav .bk{color:var(--amber);font-weight:600;font-size:14px}
+  .nav .ttl{font-weight:760;font-size:17px;letter-spacing:-.01em}
+  .nav .sp{flex:1}
+  .nav .ic{color:var(--ink);opacity:.85;font-size:16px}
+  .content{flex:1 1 auto;overflow:hidden;padding:2px 14px 8px;position:relative}
+  .cmdbar{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:11px 14px;font-size:12.5px;font-weight:650;border-top:1px solid var(--hair);background:#17171b}
+  .tabbar{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:9px 8px 14px;border-top:1px solid var(--hair);background:#17171b;font-size:10px;color:var(--t2)}
+  .tabbar .tb{display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar .tb .g{font-size:18px} .tabbar .tb.on{color:var(--amber)}
+  .muteline{color:var(--t2)}
+
+  /* ---------- components ---------- */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:12px 13px;margin:9px 0}
+  .tile{background:var(--muted);border-radius:var(--radius);padding:12px 13px;margin:9px 0}
+  .cardhead{display:flex;align-items:center;gap:8px;font-weight:740;font-size:14.5px}
+  .cardhead .ic{font-size:16px;color:var(--amber)}
+  .cardhead .chev{margin-left:auto;color:var(--t2);font-size:13px}
+  .sub2{font-size:11.5px;color:var(--t2)}
+
+  .cta{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--coral);color:#1a1208;font-weight:780;border-radius:14px;padding:13px;font-size:15px;box-shadow:0 10px 24px -10px rgba(255,122,107,.55)}
+  .cta.sm{padding:9px 13px;font-size:13px;border-radius:12px}
+  .cta.outline{background:transparent;color:var(--coral);border:1.5px solid var(--coral);box-shadow:none}
+  .cta.amber{background:var(--amber);color:#1a1208;box-shadow:0 10px 24px -10px rgba(245,158,11,.5)}
+
+  .seg{display:flex;background:var(--muted);border-radius:12px;padding:3px;gap:3px;font-size:12.5px;font-weight:650}
+  .seg span{flex:1;text-align:center;padding:7px 4px;border-radius:9px;color:var(--t2)}
+  .seg span.on{background:#3a3a42;color:#fff}
+
+  .chiprow{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}
+  .chip{background:var(--muted);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:650;color:var(--ink);display:inline-flex;align-items:center;gap:5px}
+  .chip.on{background:var(--amber);color:#1a1208} .chip.ghost{background:transparent;border:1px dashed var(--hair);color:var(--t2)}
+  .chip .cv{color:var(--t2);font-weight:700}
+
+  /* hero numeral (DisciplineHero) */
+  .hero{display:flex;align-items:flex-end;gap:12px;margin:6px 2px 2px}
+  .hero .num{font-family:ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;font-weight:850;font-size:62px;line-height:.9;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .hero .num.amber{color:var(--amber)}
+  .hero .side{padding-bottom:7px}
+  .hero .lbl{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--t2);font-weight:800}
+  .delta{display:inline-flex;align-items:center;gap:3px;font-weight:800;font-size:12px;border-radius:8px;padding:3px 8px;background:rgba(91,192,116,.16);color:var(--fresh)}
+  .delta.dn{background:rgba(255,106,92,.16);color:var(--hard)}
+
+  /* stat ribbon */
+  .ribbon{display:flex;gap:8px;margin:8px 0}
+  .ribbon .r{flex:1;background:var(--muted);border-radius:13px;padding:9px 10px}
+  .ribbon .r .v{font-weight:820;font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .ribbon .r .l{font-size:10px;color:var(--t2);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+
+  /* stat spill chips (rolled up) */
+  .spill{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:11.5px;border-radius:8px;padding:4px 8px;background:var(--muted);color:var(--t2)}
+  .spill.am{background:rgba(245,158,11,.16);color:var(--amber)}
+  .spill.pr{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .spill.az{background:rgba(88,155,242,.16);color:var(--azure)}
+
+  /* status (ascent style) chips — glyph+label, never color alone */
+  .st{display:inline-flex;align-items:center;gap:4px;font-weight:750;font-size:11px;border-radius:7px;padding:3px 7px}
+  .st-flash{background:rgba(230,180,34,.18);color:var(--flash)}
+  .st-send{background:rgba(91,192,116,.18);color:var(--send)}
+  .st-proj{background:rgba(245,158,11,.18);color:var(--proj)}
+  .st-attempt{background:rgba(138,138,144,.2);color:#c2c2c8}
+
+  /* provenance capsule */
+  .prov{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--t2);background:rgba(255,255,255,.06);border-radius:6px;padding:2px 6px}
+
+  /* glass floating ribbon */
+  .glassbar{position:absolute;left:12px;right:12px;border-radius:18px;background:var(--glass);
+    border:1px solid var(--glasshair);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    box-shadow:0 18px 40px -16px rgba(0,0,0,.7);padding:12px 13px;z-index:25}
+
+  /* mini board render (climb thumbnail) */
+  .board{position:relative;width:100%;border-radius:12px;background:
+    repeating-linear-gradient(0deg,#1b1b20 0 1px,transparent 1px 15px),
+    repeating-linear-gradient(90deg,#1b1b20 0 1px,transparent 1px 15px),
+    linear-gradient(160deg,#242019,#171716);border:1px solid #322a1c;overflow:hidden}
+  .board .hold{position:absolute;width:13px;height:13px;border-radius:50%;transform:translate(-50%,-50%);
+    border:2.2px solid var(--c);box-shadow:0 0 7px 1px var(--c);background:rgba(0,0,0,.15)}
+  .hold.start{--c:var(--h-start)} .hold.hand{--c:var(--h-hand)} .hold.finish{--c:var(--h-finish)} .hold.foot{--c:var(--h-foot);width:10px;height:10px}
+
+  /* board thumbnail gallery (Your Climbs) */
+  .bgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:8px}
+  .bcard{background:var(--surface);border:1px solid var(--hair);border-radius:15px;padding:8px;overflow:hidden}
+  .bcard .nm{font-weight:700;font-size:12.5px;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bcard .mt{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:10.5px;color:var(--t2);font-weight:600}
+  .gbadge{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border:1px solid var(--glasshair);border-radius:7px;padding:2px 7px;font-size:11px;font-weight:800;color:var(--amber)}
+
+  /* grade pyramid (segmented BarMark) */
+  .pyr{margin:8px 0 2px}
+  .pyr .pr{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11.5px}
+  .pyr .pg{width:34px;text-align:right;font-weight:750;color:var(--ink);font-variant-numeric:tabular-nums}
+  .pyr .pbar{flex:1;height:17px;border-radius:5px;background:var(--muted);overflow:hidden;display:flex}
+  .pyr .seg{height:100%}
+  .pyr .seg.flash{background:var(--flash)} .pyr .seg.send{background:var(--send)} .pyr .seg.proj{background:var(--proj)}
+  .pyr .pc{width:20px;color:var(--t2);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .pyr .pmax{height:1px;border-top:1.5px dashed var(--hard);margin:3px 0 1px 42px;position:relative}
+  .pyr .pmax span{position:absolute;right:0;top:-8px;font-size:9px;color:var(--hard);font-weight:800;background:var(--paper);padding:0 3px}
+
+  /* ring gauge */
+  .rings{display:flex;gap:10px;margin:8px 0}
+  .ring{flex:1;background:var(--muted);border-radius:14px;padding:11px 8px;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .ring .rg{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:conic-gradient(var(--rc) var(--p),#3a3a42 0);position:relative}
+  .ring .rg::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--muted)}
+  .ring .rv{position:relative;z-index:2;font-weight:850;font-size:16px;font-variant-numeric:tabular-nums}
+  .ring .rl{font-size:10.5px;color:var(--t2);font-weight:700;text-align:center}
+
+  /* bar trend (volume) */
+  .bars{display:flex;align-items:flex-end;gap:5px;height:62px;margin:8px 2px 4px}
+  .bars .b{flex:1;background:var(--amber);border-radius:4px 4px 2px 2px;opacity:.85;min-height:4px}
+  .bars .b.ghost{background:#3a3a42}
+  .axis{display:flex;justify-content:space-between;font-size:9.5px;color:var(--t2);font-weight:600;margin-top:2px}
+
+  /* consistency heatmap */
+  .heat{display:grid;grid-template-columns:repeat(17,1fr);gap:3px;margin:8px 0 2px}
+  .heat .hc{aspect-ratio:1;border-radius:3px;background:#26262b;border:1px solid #2f2f35}
+  .hc.l1{background:rgba(245,158,11,.28)} .hc.l2{background:rgba(245,158,11,.5)} .hc.l3{background:rgba(245,158,11,.72)} .hc.l4{background:var(--amber)}
+  .hc.today{outline:2px solid var(--coral);outline-offset:1px}
+
+  /* month calendar */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin:8px 0 2px;font-size:11px;text-align:center}
+  .cal .cd{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--t2);font-weight:600}
+  .cal .cd.on{background:rgba(245,158,11,.18);color:var(--ink);font-weight:750}
+  .cal .cd.dot{position:relative} .cal .cd.dot::after{content:"";position:absolute;bottom:4px;width:4px;height:4px;border-radius:50%;background:var(--amber)}
+  .cal .cd.today{outline:2px solid var(--coral);outline-offset:-2px;color:#fff}
+  .cal .dow{color:var(--t2);font-size:9.5px;font-weight:700}
+
+  /* session / ascent rows */
+  .sesscard{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:11px 12px;margin:9px 0;position:relative;overflow:hidden}
+  .sesscard .edge{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber)}
+  .sesscard .h{display:flex;align-items:center;gap:8px}
+  .sesscard .h .d{font-weight:740;font-size:14px}
+  .sesscard .h .t{margin-left:auto;font-size:11px;color:var(--t2);font-weight:600}
+  .grouphdr{display:flex;align-items:baseline;gap:8px;margin:14px 2px 2px;font-size:12px;color:var(--t2);font-weight:700}
+  .grouphdr b{color:var(--ink);font-size:14px}
+  .grouphdr .ru{margin-left:auto;color:var(--t2);font-weight:650}
+  .row{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:7px 2px;border-bottom:1px solid var(--hair)}
+  .row .num{width:14px;color:var(--t2);font-weight:700;font-size:11px}
+  .row .meta{margin-left:auto;font-weight:700;color:var(--t2);font-size:11px;font-variant-numeric:tabular-nums}
+
+  .lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:800}
+  .big{font-variant-numeric:tabular-nums;font-weight:820;letter-spacing:-.01em}
+  .search{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:11px;padding:9px 12px;font-size:13px;color:var(--t2)}
+  .field{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:11px;padding:11px 12px;font-size:13.5px;margin:8px 0}
+  .field .fl{color:var(--t2);font-size:11px;font-weight:700;min-width:62px}
+  .note{background:var(--muted);border-radius:12px;padding:11px 12px;font-size:13px;color:var(--ink);margin:8px 0;min-height:58px}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">Kilter Improvement — your climbing record, made smart</h1>
+  <p class="sub">Five upgrades to the Kilter mini-app, designed as <b>one coherent, on-device "your climbing record" system</b> on the Pulse&nbsp;Pro language:
+    <b>recognize the board at a gym you've been to</b> (coarse on-device location + Bluetooth — no more re-picking layout/size/angle) · a first-class <b>Your&nbsp;Climbs</b> gallery of the climbs you set ·
+    a redesigned <b>analytics dashboard</b> · a grouped, filterable <b>session history</b> · and a new <b>On&nbsp;the&nbsp;Board</b> log of every climb you lit on the wall. Real <code>SnappetColor</code> tokens (kilter amber <b>#F59E0B</b>), dark-mode-first.
+    <b>No backend, no network, no accounts.</b></p>
+  <div class="legend">
+    <span class="swatch"><i class="dot" style="background:var(--amber)"></i> kilter accent — wayfinding</span>
+    <span class="swatch"><i class="dot" style="background:var(--coral)"></i> coral — single CTA / brand moment</span>
+    <span class="swatch"><i class="dot" style="background:var(--fresh)"></i><i class="dot" style="background:var(--moderate)"></i><i class="dot" style="background:var(--hard)"></i> perf ramp — effort / state</span>
+    <span class="swatch"><i class="dot" style="background:var(--flash)"></i> flash <i class="dot" style="background:var(--send)"></i> send <i class="dot" style="background:var(--proj)"></i> project <i class="dot" style="background:var(--attempt)"></i> attempt</span>
+    <span class="swatch">holds: <i class="dot" style="background:var(--h-start)"></i>start <i class="dot" style="background:var(--h-hand)"></i>hand <i class="dot" style="background:var(--h-finish)"></i>finish <i class="dot" style="background:var(--h-foot)"></i>foot</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="flowhead">Flow 1 · Phase P1</div>
+  <h2 class="flowtitle">Auto-detect board on arrival — location + Bluetooth</h2>
+  <p class="flowdesc">A coarse, on-device <b>location</b> match recognizes the <i>place</i> you've climbed before and suggests your usual board <i>on arrival, before you even connect</i>; the <b>Bluetooth identifier</b> then pins the exact board and disambiguates two boards at one gym. Layout + size restore automatically; angle is a one-tap confirm (it's physically mutable and never readable over BLE). First-ever board/place stays today's one-time manual pick. Built by generalizing the existing single-board memory into a <code>KilterBoardMemory</code> (a 1:1 clone of <code>BandMemory</code>) plus CoreLocation — the coarse place is stored on-device and <b>never uploaded</b>.</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Arrive → location matches a known place</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Suggest your usual board (pre-connect)</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Connect → Bluetooth IDs the exact board</span><span class="arr">→</span>
+    <span class="fs"><i>4</i> Restore layout + size · confirm angle</span><span class="arr">→</span>
+    <span class="fs"><i>5</i> Manage boards + location in Settings</span>
+  </div>
+  <div class="gallery">
+    <div class="step">
+  <div class="stepnum">1</div>
+  <div class="device" data-shot="01c_arrival">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="ttl">Kilter</span>
+        <span class="sp"></span>
+        <span class="ic">⚙</span>
+      </div>
+      <div class="content">
+        <div class="chiprow">
+          <span class="chip on">All boards</span>
+          <span class="chip">Setter</span>
+          <span class="chip">Grade</span>
+          <span class="chip">Angle</span>
+        </div>
+
+        <div class="card" style="margin-top:8px;opacity:.55">
+          <div class="row">
+            <div class="num">1</div>
+            <div class="meta">Crimp Ladder<div class="sub2">Kilter Original · V6</div></div>
+            <span class="chev">›</span>
+          </div>
+          <div class="row">
+            <div class="num">2</div>
+            <div class="meta">Sloper Highway<div class="sub2">Kilter Original · V4</div></div>
+            <span class="chev">›</span>
+          </div>
+        </div>
+
+        <div class="glassbar" style="top:96px">
+          <div class="cardhead">
+            <span class="ic">📍</span>
+            <div style="flex:1">
+              <div class="sub2">Looks like you're at</div>
+              <div class="lbl" style="font-size:15px;color:var(--ink)">BetaBoulders Gym</div>
+            </div>
+          </div>
+          <div class="sub2" style="margin-top:8px">Set up your usual board?  <b style="color:var(--ink)">8×12 Home · 40°</b></div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+            <span class="cta sm">Set it up</span>
+            <span class="lbl" style="color:var(--t2)">Not now</span>
+            <span class="sp"></span>
+          </div>
+          <div class="sub2" style="margin-top:11px;display:flex;align-items:center;gap:5px;color:var(--t2)">
+            <span class="prov">📍 Matched on-device</span>
+            <span style="opacity:.7">location never leaves your phone</span>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tb on"><span class="g">▦</span>Browse</div>
+        <div class="tb"><span class="g">★</span>Your Climbs</div>
+        <div class="tb"><span class="g">📊</span>Stats</div>
+        <div class="tb"><span class="g">🕘</span>History</div>
+        <div class="tb"><span class="g">⚙</span>Settings</div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Suggested on arrival.</b> With location added, the app recognizes <span class="k">the PLACE</span> and offers your usual board <span class="k">on arrival</span> — before you even connect Bluetooth. Coarse place is matched entirely on-device and <span class="k">never uploaded</span>.</div>
+</div>
+    <div class="step">
+  <div class="stepnum">1</div>
+  <div class="device" data-shot="01_autodetect">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="ttl">Kilter</span>
+        <span class="sp"></span>
+        <span class="prov">📶 Connected</span>
+        <span class="ic">⚙</span>
+      </div>
+      <div class="content">
+        <div class="chiprow">
+          <span class="chip">Kilter Original</span>
+          <span class="chip on">8×12 Home</span>
+          <span class="chip on">40°</span>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="row">
+            <div class="num">1</div>
+            <div class="meta">Crimp Ladder <span class="st st-send">✓ Send</span><div class="sub2">Kilter Original · V6</div></div>
+            <span class="chev">›</span>
+          </div>
+          <div class="row">
+            <div class="num">2</div>
+            <div class="meta">Sloper Highway<div class="sub2">Kilter Original · V4</div></div>
+            <span class="chev">›</span>
+          </div>
+          <div class="row">
+            <div class="num">3</div>
+            <div class="meta">Pinch Parade<div class="sub2">Kilter Original · V5</div></div>
+            <span class="chev">›</span>
+          </div>
+        </div>
+
+        <div class="glassbar" style="bottom:78px">
+          <div class="cardhead">
+            <span class="ic">📋</span>
+            <div style="flex:1">
+              <div class="lbl">BetaBoulders Gym</div>
+              <div class="sub2">Restored 8×12 Home · 40°</div>
+            </div>
+          </div>
+          <div class="seg" style="margin-top:10px">
+            <span>35°</span><span class="on">40°</span><span>45°</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+            <span class="cta sm">Got it</span>
+            <span class="sp"></span>
+            <span class="lbl" style="color:var(--t2)">Adjust</span>
+          </div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tb on"><span class="g">▦</span>Browse</div>
+        <div class="tb"><span class="g">★</span>Your Climbs</div>
+        <div class="tb"><span class="g">📊</span>Stats</div>
+        <div class="tb"><span class="g">🕘</span>History</div>
+        <div class="tb"><span class="g">⚙</span>Settings</div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Recognized on arrival.</b> A board this phone has connected to before is matched by its <span class="k">BLE peripheral identifier</span> — layout and size restore silently. Only the <span class="k">angle</span> needs a one-tap confirm, because it's physically mutable and never readable over BLE.</div>
+</div>
+    <div class="step">
+  <div class="stepnum">6</div>
+  <div class="device" data-shot="01b_remembered">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Kilter</span>
+        <span class="ttl" style="font-size:15px">Settings</span>
+        <span class="sp"></span>
+      </div>
+      <div class="content">
+
+        <div class="lbl">BOARD DETECTION</div>
+        <div class="card">
+          <div class="field" style="border:0;padding:2px 0">
+            <span class="fl">Location</span>
+            <span style="display:flex;align-items:center;gap:6px">
+              <span style="width:7px;height:7px;border-radius:50%;background:var(--fresh);box-shadow:0 0 5px var(--fresh)"></span>
+              While Using
+            </span>
+          </div>
+          <div style="height:1px;background:var(--hair);margin:8px 0"></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="flex:1">
+              <div>Suggest my board when I arrive</div>
+              <div class="sub2">Coarse place only · on-device</div>
+            </div>
+            <span style="display:inline-flex;width:38px;height:22px;border-radius:11px;background:var(--amber);align-items:center;justify-content:flex-end;padding:0 2px;box-sizing:border-box">
+              <span style="width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.4)"></span>
+            </span>
+          </div>
+        </div>
+
+        <div class="lbl" style="margin-top:12px">REMEMBERED BOARDS</div>
+
+        <div class="card">
+          <div class="cardhead">
+            <span class="ic">▦</span>
+            <b>BetaBoulders Gym <span style="opacity:.5;font-size:12px">✎</span></b>
+            <span class="prov">📶 #2353</span>
+          </div>
+          <div class="sub2">8×12 Home · usually 40°</div>
+          <div class="sub2">📍 BetaBoulders Gym · Denver</div>
+          <div class="sub2" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Last seen 2 days ago</span>
+            <span style="color:var(--coral);opacity:.85">Forget</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:8px">
+          <div class="cardhead">
+            <span class="ic">▦</span>
+            <b>Home Garage <span style="opacity:.5;font-size:12px">✎</span></b>
+            <span class="prov">📍 place + 📶 BLE</span>
+          </div>
+          <div class="sub2">7×10 Home · usually 30°</div>
+          <div class="sub2">📍 Home · Boulder</div>
+          <div class="sub2" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Today</span>
+            <span style="color:var(--coral);opacity:.85">Forget</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:8px">
+          <div class="cardhead">
+            <span class="ic">▦</span>
+            <b>Movement RiNo <span style="opacity:.5;font-size:12px">✎</span></b>
+            <span class="chev">›</span>
+          </div>
+          <div class="sub2">12×12 Commercial · usually 45°</div>
+          <div class="sub2">📍 Movement · Denver RiNo</div>
+          <div class="sub2" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Last seen 9 days ago</span>
+            <span style="color:var(--coral);opacity:.85">Forget</span>
+          </div>
+        </div>
+
+        <div class="tile" style="margin-top:10px">
+          <div class="sub2">Boards are remembered <b>on this phone only</b>; the coarse place is stored on-device and <b>never uploaded</b>. Boards are still recognized by Bluetooth even with location off — angle stays a one-tap confirm.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Boards + the new location signal, in one place.</b> Manage remembered boards and the arrival hint here: a <span class="k">coarse place</span> lets the app suggest your board the moment you walk in, before connecting — computed and stored fully <span class="k">on-device</span>.</div>
+</div>
+  </div>
+
+  <div class="flowhead">Flow 2 · Phase P2</div>
+  <h2 class="flowtitle">Your Climbs — the climbs you set</h2>
+  <p class="flowdesc">Promote the buried "Mine" filter into a first-class <b>Your Climbs</b> gallery: a 2-up board-thumbnail grid (the lit-holds render <i>is</i> the climb's identity), global across layouts, with a Draft/Saved status axis, filter + sort, your own logbook status per climb, and Edit / Duplicate / Share / Delete. Delete keeps your logged ascents. No community signals (none exist on-device).</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Tap "Your Climbs"</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Browse thumbnail grid + filter / sort</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Per-card Edit · Duplicate · Share · Delete</span><span class="arr">→</span>
+    <span class="fs"><i>4</i> Tap → existing climb detail / set on board</span>
+  </div>
+  <div class="gallery">
+    <div class="step">
+  <div class="stepnum">2</div>
+  <div class="device" data-shot="02_yourclimbs">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Kilter</span>
+        <span class="ttl" style="font-size:15px">Your Climbs</span>
+        <span class="sp"></span>
+        <span class="ic">▦</span>
+        <span class="ic">⊕</span>
+      </div>
+      <div class="content">
+
+        <div class="hero">
+          <div class="num amber">37</div>
+          <div class="side"><div class="lbl">climbs set</div></div>
+          <span class="sp"></span>
+          <span class="cta sm">Set a climb</span>
+        </div>
+
+        <div class="seg" style="margin-top:6px">
+          <span>Saved</span><span>Drafts</span><span class="on">All</span>
+        </div>
+
+        <div class="chiprow">
+          <span class="chip on">Layout: All <span class="cv">37</span></span>
+          <span class="chip">Angle</span>
+          <span class="chip">Source</span>
+          <span class="chip ghost">↓ Recently set</span>
+        </div>
+
+        <div class="bgrid">
+
+          <div class="bcard">
+            <div class="board" style="aspect-ratio:7/9">
+              <span class="hold start" style="left:44%;top:91%"></span>
+              <span class="hold foot" style="left:62%;top:82%"></span>
+              <span class="hold hand" style="left:38%;top:68%"></span>
+              <span class="hold hand" style="left:54%;top:50%"></span>
+              <span class="hold hand" style="left:40%;top:33%"></span>
+              <span class="hold finish" style="left:52%;top:15%"></span>
+              <span class="gbadge">V5</span>
+            </div>
+            <div class="nm">Crimp Ladder</div>
+            <div class="mt"><span class="prov">🖐 Hand-set</span> 40° <span class="sp"></span><span class="st st-send">✓ Sent</span></div>
+          </div>
+
+          <div class="bcard">
+            <div class="board" style="aspect-ratio:7/9">
+              <span class="hold start" style="left:18%;top:90%"></span>
+              <span class="hold foot" style="left:34%;top:80%"></span>
+              <span class="hold hand" style="left:32%;top:64%"></span>
+              <span class="hold hand" style="left:56%;top:50%"></span>
+              <span class="hold hand" style="left:78%;top:34%"></span>
+              <span class="hold finish" style="left:82%;top:16%"></span>
+              <span class="gbadge">V7</span>
+            </div>
+            <div class="nm">Sloper Highway</div>
+            <div class="mt"><span class="prov">✨ Generated</span> 45° <span class="sp"></span><span class="st st-proj">◑ Project</span></div>
+          </div>
+
+          <div class="bcard">
+            <div class="board" style="aspect-ratio:7/9">
+              <span class="hold start" style="left:32%;top:92%"></span>
+              <span class="hold foot" style="left:22%;top:80%"></span>
+              <span class="hold foot" style="left:70%;top:78%"></span>
+              <span class="hold hand" style="left:46%;top:60%"></span>
+              <span class="hold hand" style="left:60%;top:42%"></span>
+              <span class="hold finish" style="left:48%;top:22%"></span>
+              <span class="gbadge">V4</span>
+            </div>
+            <div class="nm">Heel-Hook Test</div>
+            <div class="mt"><span class="prov">🖐 Hand-set</span> 30° <span class="sp"></span><span class="st st-attempt">· Untried</span></div>
+          </div>
+
+          <div class="bcard">
+            <div class="board" style="aspect-ratio:7/9">
+              <span class="hold start" style="left:30%;top:90%"></span>
+              <span class="hold start" style="left:68%;top:90%"></span>
+              <span class="hold hand" style="left:50%;top:62%"></span>
+              <span class="hold hand" style="left:34%;top:38%"></span>
+              <span class="hold finish" style="left:62%;top:14%"></span>
+              <span class="gbadge">V6</span>
+            </div>
+            <div class="nm">Power Pull</div>
+            <div class="mt"><span class="prov">✨ Generated</span> 40° <span class="sp"></span><span class="st st-send">✓ Sent</span></div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Your climbs, lit up.</b> The buried <span class="k">Mine</span> filter graduates to a first-class destination, led by the <span class="k">lit-holds render</span> — the board pattern <i>is</i> the climb's identity. Every cell carries your <span class="k">own logbook status</span> (Sent · Project · Untried); no community signals, since none live on-device. <span class="k">Layout: All</span> keeps it global — climbs set on other layouts never vanish.</div>
+</div>
+    <div class="step">
+  <div class="stepnum">3</div>
+  <div class="device" data-shot="02b_actions">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Your Climbs</span>
+        <span class="ttl" style="font-size:15px">Crimp Ladder</span>
+        <span class="sp"></span>
+        <span class="ic">⋯</span>
+      </div>
+      <div class="content">
+
+        <div class="board" style="aspect-ratio:7/8;max-height:198px">
+          <span class="hold start" style="left:30%;top:90%"></span>
+          <span class="hold foot" style="left:62%;top:84%"></span>
+          <span class="hold hand" style="left:38%;top:64%"></span>
+          <span class="hold hand" style="left:66%;top:46%"></span>
+          <span class="hold hand" style="left:34%;top:34%"></span>
+          <span class="hold finish" style="left:54%;top:14%"></span>
+          <span class="gbadge">V6</span>
+        </div>
+
+        <div class="ribbon">
+          <div class="r"><div class="v">V6</div><div class="l">Your grade</div></div>
+          <div class="r"><div class="v">40°</div><div class="l">Angle</div></div>
+          <div class="r"><div class="v">12</div><div class="l">Holds</div></div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0 0">
+          <span class="prov">🖐 Hand-set</span>
+          <span class="prov">Set Jun 12</span>
+          <span class="sp"></span>
+          <span class="st st-send">✓ Sent ×6</span>
+        </div>
+
+        <div class="card" style="margin-top:9px;padding:3px 6px">
+          <div class="row" style="padding:6px 4px;border-bottom:1px solid var(--hair)">
+            <span class="ic" style="color:var(--amber);width:20px;text-align:center">✎</span>
+            <b style="font-size:13px;font-weight:700">Edit</b>
+            <span class="meta" style="font-weight:600">Reopen editor</span>
+          </div>
+          <div class="row" style="padding:6px 4px;border-bottom:1px solid var(--hair)">
+            <span class="ic" style="color:var(--amber);width:20px;text-align:center">⧉</span>
+            <b style="font-size:13px;font-weight:700">Duplicate</b>
+            <span class="meta" style="font-weight:600">Clone as draft</span>
+          </div>
+          <div class="row" style="padding:6px 4px;border-bottom:1px solid var(--hair)">
+            <span class="ic" style="color:var(--amber);width:20px;text-align:center">⤴</span>
+            <b style="font-size:13px;font-weight:700">Share (QR)</b>
+            <span class="meta" style="font-weight:600">Send to a friend</span>
+          </div>
+          <div class="row" style="padding:6px 4px;border-bottom:none">
+            <span class="ic" style="color:var(--hard);width:20px;text-align:center">🗑</span>
+            <b style="font-size:13px;font-weight:700;color:var(--hard)">Delete</b>
+            <span class="meta" style="font-weight:600;color:var(--hard);opacity:.8">Keeps ascents</span>
+          </div>
+        </div>
+
+        <div class="glassbar" style="bottom:14px">
+          <div class="cardhead"><b>Delete ‘Crimp Ladder’?</b></div>
+          <div class="sub2" style="margin-top:6px;color:var(--amber);font-weight:600">Your 6 logged ascents stay in your History.</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:11px">
+            <span class="cta sm outline" style="flex:1">Cancel</span>
+            <span class="cta sm" style="flex:1;background:var(--hard);box-shadow:none">Delete</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Per-card actions, safe delete.</b> Every climb offers <span class="k">Edit · Duplicate · Share · Delete</span> from one menu. Delete is guarded — it removes the climb but <span class="k">keeps your logged ascents</span> in History, mirroring the canonical <code>KilterCreatedClimb.delete</code>.</div>
+</div>
+  </div>
+
+  <div class="flowhead">Flow 3 · Phases P0 + P3</div>
+  <h2 class="flowtitle">Climbing analytics dashboard</h2>
+  <p class="flowdesc">The keystone: lift the per-session <code>KilterSessionStats</code> engine into a pure, unit-tested all-time aggregator (<code>KilterAllTimeStats</code>) and feed a tiered Pulse&nbsp;Pro dashboard — one hero numeral (Climbing Level) → the signature segmented grade pyramid → send/flash rings → volume trend → angle distribution → a kindly consistency surface. Tiles are doorways: tap into a full trend screen. This <i>deletes</i> the untested hand-rolled math currently inline in History. Kilter-board data only.</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Open Stats from Kilter root</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Hero Climbing Level + delta</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Grade pyramid · rings · trends · angle</span><span class="arr">→</span>
+    <span class="fs"><i>4</i> Tap a tile → full trend (tier-2)</span>
+  </div>
+  <div class="gallery">
+    <div class="step">
+  <div class="stepnum">2</div>
+  <div class="device" data-shot="03_dashboard">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Kilter</span>
+        <span class="ttl" style="font-size:15px">Stats</span>
+        <span class="sp"></span>
+        <span class="ic">⤴</span>
+      </div>
+      <div class="content">
+
+        <div class="hero">
+          <div class="num amber">V7</div>
+          <div class="side">
+            <div class="lbl">Climbing Level</div>
+            <span class="delta" style="margin-top:5px">▲ +1 vs 90d</span>
+          </div>
+        </div>
+
+        <div class="ribbon">
+          <div class="r"><div class="v">412</div><div class="l">Sent</div></div>
+          <div class="r"><div class="v">38%</div><div class="l">Flash rate</div></div>
+          <div class="r"><div class="v">24</div><div class="l">This week</div></div>
+        </div>
+
+        <div class="card">
+          <div class="cardhead">
+            <span class="ic">▰</span>
+            <b>Grade pyramid</b>
+            <span class="chev">›</span>
+          </div>
+          <div class="pyr">
+            <div class="pr"><span class="pg">V9</span><span class="pbar"><span class="seg flash" style="width:0"></span><span class="seg send" style="width:2%"></span><span class="seg proj" style="width:11%"></span></span><span class="pc">5</span></div>
+            <div class="pr"><span class="pg">V8</span><span class="pbar"><span class="seg flash" style="width:2%"></span><span class="seg send" style="width:7%"></span><span class="seg proj" style="width:16%"></span></span><span class="pc">13</span></div>
+            <div class="pmax"><span>V7 max</span></div>
+            <div class="pr"><span class="pg">V7</span><span class="pbar"><span class="seg flash" style="width:8%"></span><span class="seg send" style="width:24%"></span><span class="seg proj" style="width:14%"></span></span><span class="pc">46</span></div>
+            <div class="pr"><span class="pg">V6</span><span class="pbar"><span class="seg flash" style="width:24%"></span><span class="seg send" style="width:34%"></span><span class="seg proj" style="width:9%"></span></span><span class="pc">85</span></div>
+            <div class="pr"><span class="pg">V5</span><span class="pbar"><span class="seg flash" style="width:42%"></span><span class="seg send" style="width:35%"></span><span class="seg proj" style="width:6%"></span></span><span class="pc">119</span></div>
+            <div class="pr"><span class="pg">V4</span><span class="pbar"><span class="seg flash" style="width:58%"></span><span class="seg send" style="width:34%"></span><span class="seg proj" style="width:4%"></span></span><span class="pc">144</span></div>
+          </div>
+          <div class="sub2" style="margin-top:3px">⚡ Flash · ✓ Send · ◑ Project — tap a grade to filter your sends</div>
+        </div>
+
+        <div class="rings">
+          <div class="ring">
+            <div class="rg" style="--rc:var(--fresh);--p:64%"><span class="rv">64%</span></div>
+            <div class="rl">Send rate</div>
+          </div>
+          <div class="ring">
+            <div class="rg" style="--rc:var(--flash);--p:38%"><span class="rv">38%</span></div>
+            <div class="rl">Flash rate</div>
+          </div>
+        </div>
+
+        <div class="tile" style="margin:0">
+          <div class="cardhead" style="font-size:13px">
+            <span class="ic">▦</span>
+            <b>Sends / week</b>
+            <span class="chev">›</span>
+          </div>
+          <div class="bars" style="height:38px;margin:7px 2px 2px">
+            <div class="b" style="height:40%"></div>
+            <div class="b" style="height:56%"></div>
+            <div class="b" style="height:34%"></div>
+            <div class="b" style="height:68%"></div>
+            <div class="b" style="height:52%"></div>
+            <div class="b" style="height:62%"></div>
+            <div class="b" style="height:46%"></div>
+            <div class="b" style="height:100%"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Your climbing, aggregated.</b> Lift the per-session <span class="k">KilterSessionStats</span> engine into a pure <span class="k">all-time aggregator</span> that powers this dashboard — one hero numeral, and a <span class="k">style-segmented, banded, tappable pyramid</span> as the signature visual. Deletes the untested inline History math.</div>
+</div>
+    <div class="step">
+  <div class="stepnum">4</div>
+  <div class="device" data-shot="03b_trend">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Stats</span>
+        <span class="ttl" style="font-size:15px">Sends per week</span>
+        <span class="sp"></span>
+      </div>
+      <div class="content">
+
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0 4px">
+          <span class="big" style="font-size:19px;font-weight:820">Sends / week</span>
+          <span class="delta">▲ +18% vs prev 3m</span>
+        </div>
+
+        <div class="seg" style="margin-bottom:4px">
+          <span>30d</span><span class="on">3m</span><span>1y</span><span>All</span>
+        </div>
+
+        <div class="card" style="margin:7px 0">
+          <div class="bars" style="height:66px">
+            <div class="b ghost" style="height:38%"></div>
+            <div class="b" style="height:42%"></div>
+            <div class="b ghost" style="height:46%"></div>
+            <div class="b" style="height:50%"></div>
+            <div class="b" style="height:44%"></div>
+            <div class="b" style="height:58%"></div>
+            <div class="b ghost" style="height:54%"></div>
+            <div class="b" style="height:66%"></div>
+            <div class="b" style="height:62%"></div>
+            <div class="b" style="height:78%"></div>
+            <div class="b" style="height:88%"></div>
+            <div class="b" style="height:100%"></div>
+          </div>
+          <div class="axis"><span>Mar</span><span>Apr</span><span>May</span></div>
+          <div class="sub2" style="margin-top:4px;display:flex;align-items:center;gap:6px">
+            <span style="width:14px;height:8px;background:#3a3a42;border-radius:2px;display:inline-block;flex:none"></span>
+            Ghost = previous 3m · solid = this period
+          </div>
+        </div>
+
+        <div class="card" style="margin:7px 0">
+          <div class="cardhead"><span class="ic">⛰</span><b>Max grade progression</b><span class="delta" style="margin-left:auto;white-space:nowrap">▲ V6 → V7</span></div>
+          <div class="bars" style="height:48px">
+            <div class="b" style="height:28%"></div>
+            <div class="b" style="height:28%"></div>
+            <div class="b" style="height:44%"></div>
+            <div class="b" style="height:44%"></div>
+            <div class="b" style="height:44%"></div>
+            <div class="b" style="height:62%"></div>
+            <div class="b" style="height:62%"></div>
+            <div class="b" style="height:80%"></div>
+            <div class="b" style="height:80%"></div>
+            <div class="b" style="height:80%"></div>
+            <div class="b" style="height:100%"></div>
+            <div class="b" style="height:100%"></div>
+          </div>
+          <div class="axis"><span>Mar</span><span>Apr</span><span>May · V7</span></div>
+        </div>
+
+        <div class="ribbon">
+          <div class="r"><div class="v">1.8</div><div class="l">Avg → send</div></div>
+          <div class="r"><div class="v">3.2</div><div class="l">Sessions/wk</div></div>
+          <div class="r"><div class="v">40°</div><div class="l">Top angle</div></div>
+        </div>
+
+        <div class="card" style="margin:7px 0">
+          <div class="cardhead"><span class="ic">∠</span><b>Sends by angle</b></div>
+          <div class="pyr">
+            <div class="pr"><span class="pg">25°</span><span class="pbar"><span class="seg send" style="width:34%"></span></span><span class="pc">9</span></div>
+            <div class="pr"><span class="pg">30°</span><span class="pbar"><span class="seg send" style="width:58%"></span></span><span class="pc">16</span></div>
+            <div class="pr"><span class="pg">40°</span><span class="pbar"><span class="seg send" style="width:100%"></span></span><span class="pc">27</span></div>
+            <div class="pr"><span class="pg">45°</span><span class="pbar"><span class="seg send" style="width:22%"></span></span><span class="pc">6</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>A tile is a doorway.</b> Tapping the Volume tile opens one metric, range-controlled — every period carries a <span class="k">vs-previous delta</span> with a ghost prior trace, and <span class="k">sends-by-angle</span> surfaces a uniquely-Kilter dimension we never aggregate today.</div>
+</div>
+  </div>
+
+  <div class="flowhead">Flow 4 · Phases P0 + P4</div>
+  <h2 class="flowtitle">Redesigned session history</h2>
+  <p class="flowdesc">From one flat reverse-chron list to a grouped, scoped, filterable timeline: month buckets whose sticky headers double as roll-ups ("June — 7 sessions · 41 sent · hardest V7"), a Week/Month/All scope switcher, faceted filters + search with stale-filter recovery, <b>both</b> a consistency heatmap and a tappable month calendar, and adaptive 3-4-fact session cards (one badge max). Session detail gains naming + notes + metadata (date/angle) edit via additive fields.</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Open History → grouped timeline</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Scope + filter + search + heatmap/calendar</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Tap session card → detail / replay</span><span class="arr">→</span>
+    <span class="fs"><i>4</i> Name it · notes · edit date/angle</span>
+  </div>
+  <div class="gallery">
+    <div class="step">
+  <div class="stepnum">1</div>
+  <div class="device" data-shot="04_history">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Kilter</span>
+        <span class="ttl" style="font-size:15px">History</span>
+        <span class="sp"></span>
+        <span class="ic">⚲</span>
+        <span class="ic">▦</span>
+      </div>
+      <div class="content">
+        <div class="seg"><span>Week</span><span class="on">Month</span><span>All</span></div>
+
+        <div class="search">Search sessions</div>
+
+        <div class="chiprow">
+          <div class="chip">Board</div>
+          <div class="chip on">40°</div>
+          <div class="chip">Grade</div>
+          <div class="chip">Status</div>
+          <div class="chip">Source</div>
+        </div>
+
+        <div class="heat">
+          <div class="hc l1"></div><div class="hc l3"></div><div class="hc l2"></div><div class="hc l4"></div><div class="hc"></div><div class="hc l1"></div><div class="hc l3"></div><div class="hc l2"></div><div class="hc l4"></div><div class="hc l1"></div><div class="hc"></div><div class="hc l2"></div><div class="hc l3"></div>
+          <div class="hc l2"></div><div class="hc l4"></div><div class="hc l1"></div><div class="hc"></div><div class="hc l3"></div><div class="hc l2"></div><div class="hc l4"></div><div class="hc l1"></div><div class="hc l3"></div><div class="hc l2"></div><div class="hc"></div><div class="hc l4"></div><div class="hc today"></div>
+        </div>
+
+        <div class="grouphdr"><b>June</b><span class="ru">7 sessions · 41 sent · hardest V7</span></div>
+
+        <div class="sesscard">
+          <div class="edge"></div>
+          <div class="h"><span class="d">Tue Jun 18</span><span class="t">1h04</span></div>
+          <div class="chiprow">
+            <span class="st st-send">✓ 8 sends</span>
+            <span class="spill">V6 hardest</span>
+            <span class="spill pr">PR</span>
+          </div>
+        </div>
+
+        <div class="sesscard">
+          <div class="edge"></div>
+          <div class="h"><span class="d">Sun Jun 16</span><span class="t">52m</span></div>
+          <div class="chiprow">
+            <span class="st st-flash">⚡ 42% flash</span>
+            <span class="spill">V5 hardest</span>
+            <span class="prov">📶 BLE</span>
+          </div>
+        </div>
+
+        <div class="grouphdr"><b>May</b><span class="ru">9 sessions · 53 sent · hardest V6</span></div>
+
+        <div class="sesscard">
+          <div class="edge"></div>
+          <div class="h"><span class="d">Fri May 30</span><span class="t">1h11</span></div>
+          <div class="chiprow">
+            <span class="st st-send">✓ 6 sends</span>
+            <span class="spill">V6 hardest</span>
+            <span class="spill az">25°</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>History that reads like progress.</b> From one flat reverse-chron list to <span class="k">month buckets whose headers double as roll-ups</span>, a scope switcher, faceted filters + search, and a kindly consistency heatmap — with <span class="k">adaptive 3–4-fact cards (one badge max)</span> that surface flash rate, hardest send, PRs and provenance.</div>
+</div>
+    <div class="step">
+  <div class="stepnum">4</div>
+  <div class="device" data-shot="04b_detail">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ History</span>
+        <span class="ttl" style="font-size:15px">Evening Power</span>
+        <span class="sp"></span>
+        <span class="ic" style="color:var(--amber)">Edit</span>
+      </div>
+      <div class="content">
+
+        <div class="hero">
+          <div class="num amber">V7</div>
+          <div class="side"><div class="lbl">hardest send</div></div>
+        </div>
+        <div class="sub2" style="display:flex;align-items:center;gap:7px;margin:-2px 2px 0">
+          <span>Tue Jun 18 · 8×12 Home · 40°</span>
+          <span class="prov">📶 BLE</span>
+        </div>
+
+        <div style="border-left:2px solid var(--amber);padding-left:9px;margin:11px 0 9px">
+          <div class="field" style="margin:0 0 6px">
+            <span class="fl">Name</span>
+            <span style="font-weight:700">Evening Power</span>
+            <span class="sp"></span>
+            <span style="color:var(--amber);font-size:13px">✎</span>
+          </div>
+          <div class="field" style="margin:0 0 6px">
+            <span class="fl">Angle</span>
+            <span style="font-weight:700">40°</span>
+            <span class="sp"></span>
+            <span style="color:var(--amber);font-weight:800;font-size:14px;letter-spacing:2px">‹ ›</span>
+          </div>
+          <div class="field" style="margin:0">
+            <span class="fl">Date</span>
+            <span style="font-weight:700">Jun 18, 2026</span>
+            <span class="sp"></span>
+            <span style="color:var(--amber);font-size:13px">✎</span>
+          </div>
+        </div>
+
+        <div class="note" style="border-left:2px solid var(--amber);margin:0 0 10px">
+          <div class="lbl" style="margin-bottom:4px">Notes / Feel</div>
+          Felt strong on crimps — foot slipped on the V7 crux twice. Try the left heel next time.
+        </div>
+
+        <div class="ribbon" style="margin:0 0 6px">
+          <div class="r"><div class="v">8</div><div class="l">Sends</div></div>
+          <div class="r"><div class="v">3</div><div class="l">Flash</div></div>
+          <div class="r"><div class="v">1h04</div><div class="l">Time</div></div>
+        </div>
+
+        <div class="pyr">
+          <div class="pr"><span class="pg">V7</span><span class="pbar"><span class="seg proj" style="width:100%"></span></span><span class="pc">1</span></div>
+          <div class="pr"><span class="pg">V6</span><span class="pbar"><span class="seg send" style="width:67%"></span><span class="seg proj" style="width:33%"></span></span><span class="pc">3</span></div>
+          <div class="pr"><span class="pg">V5</span><span class="pbar"><span class="seg flash" style="width:50%"></span><span class="seg send" style="width:50%"></span></span><span class="pc">4</span></div>
+          <div class="pr"><span class="pg">V4</span><span class="pbar"><span class="seg flash" style="width:100%"></span></span><span class="pc">2</span></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Edit the session, not just the climb.</b> Detail gains <span class="k">session naming + notes + metadata edit</span> via additive optional fields on <code>KilterSession</code> (lightweight migration), mirroring the gym tracker's all-axis edit. The rest of the replay — <span class="k">hero, pyramid, HR, timeline</span> — is unchanged.</div>
+</div>
+  </div>
+
+  <div class="flowhead">Flow 5 · Phase P5</div>
+  <h2 class="flowtitle">On the Board — the climbs you lit on the wall</h2>
+  <p class="flowdesc">A brand-new axis the app can't show today: lighting a climb on the board (<code>KilterBoardController.illuminate</code>) is a transient BLE write recorded <i>nowhere</i>. We capture a lightweight <b>lit-event</b> at the illuminate call sites (deduped per climb-per-session so it stays bounded) and surface an <b>On&nbsp;the&nbsp;Board</b> timeline of every climb you actually pulled up & worked — including the ones you never formally logged — with status joined from your ascent log (Lit / Attempt / ✓ Sent) and <b>one-tap re-light</b>. A "Recently on the board" rail on the root resumes a project instantly.</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Light a climb on the board (existing)</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Lit-event captured (climb · grade · angle · time)</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Browse On the Board timeline + status</span><span class="arr">→</span>
+    <span class="fs"><i>4</i> One-tap re-light from history or root rail</span>
+  </div>
+  <div class="gallery">
+    <div class="step">
+  <div class="stepnum">1</div>
+  <div class="device" data-shot="05_ontheboard">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav">
+        <span class="bk">‹ Kilter</span>
+        <span class="ttl" style="font-size:15px">On the Board</span>
+        <span class="sp"></span>
+        <span class="ic">⚲</span>
+      </div>
+      <div class="content">
+
+        <div class="hero">
+          <div class="num amber">63</div>
+          <div class="side"><div class="lbl">climbs worked · 30d</div></div>
+        </div>
+
+        <div class="chiprow">
+          <span class="chip on">All</span>
+          <span class="chip">Lit only</span>
+          <span class="chip">Sent</span>
+          <span class="chip">Angle</span>
+          <span class="chip">Board</span>
+        </div>
+
+        <div class="grouphdr"><b>Today · 40°</b><span class="ru">9 lit · 3 sent</span></div>
+
+        <div class="row">
+          <div class="board" style="width:34px;height:44px;flex:0 0 auto">
+            <span class="hold start" style="left:34%;top:86%"></span>
+            <span class="hold hand" style="left:48%;top:58%"></span>
+            <span class="hold hand" style="left:40%;top:34%"></span>
+            <span class="hold finish" style="left:56%;top:14%"></span>
+          </div>
+          <div>
+            <div style="font-weight:750;color:var(--ink)">Crimp Ladder</div>
+            <div class="sub2">V6 · 40° · 7:24 PM</div>
+          </div>
+          <div class="meta"><span class="st st-send">✓ Sent</span> <span>↻</span></div>
+        </div>
+
+        <div class="row">
+          <div class="board" style="width:34px;height:44px;flex:0 0 auto">
+            <span class="hold start" style="left:24%;top:88%"></span>
+            <span class="hold hand" style="left:58%;top:60%"></span>
+            <span class="hold hand" style="left:36%;top:40%"></span>
+            <span class="hold finish" style="left:64%;top:16%"></span>
+          </div>
+          <div>
+            <div style="font-weight:750;color:var(--ink)">Sloper Highway</div>
+            <div class="sub2">V7 · 40° · 7:09 PM</div>
+          </div>
+          <div class="meta"><span class="st st-attempt">◑ Attempt</span> <span>↻</span></div>
+        </div>
+
+        <div class="row">
+          <div class="board" style="width:34px;height:44px;flex:0 0 auto">
+            <span class="hold start" style="left:50%;top:87%"></span>
+            <span class="hold hand" style="left:38%;top:56%"></span>
+            <span class="hold hand" style="left:60%;top:38%"></span>
+            <span class="hold finish" style="left:48%;top:14%"></span>
+          </div>
+          <div>
+            <div style="font-weight:750;color:var(--ink)">Heel-Hook Test</div>
+            <div class="sub2">V5 · 40° · 6:51 PM</div>
+          </div>
+          <div class="meta"><span class="st st-attempt">· Lit</span> <span>↻</span></div>
+        </div>
+
+        <div class="grouphdr"><b>Yesterday · BetaBoulders Gym</b><span class="ru">12 lit · 5 sent</span></div>
+
+        <div class="row">
+          <div class="board" style="width:34px;height:44px;flex:0 0 auto">
+            <span class="hold start" style="left:30%;top:88%"></span>
+            <span class="hold start" style="left:66%;top:88%"></span>
+            <span class="hold hand" style="left:50%;top:54%"></span>
+            <span class="hold finish" style="left:58%;top:15%"></span>
+          </div>
+          <div>
+            <div style="font-weight:750;color:var(--ink)">Power Pull</div>
+            <div class="sub2">V6 · 45° · 8:12 PM</div>
+          </div>
+          <div class="meta"><span class="st st-send">✓ Sent</span> <span>↻</span></div>
+        </div>
+
+        <div class="row">
+          <div class="board" style="width:34px;height:44px;flex:0 0 auto">
+            <span class="hold start" style="left:44%;top:86%"></span>
+            <span class="hold hand" style="left:30%;top:60%"></span>
+            <span class="hold hand" style="left:62%;top:42%"></span>
+            <span class="hold finish" style="left:52%;top:16%"></span>
+          </div>
+          <div>
+            <div style="font-weight:750;color:var(--ink)">Compression Wall</div>
+            <div class="sub2">V8 · 45° · 7:48 PM</div>
+          </div>
+          <div class="meta"><span class="st st-attempt">· Lit</span> <span>↻</span></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>The climbs you lit but never logged.</b> Illuminating a climb is transient and recorded nowhere today; we capture a lightweight lit-event and show <span class="k">the climbs you actually pulled up &amp; worked</span> — status joined from your logs (· Lit · ◑ Attempt · ✓ Sent) with <span class="k">one-tap re-light</span>.</div>
+</div>
+    <div class="step">
+  <div class="stepnum">4</div>
+  <div class="device" data-shot="05b_recent_rail">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+      <div class="nav"><span class="ttl">Kilter</span><span class="sp"></span><span class="prov">📶 Connected</span><span class="ic">⚙</span></div>
+      <div class="content">
+
+        <div class="cardhead" style="margin-bottom:8px">
+          <span class="lbl">RECENTLY ON THE BOARD</span>
+          <span class="chev">See all ›</span>
+        </div>
+
+        <div style="display:flex;gap:8px;overflow:hidden;margin-bottom:16px">
+
+          <div class="card" style="width:96px;padding:7px;flex:0 0 auto">
+            <div class="board" style="aspect-ratio:7/9;margin-bottom:6px">
+              <span class="hold start" style="left:24%;top:86%"></span>
+              <span class="hold hand" style="left:60%;top:58%"></span>
+              <span class="hold hand" style="left:34%;top:34%"></span>
+              <span class="hold finish" style="left:54%;top:12%"></span>
+              <span class="gbadge">V6</span>
+            </div>
+            <div class="nm" style="font-size:11px">Crimp Ladder</div>
+            <span class="st st-proj" style="margin-top:5px">◑ Project</span>
+            <div class="cta amber sm" style="margin-top:6px;width:100%;text-align:center">↻ Re-light</div>
+          </div>
+
+          <div class="card" style="width:96px;padding:7px;flex:0 0 auto">
+            <div class="board" style="aspect-ratio:7/9;margin-bottom:6px">
+              <span class="hold start" style="left:30%;top:88%"></span>
+              <span class="hold hand" style="left:46%;top:54%"></span>
+              <span class="hold hand" style="left:66%;top:38%"></span>
+              <span class="hold finish" style="left:40%;top:14%"></span>
+              <span class="gbadge">V4</span>
+            </div>
+            <div class="nm" style="font-size:11px">Slab Dance</div>
+            <span class="st st-send" style="margin-top:5px">✓ Send</span>
+            <div class="cta amber sm" style="margin-top:6px;width:100%;text-align:center">↻ Re-light</div>
+          </div>
+
+          <div class="card" style="width:96px;padding:7px;flex:0 0 auto">
+            <div class="board" style="aspect-ratio:7/9;margin-bottom:6px">
+              <span class="hold start" style="left:22%;top:84%"></span>
+              <span class="hold foot" style="left:50%;top:66%"></span>
+              <span class="hold hand" style="left:62%;top:40%"></span>
+              <span class="hold finish" style="left:36%;top:14%"></span>
+              <span class="gbadge">V7</span>
+            </div>
+            <div class="nm" style="font-size:11px">Pocket Pull</div>
+            <span class="st st-attempt" style="margin-top:5px">· Attempt</span>
+            <div class="cta amber sm" style="margin-top:6px;width:100%;text-align:center">↻ Re-light</div>
+          </div>
+
+        </div>
+
+        <div class="lbl" style="margin-bottom:8px">BROWSE</div>
+        <div class="chiprow" style="margin-bottom:12px">
+          <span class="chip on">Layout 8×12 Home</span>
+          <span class="chip">Angle 40°</span>
+          <span class="chip ghost">Grade</span>
+        </div>
+
+        <div class="row">
+          <div class="num">Granite Arête<div class="meta">V5 · 40° · 412 ascents</div></div>
+          <span class="chev">›</span>
+        </div>
+        <div class="row">
+          <div class="num">Sloper Traverse<div class="meta">V6 · 40° · 188 ascents</div></div>
+          <span class="chev">›</span>
+        </div>
+        <div class="row">
+          <div class="num">Dyno Finish<div class="meta">V8 · 40° · 73 ascents</div></div>
+          <span class="chev">›</span>
+        </div>
+
+      </div>
+      <div class="tabbar">
+        <div class="tb on"><span class="g">▦</span>Browse</div>
+        <div class="tb"><span class="g">＋</span>Create</div>
+        <div class="tb"><span class="g">▤</span>On the Board</div>
+        <div class="tb"><span class="g">◷</span>Sessions</div>
+        <div class="tb"><span class="g">◐</span>You</div>
+      </div>
+    </div>
+  </div>
+  <div class="caption"><b>Recently on the board.</b> A quick-access rail <span class="k">re-lights a climb you worked recently in one tap</span> — resume a project instantly. The full lit history lives in "On the Board".</div>
+</div>
+  </div>
+
+</div>
+</body>
+</html>
