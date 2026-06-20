@@ -26,8 +26,14 @@ struct KilterRootView: View {
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var statsSessions: [KilterSession]
     /// Climbs the user authored on this device (manual editor / generator) — the "Mine" filter's source.
     @Query private var createdClimbs: [KilterCreatedClimb]
+    /// Climbs lit on the board (P5) — backs the "Recently on the board" re-light rail.
+    @Query(sort: \KilterLitEvent.litAt, order: .reverse) private var litEvents: [KilterLitEvent]
 
     private let catalog = KilterCatalog.shared
+    /// The shared board-render cache (F5) for the "Recently on the board" rail's thumbnails, so each
+    /// climb's `catalog.climb/holds/boardGeometry` resolves from SQLite ONCE (keyed by `uuid|sizeId`) —
+    /// not per row per re-render. The same type the gallery (P2) and On the Board timeline use.
+    @State private var railThumbs = KilterThumbnailCache()
     /// Whether a catalog is installed — flips the view between the browse list and the opt-in
     /// `KilterCatalogSyncView`. Kept current via `KilterCatalogStore.didChangeNotification`.
     @State private var catalogInstalled = KilterCatalogStore.shared.isInstalled
@@ -208,6 +214,10 @@ struct KilterRootView: View {
                         Label("Stats", systemImage: "chart.bar.xaxis")
                     }
                     .accessibilityIdentifier("kilter.stats")
+                    Button { router.push(KilterOnTheBoardRoute()) } label: {
+                        Label("On the Board", systemImage: "lightbulb")
+                    }
+                    .accessibilityIdentifier("kilter.onTheBoard")
                     Button { surpriseMe() } label: { Label("Surprise me", systemImage: "dice") }
                         .accessibilityIdentifier("kilter.surprise")
                     Button { showingScanner = true } label: {
@@ -299,6 +309,10 @@ struct KilterRootView: View {
         }
         .navigationDestination(for: KilterPlanRoute.self) { _ in
             KilterPlanView(sessions: sessions)
+        }
+        // P5: the history of climbs the user lit on the board (deduped, status-joined, one-tap re-light).
+        .navigationDestination(for: KilterOnTheBoardRoute.self) { _ in
+            KilterOnTheBoardView(board: board, sessions: sessions)
         }
         .task(id: filterKey) { refresh() }
         // Memoize the trend-detail aggregate (F6): rebuild only when the logs/sessions actually change,
@@ -522,6 +536,7 @@ struct KilterRootView: View {
             // bar when one is active, a first-class **Start session** control when idle (#75 —
             // start/end no longer hide in the More menu; the bars own the lifecycle).
             if sessions.isActive { sessionBar } else { idleSessionBar }
+            recentlyOnTheBoardRail
             countBar
             List {
                 if showDiscovery, let cotd {
@@ -606,6 +621,103 @@ struct KilterRootView: View {
             .accessibilityIdentifier("kilter.session.start")
         }
         .padding(.horizontal).padding(.vertical, 6)
+    }
+
+    // MARK: - P5 "Recently on the board" re-light rail
+
+    /// The deduped, newest-first recent lit climbs for the rail (status joined for the chip).
+    private var recentRail: [KilterOnTheBoard.Row] {
+        KilterOnTheBoard.recent(litEvents.map(KilterOnTheBoard.LitEvent.from),
+                                logs: allEntries.map(KilterClimbLog.from), limit: 8)
+    }
+
+    /// A horizontal rail of the most-recent climbs lit on the board, each a one-tap **re-light**, with a
+    /// "See all" link into the full On the Board timeline (wireframe `05b_recent_rail`). Hidden until the
+    /// climber has lit something.
+    @ViewBuilder private var recentlyOnTheBoardRail: some View {
+        let rows = recentRail
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("RECENTLY ON THE BOARD")
+                        .font(.caption.weight(.bold)).tracking(0.5)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button { router.push(KilterOnTheBoardRoute()) } label: {
+                        HStack(spacing: 2) { Text("See all"); Image(systemName: "chevron.right").font(.caption2) }
+                            .font(.caption.weight(.semibold))
+                    }
+                    .accessibilityIdentifier("kilter.board.seeAll")
+                }
+                .padding(.horizontal)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(rows) { row in recentRailCard(row) }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.vertical, 6)
+            .accessibilityIdentifier("kilter.board.recentRail")
+        }
+    }
+
+    private func recentRailCard(_ row: KilterOnTheBoard.Row) -> some View {
+        let e = row.event
+        return VStack(alignment: .leading, spacing: 6) {
+            recentRailThumbnail(e).frame(width: 96, height: 110)
+            Text(e.climbName).font(.caption.weight(.semibold)).lineLimit(1)
+            Text(row.status.label)
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(statusTint(row.status).opacity(0.16), in: Capsule())
+                .foregroundStyle(statusTint(row.status))
+            Button { relightRecent(e) } label: {
+                Label("Re-light", systemImage: "arrow.clockwise")
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(SnappetColor.moduleAccent("kilter"))
+            .accessibilityIdentifier("kilter.board.rail.relight")
+        }
+        .frame(width: 110)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kilter.board.railCard")
+    }
+
+    @ViewBuilder private func recentRailThumbnail(_ e: KilterOnTheBoard.LitEvent) -> some View {
+        if let render = railThumbs.render(forCatalogUUID: e.climbUUID, sizeId: e.sizeId, catalog: catalog) {
+            KilterBoardView(geometry: render.geometry, holds: render.holds)
+        } else {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(SnappetColor.surfaceMuted)
+                .overlay(Image(systemName: "square.grid.3x3").foregroundStyle(.secondary))
+        }
+    }
+
+    private func statusTint(_ status: KilterOnTheBoard.Status) -> Color {
+        switch status {
+        case .sent: return .green
+        case .attempt: return .orange
+        case .lit: return .secondary
+        }
+    }
+
+    /// Re-light a recent climb from the root rail = "put this climb up again now": send its holds to the
+    /// board AND upsert a lit-event for the CURRENT session via the shared capture path (F3). The old code
+    /// bumped the newest event for this climb across ALL sessions, corrupting a different session's
+    /// `litAt`; recording into the current session keeps every session's history intact.
+    private func relightRecent(_ e: KilterOnTheBoard.LitEvent) {
+        if let climb = catalog.climb(e.climbUUID) {
+            board.illuminate(catalog.holds(for: climb, sizeId: e.sizeId))
+        }
+        upsertLitEvent(climbUUID: e.climbUUID, climbName: e.climbName, layoutId: e.layoutId,
+                       angle: e.angle, sizeId: e.sizeId, gradeLabel: e.gradeLabel,
+                       sessionId: sessions.currentId, wasConnected: board.isConnected,
+                       in: modelContext)
+        Haptics.tap()
     }
 
     // MARK: - P1 board-detect surfaces

@@ -452,3 +452,43 @@ final class KilterFavorite {
         self.addedAt = addedAt
     }
 }
+
+/// A climb the user **lit on the board** (Kilter Improvement P5) — the brand-new axis the app couldn't
+/// show before: every climb pulled up and worked, including the ones never formally logged as an ascent.
+/// Captured at the `illuminate()` call sites (where the climb identity is known), NOT inside the
+/// platform-pure `KilterBoardController`. **Deduped per climb-per-session** so re-lighting a project ten
+/// times in one session yields ONE row (the `litAt` bumps to the latest light) — keeping the lit log
+/// bounded. Snapshots the climb's display facts (name/grade/angle/layout/size) so "On the Board" renders
+/// a thumbnail + row without re-opening the catalog. Status (Lit / Attempt / ✓ Sent) is joined from
+/// `KilterLogEntry` by the pure `KilterOnTheBoard` helper — never stored here. The integrator appends
+/// `KilterLitEvent.self` to `SnappetSchema.models`.
+@Model
+final class KilterLitEvent {
+    var climbUUID: String
+    var climbName: String
+    var gradeLabel: String
+    var angle: Int
+    var layoutId: Int
+    var sizeId: Int
+    /// When the climb was most-recently lit in this session (bumped on each re-light → dedup key).
+    var litAt: Date
+    /// Whether a board was actually connected when lit (an explicit "Light on board" tap with no board,
+    /// or the on-screen render with no connection, still records intent but flags it as not-on-the-wall).
+    var wasConnected: Bool
+    /// The board session this light belongs to (`KilterSession.id`), or `nil` for a light with no live
+    /// session. The dedup key is `(normalized climbUUID, sessionId)`.
+    var sessionId: UUID?
+
+    init(climbUUID: String, climbName: String, gradeLabel: String, angle: Int, layoutId: Int,
+         sizeId: Int, litAt: Date = .now, wasConnected: Bool = false, sessionId: UUID? = nil) {
+        self.climbUUID = climbUUID
+        self.climbName = climbName
+        self.gradeLabel = gradeLabel
+        self.angle = angle
+        self.layoutId = layoutId
+        self.sizeId = sizeId
+        self.litAt = litAt
+        self.wasConnected = wasConnected
+        self.sessionId = sessionId
+    }
+}

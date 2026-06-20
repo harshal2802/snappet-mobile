@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 22, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 23, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -290,9 +290,35 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertEqual(try SnappetBackup.encode(a), try SnappetBackup.encode(b))
     }
 
+    // MARK: - F4: KilterLitEvent sortKey is total/stable across same-climb/different-session
+
+    /// Two `KilterLitEvent` rows for the SAME climb at the SAME instant + angle but DIFFERENT sessions must
+    /// get DISTINCT sort keys, so the backup row ordering is total and the round-trip export is
+    /// deterministic. The old key omitted `sessionId`, so cross-session rows tied — leaving their order to
+    /// the (input-dependent) sort, which broke the re-export-equality contract (#68 determinism).
+    func testKilterLitEventSortKeyDistinguishesSameClimbDifferentSession() {
+        let at = Date(timeIntervalSince1970: 1_700_009_200)
+        func row(_ session: UUID?, connected: Bool = true) -> SnappetBackup.KilterLitEventRow {
+            SnappetBackup.KilterLitEventRow(
+                KilterLitEvent(climbUUID: "abc", climbName: "Crimpy", gradeLabel: "6a/V3",
+                               angle: 40, layoutId: 1, sizeId: 10, litAt: at,
+                               wasConnected: connected, sessionId: session))
+        }
+        let s1 = row(UUID()), s2 = row(UUID())
+        XCTAssertNotEqual(s1.sortKey, s2.sortKey,
+                          "same climb/instant/angle in different sessions must not collide")
+        // A nil-session row is distinct from a real-session one (its own bucket), and from a same-key row
+        // that differs only in `wasConnected` (the final distinguishing field).
+        XCTAssertNotEqual(row(nil).sortKey, s1.sortKey)
+        let session = UUID()
+        XCTAssertNotEqual(row(session, connected: true).sortKey,
+                          row(session, connected: false).sortKey,
+                          "wasConnected breaks an otherwise-identical key")
+    }
+
     // MARK: - Seed helpers (rich field coverage, incl. raw strings outside the enums)
 
-    /// One instance of every schema model — 21 rows total (two ExpenseRecords: an itemized
+    /// One instance of every schema model — 23 rows total (two ExpenseRecords: an itemized
     /// receipt AND a settlement, the two shapes sharing that model).
     private func seedEveryModel(into context: ModelContext) {
         context.insert(UsageRecord(module: "journal", action: "entry", summary: "Wrote a note",
@@ -417,6 +443,11 @@ final class SnappetBackupTests: XCTestCase {
                 KilterPlanItem(order: 2, goal: .project, climbUUID: "p-1", climbName: "Arete",
                                setter: "Sven", gradeLabel: "6b/V4", difficulty: 20, status: .pending),
             ]))
+
+        context.insert(KilterLitEvent(climbUUID: "abc123", climbName: "Crimpy", gradeLabel: "6a/V3",
+                                      angle: 40, layoutId: 1, sizeId: 10,
+                                      litAt: Date(timeIntervalSince1970: 1_700_009_200),
+                                      wasConnected: true, sessionId: kilterSession.id))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

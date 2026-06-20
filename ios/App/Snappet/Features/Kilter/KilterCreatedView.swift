@@ -536,33 +536,9 @@ struct KilterCreatedView: View {
     }
 }
 
-/// A small main-actor cache of decoded board renders, keyed by `created climb uuid` — so a scrolling grid
-/// computes each climb's holds + geometry from the SQLite-backed catalog **once**, not every frame.
-/// `@Observable` so a freshly-decoded render triggers a redraw of just that card.
-@Observable @MainActor
-final class KilterThumbnailCache {
-    struct Render { let geometry: KilterBoardGeometry; let holds: [KilterHold] }
-    private var cache: [String: Render] = [:]
-
-    /// The decoded render for a created climb (lazy: computed + cached on first ask). Renders against the
-    /// climb's authored `sizeId` so the thumbnail matches the board it was set for. Returns `nil` only on
-    /// an empty/undecodable climb (the card then shows its placeholder).
-    func render(for climb: KilterCreatedClimb, catalog: KilterCatalog) -> Render? {
-        if let hit = cache[climb.uuid] { return hit }
-        let asClimb = climb.asClimb
-        let holds = catalog.holds(for: asClimb, sizeId: climb.sizeId)
-        let geometry = catalog.boardGeometry(forLayout: climb.layoutId, sizeId: climb.sizeId)
-        guard !holds.isEmpty else { return nil }
-        let render = Render(geometry: geometry, holds: holds)
-        cache[climb.uuid] = render
-        return render
-    }
-
-    /// Drop cache entries for climbs that no longer exist (deleted / edited into a new identity).
-    func evict(keeping uuids: Set<String>) {
-        cache = cache.filter { uuids.contains($0.key) }
-    }
-}
+/// `KilterThumbnailCache` (the shared, cross-feature board-render cache) lives in its own file
+/// (`KilterThumbnailCache.swift`, F5) so On the Board's timeline rows + the root recent rail reuse the
+/// SAME cache instead of each re-resolving `catalog.climb/holds/boardGeometry` on the main thread per row.
 
 /// Memoizes the per-climb engine snapshot (`KilterCreatedGallery.CreatedRow`) so the gallery doesn't
 /// re-parse every climb's `frames` (`KilterCreatedView.isSavable`, an O(holds) parse) on every body

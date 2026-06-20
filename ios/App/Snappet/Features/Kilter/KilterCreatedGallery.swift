@@ -139,10 +139,9 @@ enum KilterCreatedGallery {
 
     /// Canonical key for the climb-uuid join: trimmed + lowercased, so the own-status/count join is
     /// case- and whitespace-insensitive on BOTH sides (a log uuid and a created-climb uuid that differ
-    /// only in case/padding still match). Mirrors the lowercasing other uuid paths already do.
-    static func normalizeUUID(_ uuid: String) -> String {
-        uuid.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
+    /// only in case/padding still match). Delegates to the shared `KilterClimbID` so this join key can't
+    /// drift from On the Board's (F6 — these two used to carry byte-for-byte duplicate normalizers).
+    static func normalizeUUID(_ uuid: String) -> String { KilterClimbID.normalize(uuid) }
 
     /// Resolve the user's OWN status for one climb from its log rows (already filtered to this uuid).
     /// Explicit + future-proof precedence: any send/flash → **Sent**; else any `.project` → **Project**;

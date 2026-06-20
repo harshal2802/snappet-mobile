@@ -6445,3 +6445,60 @@ On-device only; Kilter-board data only.
 
 **Android (tracked).** No Android tree touched — P4 is an iOS-only UI/model wave; the Kotlin mirror rides a
 later Kilter Improvement Android wave.
+
+## 2026-06-20 — Kilter Improvement P5: On the Board (history of climbs you lit)
+
+**The new axis.** A climb's only persisted action before P5 was a `KilterLogEntry` (an ascent), so every
+climb pulled up and *worked but never formally logged* was invisible. P5 adds `KilterLitEvent` — a row per
+climb LIT on the board — surfaced in a new **On the Board** timeline + a root **re-light rail**, with status
+joined from the ascent log and one-tap re-light.
+
+**`KilterLitEvent` @Model.** `{climbUUID, climbName, gradeLabel, angle, layoutId, sizeId, litAt: Date,
+wasConnected: Bool, sessionId: UUID?}`. The display facts (name/grade/angle/layout/size) are snapshotted on
+the event so On the Board renders a thumbnail + row with NO catalog re-fetch. Status (Lit/Attempt/Sent) is
+**never stored** — it's joined from `KilterLogEntry` at read time by the pure helper, so it can't go stale.
+
+**Capture seam = the illuminate CALL SITES, never the controller.** `KilterBoardController.illuminate(holds)`
+is platform-pure (it only sees `[KilterHold]`, no climb identity) and stays that way — capture lives in
+`KilterClimbDetailView.lightAndCapture()/captureLitEvent()`, wired into all four detail illuminate sites: the
+explicit "Light up this climb" button, the connect-auto-light (`onChange board.isConnected`), the size-change
+re-light, and the swipe/open `load()` sync. The authoring preview (`CreateClimbView.liveLight`) calls
+`board.illuminate` DIRECTLY (uncaptured) on purpose — design previews must not pollute the worked-climbs
+history.
+
+**Dedup = per climb-per-session UPSERT (bounded log).** `captureLitEvent` fetches the lit event for the
+current `(normalized climbUUID, sessionId)` and BUMPS its `litAt`/`wasConnected`/snapshot, else inserts one —
+so re-lighting a project ten times in a session yields ONE row. The pure `KilterOnTheBoard.deduped(_:)`
+re-applies the same key (keeping the newest `litAt`, ties broken by composite id) defensively over a
+backup-restored / hand-duplicated set. A `nil`-session light is its own bucket per climb (an out-of-session
+light isn't merged across visits). `wasConnected` flags whether a board was actually on the wall.
+
+**Pure helper `KilterOnTheBoard` (Foundation-only, tested).** Owns dedup, the status join (send-sticky:
+flash/sent → Sent, else any attempt → Attempt, else Lit — a project-only climb reads Lit; joined by
+NORMALIZED uuid so casing/whitespace can't split a created climb), day/session grouping with "N lit · M sent"
+roll-ups + a relative-day + dominant-board/angle headline, faceted filtering (status/angle/board with
+pre-filter facet values so a chip never vanishes), the hero "N climbs worked" distinct-climb count, and the
+recent-rail ordering (deduped, newest-first, capped). `LitEvent.id` is a STABLE composite (normalized climb +
+session + litAt) so a row's SwiftUI identity survives a re-query without a UUID column on the @Model.
+Unit-tested in `KilterOnTheBoardTests` (dedup same-climb-same-session → one; cross-session stays separate;
+uuid normalization; status join precedence + flash-as-send + normalization; grouping/roll-ups; headline
+board-vs-angle; hero count; status-facet filter; recent-rail ordering/cap/status).
+
+**Backup wiring (mirror KilterFavorite/KilterLogEntry).** `KilterLitEvent.self` added to
+`SnappetSchema.models` + `SnappetBackup.coveredModels`; a `KilterLitEventRow: BackupRow` (Codable, `init(_:)`,
+`make()`, `sortKey`), the `kilterLitEvents: [KilterLitEventRow]` File field, `n += kilterLitEvents.count` in
+`recordCount`, the snapshot map line, and a `deleteAll(KilterLitEvent.self)` + insert-as-is restore. Like
+`KilterLogEntry`, there's NO `@Attribute(.unique)` (a climb is legitimately lit across many sessions, and
+dedup is enforced at CAPTURE time, not by a store key) so restore inserts rows as-is — not `uniqued`.
+`SnappetBackupTests.seedEveryModel` now seeds one `KilterLitEvent`; the count tripwire bumped **22 → 23**;
+`testCodecCoversEverySchemaModel` + the recordCount twin + the full round-trip stay green.
+
+**Verification.** `KilterOnTheBoardTests` + `SnappetBackupTests` on iPhone 17 Pro + the full
+`build-for-testing`; a focused `KilterOnTheBoardUITests` XCUITest authored to compile (opens On the Board from
+the More menu; asserts the recent rail is hidden on a fresh store). **Device-pending (MrRobot):** the live
+re-light + capture-on-connect runtime legs need a real board — a simulator has no BLE radio (`board.state ==
+.unsupported`, the illuminate section hidden), so capture-on-connected-light can't fire on the simulator; the
+pure helper + dedup + backup ship green without a board.
+
+**Android (tracked).** No Android tree touched — P5 is an iOS-only wave; the Kotlin mirror rides a later
+Kilter Improvement Android wave.
