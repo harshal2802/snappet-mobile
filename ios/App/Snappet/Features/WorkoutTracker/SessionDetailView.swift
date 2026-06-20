@@ -47,8 +47,8 @@ struct SessionDetailView: View {
     /// survives the media section's `Group` re-renders. `nil` = closed; the section requests it
     /// (session-wide from the button, or scoped to a clip on tap) via the `onOpenStudio` closure.
     @State private var studio: StudioPresentation?
-    /// Edit-sets mode (issue #73): while on, each completed reps/weight tile shows text fields
-    /// editing `drafts`; Save parses them back into the session, Cancel discards.
+    /// Edit-sets mode (issue #73; all-axis follow-up): while on, each completed set tile shows
+    /// discipline-adaptive text fields editing `drafts`; Save parses them back into the session, Cancel discards.
     @State private var editingSets = false
     @State private var setDrafts: [SessionSetEditing.Key: SessionSetEditing.Draft] = [:]
     /// One shared focus across all edit fields — the number pad has no return key, so the keypad
@@ -106,8 +106,9 @@ struct SessionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .keypadDoneToolbar($keypadFocused)
         .toolbar {
-            // Edit completed reps/weight sets in place (issue #73). Hidden when the session has
-            // nothing editable (e.g. duration/climb-only freeform sessions).
+            // Edit any completed set in place (issue #73; all-axis follow-up — strength reps/weight,
+            // timed duration, run distance+duration, climb grade/status/attempts). Hidden only when the
+            // session has no completed set to edit.
             if editingSets {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { cancelSetEdits() }
@@ -562,11 +563,12 @@ private struct SessionMediaSection: View {
     // MARK: Edit drafts (issue #73)
 
     /// A binding into the parent's draft dictionary for one set — nil (read-only tile) when edit
-    /// mode is off or the set isn't editable (never completed, or not a reps/weight set).
+    /// mode is off or the set isn't editable (never completed). All-axis: drafts exist for completed
+    /// sets of every discipline, not just reps/weight.
     private func draftBinding(exerciseID: UUID, setIndex: Int) -> Binding<SessionSetEditing.Draft>? {
         let key = SessionSetEditing.Key(exerciseID: exerciseID, setIndex: setIndex)
         guard setDrafts[key] != nil else { return nil }
-        return Binding(get: { setDrafts[key] ?? SessionSetEditing.Draft(reps: "", weight: "") },
+        return Binding(get: { setDrafts[key] ?? SessionSetEditing.Draft() },
                        set: { setDrafts[key] = $0 })
     }
 
@@ -765,7 +767,8 @@ private struct SetTileRow: View {
                 Text("Set \(index)").font(.subheadline.weight(.medium))
                 Spacer()
                 if let editDraft, let keypadFocus {
-                    SetEditFields(draft: editDraft, unitLabel: unit.display, focus: keypadFocus)
+                    SetEditFields(draft: editDraft, discipline: discipline, kind: kind,
+                                  unit: unit, distanceUnit: distanceUnit, focus: keypadFocus)
                 } else if set.completedAt != nil {
                     Text(detailText).font(.subheadline.monospacedDigit())
                 } else {
@@ -801,33 +804,87 @@ private struct SetTileRow: View {
     }
 }
 
-/// The reps × weight text fields a completed set tile swaps to in edit mode (issue #73). The text
-/// mirrors the live player's inputs and is parsed with the same rules on Save (`SetMeasure`);
-/// the weight shows — and saves — in the preferred display unit (WYSIWYG with the read-only tile).
+/// The editable fields a completed set tile swaps to in edit mode. All-axis (workout-redesign follow-up):
+/// the field set adapts to the owning exercise's discipline/kind — strength shows reps × weight (the
+/// original, unchanged), a timed hold shows a duration field, a run leg shows distance + duration, and a
+/// climb shows grade + status + attempts. The text mirrors the player's inputs and is parsed with the same
+/// `SetMeasure` rules on Save; weight/distance show — and save — in the preferred display unit (WYSIWYG).
 private struct SetEditFields: View {
     @Binding var draft: SessionSetEditing.Draft
-    let unitLabel: String
+    let discipline: WorkoutDiscipline
+    let kind: SetKind
+    let unit: WeightUnit
+    let distanceUnit: DistanceUnit
     var focus: FocusState<Bool>.Binding
 
     var body: some View {
-        HStack(spacing: 6) {
-            TextField("Reps", text: $draft.reps)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .frame(width: 56)
-                .focused(focus)
-                .accessibilityIdentifier("session.editReps")
-            Text("×").foregroundStyle(.secondary)
-            TextField("Weight", text: $draft.weight)
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.center)
-                .frame(width: 72)
-                .focused(focus)
-                .accessibilityIdentifier("session.editWeight")
-            Text(unitLabel).font(.caption).foregroundStyle(.secondary)
+        Group {
+            if discipline == .run {
+                runFields
+            } else {
+                switch kind {
+                case .repsWeight:   repsWeightFields
+                case .duration:     durationField
+                case .climbAttempt: climbFields
+                }
+            }
         }
         .textFieldStyle(.roundedBorder)
         .font(.subheadline.monospacedDigit())
+    }
+
+    private var repsWeightFields: some View {
+        HStack(spacing: 6) {
+            TextField("Reps", text: $draft.reps)
+                .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 56)
+                .focused(focus).accessibilityIdentifier("session.editReps")
+            Text("×").foregroundStyle(.secondary)
+            TextField("Weight", text: $draft.weight)
+                .keyboardType(.decimalPad).multilineTextAlignment(.center).frame(width: 72)
+                .focused(focus).accessibilityIdentifier("session.editWeight")
+            Text(unit.display).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var durationField: some View {
+        HStack(spacing: 6) {
+            TextField("M:SS", text: $draft.duration)
+                .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.center).frame(width: 80)
+                .focused(focus).accessibilityIdentifier("session.editDuration")
+            Image(systemName: "timer").font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private var runFields: some View {
+        HStack(spacing: 6) {
+            TextField("Dist", text: $draft.distance)
+                .keyboardType(.decimalPad).multilineTextAlignment(.center).frame(width: 60)
+                .focused(focus).accessibilityIdentifier("session.editDistance")
+            Text(distanceUnit.display).font(.caption).foregroundStyle(.secondary)
+            TextField("M:SS", text: $draft.duration)
+                .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.center).frame(width: 72)
+                .focused(focus).accessibilityIdentifier("session.editDuration")
+        }
+    }
+
+    private var climbFields: some View {
+        HStack(spacing: 6) {
+            TextField("Grade", text: $draft.grade)
+                .multilineTextAlignment(.center).frame(width: 64)
+                .focused(focus).accessibilityIdentifier("session.editGrade")
+            Menu {
+                ForEach(KilterAscentStatus.allCases, id: \.self) { status in
+                    Button(status.label) { draft.statusRaw = status.rawValue }
+                }
+            } label: {
+                Text(draft.statusRaw.flatMap(KilterAscentStatus.init(rawValue:))?.label ?? "Status")
+                    .font(.caption.weight(.semibold))
+            }
+            .accessibilityIdentifier("session.editStatus")
+            TextField("×", text: $draft.attempts)
+                .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 40)
+                .focused(focus).accessibilityIdentifier("session.editAttempts")
+        }
     }
 }
 

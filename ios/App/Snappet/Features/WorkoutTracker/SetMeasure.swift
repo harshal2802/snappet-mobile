@@ -146,6 +146,47 @@ enum SetMeasure {
         return value
     }
 
+    /// Duration text → seconds (the inverse of `formatDuration`), for the all-axis set editor. Accepts
+    /// "M:SS" / "H:MM:SS", a plain seconds count ("90"), or a trailing-s form ("45s"); empty/malformed →
+    /// `nil`. Bounded to a day so a fat-fingered value can't poison TUT stats.
+    static func parseDuration(_ text: String) -> Double? {
+        let t = text.lowercased().replacingOccurrences(of: "s", with: "")
+            .replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return nil }
+        let secs: Double
+        if t.contains(":") {
+            let nums = t.split(separator: ":", omittingEmptySubsequences: false).map { Double($0) }
+            guard nums.allSatisfy({ ($0 ?? -1) >= 0 }) else { return nil }
+            let v = nums.compactMap { $0 }
+            switch v.count {
+            case 2: secs = v[0] * 60 + v[1]
+            case 3: secs = v[0] * 3600 + v[1] * 60 + v[2]
+            default: return nil
+            }
+        } else {
+            guard let v = Double(t) else { return nil }
+            secs = v
+        }
+        guard secs.isFinite, secs >= 0, secs < 86_400 else { return nil }
+        return secs
+    }
+
+    /// Distance text (a decimal in the display `unit`, accepting a comma) → metres, for the all-axis set
+    /// editor (the inverse of `formatDistance`'s number). Empty/non-positive/non-finite → `nil`; bounded.
+    static func parseDistance(_ text: String, unit: DistanceUnit) -> Double? {
+        guard let v = Double(text.replacingOccurrences(of: ",", with: ".")
+                                 .trimmingCharacters(in: .whitespaces)),
+              v.isFinite, v > 0, v < 100_000 else { return nil }
+        return unit == .km ? v * 1000 : v * metersPerMile
+    }
+
+    /// The display-unit distance **number** (no unit suffix) for a metres value — what the editor's
+    /// distance field shows, round-tripping with `parseDistance`. ≤ 0 / non-finite → "".
+    static func distanceFieldText(_ meters: Double, unit: DistanceUnit) -> String {
+        guard meters.isFinite, meters > 0 else { return "" }
+        return trimmedDecimal(meters / (unit == .km ? 1000 : metersPerMile), decimals: 2)
+    }
+
     // MARK: - Formatting
 
     /// Weight without a trailing ".0" (60.0 → "60", 62.5 → "62.5"). `Int(exactly:)`, not `Int(_:)`

@@ -189,10 +189,13 @@ struct WorkoutHomeView: View {
         .sheet(isPresented: $showingNewRoutine) {
             RoutineEditorView(routine: nil, resolver: resolver, defaultUnit: unit)
         }
-        // The planner's "Save as routine" → the routine editor pre-filled with the plan for review/rename (E7).
+        // The planner's "Save as routine" → the routine editor pre-filled with the plan for review/rename
+        // (E7), through the SAME `prefill: RoutineDraft?` seam E5 uses (unified, was prefillExercises/Name).
         .sheet(item: $plannerPrefill) { prefill in
-            RoutineEditorView(routine: nil, resolver: resolver, defaultUnit: unit,
-                              prefillExercises: prefill.exercises, prefillName: prefill.name)
+            RoutineEditorView(routine: nil,
+                              prefill: RoutineDraft(name: prefill.name, sport: nil, level: nil,
+                                                    detail: nil, exercises: prefill.exercises),
+                              resolver: resolver, defaultUnit: unit)
         }
         .sheet(isPresented: $showingNewExercise) {
             ExerciseEditorView(existing: nil)

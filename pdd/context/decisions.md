@@ -6113,3 +6113,38 @@ routine → review → Save → routine appears in Routines) green.
 **Android (wave H, tracked).** No Android tree touched — save-as-routine is an iOS-only UI/converter wave; the
 Kotlin mirror rides the E4 keystone wave.
 
+
+## 2026-06-19 — All-axis session-detail edit + RoutineEditor prefill unify (E2/E7 follow-ups)
+
+Two iOS loose ends from the workout-redesign waves, shipped together on `feat/workout-redesign-allaxis-edit-cleanup`.
+
+**All-axis edit (the E2 follow-up).** `SessionSetEditing` was reps/weight-only — a fat-fingered climb grade,
+hold time, or run distance wasn't correctable. Generalized it: `Draft` now carries every axis (reps/weight,
+duration, distance, grade, statusRaw, attempts); `drafts(for:)` seeds a draft for EVERY completed set of any
+discipline (so the Edit button now appears for climb/timed/run sessions, not just strength); `apply` writes
+ONLY the axes its discipline/kind owns. **The strength branch is byte-identical to the original** (same seed,
+same parse, same unit conversion) so legacy lifting edits are regression-pinned — only NEW disciplines gain
+edit. `SetEditFields` became discipline-adaptive (timed→duration; run→distance+duration; climb→grade text +
+status Menu over `KilterAscentStatus` + attempts). Added pure `SetMeasure.parseDuration` ("M:SS"/secs/"45s")
++ `parseDistance` (display-unit decimal → metres) + `distanceFieldText` (the inverse), all unit-tested.
+Scope guard: the combined timed-strength *duration* edit stays out (strength edit = reps×weight); pure logic
+only — no model/schema/backup change (writes existing `SetLog` fields), so golden bytes are untouched.
+
+**RoutineEditor prefill unify (the merge-train cleanup).** The wave-3 parallel merge left `RoutineEditorView`
+with two prefill paths — E5's `prefill: RoutineDraft?` and E7's `prefillExercises`/`prefillName`. Removed the
+E7 pair; the planner's "Save as routine" now builds a `RoutineDraft` and goes through the SAME `prefill` seam.
+One save-as-routine path for both. Both flows re-verified green (`FreeformFlowWalkthroughTests` +
+`WorkoutPlanFlowTests`).
+
+**Adversarial-review fix (per-axis guard).** A 4-lens review found the edited-vs-seeded guard was
+*whole-Draft*, so editing one axis re-applied untouched siblings from their rounded seed text — e.g. fixing a
+run leg's distance silently dropped the leg's fractional `durationSec` (42.37 → 42), and a reps-only edit
+cross-unit perturbed the stored weight ~0.01 kg. Fixed: `apply` writes each axis **only when its field
+changed** from the seed, so an untouched sibling keeps its exact stored value (fractional seconds, un-rounded
+metres, exact kg). Pinned by tests. *Accepted follow-up:* no XCUITest yet drives a non-strength edit field
+(the round-trip logic is exhaustively unit-tested; the per-discipline `SetEditFields` branches are declarative).
+
+**Verified (iPhone 17 Pro):** build green; full `SnappetTests` **1094 / 0 failures** (13 new: parsers + the
+per-discipline round-trips + the per-axis-guard regression pins + the unchanged strength path); UI green —
+`CompletionMomentTests` (incl. `testEditSetsFromSessionDetail` driving Edit→fields→Save),
+`FreeformFlowWalkthroughTests`, `WorkoutPlanFlowTests`.
