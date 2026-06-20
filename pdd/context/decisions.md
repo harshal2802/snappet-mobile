@@ -4,6 +4,53 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Kilter Improvement P3 — climbing analytics dashboard (`KilterStatsView` + trend screens)
+
+**Decision**: build a tiered Pulse Pro analytics dashboard on a new `KilterStatsRoute` (pushed on the
+shared `SuiteRouter` path, reached from the Kilter **More** menu + a History "See your stats" link),
+rendering **only** the tested P0 `KilterAllTimeStats` aggregate — **no new math in any view**. New
+trend math (range bucketing, vs-previous delta, ghost alignment, recap composition) lives in a pure,
+Foundation-only `KilterStatsTrend` enum, unit-tested in `KilterStatsTests`. Branch
+`kilter-improvement-plan`. No new `@Model`; no new `SnappetColor` brand token.
+
+**The grade pyramid is extended ADDITIVELY, not forked.** `ClimbGradePyramid`
+(`FreeformClimbSummaryComponents.swift`) gained three **defaulted** parameters — `style: Style = .solid`,
+`currentMaxLabel: String? = nil`, `onSelectGrade: ((String) -> Void)? = nil` — so its two existing
+callers (`SessionRecap`, `LiveClimbStatsSheet`, both `ClimbGradePyramid(pyramid:)`) compile and render
+**byte-for-byte unchanged** (the `.solid` branch is the original chart verbatim, including the
+`freeform.statsPyramid` id the Phase-3 UITest matches). The new `.segmented` branch stacks
+flash | send (worked) | project bands from `GradeCount.flashes`/`sends`/`projects`, styled by
+`KilterAscentStyle` so encoding is **position + label + glyph legend + Wong/perf colour** (never colour
+alone — colourblind-safe), with a dashed `RuleMark` current-max marker. Ruled out: a second pyramid view
+(would duplicate the chart) or hue-only segmentation (fails the colourblind rule).
+
+**Tap-a-grade = a chart overlay of invisible buttons, not per-mark gestures.** The segmented pyramid
+overlays one full-width transparent `Button` per grade (top→bottom = hardest→easiest, matching the
+reversed Y order) via `.chartOverlay`, each calling `onSelectGrade`. Simpler and more reliable than
+plotting-area hit-testing through the `ChartProxy`, and it carries a stable
+`kilter.stats.pyramidBar.<grade>` id for the UITest. The dashboard filters its in-page ascent log on the
+tapped grade.
+
+**Range/ghost/delta are one pure helper.** `KilterStatsTrend` does: `bucketsInRange` (inclusive
+30d/3m/1y/all trailing windows over the `VolumeBucket`s), `ghostedBars` (each in-range bar paired with
+the bucket exactly one **window** earlier — the faint "previous period" ghost the trend chart draws
+behind the solid bar), `delta` (signed change + percent; **percent is `nil` when the previous total is
+0** so the UI shows an absolute "+N" instead of a misleading "+∞%"; `.all` splits the series in half),
+`levelDelta` (the bucketed "+1 vs 90d" hero chip, compared on rounded difficulty so it matches the grade
+labels), and `monthRecap` (a "Month in Send" share line from the month roll-up). All deterministic →
+unit-tested with no device.
+
+**The inline History aggregation is DELETED, not kept in parallel.** `KilterHistoryView` lost its
+hand-rolled `summarySection` + CSS-bar `pyramidSection` and the now-unused `sends` / `sendsThisMonth` /
+`hardestSend` / `pyramid` computed props — replaced by a single doorway row to the dashboard. The
+all-time figures now have exactly one (tested) source. The `sessionsSection` + `ascentsSection` are left
+untouched for P4 to regroup (sequenced before P4 precisely because both touch this file).
+
+**Colour contract held.** One hero numeral (the Climbing Level); amber (`.kilter`) is wayfinding only
+(hero accent, tile glyphs); the perf ramp drives only the pyramid send/project bands, the level/trend
+delta chips, the send/flash rings, and the HR zones — never wayfinding. The optional cross-session HR
+trend tile renders only when a board session captured a band series.
+
 ## [2026-06-20] Kilter Improvement P2 — "Your Climbs" gallery (`KilterCreatedView` + pure `KilterCreatedGallery`)
 
 **Decision**: promote the buried, layout-scoped, text-only **Mine** browse filter into a first-class

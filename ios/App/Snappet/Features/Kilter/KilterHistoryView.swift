@@ -1,11 +1,17 @@
 import SwiftUI
 import SwiftData
 
-/// Your Kilter history: a summary, a grade pyramid (sends per grade), board sessions
-/// (auto-captured while connected over BLE — Phase 2), and the full ascent log, newest first.
-/// Pushed onto the App Library's shared NavigationStack by `KilterRootView`.
+/// Your Kilter history: board sessions (auto-captured while connected over BLE — Phase 2) and the full
+/// ascent log, newest first, with a link to the all-time analytics dashboard. Pushed onto the App
+/// Library's shared NavigationStack by `KilterRootView`.
+///
+/// P3 removed the hand-rolled inline summary strip + CSS-bar pyramid (and their untested `sends` /
+/// `sendsThisMonth` / `hardestSend` / `pyramid` math): all-time stats now live in the tested
+/// `KilterAllTimeStats` aggregate, rendered by `KilterStatsView`. History links there instead of
+/// re-deriving the figures. (P4 regroups the remaining sections; left intact here.)
 struct KilterHistoryView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(SuiteRouter.self) private var router
     @Environment(AppModel.self) private var app
     @Query(sort: \KilterLogEntry.date, order: .reverse) private var entries: [KilterLogEntry]
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var allSessions: [KilterSession]
@@ -17,8 +23,7 @@ struct KilterHistoryView: View {
                     description: Text("Climbs you log appear here."))
             } else {
                 List {
-                    summarySection
-                    pyramidSection
+                    statsLinkSection
                     if !sessions.isEmpty { sessionsSection }
                     ascentsSection
                 }
@@ -37,43 +42,25 @@ struct KilterHistoryView: View {
 
     // MARK: - Sections
 
-    private var summarySection: some View {
+    /// A single doorway row into the all-time analytics dashboard (`KilterStatsView`), replacing the old
+    /// inline summary strip + CSS-bar pyramid. The numbers now come from the tested `KilterAllTimeStats`.
+    private var statsLinkSection: some View {
         Section {
-            HStack {
-                summaryStat("Sends", "\(sends.count)")
-                Divider().frame(height: 36)
-                summaryStat("This month", "\(sendsThisMonth)")
-                Divider().frame(height: 36)
-                summaryStat("Hardest", hardestSend ?? "—")
-            }
-        }
-    }
-
-    private func summaryStat(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.weight(.bold)).monospacedDigit()
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity)
-    }
-
-    private var pyramidSection: some View {
-        Section("Grade pyramid") {
-            if pyramid.isEmpty {
-                Text("Log a send to build your pyramid.").font(.caption).foregroundStyle(.secondary)
-            } else {
-                let maxCount = pyramid.map(\.count).max() ?? 1
-                ForEach(pyramid, id: \.label) { row in
-                    HStack {
-                        Text(row.label).font(.caption.monospacedDigit()).frame(width: 64, alignment: .leading)
-                        GeometryReader { geo in
-                            Capsule().fill(.tint)
-                                .frame(width: max(8, geo.size.width * CGFloat(row.count) / CGFloat(maxCount)))
-                        }
-                        .frame(height: 14)
-                        Text("\(row.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Button { router.push(KilterStatsRoute()) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.bar.xaxis").font(.title3)
+                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("See your stats").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        Text("Climbing level, grade pyramid & trends").font(.caption).foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("kilter.history.statsLink")
         }
     }
 
@@ -138,28 +125,6 @@ struct KilterHistoryView: View {
     }
 
     // MARK: - Derived data
-
-    private var sends: [KilterLogEntry] { entries.filter { $0.status.isSend } }
-
-    private var sendsThisMonth: Int {
-        let start = Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .distantPast
-        return sends.filter { $0.date >= start }.count
-    }
-
-    private var hardestSend: String? {
-        sends.max { $0.difficulty < $1.difficulty }?.gradeLabel
-    }
-
-    /// Sends per grade, ordered easiest → hardest (by the difficulty snapshot).
-    private var pyramid: [(label: String, count: Int, difficulty: Double)] {
-        var byLabel: [String: (count: Int, difficulty: Double)] = [:]
-        for send in sends {
-            let prior = byLabel[send.gradeLabel]
-            byLabel[send.gradeLabel] = (count: (prior?.count ?? 0) + 1, difficulty: send.difficulty)
-        }
-        return byLabel.map { ($0.key, $0.value.count, $0.value.difficulty) }
-            .sorted { $0.difficulty < $1.difficulty }
-    }
 
     /// Sessions with logged entries, plus any **open** session — so a live/recovered session is always
     /// visible and endable here (the recovery surface of last resort), even before its first log.

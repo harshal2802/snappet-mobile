@@ -22,6 +22,8 @@ struct KilterRootView: View {
     @Environment(SnappetCore.self) private var core
     @Query private var favorites: [KilterFavorite]
     @Query private var allEntries: [KilterLogEntry]
+    /// Board sessions — feed the P3 analytics dashboard's all-time aggregate (session counts + HR trend).
+    @Query(sort: \KilterSession.startedAt, order: .reverse) private var statsSessions: [KilterSession]
     /// Climbs the user authored on this device (manual editor / generator) — the "Mine" filter's source.
     @Query private var createdClimbs: [KilterCreatedClimb]
 
@@ -78,6 +80,33 @@ struct KilterRootView: View {
     /// drives the graceful "not in your catalog" alert instead of a dead detail screen. Works over
     /// the catalog gate too (no catalog installed yet is just the empty-catalog case of "missing").
     @State private var missingSharedClimb: KilterClimbLink?
+
+    /// Memoized all-time aggregate for the P3 trend-detail destination (F6). The `navigationDestination`
+    /// closure used to rebuild `KilterAllTimeStats.make` over the full `@Query` on every evaluation; this
+    /// caches it and recomputes only when the logs/sessions actually change (cheap `statsSignature`).
+    @State private var cachedTrendStats: KilterAllTimeStats = .empty
+
+    private struct StatsSignature: Equatable {
+        var entryCount: Int
+        var sessionCount: Int
+        var newestEntryDate: Date?
+        var newestEntryID: PersistentIdentifier?
+        var hrSessionCount: Int
+    }
+
+    private var statsSignature: StatsSignature {
+        StatsSignature(entryCount: allEntries.count,
+                       sessionCount: statsSessions.count,
+                       newestEntryDate: allEntries.max(by: { $0.date < $1.date })?.date,
+                       newestEntryID: allEntries.max(by: { $0.date < $1.date })?.persistentModelID,
+                       hrSessionCount: statsSessions.reduce(0) { $0 + ($1.hrSeries.isEmpty ? 0 : 1) })
+    }
+
+    private func recomputeTrendStats() {
+        cachedTrendStats = KilterAllTimeStats.make(logs: allEntries.map(KilterClimbLog.from),
+                                                   sessions: statsSessions.map(KilterSessionSummary.from),
+                                                   now: Date.now)
+    }
 
     // Search + advanced filters.
     @State private var search = ""
@@ -175,6 +204,10 @@ struct KilterRootView: View {
                         Label("Plan a session", systemImage: "wand.and.stars")
                     }
                     .accessibilityIdentifier("kilter.plan")
+                    Button { router.push(KilterStatsRoute()) } label: {
+                        Label("Stats", systemImage: "chart.bar.xaxis")
+                    }
+                    .accessibilityIdentifier("kilter.stats")
                     Button { surpriseMe() } label: { Label("Surprise me", systemImage: "dice") }
                         .accessibilityIdentifier("kilter.surprise")
                     Button { showingScanner = true } label: {
@@ -245,6 +278,15 @@ struct KilterRootView: View {
         .navigationDestination(for: KilterHistoryRoute.self) { _ in
             KilterHistoryView()
         }
+        .navigationDestination(for: KilterStatsRoute.self) { _ in
+            KilterStatsView()
+        }
+        .navigationDestination(for: KilterTrendRoute.self) { route in
+            // Read the memoized aggregate (F6) — no per-evaluation rebuild over the full log.
+            KilterTrendDetailView(kind: route.kind, stats: cachedTrendStats, now: Date.now,
+                                  hasHRData: statsSessions.contains { !$0.hrSeries.isEmpty },
+                                  sessions: statsSessions)
+        }
         .navigationDestination(for: KilterSettingsRoute.self) { _ in
             KilterSettingsView(catalog: catalog)
         }
@@ -259,6 +301,9 @@ struct KilterRootView: View {
             KilterPlanView(sessions: sessions)
         }
         .task(id: filterKey) { refresh() }
+        // Memoize the trend-detail aggregate (F6): rebuild only when the logs/sessions actually change,
+        // not on every root re-render that re-evaluates the navigation destination.
+        .onChange(of: statsSignature, initial: true) { _, _ in recomputeTrendStats() }
         // Re-open the reader + refresh when the installed catalog changes (import here, or "Remove"
         // in Settings), wherever the change originated.
         .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
