@@ -577,3 +577,23 @@ social-seam stub). See the parent PR / the epic for the live links.
 *Built on the real code — iOS + Android data-model maps, the shared-component inventory, and a three-direction
 judge-panel synthesis (B = self-composing spine, C = social-ready foundation, A = everyday texture). Every
 cited `file:line` was checked against the dossier.*
+
+---
+
+## Addendum (review feedback): Session media carousel
+
+The original deck showed only the single auto-edited **highlight** per session. Per review, the session card also surfaces an **Instagram-style carousel of *all* media** shot during the session — the auto-edit becomes "clip 1", not the only view.
+
+**Three surfaces** (wireframes Flow 9 — `card_carousel.png`, `media_grouped.png`, `media_viewer.png`):
+1. **Carousel on the card** — swipeable, dots + count, each clip with a per-clip HR overlay + exercise/climb name tag.
+2. **Grouped media browser** — a `By exercise · By session · All` toggle; rails bucketed per exercise/climb, each tile with a peak-HR badge.
+3. **Fullscreen viewer** — Instagram-post style, swipe between clips, live HR overlay (peak BPM + zone band), `Share / Animate` burns the overlay in.
+
+**Why it's cheap — `SessionMedia` already has the fields** (`ios/App/Snappet/Features/WorkoutTracker/SessionMedia.swift:23`):
+| Need | `SessionMedia` field |
+|---|---|
+| Split by exercise / climb | `assignedExerciseID` · `assignedSetIndex` · `assignedClimbUUID` (+ `assignmentSourceRaw` auto/manual) |
+| Per-clip HR overlay window | `offsetSec` + `durationSec` → aligned to `KilterSession.hrSeries` (Kilter) / HealthKit (gym) |
+| Photo vs video | `kindRaw`; asset via `localIdentifier` (PHAsset) |
+
+**Phase:** new **F3b** (#227, iOS, depends on F3 #212). **Android is gated on porting `SessionMedia`** (current parity gap — no media attach on Android yet), tracked under #225; until then Android keeps the honest Stage-0 clips entry + image-template share. The carousel grouping/HR-alignment logic is pure and unit-tested; the AVFoundation overlay export is a device-burn item.

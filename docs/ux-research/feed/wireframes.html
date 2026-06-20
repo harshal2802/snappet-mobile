@@ -287,6 +287,33 @@
   .twoup .col{flex:1}
   .twoup .col .ct{font-size:10px;font-weight:800;color:var(--t2);letter-spacing:.06em;text-transform:uppercase;margin:0 0 5px;text-align:center}
 
+
+  /* ============ MEDIA CAROUSEL (added on review) ============ */
+  .carousel{display:flex;gap:8px;overflow:hidden;margin:8px 0 2px}
+  .mitem{flex:0 0 auto;width:198px;height:150px;border-radius:13px;position:relative;overflow:hidden;border:1px solid var(--hair);background:linear-gradient(150deg,#2a2017,#15140f)}
+  .mitem.wk{background:linear-gradient(150deg,#7a3d12,#15140f)}
+  .mitem .mtag{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.62);border:1px solid var(--glasshair);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:750;color:#fff;display:inline-flex;align-items:center;gap:5px}
+  .mitem .mhr{position:absolute;right:8px;top:8px;background:rgba(0,0,0,.55);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:850;display:inline-flex;align-items:center;gap:5px;color:#fff;font-variant-numeric:tabular-nums}
+  .mitem .mhr i{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .mitem .mcount{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.6);border-radius:999px;padding:2px 9px;font-size:10px;font-weight:850;color:#fff}
+  .mitem .mplay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:var(--glass);border:1px solid var(--glasshair);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .mitem .movr{position:absolute;left:0;right:0;bottom:0;height:30px;display:flex;align-items:flex-end;gap:1.5px;padding:0 8px 7px}
+  .mitem .movr i{flex:1;border-radius:1px;background:var(--hard);opacity:.85}
+  .dots{display:flex;justify-content:center;gap:5px;margin:8px 0 2px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:#3a3a42;display:inline-block}
+  .dots i.on{background:var(--ember);width:18px;border-radius:3px}
+  /* grouped media browser */
+  .mrail{margin:11px 0}
+  .mrailhdr{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:760;margin:4px 2px 7px}
+  .mrailhdr .cnt{margin-left:auto;color:var(--t2);font-size:11px;font-weight:700}
+  .mscroll{display:flex;gap:7px;overflow:hidden}
+  .mscroll .mt{flex:0 0 auto;width:100px;height:134px;border-radius:11px;position:relative;overflow:hidden;border:1px solid var(--hair);background:linear-gradient(150deg,#2a2017,#15140f)}
+  .mscroll .mt.wk{background:linear-gradient(150deg,#7a3d12,#15140f)}
+  .mscroll .mt .tg{position:absolute;left:6px;bottom:6px;font-size:9.5px;font-weight:750;color:#fff}
+  .mscroll .mt .hb{position:absolute;right:5px;top:5px;font-size:9.5px;font-weight:850;color:#fff;background:rgba(0,0,0,.55);border-radius:6px;padding:1px 5px;display:inline-flex;align-items:center;gap:3px}
+  .mscroll .mt .hb i{width:6px;height:6px;border-radius:50%;display:inline-block}
+  .mscroll .mt .pl{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);color:#fff;font-size:13px;opacity:.92}
+
 </style>
 </head>
 
@@ -1405,6 +1432,127 @@ I'll just return the fragment directly as my final answer.
   </div>
 
 </div>
+
+
+  <div class="flowhead">Flow 9 · Session media carousel <span style="color:var(--t2);font-weight:700">(added on review)</span></div>
+  <h2 class="flowtitle">Every clip from the session — swipe, grouped, HR-tagged</h2>
+  <p class="flowdesc">Beyond the single auto-edited highlight, each session card carries an <b>Instagram-style carousel of all the media you shot</b> — <b>split by exercise or by session</b>, each clip with its own <b>HR overlay</b> (aligned by <code>SessionMedia.offsetSec</code> to the HR series) and an <b>exercise / climb name tag</b> (from <code>assignedExerciseID</code> / <code>assignedClimbUUID</code>). These fields already exist on <code>SessionMedia</code> today — the auto-edit becomes "clip&nbsp;1", not the only view. iOS-first (Android needs the <code>SessionMedia</code> port first).</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Carousel on the card</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Group by exercise / session / all</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Fullscreen viewer + HR overlay</span>
+  </div>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device" data-shot="card_carousel">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+          <div class="content">
+            <div class="sesscard">
+              <div class="edge" style="background:var(--ember)"></div>
+              <div class="h"><span class="spill am">🎬 7 clips</span><div class="d">Push Day</div><div class="t">Today · 52m</div></div>
+              <div class="carousel">
+                <div class="mitem wk">
+                  <span class="mtag">🏋️ Bench Press · Set 3</span>
+                  <span class="mhr"><i style="background:var(--moderate)"></i>148</span>
+                  <div class="mplay">▶</div>
+                  <div class="movr"><i style="height:38%"></i><i style="height:60%"></i><i style="height:84%"></i><i style="height:100%"></i><i style="height:90%"></i><i style="height:72%"></i><i style="height:50%"></i></div>
+                  <span class="mcount">2 / 7</span>
+                </div>
+                <div class="mitem">
+                  <span class="mtag">🏋️ Incline DB · Set 1</span>
+                  <span class="mhr"><i style="background:var(--fresh)"></i>132</span>
+                  <div class="mplay">▶</div>
+                </div>
+              </div>
+              <div class="dots"><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="ribbon">
+                <div class="r"><div class="v">5</div><div class="l">Exercises</div></div>
+                <div class="r"><div class="v">18</div><div class="l">Sets</div></div>
+                <div class="r"><div class="v">7</div><div class="l">Clips</div></div>
+              </div>
+              <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+            </div>
+            <div class="sub2" style="text-align:center;margin-top:6px">‹ swipe all 7 clips · tap to open fullscreen ›</div>
+          </div>
+          <div class="tabbar">
+            <div class="tb"><span class="g">🏠</span>Today</div>
+            <div class="tb on"><span class="g">✦</span>Recap</div>
+            <div class="tb"><span class="g">▦</span>Apps</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>All your clips, swipeable.</b> The card hero is an Instagram-style <span class="k">SessionMedia</span> carousel — each clip tagged by <span class="k">assignedExerciseID</span> ("Bench Press · Set 3") with a per-clip HR overlay aligned via <span class="k">offsetSec</span> to the HR series. The auto-edited highlight is just clip 1; swipe for the rest.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device" data-shot="media_grouped">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Push Day</span><span class="ttl">Media</span><span class="sp"></span><span class="ic">↗</span></div>
+          <div class="content">
+            <div class="seg"><span class="on">By exercise</span><span>By session</span><span>All</span></div>
+            <div class="mrail">
+              <div class="mrailhdr">🏋️ Bench Press <span class="cnt">3 clips · 151 peak</span></div>
+              <div class="mscroll">
+                <div class="mt wk"><span class="hb"><i style="background:var(--fresh)"></i>144</span><span class="pl">▶</span><span class="tg">Set 1</span></div>
+                <div class="mt wk"><span class="hb"><i style="background:var(--hard)"></i>151</span><span class="pl">▶</span><span class="tg">Set 3 · PR</span></div>
+                <div class="mt"><span class="hb"><i style="background:var(--moderate)"></i>147</span><span class="pl">▶</span><span class="tg">Set 5</span></div>
+              </div>
+            </div>
+            <div class="mrail">
+              <div class="mrailhdr">🏋️ Incline DB Press <span class="cnt">2 clips</span></div>
+              <div class="mscroll">
+                <div class="mt"><span class="hb"><i style="background:var(--fresh)"></i>132</span><span class="pl">▶</span><span class="tg">Set 1</span></div>
+                <div class="mt"><span class="hb"><i style="background:var(--fresh)"></i>138</span><span class="pl">▶</span><span class="tg">Set 2</span></div>
+              </div>
+            </div>
+            <div class="mrail">
+              <div class="mrailhdr">🏋️ Cable Fly <span class="cnt">2 clips</span></div>
+              <div class="mscroll">
+                <div class="mt"><span class="hb"><i style="background:var(--teal)"></i>126</span><span class="pl">▶</span><span class="tg">Set 2</span></div>
+                <div class="mt"><span class="hb"><i style="background:var(--teal)"></i>129</span><span class="pl">▶</span><span class="tg">Set 3</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Split by exercise (or session, or all).</b> Groups <span class="k">SessionMedia</span> by <span class="k">assignedExerciseID</span> / <span class="k">assignedClimbUUID</span>; the toggle re-buckets the same clips ("By session" = a single time-ordered rail). Each tile shows its peak-HR badge; auto-assignment from capture time, editable.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device" data-shot="media_viewer">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="mitem full" style="width:100%;height:100%;border-radius:0;border:0;background:linear-gradient(160deg,#3a2a12,#0b0c10)">
+            <div style="position:absolute;top:52px;left:14px;right:14px;display:flex;align-items:center;gap:8px;z-index:3">
+              <span class="mtag" style="position:static">🏋️ Bench Press · Set 3 · 0:12</span><span style="flex:1"></span><span style="color:#fff;font-size:15px">✕</span>
+            </div>
+            <div class="mplay" style="width:54px;height:54px;font-size:18px">▶</div>
+            <div style="position:absolute;left:16px;right:16px;bottom:108px;color:#fff;z-index:3">
+              <div class="lbl" style="color:#fff;opacity:.78">Heart rate · this clip</div>
+              <div style="font-size:46px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums">151 <span style="font-size:16px;opacity:.8;font-weight:700">BPM peak</span></div>
+              <div class="zone" style="margin-top:9px"><i class="z2" style="width:12%"></i><i class="z3" style="width:24%"></i><i class="z4" style="width:46%"></i><i class="z5" style="width:18%"></i></div>
+              <div class="sub2" style="color:#e9e2d2;margin-top:5px">Z4 · 46% of clip · auto-tagged from capture time</div>
+            </div>
+            <div class="dots" style="position:absolute;bottom:76px;left:0;right:0;z-index:3"><i></i><i></i><i class="on" style="background:#fff"></i><i></i><i></i><i></i><i></i></div>
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:15px 16px 20px;display:flex;align-items:center;gap:15px;color:#fff;font-weight:750;font-size:13px;background:linear-gradient(0deg,rgba(0,0,0,.62),transparent);z-index:3">
+              <span>♡ React</span><span>⤓ Save</span><span style="flex:1"></span><span class="cta sm">↗ Share / Animate</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Fullscreen, Instagram-post style.</b> Swipe between every clip; the per-clip HR overlay (peak BPM + zone band) is composited live and can be <span class="k">burned in</span> on export via <span class="k">ReelExporter</span> + <span class="k">AVVideoCompositionCoreAnimationTool</span>. Name tag + timestamp from <span class="k">SessionMedia</span>.</div>
+    </div>
+
+  </div>
 
 </div><!-- /wrap -->
 <footer style="max-width:1380px;margin:40px auto 0;padding:24px 28px;color:#6c6d76;font-size:12.5px;border-top:1px solid #232329">
