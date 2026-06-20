@@ -167,6 +167,10 @@ struct KilterRootView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    Button { router.push(KilterCreatedRoute()) } label: {
+                        Label("Your Climbs", systemImage: "hammer")
+                    }
+                    .accessibilityIdentifier("kilter.yourClimbs")
                     Button { router.push(KilterPlanRoute()) } label: {
                         Label("Plan a session", systemImage: "wand.and.stars")
                     }
@@ -246,6 +250,10 @@ struct KilterRootView: View {
         }
         .navigationDestination(for: KilterSessionRoute.self) { route in
             KilterSessionDetailView(sessionID: route.id, board: board, sessions: sessions)
+        }
+        // P2: the first-class "Your Climbs" gallery (the promoted, global-across-layouts Mine).
+        .navigationDestination(for: KilterCreatedRoute.self) { _ in
+            KilterCreatedView()
         }
         .navigationDestination(for: KilterPlanRoute.self) { _ in
             KilterPlanView(sessions: sessions)

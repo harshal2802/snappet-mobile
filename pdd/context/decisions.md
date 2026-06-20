@@ -4,6 +4,67 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Kilter Improvement P2 — "Your Climbs" gallery (`KilterCreatedView` + pure `KilterCreatedGallery`)
+
+**Decision**: promote the buried, layout-scoped, text-only **Mine** browse filter into a first-class
+**Your Climbs** gallery — a board-thumbnail grid on a new `KilterCreatedRoute`, pushed on the shared
+`SuiteRouter` path (the `KilterSessionRoute` pattern) and entered from the Kilter **More** menu. The
+existing inline Mine chip + its swipe Edit/Delete stay untouched (no regression). Branch
+`kilter-improvement-plan`. No `KilterCreatedClimb` schema change; no new `SnappetColor` brand token.
+
+**Global across layouts (the headline change).** Today's `createdListItems()` filters created climbs to
+`layoutId == current`, so a climb you set on another board *vanishes*. The gallery is **global**: every
+authored climb shows regardless of layout, and layout becomes an optional *filter facet* (a chip), never
+an implicit gate. Rationale: "the climbs I set" is an identity collection, not a board-scoped browse.
+
+**Draft state is DERIVED, not a schema field.** A Draft is a climb whose holds fail `kilterValidate`
+(the same start/finish/min-holds floor the editor enforces) — re-derived in the view via
+`KilterCreatedView.isSavable(frames:)` over the stored `frames`. So Draft/Saved/All segmentation needs
+**zero** new `KilterCreatedClimb` column, **no** `SnappetBackup` Row/schema change, and no backup-test
+churn. (In practice every persisted created climb passed validation at save, so today Drafts are empty;
+the segment is wired for transient/duplicate drafts and any future "save incomplete" path without a
+migration.) Ruled out: a `var isDraft`/`status` column — it would force a backup-codec + schema change
+for state that's a pure function of the holds already stored.
+
+**Own-status = the user's OWN logbook only (never community).** Each card's status chip
+(Sent / Project / Untried, + a logCount for "Most climbed") is joined from `KilterLogEntry where
+climbUUID == created.uuid` — a send/flash → Sent, attempts-but-no-send → Project, none → Untried. There
+are no community ascents/quality on-device by design, so the gallery shows none (the old Mine rows already
+zeroed quality/ascents; this replaces that with the *personal* signal that's actually meaningful).
+
+**The pure gallery helper (testable core).** All query/sort/filter + own-status-join logic lives in
+`KilterCreatedGallery` (Foundation-only, no SwiftUI/SwiftData/catalog) — the same discipline as P0's
+`KilterAllTimeStats`. Signature:
+`KilterCreatedGallery.items(created: [CreatedRow], logs: [LogRow], segment: Segment = .all, sort: Sort =
+.recent, search: String = "", layoutId: Int? = nil, angle: Int? = nil, source: String? = nil) -> [Item]`
+(+ `ownStatus(forLogs:) -> OwnStatus` and `sorted(_:by:)`). The view feeds it device-free value
+snapshots of its `@Query` rows and renders the ordered `Item`s. 17 unit tests in
+`KilterCreatedGalleryTests` cover global-vs-layout, Draft/Saved/All, all three sorts (recent / grade with
+ungraded-last / most-climbed with recency tie-break), the Sent/Project/Untried join + count, and name +
+angle + source facets.
+
+**Thumbnails: cache the SQLite-backed render.** Per-cell thumbnails call `catalog.holds(for:sizeId:)` +
+`boardGeometry(...)` (main-actor SQLite). A `@Observable @MainActor KilterThumbnailCache` decodes each
+created climb's `(geometry, holds)` **once**, keyed by uuid (evicted when a climb is deleted/edited away),
+so a large scrolling grid doesn't re-hit the DB every frame.
+
+**Duplicate clones to a transient draft, not a phantom row.** A created climb's identity is its *content*
+(the hold set, `KilterClimbIdentity`), so an exact clone would collapse onto the source's uuid. Rather
+than persist a phantom row, **Duplicate** opens `CreateClimbView(editing:)` seeded from a *transient*
+(un-inserted) clone ("… (Copy)" name, same holds): the user changes a hold → a genuinely new content
+identity on save, or keeps it → the editor's own `KilterDuplicateChecker` (self-excluding the source, run
+at save) offers *Open existing*. Nothing is written until they save, so a cancel leaks no phantom.
+
+**Delete keeps logged ascents (made visible).** Per-card Delete routes through the canonical
+`KilterCreatedClimb.delete` (keeps logs, drops the favorite, de-indexes Spotlight); the confirm copy
+states "your N logged ascent(s) stay in History" (wireframe `02b_actions`).
+
+**Verification.** `xcodegen generate`; `KilterCreatedGalleryTests` 17/17, 0 failures (iPhone 17 Pro);
+full `build-for-testing` SUCCEEDED with **0 warnings** (Swift 6). XCUITest
+`KilterCreatedGalleryUITests` authored to compile (browse + the keep-ascents delete confirm; the
+authoring leg is guarded since the Canvas editable board has no per-hole a11y target). Android: untouched
+(iOS-only gallery; the Kotlin mirror, if any, rides a later wave).
+
 ## [2026-06-19] Kilter Improvement P0 — all-time stats engine (`KilterAllTimeStats`, keystone)
 
 **Decision**: lift the all-time climbing math (today hand-rolled inline in `KilterHistoryView`) into one
