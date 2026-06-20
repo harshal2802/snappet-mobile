@@ -4,6 +4,51 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-19] Kilter Improvement P0 — all-time stats engine (`KilterAllTimeStats`, keystone)
+
+**Decision**: lift the all-time climbing math (today hand-rolled inline in `KilterHistoryView`) into one
+pure, unit-tested value type `KilterAllTimeStats` so the later dashboard (P3) and history roll-ups /
+adaptive cards (P4) consume tested aggregates instead of re-deriving math in the view. No UI, no schema,
+no new `@Model`, no new `SnappetColor` brand token. Branch `kilter-improvement-plan`.
+
+- **`KilterAllTimeStats` is Foundation-only** (no SwiftUI/SwiftData/UIKit), the all-time analogue of the
+  per-session `KilterSessionStats`. It operates on plain `[KilterClimbLog]` (built via `KilterClimbLog.from`)
+  plus an optional `[KilterSessionSummary]` (a new plain-value bridge `from(KilterSession)` carrying
+  `id/startedAt/endedAt/angle`), so it stays device-free and unit-tested with synthetic values. **Public
+  API**:
+  `static func make(logs:sessions:now:calendar:climbingLevelWindow:weeklyVolumeWindow:) -> KilterAllTimeStats`.
+  Computes: `totalSends/totalAttempts/totalClimbsLogged/distinctClimbs`; `sendRate` (sends ÷ climbs logged)
+  and `flashRate` (flashes ÷ sends); `attemptsToSend` (avg attempts among sent climbs, `nil` with no sends);
+  `maxGradeDifficulty`+label (all-time send ceiling) and a recency-windowed `climbingLevelDifficulty`+label
+  (reuses `KilterRecommender.workingDifficulty` over the most recent N sends, so an old PR doesn't peg the
+  level); `maxGradeProgression` (best send per calendar month, chronological); `sendsPerWeek` (trailing-N
+  ISO-week volume buckets, zero-filled, oldest→newest); `angleDistribution` (sends & attempts per angle);
+  an all-time segmented `pyramid`; and `monthRollups`/`weekRollups` → `{periodLabel, sessions, sends,
+  hardestGradeLabel}`. **Empty inputs → `.empty`** (all-zero/empty). Deterministic; **Kilter-board data
+  only** (no Quick-Session fold-in).
+- **Roll-up session counting**: when a `sessions` list is supplied, "sessions" per period counts one per
+  session that **started** in that period; when omitted, it falls back to **distinct `sessionId`** among
+  that period's logs (ad-hoc logs with `sessionId == nil` don't count). ISO weeks use `.iso8601`-style keys
+  (`yearForWeekOfYear` so week 1 doesn't collide across the new-year boundary).
+- **`KilterClimbLog` extended additively** with `var angle: Int = 0` and `var sessionId: UUID? = nil`
+  (defaulted → zero call-site breakage), set in `KilterClimbLog.from(_:)` from the entry's `angle`/`sessionId`
+  — the all-time angle distribution + session roll-ups need them; the per-session engine ignores them.
+- **`KilterSessionStats.GradeCount` extended additively** with `flashes`/`projects`/`attemptsOnly`
+  (all default `0`). **`sends` keeps its exact meaning** (sent + flash, the existing pyramid total) so every
+  current caller (`ClimbGradePyramid`, `FreeformPlayerView.miniPyramid`) compiles unchanged; `flashes` is a
+  **SUBSET** of `sends`, and `projects`/`attemptsOnly` are the non-send counts at that grade — enough to
+  render a segmented flash|send|project bar in P3. The segmentation is built by a new shared
+  `KilterSessionStats.segmentedPyramid(from:gradeLabel:difficulty:status:)` used by **both** the per-session
+  `make` and the all-time engine, so the pyramid rule (a grade row appears only if it has ≥1 send;
+  easiest→hardest) is defined once. The pyramid still excludes grades with only projects/attempts.
+- **Ascent-style colour vocabulary** lives in a separate SwiftUI file `KilterAscentStyle.swift` (so the
+  aggregator stays pure): `glyph`/`label`/`color`/`decoration` over `KilterAscentStatus`. Colours are
+  **derived** — flash → local Okabe-Ito/Wong bluish-green (`0x009E73`, colourblind-safe, distinct from the
+  perf green) via `Color(hex:)`; sent → `perfFresh`; project → `perfModerate`; attempt → `textSecondary`.
+  **No new `SnappetColor` brand token**; always glyph+label (never colour-only).
+- **Recompute from rows, no denormalized persistence** in P0 (defer caching unless a real history lags).
+  P3 will delete the now-redundant inline aggregation in `KilterHistoryView`.
+
 ## [2026-06-19] Workout redesign E3 — Workout Library (discipline-spined `LibraryItem`; in-memory climb/run templates; "Exercises → Library" rename)
 
 **Decision**: the flat, strength-only "Exercises" tab becomes a **library organized by workout TYPE as the
