@@ -4,6 +4,29 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F0 — `FeedComposer` keystone (pure, eligibility-gated)
+
+**Decision**: the Recap feed renders a single pure `FeedComposer.compose(window:…)` (Foundation-only,
+`ios/App/Snappet/Features/Feed/`, no `@Model`/UI) that turns plain-value sessions/logs + the existing
+`KilterAllTimeStats` into ordered ephemeral `FeedCard`s. Each card recipe owns its `eligibility` +
+`salience`; a recipe whose trigger data is absent simply produces nothing — **graceful degradation by
+construction** (no stubs, no greyed cards), which is also how Android (no `hrSeries`/`SessionMedia`)
+ships the same engine with fewer eligible cards. New cards (F2/F3/F5/F6) are added **only** as registry
+entries + `FeedCardKind` cases — the F0 ordering core is never edited (that is what makes it the keystone).
+
+**Ordering = recency-bounded salience**: effective rank = `salience × recencyDecay(anchorDate, now)`, where
+`recencyDecay = exp(-age / halfLife)` with **halfLife = 7 days** and `anchorDate` clamped `≤ now`. This is
+the formula that makes "an old high-salience PR never out-floats a fresh session" true *by math* (a 60-day
+PR decays to ~0.0002 of its salience). Salience tiers: PR 1.0 > most-climbs 0.9 > streak 0.8 > trend 0.6 >
+climb session 0.45 > workout session 0.40.
+
+**Rules out**: banded/cached memoization in v1 (kept simple + temporal; banding would only be added later if
+profiling demands it AND can be made byte-identical across platforms, else the golden corpus passes while
+real scrolling diverges). `FeedCard` is **derive-on-read, never persisted** (the persisted backbone is the
+F0b `FeedActivity` log). Cross-platform golden corpus uses **shared fields only** (no iOS-only
+`hrSeries`/`SessionMedia`/`attemptTimestamps`) so FA0 reproduces it verbatim. Tested: `FeedComposerTests`
+(8 cases incl. the golden corpus) — green.
+
 ## [2026-06-20] Kilter Improvement P3 — climbing analytics dashboard (`KilterStatsView` + trend screens)
 
 **Decision**: build a tiered Pulse Pro analytics dashboard on a new `KilterStatsRoute` (pushed on the
