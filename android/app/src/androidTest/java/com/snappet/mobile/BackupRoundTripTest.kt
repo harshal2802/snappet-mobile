@@ -30,7 +30,7 @@ class BackupRoundTripTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = SnappetDatabase.buildInMemory(context)
         try {
-            // Seed EVERY entity (all 18 — the AC says all module flows render identical
+            // Seed EVERY entity (all 19 — the AC says all module flows render identical
             // data), spanning the storage classes: text, ints, reals, bools, nulls.
             db.usageDao().insert(UsageRecord(module = "tip", action = "calc",
                 summary = "Tipped", metric = 12.5, timestamp = 111))
@@ -60,9 +60,15 @@ class BackupRoundTripTest {
                 climbUuid = "k-1", climbName = "Crimp city", angle = 40, difficulty = 20.5,
                 gradeLabel = "V5", status = "sent", attempts = 2, createdAt = 17, sessionId = "s-1"))
             db.kilterDao().insertSession(com.snappet.mobile.feature.kilter.KilterSession(
-                id = "s-1", startedAt = 18, endedAt = 19, angle = 40, source = "manual"))
+                id = "s-1", startedAt = 18, endedAt = 19, angle = 40, source = "manual",
+                // P4 (v7) metadata columns — covers title/notes/layoutId across export→wipe→import.
+                title = "Comp prep", notes = "Felt strong", layoutId = 1))
             db.kilterDao().addFavorite(com.snappet.mobile.feature.kilter.KilterFavorite(
                 climbUuid = "k-1", addedAt = 20))
+            // P5 (v7) new table — one lit-on-the-board event (the upsert dedupes per climb-per-session).
+            db.kilterDao().upsertLitEvent(com.snappet.mobile.feature.kilter.KilterLitEvent(
+                climbUuid = "k-1", climbName = "Crimp city", gradeLabel = "V5", angle = 40,
+                layoutId = 1, sizeId = 7, litAt = 23, wasConnected = true, sessionId = "s-1"))
             db.kilterDao().upsertCreated(com.snappet.mobile.feature.kilter.KilterCreatedClimb(
                 uuid = "created-1", name = "My proj", setterUsername = "me", layoutId = 1,
                 sizeId = 7, angle = 40, frames = "p1r12p2r13", edgeLeft = 0, edgeRight = 10,

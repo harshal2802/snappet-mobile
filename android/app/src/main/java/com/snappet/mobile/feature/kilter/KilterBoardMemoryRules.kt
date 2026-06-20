@@ -1,5 +1,6 @@
 package com.snappet.mobile.feature.kilter
 
+import kotlinx.serialization.Serializable
 import kotlin.math.pow
 import kotlin.math.roundToLong
 
@@ -11,7 +12,13 @@ import kotlin.math.roundToLong
  *
  * The constructor takes a precise fix and buckets it — there is no way to store a precise coordinate, so
  * one can never be persisted by accident. Use [bucket] to create one from a raw lat/lon.
+ *
+ * Serialized for persistence via [CoarsePlaceSurrogate] (an explicit `@Serializable` DTO): the private
+ * constructor invariant is preserved because storage only ever round-trips the **already-bucketed**
+ * lat/lon — re-bucketing a value that is already at [DECIMALS] places is idempotent, so a precise fix
+ * can never sneak in through the persistence layer either.
  */
+@Serializable(with = CoarsePlaceSerializer::class)
 data class CoarsePlace private constructor(
     /** Latitude rounded to [DECIMALS] places (the stored bucket — never the precise fix). */
     val lat: Double,
@@ -32,15 +39,39 @@ data class CoarsePlace private constructor(
             val f = 10.0.pow(DECIMALS)
             return CoarsePlace((latitude * f).roundToLong() / f, (longitude * f).roundToLong() / f)
         }
+
+        /** Reconstruct from already-bucketed values (persistence only). Re-buckets defensively so the
+         *  [DECIMALS] invariant holds even if a stored value were ever tampered with — idempotent on a
+         *  value that is already coarse. */
+        internal fun fromStored(lat: Double, lon: Double): CoarsePlace = bucket(lat, lon)
     }
+}
+
+/** The on-the-wire DTO for [CoarsePlace] — a plain `@Serializable` record of the bucketed lat/lon. Kept
+ *  separate so [CoarsePlace] keeps its private constructor (no precise fix can be persisted by accident). */
+@Serializable
+private data class CoarsePlaceSurrogate(val lat: Double, val lon: Double)
+
+/** Maps [CoarsePlace] ↔ [CoarsePlaceSurrogate] so the private-ctor value type can ride in JSON without
+ *  exposing a public constructor. Delegates the format wiring to the surrogate's generated serializer. */
+internal object CoarsePlaceSerializer : kotlinx.serialization.KSerializer<CoarsePlace> {
+    private val delegate = CoarsePlaceSurrogate.serializer()
+    override val descriptor = delegate.descriptor
+    override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: CoarsePlace) =
+        encoder.encodeSerializableValue(delegate, CoarsePlaceSurrogate(value.lat, value.lon))
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): CoarsePlace =
+        decoder.decodeSerializableValue(delegate).let { CoarsePlace.fromStored(it.lat, it.lon) }
 }
 
 /**
  * Everything this device remembers about one physical board it has connected to before, keyed by the
  * BLE [deviceId] (the peripheral's address — the Android analogue of the iOS `CBPeripheral.identifier`).
- * Plain value type: persistence (a later wave) wraps it; the pure recall/label rules here read it. Mirrors
- * the iOS `RememberedBoard`.
+ * Plain value type; the pure recall/label rules here read it and [KilterBoardMemoryStore] persists a
+ * `Map<deviceId, RememberedBoard>` as a single JSON string. `@Serializable` so it rides in that JSON
+ * (the [usualAngle] computed property has no backing field, so it is not serialized). Mirrors the iOS
+ * `RememberedBoard` (Codable + UserDefaults).
  */
+@Serializable
 data class RememberedBoard(
     /** The BLE device address last used to reach this board (the stable per-install key). */
     val deviceId: String,
