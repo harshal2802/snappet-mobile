@@ -61,7 +61,7 @@ enum SnappetBackup {
         StudioProject.self,
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
-        KilterPlan.self,
+        KilterPlan.self, KilterLitEvent.self,
     ]
 
     // MARK: - The envelope
@@ -96,6 +96,7 @@ enum SnappetBackup {
         var kilterFavorites: [KilterFavoriteRow] = []
         var kilterCreatedClimbs: [KilterCreatedClimbRow] = []
         var kilterPlans: [KilterPlanRow] = []
+        var kilterLitEvents: [KilterLitEventRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -128,6 +129,7 @@ enum SnappetBackup {
             n += kilterFavorites.count
             n += kilterCreatedClimbs.count
             n += kilterPlans.count
+            n += kilterLitEvents.count
             return n
         }
     }
@@ -197,6 +199,7 @@ enum SnappetBackup {
         file.kilterFavorites = try all(KilterFavorite.self).map(KilterFavoriteRow.init).sorted(by: rowKey)
         file.kilterCreatedClimbs = try all(KilterCreatedClimb.self).map(KilterCreatedClimbRow.init).sorted(by: rowKey)
         file.kilterPlans = try all(KilterPlan.self).map(KilterPlanRow.init).sorted(by: rowKey)
+        file.kilterLitEvents = try all(KilterLitEvent.self).map(KilterLitEventRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -274,6 +277,11 @@ enum SnappetBackup {
             uniqued(file.kilterCreatedClimbs, by: \.uuid).forEach { context.insert($0.make()) }
             try deleteAll(KilterPlan.self)
             uniqued(file.kilterPlans, by: \.id).forEach { context.insert($0.make()) }
+            // No @Attribute(.unique): a climb can be lit in many sessions, and dedup is enforced at
+            // CAPTURE time (per climb-per-session), not by a store-level key — so rows insert as-is
+            // (like KilterLogEntry). A hand-duplicated backup row is valid data, not a join hazard.
+            try deleteAll(KilterLitEvent.self)
+            file.kilterLitEvents.forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -688,17 +696,25 @@ extension SnappetBackup {
         var restHR: Double?
         var metricsSourceRaw: String?
         var kcalEstimate: Double?
+        // P4 history metadata — defaulted to nil so a PRE-CHANGE backup blob (with no such keys)
+        // still decodes (the synthesized `Decodable` skips an absent optional with a default), exactly
+        // mirroring the SwiftData lightweight migration on the @Model side.
+        var title: String? = nil
+        var notes: String? = nil
+        var layoutId: Int? = nil
 
         init(_ m: KilterSession) {
             id = m.id; startedAt = m.startedAt; endedAt = m.endedAt
             angle = m.angle; source = m.source; hrSeries = m.hrSeries
             maxHR = m.maxHR; restHR = m.restHR
             metricsSourceRaw = m.metricsSourceRaw; kcalEstimate = m.kcalEstimate
+            title = m.title; notes = m.notes; layoutId = m.layoutId
         }
         func make() -> KilterSession {
             KilterSession(id: id, startedAt: startedAt, endedAt: endedAt, angle: angle,
                           source: source, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR,
-                          metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate)
+                          metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate,
+                          title: title, notes: notes, layoutId: layoutId)
         }
         var sortKey: String { id.uuidString }
     }
@@ -747,6 +763,36 @@ extension SnappetBackup {
         init(_ m: KilterFavorite) { climbUUID = m.climbUUID; addedAt = m.addedAt }
         func make() -> KilterFavorite { KilterFavorite(climbUUID: climbUUID, addedAt: addedAt) }
         var sortKey: String { climbUUID }
+    }
+
+    struct KilterLitEventRow: BackupRow {
+        var climbUUID: String
+        var climbName: String
+        var gradeLabel: String
+        var angle: Int
+        var layoutId: Int
+        var sizeId: Int
+        var litAt: Date
+        var wasConnected: Bool
+        var sessionId: UUID?
+
+        init(_ m: KilterLitEvent) {
+            climbUUID = m.climbUUID; climbName = m.climbName; gradeLabel = m.gradeLabel
+            angle = m.angle; layoutId = m.layoutId; sizeId = m.sizeId
+            litAt = m.litAt; wasConnected = m.wasConnected; sessionId = m.sessionId
+        }
+        func make() -> KilterLitEvent {
+            KilterLitEvent(climbUUID: climbUUID, climbName: climbName, gradeLabel: gradeLabel,
+                           angle: angle, layoutId: layoutId, sizeId: sizeId, litAt: litAt,
+                           wasConnected: wasConnected, sessionId: sessionId)
+        }
+        // Includes sessionId (+ sizeId + wasConnected) so two rows for the same climb+litAt+angle in
+        // DIFFERENT sessions can't collide → a total, stable order, keeping the round-trip export
+        // deterministic (F4 — the old key omitted sessionId, so cross-session rows tied).
+        var sortKey: String {
+            "\(litAt.timeIntervalSinceReferenceDate)|\(climbUUID)|\(angle)|\(sizeId)"
+            + "|\(sessionId?.uuidString ?? "none")|\(wasConnected ? 1 : 0)"
+        }
     }
 
     struct KilterCreatedClimbRow: BackupRow {

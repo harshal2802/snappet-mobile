@@ -35,6 +35,12 @@ struct KilterSessionDetailView: View {
     @State private var clipStudio: ClipStudioPresentation?
     /// Present the shared reel editor (preview / pin / remove / reorder / export).
     @State private var showingReel = false
+    /// Present the session metadata editor (name · notes · date · angle), writing the P4 additive
+    /// `KilterSession.title`/`notes` + the long-standing `startedAt`/`angle`. This is session-level
+    /// metadata editing — NOT the gym `SessionDetailView` per-set edit. A date change shifts the whole
+    /// session (+ its logs) by a delta; an angle change re-grades the at-angle logs. The session lifecycle
+    /// (`KilterSessionManager.end/recover`) is untouched.
+    @State private var editingMeta = false
 
     /// A scoped presentation of the session's shared Studio. `visibleClipMediaIDs` filters the studio
     /// to one clip (per-clip) or a climb's clips (per-climb); `nil` is the whole session. A non-nil
@@ -106,8 +112,22 @@ struct KilterSessionDetailView: View {
                 ContentUnavailableView("Session unavailable", systemImage: "clock.badge.questionmark")
             }
         }
-        .navigationTitle("Session")
+        .navigationTitle(session?.title ?? "Session")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if session != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { editingMeta = true } label: { Label("Edit", systemImage: "pencil") }
+                        .accessibilityIdentifier("kilter.summary.edit")
+                }
+            }
+        }
+        // The session metadata editor (name · notes · date · angle). A date edit shifts the whole session
+        // (+ its logs) by a delta; an angle edit re-grades the at-angle logs. (Session-level metadata — NOT
+        // the gym per-set edit.)
+        .sheet(isPresented: $editingMeta) {
+            if let session { KilterSessionMetaEditSheet(session: session, entries: entries) }
+        }
         // Opening the summary of a live session flushes HR so far onto it, so the HR chart + any clip
         // opened from here show heart rate during the session (not only after it ends). No-op once ended.
         .task(id: sessionID) { sessions.syncLiveHR(in: modelContext) }
@@ -149,12 +169,24 @@ struct KilterSessionDetailView: View {
 
     @ViewBuilder private func header(_ session: KilterSession) -> some View {
         VStack(spacing: 8) {
+            // The user-given session name (P4), when set — above the provenance line.
+            if let title = session.title, !title.isEmpty {
+                Text(title).font(.title3.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("kilter.summary.title")
+            }
             HStack(spacing: 8) {
                 Image(systemName: session.source == "ble" ? "antenna.radiowaves.left.and.right" : "hand.tap")
                 Text(session.source == "ble" ? "Board session" : "Manual session")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text("\(session.angle)°").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            // The session note (P4), when set.
+            if let notes = session.notes, !notes.isEmpty {
+                Text(notes).font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("kilter.summary.notes")
             }
             HStack {
                 Text(session.startedAt, format: .dateTime.weekday().month().day().hour().minute())
@@ -646,5 +678,146 @@ struct KilterSessionDetailView: View {
     /// summary never drifts from the rest of the app.
     private func durationString(_ seconds: TimeInterval) -> String {
         WorkoutLiveSnapshot.elapsedString(seconds)
+    }
+}
+
+/// The session metadata editor (Kilter Improvement P4). Edits the user-facing **name + notes** (the
+/// additive `KilterSession.title`/`notes`), the **start date**, and the board **angle** (the long-standing
+/// `startedAt`/`angle`) — straight to the `@Model`. The session lifecycle is untouched (this never
+/// closes/reopens the session, only edits metadata). NOTE this is NOT the gym `SessionDetailView` edit
+/// shape — that edits a completed *set's* fields; this edits *session*-level metadata.
+///
+/// Two edits move more than one field, to keep the session internally consistent:
+/// - **Date** shifts the whole session by a DELTA: `startedAt`, `endedAt`, AND every child
+///   `KilterLogEntry`'s `date`/`startedAt`/`endedAt`/`attemptTimestamps` move by the same amount, so all
+///   relative timing (per-climb windows, HR axis, rest intervals) is preserved and `endedAt` stays after
+///   `startedAt` (an HR series rebased on the original `startedAt` would otherwise desync). The picker is
+///   constrained so a finished session's interval can't invert.
+/// - **Angle** re-grades: when the session angle changes, every child log that was at the OLD session
+///   angle is moved to the new angle and its `difficulty`/`gradeLabel` re-derived from `KilterCatalog` at
+///   the new angle (so the header angle never disagrees with the pyramid/ascent rows). Logs climbed at a
+///   different angle than the session header are left alone.
+///
+/// `internal` (not `private`) only so the pure date-shift arithmetic (`applyDateShift`) can be unit-tested
+/// at the model level (`KilterHistoryTests`); nothing else references it outside this file.
+struct KilterSessionMetaEditSheet: View {
+    @Bindable var session: KilterSession
+    /// This session's logged ascents — shifted with the date and re-graded with the angle so the detail
+    /// surfaces stay consistent. Passed in (resolved by the parent) rather than re-queried here.
+    let entries: [KilterLogEntry]
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    private let catalog = KilterCatalog.shared
+
+    @State private var title: String
+    @State private var notes: String
+    @State private var startedAt: Date
+    @State private var angle: Int
+
+    init(session: KilterSession, entries: [KilterLogEntry]) {
+        self.session = session
+        self.entries = entries
+        _title = State(initialValue: session.title ?? "")
+        _notes = State(initialValue: session.notes ?? "")
+        _startedAt = State(initialValue: session.startedAt)
+        _angle = State(initialValue: session.angle)
+    }
+
+    /// A finished session can't be dragged so late its start passes its end (which would invert the
+    /// interval and break duration / the HR axis). One second of slack keeps it strictly valid. An
+    /// active session (no `endedAt`) is unconstrained.
+    private var maxStart: Date? {
+        session.endedAt.map { $0.addingTimeInterval(-1) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Session name", text: $title)
+                        .accessibilityIdentifier("kilter.summaryEdit.title")
+                }
+                Section("Notes") {
+                    TextField("How did it go?", text: $notes, axis: .vertical)
+                        .lineLimit(2...6)
+                        .accessibilityIdentifier("kilter.summaryEdit.notes")
+                }
+                Section("Details") {
+                    if let maxStart {
+                        DatePicker("Date", selection: $startedAt, in: ...maxStart)
+                            .accessibilityIdentifier("kilter.summaryEdit.date")
+                    } else {
+                        DatePicker("Date", selection: $startedAt)
+                            .accessibilityIdentifier("kilter.summaryEdit.date")
+                    }
+                    Stepper("Angle: \(angle)°", value: $angle, in: 0...70, step: 5)
+                        .accessibilityIdentifier("kilter.summaryEdit.angle")
+                }
+            }
+            .navigationTitle("Edit session")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }.fontWeight(.semibold)
+                        .accessibilityIdentifier("kilter.summaryEdit.save")
+                }
+            }
+        }
+    }
+
+    private func save() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.title = trimmedTitle.isEmpty ? nil : trimmedTitle
+        session.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+
+        // FA — Date edit shifts the WHOLE session by a delta (clamped to a valid interval), so the HR
+        // axis (rebased on `startedAt`) and every per-climb window keep their relative offsets.
+        let clampedStart = maxStart.map { min(startedAt, $0) } ?? startedAt
+        KilterSessionMetaEditSheet.applyDateShift(to: session, entries: entries, newStart: clampedStart)
+
+        // FB — Angle edit re-grades the logs at the old session angle so the header agrees with the rows.
+        let oldAngle = session.angle
+        if angle != oldAngle {
+            session.angle = angle
+            regradeLogsAtSessionAngle(from: oldAngle, to: angle)
+        }
+
+        try? modelContext.save()
+        dismiss()
+    }
+
+    /// Shift `session.startedAt`/`endedAt` and every child log's `date`/`startedAt`/`endedAt`/
+    /// `attemptTimestamps` by `newStart − session.startedAt`. Pure-ish (mutates the passed @Models) so the
+    /// per-offset arithmetic is unit-testable via this static entry point.
+    static func applyDateShift(to session: KilterSession, entries: [KilterLogEntry], newStart: Date) {
+        let delta = newStart.timeIntervalSince(session.startedAt)
+        guard delta != 0 else { return }
+        session.startedAt = newStart
+        session.endedAt = session.endedAt?.addingTimeInterval(delta)
+        for e in entries {
+            e.date = e.date.addingTimeInterval(delta)
+            e.startedAt = e.startedAt?.addingTimeInterval(delta)
+            e.endedAt = e.endedAt?.addingTimeInterval(delta)
+            e.attemptTimestamps = e.attemptTimestamps.map { $0.addingTimeInterval(delta) }
+        }
+    }
+
+    /// Re-grade every log that was at the OLD session angle to the NEW angle, re-deriving `difficulty` +
+    /// `gradeLabel` from the catalog's per-angle stats for that climb. Logs at a different angle (a climb
+    /// the user worked off-header) are left untouched. If the catalog has no stat at the new angle for a
+    /// climb, only the angle is updated (the snapshot grade is kept rather than zeroed).
+    private func regradeLogsAtSessionAngle(from oldAngle: Int, to newAngle: Int) {
+        for e in entries where e.angle == oldAngle {
+            e.angle = newAngle
+            if let stat = catalog.stats(e.climbUUID).first(where: { $0.angle == newAngle }) {
+                e.difficulty = stat.difficulty
+                e.gradeLabel = catalog.gradeLabel(stat.difficulty)
+            }
+        }
     }
 }

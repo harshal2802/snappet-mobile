@@ -152,14 +152,19 @@ struct KilterClimbDetailView: View {
         // Reload whenever the shown climb changes (initial open + each swipe).
         .task(id: currentUUID) { load() }
         // When the board comes up while viewing a climb, light it immediately (it follows swipes via
-        // `load()`); the manual "Light up this climb" button stays for a re-send.
+        // `load()`); the manual "Light up this climb" button stays for a re-send. Illumination ONLY — no
+        // capture: merely opening a climb's detail while connected isn't a deliberate "I worked this"
+        // signal, and recording it turned On the Board into a passive browse log (F1). Capture lives only
+        // on the explicit "Light up this climb" tap. (Dropping this site also removes the off-main /
+        // double-insert race the BLE-state onChange used to drive.)
         .onChange(of: board.isConnected) { _, connected in
             if connected { board.illuminate(holds) }
         }
         // A board-size change (from the browse chip, Settings, or the inline "wrong holds?" fix) remaps
         // every LED *and* reshapes the on-screen board — each size shows a different physical hole set —
         // so rebuild holds + geometry and re-light. Top-level (not inside the BLE-gated illuminate
-        // section) so the on-screen render still updates with no board / on the simulator.
+        // section) so the on-screen render still updates with no board / on the simulator. Illumination
+        // ONLY — no capture (F1): a size remap isn't a fresh "I worked this climb" action.
         .onChange(of: productSizeId) {
             guard let c = climb else { return }
             holds = catalog.holds(for: c, sizeId: productSizeId)
@@ -542,7 +547,7 @@ struct KilterClimbDetailView: View {
                 switch board.state {
                 case .connected:
                     primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
-                        board.illuminate(holds)
+                        lightAndCapture()
                     }
                     wrongHoldsControl
                     Button("Disconnect board") { board.disconnect() }
@@ -722,6 +727,8 @@ struct KilterClimbDetailView: View {
             selectedAngle = stats.max { $0.ascents < $1.ascents }?.angle ?? sharedAngle
         }
         // Keep a connected board in sync with the climb on screen (initial open + each swipe).
+        // Illumination ONLY — no capture (F1): opening/swiping to a climb's detail while connected isn't
+        // a deliberate "I worked this" action; only the explicit "Light up this climb" tap records one.
         if board.isConnected { board.illuminate(holds) }
         // Mark this climb as the one being worked, for per-climb timing + the HUD / Live Activity.
         if sessions.isActive, let c = climb {
@@ -741,7 +748,11 @@ struct KilterClimbDetailView: View {
         // BLE-connect behavior (#75). `start` folds recovery, so an open session in the store is
         // adopted rather than forked; the undoable capsule is offered ONLY for a fresh creation.
         if !sessions.isActive {
-            let createdFresh = sessions.start(angle: selectedAngle, source: "auto", in: modelContext)
+            // Stamp the board layout this session ran on (the climb's own layout) so History can facet by
+            // board/layout — this is the most-common start path (logging a climb), which previously left
+            // `layoutId` nil (FC).
+            let createdFresh = sessions.start(angle: selectedAngle, source: "auto",
+                                              layoutId: climb.layoutId, in: modelContext)
             withAnimation(.snappy) { showingAutoStartUndo = createdFresh }
         }
         // Re-arm the active climb (a prior send may have closed it) so timing + the HUD are correct.
@@ -829,4 +840,66 @@ struct KilterClimbDetailView: View {
         Haptics.tap()
     }
 
+    /// Light the climb on the board AND record a deduped `KilterLitEvent` (P5 "On the Board"). The
+    /// capture lives HERE — at the illuminate call site where the climb identity / session / size are
+    /// known — never in the platform-pure `KilterBoardController` (which only sees `[KilterHold]`). The
+    /// authoring preview (`CreateClimbView`) is intentionally NOT routed through this, so design
+    /// previews don't pollute the worked-climbs history.
+    ///
+    /// `wasConnected` records whether a board was actually on the wall when lit; an explicit tap with no
+    /// board still records intent (the climber chose this climb) but flagged not-on-the-wall.
+    private func lightAndCapture() {
+        board.illuminate(holds)
+        captureLitEvent()
+    }
+
+    /// Upsert a `KilterLitEvent` keyed by (normalized climbUUID, current sessionId): bump `litAt` on the
+    /// existing row for this climb-in-this-session, else insert one — so re-lighting a project many times
+    /// in a session yields ONE bounded row. Snapshots the climb's display facts so On the Board renders
+    /// without re-opening the catalog. No-op until the climb has loaded. The shared upsert path also backs
+    /// the re-light buttons (F3), so every recording route dedups identically.
+    private func captureLitEvent() {
+        guard let climb else { return }
+        upsertLitEvent(climbUUID: climb.uuid, climbName: climb.name, layoutId: climb.layoutId,
+                       angle: selectedAngle, sizeId: productSizeId,
+                       gradeLabel: currentStat.map { catalog.gradeLabel($0.difficulty) } ?? "",
+                       sessionId: sessions.currentId, wasConnected: board.isConnected,
+                       in: modelContext)
+    }
+
+}
+
+/// The shared (normalized climbUUID, sessionId) upsert behind every lit-event recording site — the
+/// detail-screen capture (F2) AND both re-light buttons (F3) — so they can't dedup differently.
+///
+/// The dedup matches `sessionId` IN MEMORY rather than via a `#Predicate { $0.sessionId == sid }`, because
+/// a SwiftData predicate compiles to SQL where `NULL == NULL` is never true: a no-session light could
+/// never match the existing no-session row, so every out-of-session light inserted an unbounded new row
+/// (F2). Instead we fetch by the NON-optional `climbUUID` and match the session (incl. `nil == nil`) in
+/// Swift. Bumps `litAt` + refreshes the on-screen snapshot facts on a hit; inserts one row on a miss.
+@MainActor
+func upsertLitEvent(climbUUID: String, climbName: String, layoutId: Int, angle: Int, sizeId: Int,
+                    gradeLabel: String, sessionId: UUID?, wasConnected: Bool,
+                    at now: Date = Date(), in modelContext: ModelContext) {
+    let key = KilterClimbID.normalize(climbUUID)
+    // Match BOTH the normalized uuid AND the session in memory: a `#Predicate` can't call our normalizer
+    // (so a differently-cased stored uuid would be missed) and compiles `sessionId == nil` to SQL where
+    // `NULL == NULL` is never true (so a no-session light would never find its existing no-session row →
+    // unbounded inserts, F2). Lit events are deduped per climb-per-session, so this small fetch is bounded.
+    let existing = (try? modelContext.fetch(FetchDescriptor<KilterLitEvent>()))?
+        .first { KilterClimbID.normalize($0.climbUUID) == key && $0.sessionId == sessionId }
+    if let existing {
+        existing.litAt = now
+        existing.wasConnected = wasConnected
+        // Refresh the snapshot facts to the angle/size now on screen (the picker may have moved).
+        existing.angle = angle
+        existing.gradeLabel = gradeLabel
+        existing.sizeId = sizeId
+    } else {
+        modelContext.insert(KilterLitEvent(
+            climbUUID: climbUUID, climbName: climbName, gradeLabel: gradeLabel,
+            angle: angle, layoutId: layoutId, sizeId: sizeId,
+            litAt: now, wasConnected: wasConnected, sessionId: sessionId))
+    }
+    try? modelContext.save()
 }

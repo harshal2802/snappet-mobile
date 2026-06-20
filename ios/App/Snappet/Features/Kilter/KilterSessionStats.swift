@@ -15,6 +15,12 @@ struct KilterClimbLog: Sendable, Equatable {
     var endedAt: Date?
     /// The log timestamp (`KilterLogEntry.date`) — the fallback "end" when `endedAt` is nil.
     var loggedAt: Date
+    /// The board angle this climb was logged at (`KilterLogEntry.angle`) — feeds the all-time
+    /// angle distribution. Defaulted so per-session callers (which don't need it) stay unchanged.
+    var angle: Int = 0
+    /// The board session this climb was logged in (`KilterLogEntry.sessionId`), or `nil` for ad-hoc
+    /// logs — lets the all-time aggregator count distinct sessions when no session list is supplied.
+    var sessionId: UUID? = nil
 
     var isSend: Bool { status.isSend }
     /// Effective end for timing: explicit `endedAt`, else the log timestamp.
@@ -63,7 +69,14 @@ struct KilterSessionStats: Sendable, Equatable {
     struct GradeCount: Sendable, Equatable, Identifiable {
         var gradeLabel: String
         var difficulty: Double
+        /// Total sends at this grade (sent + flash) — the existing pyramid total. Unchanged meaning.
         var sends: Int
+        /// Of those sends, how many were flashes (a SUBSET of `sends`) — segments the bar's "flash" band.
+        var flashes: Int = 0
+        /// Climbs left in the `.project` state at this grade (not counted in `sends`).
+        var projects: Int = 0
+        /// Climbs left in the `.attempt` state at this grade (not counted in `sends`/`projects`).
+        var attemptsOnly: Int = 0
         var id: String { gradeLabel }
     }
 
@@ -117,15 +130,12 @@ struct KilterSessionStats: Sendable, Equatable {
         let hardest = sendLogs.max { $0.difficulty < $1.difficulty }
         let sendsPerHour = duration > 0 ? Double(sends) / (duration / 3600) : 0
 
-        // Grade pyramid: sends per grade label, easiest→hardest by representative difficulty.
-        var byGrade: [String: (difficulty: Double, count: Int)] = [:]
-        for log in sendLogs {
-            let existing = byGrade[log.gradeLabel]
-            byGrade[log.gradeLabel] = (log.difficulty, (existing?.count ?? 0) + 1)
-        }
-        let pyramid = byGrade
-            .map { GradeCount(gradeLabel: $0.key, difficulty: $0.value.difficulty, sends: $0.value.count) }
-            .sorted { $0.difficulty < $1.difficulty }
+        // Grade pyramid: one row per grade label that has at least one SEND (the pyramid is a
+        // send-volume chart), easiest→hardest by representative difficulty. Each row carries the
+        // segmented breakdown — `sends` (sent + flash, unchanged) plus the `flashes` subset and the
+        // `projects`/`attemptsOnly` counts AT THAT GRADE — so a bar can render flash|send|project.
+        let pyramid = segmentedPyramid(from: sorted, gradeLabel: \.gradeLabel,
+                                       difficulty: \.difficulty, status: \.status)
 
         // Chronological timeline with rest-before derived across consecutive climbs.
         var timeline: [TimelineItem] = []
@@ -187,6 +197,55 @@ struct KilterSessionStats: Sendable, Equatable {
         }
     }
 
+    /// Build the segmented grade pyramid from any sequence of logs: one `GradeCount` per grade label
+    /// that recorded at least one SEND (the pyramid is a send-volume chart), easiest→hardest by the
+    /// grade's representative difficulty. Each row tallies `sends` (sent + flash), the `flashes` subset,
+    /// and `projects`/`attemptsOnly` at that grade.
+    ///
+    /// The representative `difficulty` (the easiest→hardest sort key) is taken from a **sent** log at the
+    /// grade — never a `.project`/`.attempt`, whose float difficulty can differ from the actual sends and
+    /// would mis-order the pyramid. Because every emitted row is filtered to `sends > 0`, a send always
+    /// exists; the first send seen at a grade fixes its sort key. (A grade's difficulty is normally
+    /// constant across its logs, so this only matters when non-send logs carry a different value.)
+    /// Shared by the per-session `make` and the all-time `KilterAllTimeStats` so segmentation is defined
+    /// once. Pure → unit-tested.
+    static func segmentedPyramid<S: Sequence>(
+        from logs: S,
+        gradeLabel: (S.Element) -> String,
+        difficulty: (S.Element) -> Double,
+        status: (S.Element) -> KilterAscentStatus
+    ) -> [GradeCount] {
+        var order: [String] = []
+        var byGrade: [String: GradeCount] = [:]
+        // Tracks whether a grade's representative `difficulty` has been pinned from a SEND yet.
+        var difficultyFromSend: [String: Bool] = [:]
+        for log in logs {
+            let label = gradeLabel(log)
+            if byGrade[label] == nil {
+                order.append(label)
+                byGrade[label] = GradeCount(gradeLabel: label, difficulty: difficulty(log), sends: 0)
+                difficultyFromSend[label] = false
+            }
+            let st = status(log)
+            switch st {
+            case .flash:   byGrade[label]?.sends += 1; byGrade[label]?.flashes += 1
+            case .sent:    byGrade[label]?.sends += 1
+            case .project: byGrade[label]?.projects += 1
+            case .attempt: byGrade[label]?.attemptsOnly += 1
+            }
+            // Pin the representative difficulty to the FIRST send at this grade, overriding any value
+            // seeded from an earlier non-send log so the sort key always comes from a real send.
+            if st.isSend, difficultyFromSend[label] == false {
+                byGrade[label]?.difficulty = difficulty(log)
+                difficultyFromSend[label] = true
+            }
+        }
+        return order
+            .compactMap { byGrade[$0] }
+            .filter { $0.sends > 0 }
+            .sorted { $0.difficulty < $1.difficulty }
+    }
+
     /// Median of a **sorted, non-empty** array (mean of the two middle values for an even count).
     private static func medianOf(_ sorted: [TimeInterval]) -> TimeInterval {
         let n = sorted.count
@@ -201,7 +260,8 @@ extension KilterClimbLog {
         KilterClimbLog(
             climbUUID: entry.climbUUID, climbName: entry.climbName, gradeLabel: entry.gradeLabel,
             difficulty: entry.difficulty, status: entry.status, attempts: entry.attempts,
-            startedAt: entry.startedAt, endedAt: entry.endedAt, loggedAt: entry.date)
+            startedAt: entry.startedAt, endedAt: entry.endedAt, loggedAt: entry.date,
+            angle: entry.angle, sessionId: entry.sessionId)
     }
 }
 

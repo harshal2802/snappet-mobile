@@ -4,6 +4,215 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Kilter Improvement P3 — climbing analytics dashboard (`KilterStatsView` + trend screens)
+
+**Decision**: build a tiered Pulse Pro analytics dashboard on a new `KilterStatsRoute` (pushed on the
+shared `SuiteRouter` path, reached from the Kilter **More** menu + a History "See your stats" link),
+rendering **only** the tested P0 `KilterAllTimeStats` aggregate — **no new math in any view**. New
+trend math (range bucketing, vs-previous delta, ghost alignment, recap composition) lives in a pure,
+Foundation-only `KilterStatsTrend` enum, unit-tested in `KilterStatsTests`. Branch
+`kilter-improvement-plan`. No new `@Model`; no new `SnappetColor` brand token.
+
+**The grade pyramid is extended ADDITIVELY, not forked.** `ClimbGradePyramid`
+(`FreeformClimbSummaryComponents.swift`) gained three **defaulted** parameters — `style: Style = .solid`,
+`currentMaxLabel: String? = nil`, `onSelectGrade: ((String) -> Void)? = nil` — so its two existing
+callers (`SessionRecap`, `LiveClimbStatsSheet`, both `ClimbGradePyramid(pyramid:)`) compile and render
+**byte-for-byte unchanged** (the `.solid` branch is the original chart verbatim, including the
+`freeform.statsPyramid` id the Phase-3 UITest matches). The new `.segmented` branch stacks
+flash | send (worked) | project bands from `GradeCount.flashes`/`sends`/`projects`, styled by
+`KilterAscentStyle` so encoding is **position + label + glyph legend + Wong/perf colour** (never colour
+alone — colourblind-safe), with a dashed `RuleMark` current-max marker. Ruled out: a second pyramid view
+(would duplicate the chart) or hue-only segmentation (fails the colourblind rule).
+
+**Tap-a-grade = a chart overlay of invisible buttons, not per-mark gestures.** The segmented pyramid
+overlays one full-width transparent `Button` per grade (top→bottom = hardest→easiest, matching the
+reversed Y order) via `.chartOverlay`, each calling `onSelectGrade`. Simpler and more reliable than
+plotting-area hit-testing through the `ChartProxy`, and it carries a stable
+`kilter.stats.pyramidBar.<grade>` id for the UITest. The dashboard filters its in-page ascent log on the
+tapped grade.
+
+**Range/ghost/delta are one pure helper.** `KilterStatsTrend` does: `bucketsInRange` (inclusive
+30d/3m/1y/all trailing windows over the `VolumeBucket`s), `ghostedBars` (each in-range bar paired with
+the bucket exactly one **window** earlier — the faint "previous period" ghost the trend chart draws
+behind the solid bar), `delta` (signed change + percent; **percent is `nil` when the previous total is
+0** so the UI shows an absolute "+N" instead of a misleading "+∞%"; `.all` splits the series in half),
+`levelDelta` (the bucketed "+1 vs 90d" hero chip, compared on rounded difficulty so it matches the grade
+labels), and `monthRecap` (a "Month in Send" share line from the month roll-up). All deterministic →
+unit-tested with no device.
+
+**The inline History aggregation is DELETED, not kept in parallel.** `KilterHistoryView` lost its
+hand-rolled `summarySection` + CSS-bar `pyramidSection` and the now-unused `sends` / `sendsThisMonth` /
+`hardestSend` / `pyramid` computed props — replaced by a single doorway row to the dashboard. The
+all-time figures now have exactly one (tested) source. The `sessionsSection` + `ascentsSection` are left
+untouched for P4 to regroup (sequenced before P4 precisely because both touch this file).
+
+**Colour contract held.** One hero numeral (the Climbing Level); amber (`.kilter`) is wayfinding only
+(hero accent, tile glyphs); the perf ramp drives only the pyramid send/project bands, the level/trend
+delta chips, the send/flash rings, and the HR zones — never wayfinding. The optional cross-session HR
+trend tile renders only when a board session captured a band series.
+
+## [2026-06-20] Kilter Improvement P2 — "Your Climbs" gallery (`KilterCreatedView` + pure `KilterCreatedGallery`)
+
+**Decision**: promote the buried, layout-scoped, text-only **Mine** browse filter into a first-class
+**Your Climbs** gallery — a board-thumbnail grid on a new `KilterCreatedRoute`, pushed on the shared
+`SuiteRouter` path (the `KilterSessionRoute` pattern) and entered from the Kilter **More** menu. The
+existing inline Mine chip + its swipe Edit/Delete stay untouched (no regression). Branch
+`kilter-improvement-plan`. No `KilterCreatedClimb` schema change; no new `SnappetColor` brand token.
+
+**Global across layouts (the headline change).** Today's `createdListItems()` filters created climbs to
+`layoutId == current`, so a climb you set on another board *vanishes*. The gallery is **global**: every
+authored climb shows regardless of layout, and layout becomes an optional *filter facet* (a chip), never
+an implicit gate. Rationale: "the climbs I set" is an identity collection, not a board-scoped browse.
+
+**Draft state is DERIVED, not a schema field.** A Draft is a climb whose holds fail `kilterValidate`
+(the same start/finish/min-holds floor the editor enforces) — re-derived in the view via
+`KilterCreatedView.isSavable(frames:)` over the stored `frames`. So Draft/Saved/All segmentation needs
+**zero** new `KilterCreatedClimb` column, **no** `SnappetBackup` Row/schema change, and no backup-test
+churn. (In practice every persisted created climb passed validation at save, so today Drafts are empty;
+the segment is wired for transient/duplicate drafts and any future "save incomplete" path without a
+migration.) Ruled out: a `var isDraft`/`status` column — it would force a backup-codec + schema change
+for state that's a pure function of the holds already stored.
+
+**Own-status = the user's OWN logbook only (never community).** Each card's status chip
+(Sent / Project / Untried, + a logCount for "Most climbed") is joined from `KilterLogEntry where
+climbUUID == created.uuid` — a send/flash → Sent, attempts-but-no-send → Project, none → Untried. There
+are no community ascents/quality on-device by design, so the gallery shows none (the old Mine rows already
+zeroed quality/ascents; this replaces that with the *personal* signal that's actually meaningful).
+
+**The pure gallery helper (testable core).** All query/sort/filter + own-status-join logic lives in
+`KilterCreatedGallery` (Foundation-only, no SwiftUI/SwiftData/catalog) — the same discipline as P0's
+`KilterAllTimeStats`. Signature:
+`KilterCreatedGallery.items(created: [CreatedRow], logs: [LogRow], segment: Segment = .all, sort: Sort =
+.recent, search: String = "", layoutId: Int? = nil, angle: Int? = nil, source: String? = nil) -> [Item]`
+(+ `ownStatus(forLogs:) -> OwnStatus` and `sorted(_:by:)`). The view feeds it device-free value
+snapshots of its `@Query` rows and renders the ordered `Item`s. 17 unit tests in
+`KilterCreatedGalleryTests` cover global-vs-layout, Draft/Saved/All, all three sorts (recent / grade with
+ungraded-last / most-climbed with recency tie-break), the Sent/Project/Untried join + count, and name +
+angle + source facets.
+
+**Thumbnails: cache the SQLite-backed render.** Per-cell thumbnails call `catalog.holds(for:sizeId:)` +
+`boardGeometry(...)` (main-actor SQLite). A `@Observable @MainActor KilterThumbnailCache` decodes each
+created climb's `(geometry, holds)` **once**, keyed by uuid (evicted when a climb is deleted/edited away),
+so a large scrolling grid doesn't re-hit the DB every frame.
+
+**Duplicate clones to a transient draft, not a phantom row.** A created climb's identity is its *content*
+(the hold set, `KilterClimbIdentity`), so an exact clone would collapse onto the source's uuid. Rather
+than persist a phantom row, **Duplicate** opens `CreateClimbView(editing:)` seeded from a *transient*
+(un-inserted) clone ("… (Copy)" name, same holds): the user changes a hold → a genuinely new content
+identity on save, or keeps it → the editor's own `KilterDuplicateChecker` (self-excluding the source, run
+at save) offers *Open existing*. Nothing is written until they save, so a cancel leaks no phantom.
+
+**Delete keeps logged ascents (made visible).** Per-card Delete routes through the canonical
+`KilterCreatedClimb.delete` (keeps logs, drops the favorite, de-indexes Spotlight); the confirm copy
+states "your N logged ascent(s) stay in History" (wireframe `02b_actions`).
+
+**Verification.** `xcodegen generate`; `KilterCreatedGalleryTests` 17/17, 0 failures (iPhone 17 Pro);
+full `build-for-testing` SUCCEEDED with **0 warnings** (Swift 6). XCUITest
+`KilterCreatedGalleryUITests` authored to compile (browse + the keep-ascents delete confirm; the
+authoring leg is guarded since the Canvas editable board has no per-hole a11y target). Android: untouched
+(iOS-only gallery; the Kotlin mirror, if any, rides a later wave).
+
+## [2026-06-19] Kilter Improvement P0 — all-time stats engine (`KilterAllTimeStats`, keystone)
+
+**Decision**: lift the all-time climbing math (today hand-rolled inline in `KilterHistoryView`) into one
+pure, unit-tested value type `KilterAllTimeStats` so the later dashboard (P3) and history roll-ups /
+adaptive cards (P4) consume tested aggregates instead of re-deriving math in the view. No UI, no schema,
+no new `@Model`, no new `SnappetColor` brand token. Branch `kilter-improvement-plan`.
+
+- **`KilterAllTimeStats` is Foundation-only** (no SwiftUI/SwiftData/UIKit), the all-time analogue of the
+  per-session `KilterSessionStats`. It operates on plain `[KilterClimbLog]` (built via `KilterClimbLog.from`)
+  plus an optional `[KilterSessionSummary]` (a new plain-value bridge `from(KilterSession)` carrying
+  `id/startedAt/endedAt/angle`), so it stays device-free and unit-tested with synthetic values. **Public
+  API**:
+  `static func make(logs:sessions:now:calendar:climbingLevelWindow:weeklyVolumeWindow:) -> KilterAllTimeStats`.
+  Computes: `totalSends/totalAttempts/totalClimbsLogged/distinctClimbs`; `sendRate` (sends ÷ climbs logged)
+  and `flashRate` (flashes ÷ sends); `attemptsToSend` (avg attempts among sent climbs, `nil` with no sends);
+  `maxGradeDifficulty`+label (all-time send ceiling) and a recency-windowed `climbingLevelDifficulty`+label
+  (reuses `KilterRecommender.workingDifficulty` over the most recent N sends, so an old PR doesn't peg the
+  level); `maxGradeProgression` (best send per calendar month, chronological); `sendsPerWeek` (trailing-N
+  ISO-week volume buckets, zero-filled, oldest→newest); `angleDistribution` (sends & attempts per angle);
+  an all-time segmented `pyramid`; and `monthRollups`/`weekRollups` → `{periodLabel, sessions, sends,
+  hardestGradeLabel}`. **Empty inputs → `.empty`** (all-zero/empty). Deterministic; **Kilter-board data
+  only** (no Quick-Session fold-in).
+- **Roll-up session counting**: when a `sessions` list is supplied, "sessions" per period counts one per
+  session that **started** in that period; when omitted, it falls back to **distinct `sessionId`** among
+  that period's logs (ad-hoc logs with `sessionId == nil` don't count). ISO weeks use `.iso8601`-style keys
+  (`yearForWeekOfYear` so week 1 doesn't collide across the new-year boundary).
+- **`KilterClimbLog` extended additively** with `var angle: Int = 0` and `var sessionId: UUID? = nil`
+  (defaulted → zero call-site breakage), set in `KilterClimbLog.from(_:)` from the entry's `angle`/`sessionId`
+  — the all-time angle distribution + session roll-ups need them; the per-session engine ignores them.
+- **`KilterSessionStats.GradeCount` extended additively** with `flashes`/`projects`/`attemptsOnly`
+  (all default `0`). **`sends` keeps its exact meaning** (sent + flash, the existing pyramid total) so every
+  current caller (`ClimbGradePyramid`, `FreeformPlayerView.miniPyramid`) compiles unchanged; `flashes` is a
+  **SUBSET** of `sends`, and `projects`/`attemptsOnly` are the non-send counts at that grade — enough to
+  render a segmented flash|send|project bar in P3. The segmentation is built by a new shared
+  `KilterSessionStats.segmentedPyramid(from:gradeLabel:difficulty:status:)` used by **both** the per-session
+  `make` and the all-time engine, so the pyramid rule (a grade row appears only if it has ≥1 send;
+  easiest→hardest) is defined once. The pyramid still excludes grades with only projects/attempts.
+- **Ascent-style colour vocabulary** lives in a separate SwiftUI file `KilterAscentStyle.swift` (so the
+  aggregator stays pure): `glyph`/`label`/`color`/`decoration` over `KilterAscentStatus`. Colours are
+  **derived** — flash → local Okabe-Ito/Wong bluish-green (`0x009E73`, colourblind-safe, distinct from the
+  perf green) via `Color(hex:)`; sent → `perfFresh`; project → `perfModerate`; attempt → `textSecondary`.
+  **No new `SnappetColor` brand token**; always glyph+label (never colour-only).
+- **Recompute from rows, no denormalized persistence** in P0 (defer caching unless a real history lags).
+  P3 will delete the now-redundant inline aggregation in `KilterHistoryView`.
+
+## [2026-06-20] Kilter Improvement P1 — auto-detect a previously-connected board (`KilterBoardMemory` + coarse CoreLocation)
+
+**Decision**: recognize a board this phone has connected to before and **restore its layout + size and
+pre-select the usual angle automatically**, with a one-tap angle confirm — so the climber stops re-picking
+their board every visit. Option B adds a coarse, on-device CoreLocation place match so the app can suggest
+the usual board **on arrival, before BLE connects**, and disambiguate two boards at one gym.
+
+- **Three signals, in priority order.** (1) The stable `CBPeripheral.identifier` is the primary recall
+  key. (2) The `#serial` token parsed from the Aurora advertised local name (`"<name>#<serial>@<api>"`) is
+  the **cross-check fallback** — a phone reinstall mints a fresh identifier but the board keeps its
+  serial; when several remembered entries share a serial the cross-check picks the **most-recently-seen**
+  one so the result is deterministic. (3) A **coarse place** (lat/long bucketed to 3 decimals, ≈110 m) is
+  the pre-connect suggestion signal.
+- **`UserDefaults`, not a new `@Model`.** The remembered-board map (`kilter.rememberedBoards`, JSON
+  `identifier → RememberedBoard`) lives in `UserDefaults` like `BandMemory` — no SwiftData schema, no
+  `SnappetBackup` codec change, no backup tax. The pre-P1 `kilter.lastBoardID` key only ever held a bare
+  identifier (no layout/size/angle), so it **can't seed a restore and `recall` never consults it** — it
+  stays owned by `KilterBoardController` (its adopt path), and a board known only to a pre-P1 build is
+  simply **re-learned on its first reconnect** under the new build (nothing migrated, nothing lost).
+- **On-device only; the coarse place is never uploaded.** `CoarsePlace` has no precise initializer — a raw
+  fix is bucketed the instant it lands and the precise `CLLocation` is dropped; it is **never
+  reverse-geocoded, never networked**. `KilterLocationService` requests when-in-use authorization
+  **lazily** (the first launch never prompts) and degrades to a `nil` place (→ BLE-only, no crash, no
+  prompt loop) on every denied/restricted/unavailable path. Availability (`isSupported`) is derived
+  **live** from `authorizationStatus` (denied ⇒ unsupported) — it deliberately does **not** call the
+  documented main-thread-blocking `CLLocationManager.locationServicesEnabled()` at init (CoreLocation
+  already reports a services-off device through the denied/failure delegate paths). A failed fix gets
+  **one bounded, delayed retry** (often a transient indoor miss) before giving up — no retry storm. New
+  `NSLocationWhenInUseUsageDescription` in the (hand-maintained) `Info.plist` (`GENERATE_INFOPLIST_FILE: NO`).
+- **Suggestion-not-overwrite; angle always a confirm.** A recognized connect restores layout/size (through
+  `KilterCatalog.effectiveSizeId`, kept consistent with the render + LED map) and pre-selects the most-
+  frequent angle, but surfaces a **non-blocking `pulseGlassChrome` confirm ribbon** (inline angle stepper
+  + a single coral "Got it") rather than silently applying. The pre-connect arrival card ("Set it up" /
+  "Not now") is purely a suggestion. Neither path silently clobbers a deliberate manual pick; the arrival
+  card is once-per-visit and never appears while a real connect's confirm ribbon is up — and a BLE connect
+  marks the visit's arrival **resolved**, so a later coarse-fix update can't re-pop the card for a board
+  you're already connected to.
+- **Angle recording is split — history moves only on an explicit user choice.** `remember(…)` persists a
+  board's **identity** (layout/size/serial/place/lastSeen) on connect and **never** appends an angle;
+  `confirmAngle(…)` is the **only** path that appends to `angleHistory`, fired by the ribbon's "Got it".
+  So a connect the climber ignores adds nothing, the pre-select can't self-reinforce, and a climber who
+  changes angles actually shifts the remembered habit. A brand-new board starts with an empty history (no
+  pre-select) until the user confirms once.
+- **`mostFrequentAngle` ties → most recent; pre-select & summary agree.** Among angles tied at the max
+  count, the one appearing latest in history wins, so the pre-select tracks the climber's *current* habit.
+  When the remembered usual angle isn't in this catalog's available angles, the ribbon pre-selects the
+  **nearest** available angle and prints that SAME value in its summary (so the picker and the printed
+  "<size> · <angle>°" line never diverge).
+- **Pure rules unit-tested off-device.** `serial(fromLocalName:)`, `mostFrequentAngle`,
+  `recall(identifier:serial:)`, forget/rename, `CoarsePlace.matches`, and the pure `KilterPlaceMatcher`
+  are all exercised in `KilterBoardMemoryTests` against an **injected, isolated `UserDefaults`** — no
+  CoreBluetooth, no CoreLocation. The existing `KilterBoardMatchTests` (`isLikelyBoard`) stay green.
+- **Device-pending (MrRobot).** The live BLE confirmed-connect leg and the CoreLocation fix can't be
+  exercised on the simulator; everything compiles + the pure tests pass, and the existing connect/
+  illuminate flow is unchanged (the `onBoardRecognized` hook is additive — a nil hook is byte-identical).
+
 ## [2026-06-19] Workout redesign E3 — Workout Library (discipline-spined `LibraryItem`; in-memory climb/run templates; "Exercises → Library" rename)
 
 **Decision**: the flat, strength-only "Exercises" tab becomes a **library organized by workout TYPE as the
@@ -6148,3 +6357,148 @@ metres, exact kg). Pinned by tests. *Accepted follow-up:* no XCUITest yet drives
 per-discipline round-trips + the per-axis-guard regression pins + the unchanged strength path); UI green —
 `CompletionMomentTests` (incl. `testEditSetsFromSessionDetail` driving Edit→fields→Save),
 `FreeformFlowWalkthroughTests`, `WorkoutPlanFlowTests`.
+
+
+## 2026-06-20 — Kilter Improvement P4: redesigned session history
+
+Turns the flat reverse-chron Kilter session list into a grouped, scoped, filterable timeline with
+roll-up headers, two consistency surfaces, adaptive session cards, and a session detail that gains
+name/notes/date/angle editing. Prompt: `pdd/prompts/features/kilter-improvement/P4-session-history.md`.
+
+**Additive schema + backup mirror (no destructive change).** `KilterSession` gains three ADDITIVE
+optionals — `title: String?`, `notes: String?`, `layoutId: Int?` — all defaulted to nil in `init`, so it's
+a SwiftData *lightweight* migration (existing rows decode with nil). The backup `KilterSessionRow` mirrors
+them as `Codable` fields **defaulted to nil**: a PRE-CHANGE backup blob (no such JSON keys) still decodes
+(the synthesized `Decodable` skips an absent optional to its default) — the codec twin of the lightweight
+migration. They're set in the Row's `init(_ session:)` and applied in `make()`. `coveredModels` /
+`SnappetSchema.models` / `recordCount` are unchanged (no new model → the two `SnappetBackupTests` tripwires
+stay green; `KilterSessionBackupMigrationTests` adds a round-trip + a pre-change-blob decode). `layoutId` is
+stamped at `KilterSessionManager.start(angle:source:layoutId:)` (new optional arg, defaulted) at EVERY
+start path so a new session persists a real board (FC): the root's BLE-connect + manual-start (from
+`@AppStorage("kilter.layout")`), the **climb-detail auto-start** (the dominant path — logging a climb —
+from the climb's own `KilterClimb.layoutId`), and the **plan-start** (from the plan view's
+`@AppStorage("kilter.layout")`). No call site is left passing nil.
+
+**One pure brain, view does no math.** `KilterHistoryModel` (Foundation-only, tested) takes value-mirror
+`SessionItem`s + `[KilterClimbLog]` + scope/filter state and returns a `DisplayModel`: month/week/all
+buckets + `rollupSummary` headers ("7 sessions · 41 sent · hardest V7"), per-facet selectable values, an
+`isStaleFilter` flag, and adaptive `CardModel`s. Facet values + the PR baseline are computed over the FULL
+set (not the filtered/scoped subset) so a chip never vanishes mid-filter and a PR is GLOBAL/chronological.
+
+**Stale-filter recovery, not an empty dead-end — and scope-aware (FG).** Filters are AND-combined
+(board/layout · angle · grade · status · source) + a title/board/climb-name search. When they leave the
+current scope empty yet sessions exist, the model returns a `StaleFilterRecovery` that points at the control
+that actually helps: if the SAME filters still match a session somewhere in the full set, the matches are
+merely in another period → **widen scope** ("see all"); only if they match nothing anywhere → **clear
+filters**. (`isStaleFilter` is kept as a computed convenience = `recovery != .none`.)
+
+**Consistency surfaces — window-normalized, bucketed by the log's day, ad-hoc-inclusive (FE).** `countsByDay`
+buckets **sends by each log's `loggedAt` local day** (not the session's `startedAt`), so a post-midnight send
+lands on the correct cell, AND counts logs with `sessionId == nil` (ad-hoc ascents) so the heatmap/calendar
+don't under-report; sessions still contribute their per-day count + ids (for tap-to-day) by `startedAt`.
+`heatmap`/`monthDays` normalize intensity over the days **in the window** (not all logs), so an out-of-window
+busy day can't crush the visible cells. `Day.isEmpty` now means "no session AND no send", so a send-only
+ad-hoc day still reads as active.
+
+**Active session never renders a stale period header (FD).** `group()` buckets an active (`endedAt == nil`)
+session — and headlines its group — by the CURRENT period (`now`), not its possibly-old `startedAt`, so an
+open session left over from last week doesn't conjure a stale week/month header in Week/Month scope.
+
+**Deterministic tie-breaks (FF).** The grade-facet chip order and the roll-up "hardest" pick tie-break by
+`gradeLabel` (not unordered Dictionary/flatMap iteration); the chronological sort feeding the PR baseline
+tie-breaks by session id, so PR awarding is stable for sessions with identical `startedAt`.
+
+**Adaptive cards — ONE badge max (Strava rule).** Default facts Sends · Hardest · Duration, swapping in at
+most one notable badge with a fixed priority **PR > flash-rate (≥50% of sends) > # projects** — the rarest,
+most celebration-worthy signal wins the single slot; a BLE/Manual provenance glyph+label; a live pulse on an
+open session. Cards push the UNCHANGED `KilterSessionRoute`.
+
+**BOTH consistency surfaces (user decision).** A GitHub-style `KilterHeatmapView` (cell fill = sends/day,
+today ringed) AND a tappable `KilterMonthCalendarView` (send-dot per active day), each a dumb renderer over
+the pure `KilterConsistency` day buckets and each DOUBLING AS NAVIGATION (tap a day → that day's session).
+
+**Session-level metadata edit (NOT the gym per-set edit — doc-drift fix FH).** An Edit button opens
+`KilterSessionMetaEditSheet` editing name + notes (the new fields) and date + angle (`startedAt`/`angle`),
+written straight to the `@Model`. This is *session*-level metadata — it does NOT mirror the gym
+`SessionDetailView` edit, which corrects a completed *set's* fields; earlier comments/graph/decisions claimed
+that parity and were corrected. Two edits move more than one field to keep the session internally consistent:
+- **FA — Date shifts the whole session by a delta.** The HR `hrSeries` t-axis is rebased on the ORIGINAL
+  `startedAt` and per-climb HR/effort windows are `log.effectiveStart − session.startedAt`, so moving only
+  `startedAt` would desync every window against an unmoved HR axis (and could make `startedAt > endedAt`).
+  Instead the save computes `delta = newStart − startedAt` and shifts `startedAt`, `endedAt`, AND every child
+  `KilterLogEntry`'s `date`/`startedAt`/`endedAt`/`attemptTimestamps` by the same delta (all relative timing
+  preserved). The picker is clamped to `endedAt − 1s` for a finished session so the interval can't invert.
+- **FB — Angle RE-GRADES (path chosen: re-grade, not remove).** Editing `session.angle` alone left each
+  log's own `angle`/`difficulty`/`gradeLabel` (computed at log-time angle) stale, so the header angle
+  disagreed with the pyramid/ascent rows. On an angle change, every child log that was at the OLD session
+  angle is moved to the new angle and its `difficulty`+`gradeLabel` re-derived from `KilterCatalog.stats(uuid)`
+  at the new angle (→ `gradeLabel(difficulty)`); a log climbed at a different angle than the header is left
+  alone, and a climb with no catalog stat at the new angle keeps its grade snapshot (only the angle moves).
+
+Ascent rows gain swipe-to-EDIT (`KilterAscentEditSheet`: status/attempts/angle) alongside swipe-to-delete.
+The `KilterSessionManager.end/recover` lifecycle + the detail route are untouched — the editor only edits
+metadata, never closes/reopens the session.
+
+**Verification.** Target unit suites (`KilterHistoryTests`, `SnappetBackupTests`, `KilterAllTimeStatsTests`)
++ the full `build-for-testing` on iPhone 17 Pro; new `KilterHistoryP4Tests` XCUITest authored to compile.
+On-device only; Kilter-board data only.
+
+**Android (tracked).** No Android tree touched — P4 is an iOS-only UI/model wave; the Kotlin mirror rides a
+later Kilter Improvement Android wave.
+
+## 2026-06-20 — Kilter Improvement P5: On the Board (history of climbs you lit)
+
+**The new axis.** A climb's only persisted action before P5 was a `KilterLogEntry` (an ascent), so every
+climb pulled up and *worked but never formally logged* was invisible. P5 adds `KilterLitEvent` — a row per
+climb LIT on the board — surfaced in a new **On the Board** timeline + a root **re-light rail**, with status
+joined from the ascent log and one-tap re-light.
+
+**`KilterLitEvent` @Model.** `{climbUUID, climbName, gradeLabel, angle, layoutId, sizeId, litAt: Date,
+wasConnected: Bool, sessionId: UUID?}`. The display facts (name/grade/angle/layout/size) are snapshotted on
+the event so On the Board renders a thumbnail + row with NO catalog re-fetch. Status (Lit/Attempt/Sent) is
+**never stored** — it's joined from `KilterLogEntry` at read time by the pure helper, so it can't go stale.
+
+**Capture seam = the illuminate CALL SITES, never the controller.** `KilterBoardController.illuminate(holds)`
+is platform-pure (it only sees `[KilterHold]`, no climb identity) and stays that way — capture lives in
+`KilterClimbDetailView.lightAndCapture()/captureLitEvent()`, wired into all four detail illuminate sites: the
+explicit "Light up this climb" button, the connect-auto-light (`onChange board.isConnected`), the size-change
+re-light, and the swipe/open `load()` sync. The authoring preview (`CreateClimbView.liveLight`) calls
+`board.illuminate` DIRECTLY (uncaptured) on purpose — design previews must not pollute the worked-climbs
+history.
+
+**Dedup = per climb-per-session UPSERT (bounded log).** `captureLitEvent` fetches the lit event for the
+current `(normalized climbUUID, sessionId)` and BUMPS its `litAt`/`wasConnected`/snapshot, else inserts one —
+so re-lighting a project ten times in a session yields ONE row. The pure `KilterOnTheBoard.deduped(_:)`
+re-applies the same key (keeping the newest `litAt`, ties broken by composite id) defensively over a
+backup-restored / hand-duplicated set. A `nil`-session light is its own bucket per climb (an out-of-session
+light isn't merged across visits). `wasConnected` flags whether a board was actually on the wall.
+
+**Pure helper `KilterOnTheBoard` (Foundation-only, tested).** Owns dedup, the status join (send-sticky:
+flash/sent → Sent, else any attempt → Attempt, else Lit — a project-only climb reads Lit; joined by
+NORMALIZED uuid so casing/whitespace can't split a created climb), day/session grouping with "N lit · M sent"
+roll-ups + a relative-day + dominant-board/angle headline, faceted filtering (status/angle/board with
+pre-filter facet values so a chip never vanishes), the hero "N climbs worked" distinct-climb count, and the
+recent-rail ordering (deduped, newest-first, capped). `LitEvent.id` is a STABLE composite (normalized climb +
+session + litAt) so a row's SwiftUI identity survives a re-query without a UUID column on the @Model.
+Unit-tested in `KilterOnTheBoardTests` (dedup same-climb-same-session → one; cross-session stays separate;
+uuid normalization; status join precedence + flash-as-send + normalization; grouping/roll-ups; headline
+board-vs-angle; hero count; status-facet filter; recent-rail ordering/cap/status).
+
+**Backup wiring (mirror KilterFavorite/KilterLogEntry).** `KilterLitEvent.self` added to
+`SnappetSchema.models` + `SnappetBackup.coveredModels`; a `KilterLitEventRow: BackupRow` (Codable, `init(_:)`,
+`make()`, `sortKey`), the `kilterLitEvents: [KilterLitEventRow]` File field, `n += kilterLitEvents.count` in
+`recordCount`, the snapshot map line, and a `deleteAll(KilterLitEvent.self)` + insert-as-is restore. Like
+`KilterLogEntry`, there's NO `@Attribute(.unique)` (a climb is legitimately lit across many sessions, and
+dedup is enforced at CAPTURE time, not by a store key) so restore inserts rows as-is — not `uniqued`.
+`SnappetBackupTests.seedEveryModel` now seeds one `KilterLitEvent`; the count tripwire bumped **22 → 23**;
+`testCodecCoversEverySchemaModel` + the recordCount twin + the full round-trip stay green.
+
+**Verification.** `KilterOnTheBoardTests` + `SnappetBackupTests` on iPhone 17 Pro + the full
+`build-for-testing`; a focused `KilterOnTheBoardUITests` XCUITest authored to compile (opens On the Board from
+the More menu; asserts the recent rail is hidden on a fresh store). **Device-pending (MrRobot):** the live
+re-light + capture-on-connect runtime legs need a real board — a simulator has no BLE radio (`board.state ==
+.unsupported`, the illuminate section hidden), so capture-on-connected-light can't fire on the simulator; the
+pure helper + dedup + backup ship green without a board.
+
+**Android (tracked).** No Android tree touched — P5 is an iOS-only wave; the Kotlin mirror rides a later
+Kilter Improvement Android wave.

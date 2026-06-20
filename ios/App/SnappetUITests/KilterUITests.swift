@@ -1,5 +1,31 @@
 import XCTest
 
+extension XCUIApplication {
+    /// Find an element by accessibility id, swiping up to render not-yet-instantiated lazy `List` rows
+    /// (after the History redesign, ascent rows can sit below the fold). Returns the element (which may
+    /// not exist if `maxSwipes` is exhausted).
+    @discardableResult
+    func findScrolling(_ id: String, maxSwipes: Int = 8) -> XCUIElement {
+        var n = 0
+        while n < maxSwipes {
+            let el = descendants(matching: .any)[id].firstMatch
+            if el.exists { return el }
+            swipeUp()
+            n += 1
+        }
+        return descendants(matching: .any)[id].firstMatch
+    }
+
+    /// A just-logged climb shows in History either as its session card (content-first, high up — logging
+    /// auto-starts a session) or, for an ad-hoc log, as an ascent row a little further down. True if
+    /// either is present (checks the on-screen session card first, so a top-of-list stats link stays
+    /// reachable when no scroll was needed).
+    func hasLoggedHistoryRow() -> Bool {
+        if descendants(matching: .any)["kilter.sessionRow"].firstMatch.waitForExistence(timeout: 5) { return true }
+        return findScrolling("kilter.historyRow").exists
+    }
+}
+
 /// UI coverage for the Kilter mini-app's Phase-1 flow: open the catalog from the App Library, open a
 /// climb, log a send, and confirm it lands in History. Mirrors `TipUITests`' entry pattern.
 ///
@@ -61,9 +87,8 @@ final class KilterUITests: XCTestCase {
         // History lives on the catalog toolbar, so step back out of the climb detail first.
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["kilter.history"].tap()
-        let row = app.descendants(matching: .any)["kilter.historyRow"]
-        XCTAssertTrue(row.firstMatch.waitForExistence(timeout: 6),
-                      "A history row should appear after logging a send")
+        XCTAssertTrue(app.hasLoggedHistoryRow(),
+                      "A logged climb should appear in History (as its session card or ascent row)")
     }
 
     /// Saving a climb makes it show under the Saved filter.

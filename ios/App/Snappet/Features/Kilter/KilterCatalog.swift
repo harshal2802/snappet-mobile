@@ -458,8 +458,10 @@ final class KilterCatalog {
     func defaultSizeId(forLayout layoutId: Int) -> Int { sizes(forLayout: layoutId).map(\.id).min() ?? 0 }
 
     /// Resolve the size to actually use: the requested one if it's valid for this layout, else the
-    /// layout's default. Guards against a stale preference (e.g. a size from another layout).
-    private func effectiveSizeId(forLayout layoutId: Int, requested: Int) -> Int {
+    /// layout's default. Guards against a stale preference (e.g. a size from another layout). Used by the
+    /// detail render and by P1's board-memory restore (a remembered size must still be valid for its
+    /// remembered layout).
+    func effectiveSizeId(forLayout layoutId: Int, requested: Int) -> Int {
         let ids = sizes(forLayout: layoutId).map(\.id)
         return ids.contains(requested) ? requested : (ids.min() ?? 0)
     }
