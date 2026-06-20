@@ -110,8 +110,9 @@ final class KilterHistoryP4Tests: XCTestCase {
         logASend(app)
         openHistory(app)
 
-        let ascent = app.descendants(matching: .any)["kilter.historyRow"].firstMatch
-        XCTAssertTrue(ascent.waitForExistence(timeout: 6), "An ascent row should be present")
+        // Ascent rows live in the "Ascents" section below the timeline — scroll it into view.
+        let ascent = app.findScrolling("kilter.historyRow")
+        XCTAssertTrue(ascent.exists, "An ascent row should be present")
         ascent.swipeLeft()
 
         let editAction = app.buttons["kilter.ascent.swipeEdit"]

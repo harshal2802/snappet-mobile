@@ -84,10 +84,11 @@ final class KilterStatsTests: XCTestCase {
         logASend(app)
 
         app.buttons["kilter.history"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["kilter.historyRow"].firstMatch.waitForExistence(timeout: 6),
-                      "History should still show ascent rows")
+        // Stats link is at the top of History (check + capture before any scrolling).
         let link = app.buttons["kilter.history.statsLink"]
-        XCTAssertTrue(link.waitForExistence(timeout: 4), "History should link to the stats dashboard")
+        XCTAssertTrue(link.waitForExistence(timeout: 6), "History should link to the stats dashboard")
+        // History still surfaces the logged climb (session card on screen, or ascent row below).
+        XCTAssertTrue(app.hasLoggedHistoryRow(), "History should still show logged climbs")
         link.tap()
         XCTAssertTrue(app.descendants(matching: .any)["kilter.stats.hero"].waitForExistence(timeout: 6),
                       "The stats link should open the dashboard")

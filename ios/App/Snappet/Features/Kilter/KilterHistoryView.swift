@@ -33,9 +33,12 @@ struct KilterHistoryView: View {
                 List {
                     statsLinkSection
                     scopeSection
-                    if !sessions.isEmpty { consistencySection }
+                    // Content-first: the session timeline + ascents come right after the controls so a
+                    // just-logged send is visible without scrolling past the consistency viz, which now
+                    // sits at the bottom as a summary surface (fixes the "fresh send buried" regression).
                     sessionsSection
                     ascentsSection
+                    if !sessions.isEmpty { consistencySection }
                 }
                 .searchable(text: $filters.search,
                             placement: .navigationBarDrawer(displayMode: .automatic),
