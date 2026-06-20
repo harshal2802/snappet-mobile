@@ -49,6 +49,62 @@ no new `@Model`, no new `SnappetColor` brand token. Branch `kilter-improvement-p
 - **Recompute from rows, no denormalized persistence** in P0 (defer caching unless a real history lags).
   P3 will delete the now-redundant inline aggregation in `KilterHistoryView`.
 
+## [2026-06-20] Kilter Improvement P1 — auto-detect a previously-connected board (`KilterBoardMemory` + coarse CoreLocation)
+
+**Decision**: recognize a board this phone has connected to before and **restore its layout + size and
+pre-select the usual angle automatically**, with a one-tap angle confirm — so the climber stops re-picking
+their board every visit. Option B adds a coarse, on-device CoreLocation place match so the app can suggest
+the usual board **on arrival, before BLE connects**, and disambiguate two boards at one gym.
+
+- **Three signals, in priority order.** (1) The stable `CBPeripheral.identifier` is the primary recall
+  key. (2) The `#serial` token parsed from the Aurora advertised local name (`"<name>#<serial>@<api>"`) is
+  the **cross-check fallback** — a phone reinstall mints a fresh identifier but the board keeps its
+  serial; when several remembered entries share a serial the cross-check picks the **most-recently-seen**
+  one so the result is deterministic. (3) A **coarse place** (lat/long bucketed to 3 decimals, ≈110 m) is
+  the pre-connect suggestion signal.
+- **`UserDefaults`, not a new `@Model`.** The remembered-board map (`kilter.rememberedBoards`, JSON
+  `identifier → RememberedBoard`) lives in `UserDefaults` like `BandMemory` — no SwiftData schema, no
+  `SnappetBackup` codec change, no backup tax. The pre-P1 `kilter.lastBoardID` key only ever held a bare
+  identifier (no layout/size/angle), so it **can't seed a restore and `recall` never consults it** — it
+  stays owned by `KilterBoardController` (its adopt path), and a board known only to a pre-P1 build is
+  simply **re-learned on its first reconnect** under the new build (nothing migrated, nothing lost).
+- **On-device only; the coarse place is never uploaded.** `CoarsePlace` has no precise initializer — a raw
+  fix is bucketed the instant it lands and the precise `CLLocation` is dropped; it is **never
+  reverse-geocoded, never networked**. `KilterLocationService` requests when-in-use authorization
+  **lazily** (the first launch never prompts) and degrades to a `nil` place (→ BLE-only, no crash, no
+  prompt loop) on every denied/restricted/unavailable path. Availability (`isSupported`) is derived
+  **live** from `authorizationStatus` (denied ⇒ unsupported) — it deliberately does **not** call the
+  documented main-thread-blocking `CLLocationManager.locationServicesEnabled()` at init (CoreLocation
+  already reports a services-off device through the denied/failure delegate paths). A failed fix gets
+  **one bounded, delayed retry** (often a transient indoor miss) before giving up — no retry storm. New
+  `NSLocationWhenInUseUsageDescription` in the (hand-maintained) `Info.plist` (`GENERATE_INFOPLIST_FILE: NO`).
+- **Suggestion-not-overwrite; angle always a confirm.** A recognized connect restores layout/size (through
+  `KilterCatalog.effectiveSizeId`, kept consistent with the render + LED map) and pre-selects the most-
+  frequent angle, but surfaces a **non-blocking `pulseGlassChrome` confirm ribbon** (inline angle stepper
+  + a single coral "Got it") rather than silently applying. The pre-connect arrival card ("Set it up" /
+  "Not now") is purely a suggestion. Neither path silently clobbers a deliberate manual pick; the arrival
+  card is once-per-visit and never appears while a real connect's confirm ribbon is up — and a BLE connect
+  marks the visit's arrival **resolved**, so a later coarse-fix update can't re-pop the card for a board
+  you're already connected to.
+- **Angle recording is split — history moves only on an explicit user choice.** `remember(…)` persists a
+  board's **identity** (layout/size/serial/place/lastSeen) on connect and **never** appends an angle;
+  `confirmAngle(…)` is the **only** path that appends to `angleHistory`, fired by the ribbon's "Got it".
+  So a connect the climber ignores adds nothing, the pre-select can't self-reinforce, and a climber who
+  changes angles actually shifts the remembered habit. A brand-new board starts with an empty history (no
+  pre-select) until the user confirms once.
+- **`mostFrequentAngle` ties → most recent; pre-select & summary agree.** Among angles tied at the max
+  count, the one appearing latest in history wins, so the pre-select tracks the climber's *current* habit.
+  When the remembered usual angle isn't in this catalog's available angles, the ribbon pre-selects the
+  **nearest** available angle and prints that SAME value in its summary (so the picker and the printed
+  "<size> · <angle>°" line never diverge).
+- **Pure rules unit-tested off-device.** `serial(fromLocalName:)`, `mostFrequentAngle`,
+  `recall(identifier:serial:)`, forget/rename, `CoarsePlace.matches`, and the pure `KilterPlaceMatcher`
+  are all exercised in `KilterBoardMemoryTests` against an **injected, isolated `UserDefaults`** — no
+  CoreBluetooth, no CoreLocation. The existing `KilterBoardMatchTests` (`isLikelyBoard`) stay green.
+- **Device-pending (MrRobot).** The live BLE confirmed-connect leg and the CoreLocation fix can't be
+  exercised on the simulator; everything compiles + the pure tests pass, and the existing connect/
+  illuminate flow is unchanged (the `onBoardRecognized` hook is additive — a nil hook is byte-identical).
+
 ## [2026-06-19] Workout redesign E3 — Workout Library (discipline-spined `LibraryItem`; in-memory climb/run templates; "Exercises → Library" rename)
 
 **Decision**: the flat, strength-only "Exercises" tab becomes a **library organized by workout TYPE as the

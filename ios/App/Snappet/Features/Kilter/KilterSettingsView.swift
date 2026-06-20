@@ -20,10 +20,21 @@ struct KilterSettingsView: View {
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
+    /// P1: whether to suggest the usual board on arrival at a remembered coarse place (pre-connect).
+    @AppStorage("kilter.suggestOnArrival") private var suggestOnArrival = true
 
     @Query private var entries: [KilterLogEntry]
     @Query private var sessions: [KilterSession]
     @State private var confirmingClear = false
+
+    // P1 board detection (auto-detect a previously-connected board).
+    @State private var boardMemory = KilterBoardMemory()
+    @State private var location = KilterLocationService()
+    /// Bumped on rename / forget so the remembered-boards list re-renders (it reads off UserDefaults).
+    @State private var boardsVersion = 0
+    /// The board being renamed (drives the rename alert).
+    @State private var renaming: (id: UUID, label: String)?
+    @State private var renameText = ""
 
     // Catalog library management (download / import / switch active / remove).
     @State private var installer = KilterCatalogInstaller()
@@ -96,6 +107,62 @@ struct KilterSettingsView: View {
                      + "switch to Legacy — it's for older controllers.")
             }
 
+            // P1: auto-detect a previously-connected board (BLE recognition + optional on-device coarse
+            // place suggestion). The location toggle skips CoreLocation entirely when off; BLE-only
+            // recognition still works without it.
+            Section {
+                Toggle(isOn: $suggestOnArrival) {
+                    Label("Suggest board on arrival", systemImage: "mappin.and.ellipse")
+                }
+                .accessibilityIdentifier("kilter.settings.suggestOnArrival")
+                LabeledContent("Location") {
+                    Text(locationStatusText).foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("kilter.settings.locationStatus")
+                if suggestOnArrival && location.authorization == .notDetermined && location.isSupported {
+                    Button("Allow location while using the app") { location.requestIfNeeded() }
+                        .accessibilityIdentifier("kilter.settings.requestLocation")
+                }
+            } header: {
+                Text("Board detection")
+            } footer: {
+                Text("Snappet recognizes a board you've connected to before and restores its layout, "
+                     + "size, and usual angle — you just confirm. Turn on location to suggest your usual "
+                     + "board when you arrive at a remembered place; the match is made fully on your "
+                     + "device and your location never leaves your phone.")
+            }
+
+            if !boardMemory.isEmpty {
+                Section {
+                    ForEach(boardMemory.rememberedSorted, id: \.id) { entry in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.board.label).font(.subheadline.weight(.medium))
+                            Text(rememberedDetail(entry.board))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("kilter.settings.rememberedBoard")
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                boardMemory.forget(identifier: entry.id); boardsVersion += 1
+                            } label: { Label("Forget", systemImage: "trash") }
+                            .accessibilityIdentifier("kilter.settings.forgetBoard")
+                            Button {
+                                renameText = entry.board.label
+                                renaming = (id: entry.id, label: entry.board.label)
+                            } label: { Label("Rename", systemImage: "pencil") }
+                            .tint(.blue)
+                            .accessibilityIdentifier("kilter.settings.renameBoard")
+                        }
+                    }
+                } header: {
+                    Text("Remembered boards")
+                } footer: {
+                    Text("Boards this device has connected to. Swipe to rename or forget — a forgotten "
+                         + "board is re-learned the next time you connect to it.")
+                }
+                .id(boardsVersion)
+            }
+
             Section {
                 let catalogs = installer.catalogs
                 let activeId = installer.activeCatalogId
@@ -162,6 +229,18 @@ struct KilterSettingsView: View {
         } message: {
             Text("This permanently deletes your ascent log and sessions. It can't be undone.")
         }
+        // P1: rename a remembered board.
+        .alert("Rename board", isPresented: Binding(get: { renaming != nil },
+                                                    set: { if !$0 { renaming = nil } }),
+               presenting: renaming) { entry in
+            TextField("Board name", text: $renameText)
+                .accessibilityIdentifier("kilter.settings.renameField")
+            Button("Save") {
+                let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { boardMemory.rename(identifier: entry.id, to: trimmed); boardsVersion += 1 }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in Text("Shown when this board is recognized and at your usual place.") }
         .fileImporter(isPresented: $showingImporter,
                       allowedContentTypes: [UTType(filenameExtension: "sqlite3") ?? .data, .data],
                       allowsMultipleSelection: false) { result in
@@ -185,6 +264,25 @@ struct KilterSettingsView: View {
         if !catalog.sizes(forLayout: layoutId).contains(where: { $0.id == productSizeId }) {
             productSizeId = catalog.defaultSizeId(forLayout: layoutId)
         }
+    }
+
+    /// Human-readable location authorization status for the Board-detection section.
+    private var locationStatusText: String {
+        switch location.authorization {
+        case .authorized: return "While using the app"
+        case .denied: return "Off — using Bluetooth only"
+        case .notDetermined: return "Not set"
+        }
+    }
+
+    /// "<size> · <angle>° · last seen <date>" detail line for a remembered board.
+    private func rememberedDetail(_ board: RememberedBoard) -> String {
+        let layoutName = catalog.layouts().first { $0.id == board.layoutId }?.name
+        let sizeId = catalog.effectiveSizeId(forLayout: board.layoutId, requested: board.productSizeId)
+        let sizeName = catalog.sizes(forLayout: board.layoutId).first { $0.id == sizeId }?.name
+        let angle = board.usualAngle.map { "\($0)°" }
+        let seen = "Seen " + board.lastSeen.formatted(date: .abbreviated, time: .omitted)
+        return [layoutName, sizeName, angle, seen].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func clearHistory() {

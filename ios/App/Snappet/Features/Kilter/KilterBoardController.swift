@@ -55,6 +55,16 @@ final class KilterBoardController: NSObject {
     private var lastHolds: [KilterHold] = []
     /// Notified when the connection comes up / goes down, so the module can open/close a session.
     var onConnectionChange: ((Bool) -> Void)?
+    /// Fired once on a **confirmed** connect (the right write characteristic), with the board's stable
+    /// `CBPeripheral.identifier` and the `#serial` parsed from its advertised local name (if any). P1's
+    /// board-memory uses this to recall a previously-connected board and restore its layout/size +
+    /// pre-select the usual angle (a one-tap confirm — never a silent overwrite). Additive: when unset,
+    /// connect behaves exactly as before.
+    var onBoardRecognized: ((_ identifier: UUID, _ serial: String?) -> Void)?
+    /// The advertised local name from the most recent scan match, kept so the confirmed-connect hook can
+    /// extract the board's `#serial`. A system-connected / identifier-adopted board (no scan) leaves this
+    /// `nil`, and recall still works by identifier.
+    private var lastAdvertisedName: String?
 
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
@@ -116,9 +126,11 @@ final class KilterBoardController: NSObject {
         guard let central, central.state == .poweredOn else { return }
         let knownServices = [Self.gattServiceUUID, Self.advertisedServiceUUID]
         if let existing = central.retrieveConnectedPeripherals(withServices: knownServices).first {
+            lastAdvertisedName = nil   // adopted, not scanned — no advert to read a serial from
             connect(to: existing)
         } else if let known = lastBoardIdentifier,
                   let remembered = central.retrievePeripherals(withIdentifiers: [known]).first {
+            lastAdvertisedName = nil
             connect(to: remembered)
         } else {
             beginScan()
@@ -258,6 +270,9 @@ extension KilterBoardController: CBCentralManagerDelegate {
             guard state == .scanning,
                   Self.isLikelyBoard(name: localName ?? peripheral.name,
                                      advertisedServiceUUIDs: advertisedServices) else { return }
+            // Keep the advertised name so the confirmed-connect hook can parse the board's `#serial`
+            // (a reinstall cross-check). The system-connected adopt paths clear it (they don't scan).
+            lastAdvertisedName = localName ?? peripheral.name
             connect(to: peripheral)
         }
     }
@@ -328,6 +343,12 @@ extension KilterBoardController: CBPeripheralDelegate {
                 // so the identifier-based adopt path never targets a device that wasn't really a board.
                 lastBoardIdentifier = peripheral.identifier
                 state = .connected
+                // Recognize the board (P1): hand the view the stable identifier + the `#serial` parsed
+                // from the advertised name, so it can restore the remembered layout/size + pre-select the
+                // usual angle. Fires before `onConnectionChange` so a restore is ready when the session
+                // opens. Additive — a nil hook leaves the connect flow byte-identical to before.
+                onBoardRecognized?(peripheral.identifier,
+                                   KilterBoardMemory.serial(fromLocalName: lastAdvertisedName))
                 onConnectionChange?(true)
                 if let pending = pendingHolds {
                     pendingHolds = nil

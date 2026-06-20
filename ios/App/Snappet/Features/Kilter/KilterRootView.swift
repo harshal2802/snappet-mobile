@@ -31,6 +31,20 @@ struct KilterRootView: View {
     @State private var catalogInstalled = KilterCatalogStore.shared.isInstalled
     /// Shared across the module's screens (detail illuminates / sessions group history).
     @State private var board = KilterBoardController()
+    /// P1 board memory: recognizes a board this phone has connected to before and restores its layout +
+    /// size, pre-selecting the usual angle. `UserDefaults`-backed (no `@Model`); injectable for tests.
+    @State private var boardMemory = KilterBoardMemory()
+    /// P1 coarse, on-device place match for the **pre-connect** arrival suggestion. Degrades to BLE-only
+    /// when location is denied/unavailable; the coarse place never leaves the phone.
+    @State private var location = KilterLocationService()
+    /// A recognized board awaiting the user's one-tap angle confirm (the post-connect glass ribbon). The
+    /// restore (layout/size/angle pre-select) is applied immediately; the ribbon only confirms the angle.
+    @State private var pendingConfirm: (id: UUID, board: RememberedBoard)?
+    /// A remembered board suggested on arrival at a known coarse place, BEFORE BLE connects. A suggestion
+    /// only — "Set it up" applies it; "Not now" dismisses it for this visit.
+    @State private var arrivalSuggestion: (id: UUID, board: RememberedBoard)?
+    /// Dismiss the arrival suggestion for the rest of this visit once acted on / declined.
+    @State private var arrivalDismissed = false
     /// The session manager is owned by `AppModel` (not `@State` here) so it survives navigating out of
     /// and back into the module — this view is a `navigationDestination` SwiftUI destroys on pop, which
     /// is exactly what used to strand the active session. Recovered from the store on appear.
@@ -44,6 +58,10 @@ struct KilterRootView: View {
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.minGrade") private var minGrade: Int = 10
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
+    /// P1: whether to surface the pre-connect arrival suggestion at a remembered coarse place. On by
+    /// default; the off switch (Settings) skips location entirely (BLE-only recognition still works).
+    @AppStorage("kilter.suggestOnArrival") private var suggestOnArrival = true
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var savedOnly = false
     /// Browse only climbs the user created (mutually exclusive with `savedOnly`).
     @State private var mineOnly = false
@@ -258,8 +276,25 @@ struct KilterRootView: View {
             board.onConnectionChange = { connected in
                 if connected { sessions.start(angle: angle, source: "ble", in: modelContext) }
             }
+            // P1: on a confirmed connect, recognize the board and (if known) restore its layout/size +
+            // pre-select the usual angle, then surface the one-tap confirm ribbon. An unknown board is
+            // remembered from scratch on this first connect (no restore, nothing overwritten).
+            board.onBoardRecognized = { identifier, serial in
+                recognizeBoard(identifier: identifier, serial: serial)
+            }
             board.setAPILevel(apiLevel)
+            // Pre-connect arrival suggestion: ask for a coarse fix (only if the user opted in and we have
+            // boards with a stored place) so the suggestion can appear before BLE. `requestIfNeeded`
+            // already requests a fix when authorized (and the auth-change delegate fetches one when the
+            // user first grants), so a follow-up `refresh()` here would no-op on `.notDetermined`. Denied
+            // → BLE-only.
+            if suggestOnArrival && !boardMemory.isEmpty {
+                location.requestIfNeeded()
+            }
         }
+        // When a fresh coarse fix arrives at a remembered place, raise the arrival suggestion (once per
+        // visit, never over a deliberate manual change the user just made).
+        .onChange(of: location.currentPlace) { _, place in updateArrivalSuggestion(place) }
         // Leaving Kilter entirely (the root pops off the stack) re-reveals the cross-screen live chip.
         .onDisappear { app.kilterScreenVisible = false }
         // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
@@ -327,6 +362,94 @@ struct KilterRootView: View {
         }
     }
 
+    // MARK: - P1 board recognition (auto-detect)
+
+    /// A board just confirmed its connection. If we've seen it before, restore its layout + size and
+    /// pre-select its usual angle, then raise the one-tap confirm ribbon. Either way, remember it (with
+    /// the confirmed angle + current coarse place) so the next visit recognizes it.
+    private func recognizeBoard(identifier: UUID, serial: String?) {
+        let known = boardMemory.recall(identifier: identifier, serial: serial)
+        if let known {
+            applyRestore(known)
+            withAnimation(.snappy) { pendingConfirm = (id: identifier, board: known) }
+            // A successful BLE connect makes the on-arrival card redundant — clear it AND mark this
+            // visit's arrival resolved, so a later coarse-fix update can't re-pop the card for a board
+            // we're already connected to.
+            arrivalSuggestion = nil
+            arrivalDismissed = true
+        }
+        // Remember (or update) the board's IDENTITY on every confirmed connect — first-time boards are
+        // learned here, returning boards refresh their place / last-seen. The angle is NOT recorded here;
+        // it's appended only when the user confirms it in the ribbon (so an ignored connect adds nothing).
+        boardMemory.remember(identifier: identifier,
+                             layoutId: layoutId, productSizeId: productSizeId,
+                             label: known?.label, defaultLabel: defaultBoardLabel(serial: serial),
+                             serial: serial,
+                             coarsePlace: suggestOnArrival ? location.currentPlace : nil)
+    }
+
+    /// A clearer default label for a never-renamed board, derived from the catalog's layout + size name
+    /// at the call site (the view has the catalog) so two boards at two gyms aren't both the generic
+    /// "Kilter board" — e.g. "Original 8×12" or "Board A1B2C3" when a serial is known.
+    private func defaultBoardLabel(serial: String?) -> String {
+        if let serial, !serial.isEmpty { return "Board \(serial)" }
+        let layoutName = layouts.first { $0.id == layoutId }?.name
+        let sizeName = catalog.sizes(forLayout: layoutId).first { $0.id == productSizeId }?.name
+        let parts = [layoutName, sizeName].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? "Kilter board" : parts.joined(separator: " ")
+    }
+
+    /// Restore a remembered board's selection through the same `effectiveSizeId` guard the render + LED
+    /// map use, and pre-select its usual angle. Suggestion-not-overwrite: the angle pre-select is still
+    /// confirmed in the ribbon; layout/size are restored (the ribbon shows what was restored). When the
+    /// usual angle isn't in this catalog's angles, pre-select the **nearest** available one — the same
+    /// value `restoreSummary` prints, so the picker and the summary never diverge.
+    private func applyRestore(_ board: RememberedBoard) {
+        layoutId = board.layoutId
+        productSizeId = catalog.effectiveSizeId(forLayout: board.layoutId, requested: board.productSizeId)
+        if let usual = board.usualAngle, let pre = Self.nearestAngle(to: usual, in: availableAngles) {
+            angle = pre
+        }
+    }
+
+    /// The available angle closest to `target` (ties → the lower angle, via `min`'s stable first-best),
+    /// or `nil` when the catalog has no angles. Keeps the ribbon's pre-selected picker and its printed
+    /// summary on the SAME value even when the remembered angle isn't offered here.
+    static func nearestAngle(to target: Int, in available: [Int]) -> Int? {
+        available.min { abs($0 - target) < abs($1 - target) }
+    }
+
+    /// Confirm (or adjust then confirm) the angle from the ribbon — this is the ONLY place an angle is
+    /// appended to the board's history (so the most-frequent angle tracks the climber's real, explicit
+    /// habit and a pre-select can't self-reinforce), then dismisses the ribbon.
+    private func confirmPendingBoard() {
+        if let pending = pendingConfirm {
+            boardMemory.confirmAngle(identifier: pending.id, angle: angle)
+        }
+        withAnimation(.snappy) { pendingConfirm = nil }
+    }
+
+    /// Raise the arrival suggestion when a coarse fix lands on a remembered place — pre-connect, opt-in,
+    /// once per visit, and never while a confirm ribbon (a real connect) is already up.
+    private func updateArrivalSuggestion(_ place: CoarsePlace?) {
+        guard suggestOnArrival, !arrivalDismissed, pendingConfirm == nil,
+              let place, let match = KilterPlaceMatcher.suggestion(for: place, in: boardMemory.rememberedSorted)
+        else { return }
+        withAnimation(.snappy) { arrivalSuggestion = (id: match.id, board: match.board) }
+    }
+
+    /// "Set it up" on the arrival card: restore the suggested board's layout/size + usual angle (the same
+    /// restore a connect does) WITHOUT a BLE connection, then dismiss the card.
+    private func acceptArrivalSuggestion() {
+        if let s = arrivalSuggestion { applyRestore(s.board) }
+        dismissArrivalSuggestion()
+    }
+
+    private func dismissArrivalSuggestion() {
+        arrivalDismissed = true
+        withAnimation(.snappy) { arrivalSuggestion = nil }
+    }
+
     /// Re-open the reader after the installed catalog changes, then refresh the list.
     private func reloadCatalog() {
         catalog.reload()
@@ -337,6 +460,11 @@ struct KilterRootView: View {
     private var content: some View {
         VStack(spacing: 0) {
             filterBar
+            // P1 board-detect surfaces (suggestion-not-overwrite, never blocking):
+            //  • the pre-connect arrival suggestion at a remembered coarse place, and
+            //  • the post-connect confirm ribbon when a known board restored its layout/size.
+            if let suggestion = arrivalSuggestion { arrivalSuggestionCard(suggestion) }
+            if let pending = pendingConfirm { boardConfirmRibbon(pending) }
             // The slot between the filters and the list belongs to the session: the green live
             // bar when one is active, a first-class **Start session** control when idle (#75 —
             // start/end no longer hide in the More menu; the bars own the lifecycle).
@@ -425,6 +553,97 @@ struct KilterRootView: View {
             .accessibilityIdentifier("kilter.session.start")
         }
         .padding(.horizontal).padding(.vertical, 6)
+    }
+
+    // MARK: - P1 board-detect surfaces
+
+    /// Pre-connect arrival suggestion (wireframe `01c_arrival`): "Looks like you're at <gym>. Set up your
+    /// usual board?" — a single coral CTA + a quiet "Not now", and the on-device privacy reassurance. A
+    /// suggestion only; "Set it up" restores the board, it never auto-applies.
+    @ViewBuilder private func arrivalSuggestionCard(_ suggestion: (id: UUID, board: RememberedBoard)) -> some View {
+        let b = suggestion.board
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "mappin.circle.fill")
+                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Looks like you're at")
+                        .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                    Text(b.label).font(.headline).lineLimit(1)
+                }
+                Spacer()
+            }
+            Text("Set up your usual board? \(restoreSummary(b))")
+                .font(.subheadline).foregroundStyle(SnappetColor.textSecondary).lineLimit(2)
+            HStack(spacing: 16) {
+                Button { acceptArrivalSuggestion() } label: {
+                    Text("Set it up").font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent).tint(SnappetColor.brand).controlSize(.small)
+                .accessibilityIdentifier("kilter.arrival.setup")
+                Button { dismissArrivalSuggestion() } label: {
+                    Text("NOT NOW").font(.caption.weight(.bold)).tracking(0.5)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                }
+                .accessibilityIdentifier("kilter.arrival.dismiss")
+                Spacer()
+            }
+            Label("Matched on-device — your location never leaves your phone", systemImage: "mappin.and.ellipse")
+                .font(.caption2).foregroundStyle(SnappetColor.textSecondary).lineLimit(2)
+        }
+        .padding(12)
+        .pulseGlassChrome(reduceTransparency: reduceTransparency)
+        .padding(.horizontal).padding(.top, 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .accessibilityIdentifier("kilter.arrivalSuggestion")
+    }
+
+    /// Post-connect confirm ribbon (wireframe `01_autodetect`): a known board has restored its
+    /// layout + size; the climber confirms the (pre-selected) angle with one tap, or adjusts it inline
+    /// first. Never blocking — browse stays fully usable underneath.
+    @ViewBuilder private func boardConfirmRibbon(_ pending: (id: UUID, board: RememberedBoard)) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "checklist").foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pending.board.label.uppercased())
+                        .font(.caption.weight(.bold)).tracking(0.5)
+                        .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                    Text("Restored \(restoreSummary(pending.board))")
+                        .font(.subheadline.weight(.medium)).lineLimit(1)
+                }
+                Spacer()
+            }
+            // Inline angle adjust (Picker over the board's angles), pre-selected to the usual angle.
+            Picker("Angle", selection: $angle) {
+                ForEach(availableAngles, id: \.self) { Text("\($0)°").tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("kilter.confirm.anglePicker")
+            HStack(spacing: 16) {
+                Button { confirmPendingBoard() } label: {
+                    Text("Got it").font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent).tint(SnappetColor.brand).controlSize(.small)
+                .accessibilityIdentifier("kilter.confirm.gotIt")
+                Spacer()
+            }
+        }
+        .padding(12)
+        .pulseGlassChrome(reduceTransparency: reduceTransparency)
+        .padding(.horizontal).padding(.top, 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .accessibilityIdentifier("kilter.confirmRibbon")
+    }
+
+    /// A short "<board size> · <angle>°" line for the ribbon / card (e.g. "8×12 Home · 40°"), built from
+    /// the catalog's size label for the remembered layout/size and the **same** angle `applyRestore`
+    /// pre-selected (the nearest available angle to the usual one), so summary and picker never diverge.
+    private func restoreSummary(_ board: RememberedBoard) -> String {
+        let sizeId = catalog.effectiveSizeId(forLayout: board.layoutId, requested: board.productSizeId)
+        let sizeName = catalog.sizes(forLayout: board.layoutId).first { $0.id == sizeId }?.name
+        let a = board.usualAngle.flatMap { Self.nearestAngle(to: $0, in: availableAngles) } ?? angle
+        return [sizeName, "\(a)°"].compactMap { $0 }.joined(separator: " · ")
     }
 
     /// Active-session banner: a live timer, climb count, live HR (when a source is connected), and
