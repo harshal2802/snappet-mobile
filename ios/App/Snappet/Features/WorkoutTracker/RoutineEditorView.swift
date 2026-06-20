@@ -19,16 +19,12 @@ import SwiftData
 struct RoutineEditorView: View {
     /// nil → new routine; non-nil → edit this one.
     let routine: Routine?
-    /// A pre-filled draft (save-as-routine, E5). Used only when `routine == nil`: seeds the local state for
-    /// review, then Save INSERTS a new routine from the (reviewed) state.
+    /// A pre-filled draft for **save-as-routine** — E5 (a finished Quick Session converted by
+    /// `SessionToRoutine`) and E7 (the smart planner's suggested session). Used only when `routine == nil`:
+    /// seeds the local state for review, then Save INSERTS a new routine from the (reviewed) state.
     var prefill: RoutineDraft? = nil
     let resolver: ExerciseResolver
     let defaultUnit: WeightUnit
-    /// Optional pre-fill for a NEW routine (workout-redesign E7 "Save as routine" — the smart planner hands
-    /// the editor its `[RoutineExercise]` + a suggested name so the user reviews/renames before saving). Only
-    /// used when `routine == nil`; ignored when editing an existing routine.
-    var prefillExercises: [RoutineExercise] = []
-    var prefillName: String = ""
 
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
@@ -134,17 +130,14 @@ struct RoutineEditorView: View {
             detail = routine.detail ?? ""
             items = routine.exercises
         } else if let prefill {
-            // Save-as-routine from a finished Quick Session (E5): seed for REVIEW from the converted
-            // draft. Nothing is inserted here — Save takes the new-routine path (a fresh UUID).
+            // Save-as-routine (E5 from a finished Quick Session, E7 from the smart planner): seed for
+            // REVIEW from the converted draft. Nothing is inserted here — Save takes the new-routine path
+            // (a fresh UUID), so the user trims / renames / adjusts first.
             name = prefill.name
             sport = prefill.sport ?? .general
             level = prefill.level
             detail = prefill.detail ?? ""
             items = prefill.exercises
-        } else if !prefillExercises.isEmpty {
-            // Save-as-routine from the smart planner (E7): seed from the planned exercises + name.
-            name = prefillName
-            items = prefillExercises
         }
     }
 

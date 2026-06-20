@@ -102,4 +102,32 @@ final class CompletionMomentTests: XCTestCase {
             || app.staticTexts["Sets"].waitForExistence(timeout: 2),
             "the session detail should render the type-adaptive recap hero")
     }
+
+    /// All-axis edit follow-up: the session detail's Edit mode still works end-to-end after the
+    /// `SetEditFields` refactor — Edit appears, the per-set fields render, Save round-trips back to read mode.
+    func testEditSetsFromSessionDetail() {
+        openFreeformPlayer()
+        addLiftingExercise()
+        app.buttons["freeform.quickWeight.plus"].tap()
+        app.buttons["freeform.quickLog"].tap()
+        tapFinish()
+        let viewDetail = app.buttons["freeform.viewDetail"]
+        XCTAssertTrue(viewDetail.waitForExistence(timeout: 6))
+        viewDetail.tap()
+        XCTAssertTrue(app.navigationBars["Session"].waitForExistence(timeout: 6))
+
+        let edit = app.buttons["session.editSets"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5), "a completed set makes the Edit button appear")
+        edit.tap()
+        // Entering edit mode swaps the toolbar to Cancel/Save (top-of-screen, always in the tree).
+        let save = app.buttons["session.saveSets"]
+        XCTAssertTrue(save.waitForExistence(timeout: 4), "Edit enters edit mode (Save appears)")
+        // The per-set tile is below the recap header — scroll to reveal the refactored SetEditFields.
+        app.swipeUp()
+        XCTAssertTrue(app.textFields["session.editWeight"].waitForExistence(timeout: 4),
+                      "edit mode shows the per-set reps/weight fields for a strength set")
+        save.tap()
+        XCTAssertTrue(app.buttons["session.editSets"].waitForExistence(timeout: 5),
+                      "Save round-trips back to read mode without a crash")
+    }
 }

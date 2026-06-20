@@ -45,7 +45,7 @@ final class SessionSetEditingTests: XCTestCase {
 
     // MARK: - Draft building
 
-    func testDraftsCoverCompletedRepsWeightSetsIncludingSkippedExercises() {
+    func testDraftsCoverCompletedSetsOfEveryDisciplineIncludingSkippedExercises() {
         let bench = exercise("bench", [set(8, 60), set(nil, nil, done: false)])
         let plank = exercise("plank", [SetLog(completedAt: .now, durationSec: 60)], kind: .duration)
         // Skipped mid-exercise: the completed set counts in WorkoutMath's volume/PRs, so it must
@@ -53,10 +53,76 @@ final class SessionSetEditingTests: XCTestCase {
         let skipped = exercise("row", [set(10, 40), set(nil, nil, done: false)], skipped: true)
         let drafts = SessionSetEditing.drafts(for: [bench, plank, skipped], unit: .kg)
 
-        XCTAssertEqual(drafts.count, 2, "bench set 1 + the skipped exercise's completed set")
+        // All-axis: the timed plank's completed set is now draftable too (was reps/weight-only before).
+        XCTAssertEqual(drafts.count, 3, "bench set 1 + the plank's timed set + the skipped exercise's set")
         XCTAssertEqual(drafts[key(bench, 0)], SessionSetEditing.Draft(reps: "8", weight: "60"))
+        XCTAssertEqual(drafts[key(plank, 0)], SessionSetEditing.Draft(duration: "1:00"))
         XCTAssertEqual(drafts[key(skipped, 0)], SessionSetEditing.Draft(reps: "10", weight: "40"))
         XCTAssertNil(drafts[key(skipped, 1)], "never-completed sets aren't draftable")
+    }
+
+    // MARK: - All-axis (timed / running / climbing) round-trips
+
+    private func entity(_ id: String, _ discipline: WorkoutDiscipline, _ sets: [SetLog]) -> SessionExercise {
+        var e = SessionExercise(exerciseId: id, targetSets: sets.count, targetReps: "", targetRestSeconds: 0,
+                                sets: sets, kindRaw: discipline.defaultSetKind.rawValue)
+        e.disciplineRaw = discipline.rawValue
+        return e
+    }
+
+    func testTimedDurationEditRoundTrips() {
+        let plank = entity("plank", .timed, [SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 60)])
+        var drafts = SessionSetEditing.drafts(for: [plank], unit: .kg)
+        XCTAssertEqual(drafts[key(plank, 0)], SessionSetEditing.Draft(duration: "1:00"))
+        drafts[key(plank, 0)]?.duration = "1:30"
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [plank], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].durationSec, 90)
+        XCTAssertEqual(fixed[0].sets[0].actualWeight, nil, "a timed edit never writes reps/weight")
+    }
+
+    func testRunDistanceAndDurationEditRoundTrips() {
+        var leg = SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 1500)
+        leg.distanceMeters = 5000
+        let run = entity("run", .run, [leg])
+        var drafts = SessionSetEditing.drafts(for: [run], unit: .kg)   // km (kg→km)
+        XCTAssertEqual(drafts[key(run, 0)], SessionSetEditing.Draft(duration: "25:00", distance: "5"))
+        drafts[key(run, 0)] = SessionSetEditing.Draft(duration: "24:00", distance: "5.2")
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [run], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].distanceMeters ?? 0, 5200, accuracy: 0.001)
+        XCTAssertEqual(fixed[0].sets[0].durationSec, 1440)
+    }
+
+    func testRunDistanceSeedsInMilesWhenLbPreferred() {
+        var leg = SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 600)
+        leg.distanceMeters = 1609.344   // exactly 1 mi
+        let run = entity("run", .run, [leg])
+        let drafts = SessionSetEditing.drafts(for: [run], unit: .lb)
+        XCTAssertEqual(drafts[key(run, 0)]?.distance, "1")
+    }
+
+    func testClimbGradeStatusAttemptsEditRoundTrips() {
+        let climb = entity("climb", .climb, [SetLog(completedAt: Date(timeIntervalSince1970: 0),
+                                                    climbGradeLabel: "V4",
+                                                    climbStatusRaw: KilterAscentStatus.project.rawValue,
+                                                    climbAttempts: 3)])
+        var drafts = SessionSetEditing.drafts(for: [climb], unit: .kg)
+        XCTAssertEqual(drafts[key(climb, 0)],
+                       SessionSetEditing.Draft(grade: "V4", statusRaw: "project", attempts: "3"))
+        // Correct it to a flashed V5 in one try.
+        drafts[key(climb, 0)] = SessionSetEditing.Draft(grade: "V5", statusRaw: KilterAscentStatus.flash.rawValue, attempts: "1")
+        let fixed = SessionSetEditing.apply(drafts: drafts, to: [climb], unit: .kg)
+        XCTAssertEqual(fixed[0].sets[0].climbGradeLabel, "V5")
+        XCTAssertEqual(fixed[0].sets[0].climbStatusRaw, "flash")
+        XCTAssertEqual(fixed[0].sets[0].climbAttempts, 1)
+    }
+
+    func testUntouchedNonStrengthDraftsAreIdentity() {
+        var leg = SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 1500); leg.distanceMeters = 5000
+        let run = entity("run", .run, [leg])
+        let timed = entity("plank", .timed, [SetLog(completedAt: Date(timeIntervalSince1970: 0), durationSec: 45)])
+        let drafts = SessionSetEditing.drafts(for: [run, timed], unit: .kg)
+        XCTAssertEqual(SessionSetEditing.apply(drafts: drafts, to: [run, timed], unit: .kg), [run, timed],
+                       "saving without edits round-trips bit-identically across disciplines")
     }
 
     func testDraftTextFormatsLikeThePlayer() {

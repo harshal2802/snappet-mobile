@@ -765,7 +765,8 @@ private struct SetTileRow: View {
                 Text("Set \(index)").font(.subheadline.weight(.medium))
                 Spacer()
                 if let editDraft, let keypadFocus {
-                    SetEditFields(draft: editDraft, unitLabel: unit.display, focus: keypadFocus)
+                    SetEditFields(draft: editDraft, discipline: discipline, kind: kind,
+                                  unit: unit, distanceUnit: distanceUnit, focus: keypadFocus)
                 } else if set.completedAt != nil {
                     Text(detailText).font(.subheadline.monospacedDigit())
                 } else {
@@ -801,33 +802,87 @@ private struct SetTileRow: View {
     }
 }
 
-/// The reps × weight text fields a completed set tile swaps to in edit mode (issue #73). The text
-/// mirrors the live player's inputs and is parsed with the same rules on Save (`SetMeasure`);
-/// the weight shows — and saves — in the preferred display unit (WYSIWYG with the read-only tile).
+/// The editable fields a completed set tile swaps to in edit mode. All-axis (workout-redesign follow-up):
+/// the field set adapts to the owning exercise's discipline/kind — strength shows reps × weight (the
+/// original, unchanged), a timed hold shows a duration field, a run leg shows distance + duration, and a
+/// climb shows grade + status + attempts. The text mirrors the player's inputs and is parsed with the same
+/// `SetMeasure` rules on Save; weight/distance show — and save — in the preferred display unit (WYSIWYG).
 private struct SetEditFields: View {
     @Binding var draft: SessionSetEditing.Draft
-    let unitLabel: String
+    let discipline: WorkoutDiscipline
+    let kind: SetKind
+    let unit: WeightUnit
+    let distanceUnit: DistanceUnit
     var focus: FocusState<Bool>.Binding
 
     var body: some View {
-        HStack(spacing: 6) {
-            TextField("Reps", text: $draft.reps)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .frame(width: 56)
-                .focused(focus)
-                .accessibilityIdentifier("session.editReps")
-            Text("×").foregroundStyle(.secondary)
-            TextField("Weight", text: $draft.weight)
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.center)
-                .frame(width: 72)
-                .focused(focus)
-                .accessibilityIdentifier("session.editWeight")
-            Text(unitLabel).font(.caption).foregroundStyle(.secondary)
+        Group {
+            if discipline == .run {
+                runFields
+            } else {
+                switch kind {
+                case .repsWeight:   repsWeightFields
+                case .duration:     durationField
+                case .climbAttempt: climbFields
+                }
+            }
         }
         .textFieldStyle(.roundedBorder)
         .font(.subheadline.monospacedDigit())
+    }
+
+    private var repsWeightFields: some View {
+        HStack(spacing: 6) {
+            TextField("Reps", text: $draft.reps)
+                .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 56)
+                .focused(focus).accessibilityIdentifier("session.editReps")
+            Text("×").foregroundStyle(.secondary)
+            TextField("Weight", text: $draft.weight)
+                .keyboardType(.decimalPad).multilineTextAlignment(.center).frame(width: 72)
+                .focused(focus).accessibilityIdentifier("session.editWeight")
+            Text(unit.display).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var durationField: some View {
+        HStack(spacing: 6) {
+            TextField("M:SS", text: $draft.duration)
+                .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.center).frame(width: 80)
+                .focused(focus).accessibilityIdentifier("session.editDuration")
+            Image(systemName: "timer").font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private var runFields: some View {
+        HStack(spacing: 6) {
+            TextField("Dist", text: $draft.distance)
+                .keyboardType(.decimalPad).multilineTextAlignment(.center).frame(width: 60)
+                .focused(focus).accessibilityIdentifier("session.editDistance")
+            Text(distanceUnit.display).font(.caption).foregroundStyle(.secondary)
+            TextField("M:SS", text: $draft.duration)
+                .keyboardType(.numbersAndPunctuation).multilineTextAlignment(.center).frame(width: 72)
+                .focused(focus).accessibilityIdentifier("session.editDuration")
+        }
+    }
+
+    private var climbFields: some View {
+        HStack(spacing: 6) {
+            TextField("Grade", text: $draft.grade)
+                .multilineTextAlignment(.center).frame(width: 64)
+                .focused(focus).accessibilityIdentifier("session.editGrade")
+            Menu {
+                ForEach(KilterAscentStatus.allCases, id: \.self) { status in
+                    Button(status.label) { draft.statusRaw = status.rawValue }
+                }
+            } label: {
+                Text(draft.statusRaw.flatMap(KilterAscentStatus.init(rawValue:))?.label ?? "Status")
+                    .font(.caption.weight(.semibold))
+            }
+            .accessibilityIdentifier("session.editStatus")
+            TextField("×", text: $draft.attempts)
+                .keyboardType(.numberPad).multilineTextAlignment(.center).frame(width: 40)
+                .focused(focus).accessibilityIdentifier("session.editAttempts")
+        }
     }
 }
 
