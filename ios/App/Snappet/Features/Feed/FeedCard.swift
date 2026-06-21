@@ -201,6 +201,11 @@ struct OnTheBoardPayload: Codable, Sendable, Equatable {
 
 struct LiftPRPayload: Codable, Sendable, Equatable {
     var exerciseName: String
+    /// NOTE: despite the `Kg` suffix, these three values are in `unit` (the set's DISPLAY unit, "kg"/"lb"),
+    /// NOT necessarily kilograms — every consumer renders them paired with `unit`. The PR-winner
+    /// COMPARISON in `FeedComposer.liftPRCards` is done in true kg (`WorkoutMath.toKg`); only the display
+    /// values carried here follow `unit`. (Suffix kept to avoid a rename across consumers; the field is
+    /// never persisted — FeedCard is derive-on-read.)
     var oneRepMaxKg: Double
     var weightKg: Double
     var reps: Int

@@ -65,6 +65,36 @@ final class FeedMilestoneTests: XCTestCase {
         } else { XCTFail("expected a liftPR payload") }
     }
 
+    // R9 — the cross-set PR comparison is kg-normalized, so a bigger RAW number in a heavier unit can't
+    // manufacture (or suppress) a PR. 100 kg then 200 lb (~90.7 kg): the kg-heavier first set wins, so
+    // the lb set fires NO false PR even though "200" > "100".
+    func testLiftPRComparisonIsKgNormalized() {
+        func lift(dayOffset: Int, weight: Double, unit: String) -> WorkoutSessionInput {
+            let date = t0.addingTimeInterval(Double(dayOffset) * 86_400)
+            let set = WorkoutSetInput(actualReps: 5, actualWeight: weight, weightUnit: unit, completedAt: date)
+            let ex = WorkoutExerciseInput(exerciseId: "bench", disciplineRaw: "strength", displayName: "Bench", sets: [set])
+            return WorkoutSessionInput(id: UUID(), routineName: "Push", startedAt: date,
+                                       completedAt: date.addingTimeInterval(3_000), exercises: [ex])
+        }
+        // 100 kg establishes; 200 lb (~90.7 kg) is LIGHTER in kg → no false PR from the bigger raw number.
+        let kgFirst = FeedComposer.compose(workoutSessions: [lift(dayOffset: 0, weight: 100, unit: "kg"),
+                                                             lift(dayOffset: 1, weight: 200, unit: "lb")],
+                                           now: t0.addingTimeInterval(3 * 86_400))
+            .filter { $0.kind == .b4LiftPR }
+        XCTAssertEqual(kgFirst.count, 0, "200 lb (~90.7 kg) is lighter than 100 kg → no false PR")
+
+        // Reverse: 200 lb establishes; 100 kg genuinely beats it in kg → exactly one PR, in kg unit.
+        let lbFirst = FeedComposer.compose(workoutSessions: [lift(dayOffset: 0, weight: 200, unit: "lb"),
+                                                             lift(dayOffset: 1, weight: 100, unit: "kg")],
+                                           now: t0.addingTimeInterval(3 * 86_400))
+            .filter { $0.kind == .b4LiftPR }
+        XCTAssertEqual(lbFirst.count, 1, "100 kg beats 200 lb (~90.7 kg) in kg → a real PR fires")
+        if case .liftPR(let p)? = lbFirst.first?.payload {
+            XCTAssertEqual(p.unit, "kg", "display unit stays the winning set's own unit")
+            XCTAssertEqual(p.weightKg, 100, "displayed weight stays the winning set's own value")
+        } else { XCTFail("expected a liftPR payload") }
+    }
+
     // R7 — b1 grade PR fires only when the send is a genuine all-time max grade (not for sends at or
     // below the running max).
     func testGradePRFiresOnlyAtAllTimeMax() {

@@ -420,22 +420,29 @@ enum FeedComposer {
             }
         }
         done.sort { $0.date < $1.date }
-        var best: [String: Double] = [:]
+        // `best` tracks the winning est-1RM in KG so a user logging the same exercise in lb then kg
+        // can't get a false/suppressed PR from the raw display number. The payload value/unit stay the
+        // winning set's own unit for display — only the cross-set comparison is kg-normalized.
+        var best: [String: Double] = [:]                         // winning est-1RM per exercise, in KG
         var out: [FeedCard] = []
         for d in done {
-            let orm = d.weight * (1 + Double(d.reps) / 30)        // Epley est-1RM
+            let factor = 1 + Double(d.reps) / 30                  // Epley multiplier
+            let orm = d.weight * factor                           // est-1RM in the set's own (display) unit
+            let ormKg = WorkoutMath.toKg(d.weight, WeightUnit(rawValue: d.unit)) * factor
             let prior = best[d.key]
-            if prior == nil || orm > prior! + 0.01 {
+            if prior == nil || ormKg > prior! + 0.01 {
                 if let prior {                                    // celebrate only when beating a PRIOR best
                     let cid = FeedContentIdentity.workoutSession(id: d.sessionId.uuidString)
+                    // previous-best displayed in the new winner's unit so the card reads consistently.
+                    let priorDisplay = WorkoutMath.kgToUnit(prior, WeightUnit(rawValue: d.unit) ?? .kg)
                     let payload = LiftPRPayload(exerciseName: d.name, oneRepMaxKg: orm, weightKg: d.weight,
-                                                reps: d.reps, previousOneRepMaxKg: prior, unit: d.unit)
+                                                reps: d.reps, previousOneRepMaxKg: priorDisplay, unit: d.unit)
                     out.append(FeedCard(id: "b4-\(d.key)-\(Int(d.date.timeIntervalSince1970))", contentId: cid,
                                         kind: .b4LiftPR, category: .milestone, salience: Salience.liftPR, anchorDate: d.date,
                                         sourceRefs: [ActivityRef(objectKind: "workoutSession", ref: d.sessionId.uuidString)],
                                         payload: .liftPR(payload), shareHint: .gradePRTicket))
                 }
-                best[d.key] = orm
+                best[d.key] = ormKg
             }
         }
         return out

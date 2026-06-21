@@ -104,7 +104,10 @@ enum StoryComposition {
         case .weeklyVolume(let p):
             return s(card, "Volume", "\(p.buckets.last?.sends ?? 0)", "sends this week", .kilter)
         case .streak(let p):
-            return s(card, "On a roll", "\(p.days)", "days in a row", .kilter)
+            // R7 parity: a record streak gets the celebratory "Longest streak ever" framing (matches FeedCardView).
+            return p.isRecord
+                ? s(card, "Longest streak ever", "\(p.days)", "days in a row", .kilter)
+                : s(card, "On a roll", "\(p.days)", "days in a row", .kilter)
         case .effort(let p):
             return s(card, "Effort", "\(p.maxBpm)", "peak BPM · \(p.trimp) TRIMP", .effort)
         case .hardestEffort(let p):

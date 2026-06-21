@@ -47,7 +47,12 @@ struct ShareCardSpec {
             self = .init(kick: "Grade pyramid", hero: p.maxGrade ?? "—",
                          lines: ["\(p.totalSends) sends", "\(p.rows.count) grades"], accent: SnappetColor.kilter)
         case .streak(let p):
-            self = .init(kick: "Streak", hero: "\(p.days)", lines: ["days in a row"], accent: SnappetColor.kilter)
+            // R7 parity: a record streak reflects the record in the kick + line (matches FeedCardView).
+            self = .init(kick: p.isRecord ? "Longest streak ever" : "Streak", hero: "\(p.days)",
+                         lines: p.isRecord && p.previousBest > 0
+                             ? ["days in a row", "past best \(p.previousBest)"]
+                             : ["days in a row"],
+                         accent: SnappetColor.kilter)
         case .liftPR(let p):
             self = .init(kick: "Lift PR", hero: "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)",
                          lines: [p.exerciseName, "est. 1RM"], accent: SnappetColor.brand)

@@ -277,6 +277,25 @@ final class ShareTemplateModelTests: XCTestCase {
         XCTAssertEqual(ShareTemplateKind.pyramidCard.shareTemplate, .pyramidCard)
     }
 
+    // MARK: ShareMetric.chipLabel (R5 carried — the pure model is fully covered)
+
+    func testShareMetricChipLabelIsExpectedNonEmptyLabel() {
+        let expected: [ShareMetric: String] = [
+            .headline:  "Hero",
+            .subtitle:  "Kicker",
+            .primary:   "Stat",
+            .secondary: "More",
+            .branding:  "Logo",
+        ]
+        for metric in ShareMetric.allCases {
+            let label = metric.chipLabel
+            XCTAssertFalse(label.isEmpty, "chipLabel must be non-empty for \(metric)")
+            XCTAssertEqual(label, expected[metric], "unexpected chipLabel for \(metric)")
+        }
+        // Guard: every case is exercised (no metric silently added without a label assertion).
+        XCTAssertEqual(Set(expected.keys), Set(ShareMetric.allCases))
+    }
+
     func testShareHintPreSelectsItsTemplateWhenEligible() {
         // The card's `shareHint` maps to an eligible kind so the composer can pre-select it (R5 seam).
         for card in [gradePRCard(), onTheBoardCard(), pyramidCard()] {

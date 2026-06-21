@@ -4,6 +4,23 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-21] Recap feed remediation (R1–R9) — plan conformance
+
+**Decision** (audit-closing stack): the R1–R9 remediation PRs brought the Recap feed's
+**F3/F3b/F4/F5/F7** surfaces to plan conformance without touching the keystone. The **F0
+`FeedComposer` ordering core stays intact** — every fix landed as a pure recipe/payload/view tweak
+(no new `FeedCardKind`, no `compose` ordering/recency/lens edit). Key invariants now nailed down:
+(1) **The editor HR overlay is the single source of truth** for both the in-app preview and the export
+burn — `HRTileView` (`.scorebug`) drives the `PagedMediaViewer`/F4 preview AND the `StudioOverlays` clip
+burn, so preview == burn is a style-match by construction (not a re-implemented numeric overlay).
+(2) **R9** kg-normalized the b4 lift-PR cross-set comparison via `WorkoutMath.toKg` so a mixed lb/kg log
+can't manufacture or suppress a PR (display value/unit stay the winning set's own), and added Story+share
+**streak record framing** (`isRecord` → "Longest streak ever") for parity with `FeedCardView` plus full
+`ShareMetric.chipLabel` coverage. The clip RENDER (AVFoundation/Photos) remains the honest device-only
+tail across F3/F4. Knowledge graph gained the `feed-export` (F4 surface) + `feed-milestone-cards` (F5
+family) nodes. Tested: `FeedMilestoneTests` (kg-normalized PR), `ShareTemplateModelTests` (chipLabel),
+`StoryCompositionTests`, golden corpus unchanged.
+
 ## [2026-06-21] Recap Feed R7 — F5 milestone-card conformance fixes
 
 **Decision** (audit follow-up, pure/payload-only): (1) **b5 streak record variant** — `streakCards`
