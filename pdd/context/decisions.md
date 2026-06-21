@@ -6685,3 +6685,7 @@ stays cheap — running the HighlightEngine ranker for every session on every co
 `FeedClipPlayer` only when a card becomes the scroll-center active player. So the ranker is a *tested seam
 consumed in R2*, not dead code; the `clipReady` predicate gates the player-attach there. Keystone untouched
 (no F0 ordering edit; additive payload fields + an additive `compose` param only).
+
+## 2026-06-21 — Recap feed F3b (R6) media viewer: HRTileView overlay is a STYLE-match, not a data-match
+
+**Decision.** The fullscreen feed viewer's `HRTileView` overlay reuses the editor's `.scorebug` template/colors so it visually matches the R4 export burn ("preview == burn" = *visual parity*) — but it is a STYLE-match, not a numeric data-match: the viewer renders a per-clip *windowed static* tile (`fraction = 1.0` over `clipHRWindow`), whereas the export burns the *whole-reel animated* tile. To keep poster chip and viewer overlay agreeing on sparse series, `clipHRWindow` now mirrors `clipHR`'s ±8s nearest-sample fallback (rebased to clip-local t).

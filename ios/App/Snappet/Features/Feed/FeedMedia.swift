@@ -51,6 +51,33 @@ enum FeedMedia {
                            zoneRaw: HeartRateZone.forBpm(peak, maxHR: maxHR).rawValue)
     }
 
+    /// The session HR samples that fall inside a clip's `[offsetSec, offsetSec + durationSec]` window,
+    /// **rebased to clip-local time** (`t - offsetSec`, clamped at 0). This is the pure input the
+    /// fullscreen viewer feeds to the editor's `HROverlayValues` (single HR source of truth) — so the
+    /// per-clip overlay slices the SAME series the export burn-in (R4) reads, and preview == burn.
+    ///
+    /// - A photo (`durationSec == nil`) gets a small default window so a still poster still resolves an
+    ///   overlay if HR exists at that moment; a zero-duration clip collapses to the samples AT `offsetSec`.
+    /// - When the exact window holds no samples (sparse series), falls back to the nearest samples within
+    ///   ±8s of `offsetSec` — the SAME tolerance the poster chip's `clipHR` uses — so the carousel poster
+    ///   and the fullscreen overlay agree (both show HR, or both show name-tag-only). The fallback
+    ///   samples are still rebased to clip-local time (`t - offsetSec`, clamped at 0).
+    /// - Returns `[]` only when even that ±8s neighbourhood is empty (window entirely before/after the
+    ///   series, no fabricated samples) — the caller then degrades to the name tag only, never an empty chart.
+    static func clipHRWindow(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint]) -> [HRPoint] {
+        guard !hrSeries.isEmpty else { return [] }
+        let dur = durationSec ?? Self.photoWindowSec
+        let end = offsetSec + max(0, dur)
+        let inWindow = hrSeries.filter { $0.t >= offsetSec && $0.t <= end }
+        // Mirror `clipHR`'s nearest-sample fallback (±8s) so poster chip and viewer overlay agree.
+        let window = inWindow.isEmpty ? hrSeries.filter { abs($0.t - offsetSec) <= 8 } : inWindow
+        return window
+            .map { HRPoint(t: max(0, $0.t - offsetSec), bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
+    }
+
+    /// The default window (seconds) used for a photo / nil-duration clip when slicing HR.
+    static let photoWindowSec: Double = 6
+
     /// Re-bucket the same clips by the chosen grouping. `nameFor` resolves a group key to a label.
     static func groups(_ media: [MediaInput], by grouping: Grouping, nameFor: (String) -> String) -> [Group] {
         let sorted = media.sorted { $0.offsetSec < $1.offsetSec }

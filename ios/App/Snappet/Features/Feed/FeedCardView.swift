@@ -6,6 +6,17 @@ import SwiftUI
 // the milestone/trend kinds (b1/b3/b5/c1/d1) render as compact cards now and are enriched by
 // F5/F6 — never a blank/dead row. No HR/media/reactions/share here (F2/F3/F4).
 
+/// F3b (R6): the session-media bundle a climb-session card needs to host its in-card carousel + feed
+/// the fullscreen viewer. Threaded in from `FeedView` (the SwiftData edge) the same way R2 threads the
+/// ranked clip — kept out of the keystone payload so the F0 ordering core stays untouched.
+struct FeedCardMedia {
+    var clips: [MediaInput]
+    var hrSeries: [HRPoint]
+    var maxHR: Double
+    var nameFor: (String) -> String
+    var clipContext: ClipExportCoordinator.Context?
+}
+
 struct FeedCardView: View {
     let card: FeedCard
     /// F3 (R2): true when this card is the scroll-center active player (single-active rule). The a1
@@ -15,11 +26,15 @@ struct FeedCardView: View {
     /// F3 (R2): the HighlightEngine-ranked top clip segment, computed lazily by `FeedView` ONLY for
     /// the active a1 card. `nil` → fall back to the cheap payload clip hint / still / generated hero.
     var rankedClip: FeedClipRef? = nil
+    /// F3b (R6): the session's media (carousel) + the HR/name/export inputs the fullscreen viewer needs.
+    /// Defaults empty so the milestone/detail/wall/story call sites render unchanged (no carousel).
+    var media: FeedCardMedia? = nil
 
     var body: some View {
         switch card.payload {
         case .climbSession(let p):
-            ClimbSessionCardView(payload: p, isCentral: isCentral, rankedClip: rankedClip)
+            ClimbSessionCardView(payload: p, isCentral: isCentral, rankedClip: rankedClip,
+                                 media: media, card: card)
         case .workoutSession(let p):
             WorkoutSessionCardView(payload: p)
         case .gradePR(let p):
@@ -231,6 +246,11 @@ private struct ClimbSessionCardView: View {
     var isCentral: Bool = false
     /// F3 (R2): the ranked top clip segment (active card only) — preferred over the cheap payload hint.
     var rankedClip: FeedClipRef? = nil
+    /// F3b (R6): the session's media bundle (carousel + viewer inputs). `nil` → no carousel (the F3
+    /// inline-player hero + the cheap "N clips · tap to view" affordance still render).
+    var media: FeedCardMedia? = nil
+    /// F3b (R6): the source card, threaded into the viewer's Share/Animate (`ShareComposerView`).
+    let card: FeedCard
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -268,9 +288,15 @@ private struct ClimbSessionCardView: View {
                 .init(text: "\(payload.sends) sends", tint: SnappetColor.kilter, emphasized: true),
                 .init(text: "\(payload.totalAttempts) tries")
             ])
-            if payload.clipCount > 0 {
-                // F3: inline media affordance — tap the card → CardDetail → Media browser. The hero
-                // above auto-plays the top clip when this is the scroll-center card (device-burn).
+            if let media, !media.clips.isEmpty {
+                // F3b (R6): the in-card carousel of ALL the session's clips (still posters; dots/count/
+                // peek/View-all). Tapping a page opens the paged fullscreen viewer with the editor HR
+                // overlay; "View all" opens the grouped browser. The R2 inline hero above is untouched.
+                FeedMediaCarousel(clips: media.clips, hrSeries: media.hrSeries, maxHR: media.maxHR,
+                                  nameFor: media.nameFor, card: card, clipContext: media.clipContext)
+            } else if payload.clipCount > 0 {
+                // No threaded media (detail/wall/story call sites): the cheap F3 affordance — tap the
+                // card → CardDetail → Media browser. The hero above auto-plays the top clip when central.
                 Label("\(payload.clipCount) clip\(payload.clipCount == 1 ? "" : "s") · tap to view",
                       systemImage: "play.rectangle.fill")
                     .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.kilter)

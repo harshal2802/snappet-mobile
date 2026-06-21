@@ -109,7 +109,8 @@ struct FeedView: View {
                                         // F3 (R2): pass single-active centrality + the ranked clip (active a1 card only).
                                         FeedCardView(card: card,
                                                      isCentral: card.id == activeCardId,
-                                                     rankedClip: rankedClip(for: card))
+                                                     rankedClip: rankedClip(for: card),
+                                                     media: cardMedia(for: card))
                                     }
                                         .buttonStyle(.plain)
                                         .accessibilityElement(children: .combine)
@@ -318,6 +319,54 @@ struct FeedView: View {
     /// The Kilter session id behind a climb-session card (the source ref the rank reads HR/media from).
     private func sessionId(for card: FeedCard) -> UUID? {
         card.sourceRefs.first { $0.objectKind == "kilterSession" }.flatMap { UUID(uuidString: $0.ref) }
+    }
+
+    // MARK: F3b (R6) — in-card carousel media bundle
+
+    /// The session-media bundle for an a1 climb-session card's carousel + fullscreen viewer: the
+    /// session's clips (offset-ordered downstream), its HR series/maxHR (for the editor overlay), a
+    /// name resolver, and the Animate `clipContext`. `nil` for non-climb cards or sessions with no media
+    /// → the card falls back to the F3 inline-player hero + cheap affordance (no carousel). Snapshots
+    /// the `@Model`s into plain values here on the `@MainActor` so SwiftData never crosses into the viewer.
+    private func cardMedia(for card: FeedCard) -> FeedCardMedia? {
+        guard case .climbSession = card.payload, let sid = sessionId(for: card) else { return nil }
+        let media = allMedia.filter { $0.sessionID == sid }
+        guard !media.isEmpty else { return nil }
+        return FeedCardMedia(clips: media.map(MediaInput.from),
+                             hrSeries: hrSeries(for: sid), maxHR: maxHR(for: sid),
+                             nameFor: nameResolver(for: sid), clipContext: clipContext(for: sid, card: card))
+    }
+
+    private func hrSeries(for sid: UUID) -> [HRPoint] {
+        kilterSessions.first { $0.id == sid }?.hrSeries ?? workoutSessions.first { $0.id == sid }?.hrSeries ?? []
+    }
+
+    private func maxHR(for sid: UUID) -> Double {
+        (kilterSessions.first { $0.id == sid }?.maxHR ?? workoutSessions.first { $0.id == sid }?.maxHR) ?? HeartRateZone.defaultMaxHR
+    }
+
+    private func nameResolver(for sid: UUID) -> (String) -> String {
+        var map: [String: String] = ["general": "General"]
+        for log in kilterLogs where log.sessionId == sid { map[log.climbUUID] = log.climbName }
+        return { key in map[key] ?? "Clip" }
+    }
+
+    /// The Animate context (clip render inputs) for a session that has video clips; `nil` ⇒ the viewer
+    /// shows a plain Share (no dead Animate). Mirrors `CardDetailView.clipContext`.
+    private func clipContext(for sid: UUID, card: FeedCard) -> ClipExportCoordinator.Context? {
+        let media = allMedia.filter { $0.sessionID == sid }
+        guard media.contains(where: { $0.kind == .video }) else { return nil }
+        let clips = media.map {
+            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
+                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+        }
+        guard let k = kilterSessions.first(where: { $0.id == sid }) else { return nil }
+        var clipName: String? = nil
+        if case .climbSession(let p) = card.payload { clipName = p.hardestSendGrade }
+        return ClipExportCoordinator.Context(
+            hrSeries: k.hrSeries, clips: clips,
+            duration: (k.endedAt ?? .now).timeIntervalSince(k.startedAt),
+            maxHR: maxHR(for: sid), restHR: k.restHR, clipName: clipName)
     }
 
     private func loadMoreIfNeeded(card: FeedCard, in filtered: [FeedCard]) {

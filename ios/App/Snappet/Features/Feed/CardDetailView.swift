@@ -202,7 +202,8 @@ struct CardDetailView: View {
                 .sheet(isPresented: $showingMedia) {
                     MediaBrowserView(media: media.map(MediaInput.from),
                                      hrSeries: hrSeries(for: sid), maxHR: maxHR(for: sid),
-                                     nameFor: nameResolver(for: sid))
+                                     nameFor: nameResolver(for: sid),
+                                     card: card, clipContext: clipContext)
                 }
             }
         }

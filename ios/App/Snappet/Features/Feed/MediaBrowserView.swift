@@ -3,11 +3,13 @@ import AVKit
 import Photos
 import UIKit
 
-// MARK: - Recap Feed — session media browser (F3b)
+// MARK: - Recap Feed — session media browser + paged viewer (F3b · R6)
 //
 // Instagram-style browser of ALL a session's clips, grouped by exercise / session / All, each with a
-// per-clip HR overlay (from FeedMedia.clipHR) + a name tag. Tiles show the real PHAsset poster frame and
-// the full-screen viewer plays the actual clip on device (auto-play + loop). Both degrade gracefully to a
+// per-clip HR overlay + a name tag. Tiles show the real PHAsset poster frame; the full-screen viewer is
+// a paged `TabView(.page)` that plays the actual clip on device (auto-play + loop), swipes between
+// clips, and pins the EDITOR's `HRTileView` overlay over each (single HR source of truth — the same
+// scorebug tile the R4 export burns, so preview == burn). Both degrade gracefully to a
 // gradient/placeholder when the asset can't be resolved (deleted, not granted under limited Photos
 // access, or the simulator, which has no library) — the structure stays verifiable either way.
 
@@ -16,10 +18,18 @@ struct MediaBrowserView: View {
     let hrSeries: [HRPoint]
     let maxHR: Double
     let nameFor: (String) -> String     // group key (exerciseId / climbUUID) → label
+    let card: FeedCard
+    let clipContext: ClipExportCoordinator.Context?
 
     @Environment(\.dismiss) private var dismiss
     @State private var grouping: FeedMedia.Grouping = .byExercise
-    @State private var viewer: MediaInput?
+    @State private var viewerIndex: CarouselViewerBox?
+
+    /// `offsetSec`-ordered flat list — the index space the fullscreen viewer pages over (so a tap in any
+    /// bucket opens at the right absolute clip).
+    private var ordered: [MediaInput] {
+        media.sorted { $0.offsetSec == $1.offsetSec ? $0.id.uuidString < $1.id.uuidString : $0.offsetSec < $1.offsetSec }
+    }
 
     var body: some View {
         NavigationStack {
@@ -41,7 +51,7 @@ struct MediaBrowserView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
                                     ForEach(group.items) { item in
-                                        tile(item).onTapGesture { viewer = item }
+                                        tile(item).onTapGesture { open(item) }
                                     }
                                 }
                             }
@@ -59,11 +69,27 @@ struct MediaBrowserView: View {
             .navigationTitle("Media")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-            .fullScreenCover(item: $viewer) { item in
-                MediaViewer(item: item, hr: clipHR(item), name: tagName(item))
+            .fullScreenCover(item: $viewerIndex) { box in
+                Self.viewer(clips: ordered, startIndex: box.value,
+                            hrSeries: hrSeries, maxHR: maxHR, nameFor: nameFor,
+                            card: card, clipContext: clipContext)
             }
         }
         .accessibilityIdentifier("feed.media")
+    }
+
+    /// Open the fullscreen pager at the tapped clip's ABSOLUTE index in the offset-ordered list.
+    private func open(_ m: MediaInput) {
+        if let idx = ordered.firstIndex(where: { $0.id == m.id }) { viewerIndex = CarouselViewerBox(value: idx) }
+    }
+
+    /// The fullscreen paged viewer — the single entry point used by both the carousel and the browser.
+    @ViewBuilder
+    static func viewer(clips: [MediaInput], startIndex: Int, hrSeries: [HRPoint], maxHR: Double,
+                       nameFor: @escaping (String) -> String, card: FeedCard,
+                       clipContext: ClipExportCoordinator.Context?) -> some View {
+        PagedMediaViewer(clips: clips, startIndex: startIndex, hrSeries: hrSeries, maxHR: maxHR,
+                         nameFor: nameFor, card: card, clipContext: clipContext)
     }
 
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
@@ -100,8 +126,8 @@ struct MediaBrowserView: View {
 /// Loads the asset's poster frame through one shared `PHCachingImageManager` (so scrolling the
 /// carousel doesn't re-decode), falling back to the brand gradient + kind icon when the asset can't
 /// be read (limited access, iCloud-only with network off, or the simulator). Mirrors the proven
-/// `HighlightThumbnail` loader in ReelView.
-private struct ClipThumbnail: View {
+/// `HighlightThumbnail` loader in ReelView. Shared by the in-card carousel + the browser tiles.
+struct ClipThumbnail: View {
     let localIdentifier: String
     let kind: String
     let size: CGSize
@@ -145,13 +171,121 @@ private struct ClipThumbnail: View {
     }
 }
 
-// MARK: - Full-screen clip viewer (real on-device playback)
+// MARK: - Full-screen paged clip viewer (real on-device playback + editor HR overlay)
 
-private struct MediaViewer: View {
-    let item: MediaInput
-    let hr: MediaClipHR
-    let name: String
+/// Instagram-post grammar: a full-bleed paged `TabView(.page)` over the offset-ordered clips. Only the
+/// centered page PLAYS its `AVPlayer` (single-active discipline carried from R2); off-center pages are
+/// paused, not torn down — the active ±1 neighbours that `TabView(.page)` keeps resident stay warm so a
+/// swipe resumes instantly (full teardown happens on the page's `.onDisappear`). Each page pins the
+/// EDITOR's `HRTileView` overlay (built from the clip's HR window) + a name tag, and offers
+/// Share/Animate, which present `ShareComposerView(card:clipContext:)` (R3/R4).
+private struct PagedMediaViewer: View {
+    let clips: [MediaInput]
+    let startIndex: Int
+    let hrSeries: [HRPoint]
+    let maxHR: Double
+    let nameFor: (String) -> String
+    let card: FeedCard
+    let clipContext: ClipExportCoordinator.Context?
+
     @Environment(\.dismiss) private var dismiss
+    @State private var index: Int = 0
+    @State private var showingShare = false
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            TabView(selection: $index) {
+                ForEach(Array(clips.enumerated()), id: \.element.id) { i, clip in
+                    MediaPage(item: clip,
+                              overlay: overlay(for: clip),
+                              name: tagName(clip),
+                              isActive: i == index)
+                        .tag(i)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .ignoresSafeArea()
+
+            chrome
+        }
+        .accessibilityIdentifier("feed.media.viewer")
+        .onAppear { index = min(max(0, startIndex), max(0, clips.count - 1)) }
+        .sheet(isPresented: $showingShare) {
+            ShareComposerView(card: card, clipContext: clipContext)
+        }
+    }
+
+    /// Top bar (name + count + close) and the bottom Share/Animate actions, over a legibility scrim.
+    private var chrome: some View {
+        VStack {
+            HStack {
+                Label(name, systemImage: currentKind == "video" ? "video.fill" : "photo.fill")
+                    .font(.caption.weight(.bold)).foregroundStyle(.white)
+                if clips.count > 1 {
+                    Text("\(min(index, clips.count - 1) + 1)/\(clips.count)")
+                        .font(.caption2.weight(.heavy)).foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(.black.opacity(0.4), in: Capsule())
+                }
+                Spacer()
+                Button { dismiss() } label: { Image(systemName: "xmark").foregroundStyle(.white) }
+                    .accessibilityIdentifier("feed.media.close")
+            }
+            Spacer()
+            HStack(spacing: 12) {
+                Spacer()
+                Button { showingShare = true } label: {
+                    Label(clipContext != nil ? "Animate" : "Share",
+                          systemImage: clipContext != nil ? "wand.and.stars" : "square.and.arrow.up")
+                        .font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(SnappetColor.kilter, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("feed.media.share")
+            }
+        }
+        .padding(22)
+    }
+
+    private var name: String { clips.indices.contains(index) ? tagName(clips[index]) : "" }
+    private var currentKind: String { clips.indices.contains(index) ? clips[index].kind : "video" }
+
+    private func tagName(_ m: MediaInput) -> String {
+        nameFor(m.exerciseId?.uuidString ?? m.climbUUID ?? "general")
+    }
+
+    /// Build the EDITOR overlay for a clip: slice the session HR to the clip window (rebased to clip-
+    /// local time), feed `HROverlayValues`, and render the SAME scorebug `HRTile` the export burns. Returns
+    /// `nil` when the clip has no HR in its window → the page degrades to the name tag only (no empty chart).
+    private func overlay(for m: MediaInput) -> ClipOverlay? {
+        let window = FeedMedia.clipHRWindow(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries)
+        guard !window.isEmpty else { return nil }
+        let dur = (m.durationSec ?? FeedMedia.photoWindowSec)
+        let values = HROverlayValues(samples: window, durationSec: max(0.1, dur),
+                                     maxHR: maxHR, restHR: clipContext?.restHR)
+        return ClipOverlay(tile: HRTile.make(template: .scorebug), values: values)
+    }
+}
+
+/// The per-clip overlay payload (editor tile + resolved values) — built per page on the MainActor.
+private struct ClipOverlay {
+    let tile: HRTile
+    let values: HROverlayValues
+}
+
+/// One fullscreen page: the real clip playback (active page only) under the editor HR overlay + name
+/// tag. Reuses the `ClipPlayerLayer`/PHAsset→AVPlayerItem path. Single-active rule: only the centered
+/// page PLAYS; when a page de-centers it's PAUSED (not torn down) so its player + looper stay resident
+/// and a swipe back resumes instantly. The player is fully released (paused, nilled, looper dropped)
+/// only when the page leaves the `TabView`'s resident set — its `.onDisappear`.
+private struct MediaPage: View {
+    let item: MediaInput
+    let overlay: ClipOverlay?
+    let name: String
+    let isActive: Bool
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
@@ -162,7 +296,7 @@ private struct MediaViewer: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.black
             mediaLayer.ignoresSafeArea()
 
             // Scrim so the title + HR overlay stay legible over bright footage.
@@ -170,31 +304,25 @@ private struct MediaViewer: View {
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            VStack(alignment: .leading) {
-                HStack {
-                    Label(name, systemImage: item.kind == "video" ? "video.fill" : "photo.fill")
-                        .font(.caption.weight(.bold)).foregroundStyle(.white)
-                    Spacer()
-                    Button { dismiss() } label: { Image(systemName: "xmark").foregroundStyle(.white) }
-                        .accessibilityIdentifier("feed.media.close")
-                }
-                Spacer()
-                if let peak = hr.peakBpm {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("HEART RATE · THIS CLIP").font(.caption2.weight(.bold)).foregroundStyle(.white.opacity(0.8))
-                        Text("\(peak) BPM").font(.system(size: 40, weight: .heavy, design: .rounded)).foregroundStyle(.white)
-                        if let z = hr.zoneRaw, let zone = HeartRateZone(rawValue: z) {
-                            Text(zone.pillLabel).font(.subheadline).foregroundStyle(.white.opacity(0.85))
-                        }
-                    }
+            // The EDITOR overlay — the SAME scorebug HRTile the export burns (WYSIWYG). A static poster
+            // (`fraction = 1.0`) reads the clip-window aggregate; `nil` overlay → name tag only.
+            if let overlay {
+                HRTileView(tile: overlay.tile, values: overlay.values, fraction: 1.0)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 90)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .allowsHitTesting(false)
-                }
+                    .accessibilityIdentifier("feed.media.hrTile")
             }
-            .padding(22)
         }
-        .accessibilityIdentifier("feed.media.viewer")
-        .task { await load() }
-        .onDisappear { player?.pause(); player = nil; looper = nil }
+        .accessibilityIdentifier("feed.media.page")
+        .task(id: item.id) { await load() }
+        // Single-active: the centered page plays; a de-centered (but still resident) page only PAUSES,
+        // keeping its player + looper warm for an instant resume on swipe-back.
+        .onChange(of: isActive) { _, active in active ? player?.play() : player?.pause() }
+        // Full teardown happens only when the page leaves the TabView's resident set (pause + nil player
+        // + drop looper) — not on every de-center, so neighbouring pages stay warm by design.
+        .onDisappear { teardown() }
     }
 
     @ViewBuilder private var mediaLayer: some View {
@@ -222,7 +350,12 @@ private struct MediaViewer: View {
         .accessibilityIdentifier("feed.media.placeholder")
     }
 
+    private func teardown() { player?.pause(); player = nil; looper = nil }
+
     private func load() async {
+        teardown()
+        state = .loading
+        image = nil
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [item.localIdentifier], options: nil)
         guard let asset = assets.firstObject else { state = .failed; return }
 
@@ -241,7 +374,7 @@ private struct MediaViewer: View {
             looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
             player = queue
             state = .ready
-            queue.play()
+            if isActive { queue.play() }                   // single-active: only the centered page plays
         } else {
             let target = CGSize(width: 1080, height: 1920)
             let opts = PHImageRequestOptions()
