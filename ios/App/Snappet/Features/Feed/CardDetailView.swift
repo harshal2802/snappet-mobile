@@ -17,7 +17,9 @@ struct CardDetailView: View {
     @Query private var kilterSessions: [KilterSession]
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
+    @Query private var allMedia: [SessionMedia]
     @State private var showingShare = false
+    @State private var showingMedia = false
 
     private var target: FeedDeepLink.Target { FeedDeepLink.target(for: card) }
 
@@ -37,6 +39,7 @@ struct CardDetailView: View {
                 case .none: EmptyView()
                 }
 
+                mediaButton
                 openInModuleButton
             }
             .padding(SnappetSpacing.lg)
@@ -135,6 +138,48 @@ struct CardDetailView: View {
     }
 
     // MARK: Chrome
+
+    @ViewBuilder private var mediaButton: some View {
+        let sid: UUID? = {
+            switch target {
+            case .kilterSession(let id), .workoutSession(let id): return id
+            case .none: return nil
+            }
+        }()
+        if let sid {
+            let media = allMedia.filter { $0.sessionID == sid }
+            if !media.isEmpty {
+                Button { showingMedia = true } label: {
+                    Label("Media (\(media.count))", systemImage: "photo.on.rectangle.angled")
+                        .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .foregroundStyle(SnappetColor.ink)
+                        .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: SnappetRadius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("feed.mediaButton")
+                .sheet(isPresented: $showingMedia) {
+                    MediaBrowserView(media: media.map(MediaInput.from),
+                                     hrSeries: hrSeries(for: sid), maxHR: maxHR(for: sid),
+                                     nameFor: nameResolver(for: sid))
+                }
+            }
+        }
+    }
+
+    private func hrSeries(for sid: UUID) -> [HRPoint] {
+        kilterSessions.first { $0.id == sid }?.hrSeries ?? workoutSessions.first { $0.id == sid }?.hrSeries ?? []
+    }
+    private func maxHR(for sid: UUID) -> Double {
+        (kilterSessions.first { $0.id == sid }?.maxHR ?? workoutSessions.first { $0.id == sid }?.maxHR) ?? HeartRateZone.defaultMaxHR
+    }
+    private func nameResolver(for sid: UUID) -> (String) -> String {
+        var map: [String: String] = ["general": "General"]
+        for log in kilterLogs where log.sessionId == sid { map[log.climbUUID] = log.climbName }
+        if let w = workoutSessions.first(where: { $0.id == sid }) {
+            for ex in w.exercises { map[ex.id.uuidString] = ex.displayName ?? ex.exerciseId }
+        }
+        return { key in map[key] ?? "Clip" }
+    }
 
     private var openInModuleButton: some View {
         Button {

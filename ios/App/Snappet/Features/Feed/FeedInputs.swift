@@ -36,6 +36,14 @@ extension LitEventInput {
     }
 }
 
+extension MediaInput {
+    static func from(_ m: SessionMedia) -> MediaInput {
+        MediaInput(id: m.id, kind: m.kindRaw, offsetSec: m.offsetSec, durationSec: m.durationSec,
+                   exerciseId: m.assignedExerciseID, setIndex: m.assignedSetIndex,
+                   climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier)
+    }
+}
+
 /// Bridges @Model arrays → composed FeedCards. Shared by FeedView (F1) + WallView (F7) so the
 /// derive-on-read pipeline lives in one place.
 enum FeedQuery {

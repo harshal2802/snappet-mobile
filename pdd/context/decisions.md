@@ -4,6 +4,17 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F3 / F3b — session media browser + per-clip HR
+
+**Decision**: `Features/Feed/FeedMedia.swift` (pure) groups a session's `SessionMedia` By exercise /
+By session / All (over `assignedExerciseID` / `assignedClimbUUID`) and computes each clip's HR overlay
+(`clipHR` aligns `offsetSec`→`hrSeries` window → peak/avg BPM + zone). `MediaBrowserView` renders the
+grouped browser + a fullscreen viewer with the per-clip HR overlay + name tag; reachable from a "Media (N)"
+button on `CardDetailView` when the session has media. The **live PHAsset thumbnail/video load, the inline
+auto-play `AVPlayer` hero (F3), and the HR-overlay clip export are the iOS-device-only edge** — placeholder
+tiles render in-sim so the structure + the pure grouping/HR logic are verifiable; live media is a labeled
+device-burn follow-on (same posture as F4's Animate path). Tested: `FeedMediaTests` (grouping + clip-HR window).
+
 ## [2026-06-20] Recap Feed F4 — ShareComposer (image export)
 
 **Decision**: `Features/Feed/FeedShareComposer.swift` — `ShareComposerView` renders a `ShareCardView`
