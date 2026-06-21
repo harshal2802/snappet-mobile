@@ -23,7 +23,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoNotTouch
@@ -68,6 +70,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.snappet.mobile.ui.LocalAppContainer
@@ -104,7 +109,12 @@ fun KilterDetailScreen(
     onNextPick: (String) -> Unit = {},
 ) {
     val pages = remember(siblings, uuid) {
-        if (siblings.contains(uuid)) siblings else listOf(uuid)
+        // De-duplicate while preserving order: the browse list can legitimately repeat a uuid (the
+        // Climb-of-the-day is also one of the filtered rows), and a repeated page uuid both confuses the
+        // pager's identity tracking AND — as a duplicate LazyLayout key — makes it measure pages to zero
+        // width, leaving their content unreachable. One page per climb.
+        val deduped = (if (siblings.contains(uuid)) siblings else listOf(uuid)).distinct()
+        deduped.ifEmpty { listOf(uuid) }
     }
     if (pages.size <= 1) {
         KilterClimbDetail(uuid = uuid, catalog = catalog, board = board, sessions = sessions,
@@ -132,12 +142,63 @@ fun KilterDetailScreen(
         modifier = Modifier.fillMaxSize().testTag("kilter.detail.pager"),
         // Keep neighbours warm so a swipe lands on rendered content, not a spinner.
         beyondViewportPageCount = 1,
+        // A stable per-climb key so the pager tracks pages by identity across recompositions. `pages` is
+        // de-duplicated above, so these keys are unique (a Climb-of-the-day that also appears in the list
+        // would otherwise repeat a uuid here — a duplicate LazyLayout key — and the pager would mismeasure
+        // the page to zero width, making its content unreachable).
+        key = { pages[it] },
     ) { page ->
-        KilterClimbDetail(
-            uuid = pages[page], catalog = catalog, board = board, sessions = sessions, onExit = onExit,
-            positionLabel = "${page + 1} / ${pages.size}",
-            onBackToPlan = onBackToPlan, onNextPick = onNextPick,
+        val isCurrent = page == pagerState.currentPage
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(if (isCurrent) Modifier else Modifier.clearAndSetSemantics {}),
+        ) {
+            KilterClimbDetail(
+                uuid = pages[page], catalog = catalog, board = board, sessions = sessions, onExit = onExit,
+                positionLabel = "${page + 1} / ${pages.size}",
+                onBackToPlan = onBackToPlan, onNextPick = onNextPick,
+                chromeless = true,
+            )
+        }
+    }
+}
+
+/**
+ * Top-bar + body chrome for the climb detail. Normally the shared [ModuleScaffold]. Inside the sibling
+ * pager ([chromeless]) it's a plain `Column` with a hand-rolled [TopAppBar] instead — a `Scaffold` there
+ * nests a `SubcomposeLayout` within the pager's LazyLayout and mismeasures the scrollable body to zero
+ * width, so its log buttons become unhittable. The plain column lays the body out at full width while
+ * keeping the same back arrow + title + actions (so per-page Save/Share/back all still work).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DetailChrome(
+    chromeless: Boolean,
+    title: String,
+    onExit: () -> Unit,
+    actions: @Composable (androidx.compose.foundation.layout.RowScope.() -> Unit),
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    if (!chromeless) {
+        ModuleScaffold(title = title, onExit = onExit, actions = actions, content = content)
+        return
+    }
+    Column(Modifier.fillMaxSize()) {
+        androidx.compose.material3.TopAppBar(
+            title = { Text(title) },
+            navigationIcon = {
+                IconButton(
+                    onClick = onExit,
+                    modifier = Modifier.testTag("BackButton")
+                        .semantics { contentDescription = "Back" },
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            actions = actions,
         )
+        content(PaddingValues(0.dp))
     }
 }
 
@@ -152,6 +213,11 @@ private fun KilterClimbDetail(
     positionLabel: String? = null,
     onBackToPlan: () -> Unit = {},
     onNextPick: (String) -> Unit = {},
+    // When hosted in the sibling pager, skip the M3 `Scaffold` chrome (the pager renders one page of this
+    // per climb): a `Scaffold` nests a `SubcomposeLayout` inside the pager's own LazyLayout, which there
+    // mismeasures the scrollable body to zero width — leaving its log buttons unhittable. The chromeless
+    // path renders an equivalent plain top bar + body so the content lays out and stays interactive.
+    chromeless: Boolean = false,
 ) {
     val context = LocalContext.current
     val container = LocalAppContainer.current
@@ -254,34 +320,41 @@ private fun KilterClimbDetail(
         val stat = stats.firstOrNull { it.angle == selectedAngle } ?: return
         val grade = catalog.gradeLabel(stat.difficulty)
         haptics.commit()
-        // Optimistic inline pill (auto-dismisses below). The actual write is deferred to the snackbar
-        // so Undo is a clean no-op — nothing was persisted yet (issue #89). The auto-session (issue #92)
-        // is likewise deferred to commit, so undoing a logged ascent leaves no session behind.
         logConfirmation = "Logged ${status.label.lowercase()} · $grade"
-        snackbar.showUndo(
-            message = "Logged ${status.label.lowercase()} · $grade",
-            onUndo = { logConfirmation = null },
-            commit = {
-                scope.launch {
-                    // Issue #92: the first committed log of a sitting auto-opens a "manual" session so
-                    // ascents group without the user discovering the kebab Start. start() is a no-op if
-                    // one is already open.
-                    if (sessions.currentSessionId == null) sessions.start(selectedAngle, "manual")
-                    dao.insertLog(
-                        KilterLogEntry(
-                            climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
-                            difficulty = stat.difficulty, gradeLabel = grade, status = status.name,
-                            createdAt = System.currentTimeMillis(), sessionId = sessions.currentSessionId,
-                        )
-                    )
-                    // Tick the active planned session, if this run came from "Plan a session": flips the
-                    // matching plan item to sent/attempted. No-op for an ad-hoc session or off-plan climb.
-                    sessions.applyLogToPlan(c.uuid, status, System.currentTimeMillis())
-                    container.core.log("kilter", "log-${status.name.lowercase()}",
-                        "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
-                }
-            },
-        )
+        // Persist the ascent IMMEDIATELY (iOS parity: `modelContext.insert` + save on tap). The earlier
+        // design deferred the whole write to the undo snackbar's timeout (issue #89) — but that timeout
+        // never fired once the climber tapped back to the catalog (the snackbar host is disposed) and was
+        // never delivered to the test clock at all, so the just-logged send simply never reached History.
+        // The write runs on the process-lifetime app scope so it survives leaving the detail screen, and
+        // Undo now deletes the row it wrote (a real, addressable delete) rather than cancelling a no-op.
+        container.appScope.launch {
+            // Issue #92: the first logged climb of a sitting auto-opens a "manual" session so ascents
+            // group without the user discovering the kebab Start. start() is a no-op if one is open.
+            if (sessions.currentSessionId == null) sessions.start(selectedAngle, "manual")
+            val sessionId = sessions.currentSessionId
+            val rowId = dao.insertLog(
+                KilterLogEntry(
+                    climbUuid = c.uuid, climbName = c.name, angle = selectedAngle,
+                    difficulty = stat.difficulty, gradeLabel = grade, status = status.name,
+                    createdAt = System.currentTimeMillis(), sessionId = sessionId,
+                )
+            )
+            // Tick the active planned session, if this run came from "Plan a session": flips the matching
+            // plan item to sent/attempted. No-op for an ad-hoc session or off-plan climb.
+            sessions.applyLogToPlan(c.uuid, status, System.currentTimeMillis())
+            container.core.log("kilter", "log-${status.name.lowercase()}",
+                "${status.label} ${c.name} ($grade @${selectedAngle}°)", stat.difficulty)
+            // Offer Undo on the app scope's main-thread launch so it survives a fast back-out too; it
+            // simply deletes the entry we just wrote.
+            snackbar.showUndo(
+                message = "Logged ${status.label.lowercase()} · $grade",
+                onUndo = {
+                    logConfirmation = null
+                    container.appScope.launch { dao.deleteLogById(rowId) }
+                },
+                commit = {},
+            )
+        }
     }
 
     fun toggleFavorite() {
@@ -292,7 +365,31 @@ private fun KilterClimbDetail(
         }
     }
 
-    ModuleScaffold(
+    // P5 (Kilter Improvement, On the Board): explicitly lighting a climb on the board records a lit
+    // event — the new axis that surfaces every climb pulled up and worked, even ones never logged as an
+    // ascent. Captured ONLY on this explicit light (not the passive auto-light on connect), mirroring the
+    // iOS "capture-on-explicit-light" fix. Deduped per climb-per-session at the DAO upsert. The board
+    // illuminate behavior is unchanged; the capture rides alongside it off the main thread.
+    fun lightClimb() {
+        board.illuminate(holds)
+        val c = climb ?: return
+        val stat = stats.firstOrNull { it.angle == selectedAngle }
+        val grade = stat?.let { catalog.gradeLabel(it.difficulty) } ?: ""
+        val connected = board.isConnected
+        val sessionId = sessions.currentSessionId
+        scope.launch {
+            dao.upsertLitEvent(
+                KilterLitEvent(
+                    climbUuid = c.uuid, climbName = c.name, gradeLabel = grade, angle = selectedAngle,
+                    layoutId = c.layoutId, sizeId = productSizeId, litAt = System.currentTimeMillis(),
+                    wasConnected = connected, sessionId = sessionId,
+                )
+            )
+        }
+    }
+
+    DetailChrome(
+        chromeless = chromeless,
         title = climb?.name ?: "Climb",
         onExit = onExit,
         actions = {
@@ -480,7 +577,7 @@ private fun KilterClimbDetail(
                 when (board.state) {
                     KilterBoardController.State.CONNECTED -> {
                         OutlinedButton(
-                            onClick = { board.illuminate(holds) },
+                            onClick = { lightClimb() },
                             modifier = Modifier.fillMaxWidth().testTag("kilter.illuminate"),
                         ) {
                             Icon(Icons.Filled.Lightbulb, contentDescription = null)
@@ -666,22 +763,29 @@ private fun LogButton(
 ) {
     // Issue #93: a long-press RichTooltip explains the climbing status (jargon to a newcomer).
     val tooltipState = rememberTooltipState(isPersistent = true)
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
-        tooltip = { RichTooltip(title = { Text(tooltipTitle) }) { Text(tooltipBody) } },
-        state = tooltipState,
-        modifier = modifier,
-    ) {
-        Button(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth().testTag(testTag),
+    // Keep the caller's `Modifier.weight(1f)` on a plain Box, not on the TooltipBox: TooltipBox wraps its
+    // anchor in a SubcomposeLayout, and a weighted SubcomposeLayout inside the sibling HorizontalPager's
+    // own LazyLayout mismeasures — the second button in each Row collapses to ZERO width, so its tap never
+    // lands on the Button and the log is silently dropped (History stays empty). The Box owns the weight and
+    // lays the row out evenly; the TooltipBox + Button just fill it. Same fix family as the chromeless body.
+    Box(modifier) {
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(),
+            tooltip = { RichTooltip(title = { Text(tooltipTitle) }) { Text(tooltipBody) } },
+            state = tooltipState,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Button(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth().testTag(testTag),
             colors = ButtonDefaults.buttonColors(
                 // Issue #97: route through the accent tokens instead of re-hardcoded hex (Leaf = send,
                 // Ember = a try/attempt).
                 containerColor = if (isSend) com.snappet.mobile.ui.theme.SnappetAccents.Leaf
                 else com.snappet.mobile.ui.theme.SnappetAccents.Ember),
-        ) {
-            Icon(icon, contentDescription = null); Text("  $label")
+            ) {
+                Icon(icon, contentDescription = null); Text("  $label")
+            }
         }
     }
 }

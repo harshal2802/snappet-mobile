@@ -85,6 +85,9 @@ dependencies {
     // Today daily home (issue #99): Jetpack Glance launcher widgets reading the same Room flows.
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
+    // Kilter P1 board auto-detect: a coarse, on-device location fix (FusedLocationProviderClient) for the
+    // pre-connect arrival suggestion. The place is bucketed on-device and never leaves the phone.
+    implementation(libs.play.services.location)
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)

@@ -15,6 +15,11 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
+    <!-- Kilter P1 board auto-detect: a coarse, when-in-use location fix powers the pre-connect "you're at
+         your usual gym" arrival suggestion. COARSE only (≈110 m), bucketed on-device, never networked and
+         never reverse-geocoded. Optional — denying it degrades gracefully to BLE-only recognition. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- Camera is used to scan a receipt for the Split Expenses mini-app (system camera app, no
          permission), AND in-app via CameraX to scan a shared Kilter climb's QR (issue #91), which
          DOES require the CAMERA permission (requested at the point of use). Optional feature. -->

@@ -1,6 +1,8 @@
 package com.snappet.mobile.feature.kilter
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -20,14 +22,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
@@ -38,8 +45,10 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -50,6 +59,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,7 +89,11 @@ import com.snappet.mobile.ui.theme.snappetSurfaceTransition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private enum class KilterScreen { ROOT, DETAIL, HISTORY, SETTINGS, CREATE, SESSION, SCAN, PLAN }
+private enum class KilterScreen {
+    ROOT, DETAIL, HISTORY, SETTINGS, CREATE, SESSION, SCAN, PLAN,
+    // Kilter Improvement Wave C: the new first-class surfaces reached from the catalog overflow.
+    YOUR_CLIMBS, STATS, ON_THE_BOARD,
+}
 
 /**
  * Root entry for the Kilter Board mini-app. Browse the user-installed read-only catalog (filtered by
@@ -95,6 +111,11 @@ fun KilterRoot(onExit: () -> Unit) {
     // edge; live capture is device-pending. The session manager flushes its avg/max summary on end.
     val heartRate = remember { com.snappet.mobile.feature.kilter.hr.BleHeartRateSource(context) }
     val sessions = remember { KilterSessionManager(dao, heartRate) }
+    // P1 board auto-detect: the SharedPreferences-backed board memory (recognize → restore) and the
+    // coarse, on-device location service (pre-connect arrival suggestion). Both module-scoped so they
+    // survive navigating out of and back into Kilter, mirroring the iOS root's `@State` ownership.
+    val boardMemory = remember { KilterBoardMemoryStore(context) }
+    val location = remember { KilterLocationService(context) }
     // Re-hydrate the open session + its pinned plan from the store on entry (the manager is
     // remember-scoped, so this survives navigating out of and back into Kilter, and a relaunch).
     androidx.compose.runtime.LaunchedEffect(Unit) { sessions.recover() }
@@ -187,6 +208,19 @@ fun KilterRoot(onExit: () -> Unit) {
             dao = dao,
             onOpenSession = { id -> selectedSessionId = id; screen = KilterScreen.SESSION },
             onExit = { screen = KilterScreen.ROOT },
+            onOpenStats = { screen = KilterScreen.STATS },
+            catalog = cat,
+        )
+        // Kilter Improvement Wave C — Your Climbs (P2), Stats (P3), On the Board (P5).
+        KilterScreen.YOUR_CLIMBS -> KilterCreatedGalleryScreen(
+            onOpenClimb = { uuid -> selectedUuid = uuid; browseSiblings = emptyList(); screen = KilterScreen.DETAIL },
+            onCreate = { screen = KilterScreen.CREATE },
+            onExit = { screen = KilterScreen.ROOT },
+        )
+        KilterScreen.STATS -> KilterStatsScreen(onExit = { screen = KilterScreen.ROOT })
+        KilterScreen.ON_THE_BOARD -> KilterOnTheBoardScreen(
+            onOpenClimb = { uuid -> selectedUuid = uuid; browseSiblings = emptyList(); screen = KilterScreen.DETAIL },
+            onExit = { screen = KilterScreen.ROOT },
         )
         KilterScreen.SESSION -> selectedSessionId?.let { id ->
             KilterSessionDetailScreen(
@@ -200,6 +234,7 @@ fun KilterRoot(onExit: () -> Unit) {
         )
         KilterScreen.SETTINGS -> KilterSettingsScreen(
             catalog = cat, dao = dao,
+            boardMemory = boardMemory, location = location,
             onCatalogChanged = { reloadToken++; screen = KilterScreen.ROOT },
             onExit = { screen = KilterScreen.ROOT })
         KilterScreen.DETAIL -> selectedUuid?.let { uuid ->
@@ -222,12 +257,25 @@ fun KilterRoot(onExit: () -> Unit) {
             catalog = cat,
             dao = dao,
             sessions = sessions,
+            board = board,
+            boardMemory = boardMemory,
+            location = location,
             onOpenClimb = { uuid, siblings -> selectedUuid = uuid; browseSiblings = siblings; screen = KilterScreen.DETAIL },
             onOpenHistory = { screen = KilterScreen.HISTORY },
             onOpenSettings = { screen = KilterScreen.SETTINGS },
             onOpenCreate = { screen = KilterScreen.CREATE },
             onOpenScan = { screen = KilterScreen.SCAN },
             onOpenPlan = { screen = KilterScreen.PLAN },
+            onOpenYourClimbs = { screen = KilterScreen.YOUR_CLIMBS },
+            onOpenStats = { screen = KilterScreen.STATS },
+            onOpenBoard = { screen = KilterScreen.ON_THE_BOARD },
+            onOpenClimbDetail = { uuid -> selectedUuid = uuid; browseSiblings = emptyList(); screen = KilterScreen.DETAIL },
+            onReLight = { row ->
+                // Re-light the rail's climb on the wall when a board is connected; otherwise a no-op
+                // (the rail tile shows its own affordance — no behavior change to the board path).
+                val climb = cat.climb(row.event.climbUuid)
+                if (climb != null && board.isConnected) board.illuminate(cat.holds(climb, row.event.sizeId))
+            },
             onExit = onExit,
         )
     }
@@ -240,12 +288,20 @@ private fun KilterCatalogScreen(
     catalog: KilterCatalog,
     dao: KilterDao,
     sessions: KilterSessionManager,
+    board: KilterBoardController,
+    boardMemory: KilterBoardMemoryStore,
+    location: KilterLocationService,
     onOpenClimb: (String, List<String>) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCreate: () -> Unit,
     onOpenScan: () -> Unit,
     onOpenPlan: () -> Unit,
+    onOpenYourClimbs: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenBoard: () -> Unit,
+    onOpenClimbDetail: (String) -> Unit,
+    onReLight: (KilterOnTheBoard.Row) -> Unit,
     onExit: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -255,6 +311,19 @@ private fun KilterCatalogScreen(
     val createdClimbs by dao.createdFlow().collectAsState(initial = emptyList())
     val favoriteUuids = remember(favorites) { favorites.map { it.climbUuid }.toSet() }
     val gradeFormat = remember { KilterSettings.gradeFormat(context) }
+
+    // Kilter Improvement Wave C — the "Recently on the board" rail. The most-recent lit climbs (deduped
+    // per climb-per-session, newest first) built by the pure KilterOnTheBoard engine off the lit-event
+    // log, with status joined from the ascent log. A tap opens the climb; the re-light re-sends its holds
+    // (a no-op nudge when no board is connected).
+    val recentLitEvents by dao.recentLitEventsFlow(8).collectAsState(initial = emptyList())
+    val recentRows = remember(recentLitEvents, logs) {
+        KilterOnTheBoard.recent(
+            events = recentLitEvents.map { it.asLitEvent() },
+            logs = logs.map { KilterOnTheBoard.LogRow(it.climbUuid, KilterAscentStatus.from(it.status)) },
+            limit = 8,
+        )
+    }
 
     val layouts = remember { catalog.layouts() }
     val angles = remember { catalog.angles() }
@@ -275,6 +344,18 @@ private fun KilterCatalogScreen(
             KilterSettings.setProductSizeId(context, productSizeId)
         }
     }
+    // P1 board auto-detect. Whether to surface the pre-connect arrival suggestion (persisted; off skips
+    // location entirely — BLE-only recognition still works). The post-connect confirm ribbon and the
+    // pre-connect arrival card are both suggestion-not-overwrite and never block browsing.
+    var suggestOnArrival by remember { mutableStateOf(KilterSettings.suggestOnArrival(context)) }
+    // A recognized board awaiting the user's one-tap angle confirm (restore already applied; the ribbon
+    // only confirms the angle). Pair of (deviceId, board).
+    var pendingConfirm by remember { mutableStateOf<Pair<String, RememberedBoard>?>(null) }
+    // A remembered board suggested on arrival at a known coarse place, BEFORE BLE connects (suggestion only).
+    var arrivalSuggestion by remember { mutableStateOf<Pair<String, RememberedBoard>?>(null) }
+    // Dismiss the arrival suggestion for the rest of this visit once acted on / declined / connected.
+    var arrivalDismissed by remember { mutableStateOf(false) }
+
     var savedOnly by rememberSaveable { mutableStateOf(false) }
     var mineOnly by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
@@ -319,6 +400,94 @@ private fun KilterCatalogScreen(
             }
         }
         climbs = result.first; cotd = result.second; resultCount = result.third
+    }
+
+    // MARK: - P1 board auto-detect (recognize → restore → confirm + arrival suggestion)
+
+    // The effective size for a remembered layout/size (mirrors the catalog's private `effectiveSizeId`):
+    // the requested size if this layout offers it, else the layout's default — guards a stale stored pick.
+    fun effectiveSizeId(rememberedLayout: Int, requested: Int): Int {
+        val ids = catalog.sizes(rememberedLayout).map { it.id }
+        return if (ids.contains(requested)) requested else catalog.defaultSizeId(rememberedLayout)
+    }
+    // The available angle closest to `target` (the pre-select when the usual angle isn't offered here), or
+    // null when the catalog has no angles — keeps the ribbon's picker and its printed summary in sync.
+    fun nearestAngle(target: Int): Int? = angles.minByOrNull { kotlin.math.abs(it - target) }
+    // "<size> · <angle>°" line for the ribbon / card, built from the catalog's size label for the
+    // remembered layout/size and the SAME angle `applyRestore` pre-selects.
+    fun restoreSummary(b: RememberedBoard): String {
+        val sizeId = effectiveSizeId(b.layoutId, b.sizeId)
+        val sizeName = catalog.sizes(b.layoutId).firstOrNull { it.id == sizeId }?.name
+        val a = b.usualAngle?.let { nearestAngle(it) } ?: angle
+        return listOfNotNull(sizeName, "$a°").joinToString(" · ")
+    }
+    // Restore a remembered board's selection (layout/size) through the same effective-size guard, and
+    // pre-select its usual angle — persisting each through KilterSettings AND updating the in-screen state
+    // so the filter chips + list reflect it at once. Suggestion-not-overwrite: the angle is still confirmed.
+    fun applyRestore(b: RememberedBoard) {
+        layoutId = b.layoutId; KilterSettings.setLayout(context, b.layoutId)
+        val sizeId = effectiveSizeId(b.layoutId, b.sizeId)
+        productSizeId = sizeId; KilterSettings.setProductSizeId(context, sizeId)
+        b.usualAngle?.let { nearestAngle(it) }?.let { pre ->
+            angle = pre; KilterSettings.setAngle(context, pre)
+        }
+    }
+
+    // The runtime coarse-location permission prompt (the caller drives it; the service never prompts).
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> location.onPermissionResult(granted) }
+
+    // A confirmed board connect → recognize it. If known: restore layout/size + pre-select the usual angle,
+    // then raise the one-tap confirm ribbon (and clear/disarm the arrival card, which a real connect makes
+    // redundant). Either way remember the board's IDENTITY (first-time boards learned here; the angle is
+    // appended only on explicit confirm). Re-armed whenever the inputs the closure captures change.
+    androidx.compose.runtime.DisposableEffect(suggestOnArrival, layoutId, productSizeId) {
+        board.onBoardRecognized = recognizeBoard@{ deviceId, advertisedName ->
+            val serial = KilterBoardMemoryRules.serialFromLocalName(advertisedName)
+            val known = boardMemory.recall(deviceId, serial)
+            if (known != null) {
+                applyRestore(known)
+                pendingConfirm = deviceId to known
+                arrivalSuggestion = null
+                arrivalDismissed = true
+            }
+            // Remember (or refresh) identity on every confirmed connect — never the angle (that's confirm).
+            boardMemory.remember(
+                deviceId = deviceId,
+                layoutId = layoutId,
+                sizeId = productSizeId,
+                label = known?.label,
+                serial = serial,
+                coarsePlace = if (suggestOnArrival) location.currentPlace else null,
+            )
+        }
+        onDispose { board.onBoardRecognized = null }
+    }
+
+    // On entry: ask for a coarse fix (only if opted in and we have boards with a stored place) so the
+    // pre-connect arrival suggestion can appear before BLE. Requests the runtime permission gracefully the
+    // first time; denied degrades to BLE-only with no prompt loop.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (suggestOnArrival && boardMemory.all().any { it.coarsePlace != null }) {
+            when (location.authorization) {
+                KilterLocationService.Authorization.NOT_DETERMINED ->
+                    locationPermission.launch(KilterLocationService.PERMISSION)
+                KilterLocationService.Authorization.AUTHORIZED -> location.refresh()
+                KilterLocationService.Authorization.DENIED -> Unit // BLE-only, no prompt
+            }
+        }
+    }
+
+    // When a fresh coarse fix lands on a remembered place, raise the arrival suggestion — opt-in, once per
+    // visit, never over a confirm ribbon (a real connect), and never after it's been dismissed/connected.
+    androidx.compose.runtime.LaunchedEffect(location.currentPlace, suggestOnArrival) {
+        val place = location.currentPlace
+        if (suggestOnArrival && !arrivalDismissed && pendingConfirm == null && place != null) {
+            boardMemory.suggestion(place)?.let { match ->
+                arrivalSuggestion = match.deviceId to match
+            }
+        }
     }
 
     ModuleScaffold(
@@ -366,6 +535,20 @@ private fun KilterCatalogScreen(
                         leadingIcon = { Icon(Icons.Filled.QrCodeScanner, null) },
                         modifier = Modifier.testTag("kilter.scanQr"),
                         onClick = { moreMenu = false; onOpenScan() })
+                    HorizontalDivider()
+                    // Kilter Improvement Wave C — the new first-class surfaces (iOS parity).
+                    DropdownMenuItem(text = { Text("Your Climbs") },
+                        leadingIcon = { Icon(Icons.Filled.GridView, null) },
+                        modifier = Modifier.testTag("kilter.yourClimbs.open"),
+                        onClick = { moreMenu = false; onOpenYourClimbs() })
+                    DropdownMenuItem(text = { Text("Stats") },
+                        leadingIcon = { Icon(Icons.Filled.BarChart, null) },
+                        modifier = Modifier.testTag("kilter.stats.open"),
+                        onClick = { moreMenu = false; onOpenStats() })
+                    DropdownMenuItem(text = { Text("On the Board") },
+                        leadingIcon = { Icon(Icons.Filled.GridOn, null) },
+                        modifier = Modifier.testTag("kilter.board.open"),
+                        onClick = { moreMenu = false; onOpenBoard() })
                     HorizontalDivider()
                     DropdownMenuItem(text = { Text("Settings") },
                         leadingIcon = { Icon(Icons.Filled.Settings, null) },
@@ -447,6 +630,33 @@ private fun KilterCatalogScreen(
                 )
             }
 
+            // P1 board-detect surfaces (suggestion-not-overwrite, never blocking): the pre-connect arrival
+            // suggestion at a remembered coarse place, then the post-connect confirm ribbon when a known
+            // board restored its layout/size. Both read over the browse list (which stays fully usable).
+            arrivalSuggestion?.let { (_, b) ->
+                KilterArrivalSuggestionCard(
+                    board = b,
+                    summary = restoreSummary(b),
+                    onSetUp = { applyRestore(b); arrivalDismissed = true; arrivalSuggestion = null },
+                    onDismiss = { arrivalDismissed = true; arrivalSuggestion = null },
+                )
+            }
+            pendingConfirm?.let { (deviceId, b) ->
+                KilterBoardConfirmRibbon(
+                    board = b,
+                    summary = restoreSummary(b),
+                    angles = angles,
+                    selectedAngle = angle,
+                    onAngle = { angle = it; KilterSettings.setAngle(context, it) },
+                    onConfirm = {
+                        // The ONLY place an angle is appended to history (so the usual angle tracks the real,
+                        // explicit habit and a pre-select can't self-reinforce), then dismiss the ribbon.
+                        boardMemory.confirmAngle(deviceId, angle)
+                        pendingConfirm = null
+                    },
+                )
+            }
+
             // Issue #97: the live-session banner springs in/out (slide-from-top + fade) rather than
             // popping, gated on reduce-motion.
             val reduceMotionBanner = LocalReduceMotion.current
@@ -522,11 +732,28 @@ private fun KilterCatalogScreen(
                 // Issue #93: the swipe-able sibling list is exactly what's on screen, in order — the
                 // Climb-of-the-day first (when shown) then the filtered rows. Opening any climb hands
                 // detail this list so left/right swipes move through the same set.
+                // De-duplicated: the Climb-of-the-day is also one of the filtered rows, so it would
+                // otherwise appear twice in the swipe list (and as a repeated detail-pager page).
                 val browseUuids = remember(cotd, climbs) {
-                    (listOfNotNull(cotd?.uuid) + climbs.map { it.uuid })
+                    (listOfNotNull(cotd?.uuid) + climbs.map { it.uuid }).distinct()
                 }
                 // Bottom padding keeps the Create-climb FAB clear of the last row.
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
+                    // Kilter Improvement Wave C — the "Recently on the board" rail leads the discovery
+                    // browse (hidden while searching/filtering, and when nothing has been lit yet).
+                    if (showDiscovery && recentRows.isNotEmpty()) {
+                        item(key = "recentOnBoard") {
+                            KilterRecentOnBoardRail(
+                                rows = recentRows,
+                                catalog = catalog,
+                                gradeFormat = gradeFormat,
+                                onOpenClimb = { uuid -> onOpenClimbDetail(uuid) },
+                                onReLight = onReLight,
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            )
+                            HorizontalDivider()
+                        }
+                    }
                     cotd?.let { c ->
                         item(key = "cotd") {
                             Text("CLIMB OF THE DAY", style = MaterialTheme.typography.labelSmall,
@@ -684,6 +911,92 @@ private fun EmptyState(padding: PaddingValues, title: String, message: String) {
             Text(message, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp))
+        }
+    }
+}
+
+/**
+ * P1 pre-connect arrival suggestion (wireframe `01c_arrival`): "Looks like you're at <gym> — set up <size>
+ * · <angle>?" with a single accent CTA + a quiet "Not now" and the on-device privacy reassurance. A
+ * suggestion only — "Set it up" restores the board, it never auto-applies. Mirrors the iOS
+ * `arrivalSuggestionCard`.
+ */
+@Composable
+private fun KilterArrivalSuggestionCard(
+    board: RememberedBoard,
+    summary: String,
+    onSetUp: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ElevatedCard(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).testTag("kilter.arrival.card"),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.LocationOn, contentDescription = null, tint = com.snappet.mobile.ui.theme.kilterAccent())
+                Column(Modifier.weight(1f)) {
+                    Text("Looks like you're at", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(board.label, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                }
+            }
+            Text("Set up your usual board? $summary", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSetUp, modifier = Modifier.testTag("kilter.arrival.setup")) { Text("Set it up") }
+                TextButton(onClick = onDismiss, modifier = Modifier.testTag("kilter.arrival.dismiss")) { Text("Not now") }
+            }
+            Text("Matched on-device — your location never leaves your phone",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * P1 post-connect confirm ribbon (wireframe `01_autodetect`): a known board has restored its layout +
+ * size; the climber confirms the (pre-selected) angle with one tap, or adjusts it inline first. Never
+ * blocking — browse stays fully usable underneath. Mirrors the iOS `boardConfirmRibbon`.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun KilterBoardConfirmRibbon(
+    board: RememberedBoard,
+    summary: String,
+    angles: List<Int>,
+    selectedAngle: Int,
+    onAngle: (Int) -> Unit,
+    onConfirm: () -> Unit,
+) {
+    ElevatedCard(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).testTag("kilter.autodetect.ribbon"),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.PlaylistAddCheck, contentDescription = null, tint = com.snappet.mobile.ui.theme.kilterAccent())
+                Column(Modifier.weight(1f)) {
+                    Text(board.label.uppercase(), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Text("Restored $summary", style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                }
+            }
+            // Inline angle adjust, pre-selected to the usual angle. Horizontally scrollable so a long angle
+            // list (the catalog can offer many) never overflows the ribbon.
+            if (angles.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    SingleChoiceSegmentedButtonRow {
+                        angles.forEachIndexed { index, a ->
+                            SegmentedButton(
+                                selected = a == selectedAngle,
+                                onClick = { onAngle(a) },
+                                shape = SegmentedButtonDefaults.itemShape(index, angles.size),
+                            ) { Text("$a°", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                        }
+                    }
+                }
+            }
+            Button(onClick = onConfirm, modifier = Modifier.testTag("kilter.autodetect.confirm")) { Text("Got it") }
         }
     }
 }
