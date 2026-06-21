@@ -55,13 +55,14 @@ struct KilterSessionInput: Sendable, Equatable, Identifiable {
 struct WorkoutSetInput: Sendable, Equatable {
     var actualReps: Int?
     var actualWeight: Double?
+    var weightUnit: String?       // F5/R7: "kg"/"lb" — surfaced on the b4 lift-PR payload
     var durationSec: Double?
     var distanceMeters: Double?
     var completedAt: Date?
 
-    init(actualReps: Int? = nil, actualWeight: Double? = nil, durationSec: Double? = nil,
+    init(actualReps: Int? = nil, actualWeight: Double? = nil, weightUnit: String? = nil, durationSec: Double? = nil,
          distanceMeters: Double? = nil, completedAt: Date? = nil) {
-        self.actualReps = actualReps; self.actualWeight = actualWeight
+        self.actualReps = actualReps; self.actualWeight = actualWeight; self.weightUnit = weightUnit
         self.durationSec = durationSec; self.distanceMeters = distanceMeters
         self.completedAt = completedAt
     }
@@ -323,6 +324,7 @@ enum FeedComposer {
         for s in sessions { days.insert(calendar.startOfDay(for: s.startedAt)) }
         for w in workouts where w.completedAt != nil { days.insert(calendar.startOfDay(for: w.startedAt)) }
         guard let latest = days.max() else { return [] }
+        // Current streak: consecutive active days ending at the latest active day.
         var streak = 0
         var cursor: Date? = latest
         while let day = cursor, days.contains(day) {
@@ -330,10 +332,46 @@ enum FeedComposer {
             cursor = calendar.date(byAdding: .day, value: -1, to: day)
         }
         guard streak >= 3 else { return [] }                           // eligibility: streak >= 3 days
+        // R7 b5: prior-best run — scan ALL consecutive runs over the same day set and take the longest
+        // run OTHER than the current one. `isRecord` ⇒ the current streak is strictly the longest ever.
+        let previousBest = longestPriorRun(days: days, currentRunEnd: latest, currentRunLength: streak, calendar: calendar)
+        let isRecord = streak > previousBest
+        // R7: pure PAYLOAD enrichment — salience stays `Salience.streak` so ordering/eligibility (and the
+        // golden corpus) are unchanged. The record framing is a view/share concern off `isRecord`.
+        let payload = StreakPayload(days: streak, weeks: streak / 7, isRecord: isRecord, previousBest: previousBest)
         return [FeedCard(id: "b5-streak-\(Int(latest.timeIntervalSince1970))", kind: .b5Streak, category: .milestone,
                          salience: Salience.streak, anchorDate: latest,
                          sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "streak")],
-                         payload: .streak(StreakPayload(days: streak, weeks: streak / 7)), shareHint: nil)]
+                         payload: .streak(payload), shareHint: nil)]
+    }
+
+    /// The longest consecutive-active-day run among all runs EXCEPT the current one (the run ending at
+    /// `currentRunEnd`). Pure: walks the sorted day set, measuring each gap-bounded run.
+    private static func longestPriorRun(days: Set<Date>, currentRunEnd: Date, currentRunLength: Int, calendar: Calendar) -> Int {
+        let sorted = days.sorted()
+        guard !sorted.isEmpty else { return 0 }
+        var best = 0
+        var runLen = 0
+        var runEnd: Date? = nil
+        var prev: Date? = nil
+        func close() {
+            // exclude the current run (identified by its end day) from the prior-best comparison
+            if let end = runEnd, !(end == currentRunEnd && runLen == currentRunLength) {
+                best = max(best, runLen)
+            }
+        }
+        for day in sorted {
+            if let p = prev, calendar.date(byAdding: .day, value: 1, to: p) == day {
+                runLen += 1                                            // contiguous with the prior day
+            } else {
+                close()
+                runLen = 1                                             // start a new run
+            }
+            runEnd = day
+            prev = day
+        }
+        close()
+        return best
     }
 
     private static func pyramidCards(allTime: KilterAllTimeStats, anchor: Date) -> [FeedCard] {
@@ -360,17 +398,24 @@ enum FeedComposer {
                          payload: .weeklyVolume(payload), shareHint: nil)]
     }
 
+    /// Disciplines that carry no genuine "weight PR" — a running/timed effort may incidentally carry a
+    /// weight field, so b4 must skip them (mirrors `WorkoutDiscipline.run`/`.timed` raw values).
+    private static let nonLiftDisciplines: Set<String> = ["run", "running", "timed", "cardio"]
+
     // F5 — gym est-1RM (Epley) personal records per exercise.
     private static func liftPRCards(workouts: [WorkoutSessionInput]) -> [FeedCard] {
-        struct Done { let date: Date; let key: String; let name: String; let reps: Int; let weight: Double; let sessionId: UUID }
+        struct Done { let date: Date; let key: String; let name: String; let reps: Int; let weight: Double; let unit: String; let sessionId: UUID }
         var done: [Done] = []
         for w in workouts where w.completedAt != nil {
             for ex in w.exercises where !ex.skipped {
+                // R7 gate: a running/timed exercise that incidentally carries a weight must NOT fire a lift PR.
+                if let d = ex.disciplineRaw, nonLiftDisciplines.contains(d.lowercased()) { continue }
                 for set in ex.sets {
                     guard set.completedAt != nil, let reps = set.actualReps, reps > 0,
                           let weight = set.actualWeight, weight > 0, let date = set.completedAt else { continue }
                     let key = ex.exerciseId.isEmpty ? (ex.displayName ?? "exercise") : ex.exerciseId
-                    done.append(Done(date: date, key: key, name: ex.displayName ?? key, reps: reps, weight: weight, sessionId: w.id))
+                    done.append(Done(date: date, key: key, name: ex.displayName ?? key, reps: reps, weight: weight,
+                                     unit: set.weightUnit ?? "kg", sessionId: w.id))
                 }
             }
         }
@@ -384,7 +429,7 @@ enum FeedComposer {
                 if let prior {                                    // celebrate only when beating a PRIOR best
                     let cid = FeedContentIdentity.workoutSession(id: d.sessionId.uuidString)
                     let payload = LiftPRPayload(exerciseName: d.name, oneRepMaxKg: orm, weightKg: d.weight,
-                                                reps: d.reps, previousOneRepMaxKg: prior)
+                                                reps: d.reps, previousOneRepMaxKg: prior, unit: d.unit)
                     out.append(FeedCard(id: "b4-\(d.key)-\(Int(d.date.timeIntervalSince1970))", contentId: cid,
                                         kind: .b4LiftPR, category: .milestone, salience: Salience.liftPR, anchorDate: d.date,
                                         sourceRefs: [ActivityRef(objectKind: "workoutSession", ref: d.sessionId.uuidString)],

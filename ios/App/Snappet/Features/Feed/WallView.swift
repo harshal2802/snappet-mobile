@@ -85,7 +85,7 @@ private struct WallTile: View {
         case .gradePR(let p):
             return (p.newGrade, "hardest ever", "PR", SnappetColor.brand)
         case .liftPR(let p):
-            return ("\(Int(p.oneRepMaxKg.rounded()))", "kg 1RM", "PR", SnappetColor.brand)
+            return ("\(Int(p.oneRepMaxKg.rounded()))", "\(p.unit) 1RM", "PR", SnappetColor.brand)
         case .onTheBoard(let p):
             return ("\(p.litCount)", "lit", "Board", SnappetColor.kilter)
         default:

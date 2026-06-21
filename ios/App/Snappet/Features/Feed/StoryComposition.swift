@@ -96,7 +96,7 @@ enum StoryComposition {
         case .gradePR(let p):
             return s(card, "New hardest ever", p.newGrade, p.previousGrade.map { "up from \($0)" } ?? "your first peak", .brand)
         case .liftPR(let p):
-            return s(card, "Lift PR", "\(Int(p.oneRepMaxKg.rounded())) kg", "\(p.exerciseName) est. 1RM", .brand)
+            return s(card, "Lift PR", "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)", "\(p.exerciseName) est. 1RM", .brand)
         case .pyramid(let p):
             return s(card, "Your pyramid", p.maxGrade ?? "—", "\(p.totalSends) sends", .kilter)
         case .mostClimbs(let p):

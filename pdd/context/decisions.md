@@ -4,6 +4,22 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-21] Recap Feed R7 — F5 milestone-card conformance fixes
+
+**Decision** (audit follow-up, pure/payload-only): (1) **b5 streak record variant** — `streakCards`
+now scans ALL consecutive-active-day runs and takes the longest run other than the current one as
+`previousBest`; `isRecord = currentStreak > previousBest`. Both land on the EXISTING `b5Streak` card as
+additive `StreakPayload` fields (`isRecord`/`previousBest`, defaults `false`/`0`) — **no new
+`FeedCardKind`, salience UNCHANGED at `Salience.streak`** so ordering and the golden corpus don't move
+(record framing is a view/share concern off `isRecord`). The ≥3-day baseline still gates emission.
+(2) **b4 lift-PR discipline gate** — `liftPRCards` now skips exercises whose `disciplineRaw` is a
+non-lift discipline (`run`/`running`/`timed`/`cardio`, matching `WorkoutDiscipline` raws) so a
+running/timed effort that incidentally carries a weight can't fire a false lift PR. (3) **lift-PR unit**
+— `WorkoutSetInput` gained `weightUnit: String?` (bridged from `SetLog.weightUnit?.rawValue`) and
+`LiftPRPayload` gained `unit: String` (default "kg", taken from the winning set) so the card/share render
+the right unit. Keystone (`compose` ordering / `recencyDecay` / window clamp / lens) untouched. Tested:
+`FeedMilestoneTests` (b1 all-time-max, b5 record vs non-record, lift-PR running/timed gate).
+
 ## [2026-06-20] Recap Feed F3 / F3b — session media browser + per-clip HR
 
 **Decision**: `Features/Feed/FeedMedia.swift` (pure) groups a session's `SessionMedia` By exercise /
@@ -91,8 +107,9 @@ when beating a PRIOR best — first entry just establishes) and **a3 On-the-Boar
 `KilterLitEvent`s but NO full log — the degraded "pulled up, not logged" path) as `FeedComposer` recipes
 (no edits to the ordering core). `WorkoutExerciseInput` gained `exerciseId`; new `LitEventInput` +
 `kilterLitEvents` compose param (default [] → golden corpus unchanged). Salience: liftPR 0.85 (just under
-a grade PR), onTheBoard 0.42. Views reuse the compact `MilestoneCardView`. b2 First-at-grade was folded
-out (overlaps b1). Tested: `FeedMilestoneTests`.
+a grade PR), onTheBoard 0.42. Views reuse the compact `MilestoneCardView`. b2 First-at-grade ships in
+`FeedProjectCards` (`b2FirstAtGrade`, backfill-only so it never dupes a b1 PR), NOT folded out. Tested:
+`FeedMilestoneTests`.
 
 ## [2026-06-20] Recap Feed F2 — HR-deepened cards + CardDetail + reactions
 

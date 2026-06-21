@@ -17,6 +17,7 @@ extension KilterSessionInput {
 extension WorkoutSetInput {
     static func from(_ set: SetLog) -> WorkoutSetInput {
         WorkoutSetInput(actualReps: set.actualReps, actualWeight: set.actualWeight,
+                        weightUnit: set.weightUnit?.rawValue,
                         durationSec: set.durationSec, distanceMeters: set.distanceMeters,
                         completedAt: set.completedAt)
     }

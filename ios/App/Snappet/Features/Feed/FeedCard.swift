@@ -131,6 +131,12 @@ struct MostClimbsPayload: Codable, Sendable, Equatable {
 struct StreakPayload: Codable, Sendable, Equatable {
     var days: Int
     var weeks: Int
+    /// True when the current streak beats the user's prior-best (longest-ever) run — the b5 PR/record
+    /// variant gets the celebratory "longest streak ever" framing. Additive (default false) so existing
+    /// call sites and persisted `Codable` blobs keep decoding.
+    var isRecord: Bool = false
+    /// The prior-best (longest-ever) streak length the current streak is measured against (0 if none).
+    var previousBest: Int = 0
 }
 
 struct PyramidPayload: Codable, Sendable, Equatable {
@@ -199,6 +205,9 @@ struct LiftPRPayload: Codable, Sendable, Equatable {
     var weightKg: Double
     var reps: Int
     var previousOneRepMaxKg: Double?
+    /// Weight unit the lift was logged in ("kg"/"lb") so the card/share renders the right unit. Additive
+    /// (default "kg") so existing call sites and persisted `Codable` blobs keep decoding.
+    var unit: String = "kg"
 }
 
 // MARK: F6 — insight payloads

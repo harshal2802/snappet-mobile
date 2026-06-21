@@ -49,7 +49,7 @@ struct ShareCardSpec {
         case .streak(let p):
             self = .init(kick: "Streak", hero: "\(p.days)", lines: ["days in a row"], accent: SnappetColor.kilter)
         case .liftPR(let p):
-            self = .init(kick: "Lift PR", hero: "\(Int(p.oneRepMaxKg.rounded())) kg",
+            self = .init(kick: "Lift PR", hero: "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)",
                          lines: [p.exerciseName, "est. 1RM"], accent: SnappetColor.brand)
         case .effort(let p):
             self = .init(kick: "Session effort", hero: "\(p.maxBpm)",

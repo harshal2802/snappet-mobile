@@ -46,9 +46,12 @@ struct FeedCardView: View {
                               hero: "\(p.count)", caption: p.previousRecord.map { "beat \($0)" } ?? "session record",
                               sub: "in one session", identifier: "feed.card.b3MostClimbs")
         case .streak(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "calendar", kind: "Streak",
+            MilestoneCardView(accent: SnappetColor.kilter, icon: p.isRecord ? "crown.fill" : "calendar",
+                              kind: p.isRecord ? "Longest streak ever" : "Streak",
                               hero: "\(p.days)", caption: "days in a row",
-                              sub: p.weeks >= 1 ? "\(p.weeks) week\(p.weeks == 1 ? "" : "s") unbroken" : nil,
+                              sub: p.isRecord
+                                  ? (p.previousBest > 0 ? "past best \(p.previousBest) — go gentler" : "go gentler")
+                                  : (p.weeks >= 1 ? "\(p.weeks) week\(p.weeks == 1 ? "" : "s") unbroken" : nil),
                               identifier: "feed.card.b5Streak")
         case .pyramid(let p):
             MilestoneCardView(accent: SnappetColor.kilter, icon: "triangle.fill", kind: "Grade pyramid",
@@ -72,8 +75,8 @@ struct FeedCardView: View {
                               identifier: "feed.card.a3OnTheBoard")
         case .liftPR(let p):
             MilestoneCardView(accent: SnappetColor.brand, icon: "dumbbell.fill", kind: "Lift PR",
-                              hero: "\(Int(p.oneRepMaxKg.rounded())) kg", caption: "est. 1RM · \(p.exerciseName)",
-                              sub: p.previousOneRepMaxKg.map { "was \(Int($0.rounded())) kg" },
+                              hero: "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)", caption: "est. 1RM · \(p.exerciseName)",
+                              sub: p.previousOneRepMaxKg.map { "was \(Int($0.rounded())) \(p.unit)" },
                               identifier: "feed.card.b4LiftPR")
         case .pyramidHealth(let p):
             MilestoneCardView(accent: SnappetColor.kilter, icon: "triangle.fill", kind: "Pyramid health",
