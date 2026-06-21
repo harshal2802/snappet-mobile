@@ -42,6 +42,10 @@ struct FeedView: View {
     @State private var layout: FeedLayout = .list
     @State private var presentedStory: StoryPeriod?
     @State private var memo = FeedMemo()
+    /// R10 (F1 polish): flips true once the first compose/appear completes. Until then a populated
+    /// store can briefly show the empty state while SwiftData hydrates — so we show a redacted
+    /// skeleton instead of "no recap yet" on cold launch. Flipped in `.task` (post first layout).
+    @State private var hasComposedOnce = false
 
     // MARK: F3 (R2) — single active inline-clip player (scroll-center tracking)
     /// Each visible card's frame in the `feedScroll` coordinate space, keyed by the card's STABLE id
@@ -102,7 +106,15 @@ struct FeedView: View {
                     storiesRail
                     lensBar
                     if visible.isEmpty {
-                        emptyState
+                        // R10 (F1 polish): on cold launch, before the first compose/appear completes,
+                        // show a redacted skeleton instead of the empty state — a populated store can
+                        // momentarily read empty while SwiftData hydrates, and we don't want a flash of
+                        // "no recap yet". Once `hasComposedOnce` flips (and it's still empty) → real empty.
+                        if hasComposedOnce {
+                            emptyState
+                        } else {
+                            feedSkeleton
+                        }
                     } else {
                         switch layout {
                         case .list: listBody(visible: visible, filtered: filtered)
@@ -165,7 +177,17 @@ struct FeedView: View {
             }
             .fullScreenCover(item: $presentedStory) { RecapStoryView(period: $0) }
         }
-        .task { if seen.isEmpty { seen = FeedFreshness.topIDs(all) } }
+        .task {
+            if seen.isEmpty { seen = FeedFreshness.topIDs(all) }
+            // R10 (F1 polish): first compose/appear is done — drop the skeleton. After this an empty
+            // corpus is a genuine empty state, not a cold-launch hydration flash.
+            hasComposedOnce = true
+        }
+        // R10 (F1 polish): optimistic insert — when a NEW card arrives at the head (a just-logged
+        // session), slide it in rather than snap. Scoped to the head id only (not the whole id set) so
+        // pagination appends and lens switches don't trigger a full-list reshuffle animation, and we
+        // don't allocate an id array every body eval. Never yanks scroll (the overlay pill owns that).
+        .animation(.snappy, value: visible.first?.id)
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { seen = FeedFreshness.topIDs(composed()) }
             if phase == .active { withAnimation { newCount = FeedFreshness.newCount(current: composed(), seen: seen) } }
@@ -287,6 +309,28 @@ struct FeedView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 32).padding(.top, 60)
         .accessibilityIdentifier("feed.empty")
+    }
+
+    /// R10 (F1 polish): cold-launch placeholder — a couple of redacted card-shaped rows shown until
+    /// the first compose completes (`hasComposedOnce`). A populated store paints these for a frame
+    /// instead of flashing the empty state; a genuinely empty store crosses straight to `emptyState`.
+    private var feedSkeleton: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<2, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Recent session").font(.headline)
+                    Text("Loading your recap cards").font(.subheadline)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).frame(height: 120)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(SnappetSpacing.lg)
+                .background(SnappetColor.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+        }
+        .padding(.horizontal, SnappetSpacing.lg)
+        .padding(.top, 8)
+        .redacted(reason: .placeholder)
+        .accessibilityIdentifier("feed.skeleton")
     }
 
     // MARK: Behavior

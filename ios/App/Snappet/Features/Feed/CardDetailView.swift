@@ -159,6 +159,9 @@ struct CardDetailView: View {
             }
         }
         .snappetCard()
+        // R10: stable handle for the HR zone section (the F4/HR-card deep-flow smoke asserts this on a
+        // seeded store; on a fresh store the card never renders so the smoke degrades to the empty state).
+        .accessibilityIdentifier("feed.detail.hrZones")
     }
 
     // MARK: Workout
