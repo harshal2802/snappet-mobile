@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HighlightEngine
 
 // MARK: - Recap Feed — root scroll (F1)
 //
@@ -40,8 +41,26 @@ struct FeedView: View {
     @State private var presentedStory: StoryPeriod?
     @State private var memo = FeedMemo()
 
+    // MARK: F3 (R2) — single active inline-clip player (scroll-center tracking)
+    /// Each visible card's frame in the `feedScroll` coordinate space, keyed by the card's STABLE id
+    /// (not its ForEach position) — index↔card mapping is unstable across lens/filter/pagination.
+    @State private var cardFrames: [String: CGRect] = [:]
+    /// The scroll viewport rect in the same coordinate space (updated as the list lays out).
+    @State private var viewportRect: CGRect = .zero
+    /// The id of the card that holds the one active player, per the R1 coordinator (index↔id mapped
+    /// at the view edge; the coordinator stays index-based & pure).
+    @State private var activeCardId: String?
+    /// Lazily-ranked top clip for the active a1 card only (one engine run per active-card change).
+    @State private var activeRankedClip: FeedClipRef?
+    /// The card id `activeRankedClip` was ranked for — guards against stale ranks after reorder.
+    @State private var activeRankedCardId: String?
+
     private let pageSize = 12
     private let topAnchor = "feed.top"
+    private let feedScrollSpace = "feedScroll"
+    /// Hysteresis band (points): a challenger must beat the current card's distance-to-center by more
+    /// than this to take over, so a card straddling center doesn't thrash on scroll jitter.
+    private let activeHysteresis: CGFloat = 60
 
     // MARK: Derivation (derive-on-read; no card persistence)
 
@@ -84,9 +103,14 @@ struct FeedView: View {
                         emptyState
                     } else {
                         LazyVStack(spacing: 12) {
-                            ForEach(visible) { card in
+                            ForEach(visible, id: \.id) { card in
                                 VStack(spacing: 8) {
-                                    NavigationLink(value: card) { FeedCardView(card: card) }
+                                    NavigationLink(value: card) {
+                                        // F3 (R2): pass single-active centrality + the ranked clip (active a1 card only).
+                                        FeedCardView(card: card,
+                                                     isCentral: card.id == activeCardId,
+                                                     rankedClip: rankedClip(for: card))
+                                    }
                                         .buttonStyle(.plain)
                                         .accessibilityElement(children: .combine)
                                         .simultaneousGesture(TapGesture(count: 2).onEnded {
@@ -99,13 +123,38 @@ struct FeedView: View {
                                         FeedReactionStrip(contentId: card.contentId).padding(.horizontal, 6)
                                     }
                                 }
+                                // F3 (R2): capture each card's frame in the feedScroll space → R1 coordinator.
+                                // Keyed by the card's stable id so it survives index reuse across reorders.
+                                .onGeometryChange(for: CGRect.self) { proxy in
+                                    proxy.frame(in: .named(feedScrollSpace))
+                                } action: { frame in
+                                    cardFrames[card.id] = frame
+                                    recomputeActive(visible: visible)
+                                }
+                                .onDisappear { cardFrames[card.id] = nil }
                                 .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
                             }
                         }
                         .padding(.horizontal, SnappetSpacing.lg)
                         .padding(.bottom, 24)
+                        // F3 (R2): a lens/filter/pagination change can recycle ids — drop any stale
+                        // active card and prune frames to the current id set so nothing carries over.
+                        .onChange(of: visible.map(\.id)) { _, ids in
+                            activeCardId = nil
+                            let live = Set(ids)
+                            cardFrames = cardFrames.filter { live.contains($0.key) }
+                            recomputeActive(visible: visible)
+                        }
                     }
                 }
+                // F3 (R2): capture the scroll viewport rect in the feedScroll space (drives centrality).
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(feedScrollSpace))
+                } action: { rect in
+                    viewportRect = rect
+                    recomputeActive(visible: visible)
+                }
+                .coordinateSpace(name: feedScrollSpace)
                 .overlay(alignment: .top) {
                     if let text = FeedFreshness.pillText(newCount: newCount) {
                         Button {
@@ -215,6 +264,61 @@ struct FeedView: View {
     }
 
     // MARK: Behavior
+
+    // MARK: F3 (R2) — single active inline-clip player
+
+    /// Recompute which card holds the one active player via the R1 pure coordinator (nearest viewport
+    /// center + hysteresis). When the active card changes, re-rank the top clip for it lazily (one
+    /// engine run per hand-off) — fulfilling the decisions.md seam (rank consumed by the ACTIVE card only).
+    private func recomputeActive(visible: [FeedCard]) {
+        guard viewportRect != .zero else { return }
+        // Build a dense [CGRect] in the SAME order as `visible` (each card → its id-keyed frame, or a
+        // far-offscreen rect so a not-yet-measured card never wins). The R1 coordinator stays index-
+        // based & pure; we map id↔index only here at the view edge.
+        let frames: [CGRect] = visible.map { cardFrames[$0.id] ?? CGRect(x: 0, y: -1_000_000, width: 0, height: 0) }
+        let currentIndex = activeCardId.flatMap { id in visible.firstIndex { $0.id == id } }
+        let nextIndex = FeedActivePlayerCoordinator.activeIndex(
+            cardFrames: frames, viewport: viewportRect, current: currentIndex, hysteresis: activeHysteresis)
+        let next = nextIndex.flatMap { idx in visible.indices.contains(idx) ? visible[idx].id : nil }
+        if next != activeCardId {
+            activeCardId = next
+            refreshActiveRank(visible: visible)
+        }
+    }
+
+    /// Rank the top clip segment for the active a1 card (HighlightEngine via R1's pure wiring). Runs
+    /// only on a hand-off; non-a1 / non-clipReady active cards clear the rank (they keep the still hero).
+    private func refreshActiveRank(visible: [FeedCard]) {
+        guard let id = activeCardId, let card = visible.first(where: { $0.id == id }) else {
+            activeRankedClip = nil; activeRankedCardId = nil; return
+        }
+        guard case .climbSession = card.payload, let sid = sessionId(for: card) else {
+            activeRankedClip = nil; activeRankedCardId = nil; return
+        }
+        let clips = allMedia.filter { $0.sessionID == sid }.map {
+            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
+                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+        }
+        guard let session = kilterSessions.first(where: { $0.id == sid }) else {
+            activeRankedClip = nil; activeRankedCardId = nil; return
+        }
+        let duration = (session.endedAt ?? .now).timeIntervalSince(session.startedAt)
+        let result = FeedClipEligibility.evaluate(hrSeries: session.hrSeries, clips: clips, duration: duration)
+        activeRankedClip = result.clipReady ? result.topClip : nil
+        activeRankedCardId = card.id
+    }
+
+    /// The ranked clip to hand the active a1 card — only when the rank was computed for THIS card id
+    /// (guards against a stale rank surviving a reorder). Non-active cards get `nil` (cheap payload hint).
+    private func rankedClip(for card: FeedCard) -> FeedClipRef? {
+        guard activeCardId == card.id, activeRankedCardId == card.id else { return nil }
+        return activeRankedClip
+    }
+
+    /// The Kilter session id behind a climb-session card (the source ref the rank reads HR/media from).
+    private func sessionId(for card: FeedCard) -> UUID? {
+        card.sourceRefs.first { $0.objectKind == "kilterSession" }.flatMap { UUID(uuidString: $0.ref) }
+    }
 
     private func loadMoreIfNeeded(card: FeedCard, in filtered: [FeedCard]) {
         guard let idx = filtered.firstIndex(where: { $0.id == card.id }) else { return }

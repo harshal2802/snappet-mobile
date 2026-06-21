@@ -8,11 +8,18 @@ import SwiftUI
 
 struct FeedCardView: View {
     let card: FeedCard
+    /// F3 (R2): true when this card is the scroll-center active player (single-active rule). The a1
+    /// climb card uses it to animate its hero; every other card ignores it. Defaults false so all the
+    /// existing call sites (CardDetailView, WallView, Story scenes) keep the still hero unchanged.
+    var isCentral: Bool = false
+    /// F3 (R2): the HighlightEngine-ranked top clip segment, computed lazily by `FeedView` ONLY for
+    /// the active a1 card. `nil` → fall back to the cheap payload clip hint / still / generated hero.
+    var rankedClip: FeedClipRef? = nil
 
     var body: some View {
         switch card.payload {
         case .climbSession(let p):
-            ClimbSessionCardView(payload: p)
+            ClimbSessionCardView(payload: p, isCentral: isCentral, rankedClip: rankedClip)
         case .workoutSession(let p):
             WorkoutSessionCardView(payload: p)
         case .gradePR(let p):
@@ -220,22 +227,50 @@ private struct HRTrendCardView: View {
 
 private struct ClimbSessionCardView: View {
     let payload: ClimbSessionPayload
+    /// F3 (R2): whether this is the scroll-center active card (single-active rule). Set by `FeedView`.
+    var isCentral: Bool = false
+    /// F3 (R2): the ranked top clip segment (active card only) — preferred over the cheap payload hint.
+    var rankedClip: FeedClipRef? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The clip ref to consider for the hero: the ranked segment (active card) if present, else the
+    /// cheap payload hint (earliest video by offset) carried on every a1 card.
+    private var clipRef: FeedClipRef? {
+        if let rankedClip { return rankedClip }
+        if let assetId = payload.clipAssetId {
+            return FeedClipRef(assetId: assetId,
+                               offsetSec: payload.clipOffsetSec ?? 0,
+                               durationSec: payload.clipDurationSec ?? 0)
+        }
+        return nil
+    }
+
+    /// The resolved hero tier (F3 fallback chain: clip → photo → generated). A clip animates ONLY
+    /// when this card is central AND motion is allowed (not reduceMotion, not Low Power Mode); the
+    /// `clipReady` seam is `hasHR` + a non-empty clip ref. No still photo tier wired here (the a1 card
+    /// always has a generated `DisciplineHero` underneath), so non-clip resolves to `.generated`.
+    private var heroTier: HeroTier {
+        let clip = (payload.hasHR && clipRef != nil) ? clipRef : nil
+        return FeedHeroResolver.resolveHero(
+            clip: clip, photoAssetId: nil, isCentral: isCentral,
+            reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             FeedCardHeader(title: payload.title ?? "Climb session",
                            trailing: durationText(payload.durationSec),
                            badge: payload.isPRSession ? .init(icon: "trophy.fill", text: "PR", tint: SnappetColor.brand) : nil)
-            DisciplineHero(value: payload.hardestSendGrade ?? "—", caption: "Hardest send",
-                           sublabel: "Kilter · \(payload.angle)°", accent: SnappetColor.kilter)
+            hero
             StatRibbon(items: [
                 .init(text: "\(payload.totalClimbs) climbs"),
                 .init(text: "\(payload.sends) sends", tint: SnappetColor.kilter, emphasized: true),
                 .init(text: "\(payload.totalAttempts) tries")
             ])
             if payload.clipCount > 0 {
-                // F3: inline media affordance — tap the card → CardDetail → Media browser (live
-                // auto-play AVPlayer is the device-only tail).
+                // F3: inline media affordance — tap the card → CardDetail → Media browser. The hero
+                // above auto-plays the top clip when this is the scroll-center card (device-burn).
                 Label("\(payload.clipCount) clip\(payload.clipCount == 1 ? "" : "s") · tap to view",
                       systemImage: "play.rectangle.fill")
                     .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.kilter)
@@ -244,6 +279,23 @@ private struct ClimbSessionCardView: View {
         }
         .feedCard(accent: SnappetColor.kilter)
         .accessibilityIdentifier("feed.card.a1Session")
+    }
+
+    /// The hero slot: the inline clip player overlaid on the generated `DisciplineHero` when central +
+    /// clip-ready + motion allowed, else the still generated hero (F1's no-media hero). The generated
+    /// hero stays underneath so a dropped/failed asset degrades to it with no dead surface.
+    @ViewBuilder private var hero: some View {
+        let generated = DisciplineHero(value: payload.hardestSendGrade ?? "—", caption: "Hardest send",
+                                       sublabel: "Kilter · \(payload.angle)°", accent: SnappetColor.kilter)
+        switch heroTier {
+        case .clip(let ref):
+            generated.overlay {
+                FeedClipPlayer(clip: ref)
+                    .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md, style: .continuous))
+            }
+        case .photo, .generated:
+            generated
+        }
     }
 }
 
