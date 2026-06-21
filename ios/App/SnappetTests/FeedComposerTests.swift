@@ -75,6 +75,13 @@ final class FeedComposerTests: XCTestCase {
 
         XCTAssertEqual(cards.map(\.salience), [1.0, 0.9, 0.8, 1.0, 0.45, 0.45, 0.45], "golden salience tiers")
 
+        // contentId is the cross-platform reaction/dedup key: concrete-source cards carry a UUIDv5
+        // identity; genuine aggregates are empty. (Guards H1/H2 — reactions silently no-op without it.)
+        for c in cards where c.kind == .b1GradePR { XCTAssertFalse(c.contentId.isEmpty, "a PR card must carry a contentId") }
+        XCTAssertEqual(cards.first { $0.kind == .a1Session }?.contentId,
+                       FeedContentIdentity.kilterSession(id: u1.uuidString), "session card contentId")
+        XCTAssertEqual(cards.first { $0.kind == .b5Streak }?.contentId, "", "aggregate cards carry no contentId")
+
         // exactly two PRs (the establishing V6 + the V7), no pyramid/volume (only 6 sends, one week)
         XCTAssertEqual(cards.filter { $0.kind == .b1GradePR }.count, 2)
         XCTAssertFalse(cards.contains { $0.kind == .c1Pyramid || $0.kind == .d1WeeklyVolume })

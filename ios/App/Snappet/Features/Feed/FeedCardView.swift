@@ -73,7 +73,7 @@ private struct EffortCardView: View {
             GeometryReader { geo in
                 HStack(spacing: 1.5) {
                     ForEach(payload.zones, id: \.zone) { slice in
-                        Rectangle().fill((HeartRateZone(rawValue: slice.zone) ?? .none).color)
+                        Rectangle().fill(SnappetColor.performance(forZone: HeartRateZone(rawValue: slice.zone) ?? .none))
                             .frame(width: max(0, geo.size.width * (slice.seconds / total)))
                     }
                 }
@@ -83,7 +83,7 @@ private struct EffortCardView: View {
             HStack(spacing: 10) {
                 ForEach(payload.zones.filter { $0.seconds > 0 }, id: \.zone) { slice in
                     HStack(spacing: 4) {
-                        Circle().fill((HeartRateZone(rawValue: slice.zone) ?? .none).color).frame(width: 7, height: 7)
+                        Circle().fill(SnappetColor.performance(forZone: HeartRateZone(rawValue: slice.zone) ?? .none)).frame(width: 7, height: 7)
                         Text("Z\(slice.zone)").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.textSecondary)
                     }
                 }

@@ -205,8 +205,10 @@ struct FeedCard: Codable, Sendable, Equatable, Identifiable {
     var shareHint: ShareTemplate?
 }
 
-// Navigation identity is the (unique) card id — lets a card be a navigationDestination value
-// without making every payload Hashable.
+// Identity is the (unique) card id (kind + primary ref + anchor) — lets a card be a
+// navigationDestination value without making every payload Hashable. `==` and `hash` are both
+// keyed on `id` so the Hashable/Equatable contract holds (equal ⇒ equal hash).
 extension FeedCard: Hashable {
+    static func == (lhs: FeedCard, rhs: FeedCard) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

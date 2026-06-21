@@ -251,7 +251,10 @@ enum FeedComposer {
         for s in sends where (priorMax == nil || s.difficulty > priorMax!) {
             let payload = GradePRPayload(newGrade: s.gradeLabel, newDifficulty: s.difficulty,
                                          previousGrade: priorGrade, climbName: s.climbName)
-            out.append(FeedCard(id: "b1-\(prKey(s))", kind: .b1GradePR, category: .milestone,
+            let cid = FeedContentIdentity.kilterSend(climbUUID: s.climbUUID, difficulty: s.difficulty,
+                                                     statusRaw: s.status.rawValue, date: s.loggedAt,
+                                                     sessionId: s.sessionId?.uuidString)
+            out.append(FeedCard(id: "b1-\(prKey(s))", contentId: cid, kind: .b1GradePR, category: .milestone,
                                 salience: Salience.gradePR, anchorDate: s.loggedAt,
                                 sourceRefs: [ActivityRef(objectKind: "climb", ref: s.climbUUID)],
                                 payload: .gradePR(payload), shareHint: .gradePRTicket))
@@ -272,7 +275,8 @@ enum FeedComposer {
         var priorRecord = 0
         for (s, count, end) in counted {
             if priorRecord > 0 && count > priorRecord {                 // beats a PRIOR record only
-                out.append(FeedCard(id: "b3-\(s.id.uuidString)", kind: .b3MostClimbs, category: .milestone,
+                out.append(FeedCard(id: "b3-\(s.id.uuidString)", contentId: FeedContentIdentity.kilterSession(id: s.id.uuidString),
+                                    kind: .b3MostClimbs, category: .milestone,
                                     salience: Salience.mostClimbs, anchorDate: end,
                                     sourceRefs: [ActivityRef(objectKind: "kilterSession", ref: s.id.uuidString)],
                                     payload: .mostClimbs(MostClimbsPayload(count: count, previousRecord: priorRecord)),

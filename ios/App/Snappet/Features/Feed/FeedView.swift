@@ -61,6 +61,7 @@ struct FeedView: View {
                                 VStack(spacing: 8) {
                                     NavigationLink(value: card) { FeedCardView(card: card) }
                                         .buttonStyle(.plain)
+                                        .accessibilityElement(children: .combine)
                                         .simultaneousGesture(TapGesture(count: 2).onEnded {
                                             FeedInteractionWriter.toggleReaction(contentId: card.contentId, in: context)
                                         })

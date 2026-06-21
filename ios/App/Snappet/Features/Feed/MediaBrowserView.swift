@@ -84,7 +84,7 @@ struct MediaBrowserView: View {
             if let peak = hr.peakBpm {
                 Text("\(peak)").font(.caption2.weight(.heavy)).foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background((HeartRateZone(rawValue: hr.zoneRaw ?? 0) ?? .none).color, in: Capsule())
+                    .background(SnappetColor.performance(forZone: HeartRateZone(rawValue: hr.zoneRaw ?? 0) ?? .none), in: Capsule())
                     .padding(6)
             }
         }

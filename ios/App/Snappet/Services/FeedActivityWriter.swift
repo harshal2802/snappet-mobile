@@ -17,7 +17,10 @@ enum FeedActivityWriter {
         let fid = "\(verb):\(contentId)"
         var probe = FetchDescriptor<FeedActivity>(predicate: #Predicate { $0.foreignId == fid })
         probe.fetchLimit = 1
-        if let found = try? context.fetch(probe), !found.isEmpty { return false }   // idempotent
+        // Treat a fetch FAILURE as "row might exist" (skip), so a transient store error on the
+        // recovery path can never produce a duplicate foreignId — the idempotency guarantee holds.
+        let existing = (try? context.fetch(probe))
+        if existing == nil || !(existing ?? []).isEmpty { return false }
         context.insert(FeedActivity(
             contentId: contentId, verb: verb, objectRef: objectRef, objectKind: objectKind,
             targetRef: targetRef, published: published, foreignId: fid,

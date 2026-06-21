@@ -34,8 +34,14 @@ struct ShareComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @State private var aspect: ShareAspect = .r916
-    @State private var template: ShareTemplateKind = .card
+    @State private var template: ShareTemplateKind
     @State private var shareImage: ShareImage?
+
+    init(card: FeedCard) {
+        self.card = card
+        // Pre-select the card's suggested template (F4 / F6 hand-off): sessionReceipt → Receipt, else Send Card.
+        _template = State(initialValue: card.shareHint == .sessionReceipt ? .receipt : .card)
+    }
 
     var body: some View {
         NavigationStack {

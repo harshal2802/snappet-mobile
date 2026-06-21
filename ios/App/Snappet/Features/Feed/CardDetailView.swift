@@ -100,7 +100,7 @@ struct CardDetailView: View {
             GeometryReader { geo in
                 HStack(spacing: 1.5) {
                     ForEach(hr.orderedZoneSeconds, id: \.zone) { entry in
-                        Rectangle().fill(entry.zone.color)
+                        Rectangle().fill(SnappetColor.performance(forZone: entry.zone))
                             .frame(width: max(0, geo.size.width * (entry.seconds / max(1, hr.totalSeconds))))
                     }
                 }
@@ -109,7 +109,7 @@ struct CardDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
             ForEach(hr.orderedZoneSeconds.filter { $0.seconds > 0 }, id: \.zone) { entry in
                 HStack(spacing: 8) {
-                    Circle().fill(entry.zone.color).frame(width: 8, height: 8)
+                    Circle().fill(SnappetColor.performance(forZone: entry.zone)).frame(width: 8, height: 8)
                     Text(entry.zone.pillLabel).font(.caption).foregroundStyle(SnappetColor.ink)
                     Spacer()
                     Text(minSec(entry.seconds)).font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
