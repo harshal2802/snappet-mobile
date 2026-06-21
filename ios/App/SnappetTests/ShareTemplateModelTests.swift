@@ -28,6 +28,54 @@ final class ShareTemplateModelTests: XCTestCase {
                         sourceRefs: [], payload: .streak(payload), shareHint: .sendCard)
     }
 
+    /// A workout session card (multi-line) → supports Receipt.
+    private func workoutSessionCard() -> FeedCard {
+        let payload = WorkoutSessionPayload(
+            title: "Push day", disciplineRaw: "strength", totalVolume: 4200, distanceMeters: nil,
+            exerciseCount: 5, setCount: 18, durationSec: 3000)
+        return FeedCard(id: "w1", contentId: "cid-w", kind: .a2Session, category: .strength,
+                        salience: 0.5, anchorDate: Date(timeIntervalSince1970: 0),
+                        sourceRefs: [], payload: .workoutSession(payload), shareHint: .sessionReceipt)
+    }
+
+    /// A grade-PR card → supports the Grade PR Ticket.
+    private func gradePRCard() -> FeedCard {
+        let payload = GradePRPayload(newGrade: "V7", newDifficulty: 21, previousGrade: "V6", climbName: "Crimp Time")
+        return FeedCard(id: "g1", contentId: "cid-g", kind: .b1GradePR, category: .milestone,
+                        salience: 0.9, anchorDate: Date(timeIntervalSince1970: 0),
+                        sourceRefs: [], payload: .gradePR(payload), shareHint: .gradePRTicket)
+    }
+
+    /// An on-the-board card → supports the Board Polaroid (and NOT Receipt anymore — R3 nit fix).
+    private func onTheBoardCard() -> FeedCard {
+        let payload = OnTheBoardPayload(litCount: 9, hardestGrade: "V5", gradeSpread: "V3–V5")
+        return FeedCard(id: "o1", contentId: "cid-o", kind: .a3OnTheBoard, category: .climbing,
+                        salience: 0.4, anchorDate: Date(timeIntervalSince1970: 0),
+                        sourceRefs: [], payload: .onTheBoard(payload), shareHint: .boardPolaroid)
+    }
+
+    /// A pyramid card → supports the Pyramid Card (and NOT Receipt anymore — R3 nit fix).
+    private func pyramidCard() -> FeedCard {
+        let rows = [
+            PyramidRow(grade: "V6", difficulty: 18, sends: 2, flashes: 0, projects: 1, attemptsOnly: 1),
+            PyramidRow(grade: "V5", difficulty: 15, sends: 6, flashes: 2, projects: 0, attemptsOnly: 0),
+            PyramidRow(grade: "V4", difficulty: 12, sends: 10, flashes: 4, projects: 0, attemptsOnly: 0),
+        ]
+        let payload = PyramidPayload(rows: rows, totalSends: 18, maxGrade: "V6")
+        return FeedCard(id: "p1", contentId: "cid-p", kind: .c1Pyramid, category: .recap,
+                        salience: 0.5, anchorDate: Date(timeIntervalSince1970: 0),
+                        sourceRefs: [], payload: .pyramid(payload), shareHint: .pyramidCard)
+    }
+
+    /// A pyramid-health card → supports the Pyramid Card (per-grade rows).
+    private func pyramidHealthCard() -> FeedCard {
+        let rows = [PyramidRow(grade: "V5", difficulty: 15, sends: 6, flashes: 2, projects: 0, attemptsOnly: 0)]
+        let payload = PyramidHealthPayload(rows: rows, consolidateGrade: "V5", note: "Top-heavy — shore up V5.")
+        return FeedCard(id: "ph1", contentId: "cid-ph", kind: .c2PyramidHealth, category: .recap,
+                        salience: 0.5, anchorDate: Date(timeIntervalSince1970: 0),
+                        sourceRefs: [], payload: .pyramidHealth(payload), shareHint: .pyramidCard)
+    }
+
     // MARK: Aspect → exact pixel dimensions
 
     func testExportPixelSizeIsExactPerAspect() {
@@ -61,9 +109,10 @@ final class ShareTemplateModelTests: XCTestCase {
 
     // MARK: eligibleTemplates gating
 
-    func testRichPayloadOffersCardAndReceipt() {
+    func testClimbSessionOffersCardReceiptAndBoardPolaroid() {
+        // A climb session is a multi-line receipt AND a board moment (Board Polaroid).
         let kinds = ShareTemplateModel.eligibleTemplates(for: climbSessionCard())
-        XCTAssertEqual(kinds, [.card, .receipt])
+        XCTAssertEqual(kinds, [.card, .receipt, .boardPolaroid])
         XCTAssertTrue(kinds.contains(.card), "Send Card is always present")
     }
 
@@ -72,16 +121,76 @@ final class ShareTemplateModelTests: XCTestCase {
         XCTAssertEqual(kinds, [.card])
         XCTAssertTrue(kinds.contains(.card), "Send Card is always present")
         XCTAssertFalse(kinds.contains(.receipt), "no session data → no Receipt thumbnail")
+        XCTAssertFalse(kinds.contains(.gradePRTicket))
+        XCTAssertFalse(kinds.contains(.boardPolaroid))
+        XCTAssertFalse(kinds.contains(.pyramidCard))
     }
 
     func testEveryCardKindOffersAtLeastSendCardAndNoUnimplementedTemplate() {
         // No card may surface a template kind that isn't in the implemented set (no dead thumbnails).
         let implemented = Set(ShareTemplateKind.allCases)
-        for card in [climbSessionCard(), streakCard()] {
+        let cards = [climbSessionCard(), workoutSessionCard(), streakCard(),
+                     gradePRCard(), onTheBoardCard(), pyramidCard(), pyramidHealthCard()]
+        for card in cards {
             let kinds = ShareTemplateModel.eligibleTemplates(for: card)
             XCTAssertTrue(kinds.contains(.card), "Send Card always offered")
             XCTAssertTrue(Set(kinds).isSubset(of: implemented), "only implemented kinds offered")
         }
+    }
+
+    // MARK: R5 — new template gating (each offered only for its payload)
+
+    func testGradePRTicketOnlyForGradePRPayload() {
+        XCTAssertTrue(ShareTemplateModel.eligibleTemplates(for: gradePRCard()).contains(.gradePRTicket))
+        // Not offered for any other payload.
+        for card in [climbSessionCard(), workoutSessionCard(), streakCard(), onTheBoardCard(),
+                     pyramidCard(), pyramidHealthCard()] {
+            XCTAssertFalse(ShareTemplateModel.eligibleTemplates(for: card).contains(.gradePRTicket),
+                           "Grade PR Ticket should only be offered for .gradePR")
+        }
+    }
+
+    func testBoardPolaroidOnlyForClimbSessionAndOnTheBoard() {
+        XCTAssertTrue(ShareTemplateModel.eligibleTemplates(for: climbSessionCard()).contains(.boardPolaroid))
+        XCTAssertTrue(ShareTemplateModel.eligibleTemplates(for: onTheBoardCard()).contains(.boardPolaroid))
+        // Not offered for non-board payloads.
+        for card in [workoutSessionCard(), streakCard(), gradePRCard(), pyramidCard(), pyramidHealthCard()] {
+            XCTAssertFalse(ShareTemplateModel.eligibleTemplates(for: card).contains(.boardPolaroid),
+                           "Board Polaroid should only be offered for climb/board payloads")
+        }
+    }
+
+    func testPyramidCardOnlyForPyramidPayloads() {
+        XCTAssertTrue(ShareTemplateModel.eligibleTemplates(for: pyramidCard()).contains(.pyramidCard))
+        XCTAssertTrue(ShareTemplateModel.eligibleTemplates(for: pyramidHealthCard()).contains(.pyramidCard))
+        // Not offered for non-pyramid payloads.
+        for card in [climbSessionCard(), workoutSessionCard(), streakCard(), gradePRCard(), onTheBoardCard()] {
+            XCTAssertFalse(ShareTemplateModel.eligibleTemplates(for: card).contains(.pyramidCard),
+                           "Pyramid Card should only be offered for .pyramid / .pyramidHealth")
+        }
+    }
+
+    func testOnTheBoardGetsPolaroidNotReceipt() {
+        // R3 nit fix: on-the-board now gets the bespoke Board Polaroid, NOT the generic Receipt.
+        let kinds = ShareTemplateModel.eligibleTemplates(for: onTheBoardCard())
+        XCTAssertFalse(kinds.contains(.receipt), "on-the-board no longer offers a Receipt (R3 nit fix)")
+        XCTAssertTrue(kinds.contains(.boardPolaroid))
+        XCTAssertEqual(kinds, [.card, .boardPolaroid])
+    }
+
+    func testPyramidGetsPyramidCardNotReceipt() {
+        // R3 nit fix: pyramid now gets the bespoke Pyramid Card, NOT the generic Receipt.
+        let kinds = ShareTemplateModel.eligibleTemplates(for: pyramidCard())
+        XCTAssertFalse(kinds.contains(.receipt), "pyramid no longer offers a Receipt (R3 nit fix)")
+        XCTAssertTrue(kinds.contains(.pyramidCard))
+        XCTAssertEqual(kinds, [.card, .pyramidCard])
+    }
+
+    func testWorkoutSessionStillOffersReceipt() {
+        // Receipt narrowed to the genuinely multi-line sessions — workout sessions keep it.
+        let kinds = ShareTemplateModel.eligibleTemplates(for: workoutSessionCard())
+        XCTAssertTrue(kinds.contains(.receipt), "workout sessions remain Receipt-eligible")
+        XCTAssertEqual(kinds, [.card, .receipt])
     }
 
     // MARK: defaultVisibleMetrics
@@ -93,6 +202,22 @@ final class ShareTemplateModelTests: XCTestCase {
 
     func testSingleStatCardHidesSecondaryByDefault() {
         let metrics = ShareTemplateModel.defaultVisibleMetrics(for: streakCard())
+        XCTAssertEqual(metrics, [.headline, .subtitle, .primary, .branding])
+        XCTAssertFalse(metrics.contains(.secondary))
+    }
+
+    func testBoardAndPyramidCardsDefaultToStackedSecondary() {
+        // The bespoke multi-line cards keep the full stacked metric set by default (R5).
+        let full: Set<ShareMetric> = [.headline, .subtitle, .primary, .secondary, .branding]
+        XCTAssertEqual(ShareTemplateModel.defaultVisibleMetrics(for: onTheBoardCard()), full)
+        XCTAssertEqual(ShareTemplateModel.defaultVisibleMetrics(for: pyramidCard()), full)
+        XCTAssertEqual(ShareTemplateModel.defaultVisibleMetrics(for: pyramidHealthCard()), full)
+        XCTAssertEqual(ShareTemplateModel.defaultVisibleMetrics(for: workoutSessionCard()), full)
+    }
+
+    func testGradePRCardHidesSecondaryByDefault() {
+        // A grade PR is a single-hero milestone — secondary is off by default.
+        let metrics = ShareTemplateModel.defaultVisibleMetrics(for: gradePRCard())
         XCTAssertEqual(metrics, [.headline, .subtitle, .primary, .branding])
         XCTAssertFalse(metrics.contains(.secondary))
     }
@@ -114,6 +239,24 @@ final class ShareTemplateModelTests: XCTestCase {
                        "export:photos")
     }
 
+    func testChannelIsCaseInsensitive() {
+        // Activity-type matching is lowercased, so case must not matter.
+        XCTAssertEqual(ShareTemplateModel.shareChannel(forActivityType: "COM.BURBN.INSTAGRAM.ShareExtension"),
+                       "export:instagram")
+        XCTAssertEqual(ShareTemplateModel.shareChannel(forActivityType: "COM.APPLE.UIKIT.ACTIVITY.MESSAGE"),
+                       "export:imessage")
+    }
+
+    func testChannelCameraAndPhotoVariantsMapToPhotos() {
+        // The Photos branch also catches generic "camera" / "photo" activity strings.
+        XCTAssertEqual(ShareTemplateModel.shareChannel(forActivityType: "com.apple.UIKit.activity.SaveToCameraRoll"),
+                       "export:photos")
+        XCTAssertEqual(ShareTemplateModel.shareChannel(forActivityType: "com.example.CameraExtension"),
+                       "export:photos")
+        XCTAssertEqual(ShareTemplateModel.shareChannel(forActivityType: "com.example.PhotoSaver"),
+                       "export:photos")
+    }
+
     func testChannelUnknownActivityFallsBackToShare() {
         XCTAssertEqual(ShareTemplateModel.shareChannel(forActivityType: "com.example.someotherapp"),
                        "export:share")
@@ -129,5 +272,17 @@ final class ShareTemplateModelTests: XCTestCase {
     func testShareTemplateKindMapsToPureShareTemplate() {
         XCTAssertEqual(ShareTemplateKind.card.shareTemplate, .sendCard)
         XCTAssertEqual(ShareTemplateKind.receipt.shareTemplate, .sessionReceipt)
+        XCTAssertEqual(ShareTemplateKind.gradePRTicket.shareTemplate, .gradePRTicket)
+        XCTAssertEqual(ShareTemplateKind.boardPolaroid.shareTemplate, .boardPolaroid)
+        XCTAssertEqual(ShareTemplateKind.pyramidCard.shareTemplate, .pyramidCard)
+    }
+
+    func testShareHintPreSelectsItsTemplateWhenEligible() {
+        // The card's `shareHint` maps to an eligible kind so the composer can pre-select it (R5 seam).
+        for card in [gradePRCard(), onTheBoardCard(), pyramidCard()] {
+            let eligible = ShareTemplateModel.eligibleTemplates(for: card)
+            let hinted = eligible.first { $0.shareTemplate == card.shareHint }
+            XCTAssertNotNil(hinted, "the shareHint template should be eligible for \(card.id)")
+        }
     }
 }

@@ -53,13 +53,15 @@ enum ShareAspect: String, CaseIterable, Identifiable, Sendable {
 /// The share templates that actually have a rendering view today. Kept to the CURRENTLY-IMPLEMENTED
 /// set so the composer's exhaustive switch never offers a dead thumbnail.
 ///
-/// R5: add `gradePRTicket` / `boardPolaroid` / `pyramidCard` here AND their `ShareCardView` (or
-/// dedicated template) rendering + extend `eligibleTemplates(for:)` gating below. Do NOT add a case
-/// before its view exists — it would surface a thumbnail with nothing behind it.
+/// R5 completes the named library: `card`/`receipt` (R3) + the three bespoke templates
+/// `gradePRTicket` / `boardPolaroid` / `pyramidCard`, each backed by a view in `ShareTemplates.swift`
+/// and gated by payload in `eligibleTemplates(for:)` below (no thumbnail without a view behind it).
 enum ShareTemplateKind: String, CaseIterable, Identifiable, Sendable {
-    case card    = "Send Card"
-    case receipt = "Receipt"
-    // R5: case gradePRTicket = "Grade PR", boardPolaroid = "Polaroid", pyramidCard = "Pyramid"
+    case card         = "Send Card"
+    case receipt      = "Receipt"
+    case gradePRTicket = "Grade PR Ticket"
+    case boardPolaroid = "Board Polaroid"
+    case pyramidCard   = "Pyramid Card"
 
     var id: String { rawValue }
 
@@ -67,8 +69,11 @@ enum ShareTemplateKind: String, CaseIterable, Identifiable, Sendable {
     /// pre-select from a card's `shareHint` and lets R5 map new hints to new kinds.
     var shareTemplate: ShareTemplate {
         switch self {
-        case .card:    return .sendCard
-        case .receipt: return .sessionReceipt
+        case .card:          return .sendCard
+        case .receipt:       return .sessionReceipt
+        case .gradePRTicket: return .gradePRTicket
+        case .boardPolaroid: return .boardPolaroid
+        case .pyramidCard:   return .pyramidCard
         }
     }
 }
@@ -85,6 +90,17 @@ enum ShareMetric: String, CaseIterable, Identifiable, Sendable {
     case branding   // the "snappet · recap" footer
 
     var id: String { rawValue }
+
+    /// A short, human-readable label for the metric toggle chip (R5). Pure String — no SwiftUI.
+    var chipLabel: String {
+        switch self {
+        case .headline:  return "Hero"
+        case .subtitle:  return "Kicker"
+        case .primary:   return "Stat"
+        case .secondary: return "More"
+        case .branding:  return "Logo"
+        }
+    }
 }
 
 // MARK: - The pure model
@@ -95,26 +111,58 @@ enum ShareTemplateModel {
 
     /// The templates a card's `payload` actually supports.
     ///
-    /// Every card supports **Send Card** (a single hero stat always renders). A card adds
-    /// **Receipt** only when it carries multi-line / session data worth a stacked receipt
-    /// (climb / workout sessions, the on-the-board board summary, and the pyramid).
+    /// Every card supports **Send Card** (a single hero stat always renders). The rest are
+    /// payload-gated so the picker never shows a dead thumbnail:
+    ///   • **Receipt** — only genuinely multi-line session data (`.climbSession` / `.workoutSession`).
+    ///   • **Grade PR Ticket** — only a `.gradePR` payload (the new-grade hero + "up from X").
+    ///   • **Board Polaroid** — board moments: `.climbSession` and `.onTheBoard`.
+    ///   • **Pyramid Card** — the grade pyramid: `.pyramid` and `.pyramidHealth` (carries per-grade rows).
+    ///
+    /// R3-nit fix: `.onTheBoard` / `.pyramid` were dropped from Receipt — they now get their bespoke
+    /// Board Polaroid / Pyramid Card instead of a generic stacked receipt.
     static func eligibleTemplates(for card: FeedCard) -> [ShareTemplateKind] {
         var kinds: [ShareTemplateKind] = [.card]   // Send Card: universal.
 
-        if supportsReceipt(card.payload) {
-            kinds.append(.receipt)
-        }
+        if supportsReceipt(card.payload) { kinds.append(.receipt) }
+        if supportsGradePRTicket(card.payload) { kinds.append(.gradePRTicket) }
+        if supportsBoardPolaroid(card.payload) { kinds.append(.boardPolaroid) }
+        if supportsPyramidCard(card.payload) { kinds.append(.pyramidCard) }
 
-        // R5: append .gradePRTicket when case .gradePR; .boardPolaroid when a board/clip session;
-        //     .pyramidCard when case .pyramid / .pyramidHealth (needs >= 1 pyramid row).
         return kinds
     }
 
-    /// A Receipt needs multi-line session-shaped data (several stat lines stacked). Single-number
-    /// milestone / trend / insight cards stay Send-Card-only — no empty receipt rows.
+    /// A Receipt needs genuinely multi-line session-shaped data (several stat lines stacked): only
+    /// the climb / workout sessions. Single-number milestone / trend / insight cards — and the board
+    /// summary / pyramid, which get their own bespoke templates — stay off the Receipt.
     private static func supportsReceipt(_ payload: FeedCardPayload) -> Bool {
         switch payload {
-        case .climbSession, .workoutSession, .onTheBoard, .pyramid:
+        case .climbSession, .workoutSession:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The Grade PR Ticket is the new-grade hero + "up from X" — only a `.gradePR` payload carries it.
+    private static func supportsGradePRTicket(_ payload: FeedCardPayload) -> Bool {
+        if case .gradePR = payload { return true }
+        return false
+    }
+
+    /// The Board Polaroid is a framed climb/board moment — climb sessions and the on-the-board summary.
+    private static func supportsBoardPolaroid(_ payload: FeedCardPayload) -> Bool {
+        switch payload {
+        case .climbSession, .onTheBoard:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// The Pyramid Card draws per-grade pyramid rows — the all-time pyramid and the pyramid-health nudge.
+    private static func supportsPyramidCard(_ payload: FeedCardPayload) -> Bool {
+        switch payload {
+        case .pyramid, .pyramidHealth:
             return true
         default:
             return false
@@ -123,14 +171,26 @@ enum ShareTemplateModel {
 
     // MARK: Default visible metrics
 
-    /// The metric set shown by default for a card. Session/receipt-style cards default to the full
-    /// stacked set; single-stat cards hide the `secondary` lines. R5 lets the user toggle from here.
+    /// The metric set shown by default for a card. Multi-line cards (sessions, the board summary, the
+    /// pyramid — anything with stacked supporting stats) default to the full set including `secondary`;
+    /// single-stat cards hide the `secondary` lines. R5 lets the user toggle live from this seed.
     static func defaultVisibleMetrics(for card: FeedCard) -> Set<ShareMetric> {
         let base: Set<ShareMetric> = [.headline, .subtitle, .primary, .branding]
-        if supportsReceipt(card.payload) {
+        if hasStackedSecondary(card.payload) {
             return base.union([.secondary])
         }
         return base
+    }
+
+    /// Whether a payload carries stacked secondary stat lines worth showing by default — the
+    /// multi-line sessions plus the bespoke board / pyramid cards (R5).
+    private static func hasStackedSecondary(_ payload: FeedCardPayload) -> Bool {
+        switch payload {
+        case .climbSession, .workoutSession, .onTheBoard, .pyramid, .pyramidHealth:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: ShareEvent channel derivation

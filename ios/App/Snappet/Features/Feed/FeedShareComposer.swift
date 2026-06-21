@@ -32,6 +32,9 @@ struct ShareComposerView: View {
     @Environment(AppModel.self) private var app
     @State private var aspect: ShareAspect = .r9x16
     @State private var template: ShareTemplateKind
+    /// The metrics shown on the card — drives BOTH the live preview and the exported image (WYSIWYG).
+    /// Seeded from the card's defaults (R5); the toggle chips edit it; a template switch re-seeds it.
+    @State private var visibleMetrics: Set<ShareMetric>
     @State private var shareImage: ShareImage?
     @State private var animateState: AnimateState = .idle
     @State private var animateTask: Task<Void, Never>?
@@ -48,13 +51,16 @@ struct ShareComposerView: View {
         // first eligible template (always at least .card).
         let hinted = eligible.first { $0.shareTemplate == card.shareHint }
         _template = State(initialValue: hinted ?? eligible.first ?? .card)
+        _visibleMetrics = State(initialValue: ShareTemplateModel.defaultVisibleMetrics(for: card))
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 14) {
                 ScrollView {
-                    ShareCardView(card: card, template: template, aspect: aspect)
+                    // The live preview IS the exported view (WYSIWYG): same `ShareCardView`, same
+                    // `visibleMetrics`, only the frame scale differs.
+                    ShareCardView(card: card, template: template, aspect: aspect, visibleMetrics: visibleMetrics)
                         .frame(width: aspect.previewSize.width * 0.62, height: aspect.previewSize.height * 0.62)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .shadow(radius: 14, y: 6)
@@ -65,7 +71,14 @@ struct ShareComposerView: View {
                     Picker("Template", selection: $template) {
                         ForEach(templates) { Text($0.rawValue).tag($0) }
                     }.pickerStyle(.segmented).padding(.horizontal)
+                    // A new template re-seeds the metric set to that card's sensible defaults so the
+                    // visible set always stays valid for what the template can render.
+                    .onChange(of: template) { _, _ in
+                        visibleMetrics = ShareTemplateModel.defaultVisibleMetrics(for: card)
+                    }
                 }
+
+                metricChips
 
                 Picker("Aspect", selection: $aspect) {
                     ForEach(ShareAspect.allCases) { Text($0.rawValue).tag($0) }
@@ -98,10 +111,45 @@ struct ShareComposerView: View {
     }
 
     @MainActor private func share() {
-        // Render at the EXACT export pixel size (no Apple re-crop) via the thin renderer edge.
-        let view = ShareCardView(card: card, template: template, aspect: aspect)
+        // Render at the EXACT export pixel size (no Apple re-crop) via the thin renderer edge. Pass the
+        // same `visibleMetrics` the preview used so the export is WYSIWYG.
+        let view = ShareCardView(card: card, template: template, aspect: aspect, visibleMetrics: visibleMetrics)
         guard let image = ShareImageRenderer.render(view, aspect: aspect) else { return }
         shareImage = ShareImage(image: image)
+    }
+
+    // MARK: - Metric toggle chips (R5)
+
+    /// A wrapping row of show/hide chips for every `ShareMetric`. Toggling a chip edits `visibleMetrics`,
+    /// which drives the preview AND the export (WYSIWYG). `headline` is always kept (a card with no hero
+    /// is empty), so its chip is shown selected but never removes the last anchor.
+    @ViewBuilder private var metricChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ShareMetric.allCases) { metric in
+                    let on = visibleMetrics.contains(metric)
+                    Button {
+                        toggle(metric)
+                    } label: {
+                        Text(metric.chipLabel)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 11).padding(.vertical, 6)
+                            .foregroundStyle(on ? Color.white : SnappetColor.textSecondary)
+                            .background(on ? SnappetColor.kilter : SnappetColor.surfaceMuted, in: Capsule())
+                    }
+                    .accessibilityIdentifier("share.metric.\(metric.rawValue)")
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// Toggle a metric on/off, keeping `headline` as a non-removable anchor (a card needs its hero).
+    private func toggle(_ metric: ShareMetric) {
+        if metric == .headline { visibleMetrics.insert(.headline); return }
+        if visibleMetrics.contains(metric) { visibleMetrics.remove(metric) }
+        else { visibleMetrics.insert(metric) }
     }
 
     // MARK: - Animate (HR-overlay clip · R4)
@@ -187,84 +235,52 @@ struct ShareCardView: View {
     let card: FeedCard
     var template: ShareTemplateKind = .card
     var aspect: ShareAspect = .r9x16
+    /// The metrics to show — drives BOTH the live preview and the exported image (WYSIWYG). Defaults to
+    /// the card's full default set so direct (test/preview) callers render everything.
+    var visibleMetrics: Set<ShareMetric> = Set(ShareMetric.allCases)
 
     var body: some View {
-        let s = spec
-        ZStack {
-            RadialGradient(colors: [s.accent.opacity(0.85), Color.black], center: .top, startRadius: 0, endRadius: aspect.previewSize.height)
-            VStack(alignment: .leading, spacing: 10) {
-                Text(s.kick.uppercased()).font(.caption.weight(.heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.85))
-                Text(s.hero).font(.system(size: 64, weight: .heavy, design: .rounded)).foregroundStyle(.white)
-                    .minimumScaleFactor(0.4).lineLimit(2)
-                if template == .receipt {
-                    ForEach(s.lines, id: \.self) { Text($0).font(.subheadline).foregroundStyle(.white.opacity(0.92)) }
-                } else if let first = s.lines.first {
-                    Text(first).font(.title3).foregroundStyle(.white.opacity(0.92))
-                }
-                Spacer(minLength: 0)
-                Text("snappet · recap").font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.65))
-            }
-            .padding(22)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Route the three bespoke R5 templates to their dedicated views (each renders only the visible
+        // metrics over PulsePro/.snappetCard()/SnappetColor); Send Card + Receipt render inline below.
+        switch template {
+        case .gradePRTicket: GradePRTicketTemplate(card: card, visibleMetrics: visibleMetrics)
+        case .boardPolaroid: BoardPolaroidTemplate(card: card, visibleMetrics: visibleMetrics)
+        case .pyramidCard:   PyramidCardTemplate(card: card, visibleMetrics: visibleMetrics)
+        case .card, .receipt: heroCard
         }
     }
 
-    private var spec: (kick: String, hero: String, lines: [String], accent: Color) {
-        switch card.payload {
-        case .climbSession(let p):
-            return ("Climb session", p.hardestSendGrade ?? "—",
-                    ["\(p.totalClimbs) climbs", "\(p.sends) sends", "\(p.totalAttempts) tries"], SnappetColor.kilter)
-        case .workoutSession(let p):
-            return ("Workout", p.distanceMeters != nil ? "Run" : "\(p.setCount) sets",
-                    ["\(p.exerciseCount) exercises", "\(p.setCount) sets"], SnappetColor.workout)
-        case .gradePR(let p):
-            return ("New hardest ever", p.newGrade, [p.previousGrade.map { "up from \($0)" } ?? "your first peak"], SnappetColor.brand)
-        case .pyramid(let p):
-            return ("Grade pyramid", p.maxGrade ?? "—", ["\(p.totalSends) sends"], SnappetColor.kilter)
-        case .streak(let p):
-            return ("Streak", "\(p.days)", ["days in a row"], SnappetColor.kilter)
-        case .liftPR(let p):
-            return ("Lift PR", "\(Int(p.oneRepMaxKg.rounded())) kg", [p.exerciseName, "est. 1RM"], SnappetColor.brand)
-        case .effort(let p):
-            return ("Session effort", "\(p.maxBpm)", ["peak BPM", "\(p.trimp) TRIMP"], SnappetColor.performance(forZone: .max))
-        case .hardestEffort(let p):
-            return ("Hardest-effort send", p.grade, ["\(p.peakBpm) bpm"], SnappetColor.performance(forZone: .max))
-        case .mostClimbs(let p):
-            return ("Biggest session", "\(p.count)", ["climbs in one go"], SnappetColor.kilter)
-        case .weeklyVolume(let p):
-            return ("Weekly volume", "\(p.buckets.last?.sends ?? 0)", ["sends this week"], SnappetColor.kilter)
-        case .hrTrend(let p):
-            return ("HR trend", "\(p.points.last?.avgBpm ?? 0)", ["recent avg BPM"], SnappetColor.workout)
-        case .onTheBoard(let p):
-            return ("On the board", "\(p.litCount)", ["climbs lit"], SnappetColor.kilter)
-        case .pyramidHealth(let p):
-            return ("Pyramid health", p.consolidateGrade, ["consolidate this row"], SnappetColor.kilter)
-        case .progression(let p):
-            return ("Progression", "\(p.fromGrade) → \(p.toGrade)", ["over \(p.points.count) months"], SnappetColor.kilter)
-        case .climbingLevel(let p):
-            return ("Climbing level", p.level, [p.maxGrade.map { "max \($0)" } ?? "working grade"], SnappetColor.kilter)
-        case .angleDist(let p):
-            return ("Angles", "\(p.topAngle)°", ["\(p.slices.count) angles"], SnappetColor.kilter)
-        case .periodVsLast(let p):
-            return ("This period", "\(p.current)", ["sends vs \(p.previous) last"], SnappetColor.kilter)
-        case .consistency(let p):
-            return ("Consistency", "\(p.activeDays)", ["active days"], SnappetColor.kilter)
-        case .onThisDay(let p):
-            return ("On this day", p.grade ?? "—", [p.summary], SnappetColor.kilter)
-        case .firstAtGrade(let p):
-            return ("First at grade", p.grade, [p.climbName], SnappetColor.kilter)
-        case .projectSent(let p):
-            return ("Project sent", p.grade, ["after \(p.sessions) sessions", p.climbName], SnappetColor.brand)
-        case .disciplineSplit(let p):
-            return ("Discipline split", p.topLabel, p.slices.prefix(3).map { "\($0.label): \($0.count)" }, SnappetColor.workout)
-        case .trendArrows(let p):
-            return ("90-day trends", p.arrows.first.map { "\($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" } ?? "—", p.arrows.map(\.label), SnappetColor.kilter)
-        case .effortEfficiency(let p):
-            return ("Fitness gain", "\(p.newAvgBpm)", ["avg BPM at \(p.gradeBand)", "was \(p.oldAvgBpm)"], SnappetColor.kilter)
-        case .hrvRecovery(let p):
-            return ("Recovery", "\(p.rmssd)", ["RMSSD", p.note], SnappetColor.kilter)
-        case .restNudge(let p):
-            return ("Go gentler", "\(p.hardDays)", ["hard days", p.note], SnappetColor.kilter)
+    /// The Send Card / Receipt hero layout (R3) — a discipline gradient with the hero numeral and either
+    /// one supporting line (Send Card) or the full stacked set (Receipt), each metric individually gated.
+    private var heroCard: some View {
+        let s = ShareCardSpec(card: card)
+        return ZStack {
+            RadialGradient(colors: [s.accent.opacity(0.85), Color.black], center: .top, startRadius: 0, endRadius: aspect.previewSize.height)
+            VStack(alignment: .leading, spacing: 10) {
+                if visibleMetrics.contains(.subtitle) {
+                    Text(s.kick.uppercased()).font(.caption.weight(.heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.85))
+                }
+                if visibleMetrics.contains(.headline) {
+                    Text(s.hero).font(.system(size: 64, weight: .heavy, design: .rounded)).foregroundStyle(.white)
+                        .minimumScaleFactor(0.4).lineLimit(2)
+                }
+                if template == .receipt {
+                    if visibleMetrics.contains(.primary), let first = s.primaryLine {
+                        Text(first).font(.subheadline).foregroundStyle(.white.opacity(0.92))
+                    }
+                    if visibleMetrics.contains(.secondary) {
+                        ForEach(s.secondaryLines, id: \.self) { Text($0).font(.subheadline).foregroundStyle(.white.opacity(0.92)) }
+                    }
+                } else if visibleMetrics.contains(.primary), let first = s.primaryLine {
+                    Text(first).font(.title3).foregroundStyle(.white.opacity(0.92))
+                }
+                Spacer(minLength: 0)
+                if visibleMetrics.contains(.branding) {
+                    Text("snappet · recap").font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.65))
+                }
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }
