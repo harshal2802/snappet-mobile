@@ -99,7 +99,7 @@ const nodes = [
   { id: "feed-clip-player", label: "FeedClipPlayer", type: "service", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Services/FeedClipPlayer.swift", desc: "F3 inline auto-clip hero (R2, device): a thin chromeless SwiftUI player that plays ONE ranked clip segment MUTED + LOOPED over a CMTimeRange via AVQueuePlayer + AVPlayerLooper (resolves the PHAsset → AVPlayerItem through PHImageManager). Drives the a1 climb card's hero when it's the scroll-center active card (single-active rule: FeedView feeds card frames+viewport into the pure FeedActivePlayerCoordinator → one isCentral card → one player; FeedHeroResolver picks clip vs still honoring reduceMotion/Low Power). The ranked top segment comes lazily from FeedClipEligibility/HighlightEngine for the active card only. Degrades to a still poster / generated DisciplineHero when the asset can't resolve (limited Photos access / simulator). Real muted-loop autoplay + hand-off is device-burn.", tags: ["feed","clip","avfoundation","autoplay","device-pending"] },
   { id: "feed-wall", label: "WallView (send wall)", type: "screen", group: "feed", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/Feed/WallView.swift", desc: "Recap send wall (F7): a 3-column grid over the same composed corpus (sessions + PRs + On-the-Board), identity-at-a-glance; presented from the FeedView grid toggle; tiles tap through to the same CardDetailView. Reuses FeedQuery → FeedComposer (no new math, no card persistence).", tags: ["feed","wall","grid"] },
+    file: "ios/App/Snappet/Features/Feed/WallView.swift", desc: "Recap send wall (F7): a 2–3 column Pinterest-masonry layout over the SAME composed + lens-filtered + keyset-windowed corpus FeedView renders — identity-at-a-glance. Consumes the passed-in [FeedCard] (no second derivation — does NOT call FeedQuery/FeedComposer itself), laid out by the pure FeedWallLayout distributor. Rendered INLINE in FeedView (grid toggle flips list↔wall over the same `visible`, not a modal sheet); in grid mode the R2 single-active inline player stays inert (static tiles). Each tile is a compact Pulse-Pro card (DisciplineHero + trimmed StatRibbon + .snappetCard() + discipline edge-accent) that NavigationLinks to the same CardDetailView. No new card kinds, no card persistence.", tags: ["feed","wall","grid","masonry","pulse-pro","inline"] },
   { id: "home", label: "HomeDashboardView", type: "screen", group: "shell", category: "core", platform: "ios+android",
     file: "ios/App/Snappet/Features/Home/HomeDashboardView.swift", desc: "The actionable daily home (#71): an 'Up next' section of tappable Today cards (habits left, resume workout, focus minutes, budget pace, plan a climb session) derived by the pure TodayDigest from the same SwiftData rows the modules query — each renders only when its data exists and deep-links into its module via the shell SuiteRouter. Activity-feed rows deep-link into the module that logged them; usage stats + the 7-day Swift Charts view remain. A fresh install shows a flagship CTA hero that lands in Workout Reels onboarding instead of an empty dashboard.", tags: ["dashboard","charts","today-cards","deep-link"], shot: "../screenshots/01-home.png" },
   { id: "today-digest", label: "TodayDigest", type: "core", group: "shell", category: "core", platform: "ios",
@@ -741,6 +741,12 @@ const links = [
   { source: "feed", target: "feed-activity", type: "uses", label: "writers append" },
   { source: "feed", target: "card-detail", type: "navigate" },
   { source: "card-detail", target: "feed-activity", type: "uses", label: "reaction/save" },
+
+  // ---- F7: the send wall (inline masonry layout over the same corpus) ----
+  { source: "feed", target: "feed-wall", type: "navigate", label: "grid toggle (inline)" },
+  { source: "feed-wall", target: "card-detail", type: "navigate", label: "tap tile" },
+  { source: "feed-composer", target: "feed-wall", type: "feeds", label: "same composed corpus" },
+  { source: "feed-wall", target: "feed-walllayout", type: "uses", label: "pure masonry" },
 
   // ---- F3 inline auto-clip hero (R2): single active muted-loop player ----
   { source: "feed", target: "feed-clip-player", type: "uses", label: "scroll-center hero" },

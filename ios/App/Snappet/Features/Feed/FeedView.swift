@@ -37,7 +37,9 @@ struct FeedView: View {
     @State private var visibleCount = 12
     @State private var seen: Set<String> = []
     @State private var newCount = 0
-    @State private var showingWallPlaceholder = false
+    /// Which layout the feed body renders — the list scroll (F1) or the inline masonry wall (F7).
+    /// An inline flip (not a modal sheet): the grid toggle flips this over the SAME visible corpus.
+    @State private var layout: FeedLayout = .list
     @State private var presentedStory: StoryPeriod?
     @State private var memo = FeedMemo()
 
@@ -102,49 +104,15 @@ struct FeedView: View {
                     if visible.isEmpty {
                         emptyState
                     } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(visible, id: \.id) { card in
-                                VStack(spacing: 8) {
-                                    NavigationLink(value: card) {
-                                        // F3 (R2): pass single-active centrality + the ranked clip (active a1 card only).
-                                        FeedCardView(card: card,
-                                                     isCentral: card.id == activeCardId,
-                                                     rankedClip: rankedClip(for: card),
-                                                     media: cardMedia(for: card))
-                                    }
-                                        .buttonStyle(.plain)
-                                        .accessibilityElement(children: .combine)
-                                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                                            FeedInteractionWriter.toggleReaction(contentId: card.contentId, in: context)
-                                        })
-                                        .onLongPressGesture(minimumDuration: 0.45) {
-                                            FeedInteractionWriter.toggleSave(contentId: card.contentId, in: context)
-                                        }
-                                    if !card.contentId.isEmpty {
-                                        FeedReactionStrip(contentId: card.contentId).padding(.horizontal, 6)
-                                    }
-                                }
-                                // F3 (R2): capture each card's frame in the feedScroll space → R1 coordinator.
-                                // Keyed by the card's stable id so it survives index reuse across reorders.
-                                .onGeometryChange(for: CGRect.self) { proxy in
-                                    proxy.frame(in: .named(feedScrollSpace))
-                                } action: { frame in
-                                    cardFrames[card.id] = frame
-                                    recomputeActive(visible: visible)
-                                }
-                                .onDisappear { cardFrames[card.id] = nil }
-                                .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
-                            }
-                        }
-                        .padding(.horizontal, SnappetSpacing.lg)
-                        .padding(.bottom, 24)
-                        // F3 (R2): a lens/filter/pagination change can recycle ids — drop any stale
-                        // active card and prune frames to the current id set so nothing carries over.
-                        .onChange(of: visible.map(\.id)) { _, ids in
-                            activeCardId = nil
-                            let live = Set(ids)
-                            cardFrames = cardFrames.filter { live.contains($0.key) }
-                            recomputeActive(visible: visible)
+                        switch layout {
+                        case .list: listBody(visible: visible, filtered: filtered)
+                        // F7: the masonry wall renders INLINE over the SAME visible corpus (one
+                        // composition, two layouts). No active inline player runs in grid mode
+                        // (grid tiles are static) — `layout` flip clears `activeCardId` below.
+                        // Pagination is the shared keyset: each tile's `.onAppear` advances
+                        // `visibleCount` via the same `loadMoreIfNeeded` the list uses.
+                        case .grid: WallView(cards: visible,
+                                             loadMore: { loadMoreIfNeeded(card: $0, in: filtered) })
                         }
                     }
                 }
@@ -182,13 +150,19 @@ struct FeedView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingWallPlaceholder = true } label: {
-                        Image(systemName: "square.grid.2x2")
+                    // F7: inline layout flip (no modal sheet) — list ↔ masonry wall over the same corpus.
+                    // Flipping to grid clears the single-active inline player (R2 is inert in grid mode).
+                    Button {
+                        withAnimation(.snappy) {
+                            layout.toggle()
+                            if layout == .grid { activeCardId = nil }
+                        }
+                    } label: {
+                        Image(systemName: layout == .list ? "square.grid.2x2" : "list.bullet")
                     }
                     .accessibilityIdentifier("feed.gridToggle")
                 }
             }
-            .sheet(isPresented: $showingWallPlaceholder) { WallView() }
             .fullScreenCover(item: $presentedStory) { RecapStoryView(period: $0) }
         }
         .task { if seen.isEmpty { seen = FeedFreshness.topIDs(all) } }
@@ -199,6 +173,57 @@ struct FeedView: View {
     }
 
     // MARK: Pieces
+
+    /// The F1 list layout: the LazyVStack of full Pulse-Pro cards with the R2 single-active inline
+    /// player wiring (frame capture, centrality recompute) + R6 carousel media + reaction strips.
+    /// Only rendered in `.list` mode — in `.grid` mode the inline `WallView` takes over and no player
+    /// frames are captured, so the active player stays inert.
+    @ViewBuilder private func listBody(visible: [FeedCard], filtered: [FeedCard]) -> some View {
+        LazyVStack(spacing: 12) {
+            ForEach(visible, id: \.id) { card in
+                VStack(spacing: 8) {
+                    NavigationLink(value: card) {
+                        // F3 (R2): pass single-active centrality + the ranked clip (active a1 card only).
+                        FeedCardView(card: card,
+                                     isCentral: card.id == activeCardId,
+                                     rankedClip: rankedClip(for: card),
+                                     media: cardMedia(for: card))
+                    }
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            FeedInteractionWriter.toggleReaction(contentId: card.contentId, in: context)
+                        })
+                        .onLongPressGesture(minimumDuration: 0.45) {
+                            FeedInteractionWriter.toggleSave(contentId: card.contentId, in: context)
+                        }
+                    if !card.contentId.isEmpty {
+                        FeedReactionStrip(contentId: card.contentId).padding(.horizontal, 6)
+                    }
+                }
+                // F3 (R2): capture each card's frame in the feedScroll space → R1 coordinator.
+                // Keyed by the card's stable id so it survives index reuse across reorders.
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(feedScrollSpace))
+                } action: { frame in
+                    cardFrames[card.id] = frame
+                    recomputeActive(visible: visible)
+                }
+                .onDisappear { cardFrames[card.id] = nil }
+                .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
+            }
+        }
+        .padding(.horizontal, SnappetSpacing.lg)
+        .padding(.bottom, 24)
+        // F3 (R2): a lens/filter/pagination change can recycle ids — drop any stale
+        // active card and prune frames to the current id set so nothing carries over.
+        .onChange(of: visible.map(\.id)) { _, ids in
+            activeCardId = nil
+            let live = Set(ids)
+            cardFrames = cardFrames.filter { live.contains($0.key) }
+            recomputeActive(visible: visible)
+        }
+    }
 
     @ViewBuilder private var storiesRail: some View {
         // Degrade-by-absence: a period cover shows only when its recap is eligible (week/month have a
@@ -380,6 +405,15 @@ struct FeedView: View {
         withAnimation { newCount = 0 }
         seen = FeedFreshness.topIDs(current)
     }
+}
+
+// MARK: - Feed layout (F7)
+
+/// The two layouts the feed body flips between (inline, not a sheet): the F1 list scroll and the
+/// F7 masonry wall — both over the SAME composed + lens-filtered + windowed corpus.
+enum FeedLayout {
+    case list, grid
+    mutating func toggle() { self = self == .list ? .grid : .list }
 }
 
 // MARK: - Lens chips

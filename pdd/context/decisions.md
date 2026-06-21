@@ -94,11 +94,24 @@ efficiency/HRV, consistency map, on-this-day) is a noted follow-on — additive 
 
 ## [2026-06-20] Recap Feed F7 — the send wall
 
-**Decision**: `Features/Feed/WallView.swift` — a 3-column grid over the SAME composed corpus (filtered to
-a1/a2/b1/b4/a3 tiles), presented from the FeedView grid-toggle (replacing the F1 placeholder), tiles tap
-through to the same `CardDetailView`. Extracted `FeedQuery.cards(...)` (in FeedInputs) as the shared
-@Model-arrays → composed-cards bridge used by both FeedView + WallView (no duplicated pipeline, no card
-persistence). View-only over the already-tested composer.
+**Decision**: `Features/Feed/WallView.swift` — an **inline masonry layout flip** (no modal sheet) the
+FeedView grid-toggle (`layout: .list ↔ .grid`) swaps in over FeedView's **passed-in composed +
+lens-filtered + keyset-windowed corpus** (`let cards: [FeedCard]` — NO `FeedQuery` re-derive, no second
+pipeline: one composition, two layouts — the keystone). Tiles are compact **Pulse-Pro** cards
+(`DisciplineHero` + trimmed `StatRibbon` + discipline edge-accent) that tap through to the same
+`CardDetailView` via FeedView's `.navigationDestination`. The wall renders **DIRECTLY into FeedView's
+outer `ScrollView`** — it must NOT nest its own `ScrollView`/`GeometryReader`-as-container (a
+scroll-in-a-scroll collapses to ~zero height); available width is read as a pure **measurement**
+(width-only `.onGeometryChange`), fed to the pure `FeedWallLayout.columnCount(forWidth:)` →
+`distribute(_:columns:)` (balanced shortest-column masonry, 2–3 columns), then rendered as an
+`HStack(alignment:.top)` of per-column `LazyVStack`s. **Pagination is the SHARED keyset**: each tile's
+`.onAppear` calls FeedView's `loadMore` closure (`loadMoreIfNeeded(card:in: filtered)`) — grid scrolling
+advances `visibleCount` exactly like the list, windowing over the full `filtered`. The wall filters the
+passed-in corpus to the **visual-tile subset** (`tileKinds = a1/a2/b1/b4/a3 + b2FirstAtGrade/g1ProjectSent`
+— the kinds `WallTile` renders meaningfully) so it's a real visual send-wall, not bland "—/Recap" text
+tiles; pagination still advances over the full window (loadMore fires from the rendered tiles). The active
+inline-clip player (R2) stays inert in grid mode (no card-frame capture in the wall; the `layout` flip
+clears `activeCardId`). View-only over the already-tested composer; no card persistence.
 
 ## [2026-06-20] Recap Feed F5 — more milestone cards (Lift PR + On-the-Board)
 
