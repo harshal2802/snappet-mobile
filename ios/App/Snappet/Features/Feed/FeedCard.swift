@@ -26,6 +26,14 @@ enum FeedCardKind: String, Codable, Sendable, CaseIterable {
     // F5 — more milestones
     case a3OnTheBoard     // a board session with lit climbs but no full log
     case b4LiftPR         // a gym est-1RM / weight personal record
+    // F6 — cross-session insight menu (pure, all-time / log-scan derived)
+    case c2PyramidHealth  // top-heavy pyramid nudge
+    case c3Progression    // max-grade progression over months
+    case c4ClimbingLevel  // current working grade
+    case c5AngleDist      // sends across board angles
+    case d2PeriodVsLast   // this period vs last (sends)
+    case consistencyMap   // active-days consistency
+    case onThisDay        // a send on this date in a prior year (memory)
 }
 
 /// Wayfinding category — drives the Lens bar (All · Climbing · Strength · Effort · Milestones).
@@ -171,6 +179,50 @@ struct LiftPRPayload: Codable, Sendable, Equatable {
     var previousOneRepMaxKg: Double?
 }
 
+// MARK: F6 — insight payloads
+
+struct PyramidHealthPayload: Codable, Sendable, Equatable {
+    var rows: [PyramidRow]
+    var consolidateGrade: String   // the row to shore up
+    var note: String
+}
+
+struct ProgressionPayload: Codable, Sendable, Equatable {
+    struct Point: Codable, Sendable, Equatable { var label: String; var grade: String }
+    var points: [Point]            // oldest → newest
+    var fromGrade: String
+    var toGrade: String
+}
+
+struct ClimbingLevelPayload: Codable, Sendable, Equatable {
+    var level: String
+    var maxGrade: String?
+}
+
+struct AngleDistPayload: Codable, Sendable, Equatable {
+    struct Slice: Codable, Sendable, Equatable { var angle: Int; var sends: Int }
+    var slices: [Slice]            // descending by sends
+    var topAngle: Int
+}
+
+struct PeriodVsLastPayload: Codable, Sendable, Equatable {
+    var currentLabel: String
+    var current: Int
+    var previous: Int
+}
+
+struct ConsistencyPayload: Codable, Sendable, Equatable {
+    var activeDays: Int            // distinct active days in the window
+    var windowDays: Int
+    var perDay: [Int]              // oldest → newest day counts (for a heatmap later)
+}
+
+struct OnThisDayPayload: Codable, Sendable, Equatable {
+    var yearsAgo: Int
+    var grade: String?
+    var summary: String
+}
+
 /// The discipline-typed payload union. Codable is synthesized (all cases Codable).
 enum FeedCardPayload: Codable, Sendable, Equatable {
     case climbSession(ClimbSessionPayload)
@@ -185,6 +237,13 @@ enum FeedCardPayload: Codable, Sendable, Equatable {
     case hrTrend(HRTrendPayload)
     case onTheBoard(OnTheBoardPayload)
     case liftPR(LiftPRPayload)
+    case pyramidHealth(PyramidHealthPayload)
+    case progression(ProgressionPayload)
+    case climbingLevel(ClimbingLevelPayload)
+    case angleDist(AngleDistPayload)
+    case periodVsLast(PeriodVsLastPayload)
+    case consistency(ConsistencyPayload)
+    case onThisDay(OnThisDayPayload)
 }
 
 /// The ephemeral feed unit. Pure value; derive-on-read; never persisted.

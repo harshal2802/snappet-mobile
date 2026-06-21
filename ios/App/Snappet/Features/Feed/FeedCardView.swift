@@ -53,6 +53,34 @@ struct FeedCardView: View {
                               hero: "\(Int(p.oneRepMaxKg.rounded())) kg", caption: "est. 1RM · \(p.exerciseName)",
                               sub: p.previousOneRepMaxKg.map { "was \(Int($0.rounded())) kg" },
                               identifier: "feed.card.b4LiftPR")
+        case .pyramidHealth(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "triangle.fill", kind: "Pyramid health",
+                              hero: p.consolidateGrade, caption: "consolidate", sub: p.note, identifier: "feed.card.c2PyramidHealth")
+        case .progression(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "chart.line.uptrend.xyaxis", kind: "Progression",
+                              hero: "\(p.fromGrade) → \(p.toGrade)", caption: "over \(p.points.count) months", sub: nil,
+                              identifier: "feed.card.c3Progression")
+        case .climbingLevel(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "figure.climbing", kind: "Climbing level",
+                              hero: p.level, caption: "working grade", sub: p.maxGrade.map { "max \($0)" },
+                              identifier: "feed.card.c4ClimbingLevel")
+        case .angleDist(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "ruler", kind: "Angles",
+                              hero: "\(p.topAngle)°", caption: "most sends", sub: "\(p.slices.count) angles climbed",
+                              identifier: "feed.card.c5AngleDist")
+        case .periodVsLast(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "calendar", kind: "This month vs last",
+                              hero: "\(p.current)", caption: "sends · \(p.currentLabel)",
+                              sub: p.current >= p.previous ? "▲ \(p.current - p.previous) vs last" : "▼ \(p.previous - p.current) vs last",
+                              identifier: "feed.card.d2PeriodVsLast")
+        case .consistency(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "square.grid.3x3.fill", kind: "Consistency",
+                              hero: "\(p.activeDays)", caption: "active days", sub: "in the last \(p.windowDays)",
+                              identifier: "feed.card.consistencyMap")
+        case .onThisDay(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "clock.arrow.circlepath", kind: "On this day",
+                              hero: p.grade ?? "—", caption: "\(p.yearsAgo) yr ago", sub: p.summary,
+                              identifier: "feed.card.onThisDay")
         }
     }
 }

@@ -124,6 +124,8 @@ enum FeedComposer {
         static let climbSession = 0.45
         static let onTheBoard = 0.42     // F5: board session without a full log
         static let workoutSession = 0.40
+        static let insightMemory = 0.65  // F6: on-this-day (memory)
+        static let consistency = 0.55     // F6: consistency map
     }
 
     /// Recency half-life. Decay is exp(-age/halfLife); 7 days keeps recent PRs ahead of
@@ -162,6 +164,8 @@ enum FeedComposer {
         // F5 — more milestones.
         cards += liftPRCards(workouts: workoutSessions)
         cards += onTheBoardCards(litEvents: kilterLitEvents, loggedSessionIds: Set(kilterLogs.compactMap { $0.sessionId }))
+        // F6 — cross-session insight menu (registry entries; pure, all-time/log-scan derived).
+        cards += FeedInsightCards.cards(allTime: allTimeStats, logs: kilterLogs, now: now, calendar: calendar, anchor: lastAct ?? now)
 
         let windowed = cards.filter { inWindow($0.anchorDate, window: window, now: now, calendar: calendar) }
         return ordered(windowed, now: now)

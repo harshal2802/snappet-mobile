@@ -199,12 +199,14 @@ final class FeedComposerTests: XCTestCase {
             kilterSessions: [old, new], kilterLogs: logs,
             allTimeStats: allTime(logs, [summary(uOld, old.startedAt, old.endedAt), summary(uNew, new.startedAt, new.endedAt)], now: now),
             now: now, calendar: cal)
-        // the fresh session card leads; the stale 60-day PR has decayed below it
-        XCTAssertEqual(cards.first?.kind, .a1Session)
-        if case .climbSession(let p)? = cards.first?.payload { XCTAssertFalse(p.isPRSession) }
+        // The recency bound: the fresh session ranks ABOVE the stale 60-day PR (which has decayed).
+        // (Trend cards anchored to "today" may legitimately rank above a routine session — that's fine;
+        //  the property under test is old-PR-vs-fresh-session, not absolute position.)
         let prIdx = cards.firstIndex { $0.kind == .b1GradePR }!
         let freshIdx = cards.firstIndex { $0.kind == .a1Session }!
         XCTAssertLessThan(freshIdx, prIdx, "fresh session must rank above the 60-day-old PR")
+        // the fresh session card itself is not a PR session
+        if case .climbSession(let p)? = cards.first(where: { $0.kind == .a1Session })?.payload { XCTAssertFalse(p.isPRSession) }
     }
 
     // MARK: - Lens filters

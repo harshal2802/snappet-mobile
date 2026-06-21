@@ -25,6 +25,27 @@ toolbar button on `CardDetailView`. The **Animate HR-overlay clip** path (`ReelE
 Photos) is **iOS-device-only** — surfaced honestly (a labeled device-burn follow-on), never a dead button.
 Image-share is the verifiable Pillar-1 core; clip export is device-pending.
 
+## [2026-06-20] Recap Feed F6 follow-up — Story Player engine + insight menu (review-driven)
+
+**Decision**: completed F6 to its acceptance criteria after the review flagged the shell. Pure engines:
+`StoryPlayback` (auto-advance/pause/resume/index-bounds, view feeds `tick(dt)`) + `StoryComposition`
+(period cards → cover + arc-ordered highlights, **clamped 3…8**) + `eligiblePeriods` (rail degrade-by-
+absence: week/month need an in-window session, year needs ≥6 months history) — all unit-tested.
+`RecapStoryView` now auto-advances (gated off under **Reduce Motion**), hold-to-pause via
+`onLongPressGesture(onPressingChanged:)`, swipe-down dismiss, segment progress bars, **per-scene Share**
+(carries the scene's `FeedCard` → `ShareComposerView` pre-selecting `shareHint`), and **memoizes** scenes.
+`FeedView` rail shows only eligible covers.
+
+Added the **insight menu** as composer recipes (`FeedInsightCards`, registry-only — F0 core untouched):
+c2 pyramid-health (top-heavy heuristic), c3 progression, c4 climbing-level (**gated ≥20 sends** — the
+engine computes a level for fewer, so eligibility checks `totalSends`), c5 angle-distribution, d2
+period-vs-last, consistencyMap (≥14 active days/28), onThisDay (prior-year same-date send, private memory).
+All aggregates → empty `contentId`. **Deferred additive follow-ons** (noted): d3 discipline-split, d4
+90-day trend-arrows, e4 effort-vs-grade, e5 HRV, restNudge, g1 project-cadence. Recency note: trend
+cards anchor to last-activity (may outrank a routine session — fine; the recency bound is old-PR-vs-fresh,
+which still holds). Tested: `StoryPlaybackTests`, `StoryCompositionTests`, `F6InsightCardEligibilityTests`
+(59 Feed/Story tests green).
+
 ## [2026-06-20] Recap Feed F6 — Story Player + Stories rail
 
 **Decision**: `Features/Feed/RecapStoryView.swift` — a full-bleed Wrapped-grammar player (progress bars,

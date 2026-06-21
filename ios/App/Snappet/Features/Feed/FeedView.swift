@@ -123,23 +123,34 @@ struct FeedView: View {
 
     // MARK: Pieces
 
-    private var storiesRail: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                Button { presentedStory = .week } label: {
-                    StoryCoverPlaceholder(title: "This Week", icon: "sparkles", accent: SnappetColor.kilter, isNew: true)
-                }.buttonStyle(.plain)
-                Button { presentedStory = .month } label: {
-                    StoryCoverPlaceholder(title: "This Month", icon: "calendar", accent: SnappetColor.workout, isNew: false)
-                }.buttonStyle(.plain)
-                Button { presentedStory = .year } label: {
-                    StoryCoverPlaceholder(title: "Year in Climb", icon: "trophy.fill", accent: SnappetColor.brand, isNew: false)
-                }.buttonStyle(.plain)
+    @ViewBuilder private var storiesRail: some View {
+        // Degrade-by-absence: a period cover shows only when its recap is eligible (week/month have a
+        // session in-window; year needs >=6 months of history). No eligible period → no rail (no dead chip).
+        let eligible = StoryComposition.eligiblePeriods(
+            sessionDates: kilterSessions.map(\.startedAt) + workoutSessions.compactMap(\.completedAt), now: .now)
+        if !eligible.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    if eligible.contains(.week) {
+                        Button { presentedStory = .week } label: {
+                            StoryCoverPlaceholder(title: "This Week", icon: "sparkles", accent: SnappetColor.kilter, isNew: true)
+                        }.buttonStyle(.plain)
+                    }
+                    if eligible.contains(.month) {
+                        Button { presentedStory = .month } label: {
+                            StoryCoverPlaceholder(title: "This Month", icon: "calendar", accent: SnappetColor.workout, isNew: false)
+                        }.buttonStyle(.plain)
+                    }
+                    if eligible.contains(.year) {
+                        Button { presentedStory = .year } label: {
+                            StoryCoverPlaceholder(title: "Year in Climb", icon: "trophy.fill", accent: SnappetColor.brand, isNew: false)
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, SnappetSpacing.lg).padding(.vertical, 4)
             }
-            .padding(.horizontal, SnappetSpacing.lg)
-            .padding(.vertical, 4)
+            .accessibilityIdentifier("feed.stories")
         }
-        .accessibilityIdentifier("feed.stories")
     }
 
     private var lensBar: some View {

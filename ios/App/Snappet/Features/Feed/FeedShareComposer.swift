@@ -151,6 +151,20 @@ struct ShareCardView: View {
             return ("HR trend", "\(p.points.last?.avgBpm ?? 0)", ["recent avg BPM"], SnappetColor.workout)
         case .onTheBoard(let p):
             return ("On the board", "\(p.litCount)", ["climbs lit"], SnappetColor.kilter)
+        case .pyramidHealth(let p):
+            return ("Pyramid health", p.consolidateGrade, ["consolidate this row"], SnappetColor.kilter)
+        case .progression(let p):
+            return ("Progression", "\(p.fromGrade) → \(p.toGrade)", ["over \(p.points.count) months"], SnappetColor.kilter)
+        case .climbingLevel(let p):
+            return ("Climbing level", p.level, [p.maxGrade.map { "max \($0)" } ?? "working grade"], SnappetColor.kilter)
+        case .angleDist(let p):
+            return ("Angles", "\(p.topAngle)°", ["\(p.slices.count) angles"], SnappetColor.kilter)
+        case .periodVsLast(let p):
+            return ("This period", "\(p.current)", ["sends vs \(p.previous) last"], SnappetColor.kilter)
+        case .consistency(let p):
+            return ("Consistency", "\(p.activeDays)", ["active days"], SnappetColor.kilter)
+        case .onThisDay(let p):
+            return ("On this day", p.grade ?? "—", [p.summary], SnappetColor.kilter)
         }
     }
 }
