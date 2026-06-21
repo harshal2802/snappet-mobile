@@ -47,6 +47,13 @@ object KilterSettings {
     fun setApiLevel(context: Context, value: KilterProtocol.ApiLevel) =
         prefs(context).edit().putString("apiLevel", value.name).apply()
 
+    /** P1 board auto-detect: whether to surface the pre-connect arrival suggestion at a remembered coarse
+     *  place. On by default; off skips location entirely (BLE-only recognition still works). Mirrors the
+     *  iOS `kilter.suggestOnArrival` @AppStorage key. */
+    fun suggestOnArrival(context: Context): Boolean = prefs(context).getBoolean("suggestOnArrival", true)
+    fun setSuggestOnArrival(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean("suggestOnArrival", value).apply()
+
     // Plan-config (bug #4): last-used selection strategy + the knobs it seeds. Defaults reproduce the
     // original behaviour (balanced / 6 climbs / at-grade / prefer-unsent).
     fun planStrategy(context: Context): String = prefs(context).getString("plan.strategy", "BALANCED") ?: "BALANCED"

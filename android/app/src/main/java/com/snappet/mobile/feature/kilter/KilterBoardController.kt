@@ -41,6 +41,19 @@ class KilterBoardController(context: Context) {
     /** Notified when the connection comes up / goes down, so the module can open/close a session. */
     var onConnectionChange: ((Boolean) -> Unit)? = null
 
+    /**
+     * P1 board auto-detect: notified on a **confirmed** connect (services discovered) with the board's
+     * stable BLE address ([deviceId], the Android analogue of `CBPeripheral.identifier`) and its advertised
+     * local name (so the caller can parse a `#serial` via [KilterBoardMemoryRules.serialFromLocalName]). The
+     * caller recognizes the board → restores layout/size + the usual angle → raises the confirm ribbon.
+     * Fired once per connect, after [onConnectionChange]. Device-pending like the rest of the BLE path.
+     */
+    var onBoardRecognized: ((deviceId: String, advertisedName: String?) -> Unit)? = null
+    /** The advertised local name + address captured while scanning, surfaced to [onBoardRecognized] on a
+     *  confirmed connect (the scan result is otherwise discarded after `connectGatt`). */
+    private var connectingName: String? = null
+    private var connectingAddress: String? = null
+
     /** Which Aurora payload dialect to send. Default V3 (current boards); switched to V2 when a user
      *  with an older board reports the wrong holds lighting up. Persisted by the UI, pushed via
      *  [setApiLevel]. */
@@ -177,6 +190,10 @@ class KilterBoardController(context: Context) {
             if (!isLikelyBoard(name, services) || state != State.SCANNING) return
             adapter?.bluetoothLeScanner?.stopScan(this)
             state = State.CONNECTING
+            // Capture the board's identity for the P1 recognize hook — the scan result is discarded after
+            // connectGatt, so stash the stable address + advertised name to surface on a confirmed connect.
+            connectingAddress = runCatching { result.device.address }.getOrNull()
+            connectingName = name
             startTimeout(CONNECT_TIMEOUT_MS, "Couldn't reach the board. Move closer and try again.")
             gatt = result.device.connectGatt(appContext, false, gattCallback)
         }
@@ -222,6 +239,10 @@ class KilterBoardController(context: Context) {
             failureMessage = null
             state = State.CONNECTED
             onConnectionChange?.invoke(true)
+            // P1: the connect is confirmed → hand the board's identity to the recognize hook. Prefer the
+            // address captured while scanning; fall back to the live GATT device's address.
+            val deviceId = connectingAddress ?: runCatching { g.device.address }.getOrNull()
+            if (deviceId != null) onBoardRecognized?.invoke(deviceId, connectingName)
             pending?.let { holds -> pending = null; send(holds, characteristic) }
         }
 

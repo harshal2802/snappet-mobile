@@ -2,10 +2,12 @@ package com.snappet.mobile
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.snappet.mobile.core.TestHooks
 import org.junit.After
@@ -71,9 +73,13 @@ class KilterUITest : SuiteTest() {
         // History lives on the catalog top bar, so step back out of the climb detail first.
         tapBack()
         composeRule.onNodeWithTag("kilter.history").performClick()
+        // The redesigned History is content-first: the session timeline + consistency viz lead, and the
+        // flat "Ascents" leaf list (carrying kilter.historyRow) sits below — so a just-logged ascent's row
+        // is a lazy item off the first screen. Scroll the list to it, then assert it's there.
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            composeRule.onAllNodesWithTag("kilter.historyRow").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithTag("kilter.history.list").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithTag("kilter.history.list").performScrollToNode(hasTestTag("kilter.historyRow"))
         composeRule.onAllNodesWithTag("kilter.historyRow")[0].assertIsDisplayed()
     }
 

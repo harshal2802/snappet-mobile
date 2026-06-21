@@ -20,7 +20,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +49,8 @@ import kotlinx.coroutines.launch
 fun KilterSettingsScreen(
     catalog: KilterCatalog,
     dao: KilterDao,
+    boardMemory: KilterBoardMemoryStore,
+    location: KilterLocationService,
     onCatalogChanged: () -> Unit,
     onExit: () -> Unit,
 ) {
@@ -63,6 +67,19 @@ fun KilterSettingsScreen(
     var angleMenu by remember { mutableStateOf(false) }
     var sizeMenu by remember { mutableStateOf(false) }
     var confirmingClear by remember { mutableStateOf(false) }
+
+    // P1 board auto-detect management. The suggest-on-arrival toggle (persisted), a version counter bumped
+    // on rename/forget so the remembered-boards list re-reads off SharedPreferences, and the rename dialog.
+    var suggestOnArrival by remember { mutableStateOf(KilterSettings.suggestOnArrival(context)) }
+    var boardsVersion by remember { mutableStateOf(0) }
+    val rememberedBoards = remember(boardsVersion) { boardMemory.all() }
+    var renaming by remember { mutableStateOf<RememberedBoard?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> location.onPermissionResult(granted) }
+    // Re-read live permission state when the screen appears (e.g. returning from system Settings).
+    androidx.compose.runtime.LaunchedEffect(Unit) { location.refresh() }
 
     // Catalog library (issue #42): list downloads, switch active, remove individually, download/import.
     var libraryVersion by remember { mutableStateOf(0) }
@@ -166,6 +183,79 @@ fun KilterSettingsScreen(
                 + "to Legacy — it's for older controllers.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+            // P1 board auto-detect: recognize a previously-connected board (BLE) + the optional on-device
+            // coarse-place arrival suggestion. The toggle skips location entirely when off; BLE recognition
+            // still works without it.
+            HorizontalDivider()
+            Text("Board detection", style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Suggest board on arrival", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        when (location.authorization) {
+                            KilterLocationService.Authorization.AUTHORIZED -> "Location: while using the app"
+                            KilterLocationService.Authorization.DENIED -> "Location: off — using Bluetooth only"
+                            KilterLocationService.Authorization.NOT_DETERMINED -> "Location: not set"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = suggestOnArrival,
+                    onCheckedChange = {
+                        suggestOnArrival = it
+                        KilterSettings.setSuggestOnArrival(context, it)
+                        // Turning it on with no decision yet → prompt for the coarse permission now.
+                        if (it && location.authorization == KilterLocationService.Authorization.NOT_DETERMINED) {
+                            locationPermission.launch(KilterLocationService.PERMISSION)
+                        }
+                    },
+                    modifier = Modifier.testTag("kilter.settings.suggestOnArrival"),
+                )
+            }
+            if (suggestOnArrival && location.authorization == KilterLocationService.Authorization.NOT_DETERMINED) {
+                OutlinedButton(
+                    onClick = { locationPermission.launch(KilterLocationService.PERMISSION) },
+                    modifier = Modifier.testTag("kilter.settings.requestLocation"),
+                ) { Text("Allow location while using the app") }
+            }
+            Text("Snappet recognizes a board you've connected to before and restores its layout, size, and "
+                + "usual angle — you just confirm. Turn on location to suggest your usual board when you "
+                + "arrive at a remembered place; the match is made fully on your device and your location "
+                + "never leaves your phone.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            if (rememberedBoards.isNotEmpty()) {
+                HorizontalDivider()
+                Text("Remembered boards", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary)
+                rememberedBoards.forEach { b ->
+                    Row(
+                        Modifier.fillMaxWidth().testTag("kilter.settings.rememberedBoard"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(b.label, style = MaterialTheme.typography.bodyMedium)
+                            Text(rememberedBoardDetail(catalog, b),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        TextButton(onClick = { renameText = b.label; renaming = b },
+                            modifier = Modifier.testTag("kilter.settings.renameBoard")) { Text("Rename") }
+                        TextButton(
+                            onClick = { boardMemory.forget(b.deviceId); boardsVersion++ },
+                            modifier = Modifier.testTag("kilter.settings.forgetBoard"),
+                        ) { Text("Forget", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+                Text("Boards this device has connected to. Rename or forget — a forgotten board is "
+                    + "re-learned the next time you connect to it.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
             HorizontalDivider()
             Text("Downloaded catalogs", style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary)
@@ -247,5 +337,42 @@ fun KilterSettingsScreen(
                 onDismiss = { showDownload = false },
             )
         }
+
+        // P1: rename a remembered board.
+        renaming?.let { b ->
+            AlertDialog(
+                onDismissRequest = { renaming = null },
+                title = { Text("Rename board") },
+                text = {
+                    OutlinedTextField(
+                        value = renameText,
+                        onValueChange = { renameText = it },
+                        singleLine = true,
+                        label = { Text("Board name") },
+                        modifier = Modifier.testTag("kilter.settings.renameField"),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val trimmed = renameText.trim()
+                        if (trimmed.isNotEmpty()) { boardMemory.rename(b.deviceId, trimmed); boardsVersion++ }
+                        renaming = null
+                    }) { Text("Save") }
+                },
+                dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+            )
+        }
     }
+}
+
+/** "<layout> · <size> · <angle>° · Seen <date>" detail line for a remembered board (Settings list). */
+private fun rememberedBoardDetail(catalog: KilterCatalog, b: RememberedBoard): String {
+    val layoutName = catalog.layouts().firstOrNull { it.id == b.layoutId }?.name
+    val sizes = catalog.sizes(b.layoutId)
+    val sizeId = if (sizes.any { it.id == b.sizeId }) b.sizeId else catalog.defaultSizeId(b.layoutId)
+    val sizeName = sizes.firstOrNull { it.id == sizeId }?.name
+    val angle = b.usualAngle?.let { "$it°" }
+    val seen = "Seen " + java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM)
+        .format(java.util.Date(b.lastSeen))
+    return listOfNotNull(layoutName, sizeName, angle, seen).joinToString(" · ")
 }

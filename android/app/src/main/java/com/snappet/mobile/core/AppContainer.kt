@@ -26,7 +26,15 @@ class AppContainer private constructor(
     /** Pending deep-link / shortcut / widget navigation (issues #91, #99). Mirrors iOS SuiteRouter. */
     val router: SuiteRouter by lazy { SuiteRouter() }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Process-lifetime scope for work that must outlive the composable that started it — e.g. a
+     * deferred, undoable write whose snackbar commits *after* the user has already navigated away from
+     * the originating screen (a `rememberCoroutineScope` would be cancelled on that screen's disposal,
+     * silently dropping the write). Survives screen teardown, tab switches, and back-navigation, the way
+     * iOS's detached `Task` does. Cancelled only when the process/container goes away.
+     */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope get() = appScope
 
     /**
      * The app-owned Pomodoro engine (issue #85): owned here — not `remember {}`-scoped

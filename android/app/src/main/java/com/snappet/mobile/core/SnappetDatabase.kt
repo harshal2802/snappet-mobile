@@ -19,6 +19,7 @@ import com.snappet.mobile.feature.journal.JournalEntry
 import com.snappet.mobile.feature.kilter.KilterCreatedClimb
 import com.snappet.mobile.feature.kilter.KilterDao
 import com.snappet.mobile.feature.kilter.KilterFavorite
+import com.snappet.mobile.feature.kilter.KilterLitEvent
 import com.snappet.mobile.feature.kilter.KilterLogEntry
 import com.snappet.mobile.feature.kilter.KilterPlanEntity
 import com.snappet.mobile.feature.kilter.KilterSession
@@ -54,9 +55,9 @@ import com.snappet.mobile.feature.workout.WorkoutSession
         BudgetCategory::class, BudgetTransaction::class,
         WorkoutRoutine::class, WorkoutSession::class, WorkoutCustomExercise::class,
         KilterLogEntry::class, KilterSession::class, KilterFavorite::class, KilterCreatedClimb::class,
-        KilterPlanEntity::class,
+        KilterPlanEntity::class, KilterLitEvent::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
     // ── v4 → v5 (issue #92): three NULLABLE HR columns added to `kilter_session`
     //    (avgHr, maxHr, hrSampleCount). Purely additive → a no-SQL Room AutoMigration; no existing
@@ -65,7 +66,15 @@ import com.snappet.mobile.feature.workout.WorkoutSession
     //    bump (workout columns) at merge time — see the comment on KilterSession.
     // v5 → v6 (Kilter planned-session): one additive table `kilter_plan` (KilterPlanEntity) — a no-SQL
     // Room AutoMigration; no existing row is touched and nothing can be lost.
-    autoMigrations = [AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6)],
+    // v6 → v7 (Kilter Wave B P4+P5): BOTH additive in ONE migration — three NULLABLE columns on
+    //    `kilter_session` (title, notes, layoutId) AND a new additive table `kilter_lit_event`
+    //    (KilterLitEvent). Both are pure additions → a single no-SQL Room AutoMigration covers them;
+    //    no existing row is touched and nothing can be lost.
+    autoMigrations = [
+        AutoMigration(from = 4, to = 5),
+        AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 6, to = 7),
+    ],
 )
 abstract class SnappetDatabase : RoomDatabase() {
     abstract fun usageDao(): UsageDao
