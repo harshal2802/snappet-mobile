@@ -17,6 +17,7 @@ struct CardDetailView: View {
     @Query private var kilterSessions: [KilterSession]
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
+    @State private var showingShare = false
 
     private var target: FeedDeepLink.Target { FeedDeepLink.target(for: card) }
 
@@ -44,6 +45,13 @@ struct CardDetailView: View {
         .navigationTitle("Session")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("feed.detail")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingShare = true } label: { Image(systemName: "square.and.arrow.up") }
+                    .accessibilityIdentifier("feed.share")
+            }
+        }
+        .sheet(isPresented: $showingShare) { ShareComposerView(card: card) }
     }
 
     // MARK: Kilter

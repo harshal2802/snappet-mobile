@@ -4,6 +4,16 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F4 — ShareComposer (image export)
+
+**Decision**: `Features/Feed/FeedShareComposer.swift` — `ShareComposerView` renders a `ShareCardView`
+to a `UIImage` via **`ImageRenderer`** (sim-verifiable, no Photos) at an exact aspect (9:16/4:5/1:1 — no
+crop surprise) with Send-Card/Receipt templates, hands it to the existing `ShareSheet`
+(`UIActivityViewController`), and appends a `FeedShareEvent(channel: "export:share")`. Entry is a Share
+toolbar button on `CardDetailView`. The **Animate HR-overlay clip** path (`ReelExporter` + AVFoundation +
+Photos) is **iOS-device-only** — surfaced honestly (a labeled device-burn follow-on), never a dead button.
+Image-share is the verifiable Pillar-1 core; clip export is device-pending.
+
 ## [2026-06-20] Recap Feed F6 — Story Player + Stories rail
 
 **Decision**: `Features/Feed/RecapStoryView.swift` — a full-bleed Wrapped-grammar player (progress bars,
