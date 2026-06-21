@@ -9,22 +9,8 @@ import UIKit
 // FeedShareEvent (channel "export:*"). The "Animate" HR-overlay CLIP path is iOS-device-only
 // (ReelExporter + AVFoundation + Photos) and is surfaced honestly as a device-burn follow-on.
 
-enum ShareAspect: String, CaseIterable, Identifiable {
-    case r916 = "9:16", r45 = "4:5", r11 = "1:1"
-    var id: String { rawValue }
-    var size: CGSize {
-        switch self {
-        case .r916: return CGSize(width: 360, height: 640)
-        case .r45:  return CGSize(width: 360, height: 450)
-        case .r11:  return CGSize(width: 360, height: 360)
-        }
-    }
-}
-
-enum ShareTemplateKind: String, CaseIterable, Identifiable {
-    case card = "Send Card", receipt = "Receipt"
-    var id: String { rawValue }
-}
+// `ShareAspect` and `ShareTemplateKind` now live in the pure `ShareTemplateModel` (R3) so the
+// dimension math + template gating are unit-testable without a simulator.
 
 private struct ShareImage: Identifiable { let id = UUID(); let image: UIImage }
 
@@ -33,15 +19,22 @@ struct ShareComposerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @State private var aspect: ShareAspect = .r916
+    @State private var aspect: ShareAspect = .r9x16
     @State private var template: ShareTemplateKind
     @State private var shareImage: ShareImage?
     @State private var animateNote: String?
 
+    /// Only the templates this card's payload supports — no dead thumbnails (R3 gating).
+    private let templates: [ShareTemplateKind]
+
     init(card: FeedCard) {
         self.card = card
-        // Pre-select the card's suggested template (F4 / F6 hand-off): sessionReceipt → Receipt, else Send Card.
-        _template = State(initialValue: card.shareHint == .sessionReceipt ? .receipt : .card)
+        let eligible = ShareTemplateModel.eligibleTemplates(for: card)
+        self.templates = eligible
+        // Pre-select the card's suggested template (F4 / F6 hand-off) when it's eligible, else the
+        // first eligible template (always at least .card).
+        let hinted = eligible.first { $0.shareTemplate == card.shareHint }
+        _template = State(initialValue: hinted ?? eligible.first ?? .card)
     }
 
     var body: some View {
@@ -49,15 +42,17 @@ struct ShareComposerView: View {
             VStack(spacing: 14) {
                 ScrollView {
                     ShareCardView(card: card, template: template, aspect: aspect)
-                        .frame(width: aspect.size.width * 0.62, height: aspect.size.height * 0.62)
+                        .frame(width: aspect.previewSize.width * 0.62, height: aspect.previewSize.height * 0.62)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .shadow(radius: 14, y: 6)
                         .padding(.vertical, 12)
                 }
 
-                Picker("Template", selection: $template) {
-                    ForEach(ShareTemplateKind.allCases) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented).padding(.horizontal)
+                if templates.count > 1 {
+                    Picker("Template", selection: $template) {
+                        ForEach(templates) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented).padding(.horizontal)
+                }
 
                 Picker("Aspect", selection: $aspect) {
                     ForEach(ShareAspect.allCases) { Text($0.rawValue).tag($0) }
@@ -93,21 +88,29 @@ struct ShareComposerView: View {
             .navigationTitle("Share")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-            .sheet(item: $shareImage) { ShareSheet(items: [$0.image]) }
+            .sheet(item: $shareImage) { item in
+                ShareSheet(items: [item.image]) { completed, activityType in
+                    guard completed else { return }
+                    appendShareEvent(activityType: activityType)
+                }
+            }
         }
     }
 
     @MainActor private func share() {
+        // Render at the EXACT export pixel size (no Apple re-crop) via the thin renderer edge.
         let view = ShareCardView(card: card, template: template, aspect: aspect)
-            .frame(width: aspect.size.width, height: aspect.size.height)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 3
-        guard let image = renderer.uiImage else { return }
+        guard let image = ShareImageRenderer.render(view, aspect: aspect) else { return }
         shareImage = ShareImage(image: image)
-        if !card.contentId.isEmpty {
-            context.insert(FeedShareEvent(activityContentId: card.contentId, channel: "export:share"))
-            try? context.save()
-        }
+    }
+
+    /// Append the F0b `FeedShareEvent` once the OS share actually completes, with the channel derived
+    /// from the chosen destination (instagram / imessage / photos / generic share).
+    private func appendShareEvent(activityType: String?) {
+        guard !card.contentId.isEmpty else { return }
+        let channel = ShareTemplateModel.shareChannel(forActivityType: activityType)
+        context.insert(FeedShareEvent(activityContentId: card.contentId, channel: channel))
+        try? context.save()
     }
 }
 
@@ -116,12 +119,12 @@ struct ShareComposerView: View {
 struct ShareCardView: View {
     let card: FeedCard
     var template: ShareTemplateKind = .card
-    var aspect: ShareAspect = .r916
+    var aspect: ShareAspect = .r9x16
 
     var body: some View {
         let s = spec
         ZStack {
-            RadialGradient(colors: [s.accent.opacity(0.85), Color.black], center: .top, startRadius: 0, endRadius: aspect.size.height)
+            RadialGradient(colors: [s.accent.opacity(0.85), Color.black], center: .top, startRadius: 0, endRadius: aspect.previewSize.height)
             VStack(alignment: .leading, spacing: 10) {
                 Text(s.kick.uppercased()).font(.caption.weight(.heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.85))
                 Text(s.hero).font(.system(size: 64, weight: .heavy, design: .rounded)).foregroundStyle(.white)

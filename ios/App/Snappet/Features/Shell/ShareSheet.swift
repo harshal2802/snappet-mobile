@@ -7,8 +7,17 @@ import UIKit
 /// Originally `private` to `ReelView`; generalized here when WorkoutTracker gained share/save.
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
+    /// Optional completion. `completed` is whether the user actually shared; `activityType` is the
+    /// chosen `UIActivity.ActivityType.rawValue` (nil when cancelled / unknown) — the Recap feed
+    /// (F4) maps it to a `FeedShareEvent.channel` via `ShareTemplateModel.shareChannel`.
+    var onComplete: ((_ completed: Bool, _ activityType: String?) -> Void)? = nil
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        vc.completionWithItemsHandler = { activityType, completed, _, _ in
+            onComplete?(completed, activityType?.rawValue)
+        }
+        return vc
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
