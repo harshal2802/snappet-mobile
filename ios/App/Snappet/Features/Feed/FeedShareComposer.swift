@@ -14,21 +14,34 @@ import UIKit
 
 private struct ShareImage: Identifiable { let id = UUID(); let image: UIImage }
 
+/// The Animate (HR-overlay clip) render state machine — idle → rendering → done/failed.
+private enum AnimateState: Equatable {
+    case idle, rendering
+    case done(ClipExportCoordinator.Outcome)
+    case failed(String)
+}
+
 struct ShareComposerView: View {
     let card: FeedCard
+    /// The session snapshot to render from — present only when this card targets a session with video
+    /// clips (CardDetailView builds it). `nil` ⇒ the Animate offer is hidden (no dead button).
+    var clipContext: ClipExportCoordinator.Context? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     @State private var aspect: ShareAspect = .r9x16
     @State private var template: ShareTemplateKind
     @State private var shareImage: ShareImage?
-    @State private var animateNote: String?
+    @State private var animateState: AnimateState = .idle
+    @State private var animateTask: Task<Void, Never>?
 
     /// Only the templates this card's payload supports — no dead thumbnails (R3 gating).
     private let templates: [ShareTemplateKind]
 
-    init(card: FeedCard) {
+    init(card: FeedCard, clipContext: ClipExportCoordinator.Context? = nil) {
         self.card = card
+        self.clipContext = clipContext
         let eligible = ShareTemplateModel.eligibleTemplates(for: card)
         self.templates = eligible
         // Pre-select the card's suggested template (F4 / F6 hand-off) when it's eligible, else the
@@ -66,21 +79,8 @@ struct ShareComposerView: View {
                 .accessibilityIdentifier("share.button")
                 .padding(.horizontal)
 
-                if ClipExportCoordinator.canAnimate(card) {
-                    Button {
-                        animateNote = ClipExportCoordinator.animate(card: card, in: context)
-                    } label: {
-                        Label("Animate (HR-overlay clip)", systemImage: "wand.and.stars")
-                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 11)
-                            .foregroundStyle(SnappetColor.kilter)
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SnappetColor.kilter, lineWidth: 1.2))
-                    }
-                    .accessibilityIdentifier("share.animate")
-                    .padding(.horizontal)
-                    if let animateNote { Text(animateNote).font(.caption).foregroundStyle(SnappetColor.textSecondary) }
-                } else {
-                    Label("Animate (HR clip) — sessions with video only", systemImage: "wand.and.stars")
-                        .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                if let ctx = clipContext, ClipExportCoordinator.canAnimate(card) {
+                    animateSection(ctx)
                 }
                 Color.clear.frame(height: 4)
             }
@@ -102,6 +102,73 @@ struct ShareComposerView: View {
         let view = ShareCardView(card: card, template: template, aspect: aspect)
         guard let image = ShareImageRenderer.render(view, aspect: aspect) else { return }
         shareImage = ShareImage(image: image)
+    }
+
+    // MARK: - Animate (HR-overlay clip · R4)
+
+    /// The Animate offer: a real render→Save button, a rendering ProgressView + Cancel, and an honest
+    /// result line. Only shown when a `clipContext` is present (session with video clips).
+    @ViewBuilder private func animateSection(_ ctx: ClipExportCoordinator.Context) -> some View {
+        switch animateState {
+        case .rendering:
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Rendering HR-overlay clip…").font(.subheadline).foregroundStyle(SnappetColor.ink)
+                }
+                Button("Cancel") {
+                    animateTask?.cancel()
+                    animateState = .idle
+                }
+                .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.textSecondary)
+                .accessibilityIdentifier("share.animate.cancel")
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 11).padding(.horizontal)
+        default:
+            VStack(spacing: 8) {
+                Button { runAnimate(ctx) } label: {
+                    Label("Animate (HR-overlay clip)", systemImage: "wand.and.stars")
+                        .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 11)
+                        .foregroundStyle(SnappetColor.kilter)
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SnappetColor.kilter, lineWidth: 1.2))
+                }
+                .accessibilityIdentifier("share.animate")
+                if let result = animateResultText {
+                    Text(result).font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                        .accessibilityIdentifier("share.animate.result")
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    /// The result line for the current state (`nil` while idle / rendering).
+    private var animateResultText: String? {
+        switch animateState {
+        case .idle, .rendering: return nil
+        case .failed(let m): return m
+        case .done(let outcome):
+            switch outcome {
+            case .saved: return "Saved to Photos"
+            case .rendered(let url): return "Rendered \(url.lastPathComponent)"
+            case .empty: return "No clips to animate yet."
+            case .failed(let m): return m
+            case .cancelled: return nil
+            }
+        }
+    }
+
+    private func runAnimate(_ ctx: ClipExportCoordinator.Context) {
+        animateState = .rendering
+        animateTask = Task {
+            let outcome = await ClipExportCoordinator.animate(
+                card: card, app: app, context: ctx, in: context)
+            if Task.isCancelled || outcome == .cancelled {
+                animateState = .idle
+            } else {
+                animateState = .done(outcome)
+            }
+        }
     }
 
     /// Append the F0b `FeedShareEvent` once the OS share actually completes, with the channel derived

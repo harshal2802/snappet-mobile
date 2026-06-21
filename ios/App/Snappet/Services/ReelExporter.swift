@@ -161,13 +161,49 @@ final class ReelExporter: Sendable {
             .concatenating(CGAffineTransform(translationX: tx, y: ty))
     }
 
+    /// A burned-in HR overlay for the export, sourced from a session's HR window. Reusing the EDITOR's
+    /// overlay system (`HROverlayValues` → `HRTile.make(template:)` → `StudioOverlays.makeAnimationTool`)
+    /// keeps a single source of truth — the recap-feed "Animate" clip matches the studio's scorebug.
+    /// `Sendable` value-type snapshot so it crosses into the AVFoundation export with no `@Model`.
+    struct HROverlay: Sendable {
+        var hrSeries: [HRPoint]
+        var maxHR: Double?
+        var restHR: Double?
+        var clipName: String? = nil
+    }
+
     func export(_ plan: ReelPlan) async throws -> URL {
+        try await export(plan, hrOverlay: nil)
+    }
+
+    /// Export, optionally burning a scorebug HR overlay over the stitched reel. When `hrOverlay != nil`,
+    /// the editor's Core-Animation overlay tool is attached to the (mutable) video composition. Any miss
+    /// (no mutable composition / no resolvable tile / no tool) silently exports WITHOUT the overlay — the
+    /// share offer never crashes or blocks on the overlay being renderable.
+    func export(_ plan: ReelPlan, hrOverlay: HROverlay?) async throws -> URL {
         let (composition, videoComposition) = try await makeComposition(for: plan)
+        var exportVideoComposition = videoComposition
+
+        if let hrOverlay, let mvc = videoComposition as? AVMutableVideoComposition {
+            let values = HROverlayValues(samples: hrOverlay.hrSeries,
+                                         durationSec: composition.duration.seconds,
+                                         maxHR: hrOverlay.maxHR,
+                                         restHR: hrOverlay.restHR)
+            if let tile = values.resolveTile(HRTile.make(template: .scorebug)),
+               let tool = StudioOverlays.makeAnimationTool(
+                    overlays: [], canvas: mvc.renderSize,
+                    totalDuration: composition.duration.seconds,
+                    hrSamples: hrOverlay.hrSeries, hrTile: tile) {
+                mvc.animationTool = tool
+                exportVideoComposition = mvc
+            }
+        }
+
         guard let session = AVAssetExportSession(asset: composition,
                                                  presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.exportFailed("could not create export session")
         }
-        session.videoComposition = videoComposition
+        session.videoComposition = exportVideoComposition
         let out: URL
         do { out = try exportDestination() }
         catch { throw ExportError.exportFailed(error.localizedDescription) }

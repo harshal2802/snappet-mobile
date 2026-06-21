@@ -1,29 +1,103 @@
 import Foundation
 import SwiftData
+import HighlightEngine
 
-// MARK: - Recap Feed — clip export coordinator (F4 Animate)
+// MARK: - Recap Feed — clip export coordinator (F4 Animate · R4)
 //
-// The Animate path's wiring SHIPS (offer + intent + ShareEvent); the actual HR-overlay clip RENDER is
-// the device-only tail: on a real device this assembles SessionHighlightInput → ReelPlanner →
-// ReelExporter.export(overlay:) (AVFoundation) and writes to Photos / the share sheet. In the simulator
-// (no Photos library / no AVFoundation faithfulness) we record the intent and report it runs on device —
-// an honest offer, never a dead button.
+// The real render→Save pipeline behind the "Animate" offer. Mirrors `SessionHighlightViewModel`'s
+// generate→export flow: bridge the session snapshot → engine (UNCHANGED) → `ReelPlanner` →
+// `ReelExporter.export(hrOverlay:)`, burning the EDITOR's scorebug HR overlay (single source of
+// truth), then save to Photos. Records the share intent (append-only `FeedShareEvent`). Never a dead
+// button or a crash: Photos-denied still returns `.rendered`, an empty/unrenderable reel is honest.
+//
+// Non-Sendable SwiftData `@Model`s never cross into the engine/exporter — the caller snapshots the
+// session into a plain `Context` (`[HRPoint]` + `[SessionHighlightInput.Clip]` + scalars).
 
 enum ClipExportCoordinator {
+
+    /// A plain-value snapshot of the session the card points at — built on the `@MainActor` by the
+    /// view from its `@Model`s, then handed across to the engine/exporter with no SwiftData inside.
+    struct Context {
+        var hrSeries: [HRPoint]
+        var clips: [SessionHighlightInput.Clip]
+        var duration: Double
+        var maxHR: Double?
+        var restHR: Double?
+        var clipName: String?
+    }
+
+    /// The user-facing result of an Animate run. `Equatable` so the view's state machine + tests can
+    /// compare without inspecting the URL contents.
+    enum Outcome: Equatable {
+        case saved(URL)       // rendered AND written to Photos
+        case rendered(URL)    // rendered but not saved (Photos denied) — file is still on disk
+        case empty            // nothing to render (no media / no highlights)
+        case failed(String)   // render/export error
+        case cancelled        // the user cancelled mid-render
+    }
+
     /// Animate is offered only for a climb session that actually has video clips.
     static func canAnimate(_ card: FeedCard) -> Bool {
         if case .climbSession(let p) = card.payload { return p.clipCount > 0 }
         return false
     }
 
-    /// Record the share intent (append-only ShareEvent) and kick off the export. Returns user-facing status.
-    @discardableResult
-    static func animate(card: FeedCard, in context: ModelContext) -> String {
-        if !card.contentId.isEmpty {
-            context.insert(FeedShareEvent(activityContentId: card.contentId, channel: "export:clip"))
-            try? context.save()
+    /// Run the real pipeline: bridge → engine (UNCHANGED) → `ReelPlanner` → `ReelExporter.export`
+    /// (with the editor HR overlay) → save to Photos. Records the share intent. Returns the outcome.
+    @MainActor
+    static func animate(card: FeedCard,
+                        app: AppModel,
+                        context: Context,
+                        in modelContext: ModelContext,
+                        exporter: ReelExporter = ReelExporter(),
+                        library: MediaLibraryService = MediaLibraryService()) async -> Outcome {
+        // 1. Bridge mapping (pure): session snapshot → engine Workout. Kilter climbing presets handle
+        // sport/category (pass nil; engine presets cover it).
+        let workout = SessionHighlightInput.makeWorkout(
+            hrSeries: context.hrSeries, clips: context.clips, duration: context.duration,
+            sport: nil, category: nil)
+        guard !workout.media.isEmpty else { return .empty }
+
+        // 2. Run the selector pipeline → highlights (the same engine access the studio uses).
+        let scene = await app.sceneSelector(for: workout)
+        let highlights = app.engine(boosting: [], scene: scene).selector.select(
+            workout: workout, config: .preset(for: workout.activity))
+        guard !highlights.isEmpty else { return .empty }
+
+        // 3. Plan the reel (no pins — the casual one-tap share path keeps the engine's pick).
+        let plan = app.reelPlan(for: highlights, media: workout.media, pinnedIds: [])
+
+        if Task.isCancelled { return .cancelled }
+
+        // 4. Render → export, burning the editor's scorebug HR overlay.
+        let outcome: Outcome
+        do {
+            let url = try await exporter.export(
+                plan,
+                hrOverlay: ReelExporter.HROverlay(hrSeries: context.hrSeries,
+                                                  maxHR: context.maxHR,
+                                                  restHR: context.restHR,
+                                                  clipName: context.clipName))
+            if Task.isCancelled { return .cancelled }
+            // Save to Photos; a denial is non-fatal — the file is still rendered on disk.
+            do {
+                try await library.saveVideoToPhotos(url)
+                outcome = .saved(url)
+            } catch {
+                outcome = .rendered(url)
+            }
+        } catch {
+            if Task.isCancelled { return .cancelled }
+            return .failed((error as? LocalizedError)?.errorDescription
+                           ?? "Couldn't render this clip.")
         }
-        // Device-only burn: SessionHighlightInput → ReelPlanner → ReelExporter.export(hrOverlay:) → Photos.
-        return "Your HR-overlay clip renders on device (Photos + AVFoundation)."
+
+        // 5. Record the share intent (append-only ShareEvent) on success.
+        if !card.contentId.isEmpty {
+            modelContext.insert(FeedShareEvent(activityContentId: card.contentId,
+                                               channel: ShareTemplateModel.Channel.clip))
+            try? modelContext.save()
+        }
+        return outcome
     }
 }

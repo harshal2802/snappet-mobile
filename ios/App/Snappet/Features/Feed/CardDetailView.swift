@@ -54,7 +54,49 @@ struct CardDetailView: View {
                     .accessibilityIdentifier("feed.share")
             }
         }
-        .sheet(isPresented: $showingShare) { ShareComposerView(card: card) }
+        .sheet(isPresented: $showingShare) { ShareComposerView(card: card, clipContext: clipContext) }
+    }
+
+    /// The session snapshot the "Animate" clip renders from — built only for a session target that has
+    /// video clips. `nil` ⇒ ShareComposer hides the Animate offer (no dead button). Snapshots the
+    /// `@Model`s into a plain value here on the `@MainActor` so SwiftData never crosses into the engine.
+    private var clipContext: ClipExportCoordinator.Context? {
+        let sid: UUID
+        switch target {
+        case .kilterSession(let id), .workoutSession(let id): sid = id
+        case .none: return nil
+        }
+        let media = allMedia.filter { $0.sessionID == sid }
+        guard media.contains(where: { $0.kind == .video }) else { return nil }
+
+        let clips = media.map {
+            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
+                                       isVideo: $0.kind == .video,
+                                       offsetSec: $0.offsetSec,
+                                       durationSec: $0.durationSec)
+        }
+
+        let duration: Double
+        var restHR: Double? = nil
+        var clipName: String? = nil
+        if let k = kilterSessions.first(where: { $0.id == sid }) {
+            duration = (k.endedAt ?? .now).timeIntervalSince(k.startedAt)
+            restHR = k.restHR
+            // The session's hardest send is the natural clip caption (falls back to nil).
+            if case .climbSession(let p) = card.payload { clipName = p.hardestSendGrade }
+        } else if let w = workoutSessions.first(where: { $0.id == sid }) {
+            duration = w.duration
+        } else {
+            return nil
+        }
+
+        return ClipExportCoordinator.Context(
+            hrSeries: hrSeries(for: sid),
+            clips: clips,
+            duration: duration,
+            maxHR: maxHR(for: sid),
+            restHR: restHR,
+            clipName: clipName)
     }
 
     // MARK: Kilter
