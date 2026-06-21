@@ -4,6 +4,16 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F6 — Story Player + Stories rail
+
+**Decision**: `Features/Feed/RecapStoryView.swift` — a full-bleed Wrapped-grammar player (progress bars,
+tap-right advance/tap-left back, close) opened from the now-active Stories rail (`.fullScreenCover(item:)`
+in FeedView). It re-runs the SAME `FeedComposer` scoped to a period window (`FeedQuery.cards(window:)`,
+`StoryPeriod` → `.thisWeek/.thisMonth/.thisYear`) — one engine, two callers — mapping the window's top
+cards into scenes (cover + up to 6 highlights; sparse → a "log more" scene). Per-scene share is deferred
+to F4. The long tail of extra insight cards (c2–c5 pyramid-health/progression, d2–d4 deltas, e4/e5
+efficiency/HRV, consistency map, on-this-day) is a noted follow-on — additive recipes, no core change.
+
 ## [2026-06-20] Recap Feed F7 — the send wall
 
 **Decision**: `Features/Feed/WallView.swift` — a 3-column grid over the SAME composed corpus (filtered to

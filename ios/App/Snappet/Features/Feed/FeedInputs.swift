@@ -40,12 +40,13 @@ extension LitEventInput {
 /// derive-on-read pipeline lives in one place.
 enum FeedQuery {
     static func cards(kilterSessions: [KilterSession], kilterLogs: [KilterLogEntry],
-                      workoutSessions: [WorkoutSession], litEvents: [KilterLitEvent], now: Date) -> [FeedCard] {
+                      workoutSessions: [WorkoutSession], litEvents: [KilterLitEvent],
+                      window: FeedWindow = .allTime, now: Date) -> [FeedCard] {
         let logs = kilterLogs.map(KilterClimbLog.from)
         let summaries = kilterSessions.map(KilterSessionSummary.from)
         let allTime = KilterAllTimeStats.make(logs: logs, sessions: summaries, now: now)
         return FeedComposer.compose(
-            window: .allTime,
+            window: window,
             kilterSessions: kilterSessions.map(KilterSessionInput.from),
             kilterLogs: logs,
             workoutSessions: workoutSessions.map(WorkoutSessionInput.from),

@@ -22,6 +22,7 @@ struct FeedView: View {
     @State private var seen: Set<String> = []
     @State private var newCount = 0
     @State private var showingWallPlaceholder = false
+    @State private var presentedStory: StoryPeriod?
 
     private let pageSize = 12
     private let topAnchor = "feed.top"
@@ -110,6 +111,7 @@ struct FeedView: View {
                 }
             }
             .sheet(isPresented: $showingWallPlaceholder) { WallView() }
+            .fullScreenCover(item: $presentedStory) { RecapStoryView(period: $0) }
         }
         .task { if seen.isEmpty { seen = FeedFreshness.topIDs(all) } }
         .onChange(of: scenePhase) { _, phase in
@@ -123,9 +125,15 @@ struct FeedView: View {
     private var storiesRail: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                StoryCoverPlaceholder(title: "This Week", icon: "sparkles", accent: SnappetColor.kilter, isNew: true)
-                StoryCoverPlaceholder(title: "This Month", icon: "calendar", accent: SnappetColor.workout, isNew: false)
-                StoryCoverPlaceholder(title: "Year in Climb", icon: "trophy.fill", accent: SnappetColor.brand, isNew: false)
+                Button { presentedStory = .week } label: {
+                    StoryCoverPlaceholder(title: "This Week", icon: "sparkles", accent: SnappetColor.kilter, isNew: true)
+                }.buttonStyle(.plain)
+                Button { presentedStory = .month } label: {
+                    StoryCoverPlaceholder(title: "This Month", icon: "calendar", accent: SnappetColor.workout, isNew: false)
+                }.buttonStyle(.plain)
+                Button { presentedStory = .year } label: {
+                    StoryCoverPlaceholder(title: "Year in Climb", icon: "trophy.fill", accent: SnappetColor.brand, isNew: false)
+                }.buttonStyle(.plain)
             }
             .padding(.horizontal, SnappetSpacing.lg)
             .padding(.vertical, 4)
