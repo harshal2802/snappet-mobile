@@ -24,8 +24,15 @@ extension WorkoutSetInput {
 
 extension WorkoutExerciseInput {
     static func from(_ ex: SessionExercise) -> WorkoutExerciseInput {
-        WorkoutExerciseInput(disciplineRaw: ex.disciplineRaw, displayName: ex.displayName,
+        WorkoutExerciseInput(exerciseId: ex.exerciseId, disciplineRaw: ex.disciplineRaw, displayName: ex.displayName,
                              skipped: ex.skipped, sets: ex.sets.map(WorkoutSetInput.from))
+    }
+}
+
+extension LitEventInput {
+    static func from(_ e: KilterLitEvent) -> LitEventInput {
+        LitEventInput(climbUUID: e.climbUUID, gradeLabel: e.gradeLabel,
+                      sessionId: e.sessionId?.uuidString, litAt: e.litAt)
     }
 }
 

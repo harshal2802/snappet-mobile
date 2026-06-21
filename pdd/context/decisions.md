@@ -4,6 +4,16 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F5 — more milestone cards (Lift PR + On-the-Board)
+
+**Decision**: added **b4 Lift PR** (gym est-1RM via **Epley** `w*(1+reps/30)` per `exerciseId`, fires only
+when beating a PRIOR best — first entry just establishes) and **a3 On-the-Board** (a board session with
+`KilterLitEvent`s but NO full log — the degraded "pulled up, not logged" path) as `FeedComposer` recipes
+(no edits to the ordering core). `WorkoutExerciseInput` gained `exerciseId`; new `LitEventInput` +
+`kilterLitEvents` compose param (default [] → golden corpus unchanged). Salience: liftPR 0.85 (just under
+a grade PR), onTheBoard 0.42. Views reuse the compact `MilestoneCardView`. b2 First-at-grade was folded
+out (overlaps b1). Tested: `FeedMilestoneTests`.
+
 ## [2026-06-20] Recap Feed F2 — HR-deepened cards + CardDetail + reactions
 
 **Decision**: e1 (effort/zones), e2 (hardest-effort send), e3 (HR trend) are added as composer recipes

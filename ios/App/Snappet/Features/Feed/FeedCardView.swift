@@ -43,6 +43,16 @@ struct FeedCardView: View {
             HardestEffortCardView(payload: p)
         case .hrTrend(let p):
             HRTrendCardView(payload: p)
+        case .onTheBoard(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "square.grid.3x3.fill", kind: "On the board",
+                              hero: "\(p.litCount)", caption: "climbs lit",
+                              sub: p.gradeSpread.isEmpty ? "pulled up, not logged" : p.gradeSpread,
+                              identifier: "feed.card.a3OnTheBoard")
+        case .liftPR(let p):
+            MilestoneCardView(accent: SnappetColor.brand, icon: "dumbbell.fill", kind: "Lift PR",
+                              hero: "\(Int(p.oneRepMaxKg.rounded())) kg", caption: "est. 1RM · \(p.exerciseName)",
+                              sub: p.previousOneRepMaxKg.map { "was \(Int($0.rounded())) kg" },
+                              identifier: "feed.card.b4LiftPR")
         }
     }
 }

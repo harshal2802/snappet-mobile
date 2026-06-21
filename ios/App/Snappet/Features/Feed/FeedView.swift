@@ -15,6 +15,7 @@ struct FeedView: View {
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var kilterSessions: [KilterSession]
     @Query private var kilterLogs: [KilterLogEntry]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
+    @Query private var litEvents: [KilterLitEvent]
 
     @State private var lens: FeedLensChip = .all
     @State private var visibleCount = 12
@@ -36,6 +37,7 @@ struct FeedView: View {
             kilterSessions: kilterSessions.map(KilterSessionInput.from),
             kilterLogs: logs,
             workoutSessions: workoutSessions.map(WorkoutSessionInput.from),
+            kilterLitEvents: litEvents.map(LitEventInput.from),
             allTimeStats: allTime, now: .now)
     }
 

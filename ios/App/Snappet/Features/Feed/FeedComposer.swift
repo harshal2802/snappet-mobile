@@ -68,14 +68,29 @@ struct WorkoutSetInput: Sendable, Equatable {
 }
 
 struct WorkoutExerciseInput: Sendable, Equatable {
+    var exerciseId: String
     var disciplineRaw: String?
     var displayName: String?
     var skipped: Bool
     var sets: [WorkoutSetInput]
 
-    init(disciplineRaw: String? = nil, displayName: String? = nil, skipped: Bool = false, sets: [WorkoutSetInput] = []) {
-        self.disciplineRaw = disciplineRaw; self.displayName = displayName
+    init(exerciseId: String = "", disciplineRaw: String? = nil, displayName: String? = nil, skipped: Bool = false, sets: [WorkoutSetInput] = []) {
+        self.exerciseId = exerciseId; self.disciplineRaw = disciplineRaw; self.displayName = displayName
         self.skipped = skipped; self.sets = sets
+    }
+}
+
+/// A "lit on the board" event (F5 a3) — plain value.
+struct LitEventInput: Sendable, Equatable {
+    var climbUUID: String
+    var gradeLabel: String
+    var difficulty: Double
+    var sessionId: String?
+    var litAt: Date
+
+    init(climbUUID: String, gradeLabel: String, difficulty: Double = 0, sessionId: String? = nil, litAt: Date) {
+        self.climbUUID = climbUUID; self.gradeLabel = gradeLabel; self.difficulty = difficulty
+        self.sessionId = sessionId; self.litAt = litAt
     }
 }
 
@@ -101,11 +116,13 @@ enum FeedComposer {
         static let gradePR = 1.0
         static let mostClimbs = 0.9
         static let streak = 0.8
+        static let liftPR = 0.85         // F5: a gym PR (just under a grade PR)
         static let trend = 0.6
         static let hardestEffort = 0.7   // F2: e2 > e1 > e3
         static let effort = 0.55
         static let hrTrend = 0.5
         static let climbSession = 0.45
+        static let onTheBoard = 0.42     // F5: board session without a full log
         static let workoutSession = 0.40
     }
 
@@ -123,6 +140,7 @@ enum FeedComposer {
                         kilterSessions: [KilterSessionInput] = [],
                         kilterLogs: [KilterClimbLog] = [],
                         workoutSessions: [WorkoutSessionInput] = [],
+                        kilterLitEvents: [LitEventInput] = [],
                         allTimeStats: KilterAllTimeStats = .empty,
                         now: Date,
                         calendar: Calendar = .current) -> [FeedCard] {
@@ -141,6 +159,9 @@ enum FeedComposer {
         // F2 — HR-deepened cards (registered here; never composed when hrSeries is absent).
         cards += FeedHRCards.cards(sessions: kilterSessions, logs: kilterLogs)
         cards += FeedHRCards.trend(sessions: kilterSessions)
+        // F5 — more milestones.
+        cards += liftPRCards(workouts: workoutSessions)
+        cards += onTheBoardCards(litEvents: kilterLitEvents, loggedSessionIds: Set(kilterLogs.compactMap { $0.sessionId }))
 
         let windowed = cards.filter { inWindow($0.anchorDate, window: window, now: now, calendar: calendar) }
         return ordered(windowed, now: now)
@@ -302,6 +323,65 @@ enum FeedComposer {
                          salience: Salience.trend, anchorDate: anchor,
                          sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "weeklyVolume")],
                          payload: .weeklyVolume(payload), shareHint: nil)]
+    }
+
+    // F5 — gym est-1RM (Epley) personal records per exercise.
+    private static func liftPRCards(workouts: [WorkoutSessionInput]) -> [FeedCard] {
+        struct Done { let date: Date; let key: String; let name: String; let reps: Int; let weight: Double; let sessionId: UUID }
+        var done: [Done] = []
+        for w in workouts where w.completedAt != nil {
+            for ex in w.exercises where !ex.skipped {
+                for set in ex.sets {
+                    guard set.completedAt != nil, let reps = set.actualReps, reps > 0,
+                          let weight = set.actualWeight, weight > 0, let date = set.completedAt else { continue }
+                    let key = ex.exerciseId.isEmpty ? (ex.displayName ?? "exercise") : ex.exerciseId
+                    done.append(Done(date: date, key: key, name: ex.displayName ?? key, reps: reps, weight: weight, sessionId: w.id))
+                }
+            }
+        }
+        done.sort { $0.date < $1.date }
+        var best: [String: Double] = [:]
+        var out: [FeedCard] = []
+        for d in done {
+            let orm = d.weight * (1 + Double(d.reps) / 30)        // Epley est-1RM
+            let prior = best[d.key]
+            if prior == nil || orm > prior! + 0.01 {
+                if let prior {                                    // celebrate only when beating a PRIOR best
+                    let cid = FeedContentIdentity.workoutSession(id: d.sessionId.uuidString)
+                    let payload = LiftPRPayload(exerciseName: d.name, oneRepMaxKg: orm, weightKg: d.weight,
+                                                reps: d.reps, previousOneRepMaxKg: prior)
+                    out.append(FeedCard(id: "b4-\(d.key)-\(Int(d.date.timeIntervalSince1970))", contentId: cid,
+                                        kind: .b4LiftPR, category: .milestone, salience: Salience.liftPR, anchorDate: d.date,
+                                        sourceRefs: [ActivityRef(objectKind: "workoutSession", ref: d.sessionId.uuidString)],
+                                        payload: .liftPR(payload), shareHint: .gradePRTicket))
+                }
+                best[d.key] = orm
+            }
+        }
+        return out
+    }
+
+    // F5 — "On the Board": a session with lit climbs but NO full log (the degraded path).
+    private static func onTheBoardCards(litEvents: [LitEventInput], loggedSessionIds: Set<UUID>) -> [FeedCard] {
+        let withSession = litEvents.compactMap { e -> (UUID, LitEventInput)? in
+            guard let sid = e.sessionId, let uuid = UUID(uuidString: sid) else { return nil }
+            return (uuid, e)
+        }
+        let bySession = Dictionary(grouping: withSession, by: { $0.0 }).mapValues { $0.map(\.1) }
+        var out: [FeedCard] = []
+        for (sid, events) in bySession where !loggedSessionIds.contains(sid) && !events.isEmpty {
+            let sorted = events.sorted { $0.difficulty < $1.difficulty }
+            let spread = sorted.first?.gradeLabel == sorted.last?.gradeLabel
+                ? (sorted.first?.gradeLabel ?? "")
+                : "\(sorted.first?.gradeLabel ?? "")–\(sorted.last?.gradeLabel ?? "")"
+            let anchor = events.map(\.litAt).max() ?? Date(timeIntervalSince1970: 0)
+            let payload = OnTheBoardPayload(litCount: events.count, hardestGrade: sorted.last?.gradeLabel, gradeSpread: spread)
+            out.append(FeedCard(id: "a3-\(sid.uuidString)", contentId: FeedContentIdentity.kilterSession(id: sid.uuidString),
+                                kind: .a3OnTheBoard, category: .climbing, salience: Salience.onTheBoard, anchorDate: anchor,
+                                sourceRefs: [ActivityRef(objectKind: "kilterSession", ref: sid.uuidString)],
+                                payload: .onTheBoard(payload), shareHint: nil))
+        }
+        return out.sorted { $0.anchorDate > $1.anchorDate }
     }
 
     // MARK: - Helpers

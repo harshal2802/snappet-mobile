@@ -23,6 +23,9 @@ enum FeedCardKind: String, Codable, Sendable, CaseIterable {
     case e1Effort         // session effort: HR zone bar + Edwards TRIMP
     case e2HardestEffort  // the send aligned to the session's effort peak
     case e3HRTrend        // avg/peak HR trend across recent HR sessions
+    // F5 — more milestones
+    case a3OnTheBoard     // a board session with lit climbs but no full log
+    case b4LiftPR         // a gym est-1RM / weight personal record
 }
 
 /// Wayfinding category — drives the Lens bar (All · Climbing · Strength · Effort · Milestones).
@@ -152,6 +155,22 @@ struct HRTrendPayload: Codable, Sendable, Equatable {
     var points: [Point]          // oldest → newest
 }
 
+// MARK: F5 — more milestone payloads
+
+struct OnTheBoardPayload: Codable, Sendable, Equatable {
+    var litCount: Int
+    var hardestGrade: String?
+    var gradeSpread: String   // e.g. "V3–V6"
+}
+
+struct LiftPRPayload: Codable, Sendable, Equatable {
+    var exerciseName: String
+    var oneRepMaxKg: Double
+    var weightKg: Double
+    var reps: Int
+    var previousOneRepMaxKg: Double?
+}
+
 /// The discipline-typed payload union. Codable is synthesized (all cases Codable).
 enum FeedCardPayload: Codable, Sendable, Equatable {
     case climbSession(ClimbSessionPayload)
@@ -164,6 +183,8 @@ enum FeedCardPayload: Codable, Sendable, Equatable {
     case effort(EffortPayload)
     case hardestEffort(HardestEffortPayload)
     case hrTrend(HRTrendPayload)
+    case onTheBoard(OnTheBoardPayload)
+    case liftPR(LiftPRPayload)
 }
 
 /// The ephemeral feed unit. Pure value; derive-on-read; never persisted.
