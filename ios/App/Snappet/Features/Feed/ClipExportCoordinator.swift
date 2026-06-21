@@ -59,9 +59,15 @@ enum ClipExportCoordinator {
         guard !workout.media.isEmpty else { return .empty }
 
         // 2. Run the selector pipeline → highlights (the same engine access the studio uses).
+        // Use the SAME `.fullLength()` config the flagship reel path (`ReelViewModel`) uses: HR still
+        // chooses WHICH clip to feature, but each plays in FULL (no per-clip trim) — matching the
+        // uncapped `ReelPlanner(targetDuration: nil)` behind `app.reelPlan`. Without `.fullLength()` the
+        // trimmed window is biased earlier by `hrLagSec`+`clipLeadSec` and, for a short clip captured
+        // early in the session, collapses to ~0s — the planner then drops it (`dur <= 0`) and the export
+        // throws `noVideoSegments`. That broke R4 Animate for any real short PHAsset clip, not just the seed.
         let scene = await app.sceneSelector(for: workout)
         let highlights = app.engine(boosting: [], scene: scene).selector.select(
-            workout: workout, config: .preset(for: workout.activity))
+            workout: workout, config: .preset(for: workout.activity).fullLength())
         guard !highlights.isEmpty else { return .empty }
 
         // 3. Plan the reel (no pins — the casual one-tap share path keeps the engine's pick).

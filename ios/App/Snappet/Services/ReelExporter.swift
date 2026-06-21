@@ -58,8 +58,12 @@ final class ReelExporter: Sendable {
         let composition = AVMutableComposition()
         let vTrack = composition.addMutableTrack(withMediaType: .video,
                                                  preferredTrackID: kCMPersistentTrackID_Invalid)
-        let aTrack = composition.addMutableTrack(withMediaType: .audio,
-                                                 preferredTrackID: kCMPersistentTrackID_Invalid)
+        // Audio track is created LAZILY (only when a segment actually has audio). An EMPTY audio track
+        // left in the composition makes the videoComposition re-encode fail `AVFoundationErrorDomain
+        // -11838 / OSStatus -16976` ("Operation Stopped") on-device — and real clips (and the bundled
+        // test clip) can legitimately have no audio. Same fix the studio's `StudioComposer` carries
+        // (live-workout-studio S0 spike); R11 device diagnosis confirmed it for the recap Animate path.
+        var aTrack: AVMutableCompositionTrack?
         let photoRenderer = PhotoClipRenderer()
         var cursor = CMTime.zero
         var inserted = 0
@@ -92,7 +96,10 @@ final class ReelExporter: Sendable {
                 catch { continue }
                 layouts.append(await layout(for: src, start: cursor))
                 if let srcA = try? await asset.loadTracks(withMediaType: .audio).first {
-                    try? aTrack?.insertTimeRange(range, of: srcA, at: cursor)
+                    let track = aTrack ?? composition.addMutableTrack(
+                        withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+                    aTrack = track
+                    try? track?.insertTimeRange(range, of: srcA, at: cursor)
                 }
                 cursor = cursor + range.duration
                 inserted += 1
@@ -100,8 +107,9 @@ final class ReelExporter: Sendable {
         }
         guard inserted > 0, let vTrack else { throw ExportError.noVideoSegments }
 
-        let videoComposition = makeVideoComposition(track: vTrack, layouts: layouts,
-                                                    totalDuration: composition.duration)
+        let videoComposition = try await makeVideoComposition(composition: composition, track: vTrack,
+                                                              layouts: layouts,
+                                                              totalDuration: composition.duration)
         return (composition, videoComposition)
     }
 
@@ -117,15 +125,25 @@ final class ReelExporter: Sendable {
     /// One `AVVideoComposition` over the single composition video track: a render canvas sized to the
     /// FIRST segment's oriented size (so a same-orientation reel keeps native resolution), with a
     /// piecewise `setTransform` per segment that orients then aspect-fits (letterboxes) into the canvas.
-    private func makeVideoComposition(track: AVCompositionTrack, layouts: [SegmentLayout],
-                                      totalDuration: CMTime) -> AVMutableVideoComposition? {
+    ///
+    /// Derived from `AVMutableVideoComposition.videoComposition(withPropertiesOf:)` — NOT a bare
+    /// `AVMutableVideoComposition()` — so the composition carries the source track's colour/format tags
+    /// and a valid source-track mapping. A bare init fails the device re-encode with
+    /// `AVFoundationErrorDomain -11838 / OSStatus -16976` ("Operation Stopped") the moment a
+    /// `videoComposition` is attached (with OR without the Core-Animation overlay tool) — the same
+    /// reason `StudioComposer` builds its videoComposition this way (R11 device diagnosis; the S0
+    /// profiling spike proves this construction exports on-device). renderSize / frameDuration /
+    /// instructions are then overridden with our orient-and-letterbox layout.
+    private func makeVideoComposition(composition: AVMutableComposition, track: AVCompositionTrack,
+                                      layouts: [SegmentLayout],
+                                      totalDuration: CMTime) async throws -> AVMutableVideoComposition? {
         guard let first = layouts.first else { return nil }
         // Even dimensions keep the encoder happy.
         let renderSize = CGSize(width: (first.orientedSize.width / 2).rounded() * 2,
                                 height: (first.orientedSize.height / 2).rounded() * 2)
         guard renderSize.width >= 2, renderSize.height >= 2 else { return nil }
 
-        let vc = AVMutableVideoComposition()
+        let vc = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
         vc.renderSize = renderSize
         vc.frameDuration = CMTime(value: 1, timescale: 30)
 
@@ -184,6 +202,22 @@ final class ReelExporter: Sendable {
         let (composition, videoComposition) = try await makeComposition(for: plan)
         var exportVideoComposition = videoComposition
 
+        // The iOS **Simulator** has no usable H.264 video encoder: any re-encoding export
+        // (`AVAssetExportPresetHighestQuality`, or ANY preset combined with a `videoComposition`)
+        // fails with `AVFoundationErrorDomain -11838 / OSStatus -16976` ("Operation Stopped") — the
+        // same reason every transcoding/Core-Animation-tool export in `StudioComposerProfilingTests` is
+        // device-only. It CAN, however, passthrough-remux. So on the simulator we export the stitched
+        // composition with `AVAssetExportPresetPassthrough` and NO `videoComposition` — the hermetic
+        // clip-export E2E still drives the real id-chain → selector → planner → composition → export
+        // pipeline to a real on-disk MP4, just without the re-encoded orient/letterbox + burned overlay
+        // (which can't run on the sim anyway). On **device** nothing changes: HighestQuality re-encode
+        // with the oriented videoComposition and the burned HR scorebug, exactly as before.
+        #if targetEnvironment(simulator)
+        let presetName = AVAssetExportPresetPassthrough
+        exportVideoComposition = nil   // passthrough can't apply a videoComposition
+        #else
+        let presetName = AVAssetExportPresetHighestQuality
+        // The HR scorebug is burned in via an `AVVideoCompositionCoreAnimationTool` (offline-render-only).
         if let hrOverlay, let mvc = videoComposition as? AVMutableVideoComposition {
             let values = HROverlayValues(samples: hrOverlay.hrSeries,
                                          durationSec: composition.duration.seconds,
@@ -198,9 +232,9 @@ final class ReelExporter: Sendable {
                 exportVideoComposition = mvc
             }
         }
+        #endif
 
-        guard let session = AVAssetExportSession(asset: composition,
-                                                 presetName: AVAssetExportPresetHighestQuality) else {
+        guard let session = AVAssetExportSession(asset: composition, presetName: presetName) else {
             throw ExportError.exportFailed("could not create export session")
         }
         session.videoComposition = exportVideoComposition
@@ -260,6 +294,19 @@ final class ReelExporter: Sendable {
     }
 
     private func avAsset(forLocalIdentifier id: String) async -> AVAsset? {
+        // Test-only bundled-clip fallback (R11): a sentinel `uitest-bundled://` identifier resolves to
+        // a clip bundled in the app — so the recap clip-export E2E runs the real composition/export on
+        // the simulator with no Photos. Harmless in prod: no real PHAsset `localIdentifier` uses this
+        // scheme, so this branch is unreachable for any real asset.
+        if id.hasPrefix(RecapClipSeed.bundledScheme) {
+            let name = String(id.dropFirst(RecapClipSeed.bundledScheme.count))   // "recap-uitest-clip.mov"
+            let res = (name as NSString).deletingPathExtension
+            let ext = (name as NSString).pathExtension
+            if let url = Bundle.main.url(forResource: res, withExtension: ext) {
+                return AVURLAsset(url: url)
+            }
+            return nil
+        }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
         guard let phAsset = assets.firstObject else { return nil }
         let boxed: Box<AVAsset?> = await withCheckedContinuation { cont in
