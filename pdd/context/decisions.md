@@ -6668,3 +6668,20 @@ pure helper + dedup + backup ship green without a board.
 
 **Android (tracked).** No Android tree touched — P5 is an iOS-only wave; the Kotlin mirror rides a later
 Kilter Improvement Android wave.
+
+## 2026-06-21 — Recap feed F3 clip-ranking seam (R1/R2 split)
+
+**Decision.** The F3 inline-clip work is split across two stacked PRs (see
+`pdd/prompts/features/feed/REMEDIATION-PLAN.md`). **R1** ships the pure, sim-tested foundations:
+`FeedClipEligibility` (the `clipReady(hasVideo:hasHR:planSegmentCount:)` predicate + a platform-free
+`ReelPlan` ranking wiring that runs `SessionHighlightInput.makeWorkout → HRHighlightSelector → ReelPlanner.plan`
+with the engine pieces injectable, no AVFoundation/AppModel), `FeedHeroResolver` (clip→photo→generated), and
+`FeedActivePlayerCoordinator` (nearest-viewport-center + hysteresis).
+
+**Why the card payload uses "first video by offset", not the ranked segment.** `FeedComposer`/`FeedQuery`
+enrich the a1 payload with a cheap deterministic clip hint (the earliest video `SessionMedia`) so derive-on-read
+stays cheap — running the HighlightEngine ranker for every session on every compose would be wasteful. The
+**ranked** top segment (`FeedClipEligibility.evaluate`/`topClipRef`) is consumed lazily by **R2**'s
+`FeedClipPlayer` only when a card becomes the scroll-center active player. So the ranker is a *tested seam
+consumed in R2*, not dead code; the `clipReady` predicate gates the player-attach there. Keystone untouched
+(no F0 ordering edit; additive payload fields + an additive `compose` param only).
