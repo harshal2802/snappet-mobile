@@ -168,4 +168,20 @@ final class FeedMediaTests: XCTestCase {
         XCTAssertEqual(groups.count, 1)
         XCTAssertEqual(groups.first?.items.map(\.offsetSec), [10, 50, 90])
     }
+
+    // MARK: feed scorebug — HRR drops without a rest HR
+
+    func testFeedClipScorebugDropsHRRWithoutRestHR() {
+        // With a rest HR, HRR is meaningful → kept.
+        XCTAssertTrue(HRTile.feedClipScorebug(restHR: 55).enabledMetrics.contains(.hrr),
+                      "HRR should be shown when a rest HR is present")
+        // No / zero rest HR → HRR is undefined (would render a dead 0%) → dropped.
+        XCTAssertFalse(HRTile.feedClipScorebug(restHR: nil).enabledMetrics.contains(.hrr),
+                       "HRR should be dropped when there's no rest HR")
+        XCTAssertFalse(HRTile.feedClipScorebug(restHR: 0).enabledMetrics.contains(.hrr),
+                       "HRR should be dropped when rest HR is 0")
+        // The other scorebug metrics are unaffected either way.
+        XCTAssertTrue(HRTile.feedClipScorebug(restHR: nil).enabledMetrics.contains(.bpm),
+                      "BPM stays even without a rest HR")
+    }
 }

@@ -223,7 +223,8 @@ final class ReelExporter: Sendable {
                                          durationSec: composition.duration.seconds,
                                          maxHR: hrOverlay.maxHR,
                                          restHR: hrOverlay.restHR)
-            if let tile = values.resolveTile(HRTile.make(template: .scorebug)),
+            // Same feed scorebug as the in-app viewer — drops HRR when there's no rest HR (WYSIWYG).
+            if let tile = values.resolveTile(.feedClipScorebug(restHR: hrOverlay.restHR)),
                let tool = StudioOverlays.makeAnimationTool(
                     overlays: [], canvas: mvc.renderSize,
                     totalDuration: composition.duration.seconds,

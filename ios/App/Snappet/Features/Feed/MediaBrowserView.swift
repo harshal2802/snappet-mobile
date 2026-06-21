@@ -266,7 +266,7 @@ private struct PagedMediaViewer: View {
         let dur = (m.durationSec ?? FeedMedia.photoWindowSec)
         let values = HROverlayValues(samples: window, durationSec: max(0.1, dur),
                                      maxHR: maxHR, restHR: clipContext?.restHR)
-        return ClipOverlay(tile: HRTile.make(template: .scorebug), values: values)
+        return ClipOverlay(tile: .feedClipScorebug(restHR: clipContext?.restHR), values: values)
     }
 }
 
@@ -428,4 +428,22 @@ private final class PlayerContainerView: UIView {
 private struct Box<T>: @unchecked Sendable {
     let value: T
     init(_ value: T) { self.value = value }
+}
+
+extension HRTile {
+    /// The feed clip's scorebug tile — the SAME `.scorebug` the export burns, but with HRR (heart-rate
+    /// reserve) dropped when the session has no resting HR. HRR is undefined without a rest HR and would
+    /// otherwise render a dead "0%". Used by BOTH the in-app viewer overlay and the export burn so they
+    /// stay identical (WYSIWYG). The studio editor's own tiles are unaffected (they still use `.make`).
+    static func feedClipScorebug(restHR: Double?) -> HRTile {
+        var tile = HRTile.make(template: .scorebug)
+        if (restHR ?? 0) <= 0 {
+            tile.entries = tile.entries.map { entry in
+                var entry = entry
+                if entry.metric == .hrr { entry.on = false }
+                return entry
+            }
+        }
+        return tile
+    }
 }
