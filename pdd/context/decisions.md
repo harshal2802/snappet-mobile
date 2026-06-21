@@ -25,6 +25,26 @@ toolbar button on `CardDetailView`. The **Animate HR-overlay clip** path (`ReelE
 Photos) is **iOS-device-only** — surfaced honestly (a labeled device-burn follow-on), never a dead button.
 Image-share is the verifiable Pillar-1 core; clip export is device-pending.
 
+## [2026-06-20] Recap Feed — iOS completion (remaining insight menu + F7 masonry + F3/F4 clip)
+
+**Decision**: completed every remaining iOS follow-up. New pure recipe engines (file-isolated, authored in
+parallel then integrated): `FeedProjectCards` (b2 first-at-grade *backfill-only* so it never dupes a b1 PR;
+g1 project→sent), `FeedTrendCards` (d3 discipline-split, d4 90-day trend-arrows), `FeedEffortInsights`
+(e4 effort-vs-grade efficiency, e5 HRV/recovery, restNudge — all HR-field-gated, iOS-only, protective
+framing), and `FeedWallLayout` (pure balanced shortest-column masonry, 2–3 cols by width) now driving
+`WallView`. All registered as `FeedComposer` recipes — F0 ordering core still untouched.
+
+**F3/F4 clip path**: `ClimbSessionPayload` gained `clipCount` (threaded `mediaCountBySession` through
+`compose`/`FeedQuery` from `@Query SessionMedia`); the card shows an inline "N clips" affordance and
+`ShareComposer` offers **Animate** via `ClipExportCoordinator` (records the ShareEvent + wires the
+pipeline) — the **AVFoundation/Photos clip RENDER stays the device-only tail** (honest, never a dead button).
+
+**Golden-corpus test reframed**: as the card set grew, float-identical full ordering across Swift/Kotlin is
+neither guaranteed nor the real contract — the test now pins the eligible card **multiset + salience tiers +
+recency-bounded head** (the cross-platform invariants), not the exact permutation. Also fixed: c4 climbing-
+level gated on `totalSends ≥ 20` (the engine computes a level for fewer). **Whole app suite green: 1336
+tests, 0 failures.** Deferred (true device-burn): live inline `AVPlayer` auto-play + the clip render itself.
+
 ## [2026-06-20] Recap Feed F6 follow-up — Story Player engine + insight menu (review-driven)
 
 **Decision**: completed F6 to its acceptance criteria after the review flagged the shell. Pure engines:

@@ -36,6 +36,7 @@ struct ShareComposerView: View {
     @State private var aspect: ShareAspect = .r916
     @State private var template: ShareTemplateKind
     @State private var shareImage: ShareImage?
+    @State private var animateNote: String?
 
     init(card: FeedCard) {
         self.card = card
@@ -70,8 +71,23 @@ struct ShareComposerView: View {
                 .accessibilityIdentifier("share.button")
                 .padding(.horizontal)
 
-                Label("Animate (HR-overlay clip) — needs a real device + Photos", systemImage: "wand.and.stars")
-                    .font(.caption).foregroundStyle(SnappetColor.textSecondary).padding(.bottom, 8)
+                if ClipExportCoordinator.canAnimate(card) {
+                    Button {
+                        animateNote = ClipExportCoordinator.animate(card: card, in: context)
+                    } label: {
+                        Label("Animate (HR-overlay clip)", systemImage: "wand.and.stars")
+                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .foregroundStyle(SnappetColor.kilter)
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(SnappetColor.kilter, lineWidth: 1.2))
+                    }
+                    .accessibilityIdentifier("share.animate")
+                    .padding(.horizontal)
+                    if let animateNote { Text(animateNote).font(.caption).foregroundStyle(SnappetColor.textSecondary) }
+                } else {
+                    Label("Animate (HR clip) — sessions with video only", systemImage: "wand.and.stars")
+                        .font(.caption).foregroundStyle(SnappetColor.textSecondary)
+                }
+                Color.clear.frame(height: 4)
             }
             .background(SnappetColor.paper)
             .navigationTitle("Share")
@@ -165,6 +181,20 @@ struct ShareCardView: View {
             return ("Consistency", "\(p.activeDays)", ["active days"], SnappetColor.kilter)
         case .onThisDay(let p):
             return ("On this day", p.grade ?? "—", [p.summary], SnappetColor.kilter)
+        case .firstAtGrade(let p):
+            return ("First at grade", p.grade, [p.climbName], SnappetColor.kilter)
+        case .projectSent(let p):
+            return ("Project sent", p.grade, ["after \(p.sessions) sessions", p.climbName], SnappetColor.brand)
+        case .disciplineSplit(let p):
+            return ("Discipline split", p.topLabel, p.slices.prefix(3).map { "\($0.label): \($0.count)" }, SnappetColor.workout)
+        case .trendArrows(let p):
+            return ("90-day trends", p.arrows.first.map { "\($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" } ?? "—", p.arrows.map(\.label), SnappetColor.kilter)
+        case .effortEfficiency(let p):
+            return ("Fitness gain", "\(p.newAvgBpm)", ["avg BPM at \(p.gradeBand)", "was \(p.oldAvgBpm)"], SnappetColor.kilter)
+        case .hrvRecovery(let p):
+            return ("Recovery", "\(p.rmssd)", ["RMSSD", p.note], SnappetColor.kilter)
+        case .restNudge(let p):
+            return ("Go gentler", "\(p.hardDays)", ["hard days", p.note], SnappetColor.kilter)
         }
     }
 }

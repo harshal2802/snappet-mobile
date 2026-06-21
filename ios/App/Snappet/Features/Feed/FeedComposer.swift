@@ -143,6 +143,7 @@ enum FeedComposer {
                         kilterLogs: [KilterClimbLog] = [],
                         workoutSessions: [WorkoutSessionInput] = [],
                         kilterLitEvents: [LitEventInput] = [],
+                        mediaCountBySession: [UUID: Int] = [:],
                         allTimeStats: KilterAllTimeStats = .empty,
                         now: Date,
                         calendar: Calendar = .current) -> [FeedCard] {
@@ -151,7 +152,7 @@ enum FeedComposer {
         let lastAct = lastActivity(sessions: kilterSessions, logs: kilterLogs, workouts: workoutSessions)
 
         var cards: [FeedCard] = []
-        cards += climbSessionCards(sessions: kilterSessions, logs: kilterLogs, prKeys: prKeys)
+        cards += climbSessionCards(sessions: kilterSessions, logs: kilterLogs, prKeys: prKeys, mediaCountBySession: mediaCountBySession)
         cards += workoutSessionCards(workouts: workoutSessions)
         cards += prCards
         cards += mostClimbsCards(sessions: kilterSessions, logs: kilterLogs)
@@ -166,6 +167,13 @@ enum FeedComposer {
         cards += onTheBoardCards(litEvents: kilterLitEvents, loggedSessionIds: Set(kilterLogs.compactMap { $0.sessionId }))
         // F6 — cross-session insight menu (registry entries; pure, all-time/log-scan derived).
         cards += FeedInsightCards.cards(allTime: allTimeStats, logs: kilterLogs, now: now, calendar: calendar, anchor: lastAct ?? now)
+        // F6 follow-on — the rest of the insight menu (project/grade, trends, HR-effort).
+        cards += FeedProjectCards.cards(logs: kilterLogs, now: now, calendar: calendar, anchor: lastAct ?? now)
+        cards += FeedTrendCards.cards(allTime: allTimeStats, kilterSessions: kilterSessions,
+                                      workoutSessions: workoutSessions, logs: kilterLogs,
+                                      now: now, calendar: calendar, anchor: lastAct ?? now)
+        cards += FeedEffortInsights.cards(kilterSessions: kilterSessions, logs: kilterLogs,
+                                          now: now, calendar: calendar, anchor: lastAct ?? now)
 
         let windowed = cards.filter { inWindow($0.anchorDate, window: window, now: now, calendar: calendar) }
         return ordered(windowed, now: now)
@@ -198,7 +206,7 @@ enum FeedComposer {
 
     // MARK: - Recipes
 
-    private static func climbSessionCards(sessions: [KilterSessionInput], logs: [KilterClimbLog], prKeys: Set<String>) -> [FeedCard] {
+    private static func climbSessionCards(sessions: [KilterSessionInput], logs: [KilterClimbLog], prKeys: Set<String>, mediaCountBySession: [UUID: Int]) -> [FeedCard] {
         let bySession = Dictionary(grouping: logs.filter { $0.sessionId != nil }, by: { $0.sessionId! })
         var out: [FeedCard] = []
         for s in sessions {
@@ -213,7 +221,8 @@ enum FeedComposer {
                 totalClimbs: stats.totalClimbs, sends: stats.sends, projects: stats.projects,
                 attemptsOnly: stats.attemptsOnly, totalAttempts: stats.totalAttempts,
                 durationSec: stats.totalDuration, angle: s.angle,
-                pyramid: stats.pyramid.map(Self.row(from:)), isPRSession: isPR)
+                pyramid: stats.pyramid.map(Self.row(from:)), isPRSession: isPR,
+                clipCount: mediaCountBySession[s.id] ?? 0)
             out.append(FeedCard(id: "a1-\(s.id.uuidString)", contentId: FeedContentIdentity.kilterSession(id: s.id.uuidString),
                                 kind: .a1Session, category: .climbing,
                                 salience: Salience.climbSession, anchorDate: end,

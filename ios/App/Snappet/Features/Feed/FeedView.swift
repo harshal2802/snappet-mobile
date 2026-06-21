@@ -16,6 +16,7 @@ struct FeedView: View {
     @Query private var kilterLogs: [KilterLogEntry]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
     @Query private var litEvents: [KilterLitEvent]
+    @Query private var allMedia: [SessionMedia]
 
     @State private var lens: FeedLensChip = .all
     @State private var visibleCount = 12
@@ -30,16 +31,9 @@ struct FeedView: View {
     // MARK: Derivation (derive-on-read; no card persistence)
 
     private func composed() -> [FeedCard] {
-        let logs = kilterLogs.map(KilterClimbLog.from)
-        let summaries = kilterSessions.map(KilterSessionSummary.from)
-        let allTime = KilterAllTimeStats.make(logs: logs, sessions: summaries, now: .now)
-        return FeedComposer.compose(
-            window: .allTime,
-            kilterSessions: kilterSessions.map(KilterSessionInput.from),
-            kilterLogs: logs,
-            workoutSessions: workoutSessions.map(WorkoutSessionInput.from),
-            kilterLitEvents: litEvents.map(LitEventInput.from),
-            allTimeStats: allTime, now: .now)
+        FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
+                        workoutSessions: workoutSessions, litEvents: litEvents,
+                        sessionMedia: allMedia, now: .now)
     }
 
     var body: some View {

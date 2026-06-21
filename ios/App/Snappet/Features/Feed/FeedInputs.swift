@@ -49,16 +49,20 @@ extension MediaInput {
 enum FeedQuery {
     static func cards(kilterSessions: [KilterSession], kilterLogs: [KilterLogEntry],
                       workoutSessions: [WorkoutSession], litEvents: [KilterLitEvent],
+                      sessionMedia: [SessionMedia] = [],
                       window: FeedWindow = .allTime, now: Date) -> [FeedCard] {
         let logs = kilterLogs.map(KilterClimbLog.from)
         let summaries = kilterSessions.map(KilterSessionSummary.from)
         let allTime = KilterAllTimeStats.make(logs: logs, sessions: summaries, now: now)
+        var mediaCount: [UUID: Int] = [:]
+        for m in sessionMedia where m.kind == .video { mediaCount[m.sessionID, default: 0] += 1 }
         return FeedComposer.compose(
             window: window,
             kilterSessions: kilterSessions.map(KilterSessionInput.from),
             kilterLogs: logs,
             workoutSessions: workoutSessions.map(WorkoutSessionInput.from),
             kilterLitEvents: litEvents.map(LitEventInput.from),
+            mediaCountBySession: mediaCount,
             allTimeStats: allTime, now: now)
     }
 }

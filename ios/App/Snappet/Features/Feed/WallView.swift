@@ -14,8 +14,7 @@ struct WallView: View {
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
     @Query private var litEvents: [KilterLitEvent]
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
-    private let tileKinds: Set<FeedCardKind> = [.a1Session, .a2Session, .b1GradePR, .b4LiftPR, .a3OnTheBoard]
+    private let tileKinds: Set<FeedCardKind> = [.a1Session, .a2Session, .b1GradePR, .b4LiftPR, .a3OnTheBoard, .g1ProjectSent, .b2FirstAtGrade]
 
     private var tiles: [FeedCard] {
         FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
@@ -25,19 +24,28 @@ struct WallView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
+            Group {
                 if tiles.isEmpty {
                     ContentUnavailableView("No sends yet", systemImage: "square.grid.3x3",
                                            description: Text("Log a climb or workout to fill your wall."))
-                        .padding(.top, 60)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(tiles) { card in
-                            NavigationLink(value: card) { WallTile(card: card) }
-                                .buttonStyle(.plain)
+                    GeometryReader { geo in
+                        // Pure FeedWallLayout: balanced shortest-column masonry, 2–3 columns by width.
+                        let columns = FeedWallLayout.distribute(
+                            tiles, columns: FeedWallLayout.columnCount(forWidth: Double(geo.size.width)))
+                        ScrollView {
+                            HStack(alignment: .top, spacing: 8) {
+                                ForEach(columns.indices, id: \.self) { ci in
+                                    LazyVStack(spacing: 8) {
+                                        ForEach(columns[ci]) { card in
+                                            NavigationLink(value: card) { WallTile(card: card) }.buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(SnappetSpacing.lg)
                         }
                     }
-                    .padding(SnappetSpacing.lg)
                 }
             }
             .background(SnappetColor.paper)

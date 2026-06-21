@@ -81,6 +81,34 @@ struct FeedCardView: View {
             MilestoneCardView(accent: SnappetColor.kilter, icon: "clock.arrow.circlepath", kind: "On this day",
                               hero: p.grade ?? "—", caption: "\(p.yearsAgo) yr ago", sub: p.summary,
                               identifier: "feed.card.onThisDay")
+        case .firstAtGrade(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "star.fill", kind: "First at grade",
+                              hero: p.grade, caption: "your first \(p.grade)", sub: p.climbName, identifier: "feed.card.b2FirstAtGrade")
+        case .projectSent(let p):
+            MilestoneCardView(accent: SnappetColor.brand, icon: "checkmark.seal.fill", kind: "Project sent",
+                              hero: p.grade, caption: "after \(p.sessions) session\(p.sessions == 1 ? "" : "s")", sub: p.climbName,
+                              identifier: "feed.card.g1ProjectSent")
+        case .disciplineSplit(let p):
+            MilestoneCardView(accent: SnappetColor.workout, icon: "chart.pie.fill", kind: "Discipline split",
+                              hero: p.topLabel, caption: "most sessions",
+                              sub: p.slices.prefix(3).map { "\($0.label) \($0.count)" }.joined(separator: " · "),
+                              identifier: "feed.card.d3DisciplineSplit")
+        case .trendArrows(let p):
+            MilestoneCardView(accent: SnappetColor.kilter, icon: "arrow.up.arrow.down", kind: "90-day trends",
+                              hero: p.arrows.first.map { "\($0.improving ? "▲" : "▼") \(abs($0.deltaPct))%" } ?? "—",
+                              caption: p.arrows.first?.label ?? "trend",
+                              sub: p.arrows.dropFirst().first.map { "\($0.label) \($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" },
+                              identifier: "feed.card.d4TrendArrows")
+        case .effortEfficiency(let p):
+            MilestoneCardView(accent: SnappetColor.performance(forZone: .recovery), icon: "bolt.heart", kind: "Fitness gain",
+                              hero: "\(p.newAvgBpm)", caption: "avg BPM sending \(p.gradeBand)",
+                              sub: "was \(p.oldAvgBpm) — same grade, less effort", identifier: "feed.card.e4EffortEfficiency")
+        case .hrvRecovery(let p):
+            MilestoneCardView(accent: SnappetColor.performance(forZone: .recovery), icon: "heart.text.square", kind: "Recovery",
+                              hero: "\(p.rmssd)", caption: "RMSSD", sub: p.note, identifier: "feed.card.e5HRVRecovery")
+        case .restNudge(let p):
+            MilestoneCardView(accent: SnappetColor.performance(forZone: .aerobic), icon: "leaf.fill", kind: "Go gentler",
+                              hero: "\(p.hardDays)", caption: "hard days in a row", sub: p.note, identifier: "feed.card.restNudge")
         }
     }
 }
@@ -205,6 +233,14 @@ private struct ClimbSessionCardView: View {
                 .init(text: "\(payload.sends) sends", tint: SnappetColor.kilter, emphasized: true),
                 .init(text: "\(payload.totalAttempts) tries")
             ])
+            if payload.clipCount > 0 {
+                // F3: inline media affordance — tap the card → CardDetail → Media browser (live
+                // auto-play AVPlayer is the device-only tail).
+                Label("\(payload.clipCount) clip\(payload.clipCount == 1 ? "" : "s") · tap to view",
+                      systemImage: "play.rectangle.fill")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(SnappetColor.kilter)
+                    .accessibilityIdentifier("feed.card.clips")
+            }
         }
         .feedCard(accent: SnappetColor.kilter)
         .accessibilityIdentifier("feed.card.a1Session")

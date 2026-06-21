@@ -34,6 +34,14 @@ enum FeedCardKind: String, Codable, Sendable, CaseIterable {
     case d2PeriodVsLast   // this period vs last (sends)
     case consistencyMap   // active-days consistency
     case onThisDay        // a send on this date in a prior year (memory)
+    // F6 follow-on — the rest of the insight menu
+    case b2FirstAtGrade   // first-ever send at a grade band
+    case g1ProjectSent    // a climb that went project → sent
+    case d3DisciplineSplit // climbing vs strength vs … share in window
+    case d4TrendArrows    // 90-day rolling vs baseline
+    case e4EffortEfficiency // same grade at lower HR than before (iOS, HR-gated)
+    case e5HRVRecovery    // HRV/recovery (iOS, RR-gated)
+    case restNudge        // protective "go gentler" rest suggestion
 }
 
 /// Wayfinding category — drives the Lens bar (All · Climbing · Strength · Effort · Milestones).
@@ -82,6 +90,9 @@ struct ClimbSessionPayload: Codable, Sendable, Equatable {
     var pyramid: [PyramidRow]
     /// True when a send in this session set a new all-time hardest grade (drives the PR accent).
     var isPRSession: Bool
+    /// Count of video clips attached to the session (F3) — drives the inline media affordance + the
+    /// F4 "Animate" offer. 0 → no media (generated hero fallback). Live playback/export is device-only.
+    var clipCount: Int = 0
 }
 
 struct WorkoutSessionPayload: Codable, Sendable, Equatable {
@@ -223,6 +234,46 @@ struct OnThisDayPayload: Codable, Sendable, Equatable {
     var summary: String
 }
 
+// MARK: F6 follow-on — remaining insight payloads
+
+struct FirstAtGradePayload: Codable, Sendable, Equatable {
+    var grade: String
+    var climbName: String
+}
+
+struct ProjectSentPayload: Codable, Sendable, Equatable {
+    var grade: String
+    var climbName: String
+    var sessions: Int          // sessions it was a project before sending
+}
+
+struct DisciplineSplitPayload: Codable, Sendable, Equatable {
+    struct Slice: Codable, Sendable, Equatable { var label: String; var count: Int }
+    var slices: [Slice]        // descending by count
+    var topLabel: String
+}
+
+struct TrendArrowsPayload: Codable, Sendable, Equatable {
+    struct Arrow: Codable, Sendable, Equatable { var label: String; var deltaPct: Int; var improving: Bool }
+    var arrows: [Arrow]
+}
+
+struct EffortEfficiencyPayload: Codable, Sendable, Equatable {
+    var gradeBand: String
+    var oldAvgBpm: Int
+    var newAvgBpm: Int         // newAvg < oldAvg = a fitness gain
+}
+
+struct HRVRecoveryPayload: Codable, Sendable, Equatable {
+    var rmssd: Int
+    var note: String
+}
+
+struct RestNudgePayload: Codable, Sendable, Equatable {
+    var hardDays: Int
+    var note: String
+}
+
 /// The discipline-typed payload union. Codable is synthesized (all cases Codable).
 enum FeedCardPayload: Codable, Sendable, Equatable {
     case climbSession(ClimbSessionPayload)
@@ -244,6 +295,13 @@ enum FeedCardPayload: Codable, Sendable, Equatable {
     case periodVsLast(PeriodVsLastPayload)
     case consistency(ConsistencyPayload)
     case onThisDay(OnThisDayPayload)
+    case firstAtGrade(FirstAtGradePayload)
+    case projectSent(ProjectSentPayload)
+    case disciplineSplit(DisciplineSplitPayload)
+    case trendArrows(TrendArrowsPayload)
+    case effortEfficiency(EffortEfficiencyPayload)
+    case hrvRecovery(HRVRecoveryPayload)
+    case restNudge(RestNudgePayload)
 }
 
 /// The ephemeral feed unit. Pure value; derive-on-read; never persisted.

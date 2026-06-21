@@ -121,6 +121,20 @@ enum StoryComposition {
             return s(card, "Consistency", "\(p.activeDays)", "active days", .kilter)
         case .onThisDay(let p):
             return s(card, "On this day", p.grade ?? "—", "\(p.yearsAgo) yr ago", .kilter)
+        case .firstAtGrade(let p):
+            return s(card, "First at grade", p.grade, p.climbName, .kilter)
+        case .projectSent(let p):
+            return s(card, "Project sent", p.grade, "after \(p.sessions) sessions", .brand)
+        case .disciplineSplit(let p):
+            return s(card, "Discipline split", p.topLabel, "most sessions", .workout)
+        case .trendArrows(let p):
+            return s(card, "90-day trend", p.arrows.first.map { "\($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" } ?? "—", p.arrows.first?.label ?? "trend", .kilter)
+        case .effortEfficiency(let p):
+            return s(card, "Fitness gain", "\(p.newAvgBpm)", "avg BPM at \(p.gradeBand)", .kilter)
+        case .hrvRecovery(let p):
+            return s(card, "Recovery", "\(p.rmssd)", "RMSSD", .kilter)
+        case .restNudge(let p):
+            return s(card, "Go gentler", "\(p.hardDays)", "hard days", .kilter)
         }
     }
 
