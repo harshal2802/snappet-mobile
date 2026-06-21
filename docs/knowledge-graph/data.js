@@ -96,8 +96,6 @@ const nodes = [
     file: "ios/App/Snappet/Features/Feed/FeedWallLayout.swift", desc: "Pure balanced masonry distributor (F7): shortest-column-first placement, 2–3 columns by width, no-drop/no-dup, deterministic. Drives WallView. Unit-tested.", tags: ["feed","wall","masonry","pure","tested"] },
   { id: "feed-clipexport", label: "ClipExportCoordinator", type: "service", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Feed/ClipExportCoordinator.swift", desc: "F4 Animate path: offers + wires the HR-overlay clip export (records a ShareEvent, assembles the pipeline) for climb cards with video. The AVFoundation/Photos clip RENDER is the device-only tail (honest offer, never a dead button).", tags: ["feed","clip","share","device-pending"] },
-  { id: "feed-clip-player", label: "FeedClipPlayer", type: "service", group: "feed", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Services/FeedClipPlayer.swift", desc: "F3 inline auto-clip hero (R2, device): a thin chromeless SwiftUI player that plays ONE ranked clip segment MUTED + LOOPED over a CMTimeRange via AVQueuePlayer + AVPlayerLooper (resolves the PHAsset → AVPlayerItem through PHImageManager). Drives the a1 climb card's hero when it's the scroll-center active card (single-active rule: FeedView feeds card frames+viewport into the pure FeedActivePlayerCoordinator → one isCentral card → one player; FeedHeroResolver picks clip vs still honoring reduceMotion/Low Power). The ranked top segment comes lazily from FeedClipEligibility/HighlightEngine for the active card only. Degrades to a still poster / generated DisciplineHero when the asset can't resolve (limited Photos access / simulator). Real muted-loop autoplay + hand-off is device-burn.", tags: ["feed","clip","avfoundation","autoplay","device-pending"] },
   { id: "feed-wall", label: "WallView (send wall)", type: "screen", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Feed/WallView.swift", desc: "Recap send wall (F7): a 2–3 column Pinterest-masonry layout over the SAME composed + lens-filtered + keyset-windowed corpus FeedView renders — identity-at-a-glance. Consumes the passed-in [FeedCard] (no second derivation — does NOT call FeedQuery/FeedComposer itself), laid out by the pure FeedWallLayout distributor. Rendered INLINE in FeedView (grid toggle flips list↔wall over the same `visible`, not a modal sheet); in grid mode the R2 single-active inline player stays inert (static tiles). Each tile is a compact Pulse-Pro card (DisciplineHero + trimmed StatRibbon + .snappetCard() + discipline edge-accent) that NavigationLinks to the same CardDetailView. No new card kinds, no card persistence.", tags: ["feed","wall","grid","masonry","pulse-pro","inline"] },
   { id: "feed-export", label: "Recap export surface", type: "sheet", group: "feed", category: "fitness", platform: "ios",
@@ -751,12 +749,6 @@ const links = [
   { source: "feed-wall", target: "card-detail", type: "navigate", label: "tap tile" },
   { source: "feed-composer", target: "feed-wall", type: "feeds", label: "same composed corpus" },
   { source: "feed-wall", target: "feed-walllayout", type: "uses", label: "pure masonry" },
-
-  // ---- F3 inline auto-clip hero (R2): single active muted-loop player ----
-  { source: "feed", target: "feed-clip-player", type: "uses", label: "scroll-center hero" },
-  { source: "feed-clip-player", target: "model-sessionmedia", type: "uses", label: "PHAsset clip" },
-  { source: "feed-clip-player", target: "highlightengine", type: "uses", label: "ranked segment" },
-  { source: "feed-clip-player", target: "reelplanner", type: "uses", label: "top clip" },
 
   // ---- F3b (R6): in-card carousel → fullscreen paged viewer ----
   { source: "feed", target: "feed-media-carousel", type: "contains", label: "in a1 card" },

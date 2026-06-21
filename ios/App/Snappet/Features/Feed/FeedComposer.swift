@@ -153,7 +153,6 @@ enum FeedComposer {
                         workoutSessions: [WorkoutSessionInput] = [],
                         kilterLitEvents: [LitEventInput] = [],
                         mediaCountBySession: [UUID: Int] = [:],
-                        topClipBySession: [UUID: FeedClipRef] = [:],
                         allTimeStats: KilterAllTimeStats = .empty,
                         now: Date,
                         calendar: Calendar = .current) -> [FeedCard] {
@@ -169,7 +168,7 @@ enum FeedComposer {
 
         var cards: [FeedCard] = []
         // — per-event (full inputs; window-filtered by their own anchorDate at the end) —
-        cards += climbSessionCards(sessions: kilterSessions, logs: kilterLogs, prKeys: prKeys, mediaCountBySession: mediaCountBySession, topClipBySession: topClipBySession)
+        cards += climbSessionCards(sessions: kilterSessions, logs: kilterLogs, prKeys: prKeys, mediaCountBySession: mediaCountBySession)
         cards += workoutSessionCards(workouts: workoutSessions)
         cards += prCards
         cards += mostClimbsCards(sessions: kilterSessions, logs: kilterLogs)
@@ -220,7 +219,7 @@ enum FeedComposer {
 
     // MARK: - Recipes
 
-    private static func climbSessionCards(sessions: [KilterSessionInput], logs: [KilterClimbLog], prKeys: Set<String>, mediaCountBySession: [UUID: Int], topClipBySession: [UUID: FeedClipRef]) -> [FeedCard] {
+    private static func climbSessionCards(sessions: [KilterSessionInput], logs: [KilterClimbLog], prKeys: Set<String>, mediaCountBySession: [UUID: Int]) -> [FeedCard] {
         let bySession = Dictionary(grouping: logs.filter { $0.sessionId != nil }, by: { $0.sessionId! })
         var out: [FeedCard] = []
         for s in sessions {
@@ -229,7 +228,6 @@ enum FeedComposer {
             let end = s.endedAt ?? slogs.map(\.loggedAt).max() ?? s.startedAt
             let stats = KilterSessionStats.make(from: slogs, start: s.startedAt, end: end)
             let isPR = slogs.contains { prKeys.contains(prKey($0)) }
-            let topClip = topClipBySession[s.id]                        // F3: top-ranked clip ref (iOS-only; nil on Android)
             let payload = ClimbSessionPayload(
                 title: s.title,
                 hardestSendGrade: stats.hardestSendGrade,
@@ -237,11 +235,7 @@ enum FeedComposer {
                 attemptsOnly: stats.attemptsOnly, totalAttempts: stats.totalAttempts,
                 durationSec: stats.totalDuration, angle: s.angle,
                 pyramid: stats.pyramid.map(Self.row(from:)), isPRSession: isPR,
-                clipCount: mediaCountBySession[s.id] ?? 0,
-                clipAssetId: topClip?.assetId,
-                clipOffsetSec: topClip?.offsetSec,
-                clipDurationSec: topClip?.durationSec,
-                hasHR: !s.hrSeries.isEmpty)
+                clipCount: mediaCountBySession[s.id] ?? 0)
             out.append(FeedCard(id: "a1-\(s.id.uuidString)", contentId: FeedContentIdentity.kilterSession(id: s.id.uuidString),
                                 kind: .a1Session, category: .climbing,
                                 salience: Salience.climbSession, anchorDate: end,

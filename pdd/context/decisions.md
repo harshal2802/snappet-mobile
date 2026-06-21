@@ -6733,6 +6733,17 @@ stays cheap — running the HighlightEngine ranker for every session on every co
 consumed in R2*, not dead code; the `clipReady` predicate gates the player-attach there. Keystone untouched
 (no F0 ordering edit; additive payload fields + an additive `compose` param only).
 
+**Update 2026-06-21 (R12) — the F3 inline auto-clip hero was DROPPED.** On device the inline `AVPlayer`
+rendered a black box inside the scrolling card and was redundant with the F3b/R6 in-card carousel. So the
+whole inline-hero machinery is removed: `FeedClipPlayer` (device), `FeedHeroResolver` (clip→photo→generated),
+`FeedActivePlayerCoordinator` (scroll-center + hysteresis), and `FeedClipEligibility`/`FeedClipRef`
+(`clipReady`/`reelPlan`/`topClipRef`/`evaluate`) and their tests — plus the `compose(topClipBySession:)` param,
+the a1 `clipAssetId`/`clipOffsetSec`/`clipDurationSec`/`hasHR` payload fields, and `FeedView`'s
+single-active-player scroll-center tracking. The **carousel (F3b/R6) is now the single in-card media surface**;
+the a1 hero is the still `DisciplineHero` again. `clipCount` (from `mediaCountBySession`), the carousel/paged
+viewer, and the F4 Animate path (`ClipExportCoordinator` → `SessionHighlightInput`/`app.reelPlan`, which never
+touched `FeedClipEligibility`) all remain unchanged. Keystone (F0 ordering core) still untouched.
+
 ## 2026-06-21 — Recap feed F3b (R6) media viewer: HRTileView overlay is a STYLE-match, not a data-match
 
 **Decision.** The fullscreen feed viewer's `HRTileView` overlay reuses the editor's `.scorebug` template/colors so it visually matches the R4 export burn ("preview == burn" = *visual parity*) — but it is a STYLE-match, not a numeric data-match: the viewer renders a per-clip *windowed static* tile (`fraction = 1.0` over `clipHRWindow`), whereas the export burns the *whole-reel animated* tile. To keep poster chip and viewer overlay agreeing on sparse series, `clipHRWindow` now mirrors `clipHR`'s ±8s nearest-sample fallback (rebased to clip-local t).

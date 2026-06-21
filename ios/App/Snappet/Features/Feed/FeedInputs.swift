@@ -55,22 +55,10 @@ enum FeedQuery {
         let logs = kilterLogs.map(KilterClimbLog.from)
         let summaries = kilterSessions.map(KilterSessionSummary.from)
         let allTime = KilterAllTimeStats.make(logs: logs, sessions: summaries, now: now)
+        // Per-session video-clip count → the a1 carousel + cheap "N clips" affordance + Animate offer.
         var mediaCount: [UUID: Int] = [:]
-        // F3: per-session top-clip ref for the inline hero. The video player (R2) loops this
-        // segment; here we pick the FIRST video clip (by capture offset) as the hero source —
-        // a cheap, deterministic default. (The full HighlightEngine ranking is available via
-        // `FeedClipEligibility.evaluate` for the eligibility/Animate seam and R2's player.)
-        var firstVideoBySession: [UUID: SessionMedia] = [:]
         for m in sessionMedia where m.kind == .video {
             mediaCount[m.sessionID, default: 0] += 1
-            if let existing = firstVideoBySession[m.sessionID] {
-                if m.offsetSec < existing.offsetSec { firstVideoBySession[m.sessionID] = m }
-            } else {
-                firstVideoBySession[m.sessionID] = m
-            }
-        }
-        let topClip = firstVideoBySession.mapValues {
-            FeedClipRef(assetId: $0.localIdentifier, offsetSec: $0.offsetSec, durationSec: $0.durationSec ?? 0)
         }
         return FeedComposer.compose(
             window: window,
@@ -79,7 +67,6 @@ enum FeedQuery {
             workoutSessions: workoutSessions.map(WorkoutSessionInput.from),
             kilterLitEvents: litEvents.map(LitEventInput.from),
             mediaCountBySession: mediaCount,
-            topClipBySession: topClip,
             allTimeStats: allTime, now: now)
     }
 }

@@ -90,20 +90,10 @@ struct ClimbSessionPayload: Codable, Sendable, Equatable {
     var pyramid: [PyramidRow]
     /// True when a send in this session set a new all-time hardest grade (drives the PR accent).
     var isPRSession: Bool
-    /// Count of video clips attached to the session (F3) — drives the inline media affordance + the
-    /// F4 "Animate" offer. 0 → no media (generated hero fallback). Live playback/export is device-only.
+    /// Count of video clips attached to the session (F3b) — drives the in-card carousel + the cheap
+    /// "N clips · tap to view" affordance + the F4 "Animate" offer. 0 → no media. The carousel (F3b/R6)
+    /// is the single in-card media surface; live playback/export is device-only.
     var clipCount: Int = 0
-    // F3 — additive inline-clip hero enrichment. All default so existing call sites + persisted
-    // `Codable` blobs keep working. The device player (R2) loops `[clipOffsetSec, +clipDurationSec]`
-    // over the asset `clipAssetId`; `hasHR` + a non-empty clip ref are the `clipReady` seam.
-    /// PHAsset `localIdentifier` of the top-ranked clip segment to loop as the hero (nil → no clip).
-    var clipAssetId: String? = nil
-    /// Seconds into `clipAssetId` where the looped hero segment begins.
-    var clipOffsetSec: Double? = nil
-    /// Length of the looped hero segment in seconds.
-    var clipDurationSec: Double? = nil
-    /// Whether the session has live HR (one of the three `clipReady` inputs).
-    var hasHR: Bool = false
 }
 
 struct WorkoutSessionPayload: Codable, Sendable, Equatable {
