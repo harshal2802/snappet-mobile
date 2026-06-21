@@ -132,6 +132,34 @@ final class FeedTrendCardsTests: XCTestCase {
         XCTAssertNil(FeedTrendCards.trendArrows(allTime: stats(buckets: [bucket("W1", t0, 4)]), logs: oldLogs, now: now))
     }
 
+    func testTrendArrowsZeroBaselineCapsAtHundredPercent() {
+        // Older half mean == 0 (a comeback after a gap). Dividing by zero is undefined, so the
+        // zero-baseline branch reports a fixed +100% rather than +Inf / NaN.
+        let now = t0.addingTimeInterval(200 * 86_400)
+        let oldLogs = [log(dayOffset: 0)]
+        let buckets = [
+            bucket("W1", t0, 0), bucket("W2", t0, 0),
+            bucket("W3", t0, 4), bucket("W4", t0, 6),
+        ]
+        guard let payload = FeedTrendCards.trendArrows(allTime: stats(buckets: buckets), logs: oldLogs, now: now) else {
+            return XCTFail("expected a trend arrows payload")
+        }
+        XCTAssertTrue(payload.arrows[0].improving)
+        XCTAssertEqual(payload.arrows[0].deltaPct, 100, "0 → positive reports a fixed +100%, not infinity")
+    }
+
+    func testTrendArrowsAllZeroIsFlatNotInfinite() {
+        // Both halves zero → no division, deltaPct 0, treated as non-declining (flat).
+        let now = t0.addingTimeInterval(200 * 86_400)
+        let oldLogs = [log(dayOffset: 0)]
+        let buckets = [bucket("W1", t0, 0), bucket("W2", t0, 0), bucket("W3", t0, 0), bucket("W4", t0, 0)]
+        guard let payload = FeedTrendCards.trendArrows(allTime: stats(buckets: buckets), logs: oldLogs, now: now) else {
+            return XCTFail("expected a trend arrows payload")
+        }
+        XCTAssertEqual(payload.arrows[0].deltaPct, 0)
+        XCTAssertTrue(payload.arrows[0].improving, "0 vs 0 is flat (newMean >= oldMean), not a decline")
+    }
+
     // MARK: degrade-by-absence + end-to-end
 
     func testDegradeByAbsenceOnEmpty() {

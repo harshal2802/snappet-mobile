@@ -18,10 +18,10 @@ import Foundation
 
 enum FeedTrendCards {
 
-    /// Salience literals for these two cards (kept here so the recipe is self-contained).
+    /// Salience tiers live in the keystone (FeedComposer.Salience); aliased here for readability.
     private enum Salience {
-        static let disciplineSplit = 0.55
-        static let trendArrows = 0.58
+        static let disciplineSplit = FeedComposer.Salience.disciplineSplit
+        static let trendArrows = FeedComposer.Salience.trendArrows
     }
 
     static func cards(allTime: KilterAllTimeStats,

@@ -8,6 +8,20 @@ import SwiftData
 // Lens bar (F0 pure post-filters, incl. always-available Sessions-only), a Stories-rail placeholder
 // (real period labels — F6 activates), keyset-windowed pagination, and the freshness pill.
 
+/// Render-cache for the derived feed: rebuilds the cards only when the underlying @Query content
+/// changes (add/remove), so frequent re-renders — lens taps, scroll pagination, the freshness-pill
+/// animation — reuse the last composition instead of re-running the full FeedComposer every time.
+/// A plain reference type (not an observed @State value) so reading/refreshing it inside `body`
+/// doesn't itself invalidate the view.
+private final class FeedMemo {
+    private var signature: Int?
+    private var cached: [FeedCard] = []
+    func cards(signature sig: Int, build: () -> [FeedCard]) -> [FeedCard] {
+        if sig != signature { signature = sig; cached = build() }
+        return cached
+    }
+}
+
 struct FeedView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
@@ -24,6 +38,7 @@ struct FeedView: View {
     @State private var newCount = 0
     @State private var showingWallPlaceholder = false
     @State private var presentedStory: StoryPeriod?
+    @State private var memo = FeedMemo()
 
     private let pageSize = 12
     private let topAnchor = "feed.top"
@@ -31,9 +46,27 @@ struct FeedView: View {
     // MARK: Derivation (derive-on-read; no card persistence)
 
     private func composed() -> [FeedCard] {
-        FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
-                        workoutSessions: workoutSessions, litEvents: litEvents,
-                        sessionMedia: allMedia, now: .now)
+        memo.cards(signature: feedSignature()) {
+            FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
+                            workoutSessions: workoutSessions, litEvents: litEvents,
+                            sessionMedia: allMedia, now: .now)
+        }
+    }
+
+    /// Cheap content fingerprint: counts of every source + the newest session/workout date. Changes
+    /// when records are added/removed (the common case), so the memo above can safely reuse the last
+    /// composition across pure UI re-renders. Date drift (recency decay) is intentionally ignored —
+    /// ordering stays stable while the tab is on screen and refreshes the moment data changes.
+    private func feedSignature() -> Int {
+        var h = Hasher()
+        h.combine(kilterSessions.count)
+        h.combine(kilterLogs.count)
+        h.combine(workoutSessions.count)
+        h.combine(litEvents.count)
+        h.combine(allMedia.count)
+        h.combine(kilterSessions.first?.startedAt)      // @Query sorted newest-first
+        h.combine(workoutSessions.first?.startedAt)
+        return h.finalize()
     }
 
     var body: some View {

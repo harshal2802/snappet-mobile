@@ -36,6 +36,7 @@ struct RecapStoryView: View {
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
     @Query private var litEvents: [KilterLitEvent]
+    @Query private var allMedia: [SessionMedia]
 
     @State private var scenes: [StoryScene] = []
     @State private var playback = StoryPlayback(sceneCount: 1)
@@ -135,7 +136,7 @@ struct RecapStoryView: View {
         guard scenes.isEmpty else { return }   // memoized — built once per presentation
         let cards = FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
                                     workoutSessions: workoutSessions, litEvents: litEvents,
-                                    window: period.window, now: .now)
+                                    sessionMedia: allMedia, window: period.window, now: .now)
         let sessionCount = cards.filter { $0.kind == .a1Session || $0.kind == .a2Session }.count
         scenes = StoryComposition.scenes(periodTitle: period.title, sessionCount: sessionCount, cards: cards)
         playback = StoryPlayback(sceneCount: scenes.count)

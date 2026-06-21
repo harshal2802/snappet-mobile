@@ -62,6 +62,20 @@ final class FeedEffortInsightsTests: XCTestCase {
         XCTAssertEqual(e4?.contentId, "", "aggregate card → empty contentId")
     }
 
+    func testE4FiresOnSubBpmGainThatRoundsEqual() {
+        // 159.4 → 159.0 → 158.9: a real downward trend whose oldest/newest averages BOTH round to 159.
+        // The gate compares UNROUNDED averages, so a sub-1-BPM gain still fires (regression guard for the
+        // earlier int-rounding gate that silently dropped it).
+        let (sessions, logs) = sessionsAtGrade("V5", 16, bpms: [159.4, 159.0, 158.9])
+        let cards = FeedEffortInsights.cards(kilterSessions: sessions, logs: logs, now: now, calendar: cal, anchor: now)
+        let e4 = cards.first { $0.kind == .e4EffortEfficiency }
+        XCTAssertNotNil(e4, "a sub-1-BPM real gain must not be lost to int rounding")
+        if case .effortEfficiency(let p)? = e4?.payload {
+            XCTAssertEqual(p.oldAvgBpm, 159)
+            XCTAssertEqual(p.newAvgBpm, 159, "both endpoints display 159 even though the gain was real")
+        } else { XCTFail("expected an effortEfficiency payload") }
+    }
+
     func testE4DoesNotFireOnRisingHR() {
         // HR rises across sessions → no efficiency gain → no card.
         let (sessions, logs) = sessionsAtGrade("V5", 16, bpms: [150, 160, 170])

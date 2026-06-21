@@ -69,15 +69,25 @@ enum StoryComposition {
     /// Year-in-Climb canonical arc: PR → progression → pyramid → most-climbs → volume/trend → angle → streak → effort → memory.
     private static func arcRank(_ k: FeedCardKind) -> Int {
         switch k {
-        case .b1GradePR: return 0
-        case .b4LiftPR: return 1
-        case .c1Pyramid: return 2
-        case .b3MostClimbs: return 3
-        case .d1WeeklyVolume: return 4
-        case .b5Streak: return 5
-        case .e1Effort, .e2HardestEffort: return 6
-        case .e3HRTrend: return 7
-        default: return 8
+        // PR tier
+        case .b1GradePR, .g1ProjectSent: return 0
+        case .b4LiftPR, .b2FirstAtGrade: return 1
+        // progression / pyramid
+        case .c3Progression, .c4ClimbingLevel: return 2
+        case .c1Pyramid, .c2PyramidHealth: return 3
+        // most-climbs / volume / trend
+        case .b3MostClimbs: return 4
+        case .d1WeeklyVolume, .d2PeriodVsLast, .d3DisciplineSplit, .d4TrendArrows: return 5
+        case .c5AngleDist: return 6
+        // streak / consistency
+        case .b5Streak, .consistencyMap: return 7
+        // effort
+        case .e1Effort, .e2HardestEffort, .e4EffortEfficiency, .e5HRVRecovery, .restNudge: return 8
+        case .e3HRTrend: return 9
+        // memory (last)
+        case .onThisDay: return 10
+        // sessions never reach here (filtered out before arc ranking)
+        case .a1Session, .a2Session, .a3OnTheBoard: return 11
         }
     }
 

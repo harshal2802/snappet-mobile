@@ -78,14 +78,15 @@ enum FeedEffortInsights {
         let oldAvg = oldest.map(\.peak).reduce(0, +) / Double(oldest.count)
         let newAvg = newest.map(\.peak).reduce(0, +) / Double(newest.count)
 
-        let oldInt = Int(oldAvg.rounded())
-        let newInt = Int(newAvg.rounded())
-        guard newInt < oldInt else { return [] }                       // gate: a real efficiency gain
+        // Gate on the UNROUNDED averages so a sub-1-BPM real gain (159.4 → 158.9) isn't lost to rounding;
+        // round only for the display payload.
+        guard newAvg < oldAvg else { return [] }                       // gate: a real efficiency gain
 
-        let payload = EffortEfficiencyPayload(gradeBand: chosen.key, oldAvgBpm: oldInt, newAvgBpm: newInt)
+        let payload = EffortEfficiencyPayload(gradeBand: chosen.key,
+                                              oldAvgBpm: Int(oldAvg.rounded()), newAvgBpm: Int(newAvg.rounded()))
         return [FeedCard(id: "e4-efficiency-\(chosen.key)", contentId: "",
                          kind: .e4EffortEfficiency, category: .effort,
-                         salience: 0.62, anchorDate: anchor,
+                         salience: FeedComposer.Salience.effortEfficiency, anchorDate: anchor,
                          sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "effortEfficiency")],
                          payload: .effortEfficiency(payload), shareHint: nil)]
     }
@@ -109,7 +110,7 @@ enum FeedEffortInsights {
                                          note: "Higher RMSSD = better recovered.")
         return [FeedCard(id: "e5-hrv", contentId: "",
                          kind: .e5HRVRecovery, category: .effort,
-                         salience: 0.50, anchorDate: anchor,
+                         salience: FeedComposer.Salience.hrvRecovery, anchorDate: anchor,
                          sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "hrvRecovery")],
                          payload: .hrvRecovery(payload), shareHint: nil)]
     }
@@ -148,7 +149,7 @@ enum FeedEffortInsights {
         let anchor = min(latest, now)                                  // never in the future
         return [FeedCard(id: "rest-nudge-\(Int(latest.timeIntervalSince1970))", contentId: "",
                          kind: .restNudge, category: .effort,
-                         salience: 0.50, anchorDate: anchor,
+                         salience: FeedComposer.Salience.restNudge, anchorDate: anchor,
                          sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "restNudge")],
                          payload: .restNudge(RestNudgePayload(hardDays: streak, note: note)), shareHint: nil)]
     }

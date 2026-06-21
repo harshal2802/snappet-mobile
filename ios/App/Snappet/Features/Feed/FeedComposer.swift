@@ -126,6 +126,14 @@ enum FeedComposer {
         static let workoutSession = 0.40
         static let insightMemory = 0.65  // F6: on-this-day (memory)
         static let consistency = 0.55     // F6: consistency map
+        // F6 follow-on tiers (centralized so the FA0 Kotlin port mirrors them 1:1):
+        static let projectSent = 0.85     // g1: a sent project (PR tier)
+        static let firstAtGrade = 0.60    // b2: first at a grade band
+        static let trendArrows = 0.58     // d4
+        static let disciplineSplit = 0.55 // d3
+        static let effortEfficiency = 0.62 // e4
+        static let hrvRecovery = 0.50     // e5
+        static let restNudge = 0.50       // protective rest nudge
     }
 
     /// Recency half-life. Decay is exp(-age/halfLife); 7 days keeps recent PRs ahead of
@@ -149,31 +157,35 @@ enum FeedComposer {
                         calendar: Calendar = .current) -> [FeedCard] {
 
         let (prCards, prKeys) = gradePRCards(logs: kilterLogs)
-        let lastAct = lastActivity(sessions: kilterSessions, logs: kilterLogs, workouts: workoutSessions)
+
+        // Per-event cards anchor to real event dates (the final window filter scopes them). AGGREGATE
+        // cards are computed over the WINDOW's data so a period recap (Story Player) shows period-accurate
+        // numbers and anchors in-window instead of being dropped (CRITICAL-2). .allTime uses everything.
+        let agg = windowedInputs(window: window, kilterSessions: kilterSessions, kilterLogs: kilterLogs,
+                                 workoutSessions: workoutSessions, allTimeStats: allTimeStats, now: now, calendar: calendar)
+        let aggAnchor = lastActivity(sessions: agg.sessions, logs: agg.logs, workouts: agg.workouts) ?? now
 
         var cards: [FeedCard] = []
+        // — per-event (full inputs; window-filtered by their own anchorDate at the end) —
         cards += climbSessionCards(sessions: kilterSessions, logs: kilterLogs, prKeys: prKeys, mediaCountBySession: mediaCountBySession)
         cards += workoutSessionCards(workouts: workoutSessions)
         cards += prCards
         cards += mostClimbsCards(sessions: kilterSessions, logs: kilterLogs)
         cards += streakCards(sessions: kilterSessions, workouts: workoutSessions, calendar: calendar)
-        cards += pyramidCards(allTime: allTimeStats, anchor: lastAct ?? now)
-        cards += weeklyVolumeCards(allTime: allTimeStats, anchor: lastAct ?? now)
-        // F2 — HR-deepened cards (registered here; never composed when hrSeries is absent).
-        cards += FeedHRCards.cards(sessions: kilterSessions, logs: kilterLogs)
-        cards += FeedHRCards.trend(sessions: kilterSessions)
-        // F5 — more milestones.
-        cards += liftPRCards(workouts: workoutSessions)
+        cards += FeedHRCards.cards(sessions: kilterSessions, logs: kilterLogs)          // F2 e1/e2 (per-session)
+        cards += liftPRCards(workouts: workoutSessions)                                  // F5 b4
         cards += onTheBoardCards(litEvents: kilterLitEvents, loggedSessionIds: Set(kilterLogs.compactMap { $0.sessionId }))
-        // F6 — cross-session insight menu (registry entries; pure, all-time/log-scan derived).
-        cards += FeedInsightCards.cards(allTime: allTimeStats, logs: kilterLogs, now: now, calendar: calendar, anchor: lastAct ?? now)
-        // F6 follow-on — the rest of the insight menu (project/grade, trends, HR-effort).
-        cards += FeedProjectCards.cards(logs: kilterLogs, now: now, calendar: calendar, anchor: lastAct ?? now)
-        cards += FeedTrendCards.cards(allTime: allTimeStats, kilterSessions: kilterSessions,
-                                      workoutSessions: workoutSessions, logs: kilterLogs,
-                                      now: now, calendar: calendar, anchor: lastAct ?? now)
-        cards += FeedEffortInsights.cards(kilterSessions: kilterSessions, logs: kilterLogs,
-                                          now: now, calendar: calendar, anchor: lastAct ?? now)
+        cards += FeedProjectCards.cards(logs: kilterLogs, now: now, calendar: calendar, anchor: aggAnchor)  // b2/g1 (per-climb)
+        // — aggregates (window-scoped inputs + in-window anchor) —
+        cards += pyramidCards(allTime: agg.allTime, anchor: aggAnchor)
+        cards += weeklyVolumeCards(allTime: agg.allTime, anchor: aggAnchor)
+        cards += FeedHRCards.trend(sessions: agg.sessions)                               // F2 e3
+        cards += FeedInsightCards.cards(allTime: agg.allTime, logs: agg.logs, now: now, calendar: calendar, anchor: aggAnchor)
+        cards += FeedTrendCards.cards(allTime: agg.allTime, kilterSessions: agg.sessions,
+                                      workoutSessions: agg.workouts, logs: agg.logs,
+                                      now: now, calendar: calendar, anchor: aggAnchor)
+        cards += FeedEffortInsights.cards(kilterSessions: agg.sessions, logs: agg.logs,
+                                          now: now, calendar: calendar, anchor: aggAnchor)
 
         let windowed = cards.filter { inWindow($0.anchorDate, window: window, now: now, calendar: calendar) }
         return ordered(windowed, now: now)
@@ -425,6 +437,29 @@ enum FeedComposer {
         dates += sessions.map { $0.endedAt ?? $0.startedAt }
         dates += workouts.map { $0.completedAt ?? $0.startedAt }
         return dates.max()
+    }
+
+    /// Inputs for the aggregate recipes, scoped to the window so period recaps are accurate (CRITICAL-2).
+    /// .allTime passes everything through; a period window filters the logs/sessions and recomputes
+    /// the all-time aggregate over just that window's data.
+    private struct AggInputs {
+        var logs: [KilterClimbLog]
+        var sessions: [KilterSessionInput]
+        var workouts: [WorkoutSessionInput]
+        var allTime: KilterAllTimeStats
+    }
+    private static func windowedInputs(window: FeedWindow, kilterSessions: [KilterSessionInput],
+                                       kilterLogs: [KilterClimbLog], workoutSessions: [WorkoutSessionInput],
+                                       allTimeStats: KilterAllTimeStats, now: Date, calendar: Calendar) -> AggInputs {
+        if case .allTime = window {
+            return AggInputs(logs: kilterLogs, sessions: kilterSessions, workouts: workoutSessions, allTime: allTimeStats)
+        }
+        let logs = kilterLogs.filter { inWindow($0.loggedAt, window: window, now: now, calendar: calendar) }
+        let sessions = kilterSessions.filter { inWindow($0.endedAt ?? $0.startedAt, window: window, now: now, calendar: calendar) }
+        let workouts = workoutSessions.filter { inWindow($0.completedAt ?? $0.startedAt, window: window, now: now, calendar: calendar) }
+        let summaries = sessions.map { KilterSessionSummary(id: $0.id, startedAt: $0.startedAt, endedAt: $0.endedAt, angle: $0.angle) }
+        let allTime = KilterAllTimeStats.make(logs: logs, sessions: summaries, now: now, calendar: calendar)
+        return AggInputs(logs: logs, sessions: sessions, workouts: workouts, allTime: allTime)
     }
 
     private static func inWindow(_ date: Date, window: FeedWindow, now: Date, calendar: Calendar) -> Bool {
