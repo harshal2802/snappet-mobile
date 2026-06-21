@@ -4,6 +4,14 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F7 — the send wall
+
+**Decision**: `Features/Feed/WallView.swift` — a 3-column grid over the SAME composed corpus (filtered to
+a1/a2/b1/b4/a3 tiles), presented from the FeedView grid-toggle (replacing the F1 placeholder), tiles tap
+through to the same `CardDetailView`. Extracted `FeedQuery.cards(...)` (in FeedInputs) as the shared
+@Model-arrays → composed-cards bridge used by both FeedView + WallView (no duplicated pipeline, no card
+persistence). View-only over the already-tested composer.
+
 ## [2026-06-20] Recap Feed F5 — more milestone cards (Lift PR + On-the-Board)
 
 **Decision**: added **b4 Lift PR** (gym est-1RM via **Epley** `w*(1+reps/30)` per `exerciseId`, fires only

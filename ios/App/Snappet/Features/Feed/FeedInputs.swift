@@ -36,6 +36,24 @@ extension LitEventInput {
     }
 }
 
+/// Bridges @Model arrays → composed FeedCards. Shared by FeedView (F1) + WallView (F7) so the
+/// derive-on-read pipeline lives in one place.
+enum FeedQuery {
+    static func cards(kilterSessions: [KilterSession], kilterLogs: [KilterLogEntry],
+                      workoutSessions: [WorkoutSession], litEvents: [KilterLitEvent], now: Date) -> [FeedCard] {
+        let logs = kilterLogs.map(KilterClimbLog.from)
+        let summaries = kilterSessions.map(KilterSessionSummary.from)
+        let allTime = KilterAllTimeStats.make(logs: logs, sessions: summaries, now: now)
+        return FeedComposer.compose(
+            window: .allTime,
+            kilterSessions: kilterSessions.map(KilterSessionInput.from),
+            kilterLogs: logs,
+            workoutSessions: workoutSessions.map(WorkoutSessionInput.from),
+            kilterLitEvents: litEvents.map(LitEventInput.from),
+            allTimeStats: allTime, now: now)
+    }
+}
+
 extension WorkoutSessionInput {
     static func from(_ w: WorkoutSession) -> WorkoutSessionInput {
         WorkoutSessionInput(id: w.id, routineName: w.routineName, startedAt: w.startedAt,

@@ -109,7 +109,7 @@ struct FeedView: View {
                     .accessibilityIdentifier("feed.gridToggle")
                 }
             }
-            .sheet(isPresented: $showingWallPlaceholder) { WallPlaceholderView() }
+            .sheet(isPresented: $showingWallPlaceholder) { WallView() }
         }
         .task { if seen.isEmpty { seen = FeedFreshness.topIDs(all) } }
         .onChange(of: scenePhase) { _, phase in
@@ -230,22 +230,5 @@ private struct StoryCoverPlaceholder: View {
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(isNew ? accent : SnappetColor.hairline, lineWidth: isNew ? 2 : 0.5))
-    }
-}
-
-private struct WallPlaceholderView: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                Image(systemName: "square.grid.3x3.fill").font(.largeTitle).foregroundStyle(SnappetColor.kilter)
-                Text("Send wall — coming soon").font(.headline)
-                Text("A masonry grid of every send, at a glance. Lands in a later wave.")
-                    .font(.subheadline).foregroundStyle(SnappetColor.textSecondary).multilineTextAlignment(.center)
-            }
-            .padding(32)
-            .navigationTitle("Wall")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
-        }
     }
 }
