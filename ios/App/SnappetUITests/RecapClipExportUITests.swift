@@ -84,4 +84,45 @@ final class RecapClipExportUITests: XCTestCase {
         XCTAssertTrue(label.contains("Saved") || label.contains("Rendered"),
                       "Animate must report a real render success, got: \(label)")
     }
+
+    /// Visual capture: seed → Recap → a1 detail → Media browser → open the paged viewer, and attach a
+    /// device screenshot of the editor `HRTileView` overlay (the scorebug banner) so its on-device
+    /// layout can be eyeballed. Asserts the overlay renders; the screenshot is the deliverable.
+    func testCaptureClipViewerOverlay() {
+        let app = XCUIApplication()
+        app.launchArguments += ["feed", "-uiTestSeedRecapClip"]
+        app.launch()
+
+        let recap = app.tabBars.buttons["Recap"]
+        XCTAssertTrue(recap.waitForExistence(timeout: 15), "Recap tab")
+        recap.tap()
+
+        // Into the a1 card's detail (the "Kilter · 40°" line activates THIS card's NavigationLink).
+        let a1Anchor = app.staticTexts["Kilter · 40°"]
+        XCTAssertTrue(a1Anchor.waitForExistence(timeout: 15), "a1 card angle line")
+        a1Anchor.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["feed.detail"].waitForExistence(timeout: 8), "detail")
+
+        // Open the media browser, then the paged fullscreen viewer (tap the first clip tile).
+        let mediaBtn = app.buttons["feed.mediaButton"]
+        XCTAssertTrue(mediaBtn.waitForExistence(timeout: 8), "Media button")
+        mediaBtn.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["feed.media"].waitForExistence(timeout: 8), "media browser")
+        let tile = app.descendants(matching: .any)["feed.media.tile"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 8), "clip tile")
+        tile.tap()
+
+        // Let the fullscreen viewer present + the overlay settle. `studioHRTile` is HRTileView's OWN id
+        // (the wrapping GeometryReader's id isn't a queryable element). Soft waits — we capture the
+        // screenshot no matter what, to SEE the real on-device state. No failing assert before capture
+        // (so the attachment lands in a clean, passing result bundle).
+        _ = app.descendants(matching: .any)["feed.media.page"].waitForExistence(timeout: 8)
+        _ = app.descendants(matching: .any)["studioHRTile"].waitForExistence(timeout: 8)
+
+        let shot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = "clip-viewer-overlay"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }

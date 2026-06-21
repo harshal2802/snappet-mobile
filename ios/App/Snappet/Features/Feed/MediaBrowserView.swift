@@ -304,15 +304,22 @@ private struct MediaPage: View {
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            // The EDITOR overlay — the SAME scorebug HRTile the export burns (WYSIWYG). A static poster
-            // (`fraction = 1.0`) reads the clip-window aggregate; `nil` overlay → name tag only.
+            // The EDITOR overlay — the SAME scorebug HRTile the export burns (WYSIWYG). The tile is a
+            // COMPACT card with NORMALIZED geometry (centerX/centerY/width/height, e.g. scorebug =
+            // 0.92×0.27 at (0.50, 0.86)); size + position it at that fraction of the page exactly as the
+            // export composites it onto the canvas. (Filling the whole page made HRTileLayout explode —
+            // full-height zone bars + truncated "5…"/"B…".) `fraction = 1.0` reads the clip-window
+            // aggregate; `nil` overlay → name tag only.
             if let overlay {
-                HRTileView(tile: overlay.tile, values: overlay.values, fraction: 1.0)
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 90)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .allowsHitTesting(false)
-                    .accessibilityIdentifier("feed.media.hrTile")
+                GeometryReader { geo in
+                    HRTileView(tile: overlay.tile, values: overlay.values, fraction: 1.0)
+                        .frame(width: geo.size.width * overlay.tile.width,
+                               height: geo.size.height * overlay.tile.height)
+                        .position(x: geo.size.width * overlay.tile.centerX,
+                                  y: geo.size.height * overlay.tile.centerY)
+                }
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("feed.media.hrTile")
             }
         }
         .accessibilityIdentifier("feed.media.page")
