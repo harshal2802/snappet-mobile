@@ -542,6 +542,8 @@ struct WorkoutHomeView: View {
         app.liveActivity.end()
         if saved {
             session.completedAt = .now
+            // Recap feed (F0b): append-only, idempotent workout activity.
+            FeedActivityWriter.recordWorkoutFinish(session, in: context)
             try? context.save()
             let mins = Int(session.duration / 60)
             core.log(module: WorkoutTrackerModule.id, action: "session",

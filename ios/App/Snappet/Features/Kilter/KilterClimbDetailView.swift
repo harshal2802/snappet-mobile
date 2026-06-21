@@ -787,6 +787,10 @@ struct KilterClimbDetailView: View {
                 startedAt: sessions.activeClimbStartedAt, endedAt: now,
                 attemptTimestamps: status == .attempt ? [now] : []))
         }
+        // Recap feed (F0b): append-only, idempotent per-send activity (sends carry sent/flashed).
+        FeedActivityWriter.recordKilterLog(climbUUID: climb.uuid, difficulty: stat.difficulty,
+                                           status: status, gradeLabel: grade, date: now,
+                                           sessionId: sessions.currentId, in: modelContext)
         try? modelContext.save()
         // Tick the active planned session, if this run came from "Plan a session": flips the matching
         // KilterPlanItem to sent/attempted so the plan-home shows it done. No-op for an ad-hoc session

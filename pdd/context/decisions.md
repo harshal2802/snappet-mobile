@@ -4,6 +4,28 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F0b — `FeedActivity` log (social-ready, provisioned-dormant)
+
+**Decision**: persist a thin, append-only, AS2-shaped `FeedActivity` log + first-class
+`FeedReaction` / `FeedSaveItem` / `FeedShareEvent` rows + an **empty** `FeedOutboxEntry` table
+(`Features/Feed/FeedActivity.swift`), registered in `SnappetSchema.models` + mirrored in
+`SnappetBackup` (both tripwires green; round-trip count 23→28). `FeedCard` stays derive-on-read —
+**no card table**. Social columns (`actorRef="self"`, `visibility="private"`, `audienceTo=[]`) and the
+outbox are **provisioned but DORMANT** (nothing reads them in v1) so "personal-now" becomes
+"social-ready" later by flipping `actorRef`/draining the outbox — zero card-view rewrite. Writers are
+append-only + **idempotent via `foreignId` = "\(verb):\(contentId)"** (re-running on the session-recovery
+path never duplicates), hooked into the Kilter per-send log, Kilter session-finish, and workout-complete.
+
+**The no-row-id gotcha**: content identity is UUIDv5 (`Features/Feed/FeedContentIdentity.swift`, reusing
+`KilterClimbIdentity.uuidV5`) over **shared fields only** with pinned namespaces. A per-send `contentId`
+canonicalizes `(climbUUID, difficulty, statusRaw, dayBucket(date), sessionId?)` and **NEVER the row id** —
+`KilterLogEntry` autogenerates a `Long` on Android, so keying on it would break cross-device dedup. Golden
+vectors are pinned + cross-checked against the existing `KilterClimbIdentity` vector.
+
+**Rules out**: any UI reading the social columns in v1; a per-card persisted table; row-id-derived identity.
+Migration is **strictly additive** (new models only, no column drops). Tested: `FeedContentIdentityTests`,
+`FeedActivityLogTests`, `SnappetBackupTests` — green.
+
 ## [2026-06-20] Recap Feed F0 — `FeedComposer` keystone (pure, eligibility-gated)
 
 **Decision**: the Recap feed renders a single pure `FeedComposer.compose(window:…)` (Foundation-only,
