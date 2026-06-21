@@ -4,6 +4,20 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F2 — HR-deepened cards + CardDetail + reactions
+
+**Decision**: e1 (effort/zones), e2 (hardest-effort send), e3 (HR trend) are added as composer recipes
+in a SEPARATE file `Features/Feed/FeedHRCards.swift` (imports HighlightEngine; `FeedComposer.compose`
+calls them) — the F0 ordering/recency/salience core is untouched (keystone rule). Each gates on the
+specific field it needs (`hrSeries` / per-climb timing) → never composes when absent (Android degrades
+by absence). Reuses **`WorkoutHRStats`** (`secondsByZone` + `edwardsTRIMP`, works for any `[HRPoint]`) +
+`KilterSessionStats.timeline[].peakHRR` + `HeartRateZone`/`SnappetColor.performance(forZone:)` — never
+re-derives. `KilterSessionInput` gained optional `hrSeries/maxHR/restHR` (default empty → golden corpus
+unchanged). `CardDetailView` re-derives timeline + zone chart from the source session and deep-links to
+the real `KilterSessionRoute`/`SessionRoute` via the router. Reactions/saves are append-only F0b rows
+(`FeedReaction`/`FeedSaveItem`) keyed by `FeedCard.contentId` (new field, default ""), framed as private
+memory/curation. Salience e2(0.7) > e1(0.55) > e3(0.5). Tested: `FeedHRCardTests`, `FeedInteractionTests`.
+
 ## [2026-06-20] Recap Feed F1 — `FeedView` shell + the middle "Recap" tab
 
 **Decision**: the Recap feed is the **middle** tab (Home · **Recap** · Apps) — `SuiteTab.feed` in

@@ -78,6 +78,8 @@ const nodes = [
     file: "ios/App/Snappet/Features/Shell/RootShell.swift", desc: "Bottom-nav MIDDLE tab (Home · Recap · Apps) → FeedView. SF Symbol sparkles.rectangle.stack; snappet://feed + --start-tab feed open it (F1).", tags: ["tab","feed","recap"] },
   { id: "feed", label: "FeedView", type: "screen", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Feed/FeedView.swift", desc: "The Recap feed (F1): an infinite, derive-on-read scroll of the user's own sessions as Pulse-Pro cards composed by FeedComposer over @Query'd Kilter/Workout sessions+logs. Lens bar (F0 pure post-filters incl. always-available Sessions-only), Stories-rail placeholder (F6 activates), keyset-windowed pagination, and the 'N new' freshness pill. a1/a2 session cards rich (DisciplineHero+StatRibbon+.snappetCard); milestone/trend cards compact (F5/F6 enrich). No HR/media/share yet (F2-F4).", tags: ["feed","recap","screen","pulse-pro"] },
+  { id: "card-detail", label: "CardDetailView", type: "screen", group: "feed", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Feed/CardDetailView.swift", desc: "Recap card detail (F2): the full card + re-derived climb-by-climb timeline (KilterSessionStats) + HR zone chart (WorkoutHRStats) + reactions strip + Open-in-module deep-link. HR-deepened cards e1 (zone bar + Edwards TRIMP), e2 (hardest-effort send), e3 (avg/peak HR trend) are added as FeedComposer recipes (FeedHRCards) — never editing the F0 ordering core; they never compose when hrSeries is absent.", tags: ["feed","detail","hr","reactions","deep-link"] },
   { id: "home", label: "HomeDashboardView", type: "screen", group: "shell", category: "core", platform: "ios+android",
     file: "ios/App/Snappet/Features/Home/HomeDashboardView.swift", desc: "The actionable daily home (#71): an 'Up next' section of tappable Today cards (habits left, resume workout, focus minutes, budget pace, plan a climb session) derived by the pure TodayDigest from the same SwiftData rows the modules query — each renders only when its data exists and deep-links into its module via the shell SuiteRouter. Activity-feed rows deep-link into the module that logged them; usage stats + the 7-day Swift Charts view remain. A fresh install shows a flagship CTA hero that lands in Workout Reels onboarding instead of an empty dashboard.", tags: ["dashboard","charts","today-cards","deep-link"], shot: "../screenshots/01-home.png" },
   { id: "today-digest", label: "TodayDigest", type: "core", group: "shell", category: "core", platform: "ios",
@@ -717,6 +719,8 @@ const links = [
   { source: "feed-composer", target: "feed", type: "feeds", label: "composed cards" },
   { source: "feed", target: "feed-composer", type: "uses" },
   { source: "feed", target: "feed-activity", type: "uses", label: "writers append" },
+  { source: "feed", target: "card-detail", type: "navigate" },
+  { source: "card-detail", target: "feed-activity", type: "uses", label: "reaction/save" },
 
   // ---- App Library → every module (push ModuleRoute) ----
   { source: "applibrary", target: "suiterouter", type: "uses" },

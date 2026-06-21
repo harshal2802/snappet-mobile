@@ -9,7 +9,8 @@ import Foundation
 extension KilterSessionInput {
     static func from(_ s: KilterSession) -> KilterSessionInput {
         KilterSessionInput(id: s.id, startedAt: s.startedAt, endedAt: s.endedAt,
-                           angle: s.angle, title: s.title, layoutId: s.layoutId)
+                           angle: s.angle, title: s.title, layoutId: s.layoutId,
+                           hrSeries: s.hrSeries, maxHR: s.maxHR, restHR: s.restHR)
     }
 }
 

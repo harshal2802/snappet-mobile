@@ -37,7 +37,116 @@ struct FeedCardView: View {
                               hero: "\(p.buckets.last?.sends ?? 0)", caption: "sends this week",
                               sub: p.deltaVsPrev >= 0 ? "▲ \(p.deltaVsPrev) vs last week" : "▼ \(-p.deltaVsPrev) vs last week",
                               identifier: "feed.card.d1WeeklyVolume")
+        case .effort(let p):
+            EffortCardView(payload: p)
+        case .hardestEffort(let p):
+            HardestEffortCardView(payload: p)
+        case .hrTrend(let p):
+            HRTrendCardView(payload: p)
         }
+    }
+}
+
+// MARK: e1 — Session effort / zones
+
+private struct EffortCardView: View {
+    let payload: EffortPayload
+    private var total: Double { max(1, payload.zones.reduce(0) { $0 + $1.seconds }) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            FeedCardHeader(title: payload.title ?? "Session effort", trailing: durationText(payload.durationSec),
+                           badge: .init(icon: "bolt.heart.fill", text: "", tint: SnappetColor.performance(forZone: .threshold)))
+            DisciplineHero(value: "\(payload.maxBpm)", caption: "Peak BPM",
+                           sublabel: "avg \(payload.avgBpm) · TRIMP \(payload.trimp)",
+                           accent: SnappetColor.performance(forZone: .threshold))
+            GeometryReader { geo in
+                HStack(spacing: 1.5) {
+                    ForEach(payload.zones, id: \.zone) { slice in
+                        Rectangle().fill((HeartRateZone(rawValue: slice.zone) ?? .none).color)
+                            .frame(width: max(0, geo.size.width * (slice.seconds / total)))
+                    }
+                }
+            }
+            .frame(height: 14)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            HStack(spacing: 10) {
+                ForEach(payload.zones.filter { $0.seconds > 0 }, id: \.zone) { slice in
+                    HStack(spacing: 4) {
+                        Circle().fill((HeartRateZone(rawValue: slice.zone) ?? .none).color).frame(width: 7, height: 7)
+                        Text("Z\(slice.zone)").font(.caption2.weight(.bold)).foregroundStyle(SnappetColor.textSecondary)
+                    }
+                }
+            }
+        }
+        .feedCard(accent: SnappetColor.performance(forZone: .threshold))
+        .accessibilityIdentifier("feed.card.e1Effort")
+    }
+}
+
+// MARK: e2 — Hardest-effort send
+
+private struct HardestEffortCardView: View {
+    let payload: HardestEffortPayload
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FeedCardHeader(title: "Hardest-effort send", trailing: nil,
+                           badge: .init(icon: "flame.fill", text: payload.grade, tint: SnappetColor.performance(forZone: .max)))
+            DisciplineHero(value: "\(payload.peakBpm)", caption: "Peak BPM on a send",
+                           sublabel: subline, accent: SnappetColor.performance(forZone: .max))
+            Text(payload.climbName).font(.footnote).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+        }
+        .feedCard(accent: SnappetColor.performance(forZone: .max))
+        .accessibilityIdentifier("feed.card.e2HardestEffort")
+    }
+
+    private var subline: String {
+        var parts = [payload.grade]
+        if let hrr = payload.peakHRRPercent { parts.append("\(hrr)% HRR") }
+        let z = HeartRateZone(rawValue: payload.zoneAtPeak) ?? .none
+        if z != .none { parts.append(z.pillLabel) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: e3 — Avg/peak HR trend
+
+private struct HRTrendCardView: View {
+    let payload: HRTrendPayload
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FeedCardHeader(title: "HR trend", trailing: "\(payload.points.count) sessions",
+                           badge: .init(icon: "chart.xyaxis.line", text: "", tint: SnappetColor.workout))
+            DisciplineHero(value: "\(payload.points.last?.avgBpm ?? 0)", caption: "Recent avg BPM",
+                           sublabel: subline, accent: SnappetColor.workout)
+            sparkline
+        }
+        .feedCard(accent: SnappetColor.workout)
+        .accessibilityIdentifier("feed.card.e3HRTrend")
+    }
+
+    private var subline: String {
+        guard let first = payload.points.first?.avgBpm, let last = payload.points.last?.avgBpm else { return "" }
+        let d = last - first
+        return d == 0 ? "flat over \(payload.points.count) sessions"
+            : (d < 0 ? "▼ \(-d) bpm vs first" : "▲ \(d) bpm vs first")
+    }
+
+    private var sparkline: some View {
+        let avgs = payload.points.map { Double($0.avgBpm) }
+        let lo = avgs.min() ?? 0, hi = avgs.max() ?? 1
+        let range = max(1, hi - lo)
+        return GeometryReader { geo in
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(Array(avgs.enumerated()), id: \.offset) { _, v in
+                    RoundedRectangle(cornerRadius: 2).fill(SnappetColor.workout.opacity(0.85))
+                        .frame(height: 8 + (geo.size.height - 8) * ((v - lo) / range))
+                }
+            }
+        }
+        .frame(height: 34)
     }
 }
 

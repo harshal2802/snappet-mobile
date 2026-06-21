@@ -39,10 +39,16 @@ struct KilterSessionInput: Sendable, Equatable, Identifiable {
     var angle: Int
     var title: String?
     var layoutId: Int?
+    // F2: optional HR — default empty so the golden corpus stays shared-fields-only; e1/e2 gate on non-empty.
+    var hrSeries: [HRPoint] = []
+    var maxHR: Double? = nil
+    var restHR: Double? = nil
 
-    init(id: UUID, startedAt: Date, endedAt: Date? = nil, angle: Int, title: String? = nil, layoutId: Int? = nil) {
+    init(id: UUID, startedAt: Date, endedAt: Date? = nil, angle: Int, title: String? = nil, layoutId: Int? = nil,
+         hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil) {
         self.id = id; self.startedAt = startedAt; self.endedAt = endedAt
         self.angle = angle; self.title = title; self.layoutId = layoutId
+        self.hrSeries = hrSeries; self.maxHR = maxHR; self.restHR = restHR
     }
 }
 
@@ -96,6 +102,9 @@ enum FeedComposer {
         static let mostClimbs = 0.9
         static let streak = 0.8
         static let trend = 0.6
+        static let hardestEffort = 0.7   // F2: e2 > e1 > e3
+        static let effort = 0.55
+        static let hrTrend = 0.5
         static let climbSession = 0.45
         static let workoutSession = 0.40
     }
@@ -129,6 +138,9 @@ enum FeedComposer {
         cards += streakCards(sessions: kilterSessions, workouts: workoutSessions, calendar: calendar)
         cards += pyramidCards(allTime: allTimeStats, anchor: lastAct ?? now)
         cards += weeklyVolumeCards(allTime: allTimeStats, anchor: lastAct ?? now)
+        // F2 — HR-deepened cards (registered here; never composed when hrSeries is absent).
+        cards += FeedHRCards.cards(sessions: kilterSessions, logs: kilterLogs)
+        cards += FeedHRCards.trend(sessions: kilterSessions)
 
         let windowed = cards.filter { inWindow($0.anchorDate, window: window, now: now, calendar: calendar) }
         return ordered(windowed, now: now)
@@ -177,7 +189,8 @@ enum FeedComposer {
                 attemptsOnly: stats.attemptsOnly, totalAttempts: stats.totalAttempts,
                 durationSec: stats.totalDuration, angle: s.angle,
                 pyramid: stats.pyramid.map(Self.row(from:)), isPRSession: isPR)
-            out.append(FeedCard(id: "a1-\(s.id.uuidString)", kind: .a1Session, category: .climbing,
+            out.append(FeedCard(id: "a1-\(s.id.uuidString)", contentId: FeedContentIdentity.kilterSession(id: s.id.uuidString),
+                                kind: .a1Session, category: .climbing,
                                 salience: Salience.climbSession, anchorDate: end,
                                 sourceRefs: [ActivityRef(objectKind: "kilterSession", ref: s.id.uuidString)],
                                 payload: .climbSession(payload), shareHint: .sessionReceipt))
@@ -198,7 +211,8 @@ enum FeedComposer {
                 totalVolume: volume, distanceMeters: distance > 0 ? distance : nil,
                 exerciseCount: w.exercises.filter { !$0.skipped }.count,
                 setCount: completedSets.count, durationSec: end.timeIntervalSince(w.startedAt))
-            out.append(FeedCard(id: "a2-\(w.id.uuidString)", kind: .a2Session, category: .strength,
+            out.append(FeedCard(id: "a2-\(w.id.uuidString)", contentId: FeedContentIdentity.workoutSession(id: w.id.uuidString),
+                                kind: .a2Session, category: .strength,
                                 salience: Salience.workoutSession, anchorDate: end,
                                 sourceRefs: [ActivityRef(objectKind: "workoutSession", ref: w.id.uuidString)],
                                 payload: .workoutSession(payload), shareHint: .sessionReceipt))

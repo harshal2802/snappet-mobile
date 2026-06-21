@@ -55,8 +55,20 @@ struct FeedView: View {
                     } else {
                         LazyVStack(spacing: 12) {
                             ForEach(visible) { card in
-                                FeedCardView(card: card)
-                                    .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
+                                VStack(spacing: 8) {
+                                    NavigationLink(value: card) { FeedCardView(card: card) }
+                                        .buttonStyle(.plain)
+                                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                                            FeedInteractionWriter.toggleReaction(contentId: card.contentId, in: context)
+                                        })
+                                        .onLongPressGesture(minimumDuration: 0.45) {
+                                            FeedInteractionWriter.toggleSave(contentId: card.contentId, in: context)
+                                        }
+                                    if !card.contentId.isEmpty {
+                                        FeedReactionStrip(contentId: card.contentId).padding(.horizontal, 6)
+                                    }
+                                }
+                                .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
                             }
                         }
                         .padding(.horizontal, SnappetSpacing.lg)
@@ -82,6 +94,7 @@ struct FeedView: View {
                     }
                 }
                 .refreshable { dismissPill(current: composed()) }
+                .navigationDestination(for: FeedCard.self) { CardDetailView(card: $0) }
             }
             .background(SnappetColor.paper)
             .navigationTitle("Recap")
