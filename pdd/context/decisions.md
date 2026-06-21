@@ -4,6 +4,23 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-20] Recap Feed F1 — `FeedView` shell + the middle "Recap" tab
+
+**Decision**: the Recap feed is the **middle** tab (Home · **Recap** · Apps) — `SuiteTab.feed` in
+`SuiteRouter`, a third `TabView` case in `ShellTabs` (`sparkles.rectangle.stack`, label "Recap"),
+`snappet://feed` + `--start-tab feed` open it. `FeedView` (`Features/Feed/FeedView.swift`) is
+**derive-on-read**: it `@Query`s Kilter/Workout sessions+logs, bridges to plain inputs, and calls
+`FeedComposer.compose(window:.allTime)` — it never re-derives stats. a1/a2 session cards are rich
+(`DisciplineHero` + `StatRibbon` + `.snappetCard()` + a discipline edge accent); the milestone/trend
+kinds (b1/b3/b5/c1/d1) render as **compact cards now** and are enriched by F5/F6 (never blank). The
+Lens bar uses F0's pure post-filters with an always-available **Sessions-only** chronological lens (the
+recency-float mitigation). Pagination is a keyset window grown on scroll; the freshness pill diffs
+top-ids across scene-phase. Stories rail + grid toggle are **honest placeholders** routed to F6/F7.
+
+**Rules out**: persisting cards (still derive-on-read); new brand tokens (reuse Pulse Pro); HR/media/
+reactions/share in F1 (F2–F4 add them as registry entries + slots, not card-shell rewrites). Tested:
+`FeedPaginationTests`, `FeedFreshnessTests` (pure) + `FeedViewUITests` (tab → feed → lens) — green.
+
 ## [2026-06-20] Recap Feed F0b — `FeedActivity` log (social-ready, provisioned-dormant)
 
 **Decision**: persist a thin, append-only, AS2-shaped `FeedActivity` log + first-class

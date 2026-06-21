@@ -12,7 +12,8 @@ struct RootShell: View {
     /// route into a module. The `apps` launch argument (`--start-tab apps` QA hook) seeds the
     /// initial tab.
     @State private var router = SuiteRouter(
-        initialTab: CommandLine.arguments.contains("apps") ? .apps : .home)
+        initialTab: CommandLine.arguments.contains("apps") ? .apps
+            : (CommandLine.arguments.contains("feed") ? .feed : .home))
 
     var body: some View {
         Group {
@@ -62,6 +63,8 @@ struct RootShell: View {
     /// parses; the climb/focus intents ride `SuiteRouter` one-shots (the destinations own the catalog /
     /// timer); an exercise resolves from the catalog and pushes after opening the gym tracker.
     private func handle(_ url: URL) {
+        // Recap feed (F1): `snappet://feed` selects the middle tab directly (no module push).
+        if url.scheme == "snappet", url.host == "feed" { router.tab = .feed; return }
         switch SnappetDeepLink.route(for: url) {
         case .kilterClimb(let link):
             router.pendingKilterClimb = link
@@ -163,6 +166,9 @@ struct ShellTabs: View {
             HomeDashboardView()
                 .tag(SuiteTab.home)
                 .tabItem { Label("Home", systemImage: "house.fill") }
+            FeedView()
+                .tag(SuiteTab.feed)
+                .tabItem { Label("Recap", systemImage: "sparkles.rectangle.stack") }
             AppLibraryView()
                 .tag(SuiteTab.apps)
                 .tabItem { Label("Apps", systemImage: "square.stack.3d.up.fill") }
