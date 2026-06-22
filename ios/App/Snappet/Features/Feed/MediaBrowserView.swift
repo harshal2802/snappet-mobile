@@ -87,7 +87,18 @@ struct MediaBrowserView: View {
                        nameFor: @escaping (String) -> String, card: FeedCard,
                        clipContext: ClipExportCoordinator.Context?) -> some View {
         PagedMediaViewer(clips: clips, startIndex: startIndex, hrSeries: hrSeries, maxHR: maxHR,
-                         nameFor: nameFor, card: card, clipContext: clipContext)
+                         nameFor: nameFor, card: card, clipContext: clipContext,
+                         restHR: clipContext?.restHR)
+    }
+
+    /// The SAME fullscreen paged player, presented WITHOUT the Recap Share/Animate affordance (no
+    /// `FeedCard`) — the Clips feed's tap-to-play (prompt 83). The HR overlay slices the session HR with
+    /// the session `restHR` (matching the in-feed poster), so the fullscreen scorebug == the poster's.
+    @ViewBuilder
+    static func clipsViewer(clips: [MediaInput], startIndex: Int, hrSeries: [HRPoint], maxHR: Double,
+                            restHR: Double?, nameFor: @escaping (String) -> String) -> some View {
+        PagedMediaViewer(clips: clips, startIndex: startIndex, hrSeries: hrSeries, maxHR: maxHR,
+                         nameFor: nameFor, card: nil, clipContext: nil, restHR: restHR)
     }
 
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
@@ -167,8 +178,13 @@ private struct PagedMediaViewer: View {
     let hrSeries: [HRPoint]
     let maxHR: Double
     let nameFor: (String) -> String
-    let card: FeedCard
+    /// `nil` presents the player WITHOUT the Recap Share/Animate affordance (the Clips feed, prompt 83
+    /// — it has no `FeedCard` and Share is out of slice). Recap passes its card.
+    let card: FeedCard?
     let clipContext: ClipExportCoordinator.Context?
+    /// Rest HR for the overlay's %HRR. Recap passes `clipContext?.restHR`; Clips passes the session's
+    /// `restHR` directly (it has no `clipContext`).
+    let restHR: Double?
 
     @Environment(\.dismiss) private var dismiss
     @State private var index: Int = 0
@@ -195,7 +211,7 @@ private struct PagedMediaViewer: View {
         .accessibilityIdentifier("feed.media.viewer")
         .onAppear { index = min(max(0, startIndex), max(0, clips.count - 1)) }
         .sheet(isPresented: $showingShare) {
-            ShareComposerView(card: card, clipContext: clipContext)
+            if let card { ShareComposerView(card: card, clipContext: clipContext) }
         }
     }
 
@@ -216,17 +232,21 @@ private struct PagedMediaViewer: View {
                     .accessibilityIdentifier("feed.media.close")
             }
             Spacer()
-            HStack(spacing: 12) {
-                Spacer()
-                Button { showingShare = true } label: {
-                    Label(clipContext != nil ? "Animate" : "Share",
-                          systemImage: clipContext != nil ? "wand.and.stars" : "square.and.arrow.up")
-                        .font(.subheadline.weight(.bold)).foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(SnappetColor.kilter, in: Capsule())
+            // Share/Animate only when presented from a Recap card; the Clips feed (card == nil) plays
+            // without it — Share is out of the Clips slice (prompt 83).
+            if card != nil {
+                HStack(spacing: 12) {
+                    Spacer()
+                    Button { showingShare = true } label: {
+                        Label(clipContext != nil ? "Animate" : "Share",
+                              systemImage: clipContext != nil ? "wand.and.stars" : "square.and.arrow.up")
+                            .font(.subheadline.weight(.bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(SnappetColor.kilter, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("feed.media.share")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("feed.media.share")
             }
         }
         .padding(22)
@@ -245,8 +265,8 @@ private struct PagedMediaViewer: View {
         guard !window.isEmpty else { return nil }
         let dur = (m.durationSec ?? FeedMedia.photoWindowSec)
         let values = HROverlayValues(samples: window, durationSec: max(0.1, dur),
-                                     maxHR: maxHR, restHR: clipContext?.restHR)
-        return ClipOverlay(tile: .feedClipScorebug(restHR: clipContext?.restHR), values: values)
+                                     maxHR: maxHR, restHR: restHR)
+        return ClipOverlay(tile: .feedClipScorebug(restHR: restHR), values: values)
     }
 }
 
