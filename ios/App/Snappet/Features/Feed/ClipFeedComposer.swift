@@ -61,11 +61,33 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// Capture time of the first clip — the feed's reverse-chronological sort key.
     var captureAt: Date
     var clips: [ClipFeedItem]
+    /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
+    /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
+    var aspect: Double
 
     var clipCount: Int { clips.count }
 }
 
 enum ClipFeedComposer {
+
+    // MARK: Adaptive tile aspect (prompt 92)
+    //
+    // Instagram-style clamp: a portrait tile is no taller than 4:5 and a landscape tile no wider than
+    // 1.91:1, so a clip fills its tile (no black bars) without the feed turning into absurdly tall/wide
+    // cards. A `TabView` carousel shares ONE height across a post's pages, so a post collapses to a single
+    // clamped aspect (the first clip with a known aspect). Pure — unit-tested in `ClipFeedComposerTests`.
+
+    static let minAspect = 0.8     // 4:5 portrait — the tallest tile
+    static let maxAspect = 1.91    // 1.91:1 landscape — the widest tile
+    /// The 4:5 portrait used until a clip's real aspect is backfilled (`SessionMedia.aspectRatio` nil).
+    static let defaultAspect = 0.8
+
+    /// The one clamped aspect a post's carousel uses: the first clip with a resolved aspect, clamped to
+    /// `[minAspect, maxAspect]`; `defaultAspect` when none is known yet.
+    static func postAspect(_ clips: [MediaInput]) -> Double {
+        let raw = clips.compactMap(\.aspect).first ?? defaultAspect
+        return min(maxAspect, max(minAspect, raw))
+    }
 
     /// One session's media, snapshotted at the store edge.
     struct SessionBundle: Sendable {
@@ -125,7 +147,8 @@ enum ClipFeedComposer {
                     climbUUID: first.climbUUID,
                     exerciseID: first.exerciseId,
                     captureAt: meta.startedAt.addingTimeInterval(max(0, first.offsetSec)),
-                    clips: items))
+                    clips: items,
+                    aspect: postAspect(ordered)))
             }
         }
         return out.sorted { $0.captureAt == $1.captureAt ? $0.id < $1.id : $0.captureAt > $1.captureAt }

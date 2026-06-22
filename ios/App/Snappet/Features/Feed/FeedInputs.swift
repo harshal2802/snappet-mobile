@@ -41,7 +41,8 @@ extension MediaInput {
     static func from(_ m: SessionMedia) -> MediaInput {
         MediaInput(id: m.id, kind: m.kindRaw, offsetSec: m.offsetSec, durationSec: m.durationSec,
                    exerciseId: m.assignedExerciseID, setIndex: m.assignedSetIndex,
-                   climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier)
+                   climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier,
+                   aspect: m.aspectRatio)
     }
 }
 

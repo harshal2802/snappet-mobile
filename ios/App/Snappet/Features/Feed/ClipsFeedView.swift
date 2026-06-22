@@ -225,6 +225,8 @@ private struct ClipPostCard: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
+    /// Measured full-bleed card width → drives the adaptive carousel height (prompt 92).
+    @State private var cardWidth: CGFloat = 0
     @State private var studio: StudioPresentation?
     /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
     @State private var isOnScreen = false
@@ -241,12 +243,22 @@ private struct ClipPostCard: View {
         }
     }
 
+    /// Adaptive tile height (prompt 92): the full-bleed card width ÷ the post's clamped aspect, so the
+    /// media fills the tile with no letterbox/pillarbox bars. Falls back to a sensible width until measured.
+    private var carouselHeight: CGFloat {
+        let w = cardWidth > 0 ? cardWidth : 393
+        return (w / CGFloat(post.aspect)).rounded()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             carousel
             meta
         }
+        // Lazy-backfill the post's first-clip aspect on appearance (prompt 92) so the tile resizes to the
+        // media; one-shot per clip (skips when already resolved), cached, persisted to SessionMedia.
+        .task(id: post.id) { await backfillAspect() }
         // Autoplay-on-scroll (prompt 90): when autoplay is allowed and this card is substantially on-screen,
         // it becomes the single active clip and plays MUTED. A per-card visibility signal, NOT scroll-center
         // geometry / a coordinator (the R12 black-box mechanism). At 0.7, only one full-width card qualifies.
@@ -368,7 +380,14 @@ private struct ClipPostCard: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 460)
+            .frame(height: carouselHeight)
+            // Measure the full-bleed card width so the height tracks the post's aspect (prompt 92). The
+            // width is set by the parent regardless of the frame height we set → non-circular.
+            .background(GeometryReader { g in
+                Color.clear.preference(key: ClipCardWidthKey.self, value: g.size.width)
+            })
+            .onPreferenceChange(ClipCardWidthKey.self) { cardWidth = $0 }
+            .animation(.easeInOut(duration: 0.2), value: carouselHeight)
             // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
             // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
@@ -449,6 +468,25 @@ private struct ClipPostCard: View {
         if post.kind == .kilter { router.push(KilterSessionRoute(id: post.sessionID)) }
         else { router.push(SessionRoute(id: post.sessionID)) }
     }
+
+    /// Resolve + persist the post's first-clip oriented aspect (prompt 92) — the one that drives the tile
+    /// height. Skips when already known; the resolver caches, and the `@Query` re-render resizes the tile.
+    private func backfillAspect() async {
+        guard let item = post.clips.first,
+              let media = allMedia.first(where: { $0.id == item.media.id }),
+              media.aspectRatio == nil else { return }
+        if let a = await ClipAspectResolver.shared.aspect(localIdentifier: media.localIdentifier,
+                                                          isVideo: media.kind == .video) {
+            media.aspectRatio = a
+            try? context.save()
+        }
+    }
+}
+
+/// Measures the full-bleed Clips card width so the carousel height can track the post's aspect (prompt 92).
+private struct ClipCardWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 // MARK: - One carousel poster — still frame + name overlay + HR scorebug

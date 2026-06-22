@@ -15,6 +15,10 @@ struct MediaInput: Sendable, Equatable, Identifiable {
     var setIndex: Int?
     var climbUUID: String?
     var localIdentifier: String
+    /// Oriented display aspect (width / height) for the Clips feed's adaptive tile sizing (prompt 92);
+    /// `nil` until `SessionMedia.aspectRatio` is backfilled. Defaulted so existing `MediaInput(...)` sites
+    /// (and the Recap viewer, which doesn't size by aspect) compile unchanged.
+    var aspect: Double? = nil
 }
 
 struct MediaClipHR: Sendable, Equatable {

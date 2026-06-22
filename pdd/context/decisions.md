@@ -7160,3 +7160,37 @@ green, 0 warnings.
 real clip inline + fullscreen and confirm the BPM/curve/dot move with the video (no frozen overlay), and
 that the poster chip matches.
 
+## 2026-06-22 — Clips adaptive tile sizing (prompt 92) — no black bars, persist-the-aspect
+
+**Symptom (user-reported).** Every Clips post rendered in a fixed full-width × **460pt** box with an
+aspect-**fit** video, so a portrait clip showed pillarbox bars (the reported screenshot) and a landscape
+clip would letterbox.
+
+**Approach — persist the aspect, don't read it on the render path.** No dimension was stored on a clip,
+and the only orientation-correct aspect source (`StudioComposer.sourceAspect`) is async — unsuitable to
+call per-row during scroll. So: (1) `SessionMedia` gains an additive optional `aspectRatio: Double?`
+(width/height, oriented) → SwiftData **lightweight migration** (the `assignedClimbUUID` pattern). (2) New
+**`ClipAspectResolver`** actor (Services, device I/O) resolves the oriented aspect — photo via
+`PHAsset.pixelWidth/pixelHeight` (orientation baked in), video via `naturalSize × preferredTransform` —
+cached by id. (3) The feed **lazy-backfills** it: `ClipPostCard.task(id:)` resolves the post's first clip's
+aspect on appearance and writes it back to `SessionMedia.aspectRatio` (one-shot, persisted), so **existing**
+clips converge with no app-wide migration and no capture-path churn; the `@Query` re-render resizes the
+tile. (4) Pure math stays in the composer: `MediaInput` carries `aspect`, and `ClipFeedComposer.postAspect`
+clamps the first clip's aspect IG-style to **[0.8 (4:5) … 1.91 (1.91:1)]** (default 0.8) onto
+`ClipFeedPost.aspect`. (5) `ClipPostCard` measures its full-bleed width (a `PreferenceKey`) and sets the
+carousel `.frame(height: width / post.aspect)`, replacing the fixed `460`. `.resizeAspect` stays — once the
+box matches the clip aspect there are no bars.
+
+**Decisions / trade-offs.** A `TabView` carousel shares ONE height across pages, so a post collapses to a
+single clamped aspect (the **first** clip's); a rare mixed-orientation post keeps that height and the
+off-aspect page fits-with-minor-bars (accepted — most posts are single-orientation). Backfill is **first
+clip only** (the one that drives the tile height) → minimal asset reads. The aspect is **not** round-tripped
+through `SnappetBackup` (it re-resolves lazily on first view — a restore just re-backfills). The schema doc
+(`snappet-core-schema.md`) tracks only HighlightEngine core types, not app `@Model`s, so the new field is
+recorded here, not there.
+
+**Owed on-device.** The sim has no Photos library, so the resolver returns nil and every tile shows the
+4:5 default (UITests stay green on that). Device-verify: a portrait clip → tall tile, a landscape clip →
+short tile, both with **no black bars**; existing clips resize once on first view. `ClipFeedComposer`
+clamp/pick/default is unit-tested (6 cases); full `SnappetTests` + `ClipsFeedUITests` green, 0 warnings.
+
