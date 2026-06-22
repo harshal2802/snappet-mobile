@@ -527,8 +527,11 @@ covers; tapping one scrolls the feed to that post — derive-on-read over the sa
 **Share-a-clip (prompt 87):** a ⋯ "Share clip" exports the centered clip's raw video
 (`ClipShareService`, passthrough) to the system `ShareSheet`; the overlay-burned share stays ⋯ → Edit →
 Studio. **Reactions (prompt 88):** a ❤️ favorite per post (`ClipReactionStore`, UserDefaults — no new
-`@Model`); a heart button in the header toggles it. Still-open follow-ups: a favorites filter, the
-optional WYSIWYG feed-HR, and autoplay-on-scroll (#3, the R12-risk one).
+`@Model`); a heart button in the header toggles it. **WYSIWYG feed-HR (prompt 89):** the poster now
+renders the session's SAVED Studio HR tile (`StudioProject.hrOverlay?.tile` via `@Query`, so a Studio
+edit re-renders the feed) instead of the fixed scorebug, falling back when none/empty — opt-in WYSIWYG
+for the feed (Recap viewer stays the house style). Still-open: a favorites filter, and autoplay-on-scroll
+(#3, the R12-risk one — building next with a strong device-verify caveat).
 
 ## License
 

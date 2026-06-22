@@ -29,6 +29,18 @@ final class ClipHROverlayTests: XCTestCase {
         XCTAssertEqual(p.tile.template, .scorebug)                    // the ONE feed scorebug tile
     }
 
+    func testTileOverrideUsesTheSavedStudioTile() throws {
+        let series = (10...16).map { HRPoint(t: Double($0), bpm: 130) }
+        let c = clip(offset: 10, dur: 6)
+        // No override → the house-style scorebug.
+        let def = try XCTUnwrap(ClipHROverlay.make(clip: c, hrSeries: series, maxHR: 190, restHR: nil))
+        XCTAssertEqual(def.tile.template, .scorebug)
+        // Override → the passed (saved Studio) tile, e.g. a hero (WYSIWYG, prompt 89).
+        let hero = HRTile.make(template: .hero)
+        let ov = try XCTUnwrap(ClipHROverlay.make(clip: c, hrSeries: series, maxHR: 190, restHR: nil, tile: hero))
+        XCTAssertEqual(ov.tile.template, .hero)
+    }
+
     // MARK: windowDuration — one denominator for values + fraction
 
     func testWindowDuration() {
