@@ -7042,3 +7042,20 @@ export shows a "Couldn't prepare this clip" alert (was a silently-vanishing spin
 iCloud-download path has no cancel/timeout (the spinner can hang on a slow network for an evicted clip) —
 a follow-up; and `ClipShareService` re-uses the `requestAVAsset` + export idiom by copy (StudioComposer's
 is private + cached), a small, contained duplication.
+
+## 2026-06-22 — Clips reactions = favorite (prompt 88, follow-up #1c) — a deliberate minimal-persistence call
+
+**Decision.** "Reactions" for a PERSONAL on-device feed (your own clips) = a ❤️ **favorite** (a social
+"like" records nothing on your own media). A heart button in each post header toggles it; favorited posts
+show a filled red heart (`.symbolEffect(.bounce)`). A **button**, not a double-tap, so it can't fight the
+single-tap-to-play poster gesture. A "browse only favorites" filter is a follow-up (could ride the
+explore grid).
+
+**The persistence call (flagged).** Clips' guiding principle is "no new persistence — derive over the
+session" — but a favorite must persist. Chosen the **minimal** form: a `Set<ClipFeedPost.id>` in
+**UserDefaults** (`ClipReactionStore`, `@Observable @MainActor`, injectable for tests). This adds **no new
+`@Model` / no schema change** — favorites are a thin UI-layer overlay, the session stays the source of
+truth for the clips themselves — so it honours the *spirit* of "no new persistence" while still
+recording. (Alternatives considered: an ephemeral double-tap heart honours the letter but records nothing
+— pointless on your own feed; a SwiftData favorite is a schema change — heavier than warranted.) The
+store logic is unit-tested (`ClipReactionStoreTests`).

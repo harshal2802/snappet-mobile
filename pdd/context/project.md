@@ -526,7 +526,9 @@ grid (prompt 86):** a nav-bar `square.grid.3x3` button opens an IG-style grid (`
 covers; tapping one scrolls the feed to that post — derive-on-read over the same composer, no new store.
 **Share-a-clip (prompt 87):** a ⋯ "Share clip" exports the centered clip's raw video
 (`ClipShareService`, passthrough) to the system `ShareSheet`; the overlay-burned share stays ⋯ → Edit →
-Studio. Still-open follow-ups: reactions (the rest of #1), the optional WYSIWYG feed-HR, and autoplay.
+Studio. **Reactions (prompt 88):** a ❤️ favorite per post (`ClipReactionStore`, UserDefaults — no new
+`@Model`); a heart button in the header toggles it. Still-open follow-ups: a favorites filter, the
+optional WYSIWYG feed-HR, and autoplay-on-scroll (#3, the R12-risk one).
 
 ## License
 
