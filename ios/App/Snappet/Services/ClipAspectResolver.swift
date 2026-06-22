@@ -12,26 +12,29 @@ import CoreGraphics
 //
 //   - A **photo**'s `PHAsset.pixelWidth/pixelHeight` already bake in orientation → the ratio is correct.
 //   - A **video**'s raw track `naturalSize` is pre-rotation, so we apply the track `preferredTransform`
-//     (the same `orientedSize` math `StudioComposer.sourceAspect` uses) before taking w/h; falls back to
-//     the pixel dims if the track can't be read.
+//     (the same `orientedSize` math `StudioComposer.sourceAspect` uses) before taking w/h. If the track
+//     can't be read we return `nil` (NOT the pixel dims — those are pre-rotation for video and would give
+//     an inverted aspect that the feed then persists), so the caller keeps the default.
 //   - Returns `nil` when the asset can't be read (the simulator has no library, iCloud-only with no
 //     network, or `.limited`/denied access) — the caller keeps `ClipFeedComposer.defaultAspect`.
 actor ClipAspectResolver {
     static let shared = ClipAspectResolver()
 
-    private var cache: [String: Double] = [:]
+    /// Cached oriented aspect by id. Values are `Double?` so an UNRESOLVABLE id is **negatively cached**
+    /// and not re-read on every scroll-back (prompt 94 review).
+    private var cache: [String: Double?] = [:]
 
     /// Oriented aspect (w/h) for a PHAsset `localIdentifier`, cached. `nil` if unresolved.
     func aspect(localIdentifier: String, isVideo: Bool) async -> Double? {
-        if let cached = cache[localIdentifier] { return cached }
+        if let cached = cache[localIdentifier] { return cached }   // hit (including a cached nil)
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
         else { return nil }
         let resolved = isVideo ? await videoAspect(asset) : pixelAspect(asset)
-        if let resolved { cache[localIdentifier] = resolved }
+        cache[localIdentifier] = resolved
         return resolved
     }
 
-    /// Photo (and video fallback): the asset's pixel dimensions already account for orientation.
+    /// Photo only: the asset's pixel dimensions already account for orientation (videos' do NOT).
     private func pixelAspect(_ asset: PHAsset) -> Double? {
         guard asset.pixelWidth > 0, asset.pixelHeight > 0 else { return nil }
         return Double(asset.pixelWidth) / Double(asset.pixelHeight)
@@ -52,7 +55,7 @@ actor ClipAspectResolver {
               let track = try? await avAsset.loadTracks(withMediaType: .video).first,
               let natural = try? await track.load(.naturalSize),
               let transform = try? await track.load(.preferredTransform)
-        else { return pixelAspect(asset) }
+        else { return nil }   // a video's pixel dims are PRE-rotation → don't fall back to them (prompt 94 review)
         let oriented = CGRect(origin: .zero, size: natural).applying(transform)
         let w = abs(oriented.width), h = abs(oriented.height)
         guard w > 0, h > 0 else { return pixelAspect(asset) }

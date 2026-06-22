@@ -50,7 +50,11 @@ struct ClipMediaSurface: View {
             // Single-active: play while centered/active; on de-activate, pause and reset the playhead to the
             // at-end reading so a glimpsed off-active overlay isn't frozen mid-sweep.
             .onChange(of: isActive) { _, active in
-                if active { player?.play() } else { player?.pause(); fraction = ClipHROverlay.atEndFraction }
+                // Inline (looping) always resumes; the fullscreen transport resumes only if the user hadn't
+                // paused it — so a deliberate pause survives a page swipe away + back (prompt 94 review).
+                if active {
+                    if controller == nil || controller?.isPlaying == true { player?.play() }
+                } else { player?.pause(); fraction = ClipHROverlay.atEndFraction }
             }
             // Start playback when the item becomes ready — read here (not at the end of the async `load`) so
             // the play decision uses the LIVE `isActive`: a page can de-center mid-load, and the captured
@@ -68,7 +72,7 @@ struct ClipMediaSurface: View {
                 if player.rate == 0, controller == nil { return }
                 let t = player.currentTime().seconds
                 guard t.isFinite else { return }   // item not ready yet → keep the last fraction (no 0-flash)
-                fraction = ClipHROverlay.fraction(videoTime: t, clip: clip, payload: payload)
+                fraction = ClipHROverlay.fraction(videoTime: t, clip: clip, payload: payload, loops: controller == nil)
             }
     }
 
@@ -130,7 +134,11 @@ struct ClipMediaSurface: View {
                 let single = AVPlayer(playerItem: playerItem)
                 single.isMuted = muted
                 player = single
-                controller.attach(single, duration: clip.durationSec ?? 0)
+                // Use the item's REAL duration — PHAsset.durationSec is approximate and would break the
+                // end-of-clip replay + the scrubber range (prompt 94 review). Fall back to the stored value.
+                let real = (try? await playerItem.asset.load(.duration))?.seconds
+                let dur = (real?.isFinite == true && real! > 0) ? real! : (clip.durationSec ?? 0)
+                controller.attach(single, duration: dur)
             } else {
                 let queue = AVQueuePlayer()
                 queue.isMuted = muted                                            // autoplay starts muted

@@ -407,6 +407,12 @@ private struct ClipPostCard: View {
                                        if var pc = playingClip, pc.matches(post.id, idx) { pc.muted.toggle(); playingClip = pc }
                                    },
                                    onOpenFullscreen: {
+                                       // Stop the inline player first so it isn't decoding + emitting audio
+                                       // UNDER the fullscreen player (doubled audio/decode — prompt 94 review).
+                                       // The snapshot below carries its own clips/startIndex, so it's
+                                       // independent of playingClip; clearing it also releases the inline
+                                       // audio session via onChange(of: playingClip).
+                                       playingClip = nil
                                        fullscreen = ClipFullscreen(
                                            clips: post.clips.map(\.media), startIndex: idx,
                                            series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,

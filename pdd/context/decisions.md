@@ -7266,3 +7266,21 @@ flow can't be UITested on the sim (`ClipsFeedUITests` only covers the empty stat
 play/pause; drag the timeline → the video seeks and the HR dot follows; mute; close → back at the post.
 **Watch for a black inline/fullscreen frame (R12).**
 
+**Adversarial review fixes (folded into the prompt-94 PR; a 15-agent review of the 91-94 diff confirmed 7
+real bugs).** (1) **Doubled audio/decode** — `onOpenFullscreen` now sets `playingClip = nil` first so the
+inline looping player tears down (a `.fullScreenCover` presents OVER the tree → the inline surface got no
+`.onDisappear`, so it kept decoding + emitting audio under the fullscreen player). (2) **Paused clip
+auto-resumed on page-swipe-away-and-back** — `ClipMediaSurface.onChange(of: isActive)` now resumes only when
+`controller == nil || controller?.isPlaying` (the inline looping path still always resumes; initial autoplay
+is unaffected — it flows through `onChange(of: state)`). (3+4) **Scrubber range / dead Play-at-end** — the
+controller's duration now comes from the item's **real** `asset.load(.duration)` (PHAsset.durationSec is
+approximate → broke the end-of-clip replay gate + the scrubber's 0…duration map), falling back to the stored
+value. (5) **HR dot wrapped to 0 at the exact end** of the non-looping fullscreen clip — `ClipHROverlay.fraction`
+gained a `loops` flag (`controller == nil`): looping folds (`videoTime == loop → 0`, matching the looper),
+non-looping **clamps** (rests at 1.0 on the last frame). (6) **Inverted tile aspect for rotated videos** —
+`ClipAspectResolver` no longer falls back to a video's pre-rotation `pixelWidth/Height` (which the feed
+persists); it returns `nil` so the tile keeps the 4:5 default, and it **negatively caches** unresolved ids so
+an iCloud-only clip isn't re-read on every scroll-back. (The aspect fix logically belongs to prompt 92 but is
+applied in the prompt-94 PR to keep the stacked branches intact.) All sim-green after: build + full
+`SnappetTests` + `ClipsFeedUITests`, 0 warnings.
+

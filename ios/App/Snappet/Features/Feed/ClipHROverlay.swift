@@ -66,12 +66,22 @@ enum ClipHROverlay {
     /// sparse / ±8s-fallback window where `maxT ≪ duration`) they don't, so dividing by `durationSec` makes
     /// the live dot/BPM lag the true playhead. So: fold by the clip duration (the video's loop boundary),
     /// then normalize by `maxT` from the SAME window samples the chart draws.
-    static func fraction(videoTime: Double, clip: MediaInput, payload: Payload) -> Double {
+    ///
+    /// `loops` (default true) matches the inline carousel's `AVPlayerLooper`, where `videoTime == loop`
+    /// wraps the video to frame 0 — so the dot must fold to 0 too. The fullscreen transport plays a
+    /// NON-looping player (prompt 94) that parks at the last frame, so it passes `loops: false`: the time
+    /// is clamped at `loop` (the dot rests at 1.0 at the end) instead of snapping back to the start.
+    static func fraction(videoTime: Double, clip: MediaInput, payload: Payload, loops: Bool = true) -> Double {
         let loop = windowDuration(clip)                              // the video's loop boundary
         let maxT = payload.values.samples.map(\.t).max() ?? loop     // the chart's x-axis denominator
         guard loop > 0, maxT > 0, videoTime.isFinite else { return 0 }
-        let folded = videoTime.truncatingRemainder(dividingBy: loop)
-        let t = folded < 0 ? folded + loop : folded
+        let t: Double
+        if loops {
+            let folded = videoTime.truncatingRemainder(dividingBy: loop)
+            t = folded < 0 ? folded + loop : folded
+        } else {
+            t = min(loop, max(0, videoTime))   // non-looping: rest at the end, don't wrap to 0
+        }
         return min(1, max(0, t / maxT))
     }
 }
