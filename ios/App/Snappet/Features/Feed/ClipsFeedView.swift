@@ -462,7 +462,9 @@ private struct ClipPostCard: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: carouselHeight)
-            .animation(.easeInOut(duration: 0.25), value: carouselHeight)
+            // Animate the height resolve, but NOT while scrolling — an implicit frame animation mid-scroll
+            // re-lays-out the whole paged container every frame (a jerk source).
+            .animation(isScrolling ? nil : .easeInOut(duration: 0.25), value: carouselHeight)
             // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
             // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
@@ -611,19 +613,21 @@ private struct ClipPosterView: View {
                                      onSurfaceTap: playing ? onOpenFullscreen : nil, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .allowsHitTesting(playing)
-                        // Hide a warm player ONLY when it would flash a video frame mid-SCROLL: i.e. the
-                        // vertically-visible CURRENT page of a feed NEIGHBOUR (a different post above/below).
-                        // Carousel siblings (off-side, clipped) stay visible at their paused frame so a swipe
-                        // slides an already-correct frame into place and just starts playing — no crossfade
-                        // flicker. The playing clip is always visible.
-                        .opacity((!playing && isCurrentPage && !postOnScreen) ? 0 : 1)
-                        .animation(.easeInOut(duration: 0.2), value: playing)
+                        // ONLY the playing clip's video layer is visible; warm clips stay opacity 0 so their
+                        // AVPlayerLayer is SKIPPED in compositing (the still poster below is the visible frame).
+                        // This keeps the carousel slide light — no 2-3 live video layers blending per frame —
+                        // and the reveal is INSTANT (no crossfade): the still covers the swap, then the
+                        // already-loaded player plays. (Removing the visible-sibling/crossfade was the jerk.)
+                        .opacity(playing ? 1 : 0)
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)
                 VStack(alignment: .leading, spacing: 10) {
                     nameOverlay
-                    hrOverlay
+                    // The HR scorebug is a `.ultraThinMaterial` backdrop blur (GPU-heavy to re-composite as a
+                    // page slides). Render it ONLY on the centred carousel page so a swipe doesn't drag 2-3
+                    // live blur panels at once (the off-side siblings are clipped anyway).
+                    if isCurrentPage { hrOverlay }
                 }
                 .padding(12)
             }

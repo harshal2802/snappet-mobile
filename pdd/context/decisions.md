@@ -7366,3 +7366,18 @@ swipe just slides an already-correct frame into place and starts playing (no cro
 gained `isCurrentPage` (idx == page) + `postOnScreen` (the card's `isOnScreen`). Build + `ClipsFeedUITests`
 green; built + installed on MrRobot.
 
+**On-device: the carousel "flicker" was a JERK (dropped frames), fixed at the perf root (prompt 90/92,
+MrRobot 2026-06-22).** A device UITest (`xcresulttool` screenshot burst) ruled out a black flash — it's a
+dropped-frame stutter. A 4-agent perf review (`clips-swipe-perf` workflow) found the swipe-frame costs:
+(1) every carousel page rendered an `HRTileView` whose `glassCard` is a live **`.ultraThinMaterial` backdrop
+blur** + shadows — `TabView(.page)` keeps ±1 siblings resident, so ~3 blur panels re-composite **every drag
+frame**; (2) my "visible warm siblings" change put **2-3 live `AVPlayerLayer`s** into that compositing too;
+(3) `.animation(value: carouselHeight)` implicitly re-lays-out the paged container when aspect resolves;
+(4) at settle, `composedPosts()` (called unconditionally in `body`) + per-page `ClipHROverlay.make` + a new
+`AVPlayer` mount all land on the page-change `playingClip` write. Drag-frame fixes (this round, low-risk):
+**render the glass HR tile only on `isCurrentPage`** (no sliding blur panels on siblings); **warm siblings
+`opacity 0`** (their `AVPlayerLayer` is skipped in compositing — the still poster is the visible frame —
+instant reveal, no crossfade); **gate the height animation on `!isScrolling`**. Settle-frame costs (memoize
+`composedPosts`/payloads, defer the warm mount) are the next round if a residual hitch remains. Built +
+installed on MrRobot; the one-off `ClipsCarouselDiagnosticTests` (device-only) was removed.
+
