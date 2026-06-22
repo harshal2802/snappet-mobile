@@ -81,8 +81,9 @@ enum ClipFeedComposer {
 
     static let minAspect = 0.5     // ~2:1 tall portrait — covers 9:16 phone video (0.5625) un-clamped
     static let maxAspect = 1.91    // 1.91:1 landscape — covers 16:9 (1.78) un-clamped
-    /// The neutral 4:5 shown until a clip's real aspect is backfilled (`SessionMedia.aspectRatio` nil).
-    static let defaultAspect = 0.8
+    /// 9:16 — the common phone-portrait aspect, shown until a clip's real aspect is backfilled. Defaulting to
+    /// the COMMON case means most clips' tiles don't resize (and thus don't animate-reflow) during scroll.
+    static let defaultAspect = 9.0 / 16.0
 
     /// The one clamped aspect a post's carousel uses: the first clip with a resolved aspect, clamped to
     /// `[minAspect, maxAspect]`; `defaultAspect` when none is known yet.

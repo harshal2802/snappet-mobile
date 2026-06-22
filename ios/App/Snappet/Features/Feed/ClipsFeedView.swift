@@ -302,11 +302,11 @@ private struct ClipPostCard: View {
         // churn still↔player while you fling past them (the flicker). A card leaving the screen still clears.
         .onScrollVisibilityChange(threshold: 0.7) { visible in
             isOnScreen = visible
-            guard autoplayActive else { return }
-            if visible {
-                if !isScrolling { playingClip = PlayingClipRef(postID: post.id, page: page, muted: true) }
-            } else if playingClip?.postID == post.id {
-                playingClip = nil
+            // Start the centred clip only once SETTLED. Do NOT stop a playing clip mid-scroll — that froze
+            // the video to its poster on every card you flung past (a flicker). The playing clip keeps
+            // playing as it translates; the settle handler below switches to the newly-centred one cleanly.
+            if visible, !isScrolling, autoplayActive {
+                playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
             }
         }
         // When the feed settles, the on-screen card becomes the single active (muted) clip.
@@ -603,6 +603,11 @@ private struct ClipPosterView: View {
                                      onSurfaceTap: playing ? onOpenFullscreen : nil, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .allowsHitTesting(playing)
+                        // Warm clips load INVISIBLY behind the still (opacity 0) — so scrolling shows stable
+                        // posters, not video frames flashing in/out — and the player only reveals (a quick
+                        // crossfade) once it's actually the active clip, by which point it's already loaded.
+                        .opacity(playing ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.2), value: playing)
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)

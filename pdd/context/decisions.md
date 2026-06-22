@@ -7342,3 +7342,17 @@ visible neighbour (1 playing, rest paused). ⚠️ **R12 watch:** this is the mu
 codebase warns about — must be device-verified with autoplay ON for a black inline frame before trusting it.
 Build + `ClipFeedComposerTests` + `ClipsFeedUITests` green; built + installed on MrRobot.
 
+**On-device: kill the residual scroll/carousel flicker at the root (prompt 90/92, MrRobot 2026-06-22).**
+Still flickering — three root causes, all fixed so the feed shows **stable posters during scroll** (only a
+single already-playing video translates; everything else is a still): (1) **Warm players load INVISIBLY** —
+the warm `ClipMediaSurface` is `.opacity(playing ? 1 : 0)` so it preloads behind the still and only reveals
+(0.2s crossfade) when it actually becomes the active clip; before this, warm players showed their first video
+frame as they mounted/unmounted mid-scroll = flashing. (2) **Don't stop the playing clip mid-scroll** — the
+`onScrollVisibilityChange(0.7)` handler no longer clears `playingClip` when a card drops below 70% (that
+froze the video to its poster on every card you flung past); the playing clip keeps playing as it translates
+and the settle handler switches to the newly-centred clip cleanly. (3) **Default tile aspect → 9:16** (the
+common phone-portrait, was 4:5) so a portrait clip's tile matches the default from first render and **doesn't
+animate-grow** when its aspect resolves (that reflow-during-scroll was the other flicker). The height
+animation stays (for the rare landscape resize). Net: warm = loaded-but-hidden, so the smoothness (instant
+play on settle/swipe) is kept while the visual churn is gone. `ClipFeedComposerTests` + build green; on MrRobot.
+
