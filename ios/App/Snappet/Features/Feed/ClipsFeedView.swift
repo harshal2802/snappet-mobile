@@ -39,6 +39,8 @@ struct ClipsFeedView: View {
     /// Explore-grid sheet (prompt 86) + the post id to scroll the feed to when a grid cover is picked.
     @State private var showGrid = false
     @State private var scrollTarget: String?
+    /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
+    @State private var reactions = ClipReactionStore()
 
     var body: some View {
         let posts = composedPosts()
@@ -52,7 +54,8 @@ struct ClipsFeedView: View {
                             LazyVStack(spacing: 18) {
                                 ForEach(posts) { post in
                                     ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
-                                                 allMedia: allMedia, playingClip: $playingClip)
+                                                 allMedia: allMedia, playingClip: $playingClip,
+                                                 reactions: reactions)
                                         .id(post.id)
                                 }
                             }
@@ -177,9 +180,12 @@ private struct ClipPostCard: View {
     let allMedia: [SessionMedia]
     /// The feed's single active inline clip (prompt 85) — this card plays the page that matches it.
     @Binding var playingClip: PlayingClipRef?
+    /// Favorite reactions (prompt 88) — shared UserDefaults-backed store.
+    let reactions: ClipReactionStore
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
     @State private var studio: StudioPresentation?
     /// Share-a-clip (prompt 87): the exported temp video handed to the system share sheet, + a busy flag.
@@ -235,9 +241,25 @@ private struct ClipPostCard: View {
                 Text(post.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
             }
             Spacer(minLength: 8)
+            favoriteButton
             optionsMenu
         }
         .padding(.horizontal, SnappetSpacing.lg)
+    }
+
+    // ❤️ favorite reaction (prompt 88) — a button (not a double-tap) so it can't fight the tap-to-play poster.
+    private var favoriteButton: some View {
+        Button { reactions.toggle(post.id) } label: {
+            Image(systemName: reactions.isFavorite(post.id) ? "heart.fill" : "heart")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(reactions.isFavorite(post.id) ? .red : SnappetColor.ink)
+                .symbolEffect(.bounce, value: reduceMotion ? false : reactions.isFavorite(post.id))
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("clips.post.favorite")
+        .accessibilityLabel(reactions.isFavorite(post.id) ? "Unfavorite" : "Favorite")
     }
 
     private var glyph: String {
