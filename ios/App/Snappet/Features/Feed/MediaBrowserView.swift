@@ -27,9 +27,7 @@ struct MediaBrowserView: View {
 
     /// `offsetSec`-ordered flat list — the index space the fullscreen viewer pages over (so a tap in any
     /// bucket opens at the right absolute clip).
-    private var ordered: [MediaInput] {
-        media.sorted { $0.offsetSec == $1.offsetSec ? $0.id.uuidString < $1.id.uuidString : $0.offsetSec < $1.offsetSec }
-    }
+    private var ordered: [MediaInput] { FeedMedia.ordered(media) }
 
     var body: some View {
         NavigationStack {
@@ -96,9 +94,7 @@ struct MediaBrowserView: View {
         FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR)
     }
 
-    private func tagName(_ m: MediaInput) -> String {
-        nameFor(m.exerciseId?.uuidString ?? m.climbUUID ?? "general")
-    }
+    private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }
 
     private func tile(_ m: MediaInput) -> some View {
         let hr = clipHR(m)
@@ -133,9 +129,6 @@ struct ClipThumbnail: View {
     let size: CGSize
     @State private var image: UIImage?
 
-    // MainActor-isolated via the View conformance, so the shared cache is concurrency-safe.
-    private static let manager = PHCachingImageManager()
-
     var body: some View {
         ZStack {
             if let image {
@@ -154,20 +147,9 @@ struct ClipThumbnail: View {
 
     private func load() async {
         guard image == nil else { return }
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = assets.firstObject else { return }
-        let target = CGSize(width: size.width * 3, height: size.height * 3)
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat          // single callback (no degraded pass)
-        options.isNetworkAccessAllowed = false             // posters stay local + fast
-        let manager = Self.manager
-        let loaded: UIImage? = await withCheckedContinuation { continuation in
-            manager.requestImage(for: asset, targetSize: target,
-                                 contentMode: .aspectFill, options: options) { img, _ in
-                continuation.resume(returning: img)
-            }
+        if let loaded = await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size) {
+            image = loaded
         }
-        if let loaded { image = loaded }
     }
 }
 
@@ -253,9 +235,7 @@ private struct PagedMediaViewer: View {
     private var name: String { clips.indices.contains(index) ? tagName(clips[index]) : "" }
     private var currentKind: String { clips.indices.contains(index) ? clips[index].kind : "video" }
 
-    private func tagName(_ m: MediaInput) -> String {
-        nameFor(m.exerciseId?.uuidString ?? m.climbUUID ?? "general")
-    }
+    private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }
 
     /// Build the EDITOR overlay for a clip: slice the session HR to the clip window (rebased to clip-
     /// local time), feed `HROverlayValues`, and render the SAME scorebug `HRTile` the export burns. Returns
@@ -277,7 +257,7 @@ private struct ClipOverlay {
 }
 
 /// One fullscreen page: the real clip playback (active page only) under the editor HR overlay + name
-/// tag. Reuses the `ClipPlayerLayer`/PHAsset→AVPlayerItem path. Single-active rule: only the centered
+/// tag. Reuses the `StudioPlayerLayerView`/PHAsset→AVPlayerItem path. Single-active rule: only the centered
 /// page PLAYS; when a page de-centers it's PAUSED (not torn down) so its player + looper stay resident
 /// and a swipe back resumes instantly. The player is fully released (paused, nilled, looper dropped)
 /// only when the page leaves the `TabView`'s resident set — its `.onDisappear`.
@@ -336,7 +316,7 @@ private struct MediaPage: View {
         if state == .loading {
             ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if item.kind == "video", let player {
-            ClipPlayerLayer(player: player)
+            StudioPlayerLayerView(player: player, backgroundColor: .black)
                 .accessibilityIdentifier("feed.media.player")
                 .onTapGesture { player.rate == 0 ? player.play() : player.pause() }
         } else if let image {
@@ -398,29 +378,6 @@ private struct MediaPage: View {
             state = .ready
         }
     }
-}
-
-/// Chromeless AVPlayer surface (no AVKit transport controls) so the clip plays full-bleed under the
-/// HR overlay, story-style. Tap toggles play/pause via the parent.
-private struct ClipPlayerLayer: UIViewRepresentable {
-    let player: AVPlayer
-
-    func makeUIView(context: Context) -> PlayerContainerView {
-        let view = PlayerContainerView()
-        view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspect
-        view.backgroundColor = .black
-        return view
-    }
-
-    func updateUIView(_ uiView: PlayerContainerView, context: Context) {
-        uiView.playerLayer.player = player
-    }
-}
-
-private final class PlayerContainerView: UIView {
-    override class var layerClass: AnyClass { AVPlayerLayer.self }
-    var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 }
 
 /// Wraps a non-Sendable value so it can cross an async continuation boundary.

@@ -36,6 +36,23 @@ enum FeedMedia {
         var items: [MediaInput]
     }
 
+    /// Canonical clip ordering — by `offsetSec`, ties broken by id for stability. Shared by the in-card
+    /// carousel, the browser's flat index space, and the fullscreen pager so all three agree on order.
+    static func ordered(_ media: [MediaInput]) -> [MediaInput] {
+        media.sorted { $0.offsetSec == $1.offsetSec ? $0.id.uuidString < $1.id.uuidString : $0.offsetSec < $1.offsetSec }
+    }
+
+    /// The group key for a clip: its exercise, else its climb, else "general". One source of truth for
+    /// both `groups(by:)` bucketing and the per-clip name tag.
+    static func groupKey(_ m: MediaInput) -> String {
+        m.exerciseId?.uuidString ?? m.climbUUID ?? "general"
+    }
+
+    /// The display name tag for a clip — `nameFor` applied to its `groupKey`.
+    static func tagName(_ m: MediaInput, nameFor: (String) -> String) -> String {
+        nameFor(groupKey(m))
+    }
+
     /// Peak/avg BPM within a clip's [offset, offset+duration] window from the session HR series.
     static func clipHR(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint], maxHR: Double) -> MediaClipHR {
         guard !hrSeries.isEmpty else { return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil) }
@@ -90,7 +107,7 @@ enum FeedMedia {
             var order: [String] = []
             var map: [String: [MediaInput]] = [:]
             for m in sorted {
-                let key = m.exerciseId?.uuidString ?? m.climbUUID ?? "general"
+                let key = groupKey(m)
                 if map[key] == nil { order.append(key) }
                 map[key, default: []].append(m)
             }

@@ -86,6 +86,17 @@ final class FeedSaveItem {
     }
 }
 
+/// Append-only rows scoped to one feed activity's contentId. Lets `FeedInteractionWriter` share one
+/// generic toggle/exists path without a generic `#Predicate` (SwiftData can't translate a predicate
+/// over a protocol keypath — see FeedInteractions for the generic-descriptor + in-memory-filter form,
+/// mirroring `SnappetBackup.all<M:PersistentModel>`).
+protocol ActivityScoped: PersistentModel {
+    var activityContentId: String { get }
+}
+
+extension FeedReaction: ActivityScoped {}
+extension FeedSaveItem: ActivityScoped {}
+
 /// A share/export event. `channel` is the seam: "export:*" today, "user:*" tomorrow.
 @Model
 final class FeedShareEvent {

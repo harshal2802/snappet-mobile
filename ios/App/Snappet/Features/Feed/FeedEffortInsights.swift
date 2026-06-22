@@ -84,11 +84,10 @@ enum FeedEffortInsights {
 
         let payload = EffortEfficiencyPayload(gradeBand: chosen.key,
                                               oldAvgBpm: Int(oldAvg.rounded()), newAvgBpm: Int(newAvg.rounded()))
-        return [FeedCard(id: "e4-efficiency-\(chosen.key)", contentId: "",
-                         kind: .e4EffortEfficiency, category: .effort,
-                         salience: FeedComposer.Salience.effortEfficiency, anchorDate: anchor,
-                         sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "effortEfficiency")],
-                         payload: .effortEfficiency(payload), shareHint: nil)]
+        return [.aggregate(id: "e4-efficiency-\(chosen.key)", ref: "effortEfficiency",
+                           kind: .e4EffortEfficiency, category: .effort,
+                           salience: FeedComposer.Salience.effortEfficiency, anchor: anchor,
+                           payload: .effortEfficiency(payload))]
     }
 
     // MARK: e5 — HRV / recovery (RR-gated)
@@ -108,11 +107,10 @@ enum FeedEffortInsights {
 
         let payload = HRVRecoveryPayload(rmssd: Int(rmssd.rounded()),
                                          note: "Higher RMSSD = better recovered.")
-        return [FeedCard(id: "e5-hrv", contentId: "",
-                         kind: .e5HRVRecovery, category: .effort,
-                         salience: FeedComposer.Salience.hrvRecovery, anchorDate: anchor,
-                         sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "hrvRecovery")],
-                         payload: .hrvRecovery(payload), shareHint: nil)]
+        return [.aggregate(id: "e5-hrv", ref: "hrvRecovery",
+                           kind: .e5HRVRecovery, category: .effort,
+                           salience: FeedComposer.Salience.hrvRecovery, anchor: anchor,
+                           payload: .hrvRecovery(payload))]
     }
 
     // MARK: restNudge — protective "go gentler" suggestion
@@ -147,10 +145,9 @@ enum FeedEffortInsights {
 
         let note = "\(streak) hard days straight — a rest day keeps you primed."
         let anchor = min(latest, now)                                  // never in the future
-        return [FeedCard(id: "rest-nudge-\(Int(latest.timeIntervalSince1970))", contentId: "",
-                         kind: .restNudge, category: .effort,
-                         salience: FeedComposer.Salience.restNudge, anchorDate: anchor,
-                         sourceRefs: [ActivityRef(objectKind: "aggregate", ref: "restNudge")],
-                         payload: .restNudge(RestNudgePayload(hardDays: streak, note: note)), shareHint: nil)]
+        return [.aggregate(id: "rest-nudge-\(Int(latest.timeIntervalSince1970))", ref: "restNudge",
+                           kind: .restNudge, category: .effort,
+                           salience: FeedComposer.Salience.restNudge, anchor: anchor,
+                           payload: .restNudge(RestNudgePayload(hardDays: streak, note: note)))]
     }
 }

@@ -70,6 +70,11 @@ struct WallView: View {
 private struct WallTile: View {
     let card: FeedCard
 
+    /// The user's preferred weight unit → derived `DistanceUnit` (km/mi) so the run hero honors the user's
+    /// choice (same `workoutlog.preferredUnit` the list/share/story read — one source of truth).
+    @AppStorage("workoutlog.preferredUnit") private var preferredUnitRaw = WeightUnit.kg.rawValue
+    private var distanceUnit: DistanceUnit { SessionRecap.distanceUnit(WeightUnit(rawValue: preferredUnitRaw) ?? .kg) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             DisciplineHero(value: spec.hero, caption: spec.badge,
@@ -88,43 +93,48 @@ private struct WallTile: View {
 
     private typealias RibbonItem = StatRibbon.Item
 
-    /// The compact display mapping for a tile — hero numeral + caption + sublabel + ≤2 ribbon chips,
-    /// tinted on the discipline accent. Mirrors FeedCardView's accent/figure vocabulary in a denser form.
+    /// The compact display mapping for a tile — hero numeral + caption + sublabel + ≤2 ribbon chips. The
+    /// kicker/hero/caption/icon/accent come from the ONE shared `FeedCardDisplay` descriptor (so the wall
+    /// can't drift from the list/share/story); the wall keeps its DENSITY overrides — the lift hero splits
+    /// the unit out of the numeral and shows a set-count, the badge maps from the kicker, and the ribbon
+    /// chips stay payload-specific (sends+proj, ex count, climb name).
     private var spec: (hero: String, label: String, badge: String, icon: String,
                        accent: Color, ribbon: [RibbonItem]) {
+        let d = card.display(unit: distanceUnit)
+        let base = (hero: d.hero, label: d.heroCaption, badge: d.kicker, icon: d.iconName, accent: d.accent.color)
         switch card.payload {
         case .climbSession(let p):
-            let badge = p.isPRSession ? "PR session" : "Climb"
             var ribbon: [RibbonItem] = [.init(text: "\(p.sends) sends", tint: SnappetColor.kilter, emphasized: true)]
             if p.projects > 0 { ribbon.append(.init(text: "\(p.projects) proj")) }
-            return (p.hardestSendGrade ?? "—", "hardest send", badge, "figure.climbing",
-                    SnappetColor.kilter, ribbon)
+            return (base.hero, "hardest send", p.isPRSession ? "PR session" : "Climb", base.icon, base.accent, ribbon)
         case .workoutSession(let p):
-            if let m = p.distanceMeters {
-                return (String(format: "%.1fk", m / 1000), "distance", "Run", "figure.run",
-                        SnappetColor.workout, [.init(text: "\(p.exerciseCount) ex")])
+            // Run hero = the descriptor's unit-aware distance (one SetMeasure funnel, no inline conversion).
+            // Lift keeps the wall's denser set-count hero (a layout choice; list/share/story show volume).
+            if p.distanceMeters != nil {
+                return (base.hero, "distance", "Run", "figure.run", base.accent,
+                        [.init(text: "\(p.exerciseCount) ex")])
             }
-            return ("\(p.setCount)", "sets", "Lift", "dumbbell.fill", SnappetColor.workout,
+            return ("\(p.setCount)", "sets", "Lift", "dumbbell.fill", base.accent,
                     [.init(text: "\(p.exerciseCount) ex")])
         case .gradePR(let p):
-            return (p.newGrade, "hardest ever", "Grade PR", "trophy.fill", SnappetColor.brand,
+            return (base.hero, "hardest ever", base.badge, base.icon, base.accent,
                     [.init(text: p.climbName, tint: SnappetColor.brand, emphasized: true)])
         case .liftPR(let p):
-            return ("\(Int(p.oneRepMaxKg.rounded()))", "\(p.unit) 1RM", "Lift PR", "trophy.fill",
-                    SnappetColor.brand, [.init(text: p.exerciseName, tint: SnappetColor.brand, emphasized: true)])
+            // Wall density override: split the unit out of the hero numeral into the caption.
+            return ("\(Int(p.oneRepMaxKg.rounded()))", "\(p.unit) 1RM", base.badge, base.icon, base.accent,
+                    [.init(text: p.exerciseName, tint: SnappetColor.brand, emphasized: true)])
         case .onTheBoard(let p):
             var ribbon: [RibbonItem] = []
             if let g = p.hardestGrade { ribbon.append(.init(text: g, tint: SnappetColor.kilter, emphasized: true)) }
-            return ("\(p.litCount)", "lit", "On the board", "square.grid.3x3.fill",
-                    SnappetColor.kilter, ribbon)
+            return (base.hero, "lit", base.badge, base.icon, base.accent, ribbon)
         case .firstAtGrade(let p):
-            return (p.grade, "first at grade", "First", "star.fill", SnappetColor.kilter,
+            return (base.hero, "first at grade", base.badge, base.icon, base.accent,
                     [.init(text: p.climbName)])
         case .projectSent(let p):
-            return (p.grade, "project sent", "Sent", "checkmark.seal.fill", SnappetColor.brand,
+            return (base.hero, "project sent", base.badge, base.icon, base.accent,
                     [.init(text: p.climbName, tint: SnappetColor.brand, emphasized: true)])
         default:
-            return ("—", "", "Recap", "sparkles", SnappetColor.kilter, [])
+            return (base.hero, base.label, "Recap", base.icon, base.accent, [])
         }
     }
 }

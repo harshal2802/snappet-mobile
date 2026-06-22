@@ -23,109 +23,45 @@ struct FeedCardView: View {
     /// Defaults empty so the milestone/detail/wall/story call sites render unchanged (no carousel).
     var media: FeedCardMedia? = nil
 
+    /// The user's preferred weight unit (kg/lb). The run hero's distance follows the derived
+    /// `DistanceUnit` so the LIST honors the user's km/mi choice (one source of truth via `card.display`).
+    @AppStorage("workoutlog.preferredUnit") private var preferredUnitRaw = WeightUnit.kg.rawValue
+    private var distanceUnit: DistanceUnit { SessionRecap.distanceUnit(WeightUnit(rawValue: preferredUnitRaw) ?? .kg) }
+
     var body: some View {
+        // The 5 rich/bespoke kinds keep dedicated views (carousel · zone bar · sparkline); every other
+        // kind renders through the ONE shared `FeedCardDisplay` descriptor (no per-kind switch arm here).
         switch card.payload {
         case .climbSession(let p):
             ClimbSessionCardView(payload: p, media: media, card: card)
         case .workoutSession(let p):
-            WorkoutSessionCardView(payload: p)
-        case .gradePR(let p):
-            MilestoneCardView(accent: SnappetColor.brand, icon: "trophy.fill", kind: "Grade PR",
-                              hero: p.newGrade, caption: p.previousGrade.map { "was \($0) · new hardest" } ?? "new hardest ever",
-                              sub: p.climbName, identifier: "feed.card.b1GradePR")
-        case .mostClimbs(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "flame.fill", kind: "Most climbs",
-                              hero: "\(p.count)", caption: p.previousRecord.map { "beat \($0)" } ?? "session record",
-                              sub: "in one session", identifier: "feed.card.b3MostClimbs")
-        case .streak(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: p.isRecord ? "crown.fill" : "calendar",
-                              kind: p.isRecord ? "Longest streak ever" : "Streak",
-                              hero: "\(p.days)", caption: "days in a row",
-                              sub: p.isRecord
-                                  ? (p.previousBest > 0 ? "past best \(p.previousBest) — go gentler" : "go gentler")
-                                  : (p.weeks >= 1 ? "\(p.weeks) week\(p.weeks == 1 ? "" : "s") unbroken" : nil),
-                              identifier: "feed.card.b5Streak")
-        case .pyramid(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "triangle.fill", kind: "Grade pyramid",
-                              hero: p.maxGrade ?? "—", caption: "\(p.totalSends) sends",
-                              sub: "across \(p.rows.filter { $0.sends > 0 }.count) grades", identifier: "feed.card.c1Pyramid")
-        case .weeklyVolume(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "chart.bar.fill", kind: "Weekly volume",
-                              hero: "\(p.buckets.last?.sends ?? 0)", caption: "sends this week",
-                              sub: p.deltaVsPrev >= 0 ? "▲ \(p.deltaVsPrev) vs last week" : "▼ \(-p.deltaVsPrev) vs last week",
-                              identifier: "feed.card.d1WeeklyVolume")
+            WorkoutSessionCardView(payload: p, distanceUnit: distanceUnit)
         case .effort(let p):
-            EffortCardView(payload: p)
+            EffortCardView(payload: p, card: card)
         case .hardestEffort(let p):
-            HardestEffortCardView(payload: p)
+            HardestEffortCardView(payload: p, card: card)
         case .hrTrend(let p):
-            HRTrendCardView(payload: p)
-        case .onTheBoard(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "square.grid.3x3.fill", kind: "On the board",
-                              hero: "\(p.litCount)", caption: "climbs lit",
-                              sub: p.gradeSpread.isEmpty ? "pulled up, not logged" : p.gradeSpread,
-                              identifier: "feed.card.a3OnTheBoard")
-        case .liftPR(let p):
-            MilestoneCardView(accent: SnappetColor.brand, icon: "dumbbell.fill", kind: "Lift PR",
-                              hero: "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)", caption: "est. 1RM · \(p.exerciseName)",
-                              sub: p.previousOneRepMaxKg.map { "was \(Int($0.rounded())) \(p.unit)" },
-                              identifier: "feed.card.b4LiftPR")
-        case .pyramidHealth(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "triangle.fill", kind: "Pyramid health",
-                              hero: p.consolidateGrade, caption: "consolidate", sub: p.note, identifier: "feed.card.c2PyramidHealth")
-        case .progression(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "chart.line.uptrend.xyaxis", kind: "Progression",
-                              hero: "\(p.fromGrade) → \(p.toGrade)", caption: "over \(p.points.count) months", sub: nil,
-                              identifier: "feed.card.c3Progression")
-        case .climbingLevel(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "figure.climbing", kind: "Climbing level",
-                              hero: p.level, caption: "working grade", sub: p.maxGrade.map { "max \($0)" },
-                              identifier: "feed.card.c4ClimbingLevel")
-        case .angleDist(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "ruler", kind: "Angles",
-                              hero: "\(p.topAngle)°", caption: "most sends", sub: "\(p.slices.count) angles climbed",
-                              identifier: "feed.card.c5AngleDist")
-        case .periodVsLast(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "calendar", kind: "This month vs last",
-                              hero: "\(p.current)", caption: "sends · \(p.currentLabel)",
-                              sub: p.current >= p.previous ? "▲ \(p.current - p.previous) vs last" : "▼ \(p.previous - p.current) vs last",
-                              identifier: "feed.card.d2PeriodVsLast")
-        case .consistency(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "square.grid.3x3.fill", kind: "Consistency",
-                              hero: "\(p.activeDays)", caption: "active days", sub: "in the last \(p.windowDays)",
-                              identifier: "feed.card.consistencyMap")
-        case .onThisDay(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "clock.arrow.circlepath", kind: "On this day",
-                              hero: p.grade ?? "—", caption: "\(p.yearsAgo) yr ago", sub: p.summary,
-                              identifier: "feed.card.onThisDay")
-        case .firstAtGrade(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "star.fill", kind: "First at grade",
-                              hero: p.grade, caption: "your first \(p.grade)", sub: p.climbName, identifier: "feed.card.b2FirstAtGrade")
-        case .projectSent(let p):
-            MilestoneCardView(accent: SnappetColor.brand, icon: "checkmark.seal.fill", kind: "Project sent",
-                              hero: p.grade, caption: "after \(p.sessions) session\(p.sessions == 1 ? "" : "s")", sub: p.climbName,
-                              identifier: "feed.card.g1ProjectSent")
-        case .disciplineSplit(let p):
-            MilestoneCardView(accent: SnappetColor.workout, icon: "chart.pie.fill", kind: "Discipline split",
-                              hero: p.topLabel, caption: "most sessions",
-                              sub: p.slices.prefix(3).map { "\($0.label) \($0.count)" }.joined(separator: " · "),
-                              identifier: "feed.card.d3DisciplineSplit")
-        case .trendArrows(let p):
-            MilestoneCardView(accent: SnappetColor.kilter, icon: "arrow.up.arrow.down", kind: "90-day trends",
-                              hero: p.arrows.first.map { "\($0.improving ? "▲" : "▼") \(abs($0.deltaPct))%" } ?? "—",
-                              caption: p.arrows.first?.label ?? "trend",
-                              sub: p.arrows.dropFirst().first.map { "\($0.label) \($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" },
-                              identifier: "feed.card.d4TrendArrows")
-        case .effortEfficiency(let p):
-            MilestoneCardView(accent: SnappetColor.performance(forZone: .recovery), icon: "bolt.heart", kind: "Fitness gain",
-                              hero: "\(p.newAvgBpm)", caption: "avg BPM sending \(p.gradeBand)",
-                              sub: "was \(p.oldAvgBpm) — same grade, less effort", identifier: "feed.card.e4EffortEfficiency")
-        case .hrvRecovery(let p):
-            MilestoneCardView(accent: SnappetColor.performance(forZone: .recovery), icon: "heart.text.square", kind: "Recovery",
-                              hero: "\(p.rmssd)", caption: "RMSSD", sub: p.note, identifier: "feed.card.e5HRVRecovery")
-        case .restNudge(let p):
-            MilestoneCardView(accent: SnappetColor.performance(forZone: .aerobic), icon: "leaf.fill", kind: "Go gentler",
-                              hero: "\(p.hardDays)", caption: "hard days in a row", sub: p.note, identifier: "feed.card.restNudge")
+            HRTrendCardView(payload: p, card: card)
+        default:
+            MilestoneCardView(display: card.display(unit: distanceUnit), identifier: card.identifier)
+        }
+    }
+}
+
+// MARK: - Accent token → SnappetColor bridge (view layer)
+//
+// The pure `FeedAccent` (in FeedCardDisplay.swift) can't import `Color`; this is the single place that
+// maps the platform-free token to a `SnappetColor`. `.effort`/`.recovery`/`.aerobic` route through the
+// performance ramp (max → hard, recovery → fresh, aerobic → moderate).
+extension FeedAccent {
+    var color: Color {
+        switch self {
+        case .kilter:   return SnappetColor.kilter
+        case .workout:  return SnappetColor.workout
+        case .brand:    return SnappetColor.brand
+        case .effort:   return SnappetColor.performance(forZone: .max)
+        case .recovery: return SnappetColor.performance(forZone: .recovery)
+        case .aerobic:  return SnappetColor.performance(forZone: .aerobic)
         }
     }
 }
@@ -134,15 +70,18 @@ struct FeedCardView: View {
 
 private struct EffortCardView: View {
     let payload: EffortPayload
+    /// The source card — the kicker/hero/caption/sub/accent come from the shared `FeedCardDisplay`; the
+    /// zone bar + legend stay bespoke (the descriptor doesn't own layout).
+    let card: FeedCard
+    private var display: FeedCardDisplay { card.display() }
     private var total: Double { max(1, payload.zones.reduce(0) { $0 + $1.seconds }) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            FeedCardHeader(title: payload.title ?? "Session effort", trailing: durationText(payload.durationSec),
-                           badge: .init(icon: "bolt.heart.fill", text: "", tint: SnappetColor.performance(forZone: .threshold)))
-            DisciplineHero(value: "\(payload.maxBpm)", caption: "Peak BPM",
-                           sublabel: "avg \(payload.avgBpm) · TRIMP \(payload.trimp)",
-                           accent: SnappetColor.performance(forZone: .threshold))
+            FeedCardHeader(title: display.kicker, trailing: durationText(payload.durationSec),
+                           badge: .init(icon: display.iconName, text: "", tint: display.accent.color))
+            DisciplineHero(value: display.hero, caption: display.heroCaption,
+                           sublabel: display.primaryLine, accent: display.accent.color)
             GeometryReader { geo in
                 HStack(spacing: 1.5) {
                     ForEach(payload.zones, id: \.zone) { slice in
@@ -162,7 +101,7 @@ private struct EffortCardView: View {
                 }
             }
         }
-        .feedCard(accent: SnappetColor.performance(forZone: .threshold))
+        .feedCard(accent: display.accent.color)
         .accessibilityIdentifier("feed.card.e1Effort")
     }
 }
@@ -171,25 +110,21 @@ private struct EffortCardView: View {
 
 private struct HardestEffortCardView: View {
     let payload: HardestEffortPayload
+    /// The source card — kicker/hero/caption/sub/accent from the shared `FeedCardDisplay`; the grade
+    /// badge + climb-name line stay bespoke (layout the descriptor doesn't own).
+    let card: FeedCard
+    private var display: FeedCardDisplay { card.display() }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            FeedCardHeader(title: "Hardest-effort send", trailing: nil,
-                           badge: .init(icon: "flame.fill", text: payload.grade, tint: SnappetColor.performance(forZone: .max)))
-            DisciplineHero(value: "\(payload.peakBpm)", caption: "Peak BPM on a send",
-                           sublabel: subline, accent: SnappetColor.performance(forZone: .max))
+            FeedCardHeader(title: display.kicker, trailing: nil,
+                           badge: .init(icon: display.iconName, text: payload.grade, tint: display.accent.color))
+            DisciplineHero(value: display.hero, caption: display.heroCaption,
+                           sublabel: display.primaryLine, accent: display.accent.color)
             Text(payload.climbName).font(.footnote).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
         }
-        .feedCard(accent: SnappetColor.performance(forZone: .max))
+        .feedCard(accent: display.accent.color)
         .accessibilityIdentifier("feed.card.e2HardestEffort")
-    }
-
-    private var subline: String {
-        var parts = [payload.grade]
-        if let hrr = payload.peakHRRPercent { parts.append("\(hrr)% HRR") }
-        let z = HeartRateZone(rawValue: payload.zoneAtPeak) ?? .none
-        if z != .none { parts.append(z.pillLabel) }
-        return parts.joined(separator: " · ")
     }
 }
 
@@ -197,24 +132,21 @@ private struct HardestEffortCardView: View {
 
 private struct HRTrendCardView: View {
     let payload: HRTrendPayload
+    /// The source card — kicker/hero/caption/sub/accent from the shared `FeedCardDisplay`; the trailing
+    /// session count + sparkline stay bespoke (layout the descriptor doesn't own).
+    let card: FeedCard
+    private var display: FeedCardDisplay { card.display() }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            FeedCardHeader(title: "HR trend", trailing: "\(payload.points.count) sessions",
-                           badge: .init(icon: "chart.xyaxis.line", text: "", tint: SnappetColor.workout))
-            DisciplineHero(value: "\(payload.points.last?.avgBpm ?? 0)", caption: "Recent avg BPM",
-                           sublabel: subline, accent: SnappetColor.workout)
+            FeedCardHeader(title: display.kicker, trailing: "\(payload.points.count) sessions",
+                           badge: .init(icon: display.iconName, text: "", tint: display.accent.color))
+            DisciplineHero(value: display.hero, caption: display.heroCaption,
+                           sublabel: display.primaryLine, accent: display.accent.color)
             sparkline
         }
-        .feedCard(accent: SnappetColor.workout)
+        .feedCard(accent: display.accent.color)
         .accessibilityIdentifier("feed.card.e3HRTrend")
-    }
-
-    private var subline: String {
-        guard let first = payload.points.first?.avgBpm, let last = payload.points.last?.avgBpm else { return "" }
-        let d = last - first
-        return d == 0 ? "flat over \(payload.points.count) sessions"
-            : (d < 0 ? "▼ \(-d) bpm vs first" : "▲ \(d) bpm vs first")
     }
 
     private var sparkline: some View {
@@ -243,9 +175,11 @@ private struct ClimbSessionCardView: View {
     /// F3b (R6): the source card, threaded into the viewer's Share/Animate (`ShareComposerView`).
     let card: FeedCard
 
+    private var display: FeedCardDisplay { card.display() }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            FeedCardHeader(title: payload.title ?? "Climb session",
+            FeedCardHeader(title: display.kicker,
                            trailing: durationText(payload.durationSec),
                            badge: payload.isPRSession ? .init(icon: "trophy.fill", text: "PR", tint: SnappetColor.brand) : nil)
             hero
@@ -273,11 +207,13 @@ private struct ClimbSessionCardView: View {
         .accessibilityIdentifier("feed.card.a1Session")
     }
 
-    /// The still F1 hero: hardest-send grade + "Hardest send" + "Kilter · <angle>°". The carousel
-    /// (when media is threaded) sits below it as the single in-card media surface.
+    /// The still F1 hero: hardest-send grade + "Hardest send" (from the shared descriptor) + the
+    /// a1-specific "Kilter · <angle>°" sublabel (board angle is layout the share/story/wall never show, so
+    /// it stays inline, not in the descriptor). The carousel (when media is threaded) sits below it as the
+    /// single in-card media surface.
     @ViewBuilder private var hero: some View {
-        DisciplineHero(value: payload.hardestSendGrade ?? "—", caption: "Hardest send",
-                       sublabel: "Kilter · \(payload.angle)°", accent: SnappetColor.kilter)
+        DisciplineHero(value: display.hero, caption: display.heroCaption,
+                       sublabel: "Kilter · \(payload.angle)°", accent: display.accent.color)
     }
 }
 
@@ -285,22 +221,31 @@ private struct ClimbSessionCardView: View {
 
 private struct WorkoutSessionCardView: View {
     let payload: WorkoutSessionPayload
+    /// The user's derived `DistanceUnit` (km/mi) — threaded from `FeedCardView` so the run hero (and the
+    /// derived pace sublabel) honor the user's choice. Defaults to km for direct previews/wall/detail.
+    var distanceUnit: DistanceUnit = .km
+    /// This view receives only the payload (not a FeedCard), so build the descriptor directly from the
+    /// payload — the ONE shared mapping owns the hero/caption/accent.
+    private var display: FeedCardDisplay {
+        FeedCardDisplay(payload: .workoutSession(payload), kind: .a2Session, distanceUnit: distanceUnit)
+    }
 
     private var isRunning: Bool { payload.disciplineRaw == "running" || (payload.distanceMeters ?? 0) > 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            FeedCardHeader(title: payload.title, trailing: durationText(payload.durationSec), badge: nil)
+            FeedCardHeader(title: display.kicker, trailing: durationText(payload.durationSec), badge: nil)
             if isRunning, let meters = payload.distanceMeters {
-                DisciplineHero(value: distanceText(meters), caption: "Distance",
-                               sublabel: paceText(meters: meters, durationSec: payload.durationSec), accent: SnappetColor.workout)
+                DisciplineHero(value: display.hero, caption: display.heroCaption,
+                               sublabel: paceSublabel(meters: meters, durationSec: payload.durationSec),
+                               accent: display.accent.color)
                 StatRibbon(items: [
                     .init(text: durationText(payload.durationSec)),
                     .init(text: "\(payload.setCount) splits", tint: SnappetColor.workout, emphasized: true)
                 ])
             } else {
-                DisciplineHero(value: volumeText(payload.totalVolume), caption: "Volume",
-                               sublabel: "\(payload.exerciseCount) exercises", accent: SnappetColor.workout)
+                DisciplineHero(value: display.hero, caption: display.heroCaption,
+                               sublabel: "\(payload.exerciseCount) exercises", accent: display.accent.color)
                 StatRibbon(items: [
                     .init(text: "\(payload.exerciseCount) exercises"),
                     .init(text: "\(payload.setCount) sets", tint: SnappetColor.workout, emphasized: true),
@@ -308,28 +253,33 @@ private struct WorkoutSessionCardView: View {
                 ])
             }
         }
-        .feedCard(accent: SnappetColor.workout)
+        .feedCard(accent: display.accent.color)
         .accessibilityIdentifier("feed.card.a2Session")
+    }
+
+    /// The run hero's pace sublabel — unit-aware, routed through the one `SetMeasure.formatPace` funnel
+    /// (replacing the bespoke km-only `paceText`). Empty when distance/duration are missing.
+    private func paceSublabel(meters: Double, durationSec: Double) -> String {
+        guard meters > 0, durationSec > 0 else { return "" }
+        return SetMeasure.formatPace(secPerKm: durationSec / (meters / 1000), unit: distanceUnit)
     }
 }
 
 // MARK: Compact milestone / trend card (enriched in F5/F6)
 
 private struct MilestoneCardView: View {
-    let accent: Color
-    let icon: String
-    let kind: String
-    let hero: String
-    let caption: String
-    var sub: String? = nil
+    /// The fully-resolved display from the ONE shared `FeedCardDisplay` descriptor — no per-kind switch.
+    let display: FeedCardDisplay
     let identifier: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            FeedCardHeader(title: kind, trailing: nil, badge: .init(icon: icon, text: "", tint: accent))
-            DisciplineHero(value: hero, caption: caption, sublabel: sub, accent: accent)
+            FeedCardHeader(title: display.kicker, trailing: nil,
+                           badge: .init(icon: display.iconName, text: "", tint: display.accent.color))
+            DisciplineHero(value: display.hero, caption: display.heroCaption,
+                           sublabel: display.primaryLine, accent: display.accent.color)
         }
-        .feedCard(accent: accent)
+        .feedCard(accent: display.accent.color)
         .accessibilityIdentifier(identifier)
     }
 }
@@ -387,22 +337,5 @@ private func durationText(_ seconds: Double) -> String {
     return "\(total)s"
 }
 
-private func volumeText(_ kg: Double) -> String {
-    let v = Int(kg.rounded())
-    let f = NumberFormatter()
-    f.numberStyle = .decimal
-    f.maximumFractionDigits = 0
-    return "\(f.string(from: NSNumber(value: v)) ?? "\(v)") kg"
-}
-
-private func distanceText(_ meters: Double) -> String {
-    let km = meters / 1000
-    return km >= 10 ? String(format: "%.0f km", km) : String(format: "%.2f km", km)
-}
-
-private func paceText(meters: Double, durationSec: Double) -> String {
-    guard meters > 0, durationSec > 0 else { return "" }
-    let secPerKm = durationSec / (meters / 1000)
-    let m = Int(secPerKm) / 60, s = Int(secPerKm) % 60
-    return String(format: "%d:%02d /km", m, s)
-}
+// `volumeText`/`distanceText`/`paceText` were retired: volume now lives in `FeedFmt.volume`, and
+// distance/pace route through the unit-aware `SetMeasure.formatDistance`/`formatPace` (one source of truth).

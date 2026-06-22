@@ -35,77 +35,48 @@ enum FeedLens: Sendable, Equatable {
 struct KilterSessionInput: Sendable, Equatable, Identifiable {
     var id: UUID
     var startedAt: Date
-    var endedAt: Date?
+    var endedAt: Date? = nil
     var angle: Int
-    var title: String?
-    var layoutId: Int?
+    var title: String? = nil
+    var layoutId: Int? = nil
     // F2: optional HR — default empty so the golden corpus stays shared-fields-only; e1/e2 gate on non-empty.
     var hrSeries: [HRPoint] = []
     var maxHR: Double? = nil
     var restHR: Double? = nil
-
-    init(id: UUID, startedAt: Date, endedAt: Date? = nil, angle: Int, title: String? = nil, layoutId: Int? = nil,
-         hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil) {
-        self.id = id; self.startedAt = startedAt; self.endedAt = endedAt
-        self.angle = angle; self.title = title; self.layoutId = layoutId
-        self.hrSeries = hrSeries; self.maxHR = maxHR; self.restHR = restHR
-    }
 }
 
 struct WorkoutSetInput: Sendable, Equatable {
-    var actualReps: Int?
-    var actualWeight: Double?
-    var weightUnit: String?       // F5/R7: "kg"/"lb" — surfaced on the b4 lift-PR payload
-    var durationSec: Double?
-    var distanceMeters: Double?
-    var completedAt: Date?
-
-    init(actualReps: Int? = nil, actualWeight: Double? = nil, weightUnit: String? = nil, durationSec: Double? = nil,
-         distanceMeters: Double? = nil, completedAt: Date? = nil) {
-        self.actualReps = actualReps; self.actualWeight = actualWeight; self.weightUnit = weightUnit
-        self.durationSec = durationSec; self.distanceMeters = distanceMeters
-        self.completedAt = completedAt
-    }
+    var actualReps: Int? = nil
+    var actualWeight: Double? = nil
+    var weightUnit: String? = nil       // F5/R7: "kg"/"lb" — surfaced on the b4 lift-PR payload
+    var durationSec: Double? = nil
+    var distanceMeters: Double? = nil
+    var completedAt: Date? = nil
 }
 
 struct WorkoutExerciseInput: Sendable, Equatable {
-    var exerciseId: String
-    var disciplineRaw: String?
-    var displayName: String?
-    var skipped: Bool
-    var sets: [WorkoutSetInput]
-
-    init(exerciseId: String = "", disciplineRaw: String? = nil, displayName: String? = nil, skipped: Bool = false, sets: [WorkoutSetInput] = []) {
-        self.exerciseId = exerciseId; self.disciplineRaw = disciplineRaw; self.displayName = displayName
-        self.skipped = skipped; self.sets = sets
-    }
+    var exerciseId: String = ""
+    var disciplineRaw: String? = nil
+    var displayName: String? = nil
+    var skipped: Bool = false
+    var sets: [WorkoutSetInput] = []
 }
 
 /// A "lit on the board" event (F5 a3) — plain value.
 struct LitEventInput: Sendable, Equatable {
     var climbUUID: String
     var gradeLabel: String
-    var difficulty: Double
-    var sessionId: String?
+    var difficulty: Double = 0
+    var sessionId: String? = nil
     var litAt: Date
-
-    init(climbUUID: String, gradeLabel: String, difficulty: Double = 0, sessionId: String? = nil, litAt: Date) {
-        self.climbUUID = climbUUID; self.gradeLabel = gradeLabel; self.difficulty = difficulty
-        self.sessionId = sessionId; self.litAt = litAt
-    }
 }
 
 struct WorkoutSessionInput: Sendable, Equatable, Identifiable {
     var id: UUID
     var routineName: String
     var startedAt: Date
-    var completedAt: Date?
-    var exercises: [WorkoutExerciseInput]
-
-    init(id: UUID, routineName: String, startedAt: Date, completedAt: Date? = nil, exercises: [WorkoutExerciseInput] = []) {
-        self.id = id; self.routineName = routineName; self.startedAt = startedAt
-        self.completedAt = completedAt; self.exercises = exercises
-    }
+    var completedAt: Date? = nil
+    var exercises: [WorkoutExerciseInput] = []
 }
 
 // MARK: Composer
@@ -477,7 +448,9 @@ enum FeedComposer {
         "\(log.climbUUID)@\(Int(log.loggedAt.timeIntervalSince1970 * 1000))"
     }
 
-    private static func dominantDiscipline(_ exercises: [WorkoutExerciseInput]) -> String {
+    /// Majority discipline of a workout's non-skipped exercises (default "strength").
+    /// Ties resolve to the lexicographically-smaller raw (deterministic). Shared with FeedTrendCards.
+    static func dominantDiscipline(_ exercises: [WorkoutExerciseInput]) -> String {
         let raws = exercises.filter { !$0.skipped }.compactMap { $0.disciplineRaw }
         guard !raws.isEmpty else { return "strength" }
         let counts = Dictionary(grouping: raws, by: { $0 }).mapValues(\.count)

@@ -32,6 +32,10 @@ struct RecapStoryView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The user's derived `DistanceUnit` (km/mi) — threaded into the composition so a run hero in a story
+    /// honors the user's choice (same `workoutlog.preferredUnit` the list/wall read).
+    @AppStorage("workoutlog.preferredUnit") private var preferredUnitRaw = WeightUnit.kg.rawValue
+    private var distanceUnit: DistanceUnit { SessionRecap.distanceUnit(WeightUnit(rawValue: preferredUnitRaw) ?? .kg) }
     @Query private var kilterSessions: [KilterSession]
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
@@ -138,16 +142,12 @@ struct RecapStoryView: View {
                                     workoutSessions: workoutSessions, litEvents: litEvents,
                                     sessionMedia: allMedia, window: period.window, now: .now)
         let sessionCount = cards.filter { $0.kind == .a1Session || $0.kind == .a2Session }.count
-        scenes = StoryComposition.scenes(periodTitle: period.title, sessionCount: sessionCount, cards: cards)
+        scenes = StoryComposition.scenes(periodTitle: period.title, sessionCount: sessionCount, cards: cards,
+                                         unit: distanceUnit)
         playback = StoryPlayback(sceneCount: scenes.count)
     }
 
-    private func color(_ accent: StoryAccent) -> Color {
-        switch accent {
-        case .kilter: return SnappetColor.kilter
-        case .workout: return SnappetColor.workout
-        case .brand: return SnappetColor.brand
-        case .effort: return SnappetColor.performance(forZone: .max)
-        }
-    }
+    /// The story's accent → `Color`, via the shared `FeedAccent.color` bridge (one source of truth; now
+    /// covers `.recovery`/`.aerobic` for the fitness-gain / HRV-recovery / rest-nudge insight scenes).
+    private func color(_ accent: StoryAccent) -> Color { accent.color }
 }

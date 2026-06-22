@@ -4,6 +4,57 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-21] Recap feed R13 — post-F7 cleanup wave (dedup + display unification)
+
+**Decision** (quality-only pass over the shipped F0–F7 feed; keystone `FeedComposer` ordering/recency/
+lens untouched; golden corpus + full `SnappetTests` unchanged). Behavior-preserving EXCEPT two
+deliberate changes: the card wording is reconciled to one canonical set, and distance now honors the
+user's km/mi unit. The non-obvious choices:
+
+- **`FeedCardDisplay` is the SINGLE card→display mapping.** The list (`FeedCardView`), share
+  (`ShareCardSpec`), story (`StoryComposition`) and wall (`WallTile`) each owned a parallel
+  `switch FeedCardPayload` and had drifted on wording/hero/accent/icon (audit D1–D25). They now read one
+  pure `FeedCardDisplay` (kicker/hero/heroCaption/primaryLine/secondaryLines/icon/`FeedAccent`) via
+  `FeedCard.display(unit:)` and own only layout. **Canonical reconciliation rules** (what each surface
+  now shows): prefer the richest existing copy, never invent product language, and drop semantically
+  wrong copy — e.g. the streak *record* sub no longer says "go gentler" (that's the restNudge voice, wrong
+  on a celebration → "your longest yet"); PR kicker is "New hardest ever"; pyramid grade-count uses only
+  rows with sends > 0; effort accent is the dedicated `.effort` token. `ShareCardSpec` is now a thin
+  adapter; `StoryAccent` is a `typealias FeedAccent`. The pure file imports Foundation only; the
+  `FeedAccent.color` SwiftUI bridge lives in the view layer. `FeedCardDisplayTests` is the wording guard +
+  Kotlin-port parity vector. **Rules out** a future card changing copy on one surface and silently
+  drifting from the other three. (UITests assert identifiers only — `feed.card.<kind>` is derived from
+  `kind.rawValue`, byte-identical — so reconciled wording broke no UITest.)
+- **Distance is unit-aware via the one `SetMeasure` funnel.** There is no standalone distance pref —
+  `DistanceUnit` derives from `@AppStorage("workoutlog.preferredUnit")` (`WeightUnit`) via
+  `SessionRecap.distanceUnit(_:)`. The descriptor takes `display(unit:)` (default `.km`) and routes run
+  distance/pace through `SetMeasure.formatDistance`/`formatPace`; all four surfaces thread the user's unit.
+  Pure layer unchanged (the payload stores raw meters). **Rules out** km-only feed distance + a per-surface
+  distance format.
+- **Per-refresh media index (`FeedMediaIndex`) tied to `feedSignature()`.** The media path (cardMedia/
+  resolver) was re-scanning `allMedia`/sessions/logs per visible card per body eval. It now reads O(1)
+  dicts built ONCE per signature inside `FeedMemo`, alongside the composed cards — one key, rebuilt in the
+  same branch, so cards and index can never drift. The index inherits exactly the card memo's freshness
+  contract (no separate/weaker key). `@Model`s are held only on the MainActor edge and snapshot to plain
+  values in `FeedMediaResolver` — none cross into the engine/exporter.
+- **Reaction membership is hoisted, not fetched per card.** `FeedReactionStrip` took 2 FetchDescriptors
+  per card in `.task`; now the host (`FeedView`/`CardDetailView`) holds one `@Query` each of
+  `FeedReaction`/`FeedSaveItem` and passes `reacted`/`saved` membership down. The strip drops its local
+  `@State`/`.task` — the toggle writers mutate the @Model tables, so the host `@Query` auto-refreshes and
+  re-renders with the new state (also fixes a latent desync vs the card-body double-tap/long-press gestures).
+- **Generic reaction/save writer without a generic `#Predicate`.** `ActivityScoped` + generic
+  `rows<M>`/`toggle<M>` over `FetchDescriptor<M>()` + in-memory filter (mirrors `SnappetBackup.all<M>`).
+  **Rules out** a generic `#Predicate` over a protocol keypath — SwiftData can't translate it (compile/
+  runtime trap), and there's no precedent for it in the codebase.
+- **Shared video surface + poster loader.** `StudioPlayerLayerView` gains a `backgroundColor` param
+  (default `.clear`) and serves both the studio (clear) and the feed viewer (black, was the deleted
+  `ClipPlayerLayer`); one `AssetPosterLoader` backs both `ClipThumbnail` (feed) and `HighlightThumbnail`
+  (reel). The two thumbnail *views* stay separate (distinct chrome) — only the loader is shared.
+- Plus the earlier `/simplify` dedup folded into this wave: `FeedCard.aggregate(...)` (H4 invariant in
+  one place), `FeedMediaResolver` (sole @Model→snapshot path — the R4 clip-collapse bug lived here),
+  `FeedMedia.ordered/groupKey/tagName` (sole clip order/group/tag), `dominantDiscipline` hoisted to
+  `FeedComposer`, redundant memberwise inits dropped. KG unchanged (all internal; no new surface/edge).
+
 ## [2026-06-21] Recap feed remediation (R1–R9) — plan conformance
 
 **Decision** (audit-closing stack): the R1–R9 remediation PRs brought the Recap feed's

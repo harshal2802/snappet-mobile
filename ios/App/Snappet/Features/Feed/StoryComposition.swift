@@ -6,8 +6,10 @@ import Foundation
 // 3 (sparse) … 8 (rich), in the Year-in-Climb arc order. Plus the Stories-rail eligibility rule
 // (degrade-by-absence). Pure (Foundation only) + unit-tested; the view just renders + plays.
 
-/// A discipline-accent token (kept platform-free; the view maps it to a SnappetColor).
-enum StoryAccent: Sendable, Equatable { case kilter, workout, brand, effort }
+// `StoryAccent` is now `typealias StoryAccent = FeedAccent` (defined in FeedCardDisplay.swift) so the
+// accent vocabulary is shared with the rest of the Recap feed. The existing `.kilter`/`.workout`/`.brand`/
+// `.effort` literals keep resolving; `FeedAccent` adds `.recovery`/`.aerobic` (the descriptor emits those
+// for the fitness-gain / HRV-recovery / rest-nudge insight kinds).
 
 struct StoryScene: Identifiable, Sendable, Equatable {
     let id: String
@@ -24,7 +26,9 @@ enum StoryComposition {
     static let maxScenes = 8
 
     /// Period-scoped cards → ordered scenes. cover + highlights (arc order), clamped to [3, 8].
-    static func scenes(periodTitle: String, sessionCount: Int, cards: [FeedCard]) -> [StoryScene] {
+    /// `unit` (default `.km`) is threaded into the run hero so a story honors the user's km/mi choice.
+    static func scenes(periodTitle: String, sessionCount: Int, cards: [FeedCard],
+                       unit: DistanceUnit = .km) -> [StoryScene] {
         var scenes: [StoryScene] = [
             StoryScene(id: "cover", kick: periodTitle, big: "\(sessionCount)",
                        small: sessionCount == 1 ? "session logged" : "sessions logged", accent: .kilter, card: nil)
@@ -36,7 +40,7 @@ enum StoryComposition {
                 if ra != rb { return ra < rb }
                 return a.salience > b.salience
             }
-        for c in highlights { scenes.append(scene(for: c)) }
+        for c in highlights { scenes.append(scene(for: c, unit: unit)) }
 
         scenes = Array(scenes.prefix(maxScenes))               // <= 8
         var pad = 0
@@ -91,67 +95,13 @@ enum StoryComposition {
         }
     }
 
-    private static func scene(for card: FeedCard) -> StoryScene {
-        switch card.payload {
-        case .gradePR(let p):
-            return s(card, "New hardest ever", p.newGrade, p.previousGrade.map { "up from \($0)" } ?? "your first peak", .brand)
-        case .liftPR(let p):
-            return s(card, "Lift PR", "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)", "\(p.exerciseName) est. 1RM", .brand)
-        case .pyramid(let p):
-            return s(card, "Your pyramid", p.maxGrade ?? "—", "\(p.totalSends) sends", .kilter)
-        case .mostClimbs(let p):
-            return s(card, "Biggest session", "\(p.count)", "climbs in one go", .kilter)
-        case .weeklyVolume(let p):
-            return s(card, "Volume", "\(p.buckets.last?.sends ?? 0)", "sends this week", .kilter)
-        case .streak(let p):
-            // R7 parity: a record streak gets the celebratory "Longest streak ever" framing (matches FeedCardView).
-            return p.isRecord
-                ? s(card, "Longest streak ever", "\(p.days)", "days in a row", .kilter)
-                : s(card, "On a roll", "\(p.days)", "days in a row", .kilter)
-        case .effort(let p):
-            return s(card, "Effort", "\(p.maxBpm)", "peak BPM · \(p.trimp) TRIMP", .effort)
-        case .hardestEffort(let p):
-            return s(card, "Hardest-effort send", p.grade, "\(p.peakBpm) bpm at the top", .effort)
-        case .hrTrend(let p):
-            return s(card, "HR trend", "\(p.points.last?.avgBpm ?? 0)", "recent avg BPM", .workout)
-        case .onTheBoard(let p):
-            return s(card, "On the board", "\(p.litCount)", "climbs lit", .kilter)
-        case .climbSession(let p):
-            return s(card, "Session", p.hardestSendGrade ?? "—", "\(p.sends) sends", .kilter)
-        case .workoutSession(let p):
-            return s(card, "Workout", "\(p.setCount)", "sets", .workout)
-        case .pyramidHealth(let p):
-            return s(card, "Pyramid health", p.consolidateGrade, "consolidate", .kilter)
-        case .progression(let p):
-            return s(card, "Progression", "\(p.fromGrade) → \(p.toGrade)", "this period", .kilter)
-        case .climbingLevel(let p):
-            return s(card, "Climbing level", p.level, "working grade", .kilter)
-        case .angleDist(let p):
-            return s(card, "Angles", "\(p.topAngle)°", "most sends", .kilter)
-        case .periodVsLast(let p):
-            return s(card, "This period", "\(p.current)", "sends", .kilter)
-        case .consistency(let p):
-            return s(card, "Consistency", "\(p.activeDays)", "active days", .kilter)
-        case .onThisDay(let p):
-            return s(card, "On this day", p.grade ?? "—", "\(p.yearsAgo) yr ago", .kilter)
-        case .firstAtGrade(let p):
-            return s(card, "First at grade", p.grade, p.climbName, .kilter)
-        case .projectSent(let p):
-            return s(card, "Project sent", p.grade, "after \(p.sessions) sessions", .brand)
-        case .disciplineSplit(let p):
-            return s(card, "Discipline split", p.topLabel, "most sessions", .workout)
-        case .trendArrows(let p):
-            return s(card, "90-day trend", p.arrows.first.map { "\($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" } ?? "—", p.arrows.first?.label ?? "trend", .kilter)
-        case .effortEfficiency(let p):
-            return s(card, "Fitness gain", "\(p.newAvgBpm)", "avg BPM at \(p.gradeBand)", .kilter)
-        case .hrvRecovery(let p):
-            return s(card, "Recovery", "\(p.rmssd)", "RMSSD", .kilter)
-        case .restNudge(let p):
-            return s(card, "Go gentler", "\(p.hardDays)", "hard days", .kilter)
-        }
-    }
-
-    private static func s(_ card: FeedCard, _ kick: String, _ big: String, _ small: String, _ accent: StoryAccent) -> StoryScene {
-        StoryScene(id: card.id, kick: kick, big: big, small: small, accent: accent, card: card)
+    /// ONE scene = the shared `FeedCardDisplay` descriptor, projected to the story's kick + one big + one
+    /// small line. The story leads its small line with the descriptor's `primaryLine` (the most-informative
+    /// supporting fact — e.g. "8 sends", "up from V6", "past best 12"), falling back to `heroCaption` when
+    /// there's no primary. This is the SAME wording the list/share/wall show — no parallel switch.
+    private static func scene(for card: FeedCard, unit: DistanceUnit = .km) -> StoryScene {
+        let d = card.display(unit: unit)
+        let small = d.primaryLine ?? d.heroCaption
+        return StoryScene(id: card.id, kick: d.kicker, big: d.hero, small: small, accent: d.accent, card: card)
     }
 }

@@ -53,11 +53,6 @@ enum FeedCategory: String, Codable, Sendable, CaseIterable {
 struct ActivityRef: Codable, Sendable, Equatable {
     var objectKind: String   // "kilterSession" | "workoutSession" | "climb" | "aggregate"
     var ref: String          // session id / climb uuid / period key
-
-    init(objectKind: String, ref: String) {
-        self.objectKind = objectKind
-        self.ref = ref
-    }
 }
 
 /// The suggested share template for a card (used by the F4 ShareComposer).
@@ -335,6 +330,18 @@ struct FeedCard: Codable, Sendable, Equatable, Identifiable {
     var sourceRefs: [ActivityRef]
     var payload: FeedCardPayload
     var shareHint: ShareTemplate?
+}
+
+extension FeedCard {
+    /// Builds an aggregate card — one with no single source activity. Carries the H4 invariant in one
+    /// place: `contentId` is empty and the lone sourceRef is an "aggregate" `ActivityRef`. `ref` defaults
+    /// to `id` (most aggregates) but takes a stable name where several cards share a recipe (e.g. "restNudge").
+    static func aggregate(id: String, ref: String? = nil, kind: FeedCardKind, category: FeedCategory,
+                          salience: Double, anchor: Date, payload: FeedCardPayload,
+                          share: ShareTemplate? = nil) -> FeedCard {
+        FeedCard(id: id, contentId: "", kind: kind, category: category, salience: salience, anchorDate: anchor,
+                 sourceRefs: [ActivityRef(objectKind: "aggregate", ref: ref ?? id)], payload: payload, shareHint: share)
+    }
 }
 
 // Identity is the (unique) card id (kind + primary ref + anchor) — lets a card be a

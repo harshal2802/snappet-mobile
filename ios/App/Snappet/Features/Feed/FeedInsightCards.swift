@@ -71,8 +71,7 @@ enum FeedInsightCards {
 
     private static func card(_ id: String, _ kind: FeedCardKind, _ category: FeedCategory, _ salience: Double,
                              _ anchor: Date, _ payload: FeedCardPayload, _ share: ShareTemplate?) -> FeedCard {
-        FeedCard(id: id, contentId: "", kind: kind, category: category, salience: salience, anchorDate: anchor,
-                 sourceRefs: [ActivityRef(objectKind: "aggregate", ref: id)], payload: payload, shareHint: share)
+        .aggregate(id: id, kind: kind, category: category, salience: salience, anchor: anchor, payload: payload, share: share)
     }
 
     private static func row(from g: KilterSessionStats.GradeCount) -> PyramidRow {

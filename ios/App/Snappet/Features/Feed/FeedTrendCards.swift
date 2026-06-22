@@ -54,7 +54,7 @@ enum FeedTrendCards {
         var counts: [String: Int] = [:]
         for _ in kilterSessions { counts["Climbing", default: 0] += 1 }
         for w in workoutSessions where w.completedAt != nil {
-            counts[dominantDiscipline(w.exercises), default: 0] += 1
+            counts[FeedComposer.dominantDiscipline(w.exercises), default: 0] += 1
         }
         guard counts.count >= 2 else { return nil }
 
@@ -63,15 +63,6 @@ enum FeedTrendCards {
             .sorted { $0.count != $1.count ? $0.count > $1.count : $0.label < $1.label }
         guard let top = slices.first else { return nil }
         return DisciplineSplitPayload(slices: slices, topLabel: top.label)
-    }
-
-    /// Majority discipline of a workout's non-skipped exercises (default "strength").
-    /// Ties resolve to the lexicographically-smaller raw (deterministic).
-    private static func dominantDiscipline(_ exercises: [WorkoutExerciseInput]) -> String {
-        let raws = exercises.filter { !$0.skipped }.compactMap { $0.disciplineRaw }
-        guard !raws.isEmpty else { return "strength" }
-        let counts = Dictionary(grouping: raws, by: { $0 }).mapValues(\.count)
-        return counts.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }?.key ?? "strength"
     }
 
     // MARK: - d4 trend arrows
@@ -111,7 +102,6 @@ enum FeedTrendCards {
 
     private static func card(_ id: String, _ kind: FeedCardKind, _ category: FeedCategory, _ salience: Double,
                              _ anchor: Date, _ payload: FeedCardPayload, _ share: ShareTemplate?) -> FeedCard {
-        FeedCard(id: id, contentId: "", kind: kind, category: category, salience: salience, anchorDate: anchor,
-                 sourceRefs: [ActivityRef(objectKind: "aggregate", ref: id)], payload: payload, shareHint: share)
+        .aggregate(id: id, kind: kind, category: category, salience: salience, anchor: anchor, payload: payload, share: share)
     }
 }

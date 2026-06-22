@@ -30,6 +30,11 @@ struct ShareComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    /// The user's preferred weight unit → derived `DistanceUnit` (km/mi), threaded into the shared
+    /// `ShareCardSpec`/`ShareCardView` so the exported run hero honors the user's choice (one source of
+    /// truth with the list/wall/story).
+    @AppStorage("workoutlog.preferredUnit") private var preferredUnitRaw = WeightUnit.kg.rawValue
+    private var distanceUnit: DistanceUnit { SessionRecap.distanceUnit(WeightUnit(rawValue: preferredUnitRaw) ?? .kg) }
     @State private var aspect: ShareAspect = .r9x16
     @State private var template: ShareTemplateKind
     /// The metrics shown on the card — drives BOTH the live preview and the exported image (WYSIWYG).
@@ -60,7 +65,7 @@ struct ShareComposerView: View {
                 ScrollView {
                     // The live preview IS the exported view (WYSIWYG): same `ShareCardView`, same
                     // `visibleMetrics`, only the frame scale differs.
-                    ShareCardView(card: card, template: template, aspect: aspect, visibleMetrics: visibleMetrics)
+                    ShareCardView(card: card, template: template, aspect: aspect, visibleMetrics: visibleMetrics, unit: distanceUnit)
                         .frame(width: aspect.previewSize.width * 0.62, height: aspect.previewSize.height * 0.62)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .shadow(radius: 14, y: 6)
@@ -113,7 +118,7 @@ struct ShareComposerView: View {
     @MainActor private func share() {
         // Render at the EXACT export pixel size (no Apple re-crop) via the thin renderer edge. Pass the
         // same `visibleMetrics` the preview used so the export is WYSIWYG.
-        let view = ShareCardView(card: card, template: template, aspect: aspect, visibleMetrics: visibleMetrics)
+        let view = ShareCardView(card: card, template: template, aspect: aspect, visibleMetrics: visibleMetrics, unit: distanceUnit)
         guard let image = ShareImageRenderer.render(view, aspect: aspect) else { return }
         shareImage = ShareImage(image: image)
     }
@@ -238,14 +243,17 @@ struct ShareCardView: View {
     /// The metrics to show — drives BOTH the live preview and the exported image (WYSIWYG). Defaults to
     /// the card's full default set so direct (test/preview) callers render everything.
     var visibleMetrics: Set<ShareMetric> = Set(ShareMetric.allCases)
+    /// The user's km/mi choice, threaded from `ShareComposerView` so the run hero honors it. Defaults
+    /// `.km` for direct (test/preview) callers.
+    var unit: DistanceUnit = .km
 
     var body: some View {
         // Route the three bespoke R5 templates to their dedicated views (each renders only the visible
         // metrics over PulsePro/.snappetCard()/SnappetColor); Send Card + Receipt render inline below.
         switch template {
-        case .gradePRTicket: GradePRTicketTemplate(card: card, visibleMetrics: visibleMetrics)
-        case .boardPolaroid: BoardPolaroidTemplate(card: card, visibleMetrics: visibleMetrics)
-        case .pyramidCard:   PyramidCardTemplate(card: card, visibleMetrics: visibleMetrics)
+        case .gradePRTicket: GradePRTicketTemplate(card: card, visibleMetrics: visibleMetrics, unit: unit)
+        case .boardPolaroid: BoardPolaroidTemplate(card: card, visibleMetrics: visibleMetrics, unit: unit)
+        case .pyramidCard:   PyramidCardTemplate(card: card, visibleMetrics: visibleMetrics, unit: unit)
         case .card, .receipt: heroCard
         }
     }
@@ -253,7 +261,7 @@ struct ShareCardView: View {
     /// The Send Card / Receipt hero layout (R3) — a discipline gradient with the hero numeral and either
     /// one supporting line (Send Card) or the full stacked set (Receipt), each metric individually gated.
     private var heroCard: some View {
-        let s = ShareCardSpec(card: card)
+        let s = ShareCardSpec(card: card, unit: unit)
         return ZStack {
             RadialGradient(colors: [s.accent.opacity(0.85), Color.black], center: .top, startRadius: 0, endRadius: aspect.previewSize.height)
             VStack(alignment: .leading, spacing: 10) {
@@ -264,15 +272,19 @@ struct ShareCardView: View {
                     Text(s.hero).font(.system(size: 64, weight: .heavy, design: .rounded)).foregroundStyle(.white)
                         .minimumScaleFactor(0.4).lineLimit(2)
                 }
+                // The lead supporting line falls back to the hero caption — the descriptor moves some cards'
+                // lead fact (e.g. "over N months", "working grade") into heroCaption, which the share would
+                // otherwise drop when primaryLine is nil.
+                let lead = s.primaryLine ?? s.heroCaption
                 if template == .receipt {
-                    if visibleMetrics.contains(.primary), let first = s.primaryLine {
-                        Text(first).font(.subheadline).foregroundStyle(.white.opacity(0.92))
+                    if visibleMetrics.contains(.primary), !lead.isEmpty {
+                        Text(lead).font(.subheadline).foregroundStyle(.white.opacity(0.92))
                     }
                     if visibleMetrics.contains(.secondary) {
                         ForEach(s.secondaryLines, id: \.self) { Text($0).font(.subheadline).foregroundStyle(.white.opacity(0.92)) }
                     }
-                } else if visibleMetrics.contains(.primary), let first = s.primaryLine {
-                    Text(first).font(.title3).foregroundStyle(.white.opacity(0.92))
+                } else if visibleMetrics.contains(.primary), !lead.isEmpty {
+                    Text(lead).font(.title3).foregroundStyle(.white.opacity(0.92))
                 }
                 Spacer(minLength: 0)
                 if visibleMetrics.contains(.branding) {

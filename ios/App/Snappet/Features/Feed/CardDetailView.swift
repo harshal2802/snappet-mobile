@@ -18,6 +18,8 @@ struct CardDetailView: View {
     @Query private var kilterLogs: [KilterLogEntry]
     @Query private var workoutSessions: [WorkoutSession]
     @Query private var allMedia: [SessionMedia]
+    @Query private var feedReactions: [FeedReaction]
+    @Query private var feedSaveItems: [FeedSaveItem]
     @State private var showingShare = false
     @State private var showingMedia = false
 
@@ -29,7 +31,9 @@ struct CardDetailView: View {
                 FeedCardView(card: card)
 
                 if !card.contentId.isEmpty {
-                    FeedReactionStrip(contentId: card.contentId)
+                    FeedReactionStrip(contentId: card.contentId,
+                                      reacted: feedReactions.contains { $0.activityContentId == card.contentId },
+                                      saved: feedSaveItems.contains { $0.activityContentId == card.contentId })
                         .padding(.horizontal, 2)
                 }
 
@@ -66,37 +70,7 @@ struct CardDetailView: View {
         case .kilterSession(let id), .workoutSession(let id): sid = id
         case .none: return nil
         }
-        let media = allMedia.filter { $0.sessionID == sid }
-        guard media.contains(where: { $0.kind == .video }) else { return nil }
-
-        let clips = media.map {
-            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
-                                       isVideo: $0.kind == .video,
-                                       offsetSec: $0.offsetSec,
-                                       durationSec: $0.durationSec)
-        }
-
-        let duration: Double
-        var restHR: Double? = nil
-        var clipName: String? = nil
-        if let k = kilterSessions.first(where: { $0.id == sid }) {
-            duration = (k.endedAt ?? .now).timeIntervalSince(k.startedAt)
-            restHR = k.restHR
-            // The session's hardest send is the natural clip caption (falls back to nil).
-            if case .climbSession(let p) = card.payload { clipName = p.hardestSendGrade }
-        } else if let w = workoutSessions.first(where: { $0.id == sid }) {
-            duration = w.duration
-        } else {
-            return nil
-        }
-
-        return ClipExportCoordinator.Context(
-            hrSeries: hrSeries(for: sid),
-            clips: clips,
-            duration: duration,
-            maxHR: maxHR(for: sid),
-            restHR: restHR,
-            clipName: clipName)
+        return mediaResolver.clipContext(for: sid, card: card)
     }
 
     // MARK: Kilter
@@ -203,28 +177,22 @@ struct CardDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("feed.mediaButton")
                 .sheet(isPresented: $showingMedia) {
+                    let resolver = mediaResolver
                     MediaBrowserView(media: media.map(MediaInput.from),
-                                     hrSeries: hrSeries(for: sid), maxHR: maxHR(for: sid),
-                                     nameFor: nameResolver(for: sid),
+                                     hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
+                                     nameFor: resolver.nameResolver(for: sid),
                                      card: card, clipContext: clipContext)
                 }
             }
         }
     }
 
-    private func hrSeries(for sid: UUID) -> [HRPoint] {
-        kilterSessions.first { $0.id == sid }?.hrSeries ?? workoutSessions.first { $0.id == sid }?.hrSeries ?? []
-    }
-    private func maxHR(for sid: UUID) -> Double {
-        (kilterSessions.first { $0.id == sid }?.maxHR ?? workoutSessions.first { $0.id == sid }?.maxHR) ?? HeartRateZone.defaultMaxHR
-    }
-    private func nameResolver(for sid: UUID) -> (String) -> String {
-        var map: [String: String] = ["general": "General"]
-        for log in kilterLogs where log.sessionId == sid { map[log.climbUUID] = log.climbName }
-        if let w = workoutSessions.first(where: { $0.id == sid }) {
-            for ex in w.exercises { map[ex.id.uuidString] = ex.displayName ?? ex.exerciseId }
-        }
-        return { key in map[key] ?? "Clip" }
+    /// Snapshots the @Query'd @Models into plain values for the viewer/exporter — shared with FeedView.
+    /// Detail renders a single card, so a per-access index build is fine (no shared FeedMemo here).
+    private var mediaResolver: FeedMediaResolver {
+        FeedMediaResolver(index: FeedMediaIndex(
+            kilterSessions: kilterSessions, workoutSessions: workoutSessions,
+            kilterLogs: kilterLogs, allMedia: allMedia))
     }
 
     private var openInModuleButton: some View {

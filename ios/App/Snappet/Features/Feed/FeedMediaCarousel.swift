@@ -25,18 +25,17 @@ struct FeedMediaCarousel: View {
     @State private var viewerIndex: Int?
     @State private var showingBrowser = false
 
-    /// `offsetSec`-ordered (stable) so the carousel order matches the browser + the export ranking.
-    private var ordered: [MediaInput] {
-        clips.sorted { $0.offsetSec == $1.offsetSec ? $0.id.uuidString < $1.id.uuidString : $0.offsetSec < $1.offsetSec }
-    }
-
     var body: some View {
+        // `offsetSec`-ordered (stable) so the carousel order matches the browser + the export ranking.
+        // Sorted ONCE here and threaded into the sub-views (was a computed var re-sorting on each of its
+        // ~6–8 reads per `body` eval).
+        let ordered = FeedMedia.ordered(clips)
         if ordered.isEmpty {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                carousel
-                footer
+                carousel(ordered)
+                footer(ordered)
             }
             .accessibilityIdentifier("feed.card.carousel")
             .fullScreenCover(item: $viewerIndex.asItem) { box in
@@ -53,11 +52,11 @@ struct FeedMediaCarousel: View {
 
     /// The paged thumbnails. A slight horizontal inset shows a peek of the neighbouring page (IG-style),
     /// and the `TabView` page index drives the dots + badge below. Tapping a page → fullscreen at it.
-    private var carousel: some View {
+    private func carousel(_ ordered: [MediaInput]) -> some View {
         TabView(selection: $page) {
             ForEach(Array(ordered.enumerated()), id: \.element.id) { idx, clip in
-                FeedClipPoster(clip: clip, name: tagName(clip), peakBpm: clipHR(clip).peakBpm,
-                               zoneRaw: clipHR(clip).zoneRaw)
+                let hr = clipHR(clip)
+                FeedClipPoster(clip: clip, name: tagName(clip), peakBpm: hr.peakBpm, zoneRaw: hr.zoneRaw)
                     .padding(.horizontal, ordered.count > 1 ? 3 : 0)   // peek of the next page
                     // A page tap must open the fullscreen viewer, NOT the enclosing NavigationLink's
                     // card-detail nav. A plain `.onTapGesture` loses to the NavigationLink (the link
@@ -74,10 +73,10 @@ struct FeedMediaCarousel: View {
         .tabViewStyle(.page(indexDisplayMode: .never))   // custom dots below instead of the OS dots
         .frame(height: 200)
         .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md, style: .continuous))
-        .overlay(alignment: .topTrailing) { countBadge }
+        .overlay(alignment: .topTrailing) { countBadge(ordered) }
     }
 
-    private var countBadge: some View {
+    private func countBadge(_ ordered: [MediaInput]) -> some View {
         Text("\(min(page, ordered.count - 1) + 1)/\(ordered.count)")
             .font(.caption2.weight(.heavy)).foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -86,7 +85,7 @@ struct FeedMediaCarousel: View {
             .accessibilityIdentifier("feed.card.carousel.count")
     }
 
-    private var footer: some View {
+    private func footer(_ ordered: [MediaInput]) -> some View {
         HStack {
             if ordered.count > 1 {
                 HStack(spacing: 5) {
@@ -112,9 +111,7 @@ struct FeedMediaCarousel: View {
         FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR)
     }
 
-    private func tagName(_ m: MediaInput) -> String {
-        nameFor(m.exerciseId?.uuidString ?? m.climbUUID ?? "general")
-    }
+    private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }
 }
 
 /// One carousel page: the real PHAsset poster (reusing `ClipThumbnail`), a name tag, and a compact peak

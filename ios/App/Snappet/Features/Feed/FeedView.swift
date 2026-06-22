@@ -16,11 +16,18 @@ import HighlightEngine
 /// doesn't itself invalidate the view.
 private final class FeedMemo {
     private var signature: Int?
-    private var cached: [FeedCard] = []
-    func cards(signature sig: Int, build: () -> [FeedCard]) -> [FeedCard] {
-        if sig != signature { signature = sig; cached = build() }
-        return cached
+    private var cachedCards: [FeedCard] = []
+    private var cachedIndex = FeedMediaIndex()
+    /// Refreshes BOTH the cards and the media-lookup index on a signature miss (one key, so they can
+    /// never drift) and returns the cards. Read `index` afterwards in the same body eval — the signature
+    /// has settled, so it's the index built against these cards.
+    func cards(signature sig: Int,
+               buildCards: () -> [FeedCard],
+               buildIndex: () -> FeedMediaIndex) -> [FeedCard] {
+        if sig != signature { signature = sig; cachedCards = buildCards(); cachedIndex = buildIndex() }
+        return cachedCards
     }
+    var index: FeedMediaIndex { cachedIndex }
 }
 
 struct FeedView: View {
@@ -32,6 +39,10 @@ struct FeedView: View {
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
     @Query private var litEvents: [KilterLitEvent]
     @Query private var allMedia: [SessionMedia]
+    // F2 batched membership: hoist the reaction/save corpus to ONE query each (was 2 FetchDescriptors
+    // PER card in FeedReactionStrip.task). @Model-backed, so both auto-refresh on any toggle.
+    @Query private var feedReactions: [FeedReaction]
+    @Query private var feedSaveItems: [FeedSaveItem]
 
     @State private var lens: FeedLensChip = .all
     @State private var visibleCount = 12
@@ -53,11 +64,17 @@ struct FeedView: View {
     // MARK: Derivation (derive-on-read; no card persistence)
 
     private func composed() -> [FeedCard] {
-        memo.cards(signature: feedSignature()) {
-            FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
-                            workoutSessions: workoutSessions, litEvents: litEvents,
-                            sessionMedia: allMedia, now: .now)
-        }
+        memo.cards(
+            signature: feedSignature(),
+            buildCards: {
+                FeedQuery.cards(kilterSessions: kilterSessions, kilterLogs: kilterLogs,
+                                workoutSessions: workoutSessions, litEvents: litEvents,
+                                sessionMedia: allMedia, now: .now)
+            },
+            buildIndex: {
+                FeedMediaIndex(kilterSessions: kilterSessions, workoutSessions: workoutSessions,
+                               kilterLogs: kilterLogs, allMedia: allMedia)
+            })
     }
 
     /// Cheap content fingerprint: counts of every source + the newest session/workout date. Changes
@@ -75,6 +92,13 @@ struct FeedView: View {
         h.combine(workoutSessions.first?.startedAt)
         return h.finalize()
     }
+
+    /// O(1)-membership sets for the reaction strips, rebuilt once per render from the hoisted queries
+    /// (instead of 2 FetchDescriptor scans per visible card). Toggles mutate the @Model tables, so the
+    /// queries auto-refresh and these recompute on the next body eval. NOT folded into `feedSignature()`
+    /// — they don't affect card composition, only the strip's heart/bookmark fill.
+    private var reactedIds: Set<String> { Set(feedReactions.map(\.activityContentId)) }
+    private var savedIds: Set<String> { Set(feedSaveItems.map(\.activityContentId)) }
 
     var body: some View {
         let all = composed()
@@ -185,7 +209,10 @@ struct FeedView: View {
                             FeedInteractionWriter.toggleSave(contentId: card.contentId, in: context)
                         }
                     if !card.contentId.isEmpty {
-                        FeedReactionStrip(contentId: card.contentId).padding(.horizontal, 6)
+                        FeedReactionStrip(contentId: card.contentId,
+                                          reacted: reactedIds.contains(card.contentId),
+                                          saved: savedIds.contains(card.contentId))
+                            .padding(.horizontal, 6)
                     }
                 }
                 .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
@@ -297,43 +324,14 @@ struct FeedView: View {
     /// the `@Model`s into plain values here on the `@MainActor` so SwiftData never crosses into the viewer.
     private func cardMedia(for card: FeedCard) -> FeedCardMedia? {
         guard case .climbSession = card.payload, let sid = sessionId(for: card) else { return nil }
-        let media = allMedia.filter { $0.sessionID == sid }
+        let index = memo.index                       // settled by composed() earlier this eval
+        let media = index.mediaBySession[sid] ?? []  // O(1) instead of allMedia.filter
         guard !media.isEmpty else { return nil }
+        let resolver = FeedMediaResolver(index: index)
         return FeedCardMedia(clips: media.map(MediaInput.from),
-                             hrSeries: hrSeries(for: sid), maxHR: maxHR(for: sid),
-                             nameFor: nameResolver(for: sid), clipContext: clipContext(for: sid, card: card))
-    }
-
-    private func hrSeries(for sid: UUID) -> [HRPoint] {
-        kilterSessions.first { $0.id == sid }?.hrSeries ?? workoutSessions.first { $0.id == sid }?.hrSeries ?? []
-    }
-
-    private func maxHR(for sid: UUID) -> Double {
-        (kilterSessions.first { $0.id == sid }?.maxHR ?? workoutSessions.first { $0.id == sid }?.maxHR) ?? HeartRateZone.defaultMaxHR
-    }
-
-    private func nameResolver(for sid: UUID) -> (String) -> String {
-        var map: [String: String] = ["general": "General"]
-        for log in kilterLogs where log.sessionId == sid { map[log.climbUUID] = log.climbName }
-        return { key in map[key] ?? "Clip" }
-    }
-
-    /// The Animate context (clip render inputs) for a session that has video clips; `nil` ⇒ the viewer
-    /// shows a plain Share (no dead Animate). Mirrors `CardDetailView.clipContext`.
-    private func clipContext(for sid: UUID, card: FeedCard) -> ClipExportCoordinator.Context? {
-        let media = allMedia.filter { $0.sessionID == sid }
-        guard media.contains(where: { $0.kind == .video }) else { return nil }
-        let clips = media.map {
-            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
-                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
-        }
-        guard let k = kilterSessions.first(where: { $0.id == sid }) else { return nil }
-        var clipName: String? = nil
-        if case .climbSession(let p) = card.payload { clipName = p.hardestSendGrade }
-        return ClipExportCoordinator.Context(
-            hrSeries: k.hrSeries, clips: clips,
-            duration: (k.endedAt ?? .now).timeIntervalSince(k.startedAt),
-            maxHR: maxHR(for: sid), restHR: k.restHR, clipName: clipName)
+                             hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
+                             nameFor: resolver.nameResolver(for: sid),
+                             clipContext: resolver.clipContext(for: sid, card: card))
     }
 
     private func loadMoreIfNeeded(card: FeedCard, in filtered: [FeedCard]) {

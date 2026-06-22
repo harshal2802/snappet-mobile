@@ -24,103 +24,27 @@ struct ShareCardSpec {
     var kick: String
     /// The big hero number / grade.
     var hero: String
+    /// The hero's caption ("climbs lit", "working grade", "over N months"). The share path falls back to
+    /// this when a card's `primaryLine`/`secondaryLines` are thin, so the descriptor moving the lead fact
+    /// into `heroCaption` doesn't drop it from the export (the list/story already render the caption).
+    var heroCaption: String
     /// The supporting stat lines (first = `primary`, rest = `secondary`).
     var lines: [String]
     /// The discipline accent (wayfinding) — `SnappetColor.kilter` / `.workout` / `.brand` etc.
     var accent: Color
 
-    init(card: FeedCard) {
-        switch card.payload {
-        case .climbSession(let p):
-            self = .init(kick: "Climb session", hero: p.hardestSendGrade ?? "—",
-                         lines: ["\(p.totalClimbs) climbs", "\(p.sends) sends", "\(p.totalAttempts) tries"],
-                         accent: SnappetColor.kilter)
-        case .workoutSession(let p):
-            self = .init(kick: "Workout", hero: p.distanceMeters != nil ? "Run" : "\(p.setCount) sets",
-                         lines: ["\(p.exerciseCount) exercises", "\(p.setCount) sets"],
-                         accent: SnappetColor.workout)
-        case .gradePR(let p):
-            self = .init(kick: "New hardest ever", hero: p.newGrade,
-                         lines: [p.previousGrade.map { "up from \($0)" } ?? "your first peak", p.climbName],
-                         accent: SnappetColor.brand)
-        case .pyramid(let p):
-            self = .init(kick: "Grade pyramid", hero: p.maxGrade ?? "—",
-                         lines: ["\(p.totalSends) sends", "\(p.rows.count) grades"], accent: SnappetColor.kilter)
-        case .streak(let p):
-            // R7 parity: a record streak reflects the record in the kick + line (matches FeedCardView).
-            self = .init(kick: p.isRecord ? "Longest streak ever" : "Streak", hero: "\(p.days)",
-                         lines: p.isRecord && p.previousBest > 0
-                             ? ["days in a row", "past best \(p.previousBest)"]
-                             : ["days in a row"],
-                         accent: SnappetColor.kilter)
-        case .liftPR(let p):
-            self = .init(kick: "Lift PR", hero: "\(Int(p.oneRepMaxKg.rounded())) \(p.unit)",
-                         lines: [p.exerciseName, "est. 1RM"], accent: SnappetColor.brand)
-        case .effort(let p):
-            self = .init(kick: "Session effort", hero: "\(p.maxBpm)",
-                         lines: ["peak BPM", "\(p.trimp) TRIMP"], accent: SnappetColor.performance(forZone: .max))
-        case .hardestEffort(let p):
-            self = .init(kick: "Hardest-effort send", hero: p.grade,
-                         lines: ["\(p.peakBpm) bpm"], accent: SnappetColor.performance(forZone: .max))
-        case .mostClimbs(let p):
-            self = .init(kick: "Biggest session", hero: "\(p.count)",
-                         lines: ["climbs in one go"], accent: SnappetColor.kilter)
-        case .weeklyVolume(let p):
-            self = .init(kick: "Weekly volume", hero: "\(p.buckets.last?.sends ?? 0)",
-                         lines: ["sends this week"], accent: SnappetColor.kilter)
-        case .hrTrend(let p):
-            self = .init(kick: "HR trend", hero: "\(p.points.last?.avgBpm ?? 0)",
-                         lines: ["recent avg BPM"], accent: SnappetColor.workout)
-        case .onTheBoard(let p):
-            self = .init(kick: "On the board", hero: "\(p.litCount)",
-                         lines: ["climbs lit", p.hardestGrade.map { "hardest \($0)" } ?? p.gradeSpread],
-                         accent: SnappetColor.kilter)
-        case .pyramidHealth(let p):
-            self = .init(kick: "Pyramid health", hero: p.consolidateGrade,
-                         lines: ["consolidate this row", "\(p.rows.count) grades"], accent: SnappetColor.kilter)
-        case .progression(let p):
-            self = .init(kick: "Progression", hero: "\(p.fromGrade) → \(p.toGrade)",
-                         lines: ["over \(p.points.count) months"], accent: SnappetColor.kilter)
-        case .climbingLevel(let p):
-            self = .init(kick: "Climbing level", hero: p.level,
-                         lines: [p.maxGrade.map { "max \($0)" } ?? "working grade"], accent: SnappetColor.kilter)
-        case .angleDist(let p):
-            self = .init(kick: "Angles", hero: "\(p.topAngle)°",
-                         lines: ["\(p.slices.count) angles"], accent: SnappetColor.kilter)
-        case .periodVsLast(let p):
-            self = .init(kick: "This period", hero: "\(p.current)",
-                         lines: ["sends vs \(p.previous) last"], accent: SnappetColor.kilter)
-        case .consistency(let p):
-            self = .init(kick: "Consistency", hero: "\(p.activeDays)",
-                         lines: ["active days"], accent: SnappetColor.kilter)
-        case .onThisDay(let p):
-            self = .init(kick: "On this day", hero: p.grade ?? "—",
-                         lines: [p.summary], accent: SnappetColor.kilter)
-        case .firstAtGrade(let p):
-            self = .init(kick: "First at grade", hero: p.grade,
-                         lines: [p.climbName], accent: SnappetColor.kilter)
-        case .projectSent(let p):
-            self = .init(kick: "Project sent", hero: p.grade,
-                         lines: ["after \(p.sessions) sessions", p.climbName], accent: SnappetColor.brand)
-        case .disciplineSplit(let p):
-            self = .init(kick: "Discipline split", hero: p.topLabel,
-                         lines: p.slices.prefix(3).map { "\($0.label): \($0.count)" }, accent: SnappetColor.workout)
-        case .trendArrows(let p):
-            self = .init(kick: "90-day trends",
-                         hero: p.arrows.first.map { "\($0.improving ? "▲" : "▼")\(abs($0.deltaPct))%" } ?? "—",
-                         lines: p.arrows.map(\.label), accent: SnappetColor.kilter)
-        case .effortEfficiency(let p):
-            self = .init(kick: "Fitness gain", hero: "\(p.newAvgBpm)",
-                         lines: ["avg BPM at \(p.gradeBand)", "was \(p.oldAvgBpm)"], accent: SnappetColor.kilter)
-        case .hrvRecovery(let p):
-            self = .init(kick: "Recovery", hero: "\(p.rmssd)", lines: ["RMSSD", p.note], accent: SnappetColor.kilter)
-        case .restNudge(let p):
-            self = .init(kick: "Go gentler", hero: "\(p.hardDays)", lines: ["hard days", p.note], accent: SnappetColor.kilter)
-        }
-    }
-
-    private init(kick: String, hero: String, lines: [String], accent: Color) {
-        self.kick = kick; self.hero = hero; self.lines = lines; self.accent = accent
+    /// A thin SwiftUI adapter over the ONE pure `FeedCardDisplay` descriptor — `ShareCardSpec` no longer
+    /// owns the card→display mapping (it used to carry a parallel switch that drifted from the list/story/
+    /// wall, D1–D25). `kick`/`hero`/`lines` come straight from the descriptor; `accent` is the bridged
+    /// token. `unit` (default `.km`) follows the user's km/mi choice for the run hero, threaded from
+    /// `ShareComposerView`.
+    init(card: FeedCard, unit: DistanceUnit = .km) {
+        let d = card.display(unit: unit)
+        self.kick = d.kicker
+        self.hero = d.hero
+        self.heroCaption = d.heroCaption
+        self.lines = d.lines          // [primaryLine] + secondaryLines, compacted
+        self.accent = d.accent.color
     }
 
     /// The `primary` supporting line (first), gated by visibility.
@@ -136,8 +60,10 @@ struct ShareCardSpec {
 struct GradePRTicketTemplate: View {
     let card: FeedCard
     var visibleMetrics: Set<ShareMetric>
+    /// The user's km/mi choice, threaded from `ShareComposerView` (defaults `.km` for previews/tests).
+    var unit: DistanceUnit = .km
 
-    private var spec: ShareCardSpec { ShareCardSpec(card: card) }
+    private var spec: ShareCardSpec { ShareCardSpec(card: card, unit: unit) }
     private var upFrom: String? {
         if case .gradePR(let p) = card.payload { return p.previousGrade.map { "up from \($0)" } ?? "your first peak" }
         return spec.primaryLine
@@ -193,8 +119,10 @@ struct GradePRTicketTemplate: View {
 struct BoardPolaroidTemplate: View {
     let card: FeedCard
     var visibleMetrics: Set<ShareMetric>
+    /// The user's km/mi choice, threaded from `ShareComposerView` (defaults `.km` for previews/tests).
+    var unit: DistanceUnit = .km
 
-    private var spec: ShareCardSpec { ShareCardSpec(card: card) }
+    private var spec: ShareCardSpec { ShareCardSpec(card: card, unit: unit) }
 
     var body: some View {
         ShareTemplateCanvas(accent: spec.accent) {
@@ -226,7 +154,9 @@ struct BoardPolaroidTemplate: View {
                     // The polaroid caption strip (the thick white mat bottom).
                     HStack {
                         if visibleMetrics.contains(.secondary) {
-                            Text(spec.secondaryLines.joined(separator: " · "))
+                            // Fall back to the hero caption when a card has no secondary lines (the descriptor
+                            // moved the lead fact, e.g. "climbs lit", into heroCaption) so the mat is never blank.
+                            Text(spec.secondaryLines.isEmpty ? spec.heroCaption : spec.secondaryLines.joined(separator: " · "))
                                 .font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.ink)
                                 .lineLimit(1).minimumScaleFactor(0.6)
                         } else {
@@ -257,8 +187,10 @@ struct BoardPolaroidTemplate: View {
 struct PyramidCardTemplate: View {
     let card: FeedCard
     var visibleMetrics: Set<ShareMetric>
+    /// The user's km/mi choice, threaded from `ShareComposerView` (defaults `.km` for previews/tests).
+    var unit: DistanceUnit = .km
 
-    private var spec: ShareCardSpec { ShareCardSpec(card: card) }
+    private var spec: ShareCardSpec { ShareCardSpec(card: card, unit: unit) }
 
     /// The per-grade rows (descending difficulty → narrow top, wide base), from whichever payload carries them.
     private var rows: [PyramidRow] {

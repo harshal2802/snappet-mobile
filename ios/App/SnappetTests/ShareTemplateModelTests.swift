@@ -304,4 +304,35 @@ final class ShareTemplateModelTests: XCTestCase {
             XCTAssertNotNil(hinted, "the shareHint template should be eligible for \(card.id)")
         }
     }
+
+    // MARK: R13 — share-path heroCaption fallback (regression guard)
+    //
+    // The unified FeedCardDisplay moves some cards' lead fact into `heroCaption` (which the share
+    // templates didn't render), so ShareCardSpec carries heroCaption and the share path falls back to it
+    // (`primaryLine ?? heroCaption`, and the polaroid mat when secondaryLines is empty). These assert the
+    // DATA contract that fallback relies on, so the supporting line can't silently go blank again.
+
+    func testShareCardSpecCarriesHeroCaption() {
+        // onTheBoard: the lead fact "climbs lit" lives in heroCaption and secondaryLines is empty, so the
+        // polaroid mat must fall back to heroCaption (was a blank mat).
+        let spec = ShareCardSpec(card: onTheBoardCard())
+        XCTAssertEqual(spec.heroCaption, "climbs lit")
+        XCTAssertTrue(spec.secondaryLines.isEmpty)
+        let matCaption = spec.secondaryLines.isEmpty ? spec.heroCaption : spec.secondaryLines.joined(separator: " · ")
+        XCTAssertFalse(matCaption.isEmpty, "polaroid mat caption must never be blank")
+    }
+
+    func testShareLeadLineFallsBackToHeroCaptionWhenPrimaryNil() {
+        // climbingLevel with no max grade → primaryLine nil; the generic share card's lead falls back to
+        // heroCaption ("working grade") instead of rendering nothing.
+        let payload = ClimbingLevelPayload(level: "V5", maxGrade: nil)
+        let card = FeedCard(id: "cl1", contentId: "cid-cl", kind: .c4ClimbingLevel, category: .recap,
+                            salience: 0.5, anchorDate: Date(timeIntervalSince1970: 0),
+                            sourceRefs: [], payload: .climbingLevel(payload), shareHint: nil)
+        let spec = ShareCardSpec(card: card)
+        XCTAssertNil(spec.primaryLine)
+        XCTAssertEqual(spec.heroCaption, "working grade")
+        let lead = spec.primaryLine ?? spec.heroCaption
+        XCTAssertEqual(lead, "working grade", "the share lead line must not go blank when primaryLine is nil")
+    }
 }
