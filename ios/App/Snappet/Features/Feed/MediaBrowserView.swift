@@ -2,6 +2,7 @@ import SwiftUI
 import AVKit
 import Photos
 import UIKit
+import Combine
 
 // MARK: - Recap Feed — session media browser + paged viewer (F3b · R6)
 //
@@ -257,23 +258,12 @@ private struct PagedMediaViewer: View {
 
     private func tagName(_ m: MediaInput) -> String { FeedMedia.tagName(m, nameFor: nameFor) }
 
-    /// Build the EDITOR overlay for a clip: slice the session HR to the clip window (rebased to clip-
-    /// local time), feed `HROverlayValues`, and render the SAME scorebug `HRTile` the export burns. Returns
-    /// `nil` when the clip has no HR in its window → the page degrades to the name tag only (no empty chart).
-    private func overlay(for m: MediaInput) -> ClipOverlay? {
-        let window = FeedMedia.clipHRWindow(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries)
-        guard !window.isEmpty else { return nil }
-        let dur = (m.durationSec ?? FeedMedia.photoWindowSec)
-        let values = HROverlayValues(samples: window, durationSec: max(0.1, dur),
-                                     maxHR: maxHR, restHR: restHR)
-        return ClipOverlay(tile: .feedClipScorebug(restHR: restHR), values: values)
+    /// The clip's HR overlay — via the ONE `ClipHROverlay` mapping the poster, the inline player, and this
+    /// viewer all share, so the fullscreen scorebug can't drift from the in-feed poster. `nil` when the clip
+    /// has no HR in its window → the page degrades to the name tag only (no empty chart).
+    private func overlay(for m: MediaInput) -> ClipHROverlay.Payload? {
+        ClipHROverlay.make(clip: m, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR)
     }
-}
-
-/// The per-clip overlay payload (editor tile + resolved values) — built per page on the MainActor.
-private struct ClipOverlay {
-    let tile: HRTile
-    let values: HROverlayValues
 }
 
 /// One fullscreen page: the real clip playback (active page only) under the editor HR overlay + name
@@ -283,7 +273,7 @@ private struct ClipOverlay {
 /// only when the page leaves the `TabView`'s resident set — its `.onDisappear`.
 private struct MediaPage: View {
     let item: MediaInput
-    let overlay: ClipOverlay?
+    let overlay: ClipHROverlay.Payload?
     let name: String
     let isActive: Bool
 
@@ -293,6 +283,13 @@ private struct MediaPage: View {
     @State private var player: AVQueuePlayer?
     @State private var looper: AVPlayerLooper?   // retained or looping stops
     @State private var image: UIImage?
+    /// Live HR playhead (prompt 84): the playing clip's video time → `ClipHROverlay.fraction`, driving the
+    /// scorebug's live BPM + chart dot in sync with the video. `1.0` = the clip's at-end reading, shown
+    /// before play / when paused-by-de-center / for a photo (matching the still poster). Polled from the
+    /// player by `ticker` (cleaner under Swift-6 than capturing this struct in an `addPeriodicTimeObserver`
+    /// closure); ~0.12s = a smooth dot at a light re-render cost.
+    @State private var playbackFraction: Double = ClipHROverlay.atEndFraction
+    @State private var ticker = Timer.publish(every: 0.12, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
@@ -308,11 +305,11 @@ private struct MediaPage: View {
             // COMPACT card with NORMALIZED geometry (centerX/centerY/width/height, e.g. scorebug =
             // 0.92×0.27 at (0.50, 0.86)); size + position it at that fraction of the page exactly as the
             // export composites it onto the canvas. (Filling the whole page made HRTileLayout explode —
-            // full-height zone bars + truncated "5…"/"B…".) `fraction = 1.0` reads the clip-window
-            // aggregate; `nil` overlay → name tag only.
+            // full-height zone bars + truncated "5…"/"B…".) `playbackFraction` sweeps the live BPM + chart
+            // dot in step with the video (1.0 = the clip's at-end reading while not playing); nil → name tag.
             if let overlay {
                 GeometryReader { geo in
-                    HRTileView(tile: overlay.tile, values: overlay.values, fraction: 1.0)
+                    HRTileView(tile: overlay.tile, values: overlay.values, fraction: playbackFraction)
                         .frame(width: geo.size.width * overlay.tile.width,
                                height: geo.size.height * overlay.tile.height)
                         .position(x: geo.size.width * overlay.tile.centerX,
@@ -324,12 +321,22 @@ private struct MediaPage: View {
         }
         .accessibilityIdentifier("feed.media.page")
         .task(id: item.id) { await load() }
-        // Single-active: the centered page plays; a de-centered (but still resident) page only PAUSES,
-        // keeping its player + looper warm for an instant resume on swipe-back.
-        .onChange(of: isActive) { _, active in active ? player?.play() : player?.pause() }
+        // Single-active: the centered page plays; a de-centered (but still resident) page PAUSES and resets
+        // its HR playhead to the at-end reading (so a glimpsed off-center overlay isn't frozen mid-sweep).
+        .onChange(of: isActive) { _, active in
+            if active { player?.play() } else { player?.pause(); playbackFraction = ClipHROverlay.atEndFraction }
+        }
         // Full teardown happens only when the page leaves the TabView's resident set (pause + nil player
         // + drop looper) — not on every de-center, so neighbouring pages stay warm by design.
         .onDisappear { teardown() }
+        // Live HR (prompt 84): while THIS centered page's video is actually playing, sweep the scorebug
+        // playhead in step with the video via the shared `ClipHROverlay.fraction`. Off-center / paused /
+        // photo / no-HR pages take the guarded early return (near-zero cost) — only the active player ticks.
+        .onReceive(ticker) { _ in
+            guard isActive, item.kind == "video", let player, player.rate != 0, let overlay else { return }
+            playbackFraction = ClipHROverlay.fraction(videoTime: player.currentTime().seconds,
+                                                      clip: item, payload: overlay)
+        }
     }
 
     @ViewBuilder private var mediaLayer: some View {
@@ -363,6 +370,8 @@ private struct MediaPage: View {
         teardown()
         state = .loading
         image = nil
+        playbackFraction = ClipHROverlay.atEndFraction   // the at-end reading until the video actually plays
+
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [item.localIdentifier], options: nil)
         guard let asset = assets.firstObject else { state = .failed; return }
 
