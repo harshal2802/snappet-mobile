@@ -72,17 +72,16 @@ enum ClipFeedComposer {
 
     // MARK: Adaptive tile aspect (prompt 92)
     //
-    // Instagram-feed convention: a CONSISTENT tile aspect (portrait clamped to 4:5, landscape to 1.91:1) so
-    // the feed scrolls smoothly without tiles re-growing as each aspect resolves. A portrait clip taller
-    // than 4:5 (e.g. 9:16 phone video) is cropped to fill the 4:5 tile (no black bars) — the inline player
-    // uses `.resizeAspectFill`. `defaultAspect == minAspect`, so a portrait clip's tile NEVER resizes
-    // (default 4:5 → resolved-then-clamped 4:5). A `TabView` carousel shares ONE height across a post's
-    // pages, so a post collapses to a single clamped aspect (the first clip with a known aspect). Pure —
+    // Tile the carousel to the clip's REAL aspect so a portrait video fills the frame full-height with NO
+    // black bars and no crop (the look the user preferred). The clamp only guards absurd extremes: a tile
+    // can be as tall as ~2:1 (covers 9:16 phone video = 0.5625) and as wide as 1.91:1 (covers 16:9 = 1.78).
+    // A `TabView` carousel shares ONE height across a post's pages, so a post collapses to a single clamped
+    // aspect (the first clip with a known aspect); the height animates as the real aspect resolves. Pure —
     // unit-tested in `ClipFeedComposerTests`.
 
-    static let minAspect = 0.8     // 4:5 portrait — the tallest tile (Instagram feed)
-    static let maxAspect = 1.91    // 1.91:1 landscape — the widest tile
-    /// 4:5 — the same as the portrait clamp, so a portrait clip's tile never resizes when its aspect resolves.
+    static let minAspect = 0.5     // ~2:1 tall portrait — covers 9:16 phone video (0.5625) un-clamped
+    static let maxAspect = 1.91    // 1.91:1 landscape — covers 16:9 (1.78) un-clamped
+    /// The neutral 4:5 shown until a clip's real aspect is backfilled (`SessionMedia.aspectRatio` nil).
     static let defaultAspect = 0.8
 
     /// The one clamped aspect a post's carousel uses: the first clip with a resolved aspect, clamped to

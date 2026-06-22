@@ -7325,3 +7325,20 @@ clip is now **cropped** to 4:5 (top/bottom), the IG convention — if the full c
 `minAspect` toward 0.5625 and keep `.resizeAspectFill` (taller tiles, no crop). Composer clamp tests
 reverted; `ClipFeedComposerTests` + `ClipsFeedUITests` + build green; built + installed on MrRobot.
 
+**On-device: reverted to full-aspect tiles + WARM adjacent players (prompt 90/92, MrRobot 2026-06-22).** The
+user preferred the full-height (no-crop) tiles over the IG 4:5 crop, so: clamp widened back to **[0.5 …
+1.91]** (a 9:16 clip fills full-height, no bars, no crop) and the **height animation restored**
+(`.animation(value: carouselHeight)`). To make the scroll/carousel feel smooth without the IG-style
+consistent height, added **warm (preloaded) players** — the real win paired with the settle-gating: while
+you scroll, neighbouring clips' players load **paused** so the one you settle on / swipe to plays instantly
+(no still→video lag). `ClipMediaSurface` already loads on mount and plays on `isActive` flip, so a clip is
+"warm" simply by mounting it with `isActive:false`. `ClipPosterView` split `isPlaying` → **`live`** (mount
+the player) + **`playing`** (isActive); only the playing clip is interactive (tap→fullscreen, mute, HR
+sweep) and warm clips `allowsHitTesting(false)` (taps fall through to the still). `ClipPostCard.liveFor(idx)`
+bounds the warm set: the on-screen post warms current page ± its carousel neighbours; any near-screen post
+(new low `onScrollVisibilityChange(threshold: 0.02)` signal) warms just its current page; **gated on
+`autoplayActive`** (no extra players when autoplay is off) — so ~3 players on the centred post + 1 per
+visible neighbour (1 playing, rest paused). ⚠️ **R12 watch:** this is the multi-inline-player scenario the
+codebase warns about — must be device-verified with autoplay ON for a black inline frame before trusting it.
+Build + `ClipFeedComposerTests` + `ClipsFeedUITests` green; built + installed on MrRobot.
+

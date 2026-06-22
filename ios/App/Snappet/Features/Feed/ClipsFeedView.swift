@@ -261,6 +261,9 @@ private struct ClipPostCard: View {
     @State private var studio: StudioPresentation?
     /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
     @State private var isOnScreen = false
+    /// Whether this card is even slightly on-screen — drives WARM preloading (the adjacent post above/below
+    /// loads its player paused so it plays instantly when you settle on it; the R12 black-box risk area).
+    @State private var isNearScreen = false
     /// Share-a-clip (prompt 87): the exported temp video handed to the system share sheet, + a busy flag.
     @State private var shareItem: ClipShareItem?
     @State private var preparingShare = false
@@ -311,6 +314,9 @@ private struct ClipPostCard: View {
             guard autoplayActive, !scrolling, isOnScreen else { return }
             playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
         }
+        // WARM preload: any-visible posts mount their current page's player (paused) so scrolling onto them
+        // plays instantly. A low threshold so the post above/below warms before it's the active one.
+        .onScrollVisibilityChange(threshold: 0.02) { visible in isNearScreen = visible }
         .fullScreenCover(item: $studio) { p in
             StudioEditorView(project: p.project, context: context,
                              focusClipMediaID: p.focus, visibleClipMediaIDs: p.visible)
@@ -407,6 +413,16 @@ private struct ClipPostCard: View {
         .accessibilityIdentifier("clips.post.menu")
     }
 
+    /// Whether carousel page `idx` should have a MOUNTED (warm) player: the on-screen post warms the current
+    /// page ± its carousel neighbours (instant swipe); any near-screen post warms just its current page
+    /// (instant when you scroll onto it). Only the single `playingClip` actually PLAYS — the rest are loaded
+    /// + paused. Bounded (~3 on the centred post + 1 per neighbour) to limit the R12 inline-player risk.
+    private func liveFor(_ idx: Int) -> Bool {
+        if playingClip?.matches(post.id, idx) == true { return true }   // the active clip always mounts
+        guard autoplayActive else { return false }                      // autoplay off → don't warm neighbours
+        return (isOnScreen && abs(idx - page) <= 1) || (isNearScreen && idx == page)
+    }
+
     private var carousel: some View {
         VStack(spacing: 8) {
             TabView(selection: $page) {
@@ -416,7 +432,8 @@ private struct ClipPostCard: View {
                     ClipPosterView(item: item, post: post,
                                    payload: ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
                                                                maxHR: hr.maxHR, restHR: hr.restHR, tile: hrTile),
-                                   isPlaying: playingClip?.matches(post.id, idx) == true,
+                                   live: liveFor(idx),
+                                   playing: playingClip?.matches(post.id, idx) == true,
                                    muted: playingClip?.matches(post.id, idx) == true && playingClip?.muted == true,
                                    onTapToPlay: {
                                        guard item.media.kind == "video" else { return }   // photos stay still
@@ -443,6 +460,7 @@ private struct ClipPostCard: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: carouselHeight)
+            .animation(.easeInOut(duration: 0.25), value: carouselHeight)
             // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
             // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
@@ -546,8 +564,11 @@ private struct ClipPosterView: View {
     let post: ClipFeedPost
     /// The clip's HR overlay — built ONCE by the card (not per live-HR tick); drives the surface + the tile.
     let payload: ClipHROverlay.Payload?
-    /// This clip is the feed's active inline clip → play it in place (prompt 85).
-    let isPlaying: Bool
+    /// This clip should have a MOUNTED player — either it's playing OR it's warm (preloaded + paused so it
+    /// starts instantly when reached). Drives whether `ClipMediaSurface` exists.
+    let live: Bool
+    /// This clip is the feed's single ACTIVE inline clip → it plays (isActive); warm clips stay paused.
+    let playing: Bool
     /// Start the inline player muted (autoplay; prompt 90) — tap-to-play passes false.
     let muted: Bool
     /// Tap a still video → ask the feed to make this the active clip.
@@ -571,12 +592,17 @@ private struct ClipPosterView: View {
                               size: geo.size)
                     .contentShape(Rectangle())
                     .onTapGesture { onTapToPlay() }
-                // The inline player, overlaid on top of the still when this is the feed's active video.
-                if isPlaying, item.media.kind == "video" {
-                    ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
-                                     fraction: $liveFraction, background: .clear, muted: muted,
-                                     onUnmute: onToggleMute, onSurfaceTap: onOpenFullscreen, fill: true)
+                // The inline player, overlaid on the still whenever this clip is LIVE (playing OR warm). A
+                // warm clip is mounted with isActive:false → loaded + paused → it starts instantly when it
+                // becomes the active clip. Only the PLAYING clip is interactive (tap → fullscreen, audio);
+                // warm clips let taps fall through to the still (onTapToPlay makes them the active clip).
+                if live, item.media.kind == "video" {
+                    ClipMediaSurface(clip: item.media, isActive: playing, payload: payload,
+                                     fraction: $liveFraction, background: .clear, muted: playing ? muted : true,
+                                     onUnmute: onToggleMute,
+                                     onSurfaceTap: playing ? onOpenFullscreen : nil, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .allowsHitTesting(playing)
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)
@@ -593,7 +619,7 @@ private struct ClipPosterView: View {
             // collide with the bottom HR scorebug or the top-trailing page counter. Driven by `muted`
             // (== playingClip.muted) so it stays in sync with autoplay + the scroll/transfer logic.
             .overlay(alignment: .topLeading) {
-                if isPlaying, item.media.kind == "video" { muteButton.padding(12) }
+                if playing, item.media.kind == "video" { muteButton.padding(12) }
             }
         }
     }
@@ -636,7 +662,7 @@ private struct ClipPosterView: View {
     @ViewBuilder private var hrOverlay: some View {
         if let payload {
             HRTileView(tile: payload.tile, values: payload.values,
-                       fraction: isPlaying ? liveFraction : ClipHROverlay.atEndFraction)
+                       fraction: playing ? liveFraction : ClipHROverlay.atEndFraction)
                 .frame(maxWidth: .infinity)
                 .frame(height: 96)
                 .allowsHitTesting(false)
