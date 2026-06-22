@@ -521,8 +521,10 @@ video, the editor's behaviour). **Phase 1 (prompt 85):** tapping a video poster 
 in the carousel (replacing the fullscreen pop-up), live HR riding the same `fraction`. One player engine
 (`ClipMediaSurface`) backs both the inline poster and the fullscreen viewer (one `AVPlayerLayer`
 lifecycle); single-active is tap-driven (`PlayingClipRef`, last-tapped-wins), **not** scroll-driven (the
-dropped-R12 black-box lesson). The inline render is the R12 risk → **must be device-verified**. Reactions
-/ share / grid and the optional WYSIWYG feed-HR stay a deliberate follow-up.
+dropped-R12 black-box lesson). The inline render is the R12 risk → **must be device-verified**. **Explore
+grid (prompt 86):** a nav-bar `square.grid.3x3` button opens an IG-style grid (`ClipsGridView`) of all post
+covers; tapping one scrolls the feed to that post — derive-on-read over the same composer, no new store.
+Still-open follow-ups: share-a-clip + reactions (the rest of #1), and the optional WYSIWYG feed-HR.
 
 ## License
 
