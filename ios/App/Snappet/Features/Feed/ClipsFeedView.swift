@@ -36,35 +36,63 @@ struct ClipsFeedView: View {
     /// feed (prompt 85). Tap-driven, NOT scroll-driven (the R12 hero's scroll-center coordinator is what
     /// rendered a black box in the scrolling card).
     @State private var playingClip: PlayingClipRef?
+    /// Explore-grid sheet (prompt 86) + the post id to scroll the feed to when a grid cover is picked.
+    @State private var showGrid = false
+    @State private var scrollTarget: String?
 
     var body: some View {
-        NavigationStack {
+        let posts = composedPosts()
+        return NavigationStack {
             Group {
-                let posts = composedPosts()
                 if posts.isEmpty {
                     emptyState
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 18) {
-                            ForEach(posts) { post in
-                                ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
-                                             allMedia: allMedia, playingClip: $playingClip)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 18) {
+                                ForEach(posts) { post in
+                                    ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
+                                                 allMedia: allMedia, playingClip: $playingClip)
+                                        .id(post.id)
+                                }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        .accessibilityIdentifier("clips.feed")
+                        // Scrolling the feed stops the inline player, so a tapped clip can't keep playing audio
+                        // after its card scrolls off-screen (prompt 85). This is a feed-level gesture signal —
+                        // NOT per-card scroll geometry, which is the R12 coordinator that rendered a black box.
+                        .onScrollPhaseChange { _, newPhase, _ in
+                            if newPhase != .idle, playingClip != nil { playingClip = nil }
+                        }
+                        // Jump to a post picked in the explore grid (prompt 86). Deferred a beat so the grid
+                        // sheet finishes dismissing first — scrolling mid-transition can no-op against an
+                        // off-screen (not-yet-realized) LazyVStack row.
+                        .onChange(of: scrollTarget) { _, target in
+                            guard let target else { return }
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(350))
+                                withAnimation { proxy.scrollTo(target, anchor: .top) }
+                                scrollTarget = nil
                             }
                         }
-                        .padding(.vertical, 8)
-                    }
-                    .accessibilityIdentifier("clips.feed")
-                    // Scrolling the feed stops the inline player, so a tapped clip can't keep playing audio
-                    // after its card scrolls off-screen (prompt 85). This is a feed-level gesture signal —
-                    // NOT per-card scroll geometry, which is the R12 coordinator that rendered a black box.
-                    .onScrollPhaseChange { _, newPhase, _ in
-                        if newPhase != .idle, playingClip != nil { playingClip = nil }
                     }
                 }
             }
             .background(SnappetColor.paper)
             .navigationTitle("Clips")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                if !posts.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showGrid = true } label: { Image(systemName: "square.grid.3x3") }
+                            .accessibilityIdentifier("clips.grid.button")
+                    }
+                }
+            }
+            .sheet(isPresented: $showGrid) {
+                ClipsGridView(posts: posts, onPick: { scrollTarget = $0 })
+            }
         }
     }
 

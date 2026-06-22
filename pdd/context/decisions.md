@@ -7009,3 +7009,14 @@ longer auto-plays off-center. (3) **NaN guard:** the live-HR ticker skips a non-
 `payload` is computed per-card-render in the carousel `ForEach` (a deliberate trade — it avoids recomputing
 on every ~8Hz live-HR tick, which is the worse cost); inline teardown rides `.onDisappear` on the
 still↔player branch swap (the standard SwiftUI path the viewer also uses).
+
+## 2026-06-22 — Clips explore grid (prompt 86, follow-up #1a)
+
+**Decision.** An IG-profile-style grid (`ClipsGridView`, a nav-bar `square.grid.3x3` button → `.sheet`)
+browses all Clips **posts** as square covers (the post's first clip thumbnail + name + a `rectangle.stack`
+badge for multi-clip posts), newest first. Derive-on-read over the **same** `ClipFeedComposer` posts the
+feed uses — **no new persistence**, no new player (covers are still `ClipThumbnail`s). Tapping a cover
+dismisses the grid and **scrolls the feed to that post** (`ScrollViewReader` + `.id(post.id)` +
+a one-shot `scrollTarget`), so the feed stays the one place inline playback + the ⋯ menu live. The grid
+button is gated on a non-empty feed. Owed on-device: real thumbnails need Photos (sim shows the empty
+state; the grid button only appears once there are posts, so a fresh-store sim UITest can't reach it).
