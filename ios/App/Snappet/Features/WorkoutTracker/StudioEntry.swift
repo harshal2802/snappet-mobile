@@ -67,13 +67,19 @@ enum StudioEntry {
     @MainActor
     static func findOrCreateProject(for session: WorkoutSession, media: [SessionMedia],
                                     context: ModelContext) -> StudioProject {
-        let sid = session.id
+        findOrCreateProject(forSessionID: session.id, title: session.routineName, media: media, context: context)
+    }
+
+    /// `sessionID`-keyed find-or-create (prompt 82, the Clips feed) — usable for a Kilter session too,
+    /// not just a `WorkoutSession`. The studio's main track seeds from the session's videos in capture order.
+    @MainActor
+    static func findOrCreateProject(forSessionID sid: UUID, title: String, media: [SessionMedia],
+                                    context: ModelContext) -> StudioProject {
         if let existing = try? context.fetch(
             FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
             return existing
         }
-        let project = StudioProject(sessionID: sid, title: session.routineName,
-                                    clips: seedClips(for: sid, media: media))
+        let project = StudioProject(sessionID: sid, title: title, clips: seedClips(for: sid, media: media))
         context.insert(project)
         try? context.save()
         return project
@@ -86,8 +92,16 @@ enum StudioEntry {
     @MainActor
     static func resolveProject(for session: WorkoutSession, media: [SessionMedia],
                                context: ModelContext) -> StudioProject {
-        let project = findOrCreateProject(for: session, media: media, context: context)
-        let sid = session.id
+        resolveProject(forSessionID: session.id, title: session.routineName, media: media, context: context)
+    }
+
+    /// `sessionID`-keyed `resolveProject` (prompt 82): the same find-or-create + late-clip reconcile for
+    /// any session id (gym or Kilter), so the Clips feed's "Edit this clip" / "Edit all" can open the
+    /// shared session project scoped to a clip without landing on an empty timeline.
+    @MainActor
+    static func resolveProject(forSessionID sid: UUID, title: String, media: [SessionMedia],
+                               context: ModelContext) -> StudioProject {
+        let project = findOrCreateProject(forSessionID: sid, title: title, media: media, context: context)
         let present = Set(project.clips.compactMap(\.sessionMediaID))
         let missing = media.filter { $0.sessionID == sid && $0.kind == .video && !present.contains($0.id) }
             .sorted { $0.offsetSec < $1.offsetSec }

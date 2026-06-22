@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The shell's top-level tabs. Lives beside `SuiteRouter` (not on `ShellTabs`) so anything that
 /// routes — Home cards, and later QR deep links (#75) / App Intents (#81) — can target a tab.
-enum SuiteTab: Hashable { case home, feed, apps }
+// `clips` (prompt 82) is the video/photo-first feed tab; `feed` backs the "Recap" tab (session cards).
+enum SuiteTab: Hashable { case home, clips, feed, apps }
 
 /// Shared programmatic navigation for the whole suite shell (#71): the selected top-level tab
 /// plus the App Library `NavigationStack`'s path.

@@ -496,6 +496,22 @@ persists into `predictedGrade`; sibling swipe in detail (`HorizontalPager` over 
 `ChartAccessibilityTest`). **Device-pending**: real TalkBack verification (#98); swipe/estimate/Plan
 end-to-end need a real catalog (#42) + installed generator meta on the emulator (#93).
 
+🟡 **Clips feed — video/photo-first tab (2026-06-21, prompt 82, vertical slice).** iOS. A new bottom
+tab **Clips** (Home · Clips · Recap · Apps; `SuiteTab.clips`, `snappet://clips`) — an Instagram-style
+feed where the media IS the post: one post per exercise/climb, its clips a swipeable carousel, each
+poster burning in the live HR scorebug (the editor's `HRTileView .scorebug`) + the climb/exercise name.
+Derive-on-read over `SessionMedia` + the session models via the pure `ClipFeedComposer` (one post per
+`FeedMedia` group; unit-tested in `ClipFeedComposerTests`) — **no new store**, the session stays the
+single source of truth. The ⋯ menu reuses existing entry points: Edit this clip / Edit all · N
+(`StudioEditorView` scoped via `StudioEntry`), Go to session (`SuiteRouter` open+push). Distinct from
+the Recap card feed. **macOS gate passed (2026-06-21):** authored on Linux, then compiled + run on
+Xcode — `ClipFeedComposerTests` (7) + the whole `SnappetTests` suite (1437, 0 failures) green, a new
+`ClipsFeedUITests` (tab order Home·Clips·Recap·Apps + empty state) green, 0 warnings in the new files,
+and a simulator pass confirming the tab order + `snappet://clips` selecting the tab. **Device-pending:**
+the carousel paging, the HR scorebug + climb/exercise-name overlays, and the three ⋯ actions need real
+Photos assets + a captured HR series (a fresh-store sim shows only the empty state). Reactions / share /
+grid and inline playback stay a deliberate follow-up.
+
 ## License
 
 TBD.

@@ -78,6 +78,12 @@ const nodes = [
     file: "ios/App/Snappet/Features/Shell/RootShell.swift", desc: "Bottom-nav MIDDLE tab (Home · Recap · Apps) → FeedView. SF Symbol sparkles.rectangle.stack; snappet://feed + --start-tab feed open it (F1).", tags: ["tab","feed","recap"] },
   { id: "feed", label: "FeedView", type: "screen", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Feed/FeedView.swift", desc: "The Recap feed (F1): an infinite, derive-on-read scroll of the user's own sessions as Pulse-Pro cards composed by FeedComposer over @Query'd Kilter/Workout sessions+logs. Lens bar (F0 pure post-filters incl. always-available Sessions-only), Stories-rail placeholder (F6 activates), keyset-windowed pagination, and the 'N new' freshness pill. a1/a2 session cards rich (DisciplineHero+StatRibbon+.snappetCard); milestone/trend cards compact (F5/F6 enrich). F8 adds the scroll date bar (feed-date-bar): a top-pinned era 'whisper' that reveals the topmost card's exact day + a progress underline while scrolling, hidden at the very top.", tags: ["feed","recap","screen","pulse-pro"] },
+  { id: "tab-clips", label: "Clips tab", type: "shell", group: "feed", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Shell/RootShell.swift", desc: "Bottom-nav tab (Home · Clips · Recap · Apps) → ClipsFeedView (prompt 82): the video/photo-first feed, distinct from the Recap card feed. SF Symbol play.square.stack; snappet://clips + --start-tab clips open it. SuiteTab case is .clips so it never collides with .feed (which backs Recap).", tags: ["tab","clips","feed","prompt-82"] },
+  { id: "clips-feed", label: "ClipsFeedView", type: "screen", group: "feed", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Feed/ClipsFeedView.swift", desc: "The Clips feed (prompt 82): a video/photo-first, Instagram-style tab where the media IS the post — one post per exercise (gym) or climb (Kilter), its clips a swipeable carousel. Derive-on-read over @Query'd SessionMedia + Kilter/Workout sessions+logs (composed by ClipFeedComposer); the session stays the single source of truth (no new store). Each poster is a STILL ClipThumbnail with the climb/exercise-name lower-third + the live HR scorebug (the editor's HRTileView .scorebug, sliced from the session HR series via FeedMedia.clipHRWindow). A ⋯ menu opens the Studio scoped to the current clip / all clips (StudioEditorView focus + visibleClipMediaIDs via StudioEntry) or jumps to the owning session (SuiteRouter open+push). Read-only vertical slice: reactions/share/grid + inline playback deferred.", tags: ["clips","feed","screen","media","hr","prompt-82"] },
+  { id: "clips-feed-core", label: "ClipFeedComposer", type: "engine", group: "feed", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Feed/ClipFeedComposer.swift", desc: "Pure composition for the Clips feed (prompt 82): per-session media bundles + climb/exercise name maps → [ClipFeedPost], one per exercise/climb group (reusing FeedMedia.groups bucketing so it can't disagree with the Recap browser), ordered by capture time, each clip given a derived attempt/set label. Foundation-only, no SwiftData/SwiftUI — unit-tested in ClipFeedComposerTests.", tags: ["clips","feed","pure","tested","engine","prompt-82"] },
   { id: "feed-date-bar", label: "FeedDateBar", type: "component", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Feed/FeedDateBar.swift", desc: "Recap scroll date bar (F8): one slim element pinned at the top of the feed that orients you in a long scroll. At rest it's an era 'whisper' (This week / Earlier in June / May 2026); while scrolling it expands to the topmost visible card's exact day + a glass backing + a thin progress underline, then recedes ~1.2s after you stop. Hidden at the very top (the nav title is the anchor there). Orientation strings are pure + tested (FeedTimeBucket over each card's anchorDate); FeedView tracks the topmost card via per-row top-edge crossing (onScrollPhaseChange/onScrollGeometryChange, main-actor, no preference keys). List layout only.", tags: ["feed","scroll","date","orientation","ios"] },
   { id: "card-detail", label: "CardDetailView", type: "screen", group: "feed", category: "fitness", platform: "ios",
@@ -742,6 +748,8 @@ const links = [
   { source: "tab-apps", target: "applibrary", type: "navigate" },
   { source: "shelltabs", target: "tab-feed", type: "contains" },
   { source: "tab-feed", target: "feed", type: "navigate" },
+  { source: "shelltabs", target: "tab-clips", type: "contains" },
+  { source: "tab-clips", target: "clips-feed", type: "navigate" },
   { source: "feed-composer", target: "feed", type: "feeds", label: "composed cards" },
   { source: "feed", target: "feed-composer", type: "uses" },
   { source: "feed", target: "feed-activity", type: "uses", label: "writers append" },
@@ -767,6 +775,15 @@ const links = [
   { source: "feed-media-viewer", target: "model-sessionmedia", type: "uses", label: "PHAsset clip" },
   { source: "feed-media-viewer", target: "hr-tile-frame", type: "uses", label: "editor HRTileView overlay" },
   { source: "feed-media-viewer", target: "feed-share", type: "navigate", label: "Share / Animate" },
+
+  // ---- Clips feed (prompt 82): the video/photo-first tab, derive-on-read over the session ----
+  { source: "clips-feed-core", target: "clips-feed", type: "feeds", label: "composed posts" },
+  { source: "clips-feed", target: "clips-feed-core", type: "uses" },
+  { source: "clips-feed", target: "model-sessionmedia", type: "uses", label: "clips — single source of truth" },
+  { source: "clips-feed", target: "hr-tile-frame", type: "uses", label: "HRTileView .scorebug overlay" },
+  { source: "clips-feed", target: "studio-editor", type: "cover", label: "Edit this clip / Edit all · N" },
+  { source: "clips-feed", target: "wt-session-detail", type: "navigate", label: "Go to session (gym)" },
+  { source: "clips-feed", target: "kilter-session-detail", type: "navigate", label: "Go to session (climb)" },
 
   // ---- F4 export surface (ShareComposerCover / ShareTemplates / Animate clip) ----
   { source: "feed", target: "feed-export", type: "navigate", label: "Share" },
