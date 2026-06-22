@@ -7020,3 +7020,25 @@ dismisses the grid and **scrolls the feed to that post** (`ScrollViewReader` + `
 a one-shot `scrollTarget`), so the feed stays the one place inline playback + the ⋯ menu live. The grid
 button is gated on a non-empty feed. Owed on-device: real thumbnails need Photos (sim shows the empty
 state; the grid button only appears once there are posts, so a fresh-store sim UITest can't reach it).
+
+## 2026-06-22 — Clips share-a-clip (prompt 87, follow-up #1b)
+
+**Decision.** A ⋯ menu **"Share clip"** (video clips only) exports the centered clip's **raw** video to a
+temp `.mov` (`ClipShareService`, `PHImageManager.requestAVAsset` → `AVAssetExportSession` **passthrough**,
+the StudioComposer idiom) and presents the shared `ShareSheet` (`UIActivityViewController` wrapper). RAW
+(no re-encode, original quality) — the HR-**overlay-burned** share is intentionally NOT duplicated here:
+that's ⋯ → **Edit this clip** → the Studio export (which already burns the HR tile + name). So "Share clip"
+is the quick "send this clip" path; "Edit this clip" is the rich one. A `ProgressView` shows while
+exporting; export off the main actor; failure (sim / missing / iCloud-fail) silently skips the sheet.
+**Owed on-device:** the export needs a real `PHAsset` — the sim returns nil (the wiring/menu is testable,
+the export is device-only).
+
+**Opus review fixes.** (1) **Temp cleanup:** the exported `.mov` is deleted via `ShareSheet`'s
+`onComplete` once the sheet finishes (shared or cancelled), so shares don't accumulate in `tmp`. (2)
+**Passthrough export-FAILURE fallback:** passthrough can *construct* a session yet *throw* at export for
+sources that can't remux into a `.mov` (some HEVC/HDR / multi-track) — so on failure it now retries a
+HighestQuality **re-encode** to `.mp4` instead of silently giving up. (3) **Failure feedback:** a nil
+export shows a "Couldn't prepare this clip" alert (was a silently-vanishing spinner). Accepted: the
+iCloud-download path has no cancel/timeout (the spinner can hang on a slow network for an evicted clip) —
+a follow-up; and `ClipShareService` re-uses the `requestAVAsset` + export idiom by copy (StudioComposer's
+is private + cached), a small, contained duplication.

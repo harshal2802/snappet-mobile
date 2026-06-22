@@ -524,7 +524,9 @@ lifecycle); single-active is tap-driven (`PlayingClipRef`, last-tapped-wins), **
 dropped-R12 black-box lesson). The inline render is the R12 risk → **must be device-verified**. **Explore
 grid (prompt 86):** a nav-bar `square.grid.3x3` button opens an IG-style grid (`ClipsGridView`) of all post
 covers; tapping one scrolls the feed to that post — derive-on-read over the same composer, no new store.
-Still-open follow-ups: share-a-clip + reactions (the rest of #1), and the optional WYSIWYG feed-HR.
+**Share-a-clip (prompt 87):** a ⋯ "Share clip" exports the centered clip's raw video
+(`ClipShareService`, passthrough) to the system `ShareSheet`; the overlay-burned share stays ⋯ → Edit →
+Studio. Still-open follow-ups: reactions (the rest of #1), the optional WYSIWYG feed-HR, and autoplay.
 
 ## License
 
