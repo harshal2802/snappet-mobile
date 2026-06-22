@@ -7310,3 +7310,18 @@ either/or swap), and `ClipMediaSurface`'s loading state is **transparent** (`Col
 `ProgressView`) so the still shows through while the player loads — no spinner/black flash on start, and the
 still reappears instantly on stop. Build + `ClipsFeedUITests` green; built + installed on MrRobot.
 
+**On-device scroll-feel follow-up — match the Instagram feed (prompt 90/92, MrRobot 2026-06-22).** Even
+after the above, scrolling "felt weird". Studying an IG-feed screen recording (frames via ffmpeg): IG feed
+media is a **consistent ~4:5** tile (header above + action bar/caption below stay visible — NOT a
+full-screen 9:16), so the feed never reflows. My earlier "match the full video aspect" made tiles full-9:16
+**and** re-grew them as each aspect resolved async (with a 0.2s animation) → reflow-during-scroll = the weird
+feel. Reverted to the IG model: (1) clamp back to **4:5 [0.8 … 1.91]** with `defaultAspect == minAspect`
+(0.8) so a portrait clip's tile is 4:5 from first render and **never resizes** when its aspect resolves
+(the inline `.resizeAspectFill` crops the 9:16 to 4:5 → no bars, consistent height — exactly IG); (2)
+**removed the `.animation(value: carouselHeight)`** (no animated grow); (3) **measure the feed width ONCE**
+at the feed level (a `GeometryReader` wrapping the `ScrollView`, passed down as `contentWidth`) instead of a
+per-card `PreferenceKey` that popped the height on first layout. Trade-off vs the previous build: a 9:16
+clip is now **cropped** to 4:5 (top/bottom), the IG convention — if the full clip is wanted back, widen
+`minAspect` toward 0.5625 and keep `.resizeAspectFill` (taller tiles, no crop). Composer clamp tests
+reverted; `ClipFeedComposerTests` + `ClipsFeedUITests` + build green; built + installed on MrRobot.
+

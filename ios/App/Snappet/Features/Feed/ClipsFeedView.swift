@@ -68,6 +68,9 @@ struct ClipsFeedView: View {
                 if posts.isEmpty {
                     emptyState
                 } else {
+                  // Measure the feed width ONCE here (stable) so each card's tile height is correct from the
+                  // first render — no per-card width measurement that pops the height during scroll (prompt 92).
+                  GeometryReader { feedGeo in
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 18) {
@@ -75,7 +78,8 @@ struct ClipsFeedView: View {
                                     ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
                                                  allMedia: allMedia, playingClip: $playingClip,
                                                  reactions: reactions, hrTile: sessionHRTile[post.sessionID],
-                                                 autoplayActive: autoplayActive, isScrolling: isScrolling)
+                                                 autoplayActive: autoplayActive, isScrolling: isScrolling,
+                                                 contentWidth: feedGeo.size.width)
                                         .id(post.id)
                                 }
                             }
@@ -103,6 +107,7 @@ struct ClipsFeedView: View {
                             }
                         }
                     }
+                  }
                 }
             }
             .background(SnappetColor.paper)
@@ -245,13 +250,14 @@ private struct ClipPostCard: View {
     let autoplayActive: Bool
     /// The feed is actively scrolling — autoplay waits for it to settle before starting (no mid-scroll churn).
     let isScrolling: Bool
+    /// The feed's content width (measured once at the feed level) — drives the adaptive tile height, so it's
+    /// correct from the first render and never pops during scroll.
+    let contentWidth: CGFloat
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
-    /// Measured full-bleed card width → drives the adaptive carousel height (prompt 92).
-    @State private var cardWidth: CGFloat = 0
     @State private var studio: StudioPresentation?
     /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
     @State private var isOnScreen = false
@@ -273,7 +279,7 @@ private struct ClipPostCard: View {
     /// Adaptive tile height (prompt 92): the full-bleed card width ÷ the post's clamped aspect, so the
     /// media fills the tile with no letterbox/pillarbox bars. Falls back to a sensible width until measured.
     private var carouselHeight: CGFloat {
-        let w = cardWidth > 0 ? cardWidth : 393
+        let w = contentWidth > 0 ? contentWidth : 393
         return (w / CGFloat(post.aspect)).rounded()
     }
 
@@ -437,13 +443,6 @@ private struct ClipPostCard: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: carouselHeight)
-            // Measure the full-bleed card width so the height tracks the post's aspect (prompt 92). The
-            // width is set by the parent regardless of the frame height we set → non-circular.
-            .background(GeometryReader { g in
-                Color.clear.preference(key: ClipCardWidthKey.self, value: g.size.width)
-            })
-            .onPreferenceChange(ClipCardWidthKey.self) { cardWidth = $0 }
-            .animation(.easeInOut(duration: 0.2), value: carouselHeight)
             // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
             // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
@@ -539,11 +538,6 @@ private struct ClipPostCard: View {
     }
 }
 
-/// Measures the full-bleed Clips card width so the carousel height can track the post's aspect (prompt 92).
-private struct ClipCardWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
 
 // MARK: - One carousel poster — still frame + name overlay + HR scorebug
 
