@@ -7121,3 +7121,42 @@ on scroll so audio can't blare; leaves muted autoplay for the visibility transfe
 new page muted) instead of stopping. The cross-card visibility race is already handled by the
 `postID`-matched guard (one full-width card exceeds 0.7 at a time); the fullscreen viewer + Recap are
 untouched (default `muted: false`, `onUnmute: {}`).
+
+## 2026-06-22 — Clips HR overlay tracks the video (prompt 91) — one slicer, the prompt-29 regression undone
+
+**Symptom (user-reported).** On the Clips feed the HR scorebug/curve "is not matching the video": the live
+BPM + chart dot freeze (often at the very start, curve blank) or sit at a near-constant value, feeling
+disconnected from the footage.
+
+**Root cause (deep review + adversarial verify — NOT the obvious suspect).** `offsetSec`/`durationSec` are
+populated correctly on every capture path (`creationDate − startedAt`, `asset.duration`) and `HRPoint.t`
+shares the same session origin, so the window *alignment* was sound. The bug: `ClipHROverlay.make` sliced
+HR with a **second, naive** slicer — `FeedMedia.clipHRWindow`'s strict `t≥offset && t≤end` filter + a crude
+±8s-of-`offset` fallback — instead of the project's ONE hardened `HRWindowSlicer` the Studio/export already
+use. That re-introduced the exact strict-window regression prompt-29 fixed. Concretely: (1) on sparse/real
+band data the strict window misses and the ±8s fallback can return a **single** sample → `maxT = 0` →
+`ClipHROverlay.fraction` hits its `maxT > 0` guard and returns `0` → the dot **freezes at the left edge**
+and the curve (needs ≥2 points) **doesn't draw**; (2) even with data, `maxT` (last in-window sample's
+clip-local t) `< durationSec`, so the dot **pins at the chart's right edge** for the tail of every loop.
+
+**Fix.** `FeedMedia.clipHRWindow` now delegates to `HRWindowSlicer.slice(hrSeries, start: offsetSec,
+span: durationSec ?? photoWindowSec)`, and `FeedMedia.clipHR` (the still poster's peak/avg chip) computes
+over that SAME sliced window. The slicer rebases to `[0, span]`, **brackets the window with interpolated
+endpoints** (so a window that spans the data reaches `t == span == durationSec == the AVPlayerLooper loop
+boundary`), **guarantees ≥2 points** (no single-sample freeze, no blank curve), and stays honestly empty
+only when the window is `> ±90s` (≈ the media-discovery pad) outside coverage. `ClipHROverlay.fraction`
+itself is unchanged — it already divides folded video time by the window's `maxT`, which now reaches the
+window edge, so the dot tracks 1:1. Net: the feed overlay, the export burn-in, and the playing video now
+share one slicer (WYSIWYG) and can't drift.
+
+**Behavior changes baked into tests.** Within coverage the slicer **interpolates instead of blanking**
+(the old "no sample within ±8s → empty" cases now draw an interpolated line); a single overlapping sample
+→ a ≥2-point flat line spanning the clip; out-of-coverage stays empty only beyond ±90s (an edge clip
+within the pad holds a flat last-known line). `FeedMediaTests` (5 cases) + `ClipHROverlayTests` (+1
+regression: single-sample no longer freezes) updated to the hardened-slicer contract; full `SnappetTests`
+green, 0 warnings.
+
+**Owed on-device.** The live sweep is device-verifiable only (the sim has no Photos/real clips): play a
+real clip inline + fullscreen and confirm the BPM/curve/dot move with the video (no frozen overlay), and
+that the poster chip matches.
+

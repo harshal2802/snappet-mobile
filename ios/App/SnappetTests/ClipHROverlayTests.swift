@@ -67,6 +67,21 @@ final class ClipHROverlayTests: XCTestCase {
         XCTAssertEqual(ClipHROverlay.fraction(videoTime: .infinity, clip: c, payload: p), 0, accuracy: 0.0001)
     }
 
+    /// Regression (prompt 91): a window overlapping just ONE session sample used to collapse to a single
+    /// clip-local-`t=0` point → `maxT = 0` → `fraction` returned 0 → the dot **froze at the start** and
+    /// the curve (needs ≥2 points) vanished. Routed through `HRWindowSlicer`, a single overlapping sample
+    /// now yields a ≥2-point flat line spanning `[0, span]` (maxT == span), so the overlay draws and the
+    /// playhead sweeps the whole clip in step with the video.
+    func testSingleSampleWindowStillTracksTheVideo() throws {
+        let series = [HRPoint(t: 12, bpm: 140)]              // one sample, inside the [10,16] window
+        let c = clip(offset: 10, dur: 6)
+        let p = try XCTUnwrap(ClipHROverlay.make(clip: c, hrSeries: series, maxHR: 190, restHR: nil))
+        XCTAssertGreaterThanOrEqual(p.values.samples.count, 2)                          // no single-point collapse
+        XCTAssertEqual(try XCTUnwrap(p.values.samples.map(\.t).max()), 6, accuracy: 0.0001)  // maxT == span (not 0)
+        XCTAssertEqual(ClipHROverlay.fraction(videoTime: 0, clip: c, payload: p), 0, accuracy: 0.0001)
+        XCTAssertEqual(ClipHROverlay.fraction(videoTime: 3, clip: c, payload: p), 0.5, accuracy: 0.0001)  // sweeps
+    }
+
     /// Dense window (samples reach the end → maxT == dur): the clean modulo/loop case.
     func testFractionLoopsCleanlyWhenSamplesReachWindowEnd() throws {
         let series = (10...16).map { HRPoint(t: Double($0), bpm: 130) }   // clip [10,16] → local 0…6, maxT == dur == 6
