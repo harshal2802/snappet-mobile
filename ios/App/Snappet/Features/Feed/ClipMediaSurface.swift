@@ -47,6 +47,11 @@ struct ClipMediaSurface: View {
     @State private var image: UIImage?
     @State private var state: LoadState = .loading
     @State private var ticker = Timer.publish(every: 0.12, on: .main, in: .common).autoconnect()
+    /// Mirrors `AVPlayerLayer.isReadyForDisplay`: false until the first frame is decoded. The video layer
+    /// stays transparent (so the caller's poster shows through) until this flips, then crossfades in —
+    /// Apple's recommended poster→video handoff (WWDC 2019 §503), which removes the ~1-frame carousel-swipe
+    /// flash of an empty just-mounted layer. Deep-research (2026-06-22) ranked this the #1 flicker fix.
+    @State private var layerReady = false
 
     var body: some View {
         content
@@ -87,7 +92,12 @@ struct ClipMediaSurface: View {
             Color.clear
         } else if clip.kind == "video", let player {
             StudioPlayerLayerView(player: player, backgroundColor: background,
-                                  videoGravity: fill ? .resizeAspectFill : .resizeAspect)
+                                  videoGravity: fill ? .resizeAspectFill : .resizeAspect,
+                                  onReadyForDisplayChange: { layerReady = $0 })
+                // Hold the poster until the first frame is decoded, then dissolve the video in — no empty-layer
+                // flash when a carousel page (or the autoplay clip) takes over. frame-0 ≈ poster ⇒ no ghost.
+                .opacity(layerReady ? 1 : 0)
+                .animation(.easeOut(duration: 0.18), value: layerReady)
                 .accessibilityIdentifier("feed.media.player")
                 .onTapGesture {
                     // Clips feed: tap the playing video → open fullscreen (onSurfaceTap). Otherwise (the
@@ -115,7 +125,7 @@ struct ClipMediaSurface: View {
         .accessibilityIdentifier("feed.media.placeholder")
     }
 
-    private func teardown() { controller?.detach(); player?.pause(); player = nil; looper = nil }
+    private func teardown() { controller?.detach(); player?.pause(); player = nil; looper = nil; layerReady = false }
 
     private func load() async {
         teardown()

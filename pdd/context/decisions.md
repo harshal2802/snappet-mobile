@@ -7412,3 +7412,22 @@ warms the current page immediately but the ±1 neighbours off a **`warmPage`** c
 swipe settles, so the next `AVPlayer` is created off the snap frame. (The earlier video↔poster opacity fix
 stays — outgoing clip pauses in place.) Build + `ClipsFeedUITests` green; built + installed on MrRobot.
 
+
+**On-device, round 4 — mask the carousel takeover with an `isReadyForDisplay`-gated crossfade (prompt
+92, MrRobot 2026-06-22, deep-research-backed).** After rounds 1–3 (blur off, feed cached, warm mount
+deferred) reduced the paired scene-cuts to a single, smaller discontinuity, the residual flicker was the
+**moment the next clip "takes over."** A 5-angle deep-research workflow (98 agents, adversarial 3-vote
+verify) returned ONE high-confidence, Apple-sourced fix and **refuted the big rewrites**: TabView(.page)
+"performs poorly even on M1" → *refuted 0-3*; "TikTok needs UICollectionView not SwiftUI" → *refuted 0-3*;
+"player pooling saves tens of ms" → *refuted 0-3*; network prefetch windows → *not applicable to local
+PHAsset video*. The surviving fix (Apple `AVPlayerLayer.isReadyForDisplay` docs + WWDC 2019 §503): **a layer
+mounted while `isReadyForDisplay == false` presents NO content until it flips true — that ~1-frame gap is the
+flash.** Implementation: `StudioPlayerLayerView` gained a Coordinator that **KVO-observes
+`isReadyForDisplay`** and fires `onReadyForDisplayChange` on the main actor (re-binding on player re-point so a
+recycled layer resets to not-ready); `ClipMediaSurface` holds the video **transparent (`layerReady=false`) so
+the caller's `ClipThumbnail` poster shows through**, then **dissolves the video in over 0.18s** when the first
+frame is ready. frame-0 ≈ poster ⇒ a clean dissolve, not the earlier mid-playback ghost. This is *exactly*
+the "transition animation to mask the flicker" the user asked for, done the Apple-recommended way — and it
+needed **no carousel rewrite** (TabView stays). Deliberately did NOT add `AVPlayer.preroll` yet (kept the
+change focused on the verified #1 lever); it's the next lever if the play-start still hitches at takeover.
+Sim + device builds green; built + installed + launched on MrRobot for user verification.
