@@ -796,7 +796,7 @@ const links = [
   { source: "feed-media-viewer", target: "clips-hr-overlay", type: "uses", label: "live HR playhead (prompt 84)" },
   { source: "clips-feed", target: "studio-editor", type: "cover", label: "Edit this clip / Edit all · N" },
   { source: "clips-feed", target: "studio-editor", type: "uses", label: "WYSIWYG: reads the saved HR tile (prompt 89)" },
-  { source: "clips-feed", target: "clips-media-surface", type: "uses", label: "tap poster → play INLINE (prompt 85)" },
+  { source: "clips-feed", target: "clips-media-surface", type: "uses", label: "tap poster → play INLINE (prompt 85); muted autoplay-on-scroll (prompt 90, opt-in)" },
   { source: "clips-feed", target: "clips-grid", type: "cover", label: "grid button → explore grid (prompt 86)" },
   { source: "clips-feed", target: "clips-share", type: "uses", label: "⋯ Share clip (prompt 87)" },
   { source: "clips-feed", target: "clips-reactions", type: "uses", label: "❤️ favorite (prompt 88)" },

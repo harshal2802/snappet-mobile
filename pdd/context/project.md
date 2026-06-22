@@ -530,8 +530,12 @@ Studio. **Reactions (prompt 88):** a ❤️ favorite per post (`ClipReactionStor
 `@Model`); a heart button in the header toggles it. **WYSIWYG feed-HR (prompt 89):** the poster now
 renders the session's SAVED Studio HR tile (`StudioProject.hrOverlay?.tile` via `@Query`, so a Studio
 edit re-renders the feed) instead of the fixed scorebug, falling back when none/empty — opt-in WYSIWYG
-for the feed (Recap viewer stays the house style). Still-open: a favorites filter, and autoplay-on-scroll
-(#3, the R12-risk one — building next with a strong device-verify caveat).
+for the feed (Recap viewer stays the house style). **Autoplay-on-scroll (prompt 90):** opt-in (default
+OFF, nav-bar toggle), muted, suppressed under Reduce Motion / Low Power — the ≥70%-on-screen card plays
+its clip muted (a per-card `.onScrollVisibilityChange`, NOT the R12 scroll-center coordinator); tap to
+unmute; reuses the proven `ClipMediaSurface`. **The inline render under scroll is THE R12 risk → must be
+device-verified before defaulting ON.** All of the Clips inline-render + follow-up plan (#1 grid/share/
+reactions, #2 WYSIWYG, #3 autoplay) is now built; only a favorites filter remains optional.
 
 ## License
 
