@@ -23,13 +23,24 @@ enum ClipHROverlay {
     /// Build the overlay for `clip` from its owning session's HR context. `restHR` drives the scorebug's
     /// %HRR (dropped when absent, via `HRTile.feedClipScorebug`). The values' window is rebased to clip-local
     /// time, so it lines up with `fraction(videoTime:clip:)` below.
-    static func make(clip: MediaInput, hrSeries: [HRPoint], maxHR: Double, restHR: Double?) -> Payload? {
+    ///
+    /// `tile` overrides the house-style scorebug with the session's **saved Studio tile** (prompt 89,
+    /// WYSIWYG) — its template / metrics / colours, rendered at the feed's own placement. `nil` (the
+    /// default, and what the Recap viewer passes) keeps the fixed `.feedClipScorebug`.
+    static func make(clip: MediaInput, hrSeries: [HRPoint], maxHR: Double, restHR: Double?,
+                     tile: HRTile? = nil) -> Payload? {
         let window = FeedMedia.clipHRWindow(offsetSec: clip.offsetSec, durationSec: clip.durationSec,
                                             hrSeries: hrSeries)
         guard !window.isEmpty else { return nil }
         let values = HROverlayValues(samples: window, durationSec: windowDuration(clip),
                                      maxHR: maxHR, restHR: restHR)
-        return Payload(tile: .feedClipScorebug(restHR: restHR), values: values)
+        // Use the saved Studio tile only if it would actually DRAW something with the feed's data — the
+        // export/editor gate the same way via `resolveTile`. Otherwise fall back to the scorebug, so a
+        // no-data custom tile (e.g. only kcal/HRV enabled with no chart) can't render an empty glass panel.
+        let chosen: HRTile
+        if let tile, values.resolveTile(tile) != nil { chosen = tile }
+        else { chosen = .feedClipScorebug(restHR: restHR) }
+        return Payload(tile: chosen, values: values)
     }
 
     /// The playhead `fraction` a NON-playing surface shows: the clip's at-end reading (the latest in-window

@@ -32,6 +32,11 @@ struct ClipsFeedView: View {
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var kilterSessions: [KilterSession]
     @Query private var kilterLogs: [KilterLogEntry]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
+    /// Studio projects — so the feed poster can render the session's SAVED HR tile (WYSIWYG, prompt 89);
+    /// @Query so editing the HR chart in the Studio re-renders the feed. Sorted newest-edit-first so the
+    /// per-session first-wins pick is deterministic (and is the latest edit) if a session ever has two
+    /// projects (e.g. a backup that carried duplicates).
+    @Query(sort: \StudioProject.updatedAt, order: .reverse) private var studioProjects: [StudioProject]
     /// The feed's single active inline clip — "last tapped wins", so only ONE clip plays across the whole
     /// feed (prompt 85). Tap-driven, NOT scroll-driven (the R12 hero's scroll-center coordinator is what
     /// rendered a black box in the scrolling card).
@@ -55,7 +60,7 @@ struct ClipsFeedView: View {
                                 ForEach(posts) { post in
                                     ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
                                                  allMedia: allMedia, playingClip: $playingClip,
-                                                 reactions: reactions)
+                                                 reactions: reactions, hrTile: sessionHRTile[post.sessionID])
                                         .id(post.id)
                                 }
                             }
@@ -148,6 +153,13 @@ struct ClipsFeedView: View {
                                       exerciseName: { exerciseName[$0] ?? "Exercise" })
     }
 
+    /// sessionID → the session's SAVED Studio HR tile (the WYSIWYG override, prompt 89), present only when
+    /// the user customized it in the Studio; otherwise the poster keeps the house-style `.feedClipScorebug`.
+    private var sessionHRTile: [UUID: HRTile] {
+        Dictionary(studioProjects.compactMap { p in p.hrOverlay?.tile.map { (p.sessionID, $0) } },
+                   uniquingKeysWith: { a, _ in a })
+    }
+
     private func hrContext(for sid: UUID) -> ClipFeedHR {
         if let k = kilterSessions.first(where: { $0.id == sid }) {
             return ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
@@ -182,6 +194,8 @@ private struct ClipPostCard: View {
     @Binding var playingClip: PlayingClipRef?
     /// Favorite reactions (prompt 88) — shared UserDefaults-backed store.
     let reactions: ClipReactionStore
+    /// The session's saved Studio HR tile (WYSIWYG override, prompt 89); nil → the house-style scorebug.
+    let hrTile: HRTile?
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -301,7 +315,7 @@ private struct ClipPostCard: View {
                     // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
                     ClipPosterView(item: item, post: post,
                                    payload: ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
-                                                               maxHR: hr.maxHR, restHR: hr.restHR),
+                                                               maxHR: hr.maxHR, restHR: hr.restHR, tile: hrTile),
                                    isPlaying: playingClip == PlayingClipRef(postID: post.id, page: idx),
                                    onTapToPlay: {
                                        guard item.media.kind == "video" else { return }   // photos stay still

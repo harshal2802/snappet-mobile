@@ -7059,3 +7059,31 @@ truth for the clips themselves — so it honours the *spirit* of "no new persist
 recording. (Alternatives considered: an ephemeral double-tap heart honours the letter but records nothing
 — pointless on your own feed; a SwiftData favorite is a schema change — heavier than warranted.) The
 store logic is unit-tested (`ClipReactionStoreTests`).
+
+## 2026-06-22 — Clips WYSIWYG feed HR (prompt 89, follow-up #2) — opt the feed into the saved Studio tile
+
+**Decision.** The feed poster's HR overlay now renders the **session's saved Studio HR tile**
+(`StudioProject.hrOverlay?.tile`) when the user has customized it — so editing the HR chart in the Studio
+(⋯ → Edit this clip) updates the feed poster — instead of always the fixed `.feedClipScorebug`. This
+reverses the earlier "decoupled house style" stance **for the feed only**, as a deliberate product call
+(the user asked for it; feeds usually keep a stable style, so it's opt-in by design). The Recap fullscreen
+viewer keeps the scorebug (it passes `tile: nil`).
+
+**Mechanism (no new persistence).** `ClipHROverlay.make` gained a `tile: HRTile? = nil` override (nil →
+scorebug). `ClipsFeedView` `@Query`s `[StudioProject]` (so a Studio edit re-renders the feed via SwiftData
+observation) and builds a `sessionHRTile: [UUID: HRTile]` (sessionID → `hrOverlay?.tile`, present only when
+customized), threaded to the poster. **Read-only** — no find-or-create, no side effects; a session with no
+customized tile keeps the fallback. Covered by a `ClipHROverlay.make(tile:)` unit test.
+
+**Scope note.** The tile's **content** is WYSIWYG (template / metrics / colours), but the feed renders it
+at its OWN compact placement (the bottom strip), NOT the project's export-canvas geometry — so a big
+template (e.g. hero) reads compact in the feed. Acceptable for the common scorebug-variant case; a
+geometry-faithful feed tile would be a larger change.
+
+**Opus review fixes.** (1) **Empty-card guard:** the override path bypassed `resolveTile` (which the
+export/editor use to decide a tile "draws nothing"), so a saved tile with only no-data metrics (kcal w/o
+profile, HRV w/o RR) + no chart would render a blank glass panel — `make` now falls back to the scorebug
+when `values.resolveTile(tile) == nil`. (2) **Deterministic pick:** `@Query [StudioProject]` is now sorted
+`updatedAt` desc, so the per-session first-wins choice is stable (and is the latest edit) if a session
+ever has two projects (e.g. a restored backup that carried duplicates) — `StudioProject.sessionID` isn't
+`.unique`. The cramped-big-template look is accepted (the documented placement tradeoff above).
