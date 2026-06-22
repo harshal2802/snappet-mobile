@@ -129,6 +129,8 @@ private struct ClipPostCard: View {
     @Environment(SuiteRouter.self) private var router
     @State private var page = 0
     @State private var studio: StudioPresentation?
+    /// Tapped-clip index → presents the fullscreen paged player at that clip (prompt 83). `nil` = closed.
+    @State private var viewerStart: Int?
 
     private var accent: Color {
         switch post.discipline {
@@ -206,10 +208,22 @@ private struct ClipPostCard: View {
                     ClipPosterView(item: item, post: post, hr: hr)
                         .tag(idx)
                         .accessibilityIdentifier("clips.post.page")
+                        // Tap a still poster → play it fullscreen (prompt 83). The carousel's swipe
+                        // (a drag) and this discrete tap coexist; posters themselves stay stills.
+                        .contentShape(Rectangle())
+                        .onTapGesture { viewerStart = idx }
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: 460)
+            // Reuse the ONE playback surface (Recap's `PagedMediaViewer`) so the single-active-player
+            // discipline lives in one place — presented without Share (out of the Clips slice).
+            .fullScreenCover(item: $viewerStart.asItem) { box in
+                MediaBrowserView.clipsViewer(
+                    clips: post.clips.map(\.media), startIndex: box.value,
+                    hrSeries: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
+                    nameFor: { _ in post.title })
+            }
             .overlay(alignment: .topTrailing) {
                 if post.clipCount > 1 {
                     Text("\(min(page, post.clipCount - 1) + 1)/\(post.clipCount)")

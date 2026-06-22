@@ -509,8 +509,11 @@ Xcode — `ClipFeedComposerTests` (7) + the whole `SnappetTests` suite (1437, 0 
 `ClipsFeedUITests` (tab order Home·Clips·Recap·Apps + empty state) green, 0 warnings in the new files,
 and a simulator pass confirming the tab order + `snappet://clips` selecting the tab. **Device-pending:**
 the carousel paging, the HR scorebug + climb/exercise-name overlays, and the three ⋯ actions need real
-Photos assets + a captured HR series (a fresh-store sim shows only the empty state). Reactions / share /
-grid and inline playback stay a deliberate follow-up.
+Photos assets + a captured HR series (a fresh-store sim shows only the empty state). **Tap-to-play
+(prompt 83):** tapping a poster now opens Recap's fullscreen `PagedMediaViewer` at that clip (real
+AVPlayer playback, same HR overlay, presented without Share) — the viewer was decoupled from `FeedCard`
+(optional `card` + explicit `restHR`) so Recap is unchanged; the tap→play path itself is device-owed.
+Reactions / share / grid and the optional WYSIWYG feed-HR stay a deliberate follow-up.
 
 ## License
 

@@ -6915,3 +6915,26 @@ follow-up:** if the feed should mirror per-clip overlay edits (WYSIWYG), have `C
 the session's `StudioProject` and render its saved `hrOverlay` tile instead of the fixed scorebug, and
 observe project changes so it re-renders — a deliberate product call, since feeds usually show a stable
 house style rather than each user's per-clip tweaks. Both follow-ups are out of the prompt-82 slice.
+
+## 2026-06-21 — Clips feed: tap-to-play (prompt 83, the #1 follow-up) — reuse the viewer, don't rebuild
+
+**Decision.** Tapping a Clips poster now opens the **existing** Recap fullscreen player
+(`MediaBrowserView` → `PagedMediaViewer`) at that clip — real on-device AVPlayer playback under the
+same HR scorebug + name overlay. Posters stay stills; the single-active-player discipline stays in
+**one** place (we reuse the viewer rather than building a second player in the feed).
+
+**Decoupling the viewer from `FeedCard` (the reuse-blocker).** `PagedMediaViewer` was Recap-coupled
+only through Share/Animate (`card: FeedCard` + `clipContext` → `ShareComposerView`, and
+`clipContext?.restHR` → the overlay). Rather than fake a `FeedCard`, made `card` **optional**, added an
+explicit `restHR: Double?`, switched the overlay to read `restHR` directly, and gated the Share/Animate
+button + sheet on `card != nil`. The existing `viewer(...)` factory keeps its signature and passes
+`restHR: clipContext?.restHR` — **Recap behaviour and both existing call sites are unchanged**. A new
+`clipsViewer(clips:startIndex:hrSeries:maxHR:restHR:nameFor:)` factory passes `card: nil` (so the
+Clips player has no Share — out of slice) and the session `restHR` (so the fullscreen scorebug matches
+the in-feed poster). `ClipPostCard` presents it via a second `.fullScreenCover(item:)` keyed off a
+tapped-index (`viewerStart`), reusing the existing `CarouselViewerBox`/`Binding<Int?>.asItem` adapter.
+
+**Owed on-device.** Same as prompt 82: a fresh-store sim has no Photos assets to tap, so the tap →
+play → HR-overlay path (and that the tap gesture coexists with the carousel page-swipe) is owed on a
+physical iPhone. The viewer itself is the device-validated Recap one. Follow-up #2 (WYSIWYG feed HR)
+and #3 (reactions/share/grid) remain deferred.
