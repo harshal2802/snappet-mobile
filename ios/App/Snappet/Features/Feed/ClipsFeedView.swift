@@ -535,10 +535,15 @@ private struct ClipPostCard: View {
                 } else if let pc = playingClip, pc.postID == post.id, pc.page != newPage {
                     playingClip = nil
                 }
-                // Move the warm window AFTER the snap settles, so the next neighbour's AVPlayer mounts off
-                // the animation frames (the swipe jerk was this mount landing on the fast-snap frame).
+                // Advance the warm window PROMPTLY (~80ms) so the page you're about to swipe to is already
+                // mounted+decoded BEFORE the next snap. The old 400ms defer was LONGER than the measured
+                // ~250ms swipe cadence, so a fast swipe always reached an un-warmed page and built its
+                // AVQueuePlayer+AVPlayerLooper synchronously ON the snap frame → the ~250ms freeze-then-jump.
+                // 80ms still rides a continuous fling's per-page dwell while the `page == newPage` guard skips
+                // building players for pages you blow straight past. (load() also yields before the build as a
+                // cold-mount safety net.) Warm set stays bounded to ±1 (R12).
                 Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(400))
+                    try? await Task.sleep(for: .milliseconds(80))
                     if page == newPage { warmPage = newPage }   // only if we're still on this page
                 }
             }

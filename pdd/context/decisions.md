@@ -7475,3 +7475,29 @@ secondary lever; the frame-0 poster + `layerReady` gate are the real takeover fi
 be re-added later only if a play-start hitch proves perceptible on device. Process note: the takeover
 smoothness AND these crashes are device-only — sim cannot validate this path; device-burn on MrRobot is
 mandatory. Rebuilt; Clips tab now opens + stays alive on MrRobot (verified pid alive, no new crash log).
+
+**Round 6 — the playing-swipe "flicker" was a ~250ms MAIN-THREAD STALL, not a flash (prompt 96, MrRobot
+2026-06-22).** User: "not smooth when video is playing or live play is on." Frame analysis of a 60fps
+on-device recording proved there is NO discrete flicker frame (no black/poster/white flash anywhere — the
+round-5.x `layerReady` LATCH already removed the loop-seam poster flash). The real defect: at each carousel
+swipe the screen FROZE ~200–317ms then JUMPED to the new clip — the paged-slide animation never rendered.
+(Caveat learned: iOS screen recordings are VFR + emit a ≤50ms frame when static, so a stall reads as REPEATED
+frames, not a PTS gap; measure freeze duration by resampling to CFR 60fps and counting near-identical runs
+that end in a content jump — NOT by PTS gaps.) A 5-agent trace workflow localized it: the incoming page's
+`AVQueuePlayer`+`AVPlayerLooper` was built COLD on the MainActor **on the swipe-snap frame**, because the
+warm-ahead timer was **400ms — longer than the measured ~250ms swipe cadence**, so a fast swipe always reached
+an un-warmed page and the heavy looper build (track/format setup + a 2nd decoder spinning up while the old one
+plays) blocked main across the snap. Both reviewers REJECTED pre-warm-ALL-clips (R12), pause-during-scroll (no
+TabView horizontal scroll-phase signal), the `.simultaneousGesture` (scroll-contention risk), and an off-main
+player pool (R12 black-box) — it's a TIMING bug, not warm-set-size or scroll-system. Shipped (3 low-risk):
+(1) **warm defer 400ms → 80ms** (ClipsFeedView `onChange(of:page)`) so the page you swipe to is pre-built
+BEFORE the snap; the `if page==newPage` guard still skips pages you fling past; ±1 bound kept (R12); (2)
+**`await Task.yield()` before the AVQueuePlayer/AVPlayerLooper build** in `ClipMediaSurface.load()` so even a
+cold mount defers the heavy build one runloop turn and the slide renders (isActive/muted/state read live after
+the hop — no off-center autoplay regression); (3) **off-main force-decode of the frame-0 poster** in
+`AssetPosterLoader.decoded()` (CGContext bake in the nonisolated helper) so round-5's `AVAssetImageGenerator`
+bitmap doesn't decode on the snap commit; kept 3× size (matches the layer for the crossfade). Also folded in
+the round-5.x **latch** (`onReadyForDisplayChange` only ever sets `layerReady=true`; reset only on teardown)
+that killed the loop-seam poster flash. **Measured before/after on the swipe windows: swipe-stall freezes
+10→0, longest 317ms→0ms, time-frozen-while-swiping 15%→0%; the slide now renders frame-by-frame.** Device-only
+(sim has no Photos); built + installed + verified on MrRobot.

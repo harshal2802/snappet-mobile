@@ -93,7 +93,13 @@ struct ClipMediaSurface: View {
         } else if clip.kind == "video", let player {
             StudioPlayerLayerView(player: player, backgroundColor: background,
                                   videoGravity: fill ? .resizeAspectFill : .resizeAspect,
-                                  onReadyForDisplayChange: { layerReady = $0 })
+                                  // LATCH: only ever set true. `isReadyForDisplay` momentarily drops to false at
+                                  // every AVPlayerLooper loop seam (the item is swapped) — honouring that would
+                                  // flash the layer to opacity 0 → the frame-0 poster shows through → a flicker
+                                  // ON EVERY LOOP while playing. Latching true means the reveal still waits for
+                                  // the first frame, but a mid-playback false never hides the live video again.
+                                  // Reset to false only on teardown() (new clip / disappear).
+                                  onReadyForDisplayChange: { ready in if ready { layerReady = true } })
                 // Hold the poster until the first frame is decoded, then dissolve the video in — no empty-layer
                 // flash when a carousel page (or the autoplay clip) takes over. frame-0 ≈ poster ⇒ no ghost.
                 .opacity(layerReady ? 1 : 0)
@@ -157,6 +163,11 @@ struct ClipMediaSurface: View {
                 let dur = (real?.isFinite == true && real! > 0) ? real! : (clip.durationSec ?? 0)
                 controller.attach(single, duration: dur)
             } else {
+                // Yield one runloop turn BEFORE the heavy AVQueuePlayer + AVPlayerLooper build, so a COLD mount
+                // that lands on a carousel swipe-snap doesn't block the paged-slide frame (the ~250ms
+                // freeze-then-jump). `isActive`/`muted`/`state` are read live (@State + the .onChange handlers)
+                // after this hop, so a page that de-centres mid-load still won't autoplay off-screen.
+                await Task.yield()
                 let queue = AVQueuePlayer()
                 queue.isMuted = muted                                            // autoplay starts muted
                 looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop

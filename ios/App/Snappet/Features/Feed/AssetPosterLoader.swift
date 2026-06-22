@@ -90,7 +90,25 @@ enum AssetPosterLoader {
                 else { cont.resume(throwing: error ?? CocoaError(.fileReadCorruptFile)) }
             }
         }
-        return cg.map { UIImage(cgImage: $0) }
+        return cg.map { decoded($0) }   // bake the bitmap off-main so the snap-frame draw costs zero decode
+    }
+
+    /// Force-decodes a CGImage into a baked bitmap OFF the main thread. `UIImage(cgImage:)` is otherwise lazy —
+    /// it decodes its pixels the first time it's DRAWN, which (for the carousel) is on the swipe-snap commit,
+    /// adding decode + upload to the exact frame that's already stalling. Drawing it into a CGContext here (in
+    /// the `nonisolated` helper — CGContext is not MainActor-bound) moves that cost off the snap. Falls back to
+    /// the lazy image if the context can't be created.
+    nonisolated private static func decoded(_ cg: CGImage) -> UIImage {
+        let w = cg.width, h = cg.height
+        guard w > 0, h > 0,
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return UIImage(cgImage: cg) }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let baked = ctx.makeImage() else { return UIImage(cgImage: cg) }
+        return UIImage(cgImage: baked)
     }
 
     /// Boxes the non-Sendable `AVAsset` so it can cross the `requestAVAsset` continuation (mirrors SceneScorer).
