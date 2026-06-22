@@ -513,7 +513,13 @@ Photos assets + a captured HR series (a fresh-store sim shows only the empty sta
 (prompt 83):** tapping a poster now opens Recap's fullscreen `PagedMediaViewer` at that clip (real
 AVPlayer playback, same HR overlay, presented without Share) — the viewer was decoupled from `FeedCard`
 (optional `card` + explicit `restHR`) so Recap is unchanged; the tap→play path itself is device-owed.
-Reactions / share / grid and the optional WYSIWYG feed-HR stay a deliberate follow-up.
+**Inline-render plan (2026-06-22, stacked PRs):** the inline auto-clip hero was dropped in Recap R12
+(black box in the scrolling card) → the plan is *tap-to-play inline* (not autoplay-on-scroll). **Phase 0
+(prompt 84):** `ClipHROverlay` is now the single source of truth mapping a clip → its HR overlay +
+video-playhead `fraction`, and the fullscreen viewer's scorebug goes **live** (BPM + chart dot track the
+video, the editor's behaviour). **Phase 1 (prompt 85, next):** swap the tapped poster for an inline
+player in place (replacing the fullscreen pop-up), live HR riding the same `fraction`. Reactions / share
+/ grid and the optional WYSIWYG feed-HR stay a deliberate follow-up.
 
 ## License
 

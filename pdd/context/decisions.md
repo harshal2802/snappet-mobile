@@ -6938,3 +6938,38 @@ tapped-index (`viewerStart`), reusing the existing `CarouselViewerBox`/`Binding<
 play → HR-overlay path (and that the tap gesture coexists with the carousel page-swipe) is owed on a
 physical iPhone. The viewer itself is the device-validated Recap one. Follow-up #2 (WYSIWYG feed HR)
 and #3 (reactions/share/grid) remain deferred.
+
+## 2026-06-22 — Clips on-device render plan (inline playback + live HR): the prior inline hero was DROPPED
+
+**Context that shapes the plan.** Before designing inline video in the Clips feed, found that an inline
+auto-clip player **already existed in Recap and was removed yesterday** (R12, commit `0783456`):
+`FeedClipPlayer` + `FeedActivePlayerCoordinator` (scroll-center + hysteresis) + `FeedView` scroll
+tracking — dropped because on device **the inline `AVPlayer` rendered a black box in the scrolling card**
+and was redundant with the carousel. That is exactly the *autoplay-on-scroll* architecture. **Decision:
+do NOT resurrect the scroll-autoplay coordinator.** The "redundant" objection doesn't apply to Clips
+(the media IS the post), and the black box was almost certainly the coordinator assigning players to
+*recycled scrolling rows* — the fullscreen viewer uses the same `AVPlayerLayer` and never goes black. So
+the plan is **tap-to-play inline** (one player, on the visible card, on explicit tap = the stable
+scenario that works fullscreen), NOT autoplay. Shipped as a stack of small PRs.
+
+## 2026-06-22 — Clips Phase 0 (prompt 84): one HR/video overlay SSOT + live HR in the fullscreen viewer
+
+**Decision — single source of truth.** `ClipHROverlay` (pure, Foundation-only) is now the ONE place
+mapping a clip → its HR + video overlay: `make(clip:hrSeries:maxHR:restHR:)` builds the clip-window
+`HROverlayValues` + the shared `.feedClipScorebug` tile; `windowDuration(_:)` is the one denominator the
+chart **and** the playhead both measure against (so the live HR dot can't drift from the rendered
+window); `fraction(videoTime:clip:)` is the one definition of "video time → HR playhead position"
+(loop-relative, guarded). The still poster (`ClipPosterView`) and the fullscreen viewer
+(`PagedMediaViewer`) now both call it; the private `ClipOverlay` duplicate is deleted. Unit-tested
+(`ClipHROverlayTests`).
+
+**Live HR in the viewer.** `MediaPage`'s scorebug now tracks the playing video — a `Timer.publish`
+ticker reads `player.currentTime()` while playing and feeds `ClipHROverlay.fraction` into
+`HRTileView(fraction:)` (the `.scorebug` `.bpm`/`.zone` are `live` by default, so the BPM + the
+`PremiumHRCurve` dot sweep with playback — the editor's behaviour). Chose the ticker over
+`addPeriodicTimeObserver` to avoid capturing the struct `View` in a Swift-6 `@Sendable` closure; paused /
+photo / off-center pages no-op via the guard, so a resident page costs nothing. **Owed on-device:** the
+animation only renders with real Photos + a captured HR series; the sim covers build + the pure SSOT.
+
+**Why Phase 0 first.** It delivers "live HR matching the video" cheaply (no feed-architecture risk) to
+validate the feel on device, and lands the SSOT that prompt 85's inline player reuses verbatim.

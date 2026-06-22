@@ -330,25 +330,18 @@ private struct ClipPosterView: View {
         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    // The live HR scorebug — the editor's HRTileView with the feed's `.scorebug` tile, sliced from the
-    // session HR series for this clip's window. Renders only when HR exists for the window.
+    // The HR scorebug — built by the ONE `ClipHROverlay` mapping the poster, the inline player, and the
+    // fullscreen viewer all share. A still poster reads the window aggregate (`fraction = 1.0`); when this
+    // clip plays inline (prompt 85) the same tile is driven by a live `ClipHROverlay.fraction`.
     @ViewBuilder private var hrOverlay: some View {
-        if let values = hrValues {
-            // Reuse the ONE feed scorebug definition (`HRTile.feedClipScorebug`) the Recap viewer + the
-            // export burn share, so the Clips poster can never drift from "preview == burn" (prompt 82).
-            HRTileView(tile: .feedClipScorebug(restHR: hr.restHR), values: values, fraction: 1.0)
+        if let payload = ClipHROverlay.make(clip: item.media, hrSeries: hr.series, maxHR: hr.maxHR, restHR: hr.restHR) {
+            // A still poster shows the at-end reading; when this clip plays inline (prompt 85) the same
+            // tile is driven by a live `ClipHROverlay.fraction`.
+            HRTileView(tile: payload.tile, values: payload.values, fraction: ClipHROverlay.atEndFraction)
                 .frame(maxWidth: .infinity)
                 .frame(height: 96)
                 .allowsHitTesting(false)
                 .accessibilityIdentifier("clips.post.hrTile")
         }
-    }
-
-    private var hrValues: HROverlayValues? {
-        let window = FeedMedia.clipHRWindow(offsetSec: item.media.offsetSec,
-                                            durationSec: item.media.durationSec, hrSeries: hr.series)
-        guard !window.isEmpty else { return nil }
-        let dur = item.media.durationSec ?? FeedMedia.photoWindowSec
-        return HROverlayValues(samples: window, durationSec: max(0.1, dur), maxHR: hr.maxHR, restHR: hr.restHR)
     }
 }
