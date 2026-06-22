@@ -7297,3 +7297,16 @@ photo — the rendered poster is always display-oriented), success-cached; (2) t
 (the fullscreen viewer keeps aspect-fit to show the whole clip). Net: tile matches the video → fills exactly
 → no bars, no crop in steady state. Composer clamp tests updated; built + installed on MrRobot.
 
+**On-device autoplay-flicker follow-up (prompt 90, MrRobot 2026-06-22).** With autoplay ON, scrolling made
+videos start/stop with a flicker: every card crossing the 0.7 visibility threshold mid-scroll swapped
+still→player (load→spinner→video) and the leaving card swapped back — rapid churn on a fling. Two fixes:
+(1) **Settle-gated autoplay** — the feed publishes `isScrolling` (from `onScrollPhaseChange`); a card only
+**starts** muted autoplay when the scroll is **idle** (`onScrollVisibilityChange` gates `start` on
+`!isScrolling`, and an `onChange(of: isScrolling)` starts the on-screen card on settle). A card leaving the
+screen still clears, and the originally-playing clip keeps playing until it scrolls off — so at most one
+start + one stop per scroll gesture, no mid-fling churn. (2) **No swap flash** — `ClipPosterView` now keeps
+the `ClipThumbnail` still as the ALWAYS-present ZStack base with the player overlaid on top (was an
+either/or swap), and `ClipMediaSurface`'s loading state is **transparent** (`Color.clear`, was a
+`ProgressView`) so the still shows through while the player loads — no spinner/black flash on start, and the
+still reappears instantly on stop. Build + `ClipsFeedUITests` green; built + installed on MrRobot.
+

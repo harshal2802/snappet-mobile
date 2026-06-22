@@ -47,6 +47,9 @@ struct ClipsFeedView: View {
     /// Explore-grid sheet (prompt 86) + the post id to scroll the feed to when a grid cover is picked.
     @State private var showGrid = false
     @State private var scrollTarget: String?
+    /// True while the feed is actively scrolling — autoplay only STARTS a clip once this settles, so videos
+    /// don't churn (still↔player flicker) mid-scroll (prompt 90 polish).
+    @State private var isScrolling = false
     /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
     @State private var reactions = ClipReactionStore()
     /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
@@ -72,17 +75,18 @@ struct ClipsFeedView: View {
                                     ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
                                                  allMedia: allMedia, playingClip: $playingClip,
                                                  reactions: reactions, hrTile: sessionHRTile[post.sessionID],
-                                                 autoplayActive: autoplayActive)
+                                                 autoplayActive: autoplayActive, isScrolling: isScrolling)
                                         .id(post.id)
                                 }
                             }
                             .padding(.vertical, 8)
                         }
                         .accessibilityIdentifier("clips.feed")
-                        // Scrolling stops an UNMUTED clip (a tap-to-play) so audio can't blare while you scroll
-                        // (prompt 85). A MUTED autoplay clip is left for the per-card visibility signal
-                        // (prompt 90) to transfer/clear. A feed-level gesture signal — NOT the R12 coordinator.
+                        // Track scroll phase: stop an UNMUTED clip (tap-to-play) so audio can't blare while
+                        // scrolling (prompt 85), and publish `isScrolling` so cards only START muted autoplay
+                        // once the scroll SETTLES (no mid-scroll still↔player churn — prompt 90 polish).
                         .onScrollPhaseChange { _, newPhase, _ in
+                            isScrolling = newPhase != .idle
                             if newPhase != .idle, let pc = playingClip, !pc.muted { playingClip = nil }
                         }
                         // Turning autoplay OFF stops any clip it started (otherwise a muted clip loops on).
@@ -239,6 +243,8 @@ private struct ClipPostCard: View {
     let hrTile: HRTile?
     /// Autoplay is on + allowed (prompt 90) — when this card is on-screen it plays its clip muted.
     let autoplayActive: Bool
+    /// The feed is actively scrolling — autoplay waits for it to settle before starting (no mid-scroll churn).
+    let isScrolling: Bool
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
@@ -280,17 +286,24 @@ private struct ClipPostCard: View {
         // Lazy-backfill the post's first-clip aspect on appearance (prompt 92) so the tile resizes to the
         // media; one-shot per clip (skips when already resolved), cached, persisted to SessionMedia.
         .task(id: post.id) { await backfillAspect() }
-        // Autoplay-on-scroll (prompt 90): when autoplay is allowed and this card is substantially on-screen,
-        // it becomes the single active clip and plays MUTED. A per-card visibility signal, NOT scroll-center
-        // geometry / a coordinator (the R12 black-box mechanism). At 0.7, only one full-width card qualifies.
+        // Autoplay-on-scroll (prompt 90 + polish): when autoplay is allowed and this card is substantially
+        // on-screen, it becomes the single active clip and plays MUTED. A per-card visibility signal, NOT
+        // scroll-center geometry / a coordinator (the R12 black-box mechanism). At 0.7, only one full-width
+        // card qualifies. Playback only STARTS when the scroll is SETTLED (`!isScrolling`) — so cards don't
+        // churn still↔player while you fling past them (the flicker). A card leaving the screen still clears.
         .onScrollVisibilityChange(threshold: 0.7) { visible in
             isOnScreen = visible
             guard autoplayActive else { return }
             if visible {
-                playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
+                if !isScrolling { playingClip = PlayingClipRef(postID: post.id, page: page, muted: true) }
             } else if playingClip?.postID == post.id {
                 playingClip = nil
             }
+        }
+        // When the feed settles, the on-screen card becomes the single active (muted) clip.
+        .onChange(of: isScrolling) { _, scrolling in
+            guard autoplayActive, !scrolling, isOnScreen else { return }
+            playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
         }
         .fullScreenCover(item: $studio) { p in
             StudioEditorView(project: p.project, context: context,
@@ -434,7 +447,7 @@ private struct ClipPostCard: View {
             // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
             // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
-                if autoplayActive, isOnScreen {
+                if autoplayActive, isOnScreen, !isScrolling {
                     playingClip = PlayingClipRef(postID: post.id, page: newPage, muted: true)
                 } else if let pc = playingClip, pc.postID == post.id, pc.page != newPage {
                     playingClip = nil
@@ -557,17 +570,19 @@ private struct ClipPosterView: View {
         // Size the media to the actual carousel page (not a hard-coded size) so it fills full-bleed.
         GeometryReader { geo in
             ZStack(alignment: .bottomLeading) {
-                // The inline player when this is the feed's active video; otherwise the still poster (tap → play).
+                // The still poster is ALWAYS the base (no still↔player swap), so it shows through while the
+                // player loads (the surface's loading state is transparent) and reappears instantly when the
+                // clip stops — eliminating the spinner/black flash on every autoplay start/stop.
+                ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
+                              size: geo.size)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTapToPlay() }
+                // The inline player, overlaid on top of the still when this is the feed's active video.
                 if isPlaying, item.media.kind == "video" {
                     ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
-                                     fraction: $liveFraction, background: .black, muted: muted,
+                                     fraction: $liveFraction, background: .clear, muted: muted,
                                      onUnmute: onToggleMute, onSurfaceTap: onOpenFullscreen, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
-                } else {
-                    ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
-                                  size: geo.size)
-                        .contentShape(Rectangle())
-                        .onTapGesture { onTapToPlay() }
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)

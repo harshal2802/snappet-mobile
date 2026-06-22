@@ -82,7 +82,9 @@ struct ClipMediaSurface: View {
 
     @ViewBuilder private var content: some View {
         if state == .loading {
-            ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Transparent while loading so the caller's still poster (feed) / black backing (fullscreen)
+            // shows through — no spinner flash when an autoplay clip starts (prompt 90 polish).
+            Color.clear
         } else if clip.kind == "video", let player {
             StudioPlayerLayerView(player: player, backgroundColor: background,
                                   videoGravity: fill ? .resizeAspectFill : .resizeAspect)
