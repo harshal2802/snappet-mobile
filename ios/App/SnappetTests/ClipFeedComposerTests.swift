@@ -132,9 +132,16 @@ final class ClipFeedComposerTests: XCTestCase {
 
     // MARK: - Adaptive tile aspect (prompt 92)
 
-    func testPostAspectClampsPortraitToFourFifths() {
-        // A 9:16 portrait clip (0.5625) clamps UP to the 4:5 (0.8) tallest-tile bound.
+    func testPostAspectKeepsNineBySixteenPortrait() {
+        // A standard 9:16 phone-portrait clip (0.5625) is within range → used AS-IS (no 4:5 floor), so the
+        // tile matches the video and shows no side bars.
         XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: 9.0 / 16.0)]),
+                       9.0 / 16.0, accuracy: 0.0001)
+    }
+
+    func testPostAspectClampsExtremePortraitToMin() {
+        // Only an EXTREME-tall clip (2.5:1, 0.4) clamps up to the minAspect (0.5) tallest-tile bound.
+        XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: 0.4)]),
                        ClipFeedComposer.minAspect, accuracy: 0.0001)
     }
 
@@ -162,13 +169,14 @@ final class ClipFeedComposerTests: XCTestCase {
         XCTAssertEqual(ClipFeedComposer.postAspect(clips), 1.2, accuracy: 0.0001)
     }
 
-    func testComposedPostCarriesClampedAspect() {
-        // End-to-end through posts(): the post's aspect is the first clip's, clamped (portrait → 0.8).
+    func testComposedPostCarriesResolvedAspect() {
+        // End-to-end through posts(): a 9:16 clip's true aspect is carried through un-clamped (within range)
+        // so the tile matches the video.
         let s = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "S", startedAt: start, angle: 40)
         let bundle = ClipFeedComposer.SessionBundle(meta: s, clips: [video(10, climb: "c", aspect: 9.0 / 16.0)])
         let posts = ClipFeedComposer.posts(
             sessions: [bundle],
             climbMeta: ["c": .init(name: "C", gradeLabel: "6a", angle: 40)], exerciseName: { _ in "?" })
-        XCTAssertEqual(posts.first?.aspect ?? 0, ClipFeedComposer.minAspect, accuracy: 0.0001)
+        XCTAssertEqual(posts.first?.aspect ?? 0, 9.0 / 16.0, accuracy: 0.0001)
     }
 }

@@ -35,6 +35,10 @@ struct ClipMediaSurface: View {
     var controller: ClipPlaybackController? = nil
     /// Overrides the default tap (play/pause): the Clips feed passes this to open fullscreen on a tap.
     var onSurfaceTap: (() -> Void)? = nil
+    /// Fill the surface (aspect-FILL, crop) rather than aspect-fit (letterbox). The Clips feed tile passes
+    /// `true` so a clip fills its aspect-matched tile with NO black bars (prompt 92 device fix); the
+    /// fullscreen viewer keeps the default `false` so the whole clip is visible.
+    var fill: Bool = false
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
@@ -80,7 +84,8 @@ struct ClipMediaSurface: View {
         if state == .loading {
             ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if clip.kind == "video", let player {
-            StudioPlayerLayerView(player: player, backgroundColor: background)
+            StudioPlayerLayerView(player: player, backgroundColor: background,
+                                  videoGravity: fill ? .resizeAspectFill : .resizeAspect)
                 .accessibilityIdentifier("feed.media.player")
                 .onTapGesture {
                     // Clips feed: tap the playing video → open fullscreen (onSurfaceTap). Otherwise (the

@@ -7284,3 +7284,16 @@ an iCloud-only clip isn't re-read on every scroll-back. (The aspect fix logicall
 applied in the prompt-94 PR to keep the stacked branches intact.) All sim-green after: build + full
 `SnappetTests` + `ClipsFeedUITests`, 0 warnings.
 
+**On-device sizing follow-up (prompt 92, MrRobot 2026-06-22).** The first device build STILL pillarboxed a
+portrait clip — two compounding causes: (a) the IG-style clamp floored the aspect at **0.8 (4:5)**, so a 9:16
+video (0.5625) got a 4:5 tile → aspect-fit left side bars; and (b) `ClipAspectResolver`'s `requestAVAsset` +
+`loadTracks` path returned a **track-less asset on-device** → a nil aspect → the feed used the default 0.8.
+Fixes: (1) `ClipAspectResolver` now reads the **oriented poster-frame size** via
+`PHImageManager.requestImage(.aspectFit, .highQualityFormat)` (a single callback, correct for video AND
+photo — the rendered poster is always display-oriented), success-cached; (2) the clamp widened to
+**[0.5 … 1.91]** so a 9:16 portrait video keeps its true (tall) aspect and the tile matches it; (3)
+`StudioPlayerLayerView` gained a `videoGravity` param and the Clips inline player passes `.resizeAspectFill`
+(via a `fill` flag on `ClipMediaSurface`) so a clip **fills its aspect-matched tile with no black bars**
+(the fullscreen viewer keeps aspect-fit to show the whole clip). Net: tile matches the video → fills exactly
+→ no bars, no crop in steady state. Composer clamp tests updated; built + installed on MrRobot.
+

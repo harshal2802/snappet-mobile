@@ -561,7 +561,7 @@ private struct ClipPosterView: View {
                 if isPlaying, item.media.kind == "video" {
                     ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
                                      fraction: $liveFraction, background: .black, muted: muted,
-                                     onUnmute: onToggleMute, onSurfaceTap: onOpenFullscreen)
+                                     onUnmute: onToggleMute, onSurfaceTap: onOpenFullscreen, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,

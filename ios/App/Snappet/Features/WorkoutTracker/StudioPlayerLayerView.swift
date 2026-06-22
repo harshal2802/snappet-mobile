@@ -15,11 +15,15 @@ struct StudioPlayerLayerView: UIViewRepresentable {
     /// The backing colour shown in the aspect-fit letterbox. `.clear` (default) lets the studio canvas
     /// show through; the feed viewer passes `.black` for a full-bleed story look.
     var backgroundColor: UIColor = .clear
+    /// How the video fills its layer. `.resizeAspect` (default) letterboxes — required by the studio +
+    /// fullscreen viewer so the overlay aligns. The Clips feed tile passes `.resizeAspectFill` so a clip
+    /// fills its (aspect-matched) tile with no black bars (prompt 92, device fix).
+    var videoGravity: AVLayerVideoGravity = .resizeAspect
 
     func makeUIView(context: Context) -> PlayerContainerView {
         let view = PlayerContainerView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = .resizeAspect
+        view.playerLayer.videoGravity = videoGravity
         view.backgroundColor = backgroundColor
         return view
     }
@@ -27,6 +31,7 @@ struct StudioPlayerLayerView: UIViewRepresentable {
     func updateUIView(_ uiView: PlayerContainerView, context: Context) {
         if uiView.playerLayer.player !== player { uiView.playerLayer.player = player }
         if uiView.backgroundColor != backgroundColor { uiView.backgroundColor = backgroundColor }
+        if uiView.playerLayer.videoGravity != videoGravity { uiView.playerLayer.videoGravity = videoGravity }
     }
 
     final class PlayerContainerView: UIView {

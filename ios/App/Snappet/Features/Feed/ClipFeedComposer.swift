@@ -72,14 +72,15 @@ enum ClipFeedComposer {
 
     // MARK: Adaptive tile aspect (prompt 92)
     //
-    // Instagram-style clamp: a portrait tile is no taller than 4:5 and a landscape tile no wider than
-    // 1.91:1, so a clip fills its tile (no black bars) without the feed turning into absurdly tall/wide
-    // cards. A `TabView` carousel shares ONE height across a post's pages, so a post collapses to a single
-    // clamped aspect (the first clip with a known aspect). Pure — unit-tested in `ClipFeedComposerTests`.
+    // Tile the carousel to the clip's real aspect so a portrait video fills the frame with NO black bars.
+    // The clamp only guards against absurd extremes: a tile can be as tall as ~2:1 (covers 9:16 phone
+    // video = 0.5625) and as wide as 1.91:1 (covers 16:9 landscape = 1.78). A `TabView` carousel shares ONE
+    // height across a post's pages, so a post collapses to a single clamped aspect (the first clip with a
+    // known aspect). Pure — unit-tested in `ClipFeedComposerTests`.
 
-    static let minAspect = 0.8     // 4:5 portrait — the tallest tile
-    static let maxAspect = 1.91    // 1.91:1 landscape — the widest tile
-    /// The 4:5 portrait used until a clip's real aspect is backfilled (`SessionMedia.aspectRatio` nil).
+    static let minAspect = 0.5     // ~2:1 tall portrait — covers 9:16 phone video (0.5625) un-clamped
+    static let maxAspect = 1.91    // 1.91:1 landscape — covers 16:9 (1.78) un-clamped
+    /// The neutral 4:5 used until a clip's real aspect is backfilled (`SessionMedia.aspectRatio` nil).
     static let defaultAspect = 0.8
 
     /// The one clamped aspect a post's carousel uses: the first clip with a resolved aspect, clamped to
