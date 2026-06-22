@@ -6823,3 +6823,68 @@ touched `FeedClipEligibility`) all remain unchanged. Keystone (F0 ordering core)
 ## 2026-06-21 — Recap feed F3b (R6) media viewer: HRTileView overlay is a STYLE-match, not a data-match
 
 **Decision.** The fullscreen feed viewer's `HRTileView` overlay reuses the editor's `.scorebug` template/colors so it visually matches the R4 export burn ("preview == burn" = *visual parity*) — but it is a STYLE-match, not a numeric data-match: the viewer renders a per-clip *windowed static* tile (`fraction = 1.0` over `clipHRWindow`), whereas the export burns the *whole-reel animated* tile. To keep poster chip and viewer overlay agreeing on sparse series, `clipHRWindow` now mirrors `clipHR`'s ±8s nearest-sample fallback (rebased to clip-local t).
+
+## 2026-06-21 — Clips feed: a separate video-first tab (prompt 82, vertical slice)
+
+**Decision.** The new video/photo feed ships as a SEPARATE bottom tab (`SuiteTab.clips`, "Clips",
+between Home and Recap), not a second view-mode inside Recap. Recap stays the session-summary *card*
+feed; Clips is the media-first feed where the clip IS the post. Rationale: the two have different
+grammars (cards vs full-bleed media), and a distinct tab is more discoverable than a hidden toggle. The
+case is named `.clips` (label "Clips") so it never collides with the existing `.feed` case that backs
+the "Recap" tab — and "Clips" reads more clearly beside "Recap" than a second "Feed" would.
+
+**No new persistence.** The feed is derive-on-read over `SessionMedia` + `KilterSession` /
+`WorkoutSession` / `KilterLogEntry`, composed by the pure `ClipFeedComposer` (reusing `FeedMedia.groups`
+so it can't disagree with the Recap media browser on what groups). The session remains the single
+source of truth; there is no card/clip table.
+
+**Reuse over rebuild.** The poster HR overlay reuses the editor's `HRTileView .scorebug` (the same
+STYLE-match the Recap viewer uses, see 2026-06-21 entry) sliced via `FeedMedia.clipHRWindow`; the ⋯ menu
+reuses `StudioEditorView` scoping (`focusClipMediaID` / `visibleClipMediaIDs`) and the `SuiteRouter`
+open+push session-detail pattern from `CardDetailView`. `StudioEntry` gained a `sessionID`-keyed
+`findOrCreateProject` / `resolveProject` overload (the `WorkoutSession` ones now delegate) so a Kilter
+session's project resolves the same way.
+
+**Deliberate slice simplifications (follow-ups).** (1) Posters are STILL `ClipThumbnail` frames
+(single-active-player discipline) — inline playback / a fullscreen player is deferred. (2) "Edit" opens
+the BASE `StudioEditorView` for both gym and Kilter (not `KilterClipStudio`); the Kilter climb-reassign
+panel is out of slice — the shared session project (clips, climb-name overlays, HR tile) still loads.
+(3) The per-clip "Attempt N" / "Set N" label is derived from order-in-group / `assignedSetIndex`, not
+the editor's true `StudioEditorViewModel.attemptNumber` — close enough to read; exact wiring later.
+(4) Reactions / share / explore-grid are deferred (the Recap `FeedInteractions` can be reused).
+
+**Verification (macOS gate run 2026-06-21).** Authored on Linux, then compiled + run on Xcode (iOS 26.5
+sim). Results: `** TEST BUILD SUCCEEDED **` under Swift 6, **0 errors / 0 warnings** in the three new
+files; `ClipFeedComposerTests` 7/7 green; the whole `SnappetTests` suite **1437 tests, 2 skipped, 0
+failures**; a new `ClipsFeedUITests` (Clips is the 4th tab between Home and Recap + the empty state
+renders) green; and a simulator pass confirming the tab order **Home · Clips · Recap · Apps** and that a
+cold `xcrun simctl openurl booted snappet://clips` selects the Clips tab (the empty state renders on a
+fresh store). All six poster/menu SF Symbols verified present in the iOS 26.5 CoreGlyphs catalog. **Owed
+on-device:** the carousel paging, the HR scorebug + climb/exercise-name overlays, and the three ⋯
+actions only fully render with real Photos assets + a captured HR series — a type-check + a fresh-store
+sim can't exercise them (the composer logic *is* unit-tested, and the HR overlay reuses the
+device-validated editor `HRTileView` / `HRTile.feedClipScorebug` path).
+
+**Fixes folded in at the gate (non-obvious).** (1) The repo's sim is **iPhone 17 Pro (iOS 26.5)**, not
+the prompt's "iPhone 16 Pro" — that destination doesn't exist here (see the UITest flake memo). (2)
+`ClipPosterView` had re-implemented a private `scorebugTile(restHR:)` byte-identical to the existing
+shared `HRTile.feedClipScorebug(restHR:)`; collapsed to the **one** shared definition the Recap viewer +
+the export burn already use, so the Clips poster can't drift from "preview == burn". (3) The new
+`ClipsFeedUITests` is `@MainActor` (the newer Feed-UITest convention) so the Swift-6 `XCUIApplication`
+main-actor diagnostics stay at 0 warnings.
+
+**Fixes from the adversarial review (the device-only paths the sim couldn't exercise).** (4) The feed
+surfaces **photo** posts too, but the Studio is video-only (`StudioEntry.seedClips`/`resolveProject`
+filter `kind == .video`), so a ⋯ "Edit" scoped to a photo id would open an **empty** editor. The ⋯ edit
+actions now gate on videos — "Edit this clip" shows only when the centered clip is a video; "Edit all ·
+N" only when the post has ≥2 videos (N = video count, scoped to video ids); a photo-only post offers just
+"Go to session". This mirrors `SessionDetailView.editClip`'s existing `kind == .video` guard ("photos
+aren't clip-editable") rather than teaching the timeline to seed photos (out of slice). (5) The per-clip
+label now gates "Set N" on `exerciseId != nil` so an **untagged** clip with a stray `setIndex` (the two
+are independent optionals on `SessionMedia`) stays "Clip N" — consistent with its "general" bucket
+(regression test added). (6) The poster sizes to the carousel **geometry** instead of a hard-coded
+400×500 (which overflowed narrow devices / left side-gaps on wide ones), so the media fills the page
+full-bleed everywhere — though the exact poster chrome still wants on-device visual confirmation.
+
+**Android (tracked).** Not ported — iOS-only slice; an Android mirror would follow once the iOS shape
+is device-validated.

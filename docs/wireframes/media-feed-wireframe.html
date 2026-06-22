@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Snappet — Media Feed wireframe</title>
+<style>
+  :root{
+    /* Snappet Pulse — dark mode tokens (from ios/App/Snappet/DesignSystem) */
+    --paper:#121214; --surface:#1E1E22; --surfaceMuted:#26262B;
+    --ink:#F4F3F1; --ink2:#A6A5A1; --hairline:#34343A;
+    --coral:#FF7A6B;            /* brand / Reels accent */
+    --amber:#F59E0B;            /* Kilter accent */
+    --ember:#FF9645;            /* Workout (gym) accent */
+    /* HR tile (HRTileStyle) */
+    --hrPanel:rgba(17,25,40,.72); --hrChip:rgba(28,34,48,.80);
+    --hrBorder:rgba(255,255,255,.14); --hrText:#F2F4F8; --hrCap:rgba(255,255,255,.55);
+    /* HR zone ramp (Shared/HeartRateZone) */
+    --z1:#007AFF; --z2:#30B0C7; --z3:#34C759; --z4:#FF9500; --z5:#FF3B30;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:#0a0a0b;
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+    display:flex;flex-direction:column;align-items:center;
+    padding:26px 14px 60px;gap:18px;
+  }
+  .page-title{font-size:13px;letter-spacing:.3px;color:#7d7d82;text-align:center;max-width:430px;line-height:1.5}
+  .page-title b{color:#cfcfcf;font-weight:600}
+
+  /* ---------- control toolbar ---------- */
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:430px}
+  .tbtn{
+    background:#1b1b1e;border:1px solid #2b2b30;color:#d6d6d6;
+    font-size:12.5px;font-weight:500;padding:8px 13px;border-radius:9px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;transition:.15s;
+  }
+  .tbtn:hover{background:#232327;border-color:#3a3a40}
+  .tbtn.on{background:#3a2e1a;border-color:var(--amber);color:#ffcf7a}
+  .dot-key{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+  /* ---------- device ---------- */
+  .phone{
+    position:relative;width:390px;height:844px;border-radius:54px;
+    background:#000;padding:13px;
+    box-shadow:0 0 0 2px #1c1c1f, 0 30px 70px rgba(0,0,0,.6);
+    flex:0 0 auto;
+  }
+  .screen{
+    position:relative;width:100%;height:100%;border-radius:42px;overflow:hidden;
+    background:var(--paper);display:flex;flex-direction:column;
+  }
+  .notch{position:absolute;top:13px;left:50%;transform:translateX(-50%);
+    width:128px;height:34px;background:#000;border-radius:0 0 20px 20px;z-index:60}
+
+  /* ---------- status bar ---------- */
+  .statusbar{height:50px;flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 26px 6px;font-size:14px;font-weight:600;color:var(--ink);z-index:50}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:13px}
+  .bars{display:inline-block;width:17px;height:11px;
+    background:linear-gradient(90deg,var(--ink) 0 60%,#5a5a5e 60% 100%);border-radius:2px}
+  .batt{display:inline-block;width:23px;height:12px;border:1.4px solid var(--ink);border-radius:3px;position:relative}
+  .batt::after{content:"";position:absolute;inset:1.6px;width:60%;background:var(--ink);border-radius:1px}
+  .batt::before{content:"";position:absolute;right:-3px;top:3px;width:2px;height:5px;background:var(--ink);border-radius:1px}
+
+  /* ---------- top bar ---------- */
+  .topbar{flex:0 0 auto;height:46px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 18px;border-bottom:.5px solid var(--hairline)}
+  .topbar h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.3px}
+  .topbar .ic{display:flex;gap:18px;color:var(--ink);font-size:19px}
+
+  /* ---------- feed scroll ---------- */
+  .feed{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;scrollbar-width:none}
+  .feed::-webkit-scrollbar{display:none}
+  .post{border-bottom:.5px solid var(--hairline);padding-bottom:10px;margin-bottom:4px}
+
+  /* post header */
+  .phead{display:flex;align-items:center;gap:10px;padding:10px 12px}
+  .ava{width:38px;height:38px;border-radius:50%;flex:0 0 auto;position:relative;
+    display:flex;align-items:center;justify-content:center;font-size:17px;color:#10100f}
+  .ava.kil{background:var(--amber);box-shadow:0 0 0 2px var(--paper),0 0 0 3.6px var(--amber)}
+  .ava.gym{background:var(--ember);box-shadow:0 0 0 2px var(--paper),0 0 0 3.6px var(--ember)}
+  .phead .names{flex:1 1 auto;min-width:0}
+  .phead .t1{font-size:14.5px;font-weight:700;line-height:1.2;letter-spacing:-.1px}
+  .phead .t2{font-size:12px;color:var(--ink2);line-height:1.3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .more{flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:var(--ink);font-size:20px;cursor:pointer;background:transparent;border:none}
+  .more:active{background:var(--surfaceMuted)}
+
+  /* media */
+  .media{position:relative;width:100%;aspect-ratio:4/5;background:#0c0e12;overflow:hidden;touch-action:pan-y}
+  .art{position:absolute;inset:0}
+  .scrim-top{position:absolute;left:0;right:0;top:0;height:90px;
+    background:linear-gradient(180deg,rgba(0,0,0,.45),transparent)}
+  .scrim-bot{position:absolute;left:0;right:0;bottom:0;height:230px;
+    background:linear-gradient(0deg,rgba(0,0,0,.62),rgba(0,0,0,.28) 45%,transparent)}
+
+  .idx-pill{position:absolute;top:12px;right:12px;background:rgba(0,0,0,.62);color:#fff;
+    font-size:12px;font-weight:600;padding:3px 9px;border-radius:11px;backdrop-filter:blur(2px)}
+  .mute{position:absolute;top:44px;right:12px;width:28px;height:28px;border-radius:50%;
+    background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+
+  /* climb-name lower third (OverlayItem.climbName) — sits just above the HR panel */
+  .climbchip{position:absolute;left:14px;bottom:158px;max-width:62%;
+    background:rgba(0,0,0,.55);border-radius:10px;padding:7px 11px;backdrop-filter:blur(3px)}
+  .climbchip .cn{font-size:17px;font-weight:800;line-height:1.05;letter-spacing:-.2px;color:#fff}
+  .climbchip .cg{font-size:12.5px;color:#e9e9ea;margin-top:2px;font-weight:600}
+  .climbchip .att{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;
+    color:#10100f;background:#fff;border-radius:6px;padding:2px 7px;letter-spacing:.2px}
+
+  /* HR scorebug (HRTileTemplate.scorebug) */
+  .hr{position:absolute;left:12px;right:12px;bottom:34px;
+    background:var(--hrPanel);border:1px solid var(--hrBorder);border-radius:14px;
+    padding:9px 11px 8px;backdrop-filter:blur(7px);display:flex;flex-direction:column;gap:6px;overflow:hidden}
+  .hr-accent{position:absolute;left:0;top:10px;bottom:10px;width:4px;border-radius:3px;background:var(--z2)}
+  .hr-top{display:flex;align-items:center;gap:10px;padding-left:6px}
+  .hr-hero{display:flex;align-items:baseline;gap:3px;min-width:84px}
+  .hr-num{font-size:38px;font-weight:800;letter-spacing:-1.5px;color:var(--hrText);
+    font-variant-numeric:tabular-nums;line-height:.9}
+  .hr-unit{font-size:12px;font-weight:700;color:var(--hrCap)}
+  .hr-stats{flex:1 1 auto;display:flex;flex-direction:column;gap:1px}
+  .hr-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .hr-cap{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--hrCap)}
+  .hr-val{font-size:14px;font-weight:700;color:var(--hrText);font-variant-numeric:tabular-nums}
+  .hr-val i{font-style:normal;font-size:10px;font-weight:700;color:var(--hrCap);margin-left:2px}
+  .hr-chart{height:40px;width:100%;margin-left:2px}
+  .hr-chart svg{width:100%;height:100%;display:block}
+
+  .dots{position:absolute;left:0;right:0;bottom:13px;display:flex;gap:5px;justify-content:center}
+  .dots span{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.38);transition:.2s}
+  .dots span.a{background:#fff;width:6px}
+
+  .tapzone{position:absolute;top:0;bottom:120px;width:34%;z-index:5}
+  .tz-l{left:0}.tz-r{right:0}
+
+  /* actions */
+  .actions{display:flex;align-items:center;gap:18px;padding:9px 14px 2px;font-size:23px;color:var(--ink)}
+  .actions .sp{flex:1 1 auto}
+  .act{cursor:pointer;background:none;border:none;color:var(--ink);font-size:23px;padding:0;line-height:1;display:flex}
+  .act.liked{color:var(--coral)}
+
+  /* meta */
+  .meta{padding:2px 14px 4px}
+  .react-n{font-size:13px;font-weight:700}
+  .cap{font-size:13.5px;line-height:1.42;margin-top:3px}
+  .cap b{font-weight:700}
+  .cap .muted{color:var(--ink2)}
+  .ses-link{display:inline-flex;align-items:center;gap:5px;margin-top:7px;
+    font-size:12.5px;font-weight:600;color:var(--amber);cursor:pointer}
+  .stamp{font-size:11px;color:var(--ink2);margin-top:7px;letter-spacing:.2px;text-transform:uppercase}
+
+  /* gym peek post media */
+  .gymwrap .hr-accent{background:var(--z4)}
+
+  /* ---------- tab bar ---------- */
+  .tabbar{flex:0 0 auto;height:64px;display:flex;border-top:.5px solid var(--hairline);background:rgba(18,18,20,.92)}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:#6c6c70;font-size:21px;cursor:pointer}
+  .tab span{font-size:10px;font-weight:600;letter-spacing:.2px}
+  .tab.active{color:var(--coral)}
+  .tab.newtab.active{color:var(--coral)}
+  .tab .newbadge{position:absolute;margin-top:-30px;margin-left:24px;width:7px;height:7px;border-radius:50%;background:var(--amber)}
+  .homebar{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:130px;height:5px;border-radius:3px;background:#5a5a5e;z-index:55}
+
+  /* ---------- action sheet (the ⋯ menu) ---------- */
+  .sheet-scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:80;display:none;align-items:flex-end}
+  .sheet-scrim.show{display:flex}
+  .sheet{width:100%;padding:8px 8px 10px;transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+  .sheet-scrim.show .sheet{transform:translateY(0)}
+  .sheet-grp{background:#2b2b30;border-radius:15px;overflow:hidden;margin-bottom:8px}
+  .sheet-row{display:flex;align-items:center;gap:13px;padding:14px 16px;border-bottom:.5px solid rgba(255,255,255,.07);cursor:pointer}
+  .sheet-row:last-child{border-bottom:none}
+  .sheet-row:active{background:#34343a}
+  .sheet-ic{width:26px;text-align:center;font-size:19px;color:var(--ink)}
+  .sheet-tx .a{font-size:15.5px;font-weight:600;color:var(--ink)}
+  .sheet-tx .b{font-size:12px;color:var(--ink2);margin-top:1px}
+  .sheet-cancel{background:#2b2b30;border-radius:15px;text-align:center;padding:15px;font-size:16px;font-weight:700;color:var(--ink);cursor:pointer}
+  .sheet-hd{text-align:center;font-size:11.5px;color:var(--ink2);padding:8px 0 10px;text-transform:uppercase;letter-spacing:.6px}
+
+  /* ---------- spec annotations ---------- */
+  .anno{position:absolute;inset:0;z-index:70;pointer-events:none;display:none}
+  .anno.show{display:block}
+  .ring{position:absolute;border-radius:14px}
+  .ring.y{border:2.5px dashed #ffd23f;box-shadow:0 0 0 3px rgba(255,210,63,.18)}
+  .ring.r{border:2.5px dashed #ff5d52;border-radius:50%;box-shadow:0 0 0 3px rgba(255,93,82,.18)}
+  .ring.c{border:2.5px dashed #36c6e0;box-shadow:0 0 0 3px rgba(54,198,224,.16)}
+  .lbl{position:absolute;font-size:11px;font-weight:700;line-height:1.32;padding:7px 9px;border-radius:9px;max-width:188px}
+  .lbl.y{background:#3a3413;color:#ffe28a;border:1px solid #ffd23f}
+  .lbl.r{background:#3a1715;color:#ffb3ad;border:1px solid #ff5d52}
+  .lbl.c{background:#0e2a30;color:#a9ecf6;border:1px solid #36c6e0}
+  .lbl b{color:#fff;font-weight:800}
+  .lbl .pin{position:absolute;width:8px;height:8px;border-radius:50%}
+
+  .legend{max-width:430px;font-size:12px;color:#8a8a8f;line-height:1.6;text-align:left;
+    background:#161618;border:1px solid #262629;border-radius:12px;padding:14px 16px}
+  .legend h3{margin:0 0 8px;font-size:13px;color:#d6d6d6;font-weight:600}
+  .legend .row{display:flex;gap:9px;margin:5px 0}
+  .legend .k{flex:0 0 auto;margin-top:2px}
+  .legend code{background:#222;color:#cdb98a;padding:1px 5px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+
+  <div class="page-title">
+    <b>Snappet · Media Feed</b> — interactive wireframe of the proposed video/photo feed (new tab between Home and Recap).
+    Swipe the media or tap the side arrows · tap <b>⋯</b> for the options menu · tap the heart to react.
+  </div>
+
+  <div class="toolbar">
+    <button class="tbtn" id="btnSpec"><span class="dot-key" style="background:#ffd23f"></span> Show spec map</button>
+    <button class="tbtn" id="btnMenu">Open ⋯ options menu</button>
+    <button class="tbtn" id="btnReset">Reset</button>
+  </div>
+
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen" id="screen">
+
+      <div class="statusbar">
+        <div>9:41</div>
+        <div class="r"><span class="bars"></span><span style="font-size:12px">5G</span><span class="batt"></span></div>
+      </div>
+
+      <div class="topbar">
+        <h1>Feed</h1>
+        <div class="ic"><span>⌕</span><span>◫</span></div>
+      </div>
+
+      <div class="feed" id="feedScroll">
+
+        <!-- ============ POST 1 — KILTER CLIMB ============ -->
+        <div class="post" id="post1">
+          <div class="phead" id="head1">
+            <div class="ava kil">⛰️</div>
+            <div class="names">
+              <div class="t1" id="p1name">Starfish · 6b/V4</div>
+              <div class="t2" id="p1ses">Tuesday Boulder Session · Kilter 40°</div>
+            </div>
+            <button class="more" id="more1" aria-label="options">⋯</button>
+          </div>
+
+          <div class="media" id="media1">
+            <div class="art" id="art1"></div>
+            <div class="scrim-top"></div>
+            <div class="scrim-bot"></div>
+
+            <div class="tapzone tz-l" id="tzl"></div>
+            <div class="tapzone tz-r" id="tzr"></div>
+
+            <div class="idx-pill" id="idx1">1/4</div>
+            <div class="mute">♪</div>
+
+            <div class="climbchip">
+              <div class="cn">Starfish</div>
+              <div class="cg">6b/V4 · 40°</div>
+              <div class="att" id="att1">Attempt 1</div>
+            </div>
+
+            <div class="hr" id="hr1">
+              <div class="hr-accent" id="hracc1"></div>
+              <div class="hr-top">
+                <div class="hr-hero"><span class="hr-num" id="hrnum1">96</span><span class="hr-unit">BPM</span></div>
+                <div class="hr-stats">
+                  <div class="hr-row"><span class="hr-cap">AVG</span><span class="hr-val" id="avg1">102 <i>BPM</i></span></div>
+                  <div class="hr-row"><span class="hr-cap">RDL</span><span class="hr-val" id="rdl1">0 <i>%</i></span></div>
+                  <div class="hr-row"><span class="hr-cap">KCAL</span><span class="hr-val" id="kcal1">1 <i>KCAL</i></span></div>
+                </div>
+              </div>
+              <div class="hr-chart"><svg viewBox="0 0 300 40" preserveAspectRatio="none" id="chart1"></svg></div>
+            </div>
+
+            <div class="dots" id="dots1"></div>
+          </div>
+
+          <div class="actions">
+            <button class="act" id="like1" aria-label="react">♡</button>
+            <button class="act" aria-label="share">⤴</button>
+            <span class="sp"></span>
+            <button class="act" aria-label="save">⚑</button>
+          </div>
+
+          <div class="meta">
+            <div class="react-n" id="likes1">128 reactions</div>
+            <div class="cap">
+              <b>Starfish</b> &nbsp;<span class="muted">Sent at 40° · 4 attempts filmed · avg 124 bpm · Z2 → Z4</span>
+            </div>
+            <div class="ses-link" id="sl1">↗ View Tuesday Boulder Session</div>
+            <div class="stamp">2 hours ago</div>
+          </div>
+        </div>
+
+        <!-- ============ POST 2 — GYM EXERCISE (peek) ============ -->
+        <div class="post gymwrap" id="post2">
+          <div class="phead">
+            <div class="ava gym">🏋️</div>
+            <div class="names">
+              <div class="t1">Back Squat · Set 3</div>
+              <div class="t2">Leg Day · Push/Pull/Legs</div>
+            </div>
+            <button class="more" id="more2" aria-label="options">⋯</button>
+          </div>
+          <div class="media" style="aspect-ratio:4/5">
+            <div class="art" id="art2"></div>
+            <div class="scrim-top"></div>
+            <div class="scrim-bot"></div>
+            <div class="idx-pill">1/3</div>
+            <div class="climbchip">
+              <div class="cn">Back Squat</div>
+              <div class="cg">100 kg · 5 reps</div>
+              <div class="att">Set 3 of 5</div>
+            </div>
+            <div class="hr" id="hr2">
+              <div class="hr-accent"></div>
+              <div class="hr-top">
+                <div class="hr-hero"><span class="hr-num">148</span><span class="hr-unit">BPM</span></div>
+                <div class="hr-stats">
+                  <div class="hr-row"><span class="hr-cap">AVG</span><span class="hr-val">139 <i>BPM</i></span></div>
+                  <div class="hr-row"><span class="hr-cap">RDL</span><span class="hr-val">24 <i>%</i></span></div>
+                  <div class="hr-row"><span class="hr-cap">KCAL</span><span class="hr-val">3 <i>KCAL</i></span></div>
+                </div>
+              </div>
+              <div class="hr-chart"><svg viewBox="0 0 300 40" preserveAspectRatio="none" id="chart2"></svg></div>
+            </div>
+            <div class="dots"><span class="a"></span><span></span><span></span></div>
+          </div>
+          <div class="actions">
+            <button class="act" aria-label="react">♡</button>
+            <button class="act" aria-label="share">⤴</button>
+            <span class="sp"></span>
+            <button class="act" aria-label="save">⚑</button>
+          </div>
+          <div class="meta">
+            <div class="react-n">86 reactions</div>
+            <div class="cap"><b>Back Squat</b> &nbsp;<span class="muted">Set 3 · 100 kg × 5 · peak 152 bpm</span></div>
+            <div class="ses-link" style="color:var(--ember)">↗ View Leg Day session</div>
+            <div class="stamp">Yesterday</div>
+          </div>
+        </div>
+
+        <div style="height:30px"></div>
+      </div>
+
+      <!-- ===== tab bar ===== -->
+      <div class="tabbar">
+        <div class="tab"><span style="font-size:21px">⌂</span><span>Home</span></div>
+        <div class="tab newtab active"><span class="newbadge"></span><span style="font-size:21px">▦</span><span>Feed</span></div>
+        <div class="tab"><span style="font-size:21px">✦</span><span>Recap</span></div>
+        <div class="tab"><span style="font-size:21px">⊞</span><span>Apps</span></div>
+      </div>
+      <div class="homebar"></div>
+
+      <!-- ===== action sheet ===== -->
+      <div class="sheet-scrim" id="sheetScrim">
+        <div class="sheet">
+          <div class="sheet-grp">
+            <div class="sheet-hd">Starfish · 4 clips in this post</div>
+            <div class="sheet-row" id="opt1">
+              <div class="sheet-ic">✎</div>
+              <div class="sheet-tx"><div class="a">Edit this clip</div><div class="b">Open Studio on attempt <span id="optAtt">1</span></div></div>
+            </div>
+            <div class="sheet-row" id="opt2">
+              <div class="sheet-ic">▭▭</div>
+              <div class="sheet-tx"><div class="a">Edit all clips · 4</div><div class="b">Edit the whole carousel together</div></div>
+            </div>
+            <div class="sheet-row" id="opt3">
+              <div class="sheet-ic">↗</div>
+              <div class="sheet-tx"><div class="a">Go to session</div><div class="b">Tuesday Boulder Session</div></div>
+            </div>
+          </div>
+          <div class="sheet-cancel" id="sheetCancel">Cancel</div>
+        </div>
+      </div>
+
+      <!-- ===== spec annotations ===== -->
+      <div class="anno" id="anno">
+        <div class="ring y" style="left:6px;top:96px;right:6px;height:60px"></div>
+        <div class="lbl y" style="left:96px;top:120px">
+          <span class="pin" style="background:#ffd23f;left:-14px;top:14px"></span>
+          <b>Header</b> — Session + Exercise/Climb name
+        </div>
+
+        <div class="ring r" style="right:14px;top:96px;width:40px;height:40px"></div>
+        <div class="lbl r" style="right:8px;top:150px">
+          <b>Options ⋯</b> — Edit this clip · Edit all · N · Go to session
+        </div>
+
+        <div class="ring c" style="left:14px;right:14px;top:455px;height:122px"></div>
+        <div class="lbl c" style="left:30px;top:592px">
+          <b>Burned-in overlays</b> — HR scorebug + climb-name, synced per-clip from the Studio editor
+        </div>
+
+        <div class="lbl c" style="left:30px;right:30px;bottom:120px;max-width:none;text-align:center">
+          <b>Single source of truth</b> — every clip + HR reads from <span style="font-family:monospace">SessionMedia</span> in the session. The feed only reads.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>How the wireframe maps to your spec</h3>
+    <div class="row"><span class="k dot-key" style="background:#ffd23f"></span><div><b style="color:#e7d8a8">Post header (yellow):</b> shows <b>Session + Exercise/Climb name</b>. One post = one exercise or one climb (clips grouped by <code>FeedMedia.groupKey</code>).</div></div>
+    <div class="row"><span class="k dot-key" style="background:#ff5d52"></span><div><b style="color:#f0b6b1">Options ⋯ (red):</b> 1) Edit this clip → <code>focusClipMediaID</code> · 2) Edit all · N → the climb's clip set · 3) Go to session → <code>KilterSessionDetailView</code>.</div></div>
+    <div class="row"><span class="k dot-key" style="background:#36c6e0"></span><div><b style="color:#a9dbe6">Media:</b> swipeable carousel of the climb's clips; each burns in the live HR scorebug (<code>HRTile.scorebug</code>) + climb-name lower-third, synced from that clip's Studio settings.</div></div>
+    <div class="row"><span class="k dot-key" style="background:#34343a;border:1px solid #555"></span><div><b style="color:#cfcfcf">Single source of truth:</b> the feed is read-only over <code>SessionMedia</code> + <code>WorkoutSession</code>/<code>KilterSession</code> — no new store.</div></div>
+  </div>
+
+<script>
+(function(){
+  // ---- climbing / gym media art (flat stylised "footage"); raw # only, encodeURIComponent handles escaping ----
+  function climbArt(seed){
+    var holds=['#F59E0B','#30B0C7','#FF7A6B','#34C759','#A06CF0'];
+    var h='';
+    for(var i=0;i<11;i++){
+      var x=8+((i*73+seed*37)%84); var y=10+((i*97+seed*53)%80);
+      var c=holds[(i+seed)%holds.length];
+      var op=(0.45+((i*7)%40)/100).toFixed(2);
+      h+='<ellipse cx="'+x+'" cy="'+y+'" rx="2.1" ry="3.1" fill="'+c+'" opacity="'+op+'"/>';
+    }
+    return 'data:image/svg+xml;utf8,'+encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">'+
+      '<defs><radialGradient id="g" cx="42%" cy="34%" r="80%">'+
+      '<stop offset="0%" stop-color="#3a4654"/><stop offset="42%" stop-color="#222a34"/>'+
+      '<stop offset="100%" stop-color="#0c0f14"/></radialGradient></defs>'+
+      '<rect width="100" height="100" fill="url(#g)"/>'+
+      h+
+      '<g opacity="0.92"><path d="M50 30 q-3 8 -2 16 l-7 16 6 2 6-15 5 14 6-2 -6-16 q2-9 -1-15 z" fill="#0a0c10"/>'+
+      '<circle cx="49" cy="26" r="5.4" fill="#0a0c10"/>'+
+      '<path d="M48 36 l-12 -7 2-5 12 7z" fill="#0a0c10"/><path d="M52 36 l12 -10 3 4 -12 10z" fill="#0a0c10"/></g>'+
+      '</svg>');
+  }
+  function gymArt(){
+    return 'data:image/svg+xml;utf8,'+encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">'+
+      '<defs><radialGradient id="g2" cx="50%" cy="40%" r="75%">'+
+      '<stop offset="0%" stop-color="#46382c"/><stop offset="45%" stop-color="#241d16"/>'+
+      '<stop offset="100%" stop-color="#0c0a08"/></radialGradient></defs>'+
+      '<rect width="100" height="100" fill="url(#g2)"/>'+
+      '<g fill="#0a0907"><circle cx="50" cy="30" r="6"/>'+
+      '<path d="M44 38 h12 v10 q0 6 -3 12 h-3 l1-12 -2 0 1 12 h-3 q-4-7 -4-13z"/>'+
+      '<rect x="22" y="40" width="56" height="3.4" rx="1.6"/>'+
+      '<circle cx="24" cy="41.6" r="6.5"/><circle cx="76" cy="41.6" r="6.5"/></g></svg>');
+  }
+
+  // ---- per-clip data for the Kilter carousel (demonstrates per-clip sync) ----
+  var clips=[
+    {att:1, live:96,  avg:102, rdl:0,  kcal:1, zone:'--z2', pts:[18,40,80,86,180,82,260,76,300,72]},
+    {att:2, live:118, avg:121, rdl:0,  kcal:1, zone:'--z2', pts:[12,80,70,72,150,64,230,58,300,50]},
+    {att:3, live:134, avg:128, rdl:8,  kcal:2, zone:'--z3', pts:[10,86,60,70,140,52,220,40,300,30]},
+    {att:4, live:152, avg:141, rdl:22, kcal:2, zone:'--z4', pts:[8,88,50,66,120,44,210,26,300,14]}
+  ];
+  var cur=0;
+  var css=getComputedStyle(document.documentElement);
+
+  function poly(arr){var s='';for(var i=0;i<arr.length;i+=2){s+=(i?' ':'')+arr[i]+','+arr[i+1];}return s;}
+  function drawChart(svgId, arr, zoneVar){
+    var col=css.getPropertyValue(zoneVar).trim();
+    var pts=poly(arr);
+    var last=arr.slice(-2);
+    var area='M'+arr[0]+',40 L'+pts.replace(/ /g,' L')+' L'+arr[arr.length-2]+',40 Z';
+    document.getElementById(svgId).innerHTML=
+      '<path d="'+area+'" fill="'+col+'" opacity="0.16"/>'+
+      '<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'+
+      '<circle cx="'+last[0]+'" cy="'+last[1]+'" r="6" fill="'+col+'" opacity="0.32"/>'+
+      '<circle cx="'+last[0]+'" cy="'+last[1]+'" r="2.6" fill="#fff"/>';
+  }
+
+  function renderDots(n,active){
+    var h='';for(var i=0;i<n;i++)h+='<span class="'+(i===active?'a':'')+'"></span>';return h;
+  }
+
+  function setClip(i){
+    cur=(i+clips.length)%clips.length;
+    var c=clips[cur];
+    document.getElementById('art1').style.background='center/cover url("'+climbArt(cur)+'")';
+    document.getElementById('idx1').textContent=(cur+1)+'/4';
+    document.getElementById('att1').textContent='Attempt '+c.att;
+    document.getElementById('hrnum1').textContent=c.live;
+    document.getElementById('avg1').innerHTML=c.avg+' <i>BPM</i>';
+    document.getElementById('rdl1').innerHTML=c.rdl+' <i>%</i>';
+    document.getElementById('kcal1').innerHTML=c.kcal+' <i>KCAL</i>';
+    document.getElementById('hracc1').style.background=css.getPropertyValue(c.zone);
+    drawChart('chart1', c.pts, c.zone);
+    document.getElementById('dots1').innerHTML=renderDots(4,cur);
+    document.getElementById('optAtt').textContent=c.att;
+  }
+
+  // init
+  setClip(0);
+  document.getElementById('art2').style.background='center/cover url("'+gymArt()+'")';
+  drawChart('chart2',[8,86,60,60,140,40,210,28,300,18],'--z4');
+
+  // carousel controls
+  document.getElementById('tzr').onclick=function(){setClip(cur+1)};
+  document.getElementById('tzl').onclick=function(){setClip(cur-1)};
+  // swipe
+  var sx=0;var m=document.getElementById('media1');
+  m.addEventListener('touchstart',function(e){sx=e.touches[0].clientX},{passive:true});
+  m.addEventListener('touchend',function(e){var dx=e.changedTouches[0].clientX-sx;
+    if(dx<-30)setClip(cur+1); else if(dx>30)setClip(cur-1);},{passive:true});
+
+  // like
+  var liked=false;
+  document.getElementById('like1').onclick=function(){
+    liked=!liked;this.classList.toggle('liked',liked);this.textContent=liked?'♥':'♡';
+    document.getElementById('likes1').textContent=(liked?129:128)+' reactions';
+  };
+
+  // ⋯ menu
+  var scrim=document.getElementById('sheetScrim');
+  function openSheet(){scrim.classList.add('show')}
+  function closeSheet(){scrim.classList.remove('show')}
+  document.getElementById('more1').onclick=openSheet;
+  document.getElementById('more2').onclick=openSheet;
+  document.getElementById('btnMenu').onclick=openSheet;
+  document.getElementById('sheetCancel').onclick=closeSheet;
+  scrim.addEventListener('click',function(e){if(e.target===scrim)closeSheet()});
+  function flash(el,txt){var o=el.querySelector('.b').textContent;el.querySelector('.b').textContent=txt;
+    setTimeout(function(){el.querySelector('.b').textContent=o;closeSheet();},650);}
+  document.getElementById('opt1').onclick=function(){flash(this,'→ Studio · focusClipMediaID = attempt '+clips[cur].att)};
+  document.getElementById('opt2').onclick=function(){flash(this,'→ Studio · visibleClipMediaIDs = 4 clips')};
+  document.getElementById('opt3').onclick=function(){flash(this,'→ KilterSessionDetailView')};
+
+  // spec map
+  var anno=document.getElementById('anno');var bs=document.getElementById('btnSpec');
+  bs.onclick=function(){var on=anno.classList.toggle('show');bs.classList.toggle('on',on);
+    bs.firstChild.nextSibling; bs.innerHTML='<span class="dot-key" style="background:#ffd23f"></span> '+(on?'Hide spec map':'Show spec map');};
+
+  document.getElementById('btnReset').onclick=function(){
+    setClip(0);closeSheet();anno.classList.remove('show');bs.classList.remove('on');
+    bs.innerHTML='<span class="dot-key" style="background:#ffd23f"></span> Show spec map';
+    liked=false;var l=document.getElementById('like1');l.classList.remove('liked');l.textContent='♡';
+    document.getElementById('likes1').textContent='128 reactions';
+    document.getElementById('feedScroll').scrollTop=0;
+  };
+  document.getElementById('sl1').onclick=function(){flash2('Opening Tuesday Boulder Session…')};
+  function flash2(t){var s=document.getElementById('p1ses');var o=s.textContent;s.textContent=t;
+    setTimeout(function(){s.textContent=o},900);}
+})();
+</script>
+</body>
+</html>

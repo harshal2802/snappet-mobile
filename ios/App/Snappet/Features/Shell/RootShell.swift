@@ -13,6 +13,7 @@ struct RootShell: View {
     /// initial tab.
     @State private var router = SuiteRouter(
         initialTab: CommandLine.arguments.contains("apps") ? .apps
+            : CommandLine.arguments.contains("clips") ? .clips
             : (CommandLine.arguments.contains("feed") ? .feed : .home))
 
     var body: some View {
@@ -65,6 +66,8 @@ struct RootShell: View {
     private func handle(_ url: URL) {
         // Recap feed (F1): `snappet://feed` selects the middle tab directly (no module push).
         if url.scheme == "snappet", url.host == "feed" { router.tab = .feed; return }
+        // Clips feed (prompt 82): `snappet://clips` selects the Clips tab directly.
+        if url.scheme == "snappet", url.host == "clips" { router.tab = .clips; return }
         switch SnappetDeepLink.route(for: url) {
         case .kilterClimb(let link):
             router.pendingKilterClimb = link
@@ -166,6 +169,11 @@ struct ShellTabs: View {
             HomeDashboardView()
                 .tag(SuiteTab.home)
                 .tabItem { Label("Home", systemImage: "house.fill") }
+            // The video/photo-first feed (prompt 82) — distinct from Recap (session cards). Case is
+            // `.clips` so it never collides with `.feed` (which backs the "Recap" tab below).
+            ClipsFeedView()
+                .tag(SuiteTab.clips)
+                .tabItem { Label("Clips", systemImage: "play.square.stack") }
             FeedView()
                 .tag(SuiteTab.feed)
                 .tabItem { Label("Recap", systemImage: "sparkles.rectangle.stack") }
