@@ -613,12 +613,14 @@ private struct ClipPosterView: View {
                                      onSurfaceTap: playing ? onOpenFullscreen : nil, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .allowsHitTesting(playing)
-                        // ONLY the playing clip's video layer is visible; warm clips stay opacity 0 so their
-                        // AVPlayerLayer is SKIPPED in compositing (the still poster below is the visible frame).
-                        // This keeps the carousel slide light — no 2-3 live video layers blending per frame —
-                        // and the reveal is INSTANT (no crossfade): the still covers the swap, then the
-                        // already-loaded player plays. (Removing the visible-sibling/crossfade was the jerk.)
-                        .opacity(playing ? 1 : 0)
+                        // Keep the CAROUSEL sibling's video frame visible (opacity 1) so a swipe shows
+                        // continuous video — the outgoing clip just PAUSES in place instead of cutting back
+                        // to its poster, and the incoming clip is already its own frame (the clear backing
+                        // shows the still poster through until the frame decodes, so no black). This removes
+                        // the video↔poster cuts that were the swipe jerk. Hide ONLY a vertically-visible feed
+                        // NEIGHBOUR's current page (idx==page on an off-screen post) so it can't flash a frame
+                        // during a vertical scroll.
+                        .opacity((!playing && isCurrentPage && !postOnScreen) ? 0 : 1)
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)
