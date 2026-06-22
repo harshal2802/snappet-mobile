@@ -28,6 +28,31 @@ struct PlayingClipRef: Equatable {
     func matches(_ postID: String, _ page: Int) -> Bool { self.postID == postID && self.page == page }
 }
 
+/// High-frequency carousel state, lifted OUT of `ClipsFeedView`'s `@State` into `@Observable` (prompt 97).
+///
+/// The fix for the carousel-swipe FREEZE: `playing`/`isScrolling` change on every swipe/scroll. As plain
+/// `@State` on `ClipsFeedView`, each write unconditionally re-ran the WHOLE feed `body` — re-evaluating every
+/// on-screen post card's `TabView(.page)` of AVPlayer-backed pages, which blocked the main thread ~250–600ms
+/// (the slide never rendered → freeze-then-jump). With `@Observable`, SwiftUI tracks reads per-property: views
+/// that DON'T read these (the feed `ScrollView`/`ForEach`, sibling cards) are NOT invalidated; only the leaf
+/// `ClipPosterView` that actually reads `playing` re-renders. Passing the OBJECT down (not a property) never
+/// establishes a read, so the swap is what severs the cascade. `@MainActor` — it's UI state.
+@MainActor @Observable
+final class ClipFeedPlayback {
+    /// The feed's single active inline clip ("last interaction wins"). Driving the audio session from its
+    /// `didSet` keeps the reaction OFF `ClipsFeedView.body` (an `.onChange(of:)` there would re-read it and
+    /// re-introduce the whole-feed invalidation this class exists to remove).
+    var playing: PlayingClipRef? {
+        didSet {
+            guard playing != oldValue else { return }   // match the old .onChange dedup — no redundant setActive churn
+            if let p = playing, !p.muted { ClipAudioSession.activate() }
+            else { ClipAudioSession.deactivate() }
+        }
+    }
+    /// True while the OUTER vertical feed is actively scrolling (a horizontal carousel swipe does NOT set it).
+    var isScrolling = false
+}
+
 struct ClipsFeedView: View {
     @Environment(\.modelContext) private var context
 
@@ -40,16 +65,14 @@ struct ClipsFeedView: View {
     /// per-session first-wins pick is deterministic (and is the latest edit) if a session ever has two
     /// projects (e.g. a backup that carried duplicates).
     @Query(sort: \StudioProject.updatedAt, order: .reverse) private var studioProjects: [StudioProject]
-    /// The feed's single active inline clip — "last tapped wins", so only ONE clip plays across the whole
-    /// feed (prompt 85). Tap-driven, NOT scroll-driven (the R12 hero's scroll-center coordinator is what
-    /// rendered a black box in the scrolling card).
-    @State private var playingClip: PlayingClipRef?
+    /// The feed's single active inline clip + scroll flag — "last tapped wins", so only ONE clip plays across
+    /// the whole feed (prompt 85). Tap-driven, NOT scroll-driven (the R12 hero's scroll-center coordinator is
+    /// what rendered a black box in the scrolling card). Lifted into `@Observable` (prompt 97) so a swipe
+    /// updating `playback.playing` re-renders ONLY the affected leaf page, not the whole feed body.
+    @State private var playback = ClipFeedPlayback()
     /// Explore-grid sheet (prompt 86) + the post id to scroll the feed to when a grid cover is picked.
     @State private var showGrid = false
     @State private var scrollTarget: String?
-    /// True while the feed is actively scrolling — autoplay only STARTS a clip once this settles, so videos
-    /// don't churn (still↔player flicker) mid-scroll (prompt 90 polish).
-    @State private var isScrolling = false
     /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
     @State private var reactions = ClipReactionStore()
     /// Cached derived feed (prompt 92 perf). Composing posts + slicing each clip's HR payload is the heavy
@@ -85,10 +108,10 @@ struct ClipsFeedView: View {
                                 ForEach(posts) { post in
                                     ClipPostCard(post: post,
                                                  hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
-                                                 allMedia: allMedia, playingClip: $playingClip,
+                                                 allMedia: allMedia, playback: playback,
                                                  reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
                                                  payloads: cachedPayloads,
-                                                 autoplayActive: autoplayActive, isScrolling: isScrolling,
+                                                 autoplayActive: autoplayActive,
                                                  contentWidth: feedGeo.size.width)
                                         .id(post.id)
                                 }
@@ -100,11 +123,11 @@ struct ClipsFeedView: View {
                         // scrolling (prompt 85), and publish `isScrolling` so cards only START muted autoplay
                         // once the scroll SETTLES (no mid-scroll still↔player churn — prompt 90 polish).
                         .onScrollPhaseChange { _, newPhase, _ in
-                            isScrolling = newPhase != .idle
-                            if newPhase != .idle, let pc = playingClip, !pc.muted { playingClip = nil }
+                            playback.isScrolling = newPhase != .idle
+                            if newPhase != .idle, let pc = playback.playing, !pc.muted { playback.playing = nil }
                         }
                         // Turning autoplay OFF stops any clip it started (otherwise a muted clip loops on).
-                        .onChange(of: autoplayEnabled) { _, on in if !on { playingClip = nil } }
+                        .onChange(of: autoplayEnabled) { _, on in if !on { playback.playing = nil } }
                         // Jump to a post picked in the explore grid (prompt 86). Deferred a beat so the grid
                         // sheet finishes dismissing first — scrolling mid-transition can no-op against an
                         // off-screen (not-yet-realized) LazyVStack row.
@@ -125,12 +148,8 @@ struct ClipsFeedView: View {
             // never on a playingClip/page write (prompt 92 perf: keeps the heavy composition off the swipe).
             .task { rebuildFeed() }
             .onChange(of: feedKey) { _, _ in rebuildFeed() }
-            // Audio session (prompt 93): an UNMUTED clip plays over the ring/silent switch and takes the
-            // audio focus; releasing it (re-muted / scrolled away → playingClip clears / left the feed)
-            // restores the user's other audio. Driven purely by the single source of truth playingClip.muted.
-            .onChange(of: playingClip) { _, pc in
-                if let pc, !pc.muted { ClipAudioSession.activate() } else { ClipAudioSession.deactivate() }
-            }
+            // Audio session (prompt 93): driven from `ClipFeedPlayback.playing`'s didSet (NOT an `.onChange`
+            // here — that would re-read `playing` and re-introduce the whole-feed invalidation prompt 97 removes).
             .onDisappear { ClipAudioSession.deactivate() }
             .navigationTitle("Clips")
             .navigationBarTitleDisplayMode(.large)
@@ -294,8 +313,11 @@ private struct ClipPostCard: View {
     let post: ClipFeedPost
     let hr: ClipFeedHR
     let allMedia: [SessionMedia]
-    /// The feed's single active inline clip (prompt 85) — this card plays the page that matches it.
-    @Binding var playingClip: PlayingClipRef?
+    /// The feed's single active inline clip + scroll flag (prompt 85/97) — `@Observable`, passed by reference.
+    /// The card's `body` reads ONLY `playback.isScrolling` (which a horizontal carousel swipe never flips), so a
+    /// swipe writing `playback.playing` does NOT re-evaluate this card; only the matching leaf `ClipPosterView`
+    /// (which reads `playback.playing`) re-renders.
+    let playback: ClipFeedPlayback
     /// Favorite reactions (prompt 88) — shared UserDefaults-backed store.
     let reactions: ClipReactionStore
     /// The session's saved Studio HR tile (WYSIWYG override, prompt 89); nil → the house-style scorebug.
@@ -305,8 +327,6 @@ private struct ClipPostCard: View {
     let payloads: [UUID: ClipHROverlay.Payload]
     /// Autoplay is on + allowed (prompt 90) — when this card is on-screen it plays its clip muted.
     let autoplayActive: Bool
-    /// The feed is actively scrolling — autoplay waits for it to settle before starting (no mid-scroll churn).
-    let isScrolling: Bool
     /// The feed's content width (measured once at the feed level) — drives the adaptive tile height, so it's
     /// correct from the first render and never pops during scroll.
     let contentWidth: CGFloat
@@ -365,14 +385,14 @@ private struct ClipPostCard: View {
             // Start the centred clip only once SETTLED. Do NOT stop a playing clip mid-scroll — that froze
             // the video to its poster on every card you flung past (a flicker). The playing clip keeps
             // playing as it translates; the settle handler below switches to the newly-centred one cleanly.
-            if visible, !isScrolling, autoplayActive {
-                playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
+            if visible, !playback.isScrolling, autoplayActive {
+                playback.playing = PlayingClipRef(postID: post.id, page: page, muted: true)
             }
         }
         // When the feed settles, the on-screen card becomes the single active (muted) clip.
-        .onChange(of: isScrolling) { _, scrolling in
+        .onChange(of: playback.isScrolling) { _, scrolling in
             guard autoplayActive, !scrolling, isOnScreen else { return }
-            playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
+            playback.playing = PlayingClipRef(postID: post.id, page: page, muted: true)
         }
         // WARM preload: any-visible posts mount their current page's player (paused) so scrolling onto them
         // plays instantly. A low threshold so the post above/below warms before it's the active one.
@@ -385,7 +405,7 @@ private struct ClipPostCard: View {
         // scrubber + the WYSIWYG HR tile. The viewer takes the audio session while open; re-assert the
         // feed's mute state on dismiss.
         .fullScreenCover(item: $fullscreen, onDismiss: {
-            if let pc = playingClip, !pc.muted { ClipAudioSession.activate() } else { ClipAudioSession.deactivate() }
+            if let pc = playback.playing, !pc.muted { ClipAudioSession.activate() } else { ClipAudioSession.deactivate() }
         }) { f in
             MediaBrowserView.clipsViewer(clips: f.clips, startIndex: f.startIndex,
                                          hrSeries: f.series, maxHR: f.maxHR, restHR: f.restHR,
@@ -473,13 +493,13 @@ private struct ClipPostCard: View {
         .accessibilityIdentifier("clips.post.menu")
     }
 
-    /// Whether carousel page `idx` should have a MOUNTED (warm) player: the on-screen post warms the current
-    /// page ± its carousel neighbours (instant swipe); any near-screen post warms just its current page
-    /// (instant when you scroll onto it). Only the single `playingClip` actually PLAYS — the rest are loaded
-    /// + paused. Bounded (~3 on the centred post + 1 per neighbour) to limit the R12 inline-player risk.
-    private func liveFor(_ idx: Int) -> Bool {
-        if playingClip?.matches(post.id, idx) == true { return true }   // the active clip always mounts
-        guard autoplayActive else { return false }                      // autoplay off → don't warm neighbours
+    /// Whether carousel page `idx` should be WARM-mounted (paused, ready) based ONLY on this card's own @State
+    /// — deliberately does NOT read `playback.playing` (the leaf `ClipPosterView` OR-s in the playing case), so
+    /// the card `body` doesn't depend on `playback.playing` and a swipe doesn't re-evaluate the whole card
+    /// (prompt 97). The on-screen post warms the current page ± its carousel neighbours (instant swipe); any
+    /// near-screen post warms just its current page. Bounded (~3 + 1 per neighbour) to limit the R12 risk.
+    private func warmLive(_ idx: Int) -> Bool {
+        guard autoplayActive else { return false }                      // autoplay off → mount only on tap (leaf)
         if idx == page { return isOnScreen || isNearScreen }            // the current page is warm immediately
         // Warm the ±1 carousel neighbours off the DELAYED `warmPage` so a NEW player isn't created on the
         // swipe's settle frame (which competed with the fast-snap animation = the jerk).
@@ -493,26 +513,25 @@ private struct ClipPostCard: View {
                     // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
                     // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
                     ClipPosterView(item: item, post: post,
+                                   playback: playback, postID: post.id, postIndex: idx,
                                    payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
-                                   live: liveFor(idx),
-                                   playing: playingClip?.matches(post.id, idx) == true,
+                                   warmLive: warmLive(idx),
                                    isCurrentPage: idx == page,
                                    postOnScreen: isOnScreen,
-                                   muted: playingClip?.matches(post.id, idx) == true && playingClip?.muted == true,
                                    onTapToPlay: {
                                        guard item.media.kind == "video" else { return }   // photos stay still
-                                       playingClip = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
+                                       playback.playing = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
                                    },
                                    onToggleMute: {
-                                       if var pc = playingClip, pc.matches(post.id, idx) { pc.muted.toggle(); playingClip = pc }
+                                       if var pc = playback.playing, pc.matches(post.id, idx) { pc.muted.toggle(); playback.playing = pc }
                                    },
                                    onOpenFullscreen: {
                                        // Stop the inline player first so it isn't decoding + emitting audio
                                        // UNDER the fullscreen player (doubled audio/decode — prompt 94 review).
                                        // The snapshot below carries its own clips/startIndex, so it's
-                                       // independent of playingClip; clearing it also releases the inline
-                                       // audio session via onChange(of: playingClip).
-                                       playingClip = nil
+                                       // independent of playback.playing; clearing it releases the inline audio
+                                       // session via ClipFeedPlayback.playing's didSet.
+                                       playback.playing = nil
                                        fullscreen = ClipFullscreen(
                                            clips: post.clips.map(\.media), startIndex: idx,
                                            series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
@@ -526,14 +545,14 @@ private struct ClipPostCard: View {
             .frame(height: carouselHeight)
             // Animate the height resolve, but NOT while scrolling — an implicit frame animation mid-scroll
             // re-lays-out the whole paged container every frame (a jerk source).
-            .animation(isScrolling ? nil : .easeInOut(duration: 0.25), value: carouselHeight)
+            .animation(playback.isScrolling ? nil : .easeInOut(duration: 0.25), value: carouselHeight)
             // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
             // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
-                if autoplayActive, isOnScreen, !isScrolling {
-                    playingClip = PlayingClipRef(postID: post.id, page: newPage, muted: true)
-                } else if let pc = playingClip, pc.postID == post.id, pc.page != newPage {
-                    playingClip = nil
+                if autoplayActive, isOnScreen, !playback.isScrolling {
+                    playback.playing = PlayingClipRef(postID: post.id, page: newPage, muted: true)
+                } else if let pc = playback.playing, pc.postID == post.id, pc.page != newPage {
+                    playback.playing = nil
                 }
                 // Advance the warm window PROMPTLY (~80ms) so the page you're about to swipe to is already
                 // mounted+decoded BEFORE the next snap. The old 400ms defer was LONGER than the measured
@@ -639,30 +658,41 @@ private struct ClipPostCard: View {
 private struct ClipPosterView: View {
     let item: ClipFeedItem
     let post: ClipFeedPost
+    /// The feed's active-clip state (prompt 97). This LEAF reads `playback.playing` (via the `playing` computed
+    /// below) so a swipe re-renders ONLY the two pages whose playing/live actually changed — not the card or the
+    /// feed. The card passes `playback` + this page's identity; the leaf decides if IT plays.
+    let playback: ClipFeedPlayback
+    let postID: String
+    let postIndex: Int
     /// The clip's HR overlay — built ONCE by the card (not per live-HR tick); drives the surface + the tile.
     let payload: ClipHROverlay.Payload?
-    /// This clip should have a MOUNTED player — either it's playing OR it's warm (preloaded + paused so it
-    /// starts instantly when reached). Drives whether `ClipMediaSurface` exists.
-    let live: Bool
-    /// This clip is the feed's single ACTIVE inline clip → it plays (isActive); warm clips stay paused.
-    let playing: Bool
+    /// Card-decided WARM mount (preloaded + paused), from the card's own @State only (no `playback.playing`).
+    /// `live` below OR-s this with `playing` so the active clip always mounts even when not warm.
+    let warmLive: Bool
     /// This poster is the carousel's CURRENT page (idx == page). A non-current page is a carousel sibling
     /// sitting OFF to the side (clipped by the TabView) — its warm player can stay visible (paused frame) so
     /// a swipe reveals an already-correct frame, no crossfade.
     let isCurrentPage: Bool
     /// This post is substantially on-screen (it's the one you're viewing) vs a feed neighbour above/below.
     let postOnScreen: Bool
-    /// Start the inline player muted (autoplay; prompt 90) — tap-to-play passes false.
-    let muted: Bool
     /// Tap a still video → ask the feed to make this the active clip.
     let onTapToPlay: () -> Void
     /// Toggle this clip's audio (prompt 93) — the speaker button + a tap on a muted autoplaying surface
-    /// both call it; the feed flips `playingClip.muted` (the single source of truth) both ways.
+    /// both call it; the feed flips `playback.playing.muted` (the single source of truth) both ways.
     let onToggleMute: () -> Void
     /// Tap the PLAYING video → open the fullscreen player with play/pause + scrubber (prompt 94).
     let onOpenFullscreen: () -> Void
     /// Live playhead written by the inline `ClipMediaSurface`; the HR tile reads it while playing.
     @State private var liveFraction: Double = ClipHROverlay.atEndFraction
+
+    /// This clip is the feed's single ACTIVE inline clip → it plays (isActive); warm clips stay paused. Reading
+    /// `playback.playing` HERE (not in the card) is what scopes a swipe's re-render to just this leaf (prompt 97).
+    private var playing: Bool { playback.playing?.matches(postID, postIndex) == true }
+    /// This clip should have a MOUNTED player — playing OR card-warmed. Drives whether `ClipMediaSurface` exists.
+    private var live: Bool { playing || warmLive }
+    /// Start the inline player muted (autoplay; prompt 90) — mirrors the old card-passed value (false for a
+    /// non-active page; the active ref's `muted` otherwise). Consumers gate on `playing` first regardless.
+    private var muted: Bool { playing ? (playback.playing?.muted ?? true) : false }
 
     var body: some View {
         // Size the media to the actual carousel page (not a hard-coded size) so it fills full-bleed.

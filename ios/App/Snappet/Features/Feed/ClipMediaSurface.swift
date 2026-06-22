@@ -163,15 +163,24 @@ struct ClipMediaSurface: View {
                 let dur = (real?.isFinite == true && real! > 0) ? real! : (clip.durationSec ?? 0)
                 controller.attach(single, duration: dur)
             } else {
-                // Yield one runloop turn BEFORE the heavy AVQueuePlayer + AVPlayerLooper build, so a COLD mount
-                // that lands on a carousel swipe-snap doesn't block the paged-slide frame (the ~250ms
-                // freeze-then-jump). `isActive`/`muted`/`state` are read live (@State + the .onChange handlers)
-                // after this hop, so a page that de-centres mid-load still won't autoplay off-screen.
-                await Task.yield()
-                let queue = AVQueuePlayer()
-                queue.isMuted = muted                                            // autoplay starts muted
-                looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
-                player = queue
+                // Build the AVQueuePlayer + AVPlayerLooper OFF the main thread, then hop back to assign @State.
+                // The looper build (track/format setup + KVO/boundary observers + enqueuing the looped copy) is
+                // the heavy SYNCHRONOUS cost that, on the MainActor, blocked the carousel swipe-snap frame even
+                // when warmed (the residual ~250ms freeze-then-jump on autoplay-on). On a background queue it
+                // never blocks the slide regardless of warm timing; the player is only USED (assigned to the
+                // layer, play/pause) on main, after this. `muted` snapshot + boxed item cross the @Sendable hop.
+                let isMuted = muted
+                let itemBox = Box(playerItem)
+                let built: Box<(AVQueuePlayer, AVPlayerLooper)> = await withCheckedContinuation { cont in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let queue = AVQueuePlayer()
+                        queue.isMuted = isMuted                                           // autoplay starts muted
+                        let lp = AVPlayerLooper(player: queue, templateItem: itemBox.value)   // seamless loop
+                        cont.resume(returning: Box((queue, lp)))
+                    }
+                }
+                looper = built.value.1
+                player = built.value.0
                 // NB: no `preroll` here — AVPlayer THROWS ("cannot service a preroll request until its status is
                 // ReadyToPlay") if prerolled before the item is ready. The frame-0 poster + `layerReady` gate are
                 // the actual takeover fix; a status-gated preroll can be added later only if a play-start hitch

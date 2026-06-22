@@ -7501,3 +7501,31 @@ the round-5.x **latch** (`onReadyForDisplayChange` only ever sets `layerReady=tr
 that killed the loop-seam poster flash. **Measured before/after on the swipe windows: swipe-stall freezes
 10→0, longest 317ms→0ms, time-frozen-while-swiping 15%→0%; the slide now renders frame-by-frame.** Device-only
 (sim has no Photos); built + installed + verified on MrRobot.
+
+**Round 7 — the swipe freeze was a WHOLE-FEED re-render cascade + a main-thread player build (prompt 97,
+MrRobot 2026-06-22).** After rounds 1–6 didn't stick, frame analysis of a fresh recording proved (right-edge
+crop) that during a swipe the carousel does NOT slide AND the playing video is frozen — i.e. a true
+MAIN-THREAD BLOCK (~250–600ms), then a jump. (Measurement caveat re-confirmed: iOS recordings are VFR and
+emit a frame every ~50ms when static, so a stall reads as REPEATED frames; resample to CFR 60fps and look for
+frozen runs that end in a content jump.) Two code-visible causes neither of rounds 1–6 had touched:
+**(1) Re-render cascade.** `playingClip` + `isScrolling` were plain `@State` on `ClipsFeedView`; a `@State`
+write UNCONDITIONALLY re-runs the whole view `body`, so every swipe re-evaluated the entire feed `ForEach` of
+post cards — each a `TabView(.page)` of AVPlayer-backed pages. The prompt-92 *caches* cached the DATA but the
+VIEW TREE still re-evaluated. Fix: lifted both into `@MainActor @Observable final class ClipFeedPlayback`,
+passed DOWN BY REFERENCE (a `let`, which establishes no SwiftUI dependency), and read `playback.playing` ONLY
+in the leaf `ClipPosterView` computeds (`playing`/`live`/`muted`). `ClipPostCard.body` reads only
+`playback.isScrolling` (which a horizontal carousel swipe never flips — it's driven by the OUTER vertical
+scroll), and `liveFor`→`warmLive` uses card `@State` only. Net: a swipe re-renders ONLY the two affected leaf
+pages, NOT the feed body and NOT sibling cards. Audio session moved to the model's `playing` didSet (with a
+`!= oldValue` guard) so no `.onChange(of: playing)` re-reads it in the feed body. **Verified by a 3-reviewer
+adversarial workflow: correct-ships, no regression (tap-play/mute/fullscreen/autoplay/HR all equivalent), no
+retain cycle, no must-fix.** **(2) Residual player build.** The reviewers flagged (autoplay-ON only — which
+is the user's repro) that the synchronous `AVQueuePlayer`+`AVPlayerLooper` build (track/format + KVO/boundary
+observers + enqueue) can STILL land on the snap frame when you reach an un-warmed page, and the prompt-96
+`Task.yield`/80ms-warm are a race, not a guarantee. Fix: **build the player OFF the main thread** —
+construct on `DispatchQueue.global(qos:.userInitiated)` inside a `withCheckedContinuation` (muted snapshot +
+boxed `AVPlayerItem` cross the `@Sendable` hop), then assign the boxed `(AVQueuePlayer, AVPlayerLooper)` to
+`@State` back on main. The player is only USED (layer assign, play/pause) on main, after. Confirmed CRASH-FREE
+on MrRobot (off-main `AVPlayerLooper` construction was the one safety risk — pulled systemCrashLogs, none new).
+Builds green (sim+device); installed + launched + alive on MrRobot. Pending: user device recording to confirm
+the freeze is gone (sim can't validate — no Photos).
