@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 23, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 28, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -448,6 +448,22 @@ final class SnappetBackupTests: XCTestCase {
                                       angle: 40, layoutId: 1, sizeId: 10,
                                       litAt: Date(timeIntervalSince1970: 1_700_009_200),
                                       wasConnected: true, sessionId: kilterSession.id))
+
+        // Recap feed (F0b): append-only activity log + interaction rows + outbox.
+        let feedContentId = FeedContentIdentity.kilterSession(id: kilterSession.id.uuidString)
+        context.insert(FeedActivity(contentId: feedContentId, verb: "loggedSession",
+                                    objectRef: kilterSession.id.uuidString, objectKind: "kilterSession",
+                                    targetRef: "1", published: Date(timeIntervalSince1970: 1_700_009_300),
+                                    foreignId: "loggedSession:\(feedContentId)",
+                                    aggregationKey: "1:loggedSession:kilterSession:2026-06-20"))
+        context.insert(FeedReaction(activityContentId: feedContentId, typeRaw: "note", value: "proud send",
+                                    createdAt: Date(timeIntervalSince1970: 1_700_009_400)))
+        context.insert(FeedSaveItem(activityContentId: feedContentId, collectionId: "proud-sends",
+                                    createdAt: Date(timeIntervalSince1970: 1_700_009_500)))
+        context.insert(FeedShareEvent(activityContentId: feedContentId, channel: "export:instagram",
+                                      createdAt: Date(timeIntervalSince1970: 1_700_009_600)))
+        context.insert(FeedOutboxEntry(activityContentId: feedContentId, opRaw: "create",
+                                       createdAt: Date(timeIntervalSince1970: 1_700_009_700)))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Recap Feed · Scroll Timestamp Indicator · Wireframes</title>
+<style>
+  :root{
+    /* literal hex from SnappetColor.swift (dark values lead; deck is dark-mode-first) */
+    --coral:#FF7A6B; --amber:#F59E0B; --amber-deep:#B45309; --ember:#FF9645;
+    --fresh:#5BC074; --hard:#FF6A5C;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1;
+    --glass:rgba(28,28,33,.66); --glasshair:rgba(255,255,255,.14);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#241a10,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 80px}
+  header.page{padding:54px 30px 6px;max-width:1500px;margin:0 auto}
+  h1{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffce8a 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16px;max-width:1080px;margin:0 0 6px}
+  .sub b{color:#fff}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 36px;align-items:flex-start;max-width:1500px;margin:26px auto 0;padding:0 30px}
+  .col{width:340px}
+  .badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+    padding:4px 10px;border-radius:999px;margin:0 0 10px}
+  .rec{background:linear-gradient(92deg,var(--amber),var(--ember));color:#1a1208}
+  .alt{background:#23232a;color:var(--t2);border:1px solid #33333b}
+  .colcap{margin:14px 2px 0;font-size:13px;color:#b8bcc6}
+  .colcap b{color:#fff;font-weight:650}.colcap .k{color:var(--amber);font-weight:650}
+
+  /* device */
+  .device{width:340px;height:724px;border-radius:48px;background:#000;padding:10px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:100px;height:26px;background:#000;border-radius:15px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:13px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:11px}
+  /* nav + lens (sticky chrome) */
+  .top{padding:6px 18px 0;flex:0 0 auto;background:var(--paper);z-index:40;position:relative}
+  .title-h{font-size:26px;font-weight:820;letter-spacing:-.02em;margin:2px 0 8px}
+  .lens{display:flex;gap:7px;overflow:hidden;padding:0 0 9px}
+  .chip{font-size:12px;font-weight:600;color:var(--t2);background:var(--muted);border:1px solid var(--hair);padding:5px 11px;border-radius:999px;white-space:nowrap}
+  .chip.on{color:#1a1208;background:linear-gradient(92deg,var(--amber),var(--ember));border-color:transparent}
+  .feed{flex:1 1 auto;overflow:hidden;position:relative;padding:4px 14px 0}
+  /* recap card */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:13px 14px;margin:0 0 11px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent,var(--amber))}
+  .kick{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--accent,var(--amber));display:flex;align-items:center;gap:6px}
+  .kick .ic{font-size:11px}
+  .hrow{display:flex;align-items:baseline;gap:9px;margin:5px 0 2px}
+  .hero{font-size:34px;font-weight:850;letter-spacing:-.01em;line-height:1}
+  .cap{font-size:12.5px;color:var(--t2)}
+  .sub2{font-size:12px;color:#c9cad0;margin-top:2px}
+  .ribbon{display:flex;gap:6px;margin-top:9px}
+  .pill{font-size:11px;font-weight:650;color:#d8d9de;background:var(--muted);border-radius:999px;padding:3px 9px}
+  .pill.em{background:rgba(245,158,11,.16);color:var(--amber)}
+  /* zone bar (effort) */
+  .zb{display:flex;gap:2px;height:9px;border-radius:5px;overflow:hidden;margin-top:9px}
+  .zb i{display:block;height:100%}
+  /* tabbar */
+  .tab{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:9px 0 18px;border-top:1px solid var(--hair);background:var(--paper)}
+  .tab .t{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:var(--t2)}
+  .tab .t.on{color:var(--amber)}
+  .tab .t .g{font-size:17px}
+  .gloss{position:absolute;left:0;right:0;bottom:0;height:120px;pointer-events:none;
+    background:linear-gradient(180deg,rgba(18,18,20,0),var(--paper) 86%);z-index:20}
+
+  /* ===== A — floating date pill (recommended) ===== */
+  .datepill{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:35;
+    display:flex;align-items:center;gap:9px;padding:7px 14px;border-radius:999px;
+    background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    border:1px solid var(--glasshair);box-shadow:0 10px 28px -10px rgba(0,0,0,.7)}
+  .datepill .clk{font-size:13px;color:var(--amber)}
+  .datepill .bk{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);line-height:1.05}
+  .datepill .dt{font-size:13px;font-weight:750;color:#fff;line-height:1.05}
+  .datepill .txt{display:flex;flex-direction:column}
+  /* faint scroll-progress hint on the trailing edge */
+  .progress{position:absolute;right:4px;top:120px;bottom:90px;width:3px;border-radius:3px;background:rgba(255,255,255,.06);z-index:34}
+  .progress i{position:absolute;left:0;right:0;top:26%;height:30%;border-radius:3px;background:linear-gradient(180deg,var(--amber),var(--ember))}
+
+  /* ===== B — sticky bucket header ===== */
+  .bucket{position:sticky;top:0;display:flex;align-items:center;gap:8px;
+    padding:7px 4px 7px;margin:0 0 6px;background:linear-gradient(180deg,var(--paper) 70%,rgba(18,18,20,0));z-index:30}
+  .bucket .lbl{font-size:11.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink)}
+  .bucket .cnt{font-size:10.5px;font-weight:700;color:var(--t2);background:var(--muted);border-radius:999px;padding:2px 8px}
+  .bucket .line{flex:1 1 auto;height:1px;background:var(--hair)}
+  .bucket.past .lbl{color:var(--t2)}
+  .bucket.pinned{box-shadow:0 6px 16px -10px rgba(0,0,0,.6)}
+
+  /* ===== C — combined: sticky header + transient pill mid-fling ===== */
+  .fling .datepill{opacity:1}
+  .ghosthdr{opacity:.45}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>Recap Feed — scroll timestamp indicator</h1>
+  <p class="sub">Problem: the infinite Recap feed has <b>no time anchor</b> while scrolling, so you lose your place. Three ways to fix it, in context, with real Pulse tokens. Cards are recency-bounded (≈reverse-chronological), and every card already carries an <b>anchorDate</b> — so the indicator just surfaces what's already there.</p>
+</header>
+
+<div class="gallery">
+
+  <!-- ============ A: FLOATING DATE PILL (RECOMMENDED) ============ -->
+  <div class="col">
+    <span class="badge rec">Recommended · A</span>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span class="r">5G&nbsp;&nbsp;100%</span></div>
+      <div class="top">
+        <div class="title-h">Recap</div>
+        <div class="lens"><span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span></div>
+      </div>
+      <div class="feed">
+        <!-- transient glass pill: shows the top card's bucket + date, fades when idle -->
+        <div class="datepill">
+          <span class="clk">◷</span>
+          <span class="txt"><span class="bk">Earlier this week</span><span class="dt">Wed · Jun 17</span></span>
+        </div>
+        <div class="progress"><i></i></div>
+
+        <div class="card" style="--accent:var(--coral)">
+          <div class="kick"><span class="ic">★</span>New hardest ever</div>
+          <div class="hrow"><span class="hero" style="color:var(--coral)">V7</span><span class="cap">New grade</span></div>
+          <div class="sub2">up from V6 · Crimp Time</div>
+        </div>
+        <div class="card" style="--accent:var(--amber)">
+          <div class="kick"><span class="ic">⛰</span>Climb session</div>
+          <div class="hrow"><span class="hero">V6</span><span class="cap">Hardest send</span></div>
+          <div class="ribbon"><span class="pill em">8 sends</span><span class="pill">12 climbs</span><span class="pill">19 tries</span></div>
+        </div>
+        <div class="card" style="--accent:var(--hard)">
+          <div class="kick"><span class="ic">♥</span>Session effort</div>
+          <div class="hrow"><span class="hero">172</span><span class="cap">Peak BPM</span></div>
+          <div class="zb"><i style="flex:2;background:var(--fresh)"></i><i style="flex:3;background:var(--amber)"></i><i style="flex:4;background:var(--hard)"></i></div>
+        </div>
+        <div class="gloss"></div>
+      </div>
+      <div class="tab"><div class="t"><span class="g">⌂</span>Today</div><div class="t on"><span class="g">▦</span>Recap</div><div class="t"><span class="g">▷</span>Log</div></div>
+    </div></div>
+    <p class="colcap"><b>Floating date pill.</b> A translucent glass capsule pinned top-center shows the <span class="k">bucket + exact date</span> of the topmost card. It <b>appears on scroll, fades ~1.5s after you stop</b> — zero layout cost, always honest (it reflects the real card at the top, so a floated PR can't mislead). A faint right-edge progress rail hints how deep you are.</p>
+  </div>
+
+  <!-- ============ B: STICKY BUCKET HEADERS ============ -->
+  <div class="col">
+    <span class="badge alt">Alternative · B</span>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span class="r">5G&nbsp;&nbsp;100%</span></div>
+      <div class="top">
+        <div class="title-h">Recap</div>
+        <div class="lens"><span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span></div>
+      </div>
+      <div class="feed">
+        <div class="bucket pinned"><span class="lbl">This week</span><span class="cnt">4</span><span class="line"></span></div>
+        <div class="card" style="--accent:var(--amber)">
+          <div class="kick"><span class="ic">⛰</span>Climb session</div>
+          <div class="hrow"><span class="hero">V6</span><span class="cap">Hardest send</span></div>
+          <div class="ribbon"><span class="pill em">8 sends</span><span class="pill">12 climbs</span></div>
+        </div>
+        <div class="card" style="--accent:var(--amber-deep)">
+          <div class="kick"><span class="ic">▦</span>On the board</div>
+          <div class="hrow"><span class="hero">14</span><span class="cap">climbs lit</span></div>
+          <div class="sub2">hardest V5</div>
+        </div>
+        <div class="bucket"><span class="lbl">Earlier in June</span><span class="cnt">9</span><span class="line"></span></div>
+        <div class="card" style="--accent:var(--ember)">
+          <div class="kick"><span class="ic">▲</span>90-day trends</div>
+          <div class="hrow"><span class="hero" style="color:var(--fresh)">▲12%</span><span class="cap">Weekly volume</span></div>
+        </div>
+        <div class="gloss"></div>
+      </div>
+      <div class="tab"><div class="t"><span class="g">⌂</span>Today</div><div class="t on"><span class="g">▦</span>Recap</div><div class="t"><span class="g">▷</span>Log</div></div>
+    </div></div>
+    <p class="colcap"><b>Sticky bucket headers.</b> Cards group under <span class="k">pinned time headers</span> — “This week”, “Earlier in June”, “May 2026” — that stick under the lens bar as you scroll (Apple Photos pattern). Always-visible structure + a per-bucket count. Trade-off: needs the feed to bucket cleanly, and a high-salience floated card can sit under a slightly-off header.</p>
+  </div>
+
+  <!-- ============ C: COMBINED ============ -->
+  <div class="col">
+    <span class="badge alt">Combined · C</span>
+    <div class="device"><div class="screen fling">
+      <div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span class="r">5G&nbsp;&nbsp;100%</span></div>
+      <div class="top">
+        <div class="title-h">Recap</div>
+        <div class="lens"><span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span></div>
+      </div>
+      <div class="feed">
+        <div class="bucket pinned ghosthdr"><span class="lbl">Earlier in June</span><span class="cnt">9</span><span class="line"></span></div>
+        <!-- during a fast fling, the precise pill appears over the sticky header -->
+        <div class="datepill"><span class="clk">◷</span><span class="txt"><span class="bk">Earlier in June</span><span class="dt">Thu · Jun 12</span></span></div>
+        <div class="progress"><i style="top:54%"></i></div>
+        <div class="card" style="--accent:var(--coral)">
+          <div class="kick"><span class="ic">🏋</span>Lift PR</div>
+          <div class="hrow"><span class="hero">102.5 kg</span><span class="cap">est. 1RM</span></div>
+          <div class="sub2">was 97.5 kg · Back Squat</div>
+        </div>
+        <div class="card" style="--accent:var(--ember)">
+          <div class="kick"><span class="ic">🏃</span>Workout</div>
+          <div class="hrow"><span class="hero">5.2 km</span><span class="cap">Distance</span></div>
+          <div class="ribbon"><span class="pill em">4 splits</span><span class="pill">26:04</span></div>
+        </div>
+        <div class="gloss"></div>
+      </div>
+      <div class="tab"><div class="t"><span class="g">⌂</span>Today</div><div class="t on"><span class="g">▦</span>Recap</div><div class="t"><span class="g">▷</span>Log</div></div>
+    </div></div>
+    <p class="colcap"><b>Combined (the premium endgame).</b> Sticky bucket headers give <b>structure at rest</b>; during a <b>fast fling</b> the glass pill surfaces the precise day over the (dimmed) header, then fades — so you get both “what era” and “exactly which day”. Most polished, slightly more to build. Ship <b>A first</b>, graduate to C if the structure proves useful.</p>
+  </div>
+
+</div>
+</body>
+</html>

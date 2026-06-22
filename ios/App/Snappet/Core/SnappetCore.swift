@@ -50,6 +50,8 @@ enum SnappetSchema {
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
         KilterPlan.self, KilterLitEvent.self,
+        // Recap feed (F0b) — append-only activity log + interaction rows + outbox
+        FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
     ]
 }
 

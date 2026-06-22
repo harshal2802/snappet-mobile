@@ -23,9 +23,15 @@ struct SnappetApp: App {
         // it IMPLIES a fresh in-memory store for determinism, and then seeds a completed
         // WorkoutSession with a synthetic HR series so the B2 enriched summary renders on the
         // simulator. Both args are test-only; a normal/production launch hits neither branch.
+        //
+        // `-uiTestSeedRecapClip` is another sibling test-only arg (Recap feed clip-export E2E, R11):
+        // it likewise IMPLIES a fresh in-memory store, then seeds a completed KilterSession with a
+        // logged send and one BUNDLED video clip so the Recap card shows clips and the Share sheet's
+        // Animate path runs the real ReelExporter render hermetically on the simulator.
         let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
-        let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo
+        let seedRecapClip = args.contains(RecapClipSeed.argument)
+        let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
             // touch — clear the remembered "me" so expense tests are deterministic
@@ -88,6 +94,11 @@ struct SnappetApp: App {
         // impact. Seeds into the fresh in-memory store before any UI appears.
         if seedStudioDemo {
             StudioDemoSeed.seedIfRequested(into: container.mainContext)
+        }
+        // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production impact.
+        // Seeds the recap-clip E2E session into the fresh in-memory store before any UI appears.
+        if seedRecapClip {
+            RecapClipSeed.seedIfRequested(into: container.mainContext)
         }
     }
 

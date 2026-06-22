@@ -62,6 +62,7 @@ enum SnappetBackup {
         TipCalculation.self,
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
         KilterPlan.self, KilterLitEvent.self,
+        FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
     ]
 
     // MARK: - The envelope
@@ -97,6 +98,11 @@ enum SnappetBackup {
         var kilterCreatedClimbs: [KilterCreatedClimbRow] = []
         var kilterPlans: [KilterPlanRow] = []
         var kilterLitEvents: [KilterLitEventRow] = []
+        var feedActivities: [FeedActivityRow] = []
+        var feedReactions: [FeedReactionRow] = []
+        var feedSaveItems: [FeedSaveItemRow] = []
+        var feedShareEvents: [FeedShareEventRow] = []
+        var feedOutbox: [FeedOutboxEntryRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -130,6 +136,11 @@ enum SnappetBackup {
             n += kilterCreatedClimbs.count
             n += kilterPlans.count
             n += kilterLitEvents.count
+            n += feedActivities.count
+            n += feedReactions.count
+            n += feedSaveItems.count
+            n += feedShareEvents.count
+            n += feedOutbox.count
             return n
         }
     }
@@ -200,6 +211,11 @@ enum SnappetBackup {
         file.kilterCreatedClimbs = try all(KilterCreatedClimb.self).map(KilterCreatedClimbRow.init).sorted(by: rowKey)
         file.kilterPlans = try all(KilterPlan.self).map(KilterPlanRow.init).sorted(by: rowKey)
         file.kilterLitEvents = try all(KilterLitEvent.self).map(KilterLitEventRow.init).sorted(by: rowKey)
+        file.feedActivities = try all(FeedActivity.self).map(FeedActivityRow.init).sorted(by: rowKey)
+        file.feedReactions = try all(FeedReaction.self).map(FeedReactionRow.init).sorted(by: rowKey)
+        file.feedSaveItems = try all(FeedSaveItem.self).map(FeedSaveItemRow.init).sorted(by: rowKey)
+        file.feedShareEvents = try all(FeedShareEvent.self).map(FeedShareEventRow.init).sorted(by: rowKey)
+        file.feedOutbox = try all(FeedOutboxEntry.self).map(FeedOutboxEntryRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -282,6 +298,16 @@ enum SnappetBackup {
             // (like KilterLogEntry). A hand-duplicated backup row is valid data, not a join hazard.
             try deleteAll(KilterLitEvent.self)
             file.kilterLitEvents.forEach { context.insert($0.make()) }
+            try deleteAll(FeedActivity.self)
+            uniqued(file.feedActivities, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FeedReaction.self)
+            uniqued(file.feedReactions, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FeedSaveItem.self)
+            uniqued(file.feedSaveItems, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FeedShareEvent.self)
+            uniqued(file.feedShareEvents, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FeedOutboxEntry.self)
+            uniqued(file.feedOutbox, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -830,5 +856,104 @@ extension SnappetBackup {
                                source: source, modelId: modelId, createdAt: createdAt)
         }
         var sortKey: String { uuid }
+    }
+
+    // MARK: Recap Feed rows (F0b)
+
+    struct FeedActivityRow: BackupRow {
+        var id: UUID
+        var contentId: String
+        var actorRef: String
+        var verb: String
+        var objectRef: String
+        var objectKind: String
+        var targetRef: String?
+        var published: Date
+        var visibility: String
+        var audienceTo: [String]
+        var foreignId: String
+        var aggregationKey: String
+        var updatedAt: Date
+        var version: Int
+        var schemaVersion: Int
+        init(_ m: FeedActivity) {
+            id = m.id; contentId = m.contentId; actorRef = m.actorRef; verb = m.verb
+            objectRef = m.objectRef; objectKind = m.objectKind; targetRef = m.targetRef
+            published = m.published; visibility = m.visibility; audienceTo = m.audienceTo
+            foreignId = m.foreignId; aggregationKey = m.aggregationKey; updatedAt = m.updatedAt
+            version = m.version; schemaVersion = m.schemaVersion
+        }
+        func make() -> FeedActivity {
+            FeedActivity(id: id, contentId: contentId, actorRef: actorRef, verb: verb,
+                         objectRef: objectRef, objectKind: objectKind, targetRef: targetRef,
+                         published: published, visibility: visibility, audienceTo: audienceTo,
+                         foreignId: foreignId, aggregationKey: aggregationKey, updatedAt: updatedAt,
+                         version: version, schemaVersion: schemaVersion)
+        }
+        var sortKey: String { "\(published.timeIntervalSinceReferenceDate)|\(foreignId)|\(id.uuidString)" }
+    }
+
+    struct FeedReactionRow: BackupRow {
+        var id: UUID
+        var activityContentId: String
+        var actorRef: String
+        var typeRaw: String
+        var value: String?
+        var createdAt: Date
+        init(_ m: FeedReaction) {
+            id = m.id; activityContentId = m.activityContentId; actorRef = m.actorRef
+            typeRaw = m.typeRaw; value = m.value; createdAt = m.createdAt
+        }
+        func make() -> FeedReaction {
+            FeedReaction(id: id, activityContentId: activityContentId, actorRef: actorRef,
+                         typeRaw: typeRaw, value: value, createdAt: createdAt)
+        }
+        var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(activityContentId)|\(id.uuidString)" }
+    }
+
+    struct FeedSaveItemRow: BackupRow {
+        var id: UUID
+        var activityContentId: String
+        var collectionId: String
+        var createdAt: Date
+        init(_ m: FeedSaveItem) {
+            id = m.id; activityContentId = m.activityContentId
+            collectionId = m.collectionId; createdAt = m.createdAt
+        }
+        func make() -> FeedSaveItem {
+            FeedSaveItem(id: id, activityContentId: activityContentId, collectionId: collectionId, createdAt: createdAt)
+        }
+        var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(activityContentId)|\(id.uuidString)" }
+    }
+
+    struct FeedShareEventRow: BackupRow {
+        var id: UUID
+        var activityContentId: String
+        var channel: String
+        var createdAt: Date
+        init(_ m: FeedShareEvent) {
+            id = m.id; activityContentId = m.activityContentId
+            channel = m.channel; createdAt = m.createdAt
+        }
+        func make() -> FeedShareEvent {
+            FeedShareEvent(id: id, activityContentId: activityContentId, channel: channel, createdAt: createdAt)
+        }
+        var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(channel)|\(id.uuidString)" }
+    }
+
+    struct FeedOutboxEntryRow: BackupRow {
+        var id: UUID
+        var activityContentId: String
+        var opRaw: String
+        var createdAt: Date
+        var attempts: Int
+        init(_ m: FeedOutboxEntry) {
+            id = m.id; activityContentId = m.activityContentId
+            opRaw = m.opRaw; createdAt = m.createdAt; attempts = m.attempts
+        }
+        func make() -> FeedOutboxEntry {
+            FeedOutboxEntry(id: id, activityContentId: activityContentId, opRaw: opRaw, createdAt: createdAt, attempts: attempts)
+        }
+        var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(opRaw)|\(id.uuidString)" }
     }
 }

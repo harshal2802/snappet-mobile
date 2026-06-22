@@ -1,0 +1,1562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Kilter Improvement · Pulse Pro · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values lead; this deck is dark-mode-first) */
+    --coral:#FF7A6B; --coral-l:#FF5A4D;
+    --amber:#F59E0B; --amber-deep:#B45309;        /* Kilter (climb) — WAYFINDING accent */
+    --ember:#FF9645;                              /* Workout */
+    --azure:#589BF2; --violet:#9D82F0; --teal:#3CB5C9;
+    /* performance ramp — EFFORT / STATE only */
+    --fresh:#5BC074; --moderate:#F59E0B; --hard:#FF6A5C; --limit:#9B1C16;
+    /* ascent-style nominal palette (Wong/Okabe-Ito, colorblind-safe) — paired with glyph+label always */
+    --flash:#E6B422; --send:#5BC074; --proj:#F59E0B; --attempt:#8A8A90;
+    /* hold roles */
+    --h-start:#5BC074; --h-hand:#56A0FF; --h-finish:#C77DFF; --h-foot:#FF9645;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    --glass:rgba(20,20,24,.72); --glasshair:rgba(255,255,255,.12);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#241a10,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1380px;margin:0 auto;padding:0 28px}
+  header.page{padding:58px 28px 8px;max-width:1380px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffce8a 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16.5px;max-width:1000px;margin:0 0 14px}
+  .sub b{color:#fff}
+  .legend{display:flex;flex-wrap:wrap;gap:9px 18px;margin:14px 0 4px;font-size:12.5px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:12px;height:12px;border-radius:4px;display:inline-block}
+  .flowhead{margin:56px 0 4px;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+  .flowtitle{font-size:25px;font-weight:780;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:1000px;margin:0 0 12px;font-size:14.5px}
+  .flowsteps{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px;font-size:12.5px;color:#c4c7d0}
+  .fs{display:inline-flex;align-items:center;gap:7px;background:#16161b;border:1px solid #2a2a31;border-radius:999px;padding:5px 12px}
+  .fs i{width:18px;height:18px;border-radius:50%;background:var(--amber);color:#1a1208;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;font-style:normal}
+  .fs .arr{color:#54555c}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--amber);color:#1a1208;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(245,158,11,.45)}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--amber);font-weight:650}
+
+  /* ---------- device ---------- */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 4px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .nav{display:flex;align-items:center;gap:10px;padding:7px 16px 8px;flex:0 0 auto;font-size:15px}
+  .nav .bk{color:var(--amber);font-weight:600;font-size:14px}
+  .nav .ttl{font-weight:760;font-size:17px;letter-spacing:-.01em}
+  .nav .sp{flex:1}
+  .nav .ic{color:var(--ink);opacity:.85;font-size:16px}
+  .content{flex:1 1 auto;overflow:hidden;padding:2px 14px 8px;position:relative}
+  .cmdbar{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:11px 14px;font-size:12.5px;font-weight:650;border-top:1px solid var(--hair);background:#17171b}
+  .tabbar{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:9px 8px 14px;border-top:1px solid var(--hair);background:#17171b;font-size:10px;color:var(--t2)}
+  .tabbar .tb{display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar .tb .g{font-size:18px} .tabbar .tb.on{color:var(--amber)}
+  .muteline{color:var(--t2)}
+
+  /* ---------- components ---------- */
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:12px 13px;margin:9px 0}
+  .tile{background:var(--muted);border-radius:var(--radius);padding:12px 13px;margin:9px 0}
+  .cardhead{display:flex;align-items:center;gap:8px;font-weight:740;font-size:14.5px}
+  .cardhead .ic{font-size:16px;color:var(--amber)}
+  .cardhead .chev{margin-left:auto;color:var(--t2);font-size:13px}
+  .sub2{font-size:11.5px;color:var(--t2)}
+
+  .cta{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--coral);color:#1a1208;font-weight:780;border-radius:14px;padding:13px;font-size:15px;box-shadow:0 10px 24px -10px rgba(255,122,107,.55)}
+  .cta.sm{padding:9px 13px;font-size:13px;border-radius:12px}
+  .cta.outline{background:transparent;color:var(--coral);border:1.5px solid var(--coral);box-shadow:none}
+  .cta.amber{background:var(--amber);color:#1a1208;box-shadow:0 10px 24px -10px rgba(245,158,11,.5)}
+
+  .seg{display:flex;background:var(--muted);border-radius:12px;padding:3px;gap:3px;font-size:12.5px;font-weight:650}
+  .seg span{flex:1;text-align:center;padding:7px 4px;border-radius:9px;color:var(--t2)}
+  .seg span.on{background:#3a3a42;color:#fff}
+
+  .chiprow{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}
+  .chip{background:var(--muted);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:650;color:var(--ink);display:inline-flex;align-items:center;gap:5px}
+  .chip.on{background:var(--amber);color:#1a1208} .chip.ghost{background:transparent;border:1px dashed var(--hair);color:var(--t2)}
+  .chip .cv{color:var(--t2);font-weight:700}
+
+  /* hero numeral (DisciplineHero) */
+  .hero{display:flex;align-items:flex-end;gap:12px;margin:6px 2px 2px}
+  .hero .num{font-family:ui-rounded,"SF Pro Rounded",-apple-system,sans-serif;font-weight:850;font-size:62px;line-height:.9;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .hero .num.amber{color:var(--amber)}
+  .hero .side{padding-bottom:7px}
+  .hero .lbl{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--t2);font-weight:800}
+  .delta{display:inline-flex;align-items:center;gap:3px;font-weight:800;font-size:12px;border-radius:8px;padding:3px 8px;background:rgba(91,192,116,.16);color:var(--fresh)}
+  .delta.dn{background:rgba(255,106,92,.16);color:var(--hard)}
+
+  /* stat ribbon */
+  .ribbon{display:flex;gap:8px;margin:8px 0}
+  .ribbon .r{flex:1;background:var(--muted);border-radius:13px;padding:9px 10px}
+  .ribbon .r .v{font-weight:820;font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .ribbon .r .l{font-size:10px;color:var(--t2);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:1px}
+
+  /* stat spill chips (rolled up) */
+  .spill{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:11.5px;border-radius:8px;padding:4px 8px;background:var(--muted);color:var(--t2)}
+  .spill.am{background:rgba(245,158,11,.16);color:var(--amber)}
+  .spill.pr{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .spill.az{background:rgba(88,155,242,.16);color:var(--azure)}
+
+  /* status (ascent style) chips — glyph+label, never color alone */
+  .st{display:inline-flex;align-items:center;gap:4px;font-weight:750;font-size:11px;border-radius:7px;padding:3px 7px}
+  .st-flash{background:rgba(230,180,34,.18);color:var(--flash)}
+  .st-send{background:rgba(91,192,116,.18);color:var(--send)}
+  .st-proj{background:rgba(245,158,11,.18);color:var(--proj)}
+  .st-attempt{background:rgba(138,138,144,.2);color:#c2c2c8}
+
+  /* provenance capsule */
+  .prov{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--t2);background:rgba(255,255,255,.06);border-radius:6px;padding:2px 6px}
+
+  /* glass floating ribbon */
+  .glassbar{position:absolute;left:12px;right:12px;border-radius:18px;background:var(--glass);
+    border:1px solid var(--glasshair);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    box-shadow:0 18px 40px -16px rgba(0,0,0,.7);padding:12px 13px;z-index:25}
+
+  /* mini board render (climb thumbnail) */
+  .board{position:relative;width:100%;border-radius:12px;background:
+    repeating-linear-gradient(0deg,#1b1b20 0 1px,transparent 1px 15px),
+    repeating-linear-gradient(90deg,#1b1b20 0 1px,transparent 1px 15px),
+    linear-gradient(160deg,#242019,#171716);border:1px solid #322a1c;overflow:hidden}
+  .board .hold{position:absolute;width:13px;height:13px;border-radius:50%;transform:translate(-50%,-50%);
+    border:2.2px solid var(--c);box-shadow:0 0 7px 1px var(--c);background:rgba(0,0,0,.15)}
+  .hold.start{--c:var(--h-start)} .hold.hand{--c:var(--h-hand)} .hold.finish{--c:var(--h-finish)} .hold.foot{--c:var(--h-foot);width:10px;height:10px}
+
+  /* board thumbnail gallery (Your Climbs) */
+  .bgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:8px}
+  .bcard{background:var(--surface);border:1px solid var(--hair);border-radius:15px;padding:8px;overflow:hidden}
+  .bcard .nm{font-weight:700;font-size:12.5px;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bcard .mt{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:10.5px;color:var(--t2);font-weight:600}
+  .gbadge{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border:1px solid var(--glasshair);border-radius:7px;padding:2px 7px;font-size:11px;font-weight:800;color:var(--amber)}
+
+  /* grade pyramid (segmented BarMark) */
+  .pyr{margin:8px 0 2px}
+  .pyr .pr{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11.5px}
+  .pyr .pg{width:34px;text-align:right;font-weight:750;color:var(--ink);font-variant-numeric:tabular-nums}
+  .pyr .pbar{flex:1;height:17px;border-radius:5px;background:var(--muted);overflow:hidden;display:flex}
+  .pyr .seg{height:100%}
+  .pyr .seg.flash{background:var(--flash)} .pyr .seg.send{background:var(--send)} .pyr .seg.proj{background:var(--proj)}
+  .pyr .pc{width:20px;color:var(--t2);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+  .pyr .pmax{height:1px;border-top:1.5px dashed var(--hard);margin:3px 0 1px 42px;position:relative}
+  .pyr .pmax span{position:absolute;right:0;top:-8px;font-size:9px;color:var(--hard);font-weight:800;background:var(--paper);padding:0 3px}
+
+  /* ring gauge */
+  .rings{display:flex;gap:10px;margin:8px 0}
+  .ring{flex:1;background:var(--muted);border-radius:14px;padding:11px 8px;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .ring .rg{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:conic-gradient(var(--rc) var(--p),#3a3a42 0);position:relative}
+  .ring .rg::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--muted)}
+  .ring .rv{position:relative;z-index:2;font-weight:850;font-size:16px;font-variant-numeric:tabular-nums}
+  .ring .rl{font-size:10.5px;color:var(--t2);font-weight:700;text-align:center}
+
+  /* bar trend (volume) */
+  .bars{display:flex;align-items:flex-end;gap:5px;height:62px;margin:8px 2px 4px}
+  .bars .b{flex:1;background:var(--amber);border-radius:4px 4px 2px 2px;opacity:.85;min-height:4px}
+  .bars .b.ghost{background:#3a3a42}
+  .axis{display:flex;justify-content:space-between;font-size:9.5px;color:var(--t2);font-weight:600;margin-top:2px}
+
+  /* consistency heatmap */
+  .heat{display:grid;grid-template-columns:repeat(17,1fr);gap:3px;margin:8px 0 2px}
+  .heat .hc{aspect-ratio:1;border-radius:3px;background:#26262b;border:1px solid #2f2f35}
+  .hc.l1{background:rgba(245,158,11,.28)} .hc.l2{background:rgba(245,158,11,.5)} .hc.l3{background:rgba(245,158,11,.72)} .hc.l4{background:var(--amber)}
+  .hc.today{outline:2px solid var(--coral);outline-offset:1px}
+
+  /* month calendar */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin:8px 0 2px;font-size:11px;text-align:center}
+  .cal .cd{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--t2);font-weight:600}
+  .cal .cd.on{background:rgba(245,158,11,.18);color:var(--ink);font-weight:750}
+  .cal .cd.dot{position:relative} .cal .cd.dot::after{content:"";position:absolute;bottom:4px;width:4px;height:4px;border-radius:50%;background:var(--amber)}
+  .cal .cd.today{outline:2px solid var(--coral);outline-offset:-2px;color:#fff}
+  .cal .dow{color:var(--t2);font-size:9.5px;font-weight:700}
+
+  /* session / ascent rows */
+  .sesscard{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:11px 12px;margin:9px 0;position:relative;overflow:hidden}
+  .sesscard .edge{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber)}
+  .sesscard .h{display:flex;align-items:center;gap:8px}
+  .sesscard .h .d{font-weight:740;font-size:14px}
+  .sesscard .h .t{margin-left:auto;font-size:11px;color:var(--t2);font-weight:600}
+  .grouphdr{display:flex;align-items:baseline;gap:8px;margin:14px 2px 2px;font-size:12px;color:var(--t2);font-weight:700}
+  .grouphdr b{color:var(--ink);font-size:14px}
+  .grouphdr .ru{margin-left:auto;color:var(--t2);font-weight:650}
+  .row{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:7px 2px;border-bottom:1px solid var(--hair)}
+  .row .num{width:14px;color:var(--t2);font-weight:700;font-size:11px}
+  .row .meta{margin-left:auto;font-weight:700;color:var(--t2);font-size:11px;font-variant-numeric:tabular-nums}
+
+  .lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:800}
+  .big{font-variant-numeric:tabular-nums;font-weight:820;letter-spacing:-.01em}
+  .search{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:11px;padding:9px 12px;font-size:13px;color:var(--t2)}
+  .field{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:11px;padding:11px 12px;font-size:13.5px;margin:8px 0}
+  .field .fl{color:var(--t2);font-size:11px;font-weight:700;min-width:62px}
+  .note{background:var(--muted);border-radius:12px;padding:11px 12px;font-size:13px;color:var(--ink);margin:8px 0;min-height:58px}
+
+  /* ============ FEED (Recap) additions ============ */
+  /* stories rail */
+  .stories{display:flex;gap:10px;overflow:hidden;margin:4px 0 11px;padding:1px}
+  .scover{flex:0 0 auto;width:86px;height:116px;border-radius:16px;position:relative;overflow:hidden;border:1px solid var(--hair);
+    display:flex;flex-direction:column;justify-content:flex-end;padding:9px}
+  .scover.c1{background:radial-gradient(120% 90% at 30% 12%,#3a2a12,#15130d)}
+  .scover.c2{background:radial-gradient(120% 90% at 30% 12%,#2a1530,#15130d)}
+  .scover.c3{background:radial-gradient(120% 90% at 30% 12%,#13322a,#15130d)}
+  .scover.new::before{content:"";position:absolute;inset:0;border-radius:16px;padding:2px;
+    background:linear-gradient(140deg,var(--amber),var(--coral));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+  .scover .sct{font-size:11px;font-weight:850;color:#fff;line-height:1.15;position:relative;z-index:2}
+  .scover .scs{font-size:9px;color:var(--t2);font-weight:700;margin-top:2px;position:relative;z-index:2}
+  .scover .sci{position:absolute;top:8px;left:9px;font-size:14px;z-index:2}
+  .lensbar{display:flex;gap:7px;overflow:hidden;margin:2px 0 9px}
+  /* media hero on a feed card */
+  .fhero{position:relative;width:100%;height:148px;border-radius:13px;overflow:hidden;margin:8px 0 2px;
+    background:linear-gradient(150deg,#2a2017,#15140f)}
+  .fhero .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;
+    background:var(--glass);border:1px solid var(--glasshair);display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;backdrop-filter:blur(8px)}
+  .fhero .clip{position:absolute;right:9px;top:9px}
+  .fhero .ovl{position:absolute;left:10px;bottom:9px;right:10px;display:flex;align-items:flex-end;gap:8px}
+  /* HR sparkline (zone-banded mini) */
+  .spark{display:flex;align-items:flex-end;gap:2px;height:30px;margin:7px 0 2px}
+  .spark .s{flex:1;border-radius:2px;min-height:3px}
+  .spark .s.z1{background:var(--azure)} .spark .s.z2{background:var(--teal)} .spark .s.z3{background:var(--fresh)} .spark .s.z4{background:var(--moderate)} .spark .s.z5{background:var(--hard)}
+  /* stacked HR zone bar */
+  .zone{display:flex;height:15px;border-radius:5px;overflow:hidden;margin:8px 0 5px}
+  .zone i{height:100%}
+  .zone .z1{background:var(--azure)} .zone .z2{background:var(--teal)} .zone .z3{background:var(--fresh)} .zone .z4{background:var(--moderate)} .zone .z5{background:var(--hard)}
+  .zlegend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:9.5px;color:var(--t2);font-weight:700}
+  .zlegend span{display:inline-flex;align-items:center;gap:4px}
+  .zlegend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+  /* reactions strip */
+  .react{display:flex;align-items:center;gap:15px;margin-top:9px;padding-top:9px;border-top:1px solid var(--hair);font-size:13px;color:var(--t2);font-weight:700}
+  .react .rx{display:inline-flex;align-items:center;gap:5px}
+  .react .rx.on{color:var(--coral)} .react .spx{flex:1}
+  /* freshness pill */
+  .pill{position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:30;background:var(--coral);color:#1a1208;font-weight:850;
+    font-size:12px;border-radius:999px;padding:7px 14px;box-shadow:0 10px 22px -8px rgba(255,122,107,.6);display:inline-flex;gap:6px;align-items:center}
+  /* skeleton */
+  .skel{background:linear-gradient(100deg,#1d1d22 30%,#27272e 50%,#1d1d22 70%);border-radius:13px;margin:9px 0}
+  .skel.h{height:148px} .skel.t{height:15px;width:62%;margin:8px 0} .skel.r{height:44px}
+  /* wall masonry */
+  .wall{column-count:3;column-gap:7px;margin-top:8px}
+  .wall .wc{break-inside:avoid;margin-bottom:7px;border-radius:11px;overflow:hidden;border:1px solid var(--hair);
+    background:linear-gradient(150deg,#2a2017,#15140f);position:relative;display:flex;align-items:flex-end;padding:7px;min-height:60px}
+  .wall .wc .wg{position:absolute;top:5px;right:6px;background:rgba(0,0,0,.55);border-radius:6px;padding:1px 6px;font-size:10px;font-weight:850;color:var(--amber)}
+  .wall .wc .wl{font-size:9.5px;font-weight:750;color:#fff;position:relative;z-index:2}
+  /* generated (no-media) gradient hero variants */
+  .gen{background:linear-gradient(150deg,var(--amber-deep),#15140f)} .gen.wk{background:linear-gradient(150deg,#7a3d12,#15140f)}
+  /* ============ STORY (full-bleed recap scene) ============ */
+  .story{position:relative;width:100%;height:100%;display:flex;flex-direction:column;color:#fff;padding:0}
+  .story .prog{display:flex;gap:4px;padding:52px 14px 0}
+  .story .prog i{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.28)}
+  .story .prog i.on{background:#fff}
+  .story .top{display:flex;align-items:center;gap:8px;padding:12px 16px 0;font-size:12px;font-weight:800}
+  .story .body{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 22px;gap:11px}
+  .story .kick{font-size:11px;font-weight:850;letter-spacing:.16em;text-transform:uppercase;opacity:.82}
+  .story .sbig{font-size:54px;font-weight:850;line-height:.95;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .story .ssm{font-size:15px;opacity:.86;font-weight:600;line-height:1.42}
+  .story .foot{padding:14px 18px 22px;display:flex;align-items:center;gap:9px;font-size:11px;opacity:.78;font-weight:750}
+  .story.s1{background:radial-gradient(120% 90% at 30% 8%,#3a2a12,#08090c)}
+  .story.s2{background:radial-gradient(120% 90% at 72% 8%,#2a1530,#08090c)}
+  .story.s3{background:radial-gradient(130% 95% at 50% 102%,#13322a,#08090c)}
+  /* ============ SHARE composer ============ */
+  .tpl{display:flex;gap:9px;overflow:hidden;margin:9px 0}
+  .tplc{flex:0 0 auto;width:84px}
+  .tplc .pv{height:114px;border-radius:12px;border:1px solid var(--hair);background:radial-gradient(120% 80% at 50% 0%,#2a1c0c,#100f12);overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:8px}
+  .tplc.on .pv{border-color:var(--coral);box-shadow:0 0 0 2px var(--coral)}
+  .tplc .tn{font-size:10px;font-weight:750;color:var(--t2);margin-top:6px;text-align:center}
+  .canvas{margin:8px auto 6px;border-radius:14px;border:1px solid var(--glasshair);overflow:hidden;position:relative;
+    background:radial-gradient(120% 80% at 50% 0%,#2f200d,#08090c);color:#fff}
+  .canvas.r916{width:172px;height:306px} .canvas.r45{width:224px;height:280px} .canvas.r11{width:248px;height:248px}
+  .canvas .cc{position:absolute;inset:0;display:flex;flex-direction:column;padding:16px}
+  .canvas .wm{position:absolute;left:16px;bottom:14px;font-size:10px;font-weight:800;opacity:.7;letter-spacing:.04em}
+  .export{width:150px;aspect-ratio:9/16;border-radius:16px;overflow:hidden;border:1px solid var(--glasshair);position:relative;color:#fff;
+    background:radial-gradient(120% 80% at 50% 0%,#2f200d,#08090c)}
+  .export.r45{width:172px;aspect-ratio:4/5}
+  .export .ec{position:absolute;inset:0;display:flex;flex-direction:column;padding:13px}
+  /* two-up compare frame */
+  .twoup{display:flex;gap:9px}
+  .twoup .col{flex:1}
+  .twoup .col .ct{font-size:10px;font-weight:800;color:var(--t2);letter-spacing:.06em;text-transform:uppercase;margin:0 0 5px;text-align:center}
+
+
+  /* ============ MEDIA CAROUSEL (added on review) ============ */
+  .carousel{display:flex;gap:8px;overflow:hidden;margin:8px 0 2px}
+  .mitem{flex:0 0 auto;width:198px;height:150px;border-radius:13px;position:relative;overflow:hidden;border:1px solid var(--hair);background:linear-gradient(150deg,#2a2017,#15140f)}
+  .mitem.wk{background:linear-gradient(150deg,#7a3d12,#15140f)}
+  .mitem .mtag{position:absolute;left:8px;top:8px;background:rgba(0,0,0,.62);border:1px solid var(--glasshair);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:750;color:#fff;display:inline-flex;align-items:center;gap:5px}
+  .mitem .mhr{position:absolute;right:8px;top:8px;background:rgba(0,0,0,.55);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:850;display:inline-flex;align-items:center;gap:5px;color:#fff;font-variant-numeric:tabular-nums}
+  .mitem .mhr i{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .mitem .mcount{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.6);border-radius:999px;padding:2px 9px;font-size:10px;font-weight:850;color:#fff}
+  .mitem .mplay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:var(--glass);border:1px solid var(--glasshair);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+  .mitem .movr{position:absolute;left:0;right:0;bottom:0;height:30px;display:flex;align-items:flex-end;gap:1.5px;padding:0 8px 7px}
+  .mitem .movr i{flex:1;border-radius:1px;background:var(--hard);opacity:.85}
+  .dots{display:flex;justify-content:center;gap:5px;margin:8px 0 2px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:#3a3a42;display:inline-block}
+  .dots i.on{background:var(--ember);width:18px;border-radius:3px}
+  /* grouped media browser */
+  .mrail{margin:11px 0}
+  .mrailhdr{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:760;margin:4px 2px 7px}
+  .mrailhdr .cnt{margin-left:auto;color:var(--t2);font-size:11px;font-weight:700}
+  .mscroll{display:flex;gap:7px;overflow:hidden}
+  .mscroll .mt{flex:0 0 auto;width:100px;height:134px;border-radius:11px;position:relative;overflow:hidden;border:1px solid var(--hair);background:linear-gradient(150deg,#2a2017,#15140f)}
+  .mscroll .mt.wk{background:linear-gradient(150deg,#7a3d12,#15140f)}
+  .mscroll .mt .tg{position:absolute;left:6px;bottom:6px;font-size:9.5px;font-weight:750;color:#fff}
+  .mscroll .mt .hb{position:absolute;right:5px;top:5px;font-size:9.5px;font-weight:850;color:#fff;background:rgba(0,0,0,.55);border-radius:6px;padding:1px 5px;display:inline-flex;align-items:center;gap:3px}
+  .mscroll .mt .hb i{width:6px;height:6px;border-radius:50%;display:inline-block}
+  .mscroll .mt .pl{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);color:#fff;font-size:13px;opacity:.92}
+
+</style>
+</head>
+
+<body>
+<header class="page">
+  <h1 class="title">Recap — your sessions, retold</h1>
+  <p class="sub">A new third tab, <b>Recap</b>, between Today and Apps: an Instagram-style, infinite-scroll <b>feed of your own climbing &amp; gym sessions</b> as polished, shareable Pulse&nbsp;Pro cards — woven through with <b>auto-generated insight &amp; recap cards</b> that compose themselves from whatever data you actually have. When fitness-band <b>HR data</b> exists it deepens the card; when <b>photos/video</b> exist, iOS auto-edits an HR-overlay clip; and a Spotify-Wrapped-style <b>Story</b> rail turns the tab into a daily-open hook. Built on a pure, eligibility-gated <code>FeedComposer</code> + an append-only, UUIDv5 <code>FeedActivity</code> log that is <b>personal now, social-ready later</b>. Real <code>SnappetColor</code> / <code>PulseColors</code> tokens (kilter amber <b>#F59E0B</b>, workout ember <b>#FF9645</b>, coral brand <b>#FF7A6B</b>), dark-mode-first.
+    <b>On-device only — no backend, no network, no accounts.</b> "Share" = export an image/clip to the OS share sheet.</p>
+  <div class="legend">
+    <span class="swatch"><i class="dot" style="background:var(--amber)"></i> kilter amber — climbing accent</span>
+    <span class="swatch"><i class="dot" style="background:var(--ember)"></i> ember — workout accent</span>
+    <span class="swatch"><i class="dot" style="background:var(--coral)"></i> coral — single CTA / share moment</span>
+    <span class="swatch">HR zones: <i class="dot" style="background:var(--azure)"></i>Z1 <i class="dot" style="background:var(--teal)"></i>Z2 <i class="dot" style="background:var(--fresh)"></i>Z3 <i class="dot" style="background:var(--moderate)"></i>Z4 <i class="dot" style="background:var(--hard)"></i>Z5</span>
+    <span class="swatch">ascent: <i class="dot" style="background:var(--flash)"></i>flash <i class="dot" style="background:var(--send)"></i>send <i class="dot" style="background:var(--proj)"></i>project <i class="dot" style="background:var(--attempt)"></i>attempt</span>
+  </div>
+  <div class="legend" style="margin-top:6px">
+    <span class="swatch" style="color:var(--t2)"><b style="color:#fff">Read me:</b> each phone is one wireframe screen. Captions name the real data model + reused engine behind every card.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="flowhead">Flow 1 · The Recap feed</div>
+<h2 class="flowtitle">The self-composing feed — root states</h2>
+<p class="flowdesc">The Recap root scroll renders whatever <span class="k">FeedComposer.compose(window:)</span> emits from <span class="k">KilterSessionStats</span>, <span class="k">KilterAllTimeStats</span> and <span class="k">HRStats</span> — degrading by absence across iOS and Android, never showing a dead button or an empty wall.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> Rich state</span><span class="arr">→</span><span class="fs"><i>2</i> Sparse / new-user</span><span class="arr">→</span><span class="fs"><i>3</i> Android degraded</span><span class="arr">→</span><span class="fs"><i>4</i> Freshness</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="feed_rich">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="stories">
+            <div class="scover c1 new"><span class="sci">✦</span><div class="sct">This Week</div><div class="scs">5 sessions</div></div>
+            <div class="scover c2"><span class="sci">📅</span><div class="sct">June</div><div class="scs">recap</div></div>
+            <div class="scover c3"><span class="sci">🏆</span><div class="sct">Year in Climb</div><div class="scs">2026</div></div>
+          </div>
+          <div class="lensbar">
+            <span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span><span class="chip">Milestones</span>
+          </div>
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ PR</span><div class="d">Climb session</div><div class="t">Today · 1h 12m</div></div>
+            <div class="fhero">
+              <div class="clip"><span class="spill az">▶ 0:18 clip</span></div>
+              <div class="play">▶</div>
+              <div class="ovl">Kilter · 40° · auto-clip ready</div>
+            </div>
+            <div class="hero"><div class="num amber">V7</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">Kilter · 40°</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">14</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">9</div><div class="l">Sends</div></div>
+              <div class="r"><div class="v">152</div><div class="l">Peak BPM</div></div>
+            </div>
+            <div class="spark"><span class="s z2" style="height:36%"></span><span class="s z3" style="height:58%"></span><span class="s z4" style="height:82%"></span><span class="s z5" style="height:100%"></span><span class="s z4" style="height:78%"></span><span class="s z3" style="height:54%"></span><span class="s z2" style="height:34%"></span><span class="s z4" style="height:88%"></span></div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+          <div class="sesscard">
+            <div class="edge" style="background:var(--coral)"></div>
+            <div class="h"><span class="spill pr">🏆 GRADE PR</span><div class="d">New hardest ever</div><div class="t">Today</div></div>
+            <div class="hero"><div class="num" style="color:var(--coral)">V7</div><div class="side"><div class="lbl">Was V6 · +1 grade</div><div class="sub2">Kilter · 40°</div></div></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>The money shot.</b> Newest <span class="k">KilterSession</span> on top, its hero clip from <span class="k">SessionMedia</span> ranked by <span class="k">ReelRanking</span>, ribbon + zone sparkline from <span class="k">KilterSessionStats + HRStats</span>; the coral <span class="k">Grade PR</span> card below is recency-bounded from <span class="k">KilterAllTimeStats.maxGradeDifficulty</span>. Stories rail + lens chips are client-side over <span class="k">FeedComposer</span>.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="feed_sparse">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="lensbar">
+            <span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span><span class="chip">Milestones</span>
+          </div>
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ Sent</span><div class="d">Climb session</div><div class="t">Today · 38m</div></div>
+            <div class="hero"><div class="num amber">V4</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">Kilter · 40°</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">6</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">4</div><div class="l">Sends</div></div>
+              <div class="r"><div class="v">2</div><div class="l">Projects</div></div>
+            </div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx">↗ Share</span></div>
+          </div>
+          <div class="tile" style="text-align:center;padding:20px 16px">
+            <div style="font-size:26px;margin-bottom:6px">✦</div>
+            <div class="lbl">Your Recap is warming up</div>
+            <div class="sub2" style="margin:6px 0 12px">Log 2 more sessions to unlock your first insights — PRs, your grade pyramid and Year-in-Climb.</div>
+            <div class="bars" style="justify-content:center;gap:8px">
+              <span class="b" style="height:60%;background:var(--amber)"></span><span class="b ghost" style="height:60%"></span><span class="b ghost" style="height:60%"></span>
+            </div>
+            <div class="sub2" style="margin-top:8px">1 of 3 sessions</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Lively cold-start, never an empty wall.</b> One plain <span class="k">KilterSession</span> card plus a composer-hint <span class="k">tile</span>: insight predicates in <span class="k">FeedComposer</span> aren't eligible yet, so a friendly progress nudge stands in for the not-yet-composed <span class="k">KilterAllTimeStats</span> cards.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="feed_android">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="stories">
+            <div class="scover c1 new"><span class="sci">✦</span><div class="sct">This Week</div><div class="scs">5 sessions</div></div>
+            <div class="scover c2"><span class="sci">📅</span><div class="sct">June</div><div class="scs">recap</div></div>
+            <div class="scover c3"><span class="sci">🏆</span><div class="sct">Year in Climb</div><div class="scs">2026</div></div>
+          </div>
+          <div class="lensbar">
+            <span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span><span class="chip">Milestones</span>
+          </div>
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ PR</span><div class="d">Climb session</div><div class="t">Today · 1h 12m</div></div>
+            <div class="fhero gen">
+              <div class="hero" style="margin:0"><div class="num amber">V7</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">Kilter · 40°</div></div></div>
+            </div>
+            <div class="ribbon">
+              <div class="r"><div class="v">14</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">9</div><div class="l">Sends</div></div>
+              <div class="r"><div class="v">2</div><div class="l">Projects</div></div>
+            </div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx">↗ Share</span></div>
+          </div>
+          <div class="sesscard">
+            <div class="edge" style="background:var(--moderate)"></div>
+            <div class="h"><span class="spill am">❤ EFFORT</span><div class="d">Session effort</div><div class="t">Today</div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">128</div><div class="l">Avg BPM</div></div>
+              <div class="r"><div class="v">152</div><div class="l">Peak BPM</div></div>
+              <div class="r"><div class="v">1h 12m</div><div class="l">Duration</div></div>
+            </div>
+            <div class="sub2" style="margin-top:8px">Zone breakdown isn't available on Android — avg / peak summary only.</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">⌂</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▤</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Graceful parity, by construction.</b> Same <span class="k">FeedComposer</span> output, but Android has no <span class="k">SessionMedia</span> so the hero is a generated <span class="k">DisciplineHero</span> (<code>.fhero.gen</code>), and with no <span class="k">hrSeries</span> the effort card emits the summary payload from <span class="k">avgHr/maxHr</span> only — no zone chart that would render empty.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device" data-shot="feed_fresh">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="pill">✦ 3 new sessions · New recap ready · tap to refresh</div>
+          <div class="sub2" style="text-align:center;margin:4px 0 10px">↓ pull to refresh</div>
+          <div class="stories">
+            <div class="scover c1 new"><span class="sci">✦</span><div class="sct">This Week</div><div class="scs">5 sessions</div></div>
+            <div class="scover c2"><span class="sci">📅</span><div class="sct">June</div><div class="scs">recap</div></div>
+            <div class="scover c3"><span class="sci">🏆</span><div class="sct">Year in Climb</div><div class="scs">2026</div></div>
+          </div>
+          <div class="lensbar">
+            <span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span><span class="chip">Milestones</span>
+          </div>
+          <div class="skel"><div class="h"></div><div class="t"></div><div class="r"></div></div>
+          <div class="skel"><div class="h"></div><div class="t"></div><div class="r"></div></div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Freshness without a yank.</b> Sessions logged while away surface as a floating <span class="k">pill</span> (scroll-to-top, no jump), <span class="k">.skel</span> skeletons paint while <span class="k">FeedComposer</span> re-runs over the new <span class="k">FeedActivity</span> rows; pull-to-refresh re-derives cards on read.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 2 · Session cards</div>
+<h2 class="flowtitle">One session = one shareable card</h2>
+<p class="flowdesc">Every finished session composes into a single rich <span class="k">FeedCard</span> — a <span class="k">PulsePro.DisciplineHero</span> + <span class="k">StatRibbon</span> on a <span class="k">.snappetCard()</span> surface, with a discipline edge accent and a one-tap Share. Payloads are discipline-adaptive (<span class="k">KilterSessionStats</span> vs <span class="k">WorkoutSession + SetLog</span>) and media degrades gracefully to a generated hero.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> Climb card</span><span class="arr">→</span><span class="fs"><i>2</i> No-media fallback</span><span class="arr">→</span><span class="fs"><i>3</i> Strength card</span><span class="arr">→</span><span class="fs"><i>4</i> Running card</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="card_climb">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><div class="d">Climb session</div><div class="t">Today · 1h 12m</div></div>
+            <div class="fhero" style="margin-top:8px">
+              <span class="clip"><span class="spill az">▶ 0:18 clip</span></span>
+              <div class="play">▶</div>
+              <div class="ovl">Kilter · 40° · 14 climbs</div>
+            </div>
+            <div class="hero" style="margin-top:10px"><div class="num amber">V7</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">Was V6 · new PR</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">14</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">9</div><div class="l">Sends</div></div>
+              <div class="r"><div class="v">2</div><div class="l">Projects</div></div>
+            </div>
+            <div class="pyr" style="margin-top:10px">
+              <div class="pr"><span class="pg">V7</span><span class="pbar"><span class="seg send" style="width:14%"></span></span><span class="pc">1</span></div>
+              <div class="pr"><span class="pg">V6</span><span class="pbar"><span class="seg send" style="width:40%"></span><span class="seg proj" style="width:14%"></span></span><span class="pc">3</span></div>
+              <div class="pr"><span class="pg">V5</span><span class="pbar"><span class="seg flash" style="width:28%"></span><span class="seg send" style="width:43%"></span></span><span class="pc">4</span></div>
+              <div class="pr"><span class="pg">V4</span><span class="pbar"><span class="seg flash" style="width:57%"></span></span><span class="pc">2</span></div>
+            </div>
+            <div class="spark" style="margin-top:10px"><span class="s z2" style="height:36%"></span><span class="s z3" style="height:58%"></span><span class="s z4" style="height:80%"></span><span class="s z5" style="height:100%"></span><span class="s z4" style="height:84%"></span><span class="s z3" style="height:52%"></span><span class="s z2" style="height:34%"></span><span class="s z4" style="height:88%"></span></div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>The flagship session card.</b> Built from <span class="k">KilterSession + KilterSessionStats</span> — <span class="k">DisciplineHero</span> shows the hardest send, the <span class="k">StatRibbon</span> the fact triad, the inline pyramid + zone sparkline from <span class="k">KilterSessionStats.pyramid</span> / <span class="k">HRStats.secondsByZone</span>, and the clip badge from <span class="k">SessionMedia</span>.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="card_climb_nomedia">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><div class="d">Climb session</div><div class="t">Today · 1h 12m</div></div>
+            <div class="fhero gen" style="margin-top:8px">
+              <div class="hero" style="margin:0"><div class="num amber">V7</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">Kilter · 40°</div></div></div>
+              <div class="pyr" style="margin-top:8px;width:78%">
+                <div class="pr"><span class="pg">V7</span><span class="pbar"><span class="seg send" style="width:14%"></span></span><span class="pc">1</span></div>
+                <div class="pr"><span class="pg">V6</span><span class="pbar"><span class="seg send" style="width:40%"></span><span class="seg proj" style="width:14%"></span></span><span class="pc">3</span></div>
+                <div class="pr"><span class="pg">V5</span><span class="pbar"><span class="seg flash" style="width:28%"></span><span class="seg send" style="width:43%"></span></span><span class="pc">4</span></div>
+              </div>
+            </div>
+            <div class="ribbon">
+              <div class="r"><div class="v">14</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">9</div><div class="l">Sends</div></div>
+              <div class="r"><div class="v">2</div><div class="l">Projects</div></div>
+            </div>
+            <div class="spark" style="margin-top:10px"><span class="s z2" style="height:36%"></span><span class="s z3" style="height:58%"></span><span class="s z4" style="height:80%"></span><span class="s z5" style="height:100%"></span><span class="s z4" style="height:84%"></span><span class="s z3" style="height:52%"></span><span class="s z2" style="height:34%"></span><span class="s z4" style="height:88%"></span></div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Generated hero, no footage.</b> When no <span class="k">SessionMedia</span> exists, the hero falls back to a composited <span class="k">DisciplineHero</span> gradient — the V7 numeral + mini-pyramid drawn from <span class="k">KilterSessionStats</span>, so the card degrades by construction and is still fully shareable.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="card_strength">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--ember)"></div>
+            <div class="h"><div class="d">Push Day</div><div class="t">Today · 52m</div></div>
+            <div class="hero" style="margin-top:8px"><div class="num" style="color:var(--ember)">4,250</div><div class="side"><div class="lbl">Total volume · kg</div><div class="sub2">Strength · 5 exercises</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">5</div><div class="l">Exercises</div></div>
+              <div class="r"><div class="v">18</div><div class="l">Sets</div></div>
+              <div class="r"><div class="v">52m</div><div class="l">Duration</div></div>
+            </div>
+            <div class="spill pr" style="margin-top:10px">🏆 Bench PR · 82.5 kg e1RM</div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Strength session, volume hero.</b> From <span class="k">WorkoutSession + SetLog</span> — <span class="k">DisciplineHero</span> shows total volume, the <span class="k">StatRibbon</span> the exercise/set/time triad, and the <span class="k">b4LiftPR</span> spill computes est-1RM from <span class="k">SetLog.actualWeight × actualReps</span> vs prior best.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device" data-shot="card_running">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--ember)"></div>
+            <div class="h"><div class="d">Run · easy Z3</div><div class="t">Today · 27:30</div></div>
+            <div class="hero" style="margin-top:8px"><div class="num" style="color:var(--ember)">5.2</div><div class="side"><div class="lbl">Distance · km</div><div class="sub2">Running · 5:17 /km</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">27:30</div><div class="l">Time</div></div>
+              <div class="r"><div class="v">5:17</div><div class="l">Pace /km</div></div>
+              <div class="r"><div class="v">156</div><div class="l">Avg BPM</div></div>
+            </div>
+            <div class="spark" style="margin-top:10px"><span class="s z2" style="height:40%"></span><span class="s z3" style="height:64%"></span><span class="s z3" style="height:70%"></span><span class="s z4" style="height:88%"></span><span class="s z4" style="height:92%"></span><span class="s z4" style="height:86%"></span><span class="s z3" style="height:66%"></span><span class="s z2" style="height:42%"></span></div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Running session, distance hero.</b> Same <span class="k">a2Session</span> card with a discipline-adaptive payload — <span class="k">WorkoutSession + SetLog.distanceMeters</span> feed distance/pace into the <span class="k">DisciplineHero</span> + <span class="k">StatRibbon</span>, and the zone sparkline comes from the run's <span class="k">HRStats</span> series.</div>
+  </div>
+
+</div>
+
+I have everything needed. Returning the HTML fragment.
+
+<div class="flowhead">Flow 3 · Insight &amp; milestone cards</div>
+<h2 class="flowtitle">Cards that compose themselves from your record</h2>
+<p class="flowdesc">The eligibility-gated <span class="k">FeedComposer</span> reads <span class="k">KilterAllTimeStats</span>, <span class="k">KilterSessionStats</span> and the dated <span class="k">FeedActivity</span> log to float PR, pyramid, streak and on-this-day cards — each one only composes when its predicate fires, and never sorts older than its trigger.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> Grade PR fires</span><span class="arr">→</span><span class="fs"><i>2</i> Pyramid + health nudge</span><span class="arr">→</span><span class="fs"><i>3</i> Streak, framed gently</span><span class="arr">→</span><span class="fs"><i>4</i> On-this-day memory</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="card_pr">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard" style="border-color:var(--coral);box-shadow:0 0 0 1px var(--coral),0 0 28px -6px var(--coral)">
+            <div class="edge" style="background:var(--coral)"></div>
+            <div class="h"><span class="spill pr">🏆 GRADE PR</span><div class="d">New hardest ever</div><div class="t">Today</div></div>
+            <div class="hero"><div class="num" style="color:var(--coral)">V7</div><div class="side"><div class="lbl" style="color:var(--coral-l)">YOUR HARDEST EVER</div><div class="sub2">Kilter · 40°</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">V6</div><div class="l">Was</div></div>
+              <div class="r"><div class="v" style="color:var(--coral)">+1</div><div class="l">Grade</div></div>
+              <div class="r"><div class="v">128</div><div class="l">Avg BPM</div></div>
+            </div>
+            <div class="tile" style="margin-top:8px;display:flex;align-items:center;gap:8px"><span style="color:var(--coral)">✨</span><span class="sub2">Tap to see how — the send, the pyramid row it completed</span><span class="chev" style="margin-left:auto">›</span></div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on" style="background:var(--coral);color:#1a0d0d">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Grade PR, celebratory.</b> Composed when a send's difficulty beats <span class="k">KilterAllTimeStats.maxGradeDifficulty</span>; the "see how" hint pushes to <span class="k">InsightDetailView</span>, Share is emphasized so the <span class="k">FeedComposer</span> card is one tap from an artifact.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="card_pyramid">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">▦ Pyramid</span><div class="d">Grade pyramid · all-time</div><div class="t">23 sends</div></div>
+            <div class="pyr">
+              <div class="pr"><span class="pg">V7</span><div class="pbar"><span class="seg send" style="width:6%"></span></div><span class="pc">1</span></div>
+              <div class="pmax">max · V7</div>
+              <div class="pr"><span class="pg">V6</span><div class="pbar"><span class="seg send" style="width:14%"></span><span class="seg proj" style="width:5%"></span></div><span class="pc">3</span></div>
+              <div class="pr"><span class="pg">V5</span><div class="pbar"><span class="seg flash" style="width:9%"></span><span class="seg send" style="width:24%"></span></div><span class="pc">6</span></div>
+              <div class="pr"><span class="pg">V4</span><div class="pbar"><span class="seg flash" style="width:20%"></span><span class="seg send" style="width:38%"></span></div><span class="pc">8</span></div>
+              <div class="pr"><span class="pg">V3</span><div class="pbar"><span class="seg flash" style="width:30%"></span><span class="seg send" style="width:18%"></span></div><span class="pc">5</span></div>
+            </div>
+          </div>
+          <div class="tile">
+            <div class="cardhead"><span class="ic">🩺</span><b>Pyramid health</b></div>
+            <div class="sub2" style="margin-top:6px">Your base is solid — 2 more clean <b>V6</b> sends would round out the row below your max.</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Pyramid + plain-language health.</b> The c1 bars read <span class="k">KilterAllTimeStats.pyramid</span> (flash/send/proj split); the c2 tile is a top-heavy shape heuristic over the same array — a nudge, never a chart that renders empty.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="card_streak">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--teal)"></div>
+            <div class="h"><span class="st st-flash">🔥 Streak</span><div class="d">Consistency</div><div class="t">6 weeks</div></div>
+            <div class="hero"><div class="num" style="color:var(--teal)">12</div><div class="side"><div class="lbl">Day streak</div><div class="sub2">6 weeks unbroken · ~4×/week</div></div></div>
+            <div class="heat">
+              <span class="hc l1"></span><span class="hc l3"></span><span class="hc"></span><span class="hc l2"></span><span class="hc l4"></span><span class="hc l3"></span><span class="hc"></span><span class="hc l3"></span><span class="hc l2"></span><span class="hc l4"></span><span class="hc"></span><span class="hc l3"></span><span class="hc l4"></span><span class="hc l2"></span><span class="hc l3"></span><span class="hc l4"></span><span class="hc today"></span>
+              <span class="hc l2"></span><span class="hc l4"></span><span class="hc l3"></span><span class="hc"></span><span class="hc l3"></span><span class="hc l4"></span><span class="hc l2"></span><span class="hc l3"></span><span class="hc"></span><span class="hc l4"></span><span class="hc l3"></span><span class="hc l2"></span><span class="hc l4"></span><span class="hc l3"></span><span class="hc"></span><span class="hc l3"></span><span class="hc l4"></span>
+            </div>
+            <div class="tile" style="margin-top:8px;display:flex;align-items:center;gap:8px"><span style="color:var(--azure)">🌙</span><span class="sub2">You've trained 4 hard days — a rest day keeps you primed.</span></div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Streak, framed protectively.</b> Day-counts feed the <span class="k">consistencyMap</span> heat grid and the <span class="k">streak</span> predicate; the rest line is the "Go Gentler" <span class="k">restNudge</span> over volume load — protective, not a guilt nag.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device" data-shot="card_onthisday">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--violet)"></div>
+            <div class="h"><span class="spill" style="background:var(--violet);color:#fff">⏳ ON THIS DAY</span><div class="d">1 year ago today</div><div class="t">Memory</div></div>
+            <div class="hero"><div class="num" style="color:var(--violet)">V5</div><div class="side"><div class="lbl">Your first ever V5</div><div class="sub2">June 20, 2025 · Kilter · 40°</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">V5</div><div class="l">Then · top</div></div>
+              <div class="r"><div class="v" style="color:var(--coral)">V7</div><div class="l">Now · top</div></div>
+              <div class="r"><div class="v">+2</div><div class="l">Grades</div></div>
+            </div>
+            <div class="tile" style="margin-top:8px"><div class="sub2">You sent your first <b>V5</b> — now V5 is a warm-up.</div></div>
+            <div class="react"><span class="rx">📝 React as note</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="sub2" style="font-size:11px">private memory</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>On-this-day memory.</b> The <span class="k">onThisDay</span> predicate matches a dated <span class="k">FeedActivity</span> on this calendar day a year back; the then-&amp;-now triad reads <span class="k">KilterAllTimeStats.maxGradeProgression</span>, and "react-as-note" writes a private <span class="k">Reaction(type:note)</span> row — curation, not a social like.</div>
+  </div>
+
+</div>
+
+I have full command of both files. Now I'll author the Flow 4 section per the kit's structure.
+
+```
+<div class="flowhead">Flow 4 · HR & effort — the differentiator</div>
+<h2 class="flowtitle">Heart-rate turns a log into insight</h2>
+<p class="flowdesc">When <span class="k">KilterSession.hrSeries</span> exists (iOS), the composer surfaces zone bars, Edwards TRIMP, effort-vs-grade efficiency and HR trends from <span class="k">HRStats</span> + <span class="k">KilterSessionStats.timeline[].effort</span>; Android stores only an avg/max/redline summary, so the same card composes a simpler payload — never an empty chart.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> iOS zone bar</span><span class="arr">→</span><span class="fs"><i>2</i> Android summary</span><span class="arr">→</span><span class="fs"><i>3</i> efficiency gain</span><span class="arr">→</span><span class="fs"><i>4</i> HR trend arrows</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="card_effort_ios">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ Effort</span><div class="d">Session effort · iOS</div><div class="t">Today · 1h 12m</div></div>
+            <div class="hero"><div class="num" style="color:var(--hard)">152</div><div class="side"><div class="lbl">Peak BPM</div><div class="sub2">avg 128 · Kilter 40°</div></div></div>
+            <div class="zone" style="margin-top:12px"><i class="z1" style="width:10%"></i><i class="z2" style="width:18%"></i><i class="z3" style="width:42%"></i><i class="z4" style="width:22%"></i><i class="z5" style="width:8%"></i></div>
+            <div class="zlegend" style="margin-top:8px"><span><i style="background:var(--azure)"></i>Z1</span><span><i style="background:var(--teal)"></i>Z2</span><span><i style="background:var(--fresh)"></i>Z3</span><span><i style="background:var(--moderate)"></i>Z4</span><span><i style="background:var(--hard)"></i>Z5</span></div>
+            <div class="ribbon" style="margin-top:12px">
+              <div class="r"><div class="v">22<span style="font-size:11px"> min</span></div><div class="l">In Z4+</div></div>
+              <div class="r"><div class="v">78</div><div class="l">TRIMP</div></div>
+              <div class="r"><div class="v">128</div><div class="l">Avg BPM</div></div>
+            </div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>The full-fat effort card.</b> The stacked zone bar + "22 min in Z4+ · TRIMP 78" come from <span class="k">HRStats.secondsByZone</span> and <span class="k">edwardsTRIMP</span> computed over the complete <span class="k">KilterSession.hrSeries</span> — iOS-only because only iOS stores the full series.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="card_effort_android">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ Effort</span><div class="d">Session effort · Android</div><div class="t">Today · 1h 12m</div></div>
+            <div class="hero"><div class="num" style="color:var(--hard)">152</div><div class="side"><div class="lbl">Peak BPM</div><div class="sub2">summary only · Kilter 40°</div></div></div>
+            <div class="ribbon" style="margin-top:12px">
+              <div class="r"><div class="v">128</div><div class="l">Avg BPM</div></div>
+              <div class="r"><div class="v">152</div><div class="l">Max BPM</div></div>
+              <div class="r"><div class="v" style="color:var(--hard)">152</div><div class="l">Redline</div></div>
+            </div>
+            <div class="note" style="margin-top:12px;font-size:12px;color:var(--t2)">No per-beat series on Android — zone breakdown is simply not composed, so there's no empty chart to apologise for.</div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Degrade by simpler payload, not empty chart.</b> Android <span class="k">KilterSession</span> persists only <span class="k">avgHr / maxHr / hrSampleCount</span>, so the same e1 card composes an avg/max/redline <span class="k">StatRibbon</span> — the zone predicate over <span class="k">HRStats.secondsByZone</span> is never eligible, so it's never drawn.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="card_efficiency">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--fresh)"></div>
+            <div class="h"><span class="spill az">📈 FITNESS GAIN</span><div class="d">Effort vs grade</div><div class="t">90-day trend</div></div>
+            <div class="hero"><div class="num" style="color:var(--fresh)">132</div><div class="side"><div class="lbl">avg BPM sending V6</div><div class="sub2">was 148 · <span class="delta dn">↓ 16 BPM</span></div></div></div>
+            <div class="bars" style="margin-top:14px;align-items:flex-end">
+              <div class="b" style="height:100%;background:var(--hard)"></div>
+              <div class="b ghost" style="height:30%"></div>
+              <div class="b ghost" style="height:30%"></div>
+              <div class="b" style="height:70%;background:var(--fresh)"></div>
+            </div>
+            <div class="axis"><span>3 mo ago</span><span style="flex:1"></span><span>today</span></div>
+            <div class="sub2" style="margin-top:12px;color:var(--ink)">You're sending the <b>same grade with less effort</b> — your engine got fitter, not just your fingers.</div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>The standout differentiator.</b> The e4 efficiency card pairs same-grade sends across time from <span class="k">HRStats</span> + <span class="k">KilterSessionStats.timeline[].effort</span> over full <span class="k">hrSeries</span> — iOS-only, framed as a fitness gain (148→132 avg BPM on V6).</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device" data-shot="card_hrtrend">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ Trend</span><div class="d">Avg & peak HR</div><div class="t">90 days vs baseline</div></div>
+            <div class="lbl" style="margin-top:10px">Weekly avg HR</div>
+            <div class="bars" style="margin-top:8px;align-items:flex-end">
+              <div class="b" style="height:88%;background:var(--moderate)"></div>
+              <div class="b" style="height:80%;background:var(--moderate)"></div>
+              <div class="b" style="height:72%;background:var(--fresh)"></div>
+              <div class="b" style="height:66%;background:var(--fresh)"></div>
+              <div class="b" style="height:60%;background:var(--fresh)"></div>
+              <div class="b" style="height:55%;background:var(--teal)"></div>
+            </div>
+            <div class="axis"><span>wk1</span><span style="flex:1"></span><span>wk6</span></div>
+            <div class="ribbon" style="margin-top:14px">
+              <div class="r"><div class="v" style="color:var(--fresh)">128</div><div class="l">Avg BPM</div></div>
+              <div class="r"><div class="v">152</div><div class="l">Peak BPM</div></div>
+              <div class="r"><div class="v">12</div><div class="l">w/ HR</div></div>
+            </div>
+            <div class="chiprow" style="margin-top:12px">
+              <span class="chip ghost">Resting HR <span class="delta dn">↓ 4 BPM</span></span>
+              <span class="chip ghost">Weekly volume <span class="delta">↑ 18%</span></span>
+            </div>
+            <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Trend arrows over 90 days.</b> The e3 card rolls per-session HR summaries into a weekly avg-HR <span class="k">.bars</span> mini-trend, and d4 trend arrows (resting HR ↓, volume ↑) come from a 90-day rolling avg vs baseline over <span class="k">HRStats</span> — composed on both platforms.</div>
+  </div>
+
+</div>
+
+I have everything I need. Here is the HTML fragment.
+
+<div class="flowhead">Flow 5 · Recap Stories (prototype-first)</div>
+<h2 class="flowtitle">Spotify-Wrapped, for your climbing year</h2>
+<p class="flowdesc">The highest-wow, highest-risk surface: <span class="k">RecapStoryCover</span> re-runs <span class="k">FeedComposer(window:)</span> scoped to a period — sparse weeks render fewer scenes, a rich year renders up to eight. Each scene rides <span class="k">KilterAllTimeStats</span> + <span class="k">KilterSessionStats</span> and is independently shareable.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> Year cover</span><span class="arr">→</span><span class="fs"><i>2</i> Grade journey</span><span class="arr">→</span><span class="fs"><i>3</i> Pyramid reveal</span><span class="arr">→</span><span class="fs"><i>4</i> Weekly variant</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="story_cover">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="story s1">
+          <div class="prog"><i class="on"></i><i></i><i></i><i></i></div>
+          <div class="top"><span>✦ Year in Climb</span><span class="sp" style="flex:1"></span><span>✕</span></div>
+          <div class="body">
+            <div class="kick">2026 · your climbing year</div>
+            <div class="sbig">312<br>climbs</div>
+            <div class="ssm">across <b>48 sessions</b> on the Kilter board — your strongest year yet.</div>
+          </div>
+          <div class="foot"><span>tap → next</span><span style="flex:1"></span><span>↗ Share scene</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Year in Climb, scene 1.</b> The cover counts a full year of <span class="k">KilterSession</span> rows; totals roll up through <span class="k">FeedComposer(window: .year)</span> over <span class="k">KilterAllTimeStats</span>. Spotify-Wrapped grammar, full-bleed, no chrome.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="story_progress">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="story s2">
+          <div class="prog"><i></i><i class="on"></i><i></i><i></i></div>
+          <div class="top"><span>✦ Year in Climb</span><span class="sp" style="flex:1"></span><span>✕</span></div>
+          <div class="body">
+            <div class="kick">you leveled up</div>
+            <div class="sbig">V5 → V7</div>
+            <div class="ssm">your max grade climbed <b>two notches</b> this year.</div>
+            <div class="chiprow" style="margin-top:14px">
+              <span class="chip ghost">V5</span><span class="arr">→</span><span class="chip ghost">V6</span><span class="arr">→</span><span class="chip on cv">V7</span>
+            </div>
+          </div>
+          <div class="foot"><span>tap → next</span><span style="flex:1"></span><span>↗ Share scene</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Year in Climb, scene 2.</b> The grade-journey scene reads <span class="k">KilterAllTimeStats.maxGradeProgression</span>; the inline V5→V6→V7 hint is the same progression series the <span class="k">c3 Grade Progression</span> card renders.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="story_pyramid">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="story s3">
+          <div class="prog"><i></i><i></i><i class="on"></i><i></i></div>
+          <div class="top"><span>✦ Year in Climb</span><span class="sp" style="flex:1"></span><span>✕</span></div>
+          <div class="body">
+            <div class="kick">your pyramid</div>
+            <div class="pyr" style="margin-top:10px">
+              <div class="pr"><span class="pg">V7</span><span class="pbar"><i class="seg send" style="width:14%"></i></span><span class="pc">1</span></div>
+              <div class="pr"><span class="pg">V6</span><span class="pbar"><i class="seg send" style="width:38%"></i></span><span class="pc">3</span></div>
+              <div class="pr"><span class="pg">V5</span><span class="pbar"><i class="seg send" style="width:62%"></i></span><span class="pc">6</span></div>
+              <div class="pr"><span class="pg">V4</span><span class="pbar"><i class="seg send" style="width:84%"></i></span><span class="pc">8</span></div>
+              <div class="pr"><span class="pg">V3</span><span class="pbar"><i class="seg send" style="width:54%"></i></span><span class="pc">5</span></div>
+            </div>
+            <div class="ssm" style="margin-top:12px">broad base, one <b>V7 capstone</b>.</div>
+          </div>
+          <div class="foot"><span>tap → next</span><span style="flex:1"></span><span>↗ Share scene</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Year in Climb, scene 3.</b> The pyramid reveal is a light-on-dark render of <span class="k">KilterAllTimeStats.pyramid</span> — the same data the feed's <span class="k">c1 Grade Pyramid</span> card composes, scoped to the year window.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device" data-shot="story_week">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="story s1">
+          <div class="prog"><i class="on"></i><i></i><i></i></div>
+          <div class="top"><span>✦ This Week</span><span class="sp" style="flex:1"></span><span>✕</span></div>
+          <div class="body">
+            <div class="kick">This week</div>
+            <div class="sbig">5<br>sessions</div>
+            <div class="ssm"><b>9 sends</b> · hardest <b>V7</b> · 22 min in the red.</div>
+          </div>
+          <div class="foot"><span>tap → next</span><span style="flex:1"></span><span>↗ Share scene</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Weekly recap variant.</b> Same <span class="k">FeedComposer</span>, window-scoped (<span class="k">.thisWeek</span> vs <span class="k">.year</span>) over <span class="k">KilterAllTimeStats.weekRollups</span> + <span class="k">HRStats.secondsByZone</span> (the 22-min Z4+ figure); sparse weeks render fewer scenes by eligibility.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 6 · Detail &amp; the Wall</div>
+<h2 class="flowtitle">Go deeper, or browse it all</h2>
+<p class="flowdesc">Push into a single session for the full climb-by-climb story (<span class="k">KilterSessionStats.timeline</span> + HR zone chart), browse your whole identity as a masonry "send wall" off <span class="k">KilterAllTimeStats</span>, then react and curate with append-only <span class="k">Reaction</span> / <span class="k">SaveItem</span> rows.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> Card detail</span><span class="arr">→</span><span class="fs"><i>2</i> Send wall</span><span class="arr">→</span><span class="fs"><i>3</i> React &amp; save</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="detail_climb">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="bk">‹ Recap</span><span class="ttl">Climb session</span><span class="sp"></span></div>
+        <div class="content">
+          <div class="card">
+            <div class="cardhead"><span class="ic" style="color:var(--amber)">✦</span><span>Today · 1h 12m</span><span class="chev">Kilter · 40°</span></div>
+            <div class="hero"><div class="num amber">V7</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">9 sends · 2 projects</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">14</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">128</div><div class="l">Avg BPM</div></div>
+              <div class="r"><div class="v">152</div><div class="l">Peak BPM</div></div>
+            </div>
+          </div>
+
+          <div class="lbl" style="margin:14px 2px 6px">Climb-by-climb timeline</div>
+          <div class="card" style="padding:4px 0">
+            <div class="row"><span class="num">1</span><div class="meta"><b>V5</b> · 40°</div><span class="st st-flash">⚡ Flash</span><span class="s z2" style="height:14px;width:4px;border-radius:2px;margin-left:8px"></span></div>
+            <div class="row"><span class="num">5</span><div class="meta"><b>V6</b> · 40°</div><span class="st st-send">✦ Send</span><span class="s z4" style="height:20px;width:4px;border-radius:2px;margin-left:8px"></span></div>
+            <div class="row"><span class="num">9</span><div class="meta"><b>V7</b> · 40°</div><span class="st st-send">✦ PR send</span><span class="s z5" style="height:26px;width:4px;border-radius:2px;margin-left:8px"></span></div>
+            <div class="row"><span class="num">11</span><div class="meta"><b>V6</b> · 40°</div><span class="st st-proj">◷ Project</span><span class="s z5" style="height:24px;width:4px;border-radius:2px;margin-left:8px"></span></div>
+            <div class="row"><span class="num">13</span><div class="meta"><b>V6</b> · 40°</div><span class="st st-attempt">· Attempt</span><span class="s z3" style="height:16px;width:4px;border-radius:2px;margin-left:8px"></span></div>
+          </div>
+
+          <div class="lbl" style="margin:14px 2px 6px">HR zones · 22 min in Z4+</div>
+          <div class="zone"><i class="z1" style="width:8%"></i><i class="z2" style="width:18%"></i><i class="z3" style="width:34%"></i><i class="z4" style="width:25%"></i><i class="z5" style="width:15%"></i></div>
+          <div class="zlegend"><span><i class="z2"></i>Z2</span><span><i class="z3"></i>Z3</span><span><i class="z4"></i>Z4</span><span><i class="z5"></i>Z5 peak 152</span></div>
+
+          <div class="lbl" style="margin:14px 2px 6px">Session media</div>
+          <div class="stories" style="gap:8px">
+            <div class="thumb"><span class="play">▶</span></div>
+            <div class="thumb"></div>
+            <div class="thumb"><span class="play">▶</span></div>
+            <div class="thumb"></div>
+          </div>
+
+          <div class="react" style="margin-top:12px"><span class="rx on">♡ 1</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx">↗</span></div>
+          <div class="cta" style="margin-top:10px">↗ Share</div>
+          <div class="cta outline" style="margin-top:8px">Open in Kilter</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>One session, end to end.</b> Reuses <span class="k">KilterSessionStats.timeline</span> for the climb-by-climb rows + effort markers and the <span class="k">HRStats.secondsByZone</span> zone chart; "Open in Kilter" deep-links to <span class="k">KilterSessionDetail</span>, media tiles from <span class="k">SessionMedia</span>.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="wall">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Send wall</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="seg" style="margin-bottom:10px"><span class="on">▦ Grid</span><span>≣ Masonry</span></div>
+          <div class="wall">
+            <div class="wc" style="min-height:128px;background:var(--amber-deep)"><span class="wg">V7</span><span class="wl">PR · today</span></div>
+            <div class="wc" style="min-height:92px;background:var(--surface)"><span class="wg">V5</span><span class="wl">40° flash</span></div>
+            <div class="wc" style="min-height:104px;background:var(--surface)"><span class="wg">V6</span><span class="wl">40° send</span></div>
+            <div class="wc" style="min-height:88px;background:var(--surface)"><span class="wg">V4</span><span class="wl">warmup</span></div>
+            <div class="wc" style="min-height:120px;background:var(--amber)"><span class="wg">V6</span><span class="wl">project sent</span></div>
+            <div class="wc" style="min-height:96px;background:var(--surface)"><span class="wg">V5</span><span class="wl">45° send</span></div>
+            <div class="wc" style="min-height:110px;background:var(--surface)"><span class="wg">V4</span><span class="wl">flash</span></div>
+            <div class="wc" style="min-height:84px;background:var(--surface)"><span class="wg">V3</span><span class="wl">40°</span></div>
+            <div class="wc" style="min-height:124px;background:var(--surface)"><span class="wg">V6</span><span class="wl">40° send</span></div>
+            <div class="wc" style="min-height:92px;background:var(--surface)"><span class="wg">V5</span><span class="wl">send</span></div>
+            <div class="wc" style="min-height:100px;background:var(--surface)"><span class="wg">V4</span><span class="wl">overhang</span></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Your whole climbing identity at a glance.</b> Masonry portfolio over the same corpus as the feed; tiles + grade badges derive from <span class="k">KilterAllTimeStats.pyramid</span> and per-send <span class="k">KilterSession</span> rows, hottest grade (V7 PR) anchored top-left.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="microinteractions">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="sesscard" style="position:relative">
+            <div class="edge" style="background:var(--amber)"></div>
+            <div class="h"><span class="st st-send">✦ PR</span><div class="d">Climb session</div><div class="t">Today · 1h 12m</div></div>
+            <div class="hero"><div class="num amber">V7</div><div class="side"><div class="lbl">Hardest send</div><div class="sub2">Kilter · 40°</div></div></div>
+            <div class="ribbon">
+              <div class="r"><div class="v">14</div><div class="l">Climbs</div></div>
+              <div class="r"><div class="v">9</div><div class="l">Sends</div></div>
+              <div class="r"><div class="v">152</div><div class="l">Peak BPM</div></div>
+            </div>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:96px;color:var(--coral);text-shadow:0 0 30px var(--coral)">♡</div>
+          </div>
+          <div class="sub2" style="text-align:center;margin-top:6px">Double-tap to react</div>
+
+          <div class="glassbar" style="bottom:18px">
+            <div class="lbl" style="margin-bottom:8px">Save to collection</div>
+            <div class="row"><span class="g">📌</span><div class="meta">Projects</div><span class="chev">12</span></div>
+            <div class="row"><span class="g">🏆</span><div class="meta">Proud sends</div><span class="chev">8</span></div>
+            <div class="row"><span class="g">＋</span><div class="meta">New collection</div></div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Private memory, not a hollow like.</b> Double-tap appends a <span class="k">Reaction</span> row (target=self), long-press opens the <span class="k">SaveItem</span> collection menu — both append-only rows framed as personal curation over your own <span class="k">FeedActivity</span> log.</div>
+  </div>
+
+</div>
+
+<div class="flowhead">Flow 7 · Share &amp; export</div>
+<h2 class="flowtitle">Any card → a post in two taps</h2>
+<p class="flowdesc">A tapped card opens <span class="k">ShareComposerCover</span> — a named-template library renders on-device at exact 9:16 / 4:5 / 1:1 (no crop bug), iOS adds an <span class="k">ReelExporter</span> HR-overlay clip, and every export appends a <span class="k">ShareEvent(channel: export:*)</span> to the <span class="k">FeedActivity</span> log. Android ships the image templates today; clips are an honest Stage-0 <span class="k">ReelRoot</span>.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> pick template</span><span class="arr">→</span><span class="fs"><i>2</i> live preview + toggles</span><span class="arr">→</span><span class="fs"><i>3</i> exported assets</span><span class="arr">→</span><span class="fs"><i>4</i> Android Stage-0</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="share_picker">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="bk">‹ Card</span><span class="ttl">Share</span><span class="sp"></span><span class="ic">✕</span></div>
+        <div class="content">
+          <div class="lbl" style="margin:2px 0 8px">Template</div>
+          <div class="tpl">
+            <div class="tplc on"><div class="pv" style="background:linear-gradient(160deg,var(--amber-deep),var(--amber))"><span style="color:#1a1205;font-weight:800;font-size:22px">V7</span></div><div class="tn">Send Card</div></div>
+            <div class="tplc"><div class="pv" style="background:linear-gradient(160deg,var(--surface),var(--muted))"><span style="color:var(--t2);font-size:11px">9·2·3</span></div><div class="tn">Receipt</div></div>
+            <div class="tplc"><div class="pv" style="background:linear-gradient(160deg,var(--coral),var(--coral-l))"><span style="color:#2a0a06;font-weight:800;font-size:11px">🏆 PR</span></div><div class="tn">Grade PR Ticket</div></div>
+            <div class="tplc"><div class="pv" style="background:linear-gradient(160deg,#23303a,var(--azure))"><span style="font-size:18px">📸</span></div><div class="tn">Board Polaroid</div></div>
+            <div class="tplc"><div class="pv" style="background:linear-gradient(160deg,var(--surface),var(--violet))"><span style="color:#fff;font-size:13px">▰▰▱</span></div><div class="tn">Pyramid Card</div></div>
+          </div>
+          <div class="lbl" style="margin:16px 0 8px">Aspect ratio</div>
+          <div class="seg"><span class="on">9:16</span><span>4:5</span><span>1:1</span></div>
+          <div class="card" style="margin-top:14px;padding:12px">
+            <div class="lbl">Composing from</div>
+            <div class="sub2" style="margin-top:4px">Today · Kilter 40° · 14 climbs · 9 sends · hardest V7</div>
+          </div>
+          <div class="cta" style="margin-top:16px">↗ Share</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Pick a template.</b> Five named object-templates ("Send Card" selected) each preview from the same source. Aspect <span class="k">ShareTemplate</span> + payload from <span class="k">FeedCard.payload</span> (built off <span class="k">KilterSessionStats</span> / <span class="k">KilterAllTimeStats</span>).</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="share_preview">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="bk">‹ Templates</span><span class="ttl">Send Ticket</span><span class="sp"></span><span class="ic">⤓</span></div>
+        <div class="content">
+          <div class="canvas r916" style="background:linear-gradient(165deg,var(--amber-deep),#1a1205)">
+            <div class="cc">
+              <div class="lbl" style="color:var(--amber-l)">Grade PR · Kilter 40°</div>
+              <div class="num amber" style="font-size:62px;line-height:1">V7</div>
+              <div class="sub2" style="color:#f3e2c2">Jun 20, 2026 · your hardest ever</div>
+              <div class="ribbon" style="margin-top:12px;background:rgba(0,0,0,.28)">
+                <div class="r"><div class="v">9</div><div class="l">Sends</div></div>
+                <div class="r"><div class="v">1h12</div><div class="l">Time</div></div>
+                <div class="r"><div class="v">152</div><div class="l">Peak BPM</div></div>
+              </div>
+              <div class="spark" style="margin-top:10px"><span class="s z2" style="height:34%"></span><span class="s z3" style="height:58%"></span><span class="s z4" style="height:82%"></span><span class="s z5" style="height:100%"></span><span class="s z4" style="height:74%"></span><span class="s z2" style="height:40%"></span></div>
+            </div>
+            <div class="wm">snappet · recap</div>
+          </div>
+          <div class="chiprow" style="margin-top:12px">
+            <span class="chip on">Show HR</span><span class="chip on">Show pyramid</span><span class="chip ghost">Show map</span>
+          </div>
+          <div class="seg" style="margin-top:10px"><span class="on">9:16</span><span>4:5</span><span>1:1</span></div>
+          <div class="cta amber" style="margin-top:14px">▶ Animate (HR clip)</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Live on-device preview.</b> WYSIWYG render of the composed 9:16 Send Ticket; metric chips toggle <span class="k">FeedCard.payload</span> fields. iOS Animate path drives <span class="k">ReelExporter</span> + <span class="k">AVVideoCompositionCoreAnimationTool</span> to burn the <span class="k">HRStats</span> overlay into the clip.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device" data-shot="share_exports">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="bk">‹ Preview</span><span class="ttl">Exported</span><span class="sp"></span><span class="ic">✓</span></div>
+        <div class="content">
+          <div class="twoup">
+            <div class="col">
+              <div class="ct">Instagram Story · 9:16</div>
+              <div class="export" style="background:linear-gradient(165deg,var(--amber-deep),#1a1205)">
+                <div class="ec">
+                  <div class="lbl" style="color:var(--amber-l)">Kilter 40°</div>
+                  <div class="num amber" style="font-size:40px;line-height:1">V7</div>
+                  <div class="sub2" style="color:#f3e2c2;font-size:10px">hardest ever · Jun 20</div>
+                  <div class="spark" style="margin-top:8px"><span class="s z3" style="height:50%"></span><span class="s z4" style="height:78%"></span><span class="s z5" style="height:100%"></span><span class="s z4" style="height:70%"></span><span class="s z2" style="height:36%"></span></div>
+                  <div class="wm" style="font-size:8px">snappet · recap</div>
+                </div>
+              </div>
+            </div>
+            <div class="col">
+              <div class="ct">iMessage · 4:5</div>
+              <div class="export r45" style="background:linear-gradient(165deg,var(--surface),var(--muted))">
+                <div class="ec">
+                  <div class="lbl">Session Receipt</div>
+                  <div class="big" style="font-size:13px;margin-top:2px">Today · 1h 12m</div>
+                  <div class="sub2" style="font-size:9px">14 climbs · 9 sends · 2 proj · 3 att</div>
+                  <div class="row" style="margin-top:6px"><span class="num">V7</span><span class="meta" style="font-size:9px">hardest</span></div>
+                  <div class="row"><span class="num">128</span><span class="meta" style="font-size:9px">avg BPM</span></div>
+                  <div class="wm" style="font-size:8px">snappet · recap</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="tile" style="margin-top:14px;padding:12px">
+            <div class="lbl">Logged</div>
+            <div class="sub2" style="margin-top:4px">ShareEvent · channel = export:instagram</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>The finished artifacts.</b> A 9:16 Send Ticket for IG Stories and a 4:5 Session Receipt for iMessage, rendered at exact dimensions. Each export appends a <span class="k">ShareEvent(channel: export:instagram)</span> to the append-only <span class="k">FeedActivity</span> log.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device" data-shot="android_clip_stage0">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="card" style="padding:16px;text-align:center">
+            <div style="font-size:34px;margin-bottom:6px">🎬</div>
+            <div class="big" style="font-size:17px">Clips are coming to Android</div>
+            <div class="sub2" style="margin-top:6px">HR-overlay video export is in build. Your image templates already work here today.</div>
+            <div class="cta outline" style="margin-top:14px">🔔 Notify me</div>
+          </div>
+          <div class="card" style="padding:14px;margin-top:14px">
+            <div class="lbl">What you can do now</div>
+            <div class="row" style="margin-top:8px"><span class="num">1</span><span class="meta" style="text-align:left;flex:1">Share a Send Card or Pyramid image — full quality</span></div>
+            <div class="row"><span class="num">2</span><span class="meta" style="text-align:left;flex:1">Export 9:16 / 4:5 / 1:1 to any app</span></div>
+            <div class="row"><span class="num">3</span><span class="meta" style="text-align:left;flex:1">We'll ping you the day animated clips land</span></div>
+          </div>
+          <div class="tile" style="margin-top:14px;padding:12px">
+            <div class="lbl">Available today</div>
+            <div class="sub2" style="margin-top:4px">Send Card · Receipt · Grade PR Ticket · Board Polaroid · Pyramid Card</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Honest Stage-0 on Android.</b> A live "Notify me" outline button (never a dead/disabled stub) + a 3-step explanation. Backed by the honest Stage-0 <span class="k">ReelRoot</span>; the <span class="k">ShareComposer</span> image templates run for real on Android today.</div>
+  </div>
+
+</div>
+
+I'll just return the fragment directly as my final answer.
+
+<div class="flowhead">Flow 8 · Shell &amp; states</div>
+<h2 class="flowtitle">Where it lives, and the edges</h2>
+<p class="flowdesc">Recap plugs in as the middle tab on both platforms — <span class="k">SuiteTab.feed</span> in the iOS <span class="k">RootShell.swift</span> TabView and <span class="k">RootShell.kt</span> NavigationBar index 2 — and degrades gracefully by construction, so a brand-new user sees a friendly cold-start built by <span class="k">FeedComposer</span> (zero eligible cards) instead of a dead wall.</p>
+<div class="flowsteps">
+  <span class="fs"><i>1</i> three-tab shell, both platforms</span><span class="arr">→</span><span class="fs"><i>2</i> cold-start empty state</span>
+</div>
+<div class="gallery">
+
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device" data-shot="tabbar">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Shell · 3-tab</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="lbl" style="margin-bottom:8px">Recap is the new emotional center — the middle tab on both platforms</div>
+          <div class="twoup">
+            <div class="col">
+              <div class="ct">iOS · SwiftUI TabView</div>
+              <div class="tabbar" style="border-radius:14px;border:1px solid var(--hair)">
+                <div class="tb"><span class="g">􀎟</span>Today</div>
+                <div class="tb on"><span class="g">􀏅</span>Recap</div>
+                <div class="tb"><span class="g">􀏜</span>Apps</div>
+              </div>
+              <div class="sub2" style="margin-top:8px">SF Symbol <b>sparkles.rectangle.stack</b> · <span class="k">.tag(SuiteTab.feed)</span></div>
+            </div>
+            <div class="col">
+              <div class="ct">Android · Material NavigationBar</div>
+              <div class="tabbar" style="border-radius:14px;border:1px solid var(--hair)">
+                <div class="tb"><span class="g">⌂</span>Today</div>
+                <div class="tb on"><span class="g">✦</span>Recap</div>
+                <div class="tb"><span class="g">▦</span>Apps</div>
+              </div>
+              <div class="sub2" style="margin-top:8px">Icon <b>Icons.Filled.AutoAwesome</b> · <span class="k">index 2 → FeedScreen()</span></div>
+            </div>
+          </div>
+          <div class="tile" style="margin-top:14px">
+            <div class="lbl">Same order, same active slot</div>
+            <div class="sub2">Today · <b>Recap</b> · Apps — Recap pinned to the center/active position on every root screen. <span class="k">snappet://feed</span> (iOS) and <span class="k">snappet://module/feed</span> (Android) deep-link straight to it.</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>One tab, two shells.</b> Recap is wired as the third tab on both sides — <span class="k">SuiteTab.feed</span> / <span class="k">RootShell.swift TabView</span> on iOS and <span class="k">RootShell.kt NavigationBar index 2</span> on Android — so the same <span class="k">FeedComposer</span> output renders behind a platform-native bar with no divergent shell code.</div>
+  </div>
+
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device" data-shot="empty">
+      <div class="island"></div>
+      <div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+        <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+        <div class="content">
+          <div class="card" style="text-align:center;padding:28px 18px;background:linear-gradient(180deg,rgba(245,158,11,0.10),var(--surface))">
+            <div style="font-size:46px;line-height:1;margin-bottom:14px">✦</div>
+            <div class="big" style="font-size:19px;line-height:1.25">Your Recap starts with<br>your first session</div>
+            <div class="sub2" style="margin-top:10px;max-width:240px;margin-left:auto;margin-right:auto">Log a climb or a workout and your feed composes itself — sends, PRs, effort and a Year-in-Climb story unlock as the data arrives. Nothing to set up.</div>
+          </div>
+          <div class="lbl" style="margin-top:18px;margin-bottom:8px">Two ways to begin</div>
+          <a class="cta amber" style="display:block;margin-bottom:10px">🧗 Start a Kilter session</a>
+          <a class="cta outline" style="display:block">🏋 Log a workout</a>
+          <div class="tile" style="margin-top:16px">
+            <div class="lbl">What unlocks first</div>
+            <div class="chiprow" style="margin-top:6px">
+              <span class="chip ghost">a1 Session</span><span class="chip ghost">streak ≥3</span><span class="chip ghost">b1 Grade PR</span><span class="chip ghost">On-this-day</span>
+            </div>
+            <div class="sub2" style="margin-top:8px">Early-eligible cards are seeded aggressively so even one logged session paints a real card — never a blank wall.</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tb"><span class="g">🏠</span>Today</div>
+          <div class="tb on"><span class="g">✦</span>Recap</div>
+          <div class="tb"><span class="g">▦</span>Apps</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>Cold-start, by construction.</b> A brand-new user has zero eligible <span class="k">FeedCard</span>s, so <span class="k">FeedComposer</span> emits the lively empty state instead of stubs — the two <span class="k">.cta</span>s deep-link into the Kilter and Workout modules, and the first <span class="k">KilterSession</span> / <span class="k">WorkoutSession</span> logged immediately unlocks an <span class="k">a1/a2</span> card.</div>
+  </div>
+
+</div>
+
+
+  <div class="flowhead">Flow 9 · Session media carousel <span style="color:var(--t2);font-weight:700">(added on review)</span></div>
+  <h2 class="flowtitle">Every clip from the session — swipe, grouped, HR-tagged</h2>
+  <p class="flowdesc">Beyond the single auto-edited highlight, each session card carries an <b>Instagram-style carousel of all the media you shot</b> — <b>split by exercise or by session</b>, each clip with its own <b>HR overlay</b> (aligned by <code>SessionMedia.offsetSec</code> to the HR series) and an <b>exercise / climb name tag</b> (from <code>assignedExerciseID</code> / <code>assignedClimbUUID</code>). These fields already exist on <code>SessionMedia</code> today — the auto-edit becomes "clip&nbsp;1", not the only view. iOS-first (Android needs the <code>SessionMedia</code> port first).</p>
+  <div class="flowsteps">
+    <span class="fs"><i>1</i> Carousel on the card</span><span class="arr">→</span>
+    <span class="fs"><i>2</i> Group by exercise / session / all</span><span class="arr">→</span>
+    <span class="fs"><i>3</i> Fullscreen viewer + HR overlay</span>
+  </div>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device" data-shot="card_carousel">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="ttl">Recap</span><span class="sp"></span><span class="ic">▦</span></div>
+          <div class="content">
+            <div class="sesscard">
+              <div class="edge" style="background:var(--ember)"></div>
+              <div class="h"><span class="spill am">🎬 7 clips</span><div class="d">Push Day</div><div class="t">Today · 52m</div></div>
+              <div class="carousel">
+                <div class="mitem wk">
+                  <span class="mtag">🏋️ Bench Press · Set 3</span>
+                  <span class="mhr"><i style="background:var(--moderate)"></i>148</span>
+                  <div class="mplay">▶</div>
+                  <div class="movr"><i style="height:38%"></i><i style="height:60%"></i><i style="height:84%"></i><i style="height:100%"></i><i style="height:90%"></i><i style="height:72%"></i><i style="height:50%"></i></div>
+                  <span class="mcount">2 / 7</span>
+                </div>
+                <div class="mitem">
+                  <span class="mtag">🏋️ Incline DB · Set 1</span>
+                  <span class="mhr"><i style="background:var(--fresh)"></i>132</span>
+                  <div class="mplay">▶</div>
+                </div>
+              </div>
+              <div class="dots"><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="ribbon">
+                <div class="r"><div class="v">5</div><div class="l">Exercises</div></div>
+                <div class="r"><div class="v">18</div><div class="l">Sets</div></div>
+                <div class="r"><div class="v">7</div><div class="l">Clips</div></div>
+              </div>
+              <div class="react"><span class="rx">♡ React</span><span class="rx">⤓ Save</span><span class="spx"></span><span class="rx on">↗ Share</span></div>
+            </div>
+            <div class="sub2" style="text-align:center;margin-top:6px">‹ swipe all 7 clips · tap to open fullscreen ›</div>
+          </div>
+          <div class="tabbar">
+            <div class="tb"><span class="g">🏠</span>Today</div>
+            <div class="tb on"><span class="g">✦</span>Recap</div>
+            <div class="tb"><span class="g">▦</span>Apps</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>All your clips, swipeable.</b> The card hero is an Instagram-style <span class="k">SessionMedia</span> carousel — each clip tagged by <span class="k">assignedExerciseID</span> ("Bench Press · Set 3") with a per-clip HR overlay aligned via <span class="k">offsetSec</span> to the HR series. The auto-edited highlight is just clip 1; swipe for the rest.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device" data-shot="media_grouped">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Push Day</span><span class="ttl">Media</span><span class="sp"></span><span class="ic">↗</span></div>
+          <div class="content">
+            <div class="seg"><span class="on">By exercise</span><span>By session</span><span>All</span></div>
+            <div class="mrail">
+              <div class="mrailhdr">🏋️ Bench Press <span class="cnt">3 clips · 151 peak</span></div>
+              <div class="mscroll">
+                <div class="mt wk"><span class="hb"><i style="background:var(--fresh)"></i>144</span><span class="pl">▶</span><span class="tg">Set 1</span></div>
+                <div class="mt wk"><span class="hb"><i style="background:var(--hard)"></i>151</span><span class="pl">▶</span><span class="tg">Set 3 · PR</span></div>
+                <div class="mt"><span class="hb"><i style="background:var(--moderate)"></i>147</span><span class="pl">▶</span><span class="tg">Set 5</span></div>
+              </div>
+            </div>
+            <div class="mrail">
+              <div class="mrailhdr">🏋️ Incline DB Press <span class="cnt">2 clips</span></div>
+              <div class="mscroll">
+                <div class="mt"><span class="hb"><i style="background:var(--fresh)"></i>132</span><span class="pl">▶</span><span class="tg">Set 1</span></div>
+                <div class="mt"><span class="hb"><i style="background:var(--fresh)"></i>138</span><span class="pl">▶</span><span class="tg">Set 2</span></div>
+              </div>
+            </div>
+            <div class="mrail">
+              <div class="mrailhdr">🏋️ Cable Fly <span class="cnt">2 clips</span></div>
+              <div class="mscroll">
+                <div class="mt"><span class="hb"><i style="background:var(--teal)"></i>126</span><span class="pl">▶</span><span class="tg">Set 2</span></div>
+                <div class="mt"><span class="hb"><i style="background:var(--teal)"></i>129</span><span class="pl">▶</span><span class="tg">Set 3</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Split by exercise (or session, or all).</b> Groups <span class="k">SessionMedia</span> by <span class="k">assignedExerciseID</span> / <span class="k">assignedClimbUUID</span>; the toggle re-buckets the same clips ("By session" = a single time-ordered rail). Each tile shows its peak-HR badge; auto-assignment from capture time, editable.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device" data-shot="media_viewer">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="mitem full" style="width:100%;height:100%;border-radius:0;border:0;background:linear-gradient(160deg,#3a2a12,#0b0c10)">
+            <div style="position:absolute;top:52px;left:14px;right:14px;display:flex;align-items:center;gap:8px;z-index:3">
+              <span class="mtag" style="position:static">🏋️ Bench Press · Set 3 · 0:12</span><span style="flex:1"></span><span style="color:#fff;font-size:15px">✕</span>
+            </div>
+            <div class="mplay" style="width:54px;height:54px;font-size:18px">▶</div>
+            <div style="position:absolute;left:16px;right:16px;bottom:108px;color:#fff;z-index:3">
+              <div class="lbl" style="color:#fff;opacity:.78">Heart rate · this clip</div>
+              <div style="font-size:46px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums">151 <span style="font-size:16px;opacity:.8;font-weight:700">BPM peak</span></div>
+              <div class="zone" style="margin-top:9px"><i class="z2" style="width:12%"></i><i class="z3" style="width:24%"></i><i class="z4" style="width:46%"></i><i class="z5" style="width:18%"></i></div>
+              <div class="sub2" style="color:#e9e2d2;margin-top:5px">Z4 · 46% of clip · auto-tagged from capture time</div>
+            </div>
+            <div class="dots" style="position:absolute;bottom:76px;left:0;right:0;z-index:3"><i></i><i></i><i class="on" style="background:#fff"></i><i></i><i></i><i></i><i></i></div>
+            <div style="position:absolute;left:0;right:0;bottom:0;padding:15px 16px 20px;display:flex;align-items:center;gap:15px;color:#fff;font-weight:750;font-size:13px;background:linear-gradient(0deg,rgba(0,0,0,.62),transparent);z-index:3">
+              <span>♡ React</span><span>⤓ Save</span><span style="flex:1"></span><span class="cta sm">↗ Share / Animate</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Fullscreen, Instagram-post style.</b> Swipe between every clip; the per-clip HR overlay (peak BPM + zone band) is composited live and can be <span class="k">burned in</span> on export via <span class="k">ReelExporter</span> + <span class="k">AVVideoCompositionCoreAnimationTool</span>. Name tag + timestamp from <span class="k">SessionMedia</span>.</div>
+    </div>
+
+  </div>
+
+</div><!-- /wrap -->
+<footer style="max-width:1380px;margin:40px auto 0;padding:24px 28px;color:#6c6d76;font-size:12.5px;border-top:1px solid #232329">
+  Snappet · <b>Recap</b> feed — planning wireframes. Pure <code>FeedComposer</code> keystone · derive-on-read cards · social-ready <code>FeedActivity</code> log. Real Pulse Pro tokens, dark-mode-first. No backend.
+</footer>
+</body>
+</html>

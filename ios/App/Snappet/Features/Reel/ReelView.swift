@@ -300,8 +300,6 @@ private struct HighlightThumbnail: View {
     @State private var image: UIImage?
 
     private static let side: CGFloat = 52
-    // MainActor-isolated via the View conformance, so the shared cache is concurrency-safe.
-    private static let manager = PHCachingImageManager()
 
     var body: some View {
         Group {
@@ -336,21 +334,11 @@ private struct HighlightThumbnail: View {
 
     private func load() async {
         guard image == nil else { return }
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil)
-        guard let asset = assets.firstObject else { return }
-        let target = CGSize(width: Self.side * 3, height: Self.side * 3)
-        let options = PHImageRequestOptions()
-        // One callback per request (continuation must resume exactly once) + on-device only.
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = false
-        let manager = Self.manager
-        let loaded: UIImage? = await withCheckedContinuation { continuation in
-            manager.requestImage(for: asset, targetSize: target,
-                                 contentMode: .aspectFill, options: options) { img, _ in
-                continuation.resume(returning: img)
-            }
+        if let loaded = await AssetPosterLoader.poster(
+            localIdentifier: assetId, pointSize: CGSize(width: Self.side, height: Self.side)
+        ) {
+            image = loaded
         }
-        if let loaded { image = loaded }
     }
 }
 

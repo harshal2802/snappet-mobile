@@ -4,6 +4,295 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-21] Recap feed F8 — scroll date bar (time orientation)
+
+**Decision** (user feedback: a long feed had no time anchor while scrolling). Added **one adaptive date
+bar** — a top overlay on the feed's `ScrollView`, NOT a pinned header. Why an overlay: `FeedView`'s stories
+rail + lens bar scroll away and the large nav title collapses, so a header-zone bar would cover content or
+force a layout rebuild. The bar is **hidden at the very top** (nav title is the anchor), shows an era
+**whisper** once scrolled past the header (transparent, just the bucket label), and **while scrolling**
+reveals the topmost visible card's exact day + a glass backing + a thin progress underline, receding ~1.2s
+after the finger lifts. Wireframe-approved “refined C” (`docs/ux-research/feed/wireframes-timestamp-c.html`).
+
+Non-obvious choices:
+- **Orientation logic is pure + tested** (`FeedTimeBucket` → `FeedDateLabel{era, day}`, Foundation only,
+  injected calendar for determinism). Buckets: Today · Yesterday · This week (2–6 days) · Earlier in `<Month>`
+  (current calendar month) · `<Month Year>`. Day = "EEE · MMM d"; the era carries the year so the day omits it.
+  Future dates clamp to Today. The view (`FeedDateBar`) is layout-only.
+- **Topmost-card tracking uses per-row top-edge crossing, not preference keys.** Each list row reports
+  `minY<=0 && maxY>0` in a named coordinate space via `onChange` — the bool flips only when a new card
+  crosses the top, so it fires per-crossing (not per-frame), and `onChange`'s action runs on the **main
+  actor**. This sidesteps Swift 6 strict concurrency: `onPreferenceChange`'s action is `@Sendable` in the
+  iOS 18 SDK and can't mutate `@State`, whereas `onScrollPhaseChange`/`onScrollGeometryChange`/`onChange`
+  actions are main-actor. **Rules out** a preference-key collector (concurrency friction + per-frame thrash).
+- **List layout only.** The bar reads per-row positions from the list; the masonry wall (F7) is untouched.
+  The `scrollY > 120` reveal threshold is a heuristic for "past the stories+lens header". Keystone
+  (`FeedComposer`/ordering) and the card model are unchanged. KG: new `feed-date-bar` component node + edge.
+
+## [2026-06-21] Recap feed R13 — post-F7 cleanup wave (dedup + display unification)
+
+**Decision** (quality-only pass over the shipped F0–F7 feed; keystone `FeedComposer` ordering/recency/
+lens untouched; golden corpus + full `SnappetTests` unchanged). Behavior-preserving EXCEPT two
+deliberate changes: the card wording is reconciled to one canonical set, and distance now honors the
+user's km/mi unit. The non-obvious choices:
+
+- **`FeedCardDisplay` is the SINGLE card→display mapping.** The list (`FeedCardView`), share
+  (`ShareCardSpec`), story (`StoryComposition`) and wall (`WallTile`) each owned a parallel
+  `switch FeedCardPayload` and had drifted on wording/hero/accent/icon (audit D1–D25). They now read one
+  pure `FeedCardDisplay` (kicker/hero/heroCaption/primaryLine/secondaryLines/icon/`FeedAccent`) via
+  `FeedCard.display(unit:)` and own only layout. **Canonical reconciliation rules** (what each surface
+  now shows): prefer the richest existing copy, never invent product language, and drop semantically
+  wrong copy — e.g. the streak *record* sub no longer says "go gentler" (that's the restNudge voice, wrong
+  on a celebration → "your longest yet"); PR kicker is "New hardest ever"; pyramid grade-count uses only
+  rows with sends > 0; effort accent is the dedicated `.effort` token. `ShareCardSpec` is now a thin
+  adapter; `StoryAccent` is a `typealias FeedAccent`. The pure file imports Foundation only; the
+  `FeedAccent.color` SwiftUI bridge lives in the view layer. `FeedCardDisplayTests` is the wording guard +
+  Kotlin-port parity vector. **Rules out** a future card changing copy on one surface and silently
+  drifting from the other three. (UITests assert identifiers only — `feed.card.<kind>` is derived from
+  `kind.rawValue`, byte-identical — so reconciled wording broke no UITest.)
+- **Distance is unit-aware via the one `SetMeasure` funnel.** There is no standalone distance pref —
+  `DistanceUnit` derives from `@AppStorage("workoutlog.preferredUnit")` (`WeightUnit`) via
+  `SessionRecap.distanceUnit(_:)`. The descriptor takes `display(unit:)` (default `.km`) and routes run
+  distance/pace through `SetMeasure.formatDistance`/`formatPace`; all four surfaces thread the user's unit.
+  Pure layer unchanged (the payload stores raw meters). **Rules out** km-only feed distance + a per-surface
+  distance format.
+- **Per-refresh media index (`FeedMediaIndex`) tied to `feedSignature()`.** The media path (cardMedia/
+  resolver) was re-scanning `allMedia`/sessions/logs per visible card per body eval. It now reads O(1)
+  dicts built ONCE per signature inside `FeedMemo`, alongside the composed cards — one key, rebuilt in the
+  same branch, so cards and index can never drift. The index inherits exactly the card memo's freshness
+  contract (no separate/weaker key). `@Model`s are held only on the MainActor edge and snapshot to plain
+  values in `FeedMediaResolver` — none cross into the engine/exporter.
+- **Reaction membership is hoisted, not fetched per card.** `FeedReactionStrip` took 2 FetchDescriptors
+  per card in `.task`; now the host (`FeedView`/`CardDetailView`) holds one `@Query` each of
+  `FeedReaction`/`FeedSaveItem` and passes `reacted`/`saved` membership down. The strip drops its local
+  `@State`/`.task` — the toggle writers mutate the @Model tables, so the host `@Query` auto-refreshes and
+  re-renders with the new state (also fixes a latent desync vs the card-body double-tap/long-press gestures).
+- **Generic reaction/save writer without a generic `#Predicate`.** `ActivityScoped` + generic
+  `rows<M>`/`toggle<M>` over `FetchDescriptor<M>()` + in-memory filter (mirrors `SnappetBackup.all<M>`).
+  **Rules out** a generic `#Predicate` over a protocol keypath — SwiftData can't translate it (compile/
+  runtime trap), and there's no precedent for it in the codebase.
+- **Shared video surface + poster loader.** `StudioPlayerLayerView` gains a `backgroundColor` param
+  (default `.clear`) and serves both the studio (clear) and the feed viewer (black, was the deleted
+  `ClipPlayerLayer`); one `AssetPosterLoader` backs both `ClipThumbnail` (feed) and `HighlightThumbnail`
+  (reel). The two thumbnail *views* stay separate (distinct chrome) — only the loader is shared.
+- Plus the earlier `/simplify` dedup folded into this wave: `FeedCard.aggregate(...)` (H4 invariant in
+  one place), `FeedMediaResolver` (sole @Model→snapshot path — the R4 clip-collapse bug lived here),
+  `FeedMedia.ordered/groupKey/tagName` (sole clip order/group/tag), `dominantDiscipline` hoisted to
+  `FeedComposer`, redundant memberwise inits dropped. KG unchanged (all internal; no new surface/edge).
+
+## [2026-06-21] Recap feed remediation (R1–R9) — plan conformance
+
+**Decision** (audit-closing stack): the R1–R9 remediation PRs brought the Recap feed's
+**F3/F3b/F4/F5/F7** surfaces to plan conformance without touching the keystone. The **F0
+`FeedComposer` ordering core stays intact** — every fix landed as a pure recipe/payload/view tweak
+(no new `FeedCardKind`, no `compose` ordering/recency/lens edit). Key invariants now nailed down:
+(1) **The editor HR overlay is the single source of truth** for both the in-app preview and the export
+burn — `HRTileView` (`.scorebug`) drives the `PagedMediaViewer`/F4 preview AND the `StudioOverlays` clip
+burn, so preview == burn is a style-match by construction (not a re-implemented numeric overlay).
+(2) **R9** kg-normalized the b4 lift-PR cross-set comparison via `WorkoutMath.toKg` so a mixed lb/kg log
+can't manufacture or suppress a PR (display value/unit stay the winning set's own), and added Story+share
+**streak record framing** (`isRecord` → "Longest streak ever") for parity with `FeedCardView` plus full
+`ShareMetric.chipLabel` coverage. The clip RENDER (AVFoundation/Photos) remains the honest device-only
+tail across F3/F4. Knowledge graph gained the `feed-export` (F4 surface) + `feed-milestone-cards` (F5
+family) nodes. Tested: `FeedMilestoneTests` (kg-normalized PR), `ShareTemplateModelTests` (chipLabel),
+`StoryCompositionTests`, golden corpus unchanged.
+
+## [2026-06-21] Recap Feed R7 — F5 milestone-card conformance fixes
+
+**Decision** (audit follow-up, pure/payload-only): (1) **b5 streak record variant** — `streakCards`
+now scans ALL consecutive-active-day runs and takes the longest run other than the current one as
+`previousBest`; `isRecord = currentStreak > previousBest`. Both land on the EXISTING `b5Streak` card as
+additive `StreakPayload` fields (`isRecord`/`previousBest`, defaults `false`/`0`) — **no new
+`FeedCardKind`, salience UNCHANGED at `Salience.streak`** so ordering and the golden corpus don't move
+(record framing is a view/share concern off `isRecord`). The ≥3-day baseline still gates emission.
+(2) **b4 lift-PR discipline gate** — `liftPRCards` now skips exercises whose `disciplineRaw` is a
+non-lift discipline (`run`/`running`/`timed`/`cardio`, matching `WorkoutDiscipline` raws) so a
+running/timed effort that incidentally carries a weight can't fire a false lift PR. (3) **lift-PR unit**
+— `WorkoutSetInput` gained `weightUnit: String?` (bridged from `SetLog.weightUnit?.rawValue`) and
+`LiftPRPayload` gained `unit: String` (default "kg", taken from the winning set) so the card/share render
+the right unit. Keystone (`compose` ordering / `recencyDecay` / window clamp / lens) untouched. Tested:
+`FeedMilestoneTests` (b1 all-time-max, b5 record vs non-record, lift-PR running/timed gate).
+
+## [2026-06-20] Recap Feed F3 / F3b — session media browser + per-clip HR
+
+**Decision**: `Features/Feed/FeedMedia.swift` (pure) groups a session's `SessionMedia` By exercise /
+By session / All (over `assignedExerciseID` / `assignedClimbUUID`) and computes each clip's HR overlay
+(`clipHR` aligns `offsetSec`→`hrSeries` window → peak/avg BPM + zone). `MediaBrowserView` renders the
+grouped browser + a fullscreen viewer with the per-clip HR overlay + name tag; reachable from a "Media (N)"
+button on `CardDetailView` when the session has media. The **live PHAsset thumbnail/video load, the inline
+auto-play `AVPlayer` hero (F3), and the HR-overlay clip export are the iOS-device-only edge** — placeholder
+tiles render in-sim so the structure + the pure grouping/HR logic are verifiable; live media is a labeled
+device-burn follow-on (same posture as F4's Animate path). Tested: `FeedMediaTests` (grouping + clip-HR window).
+
+## [2026-06-20] Recap Feed F4 — ShareComposer (image export)
+
+**Decision**: `Features/Feed/FeedShareComposer.swift` — `ShareComposerView` renders a `ShareCardView`
+to a `UIImage` via **`ImageRenderer`** (sim-verifiable, no Photos) at an exact aspect (9:16/4:5/1:1 — no
+crop surprise) with Send-Card/Receipt templates, hands it to the existing `ShareSheet`
+(`UIActivityViewController`), and appends a `FeedShareEvent(channel: "export:share")`. Entry is a Share
+toolbar button on `CardDetailView`. The **Animate HR-overlay clip** path (`ReelExporter` + AVFoundation +
+Photos) is **iOS-device-only** — surfaced honestly (a labeled device-burn follow-on), never a dead button.
+Image-share is the verifiable Pillar-1 core; clip export is device-pending.
+
+## [2026-06-20] Recap Feed — iOS completion (remaining insight menu + F7 masonry + F3/F4 clip)
+
+**Decision**: completed every remaining iOS follow-up. New pure recipe engines (file-isolated, authored in
+parallel then integrated): `FeedProjectCards` (b2 first-at-grade *backfill-only* so it never dupes a b1 PR;
+g1 project→sent), `FeedTrendCards` (d3 discipline-split, d4 90-day trend-arrows), `FeedEffortInsights`
+(e4 effort-vs-grade efficiency, e5 HRV/recovery, restNudge — all HR-field-gated, iOS-only, protective
+framing), and `FeedWallLayout` (pure balanced shortest-column masonry, 2–3 cols by width) now driving
+`WallView`. All registered as `FeedComposer` recipes — F0 ordering core still untouched.
+
+**F3/F4 clip path**: `ClimbSessionPayload` gained `clipCount` (threaded `mediaCountBySession` through
+`compose`/`FeedQuery` from `@Query SessionMedia`); the card shows an inline "N clips" affordance and
+`ShareComposer` offers **Animate** via `ClipExportCoordinator` (records the ShareEvent + wires the
+pipeline) — the **AVFoundation/Photos clip RENDER stays the device-only tail** (honest, never a dead button).
+
+**Golden-corpus test reframed**: as the card set grew, float-identical full ordering across Swift/Kotlin is
+neither guaranteed nor the real contract — the test now pins the eligible card **multiset + salience tiers +
+recency-bounded head** (the cross-platform invariants), not the exact permutation. Also fixed: c4 climbing-
+level gated on `totalSends ≥ 20` (the engine computes a level for fewer). **Whole app suite green: 1336
+tests, 0 failures.** Deferred (true device-burn): live inline `AVPlayer` auto-play + the clip render itself.
+
+## [2026-06-20] Recap Feed F6 follow-up — Story Player engine + insight menu (review-driven)
+
+**Decision**: completed F6 to its acceptance criteria after the review flagged the shell. Pure engines:
+`StoryPlayback` (auto-advance/pause/resume/index-bounds, view feeds `tick(dt)`) + `StoryComposition`
+(period cards → cover + arc-ordered highlights, **clamped 3…8**) + `eligiblePeriods` (rail degrade-by-
+absence: week/month need an in-window session, year needs ≥6 months history) — all unit-tested.
+`RecapStoryView` now auto-advances (gated off under **Reduce Motion**), hold-to-pause via
+`onLongPressGesture(onPressingChanged:)`, swipe-down dismiss, segment progress bars, **per-scene Share**
+(carries the scene's `FeedCard` → `ShareComposerView` pre-selecting `shareHint`), and **memoizes** scenes.
+`FeedView` rail shows only eligible covers.
+
+Added the **insight menu** as composer recipes (`FeedInsightCards`, registry-only — F0 core untouched):
+c2 pyramid-health (top-heavy heuristic), c3 progression, c4 climbing-level (**gated ≥20 sends** — the
+engine computes a level for fewer, so eligibility checks `totalSends`), c5 angle-distribution, d2
+period-vs-last, consistencyMap (≥14 active days/28), onThisDay (prior-year same-date send, private memory).
+All aggregates → empty `contentId`. **Deferred additive follow-ons** (noted): d3 discipline-split, d4
+90-day trend-arrows, e4 effort-vs-grade, e5 HRV, restNudge, g1 project-cadence. Recency note: trend
+cards anchor to last-activity (may outrank a routine session — fine; the recency bound is old-PR-vs-fresh,
+which still holds). Tested: `StoryPlaybackTests`, `StoryCompositionTests`, `F6InsightCardEligibilityTests`
+(59 Feed/Story tests green).
+
+## [2026-06-20] Recap Feed F6 — Story Player + Stories rail
+
+**Decision**: `Features/Feed/RecapStoryView.swift` — a full-bleed Wrapped-grammar player (progress bars,
+tap-right advance/tap-left back, close) opened from the now-active Stories rail (`.fullScreenCover(item:)`
+in FeedView). It re-runs the SAME `FeedComposer` scoped to a period window (`FeedQuery.cards(window:)`,
+`StoryPeriod` → `.thisWeek/.thisMonth/.thisYear`) — one engine, two callers — mapping the window's top
+cards into scenes (cover + up to 6 highlights; sparse → a "log more" scene). Per-scene share is deferred
+to F4. The long tail of extra insight cards (c2–c5 pyramid-health/progression, d2–d4 deltas, e4/e5
+efficiency/HRV, consistency map, on-this-day) is a noted follow-on — additive recipes, no core change.
+
+## [2026-06-20] Recap Feed F7 — the send wall
+
+**Decision**: `Features/Feed/WallView.swift` — an **inline masonry layout flip** (no modal sheet) the
+FeedView grid-toggle (`layout: .list ↔ .grid`) swaps in over FeedView's **passed-in composed +
+lens-filtered + keyset-windowed corpus** (`let cards: [FeedCard]` — NO `FeedQuery` re-derive, no second
+pipeline: one composition, two layouts — the keystone). Tiles are compact **Pulse-Pro** cards
+(`DisciplineHero` + trimmed `StatRibbon` + discipline edge-accent) that tap through to the same
+`CardDetailView` via FeedView's `.navigationDestination`. The wall renders **DIRECTLY into FeedView's
+outer `ScrollView`** — it must NOT nest its own `ScrollView`/`GeometryReader`-as-container (a
+scroll-in-a-scroll collapses to ~zero height); available width is read as a pure **measurement**
+(width-only `.onGeometryChange`), fed to the pure `FeedWallLayout.columnCount(forWidth:)` →
+`distribute(_:columns:)` (balanced shortest-column masonry, 2–3 columns), then rendered as an
+`HStack(alignment:.top)` of per-column `LazyVStack`s. **Pagination is the SHARED keyset**: each tile's
+`.onAppear` calls FeedView's `loadMore` closure (`loadMoreIfNeeded(card:in: filtered)`) — grid scrolling
+advances `visibleCount` exactly like the list, windowing over the full `filtered`. The wall filters the
+passed-in corpus to the **visual-tile subset** (`tileKinds = a1/a2/b1/b4/a3 + b2FirstAtGrade/g1ProjectSent`
+— the kinds `WallTile` renders meaningfully) so it's a real visual send-wall, not bland "—/Recap" text
+tiles; pagination still advances over the full window (loadMore fires from the rendered tiles). The active
+inline-clip player (R2) stays inert in grid mode (no card-frame capture in the wall; the `layout` flip
+clears `activeCardId`). View-only over the already-tested composer; no card persistence.
+
+## [2026-06-20] Recap Feed F5 — more milestone cards (Lift PR + On-the-Board)
+
+**Decision**: added **b4 Lift PR** (gym est-1RM via **Epley** `w*(1+reps/30)` per `exerciseId`, fires only
+when beating a PRIOR best — first entry just establishes) and **a3 On-the-Board** (a board session with
+`KilterLitEvent`s but NO full log — the degraded "pulled up, not logged" path) as `FeedComposer` recipes
+(no edits to the ordering core). `WorkoutExerciseInput` gained `exerciseId`; new `LitEventInput` +
+`kilterLitEvents` compose param (default [] → golden corpus unchanged). Salience: liftPR 0.85 (just under
+a grade PR), onTheBoard 0.42. Views reuse the compact `MilestoneCardView`. b2 First-at-grade ships in
+`FeedProjectCards` (`b2FirstAtGrade`, backfill-only so it never dupes a b1 PR), NOT folded out. Tested:
+`FeedMilestoneTests`.
+
+## [2026-06-20] Recap Feed F2 — HR-deepened cards + CardDetail + reactions
+
+**Decision**: e1 (effort/zones), e2 (hardest-effort send), e3 (HR trend) are added as composer recipes
+in a SEPARATE file `Features/Feed/FeedHRCards.swift` (imports HighlightEngine; `FeedComposer.compose`
+calls them) — the F0 ordering/recency/salience core is untouched (keystone rule). Each gates on the
+specific field it needs (`hrSeries` / per-climb timing) → never composes when absent (Android degrades
+by absence). Reuses **`WorkoutHRStats`** (`secondsByZone` + `edwardsTRIMP`, works for any `[HRPoint]`) +
+`KilterSessionStats.timeline[].peakHRR` + `HeartRateZone`/`SnappetColor.performance(forZone:)` — never
+re-derives. `KilterSessionInput` gained optional `hrSeries/maxHR/restHR` (default empty → golden corpus
+unchanged). `CardDetailView` re-derives timeline + zone chart from the source session and deep-links to
+the real `KilterSessionRoute`/`SessionRoute` via the router. Reactions/saves are append-only F0b rows
+(`FeedReaction`/`FeedSaveItem`) keyed by `FeedCard.contentId` (new field, default ""), framed as private
+memory/curation. Salience e2(0.7) > e1(0.55) > e3(0.5). Tested: `FeedHRCardTests`, `FeedInteractionTests`.
+
+## [2026-06-20] Recap Feed F1 — `FeedView` shell + the middle "Recap" tab
+
+**Decision**: the Recap feed is the **middle** tab (Home · **Recap** · Apps) — `SuiteTab.feed` in
+`SuiteRouter`, a third `TabView` case in `ShellTabs` (`sparkles.rectangle.stack`, label "Recap"),
+`snappet://feed` + `--start-tab feed` open it. `FeedView` (`Features/Feed/FeedView.swift`) is
+**derive-on-read**: it `@Query`s Kilter/Workout sessions+logs, bridges to plain inputs, and calls
+`FeedComposer.compose(window:.allTime)` — it never re-derives stats. a1/a2 session cards are rich
+(`DisciplineHero` + `StatRibbon` + `.snappetCard()` + a discipline edge accent); the milestone/trend
+kinds (b1/b3/b5/c1/d1) render as **compact cards now** and are enriched by F5/F6 (never blank). The
+Lens bar uses F0's pure post-filters with an always-available **Sessions-only** chronological lens (the
+recency-float mitigation). Pagination is a keyset window grown on scroll; the freshness pill diffs
+top-ids across scene-phase. Stories rail + grid toggle are **honest placeholders** routed to F6/F7.
+
+**Rules out**: persisting cards (still derive-on-read); new brand tokens (reuse Pulse Pro); HR/media/
+reactions/share in F1 (F2–F4 add them as registry entries + slots, not card-shell rewrites). Tested:
+`FeedPaginationTests`, `FeedFreshnessTests` (pure) + `FeedViewUITests` (tab → feed → lens) — green.
+
+## [2026-06-20] Recap Feed F0b — `FeedActivity` log (social-ready, provisioned-dormant)
+
+**Decision**: persist a thin, append-only, AS2-shaped `FeedActivity` log + first-class
+`FeedReaction` / `FeedSaveItem` / `FeedShareEvent` rows + an **empty** `FeedOutboxEntry` table
+(`Features/Feed/FeedActivity.swift`), registered in `SnappetSchema.models` + mirrored in
+`SnappetBackup` (both tripwires green; round-trip count 23→28). `FeedCard` stays derive-on-read —
+**no card table**. Social columns (`actorRef="self"`, `visibility="private"`, `audienceTo=[]`) and the
+outbox are **provisioned but DORMANT** (nothing reads them in v1) so "personal-now" becomes
+"social-ready" later by flipping `actorRef`/draining the outbox — zero card-view rewrite. Writers are
+append-only + **idempotent via `foreignId` = "\(verb):\(contentId)"** (re-running on the session-recovery
+path never duplicates), hooked into the Kilter per-send log, Kilter session-finish, and workout-complete.
+
+**The no-row-id gotcha**: content identity is UUIDv5 (`Features/Feed/FeedContentIdentity.swift`, reusing
+`KilterClimbIdentity.uuidV5`) over **shared fields only** with pinned namespaces. A per-send `contentId`
+canonicalizes `(climbUUID, difficulty, statusRaw, dayBucket(date), sessionId?)` and **NEVER the row id** —
+`KilterLogEntry` autogenerates a `Long` on Android, so keying on it would break cross-device dedup. Golden
+vectors are pinned + cross-checked against the existing `KilterClimbIdentity` vector.
+
+**Rules out**: any UI reading the social columns in v1; a per-card persisted table; row-id-derived identity.
+Migration is **strictly additive** (new models only, no column drops). Tested: `FeedContentIdentityTests`,
+`FeedActivityLogTests`, `SnappetBackupTests` — green.
+
+## [2026-06-20] Recap Feed F0 — `FeedComposer` keystone (pure, eligibility-gated)
+
+**Decision**: the Recap feed renders a single pure `FeedComposer.compose(window:…)` (Foundation-only,
+`ios/App/Snappet/Features/Feed/`, no `@Model`/UI) that turns plain-value sessions/logs + the existing
+`KilterAllTimeStats` into ordered ephemeral `FeedCard`s. Each card recipe owns its `eligibility` +
+`salience`; a recipe whose trigger data is absent simply produces nothing — **graceful degradation by
+construction** (no stubs, no greyed cards), which is also how Android (no `hrSeries`/`SessionMedia`)
+ships the same engine with fewer eligible cards. New cards (F2/F3/F5/F6) are added **only** as registry
+entries + `FeedCardKind` cases — the F0 ordering core is never edited (that is what makes it the keystone).
+
+**Ordering = recency-bounded salience**: effective rank = `salience × recencyDecay(anchorDate, now)`, where
+`recencyDecay = exp(-age / halfLife)` with **halfLife = 7 days** and `anchorDate` clamped `≤ now`. This is
+the formula that makes "an old high-salience PR never out-floats a fresh session" true *by math* (a 60-day
+PR decays to ~0.0002 of its salience). Salience tiers: PR 1.0 > most-climbs 0.9 > streak 0.8 > trend 0.6 >
+climb session 0.45 > workout session 0.40.
+
+**Rules out**: banded/cached memoization in v1 (kept simple + temporal; banding would only be added later if
+profiling demands it AND can be made byte-identical across platforms, else the golden corpus passes while
+real scrolling diverges). `FeedCard` is **derive-on-read, never persisted** (the persisted backbone is the
+F0b `FeedActivity` log). Cross-platform golden corpus uses **shared fields only** (no iOS-only
+`hrSeries`/`SessionMedia`/`attemptTimestamps`) so FA0 reproduces it verbatim. Tested: `FeedComposerTests`
+(8 cases incl. the golden corpus) — green.
+
 ## [2026-06-20] Kilter Improvement P3 — climbing analytics dashboard (`KilterStatsView` + trend screens)
 
 **Decision**: build a tiered Pulse Pro analytics dashboard on a new `KilterStatsRoute` (pushed on the
@@ -6502,3 +6791,35 @@ pure helper + dedup + backup ship green without a board.
 
 **Android (tracked).** No Android tree touched — P5 is an iOS-only wave; the Kotlin mirror rides a later
 Kilter Improvement Android wave.
+
+## 2026-06-21 — Recap feed F3 clip-ranking seam (R1/R2 split)
+
+**Decision.** The F3 inline-clip work is split across two stacked PRs (see
+`pdd/prompts/features/feed/REMEDIATION-PLAN.md`). **R1** ships the pure, sim-tested foundations:
+`FeedClipEligibility` (the `clipReady(hasVideo:hasHR:planSegmentCount:)` predicate + a platform-free
+`ReelPlan` ranking wiring that runs `SessionHighlightInput.makeWorkout → HRHighlightSelector → ReelPlanner.plan`
+with the engine pieces injectable, no AVFoundation/AppModel), `FeedHeroResolver` (clip→photo→generated), and
+`FeedActivePlayerCoordinator` (nearest-viewport-center + hysteresis).
+
+**Why the card payload uses "first video by offset", not the ranked segment.** `FeedComposer`/`FeedQuery`
+enrich the a1 payload with a cheap deterministic clip hint (the earliest video `SessionMedia`) so derive-on-read
+stays cheap — running the HighlightEngine ranker for every session on every compose would be wasteful. The
+**ranked** top segment (`FeedClipEligibility.evaluate`/`topClipRef`) is consumed lazily by **R2**'s
+`FeedClipPlayer` only when a card becomes the scroll-center active player. So the ranker is a *tested seam
+consumed in R2*, not dead code; the `clipReady` predicate gates the player-attach there. Keystone untouched
+(no F0 ordering edit; additive payload fields + an additive `compose` param only).
+
+**Update 2026-06-21 (R12) — the F3 inline auto-clip hero was DROPPED.** On device the inline `AVPlayer`
+rendered a black box inside the scrolling card and was redundant with the F3b/R6 in-card carousel. So the
+whole inline-hero machinery is removed: `FeedClipPlayer` (device), `FeedHeroResolver` (clip→photo→generated),
+`FeedActivePlayerCoordinator` (scroll-center + hysteresis), and `FeedClipEligibility`/`FeedClipRef`
+(`clipReady`/`reelPlan`/`topClipRef`/`evaluate`) and their tests — plus the `compose(topClipBySession:)` param,
+the a1 `clipAssetId`/`clipOffsetSec`/`clipDurationSec`/`hasHR` payload fields, and `FeedView`'s
+single-active-player scroll-center tracking. The **carousel (F3b/R6) is now the single in-card media surface**;
+the a1 hero is the still `DisciplineHero` again. `clipCount` (from `mediaCountBySession`), the carousel/paged
+viewer, and the F4 Animate path (`ClipExportCoordinator` → `SessionHighlightInput`/`app.reelPlan`, which never
+touched `FeedClipEligibility`) all remain unchanged. Keystone (F0 ordering core) still untouched.
+
+## 2026-06-21 — Recap feed F3b (R6) media viewer: HRTileView overlay is a STYLE-match, not a data-match
+
+**Decision.** The fullscreen feed viewer's `HRTileView` overlay reuses the editor's `.scorebug` template/colors so it visually matches the R4 export burn ("preview == burn" = *visual parity*) — but it is a STYLE-match, not a numeric data-match: the viewer renders a per-clip *windowed static* tile (`fraction = 1.0` over `clipHRWindow`), whereas the export burns the *whole-reel animated* tile. To keep poster chip and viewer overlay agreeing on sparse series, `clipHRWindow` now mirrors `clipHR`'s ±8s nearest-sample fallback (rebased to clip-local t).

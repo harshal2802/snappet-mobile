@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Recap Feed · Refined C · Adaptive Date Bar</title>
+<style>
+  :root{
+    --coral:#FF7A6B; --amber:#F59E0B; --amber-deep:#B45309; --ember:#FF9645;
+    --fresh:#5BC074; --hard:#FF6A5C;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1;
+    --glass:rgba(28,28,33,.62); --glasshair:rgba(255,255,255,.10);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#241a10,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 80px}
+  header.page{padding:54px 30px 6px;max-width:1500px;margin:0 auto}
+  h1{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffce8a 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16px;max-width:1120px;margin:0 0 6px}.sub b{color:#fff}.sub .k{color:var(--amber);font-weight:650}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 36px;align-items:flex-start;max-width:1500px;margin:26px auto 0;padding:0 30px}
+  .col{width:340px}
+  .badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;padding:4px 10px;border-radius:999px;margin:0 0 10px}
+  .s1{background:#23232a;color:var(--t2);border:1px solid #33333b}
+  .s2{background:linear-gradient(92deg,var(--amber),var(--ember));color:#1a1208}
+  .colcap{margin:14px 2px 0;font-size:13px;color:#b8bcc6}.colcap b{color:#fff;font-weight:650}.colcap .k{color:var(--amber);font-weight:650}
+
+  .device{width:340px;height:724px;border-radius:48px;background:#000;padding:10px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:38px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:100px;height:26px;background:#000;border-radius:15px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:13px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:11px}
+  .top{padding:6px 18px 0;flex:0 0 auto;background:var(--paper);z-index:40;position:relative}
+  .title-h{font-size:26px;font-weight:820;letter-spacing:-.02em;margin:2px 0 8px}
+  .lens{display:flex;gap:7px;overflow:hidden;padding:0 0 6px}
+  .chip{font-size:12px;font-weight:600;color:var(--t2);background:var(--muted);border:1px solid var(--hair);padding:5px 11px;border-radius:999px;white-space:nowrap}
+  .chip.on{color:#1a1208;background:linear-gradient(92deg,var(--amber),var(--ember));border-color:transparent}
+
+  /* === the ONE adaptive date bar (sits in the header zone; never over a card) === */
+  .datebar{flex:0 0 auto;position:relative;display:flex;align-items:center;gap:8px;
+    padding:7px 18px;margin:0;border-bottom:1px solid transparent;transition:all .25s;z-index:39}
+  .datebar .era{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--t2)}
+  .datebar .spacer{flex:1 1 auto}
+  .datebar .day{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:720;color:#fff;
+    opacity:0;transform:translateX(8px);transition:all .25s}
+  .datebar .day .clk{font-size:12px;color:var(--amber)}
+  .datebar .track{position:absolute;left:0;bottom:-1px;height:2px;background:transparent;border-radius:2px;transition:opacity .25s}
+  .datebar .track i{display:block;height:100%;background:linear-gradient(90deg,var(--amber),var(--ember));border-radius:2px}
+  /* ACTIVE (mid-scroll): glass bg, era brightens, precise day slides in, progress underline shows */
+  .scrolling .datebar{background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom-color:var(--glasshair)}
+  .scrolling .datebar .era{color:var(--ink)}
+  .scrolling .datebar .day{opacity:1;transform:none}
+  .scrolling .datebar .track{background:rgba(255,255,255,.06)}
+
+  .feed{flex:1 1 auto;overflow:hidden;position:relative;padding:8px 14px 0}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:13px 14px;margin:0 0 11px;position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent,var(--amber))}
+  .kick{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--accent,var(--amber));display:flex;align-items:center;gap:6px}
+  .hrow{display:flex;align-items:baseline;gap:9px;margin:5px 0 2px}
+  .hero{font-size:34px;font-weight:850;letter-spacing:-.01em;line-height:1}
+  .cap{font-size:12.5px;color:var(--t2)}
+  .sub2{font-size:12px;color:#c9cad0;margin-top:2px}
+  .ribbon{display:flex;gap:6px;margin-top:9px}
+  .pill{font-size:11px;font-weight:650;color:#d8d9de;background:var(--muted);border-radius:999px;padding:3px 9px}
+  .pill.em{background:rgba(245,158,11,.16);color:var(--amber)}
+  .zb{display:flex;gap:2px;height:9px;border-radius:5px;overflow:hidden;margin-top:9px}.zb i{display:block;height:100%}
+  .tab{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:9px 0 18px;border-top:1px solid var(--hair);background:var(--paper)}
+  .tab .t{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;color:var(--t2)}.tab .t.on{color:var(--amber)}.tab .t .g{font-size:17px}
+  .gloss{position:absolute;left:0;right:0;bottom:0;height:120px;pointer-events:none;background:linear-gradient(180deg,rgba(18,18,20,0),var(--paper) 86%);z-index:20}
+  .finger{position:absolute;width:54px;height:54px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.22),rgba(255,255,255,0) 70%);z-index:50;border:1.5px solid rgba(255,255,255,.25)}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>Refined C — one adaptive date bar</h1>
+  <p class="sub">The fix for “obstructing”: <b>not</b> a pill floating over your cards + a header competing with it — just <b>one slim bar in the header zone</b>. <span class="k">At rest it’s a whisper</span> (era label only, transparent). <span class="k">While you scroll it reveals the exact day</span> (glass bg + a progress underline), then recedes ~1.2s after you stop. Cards are never covered.</p>
+</header>
+
+<div class="gallery">
+
+  <!-- 1 · AT REST -->
+  <div class="col">
+    <span class="badge s1">State 1 · At rest</span>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span class="r">5G&nbsp;&nbsp;100%</span></div>
+      <div class="top">
+        <div class="title-h">Recap</div>
+        <div class="lens"><span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span></div>
+      </div>
+      <div class="datebar"><span class="era">This week</span><span class="spacer"></span><span class="day"><span class="clk">◷</span>Wed · Jun 17</span><span class="track"><i style="width:18%"></i></span></div>
+      <div class="feed">
+        <div class="card" style="--accent:var(--coral)">
+          <div class="kick"><span>★</span>New hardest ever</div>
+          <div class="hrow"><span class="hero" style="color:var(--coral)">V7</span><span class="cap">New grade</span></div>
+          <div class="sub2">up from V6 · Crimp Time</div>
+        </div>
+        <div class="card" style="--accent:var(--amber)">
+          <div class="kick"><span>⛰</span>Climb session</div>
+          <div class="hrow"><span class="hero">V6</span><span class="cap">Hardest send</span></div>
+          <div class="ribbon"><span class="pill em">8 sends</span><span class="pill">12 climbs</span><span class="pill">19 tries</span></div>
+        </div>
+        <div class="card" style="--accent:var(--hard)">
+          <div class="kick"><span>♥</span>Session effort</div>
+          <div class="hrow"><span class="hero">172</span><span class="cap">Peak BPM</span></div>
+          <div class="zb"><i style="flex:2;background:var(--fresh)"></i><i style="flex:3;background:var(--amber)"></i><i style="flex:4;background:var(--hard)"></i></div>
+        </div>
+        <div class="gloss"></div>
+      </div>
+      <div class="tab"><div class="t"><span class="g">⌂</span>Today</div><div class="t on"><span class="g">▦</span>Recap</div><div class="t"><span class="g">▷</span>Log</div></div>
+    </div></div>
+    <p class="colcap"><b>At rest — a whisper.</b> Just the <span class="k">era label</span> (“This week”), transparent background, no underline, no pill. Full card real estate; nothing competes with the content.</p>
+  </div>
+
+  <!-- 2 · SCROLLING (active) -->
+  <div class="col">
+    <span class="badge s2">State 2 · While scrolling</span>
+    <div class="device"><div class="screen scrolling">
+      <div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span class="r">5G&nbsp;&nbsp;100%</span></div>
+      <div class="top">
+        <div class="title-h">Recap</div>
+        <div class="lens"><span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span></div>
+      </div>
+      <div class="datebar"><span class="era">Earlier in June</span><span class="spacer"></span><span class="day"><span class="clk">◷</span>Thu · Jun 12</span><span class="track"><i style="width:52%"></i></span></div>
+      <div class="feed">
+        <div class="card" style="--accent:var(--coral)">
+          <div class="kick"><span>🏋</span>Lift PR</div>
+          <div class="hrow"><span class="hero">102.5<span style="font-size:18px"> kg</span></span><span class="cap">est. 1RM</span></div>
+          <div class="sub2">was 97.5 kg · Back Squat</div>
+        </div>
+        <div class="card" style="--accent:var(--ember)">
+          <div class="kick"><span>🏃</span>Workout</div>
+          <div class="hrow"><span class="hero">5.2<span style="font-size:18px"> km</span></span><span class="cap">Distance</span></div>
+          <div class="ribbon"><span class="pill em">4 splits</span><span class="pill">26:04</span></div>
+        </div>
+        <div class="card" style="--accent:var(--amber-deep)">
+          <div class="kick"><span>▦</span>On the board</div>
+          <div class="hrow"><span class="hero">14</span><span class="cap">climbs lit</span></div>
+        </div>
+        <div class="gloss"></div>
+      </div>
+      <div class="finger" style="right:34px;bottom:150px"></div>
+      <div class="tab"><div class="t"><span class="g">⌂</span>Today</div><div class="t on"><span class="g">▦</span>Recap</div><div class="t"><span class="g">▷</span>Log</div></div>
+    </div></div>
+    <p class="colcap"><b>While scrolling — reveal on demand.</b> The same bar gets a <span class="k">glass background</span>, the era brightens, the <span class="k">exact day slides in on the right</span> (“Thu · Jun 12”), and a thin amber <span class="k">progress underline</span> shows depth. Still slim, still in the header zone — it never overlaps a card. Fades back to State 1 ~1.2s after your finger lifts.</p>
+  </div>
+
+  <!-- 3 · CROSSING A BUCKET -->
+  <div class="col">
+    <span class="badge s2">State 3 · Crossing into a new era</span>
+    <div class="device"><div class="screen scrolling">
+      <div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span class="r">5G&nbsp;&nbsp;100%</span></div>
+      <div class="top">
+        <div class="title-h">Recap</div>
+        <div class="lens"><span class="chip on">All</span><span class="chip">Climbing</span><span class="chip">Strength</span><span class="chip">Effort</span></div>
+      </div>
+      <div class="datebar"><span class="era">May 2026</span><span class="spacer"></span><span class="day"><span class="clk">◷</span>Sat · May 24</span><span class="track"><i style="width:81%"></i></span></div>
+      <div class="feed">
+        <div class="card" style="--accent:var(--amber)">
+          <div class="kick"><span>△</span>Grade pyramid</div>
+          <div class="hrow"><span class="hero">V6</span><span class="cap">top grade</span></div>
+          <div class="sub2">47 sends · across 5 grades</div>
+        </div>
+        <div class="card" style="--accent:var(--amber)">
+          <div class="kick"><span>◷</span>On this day</div>
+          <div class="hrow"><span class="hero">V5</span><span class="cap">1 yr ago</span></div>
+          <div class="sub2">your first overhang flash</div>
+        </div>
+        <div class="card" style="--accent:var(--ember)">
+          <div class="kick"><span>◴</span>Consistency</div>
+          <div class="hrow"><span class="hero">18</span><span class="cap">active days</span></div>
+        </div>
+        <div class="gloss"></div>
+      </div>
+      <div class="finger" style="right:40px;bottom:300px"></div>
+      <div class="tab"><div class="t"><span class="g">⌂</span>Today</div><div class="t on"><span class="g">▦</span>Recap</div><div class="t"><span class="g">▷</span>Log</div></div>
+    </div></div>
+    <p class="colcap"><b>Crossing eras updates live.</b> Scroll far enough and the era flips to <span class="k">“May 2026”</span> with the day continuing to track (“Sat · May 24”), the underline near the bottom. Buckets: <b>Today · Yesterday · This week · Earlier in <month> · <Month Year> · <Year></b> — derived from each card’s <code>anchorDate</code>, the same value the feed already sorts by.</p>
+  </div>
+
+</div>
+</body>
+</html>

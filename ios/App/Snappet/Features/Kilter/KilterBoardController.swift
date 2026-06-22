@@ -562,6 +562,8 @@ final class KilterSessionManager {
             liveWorkout.stop()
             didStartMetrics = false
         }
+        // Recap feed (F0b): append-only, idempotent session activity (safe on the recovery path).
+        FeedActivityWriter.recordKilterSessionFinish(session, in: context)
         try? context.save()
         liveActivity?.end()
         if isCurrent { current = nil; currentPlanId = nil; planProgress = nil; planPendingUUIDs = []; resetActiveClimb() }
