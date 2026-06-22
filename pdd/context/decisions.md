@@ -7529,3 +7529,17 @@ boxed `AVPlayerItem` cross the `@Sendable` hop), then assign the boxed `(AVQueue
 on MrRobot (off-main `AVPlayerLooper` construction was the one safety risk — pulled systemCrashLogs, none new).
 Builds green (sim+device); installed + launched + alive on MrRobot. Pending: user device recording to confirm
 the freeze is gone (sim can't validate — no Photos).
+
+**Round 7b — warm the incoming clip earlier so the snap "completes" smoothly (prompt 97 cont., MrRobot
+2026-06-22).** After round 7 killed the freeze, the user reported the SECOND HALF of the swipe (the snap
+after the gesture) feels abrupt on fast/normal swipes but fine super-slow — the tell that the incoming
+player hadn't DECODED its first frame before the snap (slow swipes gave it the lead time). Fix: `warmLive`
+now warms the ±1 neighbours off the CURRENT `page` DIRECTLY (removed the round-3 80ms-delayed `warmPage`
+copy + state + Task) — safe now that the build is off-main + cascade-free (prompt 97), so eager warming
+can't block the slide. Warming during the DWELL lets the neighbour's AVPlayerLayer reach isReadyForDisplay
+(decode frame-0) BEFORE the swipe, so a fast swipe lands on an already-decoded frame. Also lengthened the
+`layerReady` reveal crossfade 0.18s→0.32s ease-in-out so the rare un-warmed reveal completes softly. NOTE
+for next step: the raw SNAP GEOMETRY speed is fixed by the stock `TabView(.page)` (UIKit-internal, not
+tunable); if the slide itself still feels too fast after this, the next move is a custom UIScrollView-backed
+pager (directional-locked vs the vertical feed) with a tunable snap duration/curve. Builds green; installed
+on MrRobot.

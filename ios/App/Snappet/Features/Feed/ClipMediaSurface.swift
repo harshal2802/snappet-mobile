@@ -101,9 +101,11 @@ struct ClipMediaSurface: View {
                                   // Reset to false only on teardown() (new clip / disappear).
                                   onReadyForDisplayChange: { ready in if ready { layerReady = true } })
                 // Hold the poster until the first frame is decoded, then dissolve the video in — no empty-layer
-                // flash when a carousel page (or the autoplay clip) takes over. frame-0 ≈ poster ⇒ no ghost.
+                // flash when a carousel page (or the autoplay clip) takes over. frame-0 ≈ poster ⇒ no ghost. A
+                // gentle ~0.32s ease-in-out so that on the rare fast swipe where the incoming frame isn't
+                // decoded before the snap, the video "completes" softly instead of popping in (prompt 97 polish).
                 .opacity(layerReady ? 1 : 0)
-                .animation(.easeOut(duration: 0.18), value: layerReady)
+                .animation(.easeInOut(duration: 0.32), value: layerReady)
                 .accessibilityIdentifier("feed.media.player")
                 .onTapGesture {
                     // Clips feed: tap the playing video → open fullscreen (onSurfaceTap). Otherwise (the

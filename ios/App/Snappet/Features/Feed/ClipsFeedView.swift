@@ -335,9 +335,6 @@ private struct ClipPostCard: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
-    /// A copy of `page` updated a beat AFTER a swipe settles — used to warm the ±1 carousel NEIGHBOURS, so a
-    /// new AVPlayer mounts OFF the swipe's settle/snap frame (mounting it on that frame was the swipe jerk).
-    @State private var warmPage = 0
     @State private var studio: StudioPresentation?
     /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
     @State private var isOnScreen = false
@@ -501,9 +498,13 @@ private struct ClipPostCard: View {
     private func warmLive(_ idx: Int) -> Bool {
         guard autoplayActive else { return false }                      // autoplay off → mount only on tap (leaf)
         if idx == page { return isOnScreen || isNearScreen }            // the current page is warm immediately
-        // Warm the ±1 carousel neighbours off the DELAYED `warmPage` so a NEW player isn't created on the
-        // swipe's settle frame (which competed with the fast-snap animation = the jerk).
-        return isOnScreen && abs(idx - warmPage) <= 1
+        // Warm the ±1 carousel neighbours off the CURRENT `page` DIRECTLY (no 80ms-delayed copy). The delay was
+        // a round-3 workaround to keep a new player's mount off the snap frame — obsolete now that the build is
+        // OFF-MAIN (prompt 97) and no longer re-renders the feed: an eager mount can't block the slide. Warming
+        // during the DWELL gives the neighbour's layer time to become isReadyForDisplay (decode its first frame)
+        // BEFORE you swipe, so a fast swipe lands on an already-decoded frame instead of a poster that pops to
+        // video at the snap (the "abrupt second half"; slow swipes already had that lead time). Bounded ±1 (R12).
+        return isOnScreen && abs(idx - page) <= 1
     }
 
     private var carousel: some View {
@@ -554,17 +555,7 @@ private struct ClipPostCard: View {
                 } else if let pc = playback.playing, pc.postID == post.id, pc.page != newPage {
                     playback.playing = nil
                 }
-                // Advance the warm window PROMPTLY (~80ms) so the page you're about to swipe to is already
-                // mounted+decoded BEFORE the next snap. The old 400ms defer was LONGER than the measured
-                // ~250ms swipe cadence, so a fast swipe always reached an un-warmed page and built its
-                // AVQueuePlayer+AVPlayerLooper synchronously ON the snap frame → the ~250ms freeze-then-jump.
-                // 80ms still rides a continuous fling's per-page dwell while the `page == newPage` guard skips
-                // building players for pages you blow straight past. (load() also yields before the build as a
-                // cold-mount safety net.) Warm set stays bounded to ±1 (R12).
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(80))
-                    if page == newPage { warmPage = newPage }   // only if we're still on this page
-                }
+                // (No warm-window defer: `warmLive` now warms the ±1 neighbours off `page` directly — prompt 97.)
             }
             .overlay(alignment: .topTrailing) {
                 if post.clipCount > 1 {
