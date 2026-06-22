@@ -77,7 +77,9 @@ const nodes = [
   { id: "tab-feed", label: "Recap tab", type: "shell", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Shell/RootShell.swift", desc: "Bottom-nav MIDDLE tab (Home · Recap · Apps) → FeedView. SF Symbol sparkles.rectangle.stack; snappet://feed + --start-tab feed open it (F1).", tags: ["tab","feed","recap"] },
   { id: "feed", label: "FeedView", type: "screen", group: "feed", category: "fitness", platform: "ios",
-    file: "ios/App/Snappet/Features/Feed/FeedView.swift", desc: "The Recap feed (F1): an infinite, derive-on-read scroll of the user's own sessions as Pulse-Pro cards composed by FeedComposer over @Query'd Kilter/Workout sessions+logs. Lens bar (F0 pure post-filters incl. always-available Sessions-only), Stories-rail placeholder (F6 activates), keyset-windowed pagination, and the 'N new' freshness pill. a1/a2 session cards rich (DisciplineHero+StatRibbon+.snappetCard); milestone/trend cards compact (F5/F6 enrich). No HR/media/share yet (F2-F4).", tags: ["feed","recap","screen","pulse-pro"] },
+    file: "ios/App/Snappet/Features/Feed/FeedView.swift", desc: "The Recap feed (F1): an infinite, derive-on-read scroll of the user's own sessions as Pulse-Pro cards composed by FeedComposer over @Query'd Kilter/Workout sessions+logs. Lens bar (F0 pure post-filters incl. always-available Sessions-only), Stories-rail placeholder (F6 activates), keyset-windowed pagination, and the 'N new' freshness pill. a1/a2 session cards rich (DisciplineHero+StatRibbon+.snappetCard); milestone/trend cards compact (F5/F6 enrich). F8 adds the scroll date bar (feed-date-bar): a top-pinned era 'whisper' that reveals the topmost card's exact day + a progress underline while scrolling, hidden at the very top.", tags: ["feed","recap","screen","pulse-pro"] },
+  { id: "feed-date-bar", label: "FeedDateBar", type: "component", group: "feed", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/Feed/FeedDateBar.swift", desc: "Recap scroll date bar (F8): one slim element pinned at the top of the feed that orients you in a long scroll. At rest it's an era 'whisper' (This week / Earlier in June / May 2026); while scrolling it expands to the topmost visible card's exact day + a glass backing + a thin progress underline, then recedes ~1.2s after you stop. Hidden at the very top (the nav title is the anchor there). Orientation strings are pure + tested (FeedTimeBucket over each card's anchorDate); FeedView tracks the topmost card via per-row top-edge crossing (onScrollPhaseChange/onScrollGeometryChange, main-actor, no preference keys). List layout only.", tags: ["feed","scroll","date","orientation","ios"] },
   { id: "card-detail", label: "CardDetailView", type: "screen", group: "feed", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/Feed/CardDetailView.swift", desc: "Recap card detail (F2): the full card + re-derived climb-by-climb timeline (KilterSessionStats) + HR zone chart (WorkoutHRStats) + reactions strip + Open-in-module deep-link. HR-deepened cards e1 (zone bar + Edwards TRIMP), e2 (hardest-effort send), e3 (avg/peak HR trend) are added as FeedComposer recipes (FeedHRCards) — never editing the F0 ordering core; they never compose when hrSeries is absent.", tags: ["feed","detail","hr","reactions","deep-link"] },
   { id: "media-browser", label: "MediaBrowserView", type: "sheet", group: "feed", category: "fitness", platform: "ios",
@@ -747,6 +749,9 @@ const links = [
   // ---- F7: the send wall (inline masonry layout over the same corpus) ----
   { source: "feed", target: "feed-wall", type: "navigate", label: "grid toggle (inline)" },
   { source: "feed-wall", target: "card-detail", type: "navigate", label: "tap tile" },
+
+  // ---- F8: the scroll date bar (orientation) ----
+  { source: "feed", target: "feed-date-bar", type: "contains", label: "scroll orientation" },
   { source: "feed-composer", target: "feed-wall", type: "feeds", label: "same composed corpus" },
   { source: "feed-wall", target: "feed-walllayout", type: "uses", label: "pure masonry" },
 

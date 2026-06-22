@@ -30,6 +30,10 @@ private final class FeedMemo {
     var index: FeedMediaIndex { cachedIndex }
 }
 
+/// The scroll snapshot the F8 date bar reads from `onScrollGeometryChange`: current offset + a 0…1
+/// depth fraction for the progress underline. Equatable so the action only fires on real change.
+private struct FeedScrollSnapshot: Equatable { let y: CGFloat; let frac: Double }
+
 struct FeedView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
@@ -57,9 +61,16 @@ struct FeedView: View {
     /// store can briefly show the empty state while SwiftData hydrates — so we show a redacted
     /// skeleton instead of "no recap yet" on cold launch. Flipped in `.task` (post first layout).
     @State private var hasComposedOnce = false
+    // F8 scroll date bar: the topmost visible card's anchorDate + live scroll state drive the bar.
+    @State private var topDate: Date?
+    @State private var scrollY: CGFloat = 0
+    @State private var scrollFrac: Double = 0
+    @State private var scrolling = false
+    @State private var dayRevealed = false
 
     private let pageSize = 12
     private let topAnchor = "feed.top"
+    private let feedSpace = "feedScroll"
 
     // MARK: Derivation (derive-on-read; no card persistence)
 
@@ -99,6 +110,17 @@ struct FeedView: View {
     /// — they don't affect card composition, only the strip's heart/bookmark fill.
     private var reactedIds: Set<String> { Set(feedReactions.map(\.activityContentId)) }
     private var savedIds: Set<String> { Set(feedSaveItems.map(\.activityContentId)) }
+
+    // MARK: F8 — scroll date bar
+
+    /// The scroll date bar's label = the topmost visible card's era + day. `nil` at the very top.
+    private var dateLabel: FeedDateLabel? { topDate.map { FeedTimeBucket.label(for: $0, now: .now) } }
+
+    /// Show the bar once scrolled past the stories/lens header (hidden at the very top, where the large
+    /// nav title is the anchor). List layout only — the masonry wall doesn't feed per-row positions.
+    private func showDateBar(_ visible: [FeedCard]) -> Bool {
+        layout == .list && scrollY > 120 && dateLabel != nil && !visible.isEmpty
+    }
 
     var body: some View {
         let all = composed()
@@ -148,6 +170,31 @@ struct FeedView: View {
                         .accessibilityIdentifier("feed.pill")
                         .padding(.top, 6)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                // F8: the scroll date bar — orientation while you scroll a long feed.
+                .coordinateSpace(.named(feedSpace))
+                .onScrollPhaseChange { _, newPhase, _ in scrolling = newPhase != .idle }
+                .onScrollGeometryChange(for: FeedScrollSnapshot.self) { g in
+                    FeedScrollSnapshot(y: g.contentOffset.y,
+                                       frac: g.contentOffset.y / max(1, g.contentSize.height - g.containerSize.height))
+                } action: { _, s in
+                    scrollY = s.y
+                    scrollFrac = min(1, max(0, s.frac))
+                }
+                .overlay(alignment: .top) {
+                    if showDateBar(visible), let label = dateLabel {
+                        FeedDateBar(label: label, revealed: dayRevealed, progress: scrollFrac)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.25), value: showDateBar(visible))
+                // Reveal the precise day while scrolling; recede to the era whisper ~1.2s after settling.
+                .task(id: scrolling) {
+                    if scrolling { dayRevealed = true }
+                    else {
+                        try? await Task.sleep(for: .seconds(1.2))
+                        if !Task.isCancelled { dayRevealed = false }
                     }
                 }
                 .refreshable { dismissPill(current: composed()) }
@@ -216,6 +263,17 @@ struct FeedView: View {
                     }
                 }
                 .onAppear { loadMoreIfNeeded(card: card, in: filtered) }
+                // F8: the card straddling the top edge IS the one the date bar announces. Cheap — the
+                // bool only flips when a new card crosses the top, so onChange fires per-crossing (not
+                // per-frame), and its action runs on the main actor (no preference-key concurrency).
+                .background {
+                    GeometryReader { g in
+                        let f = g.frame(in: .named(feedSpace))
+                        Color.clear.onChange(of: f.minY <= 0 && f.maxY > 0, initial: true) { _, isTop in
+                            if isTop { topDate = card.anchorDate }
+                        }
+                    }
+                }
             }
         }
         .padding(.horizontal, SnappetSpacing.lg)

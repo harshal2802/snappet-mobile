@@ -4,6 +4,31 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-21] Recap feed F8 — scroll date bar (time orientation)
+
+**Decision** (user feedback: a long feed had no time anchor while scrolling). Added **one adaptive date
+bar** — a top overlay on the feed's `ScrollView`, NOT a pinned header. Why an overlay: `FeedView`'s stories
+rail + lens bar scroll away and the large nav title collapses, so a header-zone bar would cover content or
+force a layout rebuild. The bar is **hidden at the very top** (nav title is the anchor), shows an era
+**whisper** once scrolled past the header (transparent, just the bucket label), and **while scrolling**
+reveals the topmost visible card's exact day + a glass backing + a thin progress underline, receding ~1.2s
+after the finger lifts. Wireframe-approved “refined C” (`docs/ux-research/feed/wireframes-timestamp-c.html`).
+
+Non-obvious choices:
+- **Orientation logic is pure + tested** (`FeedTimeBucket` → `FeedDateLabel{era, day}`, Foundation only,
+  injected calendar for determinism). Buckets: Today · Yesterday · This week (2–6 days) · Earlier in `<Month>`
+  (current calendar month) · `<Month Year>`. Day = "EEE · MMM d"; the era carries the year so the day omits it.
+  Future dates clamp to Today. The view (`FeedDateBar`) is layout-only.
+- **Topmost-card tracking uses per-row top-edge crossing, not preference keys.** Each list row reports
+  `minY<=0 && maxY>0` in a named coordinate space via `onChange` — the bool flips only when a new card
+  crosses the top, so it fires per-crossing (not per-frame), and `onChange`'s action runs on the **main
+  actor**. This sidesteps Swift 6 strict concurrency: `onPreferenceChange`'s action is `@Sendable` in the
+  iOS 18 SDK and can't mutate `@State`, whereas `onScrollPhaseChange`/`onScrollGeometryChange`/`onChange`
+  actions are main-actor. **Rules out** a preference-key collector (concurrency friction + per-frame thrash).
+- **List layout only.** The bar reads per-row positions from the list; the masonry wall (F7) is untouched.
+  The `scrollY > 120` reveal threshold is a heuristic for "past the stories+lens header". Keystone
+  (`FeedComposer`/ordering) and the card model are unchanged. KG: new `feed-date-bar` component node + edge.
+
 ## [2026-06-21] Recap feed R13 — post-F7 cleanup wave (dedup + display unification)
 
 **Decision** (quality-only pass over the shipped F0–F7 feed; keystone `FeedComposer` ordering/recency/
