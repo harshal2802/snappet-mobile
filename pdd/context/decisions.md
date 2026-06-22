@@ -6888,3 +6888,30 @@ full-bleed everywhere — though the exact poster chrome still wants on-device v
 
 **Android (tracked).** Not ported — iOS-only slice; an Android mirror would follow once the iOS shape
 is device-validated.
+
+## 2026-06-21 — Clips feed: two on-device behaviours clarified (inline playback + HR-edit propagation)
+
+Reviewing the Clips feed on the device (PR #241) raised two questions; recording the answers because
+both encode a *deliberate decoupling* that is easy to mistake for a bug — plus a follow-up each.
+
+**Q1 — "why don't the feed videos play?"** By design. The Clips poster is a STILL frame
+(`ClipThumbnail` over `AssetPosterLoader`, with a `play.circle.fill` marker on videos); there is **no
+`AVPlayer` in `ClipsFeedView`** and the poster has **no tap handler**. Inline playback / a fullscreen
+player were deferred — the single-active-player discipline (only one live `AVPlayer` at a time) is the
+hard part, and the slice shipped read-only first. To play a clip today: ⋯ → "Edit this clip" (the
+Studio preview plays) or ⋯ → "Go to session" (the session detail's fullscreen viewer). **Follow-up:**
+add a tap on the poster that presents the existing Recap `MediaBrowserView.viewer` (`PagedMediaViewer`,
+real on-device paged AVPlayer at the tapped index), keeping the in-feed posters as stills.
+
+**Q2 — "if I edit the HR chart in the clip editor, does the feed poster update?"** No — and not by
+accident. The feed poster's HR scorebug is **decoupled from the `StudioProject`**: it draws a FIXED
+`HRTile.feedClipScorebug` fed by the **session's** `hrSeries` (sliced per-clip via
+`FeedMedia.clipHRWindow`), and `ClipsFeedView` `@Query`s `SessionMedia` + the sessions, **not**
+projects — so a project edit neither feeds the poster nor invalidates it (the poster re-renders on
+cover dismissal but recomputes the *same* scorebug, so it looks identical; not a stale cache). The edit
+*does* show in the Studio preview + the exported/burned reel (both read the project). This is the
+intended "house style" — the R6 *STYLE-match, not data-match* decision. **Open product question /
+follow-up:** if the feed should mirror per-clip overlay edits (WYSIWYG), have `ClipPosterView` resolve
+the session's `StudioProject` and render its saved `hrOverlay` tile instead of the fixed scorebug, and
+observe project changes so it re-renders — a deliberate product call, since feeds usually show a stable
+house style rather than each user's per-clip tweaks. Both follow-ups are out of the prompt-82 slice.
