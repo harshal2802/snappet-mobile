@@ -7087,3 +7087,37 @@ when `values.resolveTile(tile) == nil`. (2) **Deterministic pick:** `@Query [Stu
 `updatedAt` desc, so the per-session first-wins choice is stable (and is the latest edit) if a session
 ever has two projects (e.g. a restored backup that carried duplicates) — `StudioProject.sessionID` isn't
 `.unique`. The cramped-big-template look is accepted (the documented placement tradeoff above).
+
+## 2026-06-22 — Clips autoplay-on-scroll (prompt 90, follow-up #3) — the R12-risk one, done conservatively
+
+**Context.** The inline auto-clip hero was DROPPED in R12 (black box; its `FeedActivePlayerCoordinator`
+scroll-center assignment to recycled rows was the cause). I advised against rebuilding autoplay; the user
+opted in eyes-open. So this ships it **conservatively**: **opt-in (default OFF)** behind a nav-bar toggle
+(`play.slash` ⇄ `play.circle.fill`, `@AppStorage "clips.autoplay"`), **muted**, suppressed under **Reduce
+Motion** and **Low Power** — and reusing the **proven** `ClipMediaSurface` (tap-to-play, prompt 85), NOT a
+new player.
+
+**Mechanism — NO scroll-center coordinator.** Autoplay drives the SAME `playingClip` single-active state
+tap-to-play uses, from a per-card **`.onScrollVisibilityChange(threshold: 0.7)`** signal (iOS 18): when a
+card is ≥70% on-screen (only one full-width card qualifies) and autoplay is allowed, it sets
+`playingClip = (post.id, page, muted: true)`; dropping below clears it (if it was this card's). The
+Phase-1 "scrolling stops playback" rule is suppressed while autoplay is on (scrolling **transfers** play
+instead). `PlayingClipRef` gained `muted`; `ClipMediaSurface` gained `muted` (sets `player.isMuted`) — a
+tap on a muted autoplaying clip **unmutes** (`unmutedByTap`), a further tap pauses/resumes. Tap-to-play
+stays unmuted (sets `muted: false`); the fullscreen viewer + Recap are untouched (default `muted: false`).
+
+**Owed on-device — THE R12 risk.** The inline `AVPlayerLayer` rendering under scroll is exactly the R12
+black-box scenario. This uses the stable per-card player + a visibility signal (not the coordinator), but
+it **MUST be device-verified** (watch for a black inline frame while scrolling with autoplay on) before
+the default is ever flipped to ON. The sim can't reproduce it (no Photos).
+
+**Opus review fixes (the mute/scroll/toggle interactions).** Mute is now driven **purely** by
+`playingClip.muted` (the single source of truth) — `ClipMediaSurface` lost its local `unmutedByTap`; a
+tap on a muted surface calls an `onUnmute` closure that flips `playingClip.muted` to false (so the feed's
+logic stays accurate). Then: (1) the scroll-stop fires on `!pc.muted` (stops an **unmuted** tap/auto clip
+on scroll so audio can't blare; leaves muted autoplay for the visibility transfer) instead of
+`!autoplayEnabled`; (2) toggling autoplay **OFF** clears `playingClip` (was: the muted clip looped on);
+(3) autoplay **follows carousel swipes** (a per-card `isOnScreen` + `onChange(of: page)` re-targets the
+new page muted) instead of stopping. The cross-card visibility race is already handled by the
+`postID`-matched guard (one full-width card exceeds 0.7 at a time); the fullscreen viewer + Recap are
+untouched (default `muted: false`, `onUnmute: {}`).

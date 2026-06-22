@@ -25,6 +25,11 @@ struct ClipMediaSurface: View {
     @Binding var fraction: Double
     /// Letterbox backing colour shown around the aspect-fit video.
     var background: UIColor = .black
+    /// Mute the player (autoplay convention, prompt 90); driven purely by the caller's `playingClip.muted`.
+    var muted: Bool = false
+    /// A tap on a muted (autoplaying) surface calls this so the CALLER can flip `playingClip.muted` (the
+    /// single source of truth) — keeping the feed's "stop on scroll" / "transfer" logic accurate.
+    var onUnmute: () -> Void = {}
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
@@ -46,6 +51,7 @@ struct ClipMediaSurface: View {
             // the play decision uses the LIVE `isActive`: a page can de-center mid-load, and the captured
             // value would otherwise auto-play an off-center page.
             .onChange(of: state) { _, ready in if ready == .ready, isActive { player?.play() } }
+            .onChange(of: muted) { _, m in player?.isMuted = m }
             // Full teardown only when the surface leaves the view tree (pause + nil player + drop looper).
             .onDisappear { teardown() }
             // Live HR: while THIS active surface's video plays, sweep the playhead via the shared mapping.
@@ -64,7 +70,12 @@ struct ClipMediaSurface: View {
         } else if clip.kind == "video", let player {
             StudioPlayerLayerView(player: player, backgroundColor: background)
                 .accessibilityIdentifier("feed.media.player")
-                .onTapGesture { player.rate == 0 ? player.play() : player.pause() }
+                .onTapGesture {
+                    // First tap on a muted (autoplaying) clip unmutes it (the caller flips playingClip.muted,
+                    // the single source of truth); otherwise toggle play/pause.
+                    if muted { onUnmute() }
+                    else { player.rate == 0 ? player.play() : player.pause() }
+                }
         } else if let image {
             Image(uiImage: image).resizable().scaledToFit()
                 .accessibilityIdentifier("feed.media.photo")
@@ -105,6 +116,7 @@ struct ClipMediaSurface: View {
             }
             guard let playerItem = boxed.value else { state = .failed; return }
             let queue = AVQueuePlayer()
+            queue.isMuted = muted                                            // autoplay starts muted
             looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
             player = queue
             state = .ready   // `.onChange(of: state)` starts playback iff still active (live isActive)

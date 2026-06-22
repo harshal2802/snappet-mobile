@@ -23,6 +23,9 @@ struct ClipFeedHR: Equatable {
 struct PlayingClipRef: Equatable {
     var postID: String
     var page: Int
+    /// Autoplay starts muted (prompt 90); tap-to-play is unmuted.
+    var muted: Bool = false
+    func matches(_ postID: String, _ page: Int) -> Bool { self.postID == postID && self.page == page }
 }
 
 struct ClipsFeedView: View {
@@ -46,6 +49,14 @@ struct ClipsFeedView: View {
     @State private var scrollTarget: String?
     /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
     @State private var reactions = ClipReactionStore()
+    /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
+    /// suppressed under Reduce Motion / Low Power.
+    @AppStorage("clips.autoplay") private var autoplayEnabled = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var autoplayActive: Bool {
+        autoplayEnabled && !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
 
     var body: some View {
         let posts = composedPosts()
@@ -60,19 +71,22 @@ struct ClipsFeedView: View {
                                 ForEach(posts) { post in
                                     ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
                                                  allMedia: allMedia, playingClip: $playingClip,
-                                                 reactions: reactions, hrTile: sessionHRTile[post.sessionID])
+                                                 reactions: reactions, hrTile: sessionHRTile[post.sessionID],
+                                                 autoplayActive: autoplayActive)
                                         .id(post.id)
                                 }
                             }
                             .padding(.vertical, 8)
                         }
                         .accessibilityIdentifier("clips.feed")
-                        // Scrolling the feed stops the inline player, so a tapped clip can't keep playing audio
-                        // after its card scrolls off-screen (prompt 85). This is a feed-level gesture signal —
-                        // NOT per-card scroll geometry, which is the R12 coordinator that rendered a black box.
+                        // Scrolling stops an UNMUTED clip (a tap-to-play) so audio can't blare while you scroll
+                        // (prompt 85). A MUTED autoplay clip is left for the per-card visibility signal
+                        // (prompt 90) to transfer/clear. A feed-level gesture signal — NOT the R12 coordinator.
                         .onScrollPhaseChange { _, newPhase, _ in
-                            if newPhase != .idle, playingClip != nil { playingClip = nil }
+                            if newPhase != .idle, let pc = playingClip, !pc.muted { playingClip = nil }
                         }
+                        // Turning autoplay OFF stops any clip it started (otherwise a muted clip loops on).
+                        .onChange(of: autoplayEnabled) { _, on in if !on { playingClip = nil } }
                         // Jump to a post picked in the explore grid (prompt 86). Deferred a beat so the grid
                         // sheet finishes dismissing first — scrolling mid-transition can no-op against an
                         // off-screen (not-yet-realized) LazyVStack row.
@@ -92,6 +106,14 @@ struct ClipsFeedView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 if !posts.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        // Autoplay-on-scroll toggle (prompt 90) — opt-in, off by default.
+                        Button { autoplayEnabled.toggle() } label: {
+                            Image(systemName: autoplayEnabled ? "play.circle.fill" : "play.slash")
+                        }
+                        .accessibilityIdentifier("clips.autoplay.toggle")
+                        .accessibilityLabel(autoplayEnabled ? "Turn off autoplay" : "Turn on autoplay")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button { showGrid = true } label: { Image(systemName: "square.grid.3x3") }
                             .accessibilityIdentifier("clips.grid.button")
@@ -196,12 +218,16 @@ private struct ClipPostCard: View {
     let reactions: ClipReactionStore
     /// The session's saved Studio HR tile (WYSIWYG override, prompt 89); nil → the house-style scorebug.
     let hrTile: HRTile?
+    /// Autoplay is on + allowed (prompt 90) — when this card is on-screen it plays its clip muted.
+    let autoplayActive: Bool
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
     @State private var studio: StudioPresentation?
+    /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
+    @State private var isOnScreen = false
     /// Share-a-clip (prompt 87): the exported temp video handed to the system share sheet, + a busy flag.
     @State private var shareItem: ClipShareItem?
     @State private var preparingShare = false
@@ -220,6 +246,18 @@ private struct ClipPostCard: View {
             header
             carousel
             meta
+        }
+        // Autoplay-on-scroll (prompt 90): when autoplay is allowed and this card is substantially on-screen,
+        // it becomes the single active clip and plays MUTED. A per-card visibility signal, NOT scroll-center
+        // geometry / a coordinator (the R12 black-box mechanism). At 0.7, only one full-width card qualifies.
+        .onScrollVisibilityChange(threshold: 0.7) { visible in
+            isOnScreen = visible
+            guard autoplayActive else { return }
+            if visible {
+                playingClip = PlayingClipRef(postID: post.id, page: page, muted: true)
+            } else if playingClip?.postID == post.id {
+                playingClip = nil
+            }
         }
         .fullScreenCover(item: $studio) { p in
             StudioEditorView(project: p.project, context: context,
@@ -316,10 +354,14 @@ private struct ClipPostCard: View {
                     ClipPosterView(item: item, post: post,
                                    payload: ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
                                                                maxHR: hr.maxHR, restHR: hr.restHR, tile: hrTile),
-                                   isPlaying: playingClip == PlayingClipRef(postID: post.id, page: idx),
+                                   isPlaying: playingClip?.matches(post.id, idx) == true,
+                                   muted: playingClip?.matches(post.id, idx) == true && playingClip?.muted == true,
                                    onTapToPlay: {
                                        guard item.media.kind == "video" else { return }   // photos stay still
-                                       playingClip = PlayingClipRef(postID: post.id, page: idx)
+                                       playingClip = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
+                                   },
+                                   onUnmute: {
+                                       if var pc = playingClip, pc.matches(post.id, idx) { pc.muted = false; playingClip = pc }
                                    })
                         .tag(idx)
                         .accessibilityIdentifier("clips.post.page")
@@ -327,9 +369,14 @@ private struct ClipPostCard: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: 460)
-            // Swiping the carousel off the playing clip stops it (you've moved away) — keeps one live player.
+            // Swiping the carousel: autoplay follows to the new page (muted); a tap-play stops (you moved off
+            // it, prompt 85). Either way one live player.
             .onChange(of: page) { _, newPage in
-                if let pc = playingClip, pc.postID == post.id, pc.page != newPage { playingClip = nil }
+                if autoplayActive, isOnScreen {
+                    playingClip = PlayingClipRef(postID: post.id, page: newPage, muted: true)
+                } else if let pc = playingClip, pc.postID == post.id, pc.page != newPage {
+                    playingClip = nil
+                }
             }
             .overlay(alignment: .topTrailing) {
                 if post.clipCount > 1 {
@@ -413,8 +460,12 @@ private struct ClipPosterView: View {
     let payload: ClipHROverlay.Payload?
     /// This clip is the feed's active inline clip → play it in place (prompt 85).
     let isPlaying: Bool
+    /// Start the inline player muted (autoplay; prompt 90) — tap-to-play passes false.
+    let muted: Bool
     /// Tap a still video → ask the feed to make this the active clip.
     let onTapToPlay: () -> Void
+    /// Tap a muted (autoplaying) clip → the feed flips its `playingClip.muted` to false (prompt 90).
+    let onUnmute: () -> Void
     /// Live playhead written by the inline `ClipMediaSurface`; the HR tile reads it while playing.
     @State private var liveFraction: Double = ClipHROverlay.atEndFraction
 
@@ -425,7 +476,7 @@ private struct ClipPosterView: View {
                 // The inline player when this is the feed's active video; otherwise the still poster (tap → play).
                 if isPlaying, item.media.kind == "video" {
                     ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
-                                     fraction: $liveFraction, background: .black)
+                                     fraction: $liveFraction, background: .black, muted: muted, onUnmute: onUnmute)
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
