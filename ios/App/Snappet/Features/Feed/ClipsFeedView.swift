@@ -52,6 +52,14 @@ struct ClipsFeedView: View {
     @State private var isScrolling = false
     /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
     @State private var reactions = ClipReactionStore()
+    /// Cached derived feed (prompt 92 perf). Composing posts + slicing each clip's HR payload is the heavy
+    /// part; do it ONLY when the @Query data changes — NOT on every `playingClip`/`page` write. A carousel
+    /// swipe writes `playingClip`, which re-runs `body`; recomputing the feed there landed the work on the
+    /// fast-snap animation frame and dropped it (the swipe jerk). Cache severs that edge.
+    @State private var cachedPosts: [ClipFeedPost] = []
+    @State private var cachedHRContext: [UUID: ClipFeedHR] = [:]
+    @State private var cachedHRTiles: [UUID: HRTile] = [:]
+    @State private var cachedPayloads: [UUID: ClipHROverlay.Payload] = [:]
     /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
     /// suppressed under Reduce Motion / Low Power.
     @AppStorage("clips.autoplay") private var autoplayEnabled = false
@@ -62,7 +70,7 @@ struct ClipsFeedView: View {
     }
 
     var body: some View {
-        let posts = composedPosts()
+        let posts = cachedPosts
         return NavigationStack {
             Group {
                 if posts.isEmpty {
@@ -75,9 +83,11 @@ struct ClipsFeedView: View {
                         ScrollView {
                             LazyVStack(spacing: 18) {
                                 ForEach(posts) { post in
-                                    ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
+                                    ClipPostCard(post: post,
+                                                 hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
                                                  allMedia: allMedia, playingClip: $playingClip,
-                                                 reactions: reactions, hrTile: sessionHRTile[post.sessionID],
+                                                 reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
+                                                 payloads: cachedPayloads,
                                                  autoplayActive: autoplayActive, isScrolling: isScrolling,
                                                  contentWidth: feedGeo.size.width)
                                         .id(post.id)
@@ -111,6 +121,10 @@ struct ClipsFeedView: View {
                 }
             }
             .background(SnappetColor.paper)
+            // Build the cached feed on first appearance and ONLY when the underlying @Query data changes —
+            // never on a playingClip/page write (prompt 92 perf: keeps the heavy composition off the swipe).
+            .task { rebuildFeed() }
+            .onChange(of: feedKey) { _, _ in rebuildFeed() }
             // Audio session (prompt 93): an UNMUTED clip plays over the ring/silent switch and takes the
             // audio focus; releasing it (re-muted / scrolled away → playingClip clears / left the feed)
             // restores the user's other audio. Driven purely by the single source of truth playingClip.muted.
@@ -191,6 +205,46 @@ struct ClipsFeedView: View {
                                       exerciseName: { exerciseName[$0] ?? "Exercise" })
     }
 
+    /// A cheap Equatable signature of the @Query inputs — recompute the cached feed only when this changes
+    /// (add/remove, an aspect backfill, a Studio-tile edit), NOT on a `playingClip`/`page` write.
+    private struct FeedKey: Equatable {
+        var media: Int, aspects: Int, kSessions: Int, kLogs: Int, wSessions: Int, projects: Int
+        var newestEdit: Date?
+    }
+    private var feedKey: FeedKey {
+        FeedKey(media: allMedia.count,
+                aspects: allMedia.reduce(0) { $0 + ($1.aspectRatio != nil ? 1 : 0) },
+                kSessions: kilterSessions.count, kLogs: kilterLogs.count,
+                wSessions: workoutSessions.count, projects: studioProjects.count,
+                newestEdit: studioProjects.first?.updatedAt)
+    }
+
+    /// Rebuild the cached posts + per-session HR context/tile + per-clip HR payloads in ONE pass. Called on
+    /// first appearance and whenever `feedKey` changes — so the expensive composition + per-clip
+    /// `ClipHROverlay.make` (HR-window slice + stats) happens off the swipe path.
+    private func rebuildFeed() {
+        let posts = composedPosts()
+        let tiles = sessionHRTile
+        var hrCtx: [UUID: ClipFeedHR] = [:]
+        for k in kilterSessions { hrCtx[k.id] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR) }
+        for w in workoutSessions { hrCtx[w.id] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR) }
+        var payloads: [UUID: ClipHROverlay.Payload] = [:]
+        for post in posts {
+            let hr = hrCtx[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
+            let tile = tiles[post.sessionID]
+            for item in post.clips {
+                if let p = ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
+                                              maxHR: hr.maxHR, restHR: hr.restHR, tile: tile) {
+                    payloads[item.media.id] = p
+                }
+            }
+        }
+        cachedPosts = posts
+        cachedHRContext = hrCtx
+        cachedHRTiles = tiles
+        cachedPayloads = payloads
+    }
+
     /// sessionID → the session's SAVED Studio HR tile (the WYSIWYG override, prompt 89), present only when
     /// the user customized it in the Studio; otherwise the poster keeps the house-style `.feedClipScorebug`.
     private var sessionHRTile: [UUID: HRTile] {
@@ -246,6 +300,9 @@ private struct ClipPostCard: View {
     let reactions: ClipReactionStore
     /// The session's saved Studio HR tile (WYSIWYG override, prompt 89); nil → the house-style scorebug.
     let hrTile: HRTile?
+    /// Precomputed per-clip HR overlay payloads (keyed by clip media id) — built once off the swipe path so a
+    /// page change doesn't re-slice/re-stat the HR window per page (prompt 92 perf).
+    let payloads: [UUID: ClipHROverlay.Payload]
     /// Autoplay is on + allowed (prompt 90) — when this card is on-screen it plays its clip muted.
     let autoplayActive: Bool
     /// The feed is actively scrolling — autoplay waits for it to settle before starting (no mid-scroll churn).
@@ -258,6 +315,9 @@ private struct ClipPostCard: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = 0
+    /// A copy of `page` updated a beat AFTER a swipe settles — used to warm the ±1 carousel NEIGHBOURS, so a
+    /// new AVPlayer mounts OFF the swipe's settle/snap frame (mounting it on that frame was the swipe jerk).
+    @State private var warmPage = 0
     @State private var studio: StudioPresentation?
     /// Whether this card is substantially on-screen (drives autoplay; prompt 90).
     @State private var isOnScreen = false
@@ -420,7 +480,10 @@ private struct ClipPostCard: View {
     private func liveFor(_ idx: Int) -> Bool {
         if playingClip?.matches(post.id, idx) == true { return true }   // the active clip always mounts
         guard autoplayActive else { return false }                      // autoplay off → don't warm neighbours
-        return (isOnScreen && abs(idx - page) <= 1) || (isNearScreen && idx == page)
+        if idx == page { return isOnScreen || isNearScreen }            // the current page is warm immediately
+        // Warm the ±1 carousel neighbours off the DELAYED `warmPage` so a NEW player isn't created on the
+        // swipe's settle frame (which competed with the fast-snap animation = the jerk).
+        return isOnScreen && abs(idx - warmPage) <= 1
     }
 
     private var carousel: some View {
@@ -430,8 +493,7 @@ private struct ClipPostCard: View {
                     // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
                     // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
                     ClipPosterView(item: item, post: post,
-                                   payload: ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
-                                                               maxHR: hr.maxHR, restHR: hr.restHR, tile: hrTile),
+                                   payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
                                    live: liveFor(idx),
                                    playing: playingClip?.matches(post.id, idx) == true,
                                    isCurrentPage: idx == page,
@@ -472,6 +534,12 @@ private struct ClipPostCard: View {
                     playingClip = PlayingClipRef(postID: post.id, page: newPage, muted: true)
                 } else if let pc = playingClip, pc.postID == post.id, pc.page != newPage {
                     playingClip = nil
+                }
+                // Move the warm window AFTER the snap settles, so the next neighbour's AVPlayer mounts off
+                // the animation frames (the swipe jerk was this mount landing on the fast-snap frame).
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    if page == newPage { warmPage = newPage }   // only if we're still on this page
                 }
             }
             .overlay(alignment: .topTrailing) {

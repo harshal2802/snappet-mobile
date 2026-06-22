@@ -7396,3 +7396,19 @@ never the jerk; warm-loading makes playback instant, it doesn't make the slide c
 blur.** Settle-frame costs (cache `composedPosts`, memoize payloads, defer the warm mount) remain as the
 next round if an end-of-swipe hitch persists. Build green; built + installed on MrRobot.
 
+**On-device, round 3 — the jerk is MAIN-THREAD work on the page change, not compositing (prompt 92,
+MrRobot 2026-06-22).** Two decisive user observations: (a) removing the blur didn't help (so the GPU
+blur wasn't it), and (b) a **slow swipe is smooth and the next clip plays mid-swipe, but a normal/fast
+swipe jerks**. That speed-dependence is the tell: a fast swipe runs a **fast-snap animation** that competes
+with the main thread, and the carousel page change does heavy main-thread work right on that snap frame —
+so frames drop. The work: a page change writes `playingClip`, which re-runs `ClipsFeedView.body` →
+`composedPosts()` (buckets all media, sorts logs, runs the composer) **+** per-page `ClipHROverlay.make`
+(HR-window slice + `WorkoutHRStats`) **+** mounting a NEW `AVPlayer` for the next carousel neighbour. Fixes:
+(1) **cache the derived feed** — `cachedPosts`/`cachedHRContext`/`cachedHRTiles`/`cachedPayloads` rebuilt by
+`rebuildFeed()` ONLY when a cheap Equatable `feedKey` (counts + resolved-aspect count + newest project
+`updatedAt`) changes, via `.task` + `.onChange(of: feedKey)` — so a `playingClip`/`page` write no longer
+recomputes the feed or re-slices every clip's HR payload; (2) **defer the warm-neighbour mount** — `liveFor`
+warms the current page immediately but the ±1 neighbours off a **`warmPage`** copy updated ~400ms AFTER the
+swipe settles, so the next `AVPlayer` is created off the snap frame. (The earlier video↔poster opacity fix
+stays — outgoing clip pauses in place.) Build + `ClipsFeedUITests` green; built + installed on MrRobot.
+
