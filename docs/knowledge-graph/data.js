@@ -1157,6 +1157,7 @@ const links = [
   { source: "wt-highlight", target: "medialibraryservice", type: "uses", label: "save to Photos" },
   { source: "studio-editor", target: "sharesheet", type: "present", label: "export → share" },
   { source: "wt-highlight", target: "sharesheet", type: "present" },
+  { source: "clips-share", target: "sharesheet", type: "present", label: "export → share (prompt 87)" },
   { source: "medialibraryservice", target: "ext-photos", type: "uses", label: "add-only" },
 
   // ---- Live Workout Studio initiative overview (carries the walkthrough video) ----
