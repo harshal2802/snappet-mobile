@@ -102,6 +102,13 @@ struct ClipsFeedView: View {
                 }
             }
             .background(SnappetColor.paper)
+            // Audio session (prompt 93): an UNMUTED clip plays over the ring/silent switch and takes the
+            // audio focus; releasing it (re-muted / scrolled away → playingClip clears / left the feed)
+            // restores the user's other audio. Driven purely by the single source of truth playingClip.muted.
+            .onChange(of: playingClip) { _, pc in
+                if let pc, !pc.muted { ClipAudioSession.activate() } else { ClipAudioSession.deactivate() }
+            }
+            .onDisappear { ClipAudioSession.deactivate() }
             .navigationTitle("Clips")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -372,8 +379,8 @@ private struct ClipPostCard: View {
                                        guard item.media.kind == "video" else { return }   // photos stay still
                                        playingClip = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
                                    },
-                                   onUnmute: {
-                                       if var pc = playingClip, pc.matches(post.id, idx) { pc.muted = false; playingClip = pc }
+                                   onToggleMute: {
+                                       if var pc = playingClip, pc.matches(post.id, idx) { pc.muted.toggle(); playingClip = pc }
                                    })
                         .tag(idx)
                         .accessibilityIdentifier("clips.post.page")
@@ -502,8 +509,9 @@ private struct ClipPosterView: View {
     let muted: Bool
     /// Tap a still video → ask the feed to make this the active clip.
     let onTapToPlay: () -> Void
-    /// Tap a muted (autoplaying) clip → the feed flips its `playingClip.muted` to false (prompt 90).
-    let onUnmute: () -> Void
+    /// Toggle this clip's audio (prompt 93) — the speaker button + a tap on a muted autoplaying surface
+    /// both call it; the feed flips `playingClip.muted` (the single source of truth) both ways.
+    let onToggleMute: () -> Void
     /// Live playhead written by the inline `ClipMediaSurface`; the HR tile reads it while playing.
     @State private var liveFraction: Double = ClipHROverlay.atEndFraction
 
@@ -514,7 +522,7 @@ private struct ClipPosterView: View {
                 // The inline player when this is the feed's active video; otherwise the still poster (tap → play).
                 if isPlaying, item.media.kind == "video" {
                     ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
-                                     fraction: $liveFraction, background: .black, muted: muted, onUnmute: onUnmute)
+                                     fraction: $liveFraction, background: .black, muted: muted, onUnmute: onToggleMute)
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
@@ -533,7 +541,27 @@ private struct ClipPosterView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .background(Color.black)
+            // Instagram-style mute toggle (prompt 93): only on the PLAYING video, top-leading so it can't
+            // collide with the bottom HR scorebug or the top-trailing page counter. Driven by `muted`
+            // (== playingClip.muted) so it stays in sync with autoplay + the scroll/transfer logic.
+            .overlay(alignment: .topLeading) {
+                if isPlaying, item.media.kind == "video" { muteButton.padding(12) }
+            }
         }
+    }
+
+    private var muteButton: some View {
+        Button(action: onToggleMute) {
+            Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(.black.opacity(0.45), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("clips.post.mute")
+        .accessibilityLabel(muted ? "Unmute" : "Mute")
     }
 
     // The climb-name lower-third (OverlayItem.climbName look) + the per-clip attempt/set chip.

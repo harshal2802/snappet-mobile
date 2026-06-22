@@ -7194,3 +7194,38 @@ recorded here, not there.
 short tile, both with **no black bars**; existing clips resize once on first view. `ClipFeedComposer`
 clamp/pick/default is unit-tested (6 cases); full `SnappetTests` + `ClipsFeedUITests` green, 0 warnings.
 
+## 2026-06-22 — Clips audio + mute toggle (prompt 93) — reverses the silent-switch decision, IG-style
+
+**Symptom (user-reported).** "Audio from video is missing" + a request to mute/unmute "the way Instagram
+does it".
+
+**Root cause.** The app **never configured an `AVAudioSession`** (a full-tree grep found zero
+`setCategory`), so playback ran on the default ambient category, which the hardware ring/silent switch
+silences — clip audio was inaudible even when `player.isMuted == false`. This was a recorded deliberate
+choice the Clips feed inherited (decisions.md:4703, "audio respects the silent switch — no audio-session
+override"); prompt 93 **reverses it for Clips**. The mute plumbing was already correct (single source of
+truth `playingClip.muted`), and there was no "tap-to-play stays muted" bug — the gap was the session +
+a visible control.
+
+**Fix.** (1) New **`ClipAudioSession`** (Services): `activate()` → `setCategory(.playback)` +
+`setActive(true)` (plays over the silent switch, takes audio focus); `deactivate()` →
+`setActive(false, .notifyOthersOnDeactivation)` (restores the user's music). Failures swallowed — an
+audio-session hiccup must never crash playback. (2) Driven by the **single source of truth**: a
+`.onChange(of: playingClip)` in `ClipsFeedView` activates when a clip is unmuted and deactivates otherwise
+(re-muted / scrolled away → `playingClip` clears / left the feed via `.onDisappear`) — one place, no
+scattered calls. **Chosen behavior (confirmed with the user): interrupt** other audio while unmuted, like
+Instagram/TikTok (plain `.playback`, not `.mixWithOthers`/`.duckOthers`). (3) A **top-leading**
+`speaker.slash.fill`/`speaker.wave.2.fill` toggle in `ClipPosterView`, shown only on the **playing** video,
+generalizes the old `onUnmute` closure to **`onToggleMute`** (flips `playingClip.muted` both ways); a tap on
+a muted autoplay surface still unmutes via the same closure. Placed top-leading so it can't collide with the
+bottom HR scorebug (full-width) or the top-trailing page counter.
+
+**Why the control lives in the caller, not `ClipMediaSurface`.** The surface is shared with the fullscreen
+`MediaPage`, and the feed's scroll-stop/transfer logic reads `playingClip.muted` — so mute state stays in
+the caller (the established prompt-90 discipline).
+
+**Owed on-device.** Audio + the silent switch + other-app interruption can't be unit-tested: on a device
+with music playing and the phone on silent, unmuting a clip should play its audio and pause the music;
+re-muting / scrolling away should resume it; the toggle icon should track state across autoplay + tap. Full
+`SnappetTests` + `ClipsFeedUITests` green, 0 warnings.
+
