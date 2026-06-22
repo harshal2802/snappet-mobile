@@ -434,6 +434,8 @@ private struct ClipPostCard: View {
                                                                maxHR: hr.maxHR, restHR: hr.restHR, tile: hrTile),
                                    live: liveFor(idx),
                                    playing: playingClip?.matches(post.id, idx) == true,
+                                   isCurrentPage: idx == page,
+                                   postOnScreen: isOnScreen,
                                    muted: playingClip?.matches(post.id, idx) == true && playingClip?.muted == true,
                                    onTapToPlay: {
                                        guard item.media.kind == "video" else { return }   // photos stay still
@@ -569,6 +571,12 @@ private struct ClipPosterView: View {
     let live: Bool
     /// This clip is the feed's single ACTIVE inline clip → it plays (isActive); warm clips stay paused.
     let playing: Bool
+    /// This poster is the carousel's CURRENT page (idx == page). A non-current page is a carousel sibling
+    /// sitting OFF to the side (clipped by the TabView) — its warm player can stay visible (paused frame) so
+    /// a swipe reveals an already-correct frame, no crossfade.
+    let isCurrentPage: Bool
+    /// This post is substantially on-screen (it's the one you're viewing) vs a feed neighbour above/below.
+    let postOnScreen: Bool
     /// Start the inline player muted (autoplay; prompt 90) — tap-to-play passes false.
     let muted: Bool
     /// Tap a still video → ask the feed to make this the active clip.
@@ -603,10 +611,12 @@ private struct ClipPosterView: View {
                                      onSurfaceTap: playing ? onOpenFullscreen : nil, fill: true)
                         .frame(width: geo.size.width, height: geo.size.height)
                         .allowsHitTesting(playing)
-                        // Warm clips load INVISIBLY behind the still (opacity 0) — so scrolling shows stable
-                        // posters, not video frames flashing in/out — and the player only reveals (a quick
-                        // crossfade) once it's actually the active clip, by which point it's already loaded.
-                        .opacity(playing ? 1 : 0)
+                        // Hide a warm player ONLY when it would flash a video frame mid-SCROLL: i.e. the
+                        // vertically-visible CURRENT page of a feed NEIGHBOUR (a different post above/below).
+                        // Carousel siblings (off-side, clipped) stay visible at their paused frame so a swipe
+                        // slides an already-correct frame into place and just starts playing — no crossfade
+                        // flicker. The playing clip is always visible.
+                        .opacity((!playing && isCurrentPage && !postOnScreen) ? 0 : 1)
                         .animation(.easeInOut(duration: 0.2), value: playing)
                 }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)

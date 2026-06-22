@@ -7356,3 +7356,13 @@ animate-grow** when its aspect resolves (that reflow-during-scroll was the other
 animation stays (for the rare landscape resize). Net: warm = loaded-but-hidden, so the smoothness (instant
 play on settle/swipe) is kept while the visual churn is gone. `ClipFeedComposerTests` + build green; on MrRobot.
 
+**On-device: carousel-swipe flicker (prompt 90/94, MrRobot 2026-06-22).** The blanket `opacity(playing?1:0)`
+fixed the vertical scroll but flickered carousel swipes: a sibling page's warm player was hidden, so a swipe
+had to **crossfade it in from invisible while it started playing** — the poster↔moving-video blend was the
+flicker. Refined: hide a warm player ONLY when it's the **vertically-visible current page of a feed
+NEIGHBOUR** (`!playing && isCurrentPage && !postOnScreen`). Carousel siblings are off to the side (clipped
+by the `TabView`), so they never cause scroll-flash — they now stay **visible at their paused frame**, and a
+swipe just slides an already-correct frame into place and starts playing (no crossfade). `ClipPosterView`
+gained `isCurrentPage` (idx == page) + `postOnScreen` (the card's `isOnScreen`). Build + `ClipsFeedUITests`
+green; built + installed on MrRobot.
+
