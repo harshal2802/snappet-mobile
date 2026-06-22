@@ -159,9 +159,13 @@ struct ClipThumbnail: View {
 
     private func load() async {
         guard image == nil else { return }
-        if let loaded = await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size) {
-            image = loaded
-        }
+        // Video: use the EXACT frame-0 (not Photos' arbitrary thumbnail) so the still equals the frame the
+        // player layer first displays → the carousel's poster→video reveal is invisible (no takeover flick).
+        // Photos keep the thumbnail; the frame-0 path itself falls back to `poster(...)` if it can't decode.
+        let loaded = kind == "video"
+            ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size)
+            : await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
+        if let loaded { image = loaded }
     }
 }
 

@@ -7431,3 +7431,47 @@ the "transition animation to mask the flicker" the user asked for, done the Appl
 needed **no carousel rewrite** (TabView stays). Deliberately did NOT add `AVPlayer.preroll` yet (kept the
 change focused on the verified #1 lever); it's the next lever if the play-start still hitches at takeover.
 Sim + device builds green; built + installed + launched on MrRobot for user verification.
+
+**On-device, round 5 — eliminate the takeover flick at the SOURCE: frame-0 posters (prompt 95, MrRobot
+2026-06-22).** 120fps frame analysis proved the slide is frame-CLEAN (no dropped/blank frame); the residual
+"flick" is a content discontinuity at the instant a swipe centers the next clip. A 7-agent design workflow
+(1 mapper · 3 coded approaches · 3 adversarial judges) localized the root: `ClipThumbnail`'s video still came
+from `AssetPosterLoader.poster` → `PHImageManager.requestImage`, which for a VIDEO returns Photos' arbitrary
+key-frame thumbnail — **not frame-0** — so the round-4 `isReadyForDisplay` crossfade revealed the player's
+*actual* frame-0 over a *different* still = a visible image JUMP (only on normal/fast swipes, where the page
+centers on its poster before the warm player decodes; slow swipes were already smooth — the user's exact
+tell). Judges (2 of 3, third concurring) chose **eliminate** over **mask**, and ALL THREE flagged a
+`.simultaneousGesture(DragGesture)` on the `TabView(.page)` as the one ship risk (scroll/hit-test
+contention) → deferred. Shipped: (1) **`AssetPosterLoader.videoFrameZero`** — `requestAVAsset` +
+`AVAssetImageGenerator` at `CMTime.zero`, zero tolerance, `appliesPreferredTrackTransform`, 3× size, cached,
+**falls back to `poster()`** (SceneScorer convention); `ClipThumbnail` video → frame-0, photos unchanged. Now
+the still == the frame the layer first displays ⇒ the crossfade is image-identical = invisible, AND an
+un-warmed fast-swipe page centers on the CORRECT frame (no race to win). (2) **`preroll(atRate:1.0,
+completionHandler: nil)`** on the looping queue — pre-decode so first `play()` has no static→motion stutter
+(a judge caught that the `await queue.preroll(...)` the design agents wrote does NOT compile — `preroll` is
+closure-only, no async overload). (3) **HR-dot easing** — `.animation(.easeOut(0.18), value: playing)` on the
+scorebug so it glides into the live sweep instead of snapping; the `playingClip`/`fraction` SSOT untouched.
+**Decision — frame-0 is local-only** (`isNetworkAccessAllowed=false`, mirroring `poster()` for fast posters):
+an iCloud-only/not-yet-downloaded clip degrades to the Photos thumbnail until local (the live player allows
+network, so its frame-0 may briefly differ for that one clip) — accepted edge. Deferred the earlier-warm
+gesture; revisit only if a residual flick survives on very fast flicks of heavy clips (and prefer a
+non-gesture warm). Sim + device builds green; built + installed + launched on MrRobot for frame-check.
+
+**Round 5.1 — two on-device crashes opening Clips, fixed (prompt 95, MrRobot 2026-06-22).** The first
+round-5 install crashed on opening the Clips tab. Pulled the device crash reports
+(`xcrun devicectl device copy from --domain-type systemCrashLogs`) — two distinct bugs, both in the
+round-5 additions, neither caught by sim (sim has no Photos so `videoFrameZero` no-ops there):
+(1) **SIGTRAP / `dispatch_assert_queue` in `AssetPosterLoader.videoFrameZero`** — `AssetPosterLoader` is
+`@MainActor`, so the `requestAVAsset` (and `generateCGImagesAsynchronously`) completion CLOSURES inherited
+MainActor isolation, but `PHImageManager` delivers them on a BACKGROUND queue → Swift 6's runtime executor
+check trapped. (This is why the other `requestAVAsset` sites — `ReelExporter`/`SceneScorer`, NOT `@MainActor`
+— never crashed, and why `poster()`'s `requestImage` survives: it delivers on main.) Fix: moved the
+PHImageManager/AVAssetImageGenerator work into a **`nonisolated` static `extractFrameZero`** that returns a
+Sendable `UIImage`, so the callbacks run non-isolated on their background queues and nothing non-Sendable
+crosses back. (2) **`NSInvalidArgumentException`: "AVPlayer cannot service a preroll request until its status
+is ReadyToPlay"** — the round-5 `queue.preroll(atRate:1.0, completionHandler:nil)` was called right after
+constructing the `AVQueuePlayer`, before its item was ready → AVPlayer THROWS. **`preroll` REMOVED** (it's a
+secondary lever; the frame-0 poster + `layerReady` gate are the real takeover fix). A status-gated preroll can
+be re-added later only if a play-start hitch proves perceptible on device. Process note: the takeover
+smoothness AND these crashes are device-only — sim cannot validate this path; device-burn on MrRobot is
+mandatory. Rebuilt; Clips tab now opens + stays alive on MrRobot (verified pid alive, no new crash log).

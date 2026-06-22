@@ -755,6 +755,9 @@ private struct ClipPosterView: View {
                        liveBlur: false)   // flat scrim, not a live backdrop blur → cheap to slide (prompt 92)
                 .frame(maxWidth: .infinity)
                 .frame(height: 96)
+                // Glide the BPM dot from the at-end reading into the live sweep at takeover instead of snapping
+                // — the small HR-overlay discontinuity the frame-0 poster fix doesn't touch (round 5 graft).
+                .animation(.easeOut(duration: 0.18), value: playing)
                 .allowsHitTesting(false)
                 .accessibilityIdentifier("clips.post.hrTile")
         }

@@ -161,6 +161,10 @@ struct ClipMediaSurface: View {
                 queue.isMuted = muted                                            // autoplay starts muted
                 looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
                 player = queue
+                // NB: no `preroll` here — AVPlayer THROWS ("cannot service a preroll request until its status is
+                // ReadyToPlay") if prerolled before the item is ready. The frame-0 poster + `layerReady` gate are
+                // the actual takeover fix; a status-gated preroll can be added later only if a play-start hitch
+                // proves perceptible on device.
             }
             state = .ready   // `.onChange(of: state)` starts playback iff still active (live isActive)
         } else {
