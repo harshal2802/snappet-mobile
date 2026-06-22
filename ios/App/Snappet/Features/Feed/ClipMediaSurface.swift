@@ -30,10 +30,15 @@ struct ClipMediaSurface: View {
     /// A tap on a muted (autoplaying) surface calls this so the CALLER can flip `playingClip.muted` (the
     /// single source of truth) — keeping the feed's "stop on scroll" / "transfer" logic accurate.
     var onUnmute: () -> Void = {}
+    /// Fullscreen transport (prompt 94): non-nil → play this clip on a NON-looping `AVPlayer` and attach it
+    /// here so the caller's `MediaTransportBar` can play/pause + scrub. nil (the feed/Recap inline) loops.
+    var controller: ClipPlaybackController? = nil
+    /// Overrides the default tap (play/pause): the Clips feed passes this to open fullscreen on a tap.
+    var onSurfaceTap: (() -> Void)? = nil
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
-    @State private var player: AVQueuePlayer?
+    @State private var player: AVPlayer?
     @State private var looper: AVPlayerLooper?   // retained or looping stops
     @State private var image: UIImage?
     @State private var state: LoadState = .loading
@@ -57,7 +62,10 @@ struct ClipMediaSurface: View {
             // Live HR: while THIS active surface's video plays, sweep the playhead via the shared mapping.
             // Inactive / paused / photo / no-HR take the guarded early return (near-zero cost).
             .onReceive(ticker) { _ in
-                guard isActive, clip.kind == "video", let player, player.rate != 0, let payload else { return }
+                guard isActive, clip.kind == "video", let player, let payload else { return }
+                // Inline loops + sweeps only while playing; the fullscreen transport tracks SEEKS even while
+                // paused (so the HR dot follows the scrubber) → don't gate on rate when a controller drives it.
+                if player.rate == 0, controller == nil { return }
                 let t = player.currentTime().seconds
                 guard t.isFinite else { return }   // item not ready yet → keep the last fraction (no 0-flash)
                 fraction = ClipHROverlay.fraction(videoTime: t, clip: clip, payload: payload)
@@ -71,9 +79,11 @@ struct ClipMediaSurface: View {
             StudioPlayerLayerView(player: player, backgroundColor: background)
                 .accessibilityIdentifier("feed.media.player")
                 .onTapGesture {
-                    // First tap on a muted (autoplaying) clip unmutes it (the caller flips playingClip.muted,
-                    // the single source of truth); otherwise toggle play/pause.
-                    if muted { onUnmute() }
+                    // Clips feed: tap the playing video → open fullscreen (onSurfaceTap). Otherwise (the
+                    // fullscreen / Recap surface): first tap on a muted autoplay clip unmutes (the caller
+                    // flips playingClip.muted, the single source of truth); else toggle play/pause.
+                    if let onSurfaceTap { onSurfaceTap() }
+                    else if muted { onUnmute() }
                     else { player.rate == 0 ? player.play() : player.pause() }
                 }
         } else if let image {
@@ -94,7 +104,7 @@ struct ClipMediaSurface: View {
         .accessibilityIdentifier("feed.media.placeholder")
     }
 
-    private func teardown() { player?.pause(); player = nil; looper = nil }
+    private func teardown() { controller?.detach(); player?.pause(); player = nil; looper = nil }
 
     private func load() async {
         teardown()
@@ -115,10 +125,18 @@ struct ClipMediaSurface: View {
                 }
             }
             guard let playerItem = boxed.value else { state = .failed; return }
-            let queue = AVQueuePlayer()
-            queue.isMuted = muted                                            // autoplay starts muted
-            looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
-            player = queue
+            if let controller {
+                // Fullscreen (prompt 94): a NON-looping player so the scrubber maps cleanly to 0…duration.
+                let single = AVPlayer(playerItem: playerItem)
+                single.isMuted = muted
+                player = single
+                controller.attach(single, duration: clip.durationSec ?? 0)
+            } else {
+                let queue = AVQueuePlayer()
+                queue.isMuted = muted                                            // autoplay starts muted
+                looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
+                player = queue
+            }
             state = .ready   // `.onChange(of: state)` starts playback iff still active (live isActive)
         } else {
             let target = CGSize(width: 1080, height: 1920)

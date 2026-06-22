@@ -92,6 +92,16 @@ struct MediaBrowserView: View {
                          restHR: clipContext?.restHR)
     }
 
+    /// The Clips-feed fullscreen viewer (prompt 94): the paged player + the HR overlay (the session's
+    /// WYSIWYG `tile`) + the play/pause + scrubber transport — no Recap card / Share.
+    @ViewBuilder
+    static func clipsViewer(clips: [MediaInput], startIndex: Int, hrSeries: [HRPoint], maxHR: Double,
+                            restHR: Double?, nameFor: @escaping (String) -> String, tile: HRTile?) -> some View {
+        PagedMediaViewer(clips: clips, startIndex: startIndex, hrSeries: hrSeries, maxHR: maxHR,
+                         nameFor: nameFor, card: nil, clipContext: nil, restHR: restHR,
+                         hrTile: tile, transport: true)
+    }
+
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
         FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR)
     }
@@ -176,6 +186,11 @@ private struct PagedMediaViewer: View {
     /// Rest HR for the overlay's %HRR. Recap passes `clipContext?.restHR`; Clips passes the session's
     /// `restHR` directly (it has no `clipContext`).
     let restHR: Double?
+    /// The session's SAVED Studio HR tile (WYSIWYG, prompt 89/94) so the fullscreen overlay matches the
+    /// Clips poster; nil keeps the house-style scorebug (the Recap path).
+    var hrTile: HRTile? = nil
+    /// Clips fullscreen (prompt 94): show the play/pause + scrubber transport bar + take the audio session.
+    var transport: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var index: Int = 0
@@ -187,7 +202,7 @@ private struct PagedMediaViewer: View {
 
             TabView(selection: $index) {
                 ForEach(Array(clips.enumerated()), id: \.element.id) { i, clip in
-                    MediaPage(item: clip, overlay: overlay(for: clip), isActive: i == index)
+                    MediaPage(item: clip, overlay: overlay(for: clip), isActive: i == index, transport: transport)
                         .tag(i)
                 }
             }
@@ -197,7 +212,11 @@ private struct PagedMediaViewer: View {
             chrome
         }
         .accessibilityIdentifier("feed.media.viewer")
-        .onAppear { index = min(max(0, startIndex), max(0, clips.count - 1)) }
+        .onAppear {
+            index = min(max(0, startIndex), max(0, clips.count - 1))
+            if transport { ClipAudioSession.activate() }       // Clips fullscreen plays over the silent switch
+        }
+        .onDisappear { if transport { ClipAudioSession.deactivate() } }
         .sheet(isPresented: $showingShare) {
             if let card { ShareComposerView(card: card, clipContext: clipContext) }
         }
@@ -249,7 +268,7 @@ private struct PagedMediaViewer: View {
     /// viewer all share, so the fullscreen scorebug can't drift from the in-feed poster. `nil` when the clip
     /// has no HR in its window → the page degrades to the name tag only (no empty chart).
     private func overlay(for m: MediaInput) -> ClipHROverlay.Payload? {
-        ClipHROverlay.make(clip: m, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR)
+        ClipHROverlay.make(clip: m, hrSeries: hrSeries, maxHR: maxHR, restHR: restHR, tile: hrTile)
     }
 }
 
@@ -260,15 +279,22 @@ private struct MediaPage: View {
     let item: MediaInput
     let overlay: ClipHROverlay.Payload?
     let isActive: Bool
+    /// Clips fullscreen (prompt 94): play/pause + scrubber transport over a non-looping player (video only).
+    var transport: Bool = false
     /// Live HR playhead, written by `ClipMediaSurface` from the player and read by the scorebug below.
     @State private var playbackFraction: Double = ClipHROverlay.atEndFraction
+    /// Drives the transport bar; the active video surface attaches its player to it.
+    @State private var controller = ClipPlaybackController()
+
+    private var transportActive: Bool { transport && item.kind == "video" }
 
     var body: some View {
         ZStack {
             Color.black
             // One shared media engine (player/looper/photo + the live-HR playhead) for both surfaces.
             ClipMediaSurface(clip: item, isActive: isActive, payload: overlay,
-                             fraction: $playbackFraction, background: .black)
+                             fraction: $playbackFraction, background: .black,
+                             controller: transportActive ? controller : nil)
                 .ignoresSafeArea()
 
             // Scrim so the title + HR overlay stay legible over bright footage.
@@ -292,6 +318,15 @@ private struct MediaPage: View {
                 }
                 .allowsHitTesting(false)
                 .accessibilityIdentifier("feed.media.hrTile")
+            }
+
+            // Play/pause + scrubbable timeline + mute (Clips fullscreen, prompt 94) — only on the active
+            // video page, over the non-looping player it attached to `controller`.
+            if transportActive, isActive {
+                VStack {
+                    Spacer()
+                    MediaTransportBar(controller: controller).padding(.bottom, 28)
+                }
             }
         }
         .accessibilityIdentifier("feed.media.page")

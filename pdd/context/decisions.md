@@ -7229,3 +7229,40 @@ with music playing and the phone on silent, unmuting a clip should play its audi
 re-muting / scrolling away should resume it; the toggle icon should track state across autoplay + tap. Full
 `SnappetTests` + `ClipsFeedUITests` green, 0 warnings.
 
+## 2026-06-22 — Clips tap-to-fullscreen + transport (prompt 94) — reuse the viewer, add play/pause + scrubber
+
+**Ask (user).** Tap a playing clip → fullscreen, with play/pause and a scrubbable timeline.
+
+**Reuse, don't rebuild.** The Recap `PagedMediaViewer`/`MediaPage` (MediaBrowserView.swift) already presents
+a `fullScreenCover` paged player that plays the real clip, is single-active, and pins the `ClipHROverlay`
+scorebug — it was missing exactly the two controls asked for. So a new `MediaBrowserView.clipsViewer(...)`
+factory builds it with `card: nil` (no Recap Share), the session's **WYSIWYG `hrTile`**, and a new
+`transport: true` flag. **Not** `AVPlayerViewController`/`VideoPlayer` — the system transport can't composite
+the burned HR overlay (the reason the app uses the controls-free `StudioPlayerLayerView` everywhere).
+
+**Transport.** New `ClipPlaybackController` (`@Observable`) + `MediaTransportBar` (play/pause · `m:ss`
+scrubber · `m:ss` · mute). For clean `0…duration` scrubbing the fullscreen page plays a **non-looping**
+`AVPlayer` (a new `controller` param on the shared `ClipMediaSurface` switches it from the inline
+`AVPlayerLooper`); the surface attaches that player to the controller, which observes time via
+`addPeriodicTimeObserver` (`MainActor.assumeIsolated` — the observer fires on `.main`). **The HR dot follows
+the scrub for free**: the surface's existing playhead ticker reads the same `player.currentTime()` (a seek
+moves it), and its rate-gate is relaxed when a controller drives it so the dot tracks even while paused.
+`ClipMediaSurface.player` widened `AVQueuePlayer? → AVPlayer?` to hold either.
+
+**Interaction.** A new `onSurfaceTap` override on `ClipMediaSurface`: in the FEED, tapping the **playing**
+inline video opens fullscreen (`ClipsFeedView.fullScreenCover(item: ClipFullscreen)` scoped to the post's
+clips at the current page). The **still-poster tap still plays inline** (prompt 85 preserved) and the inline
+**mute toggle** (prompt 93) stays — so a non-autoplay still is *tap → play, tap → fullscreen* (two steps), an
+autoplay clip is *tap → fullscreen* (one). Literal reading of the user's "tap the playing video →
+fullscreen"; one-tap-from-still is a trivial follow-up if wanted.
+
+**Audio.** The Clips fullscreen viewer takes the audio session on appear (`transport`-gated, so Recap is
+untouched) and the feed re-asserts its mute state on the cover's `onDismiss`. The bar's mute button toggles
+the fullscreen player directly.
+
+**Owed on-device.** The sim has no Photos, so the feed is empty there — the interactive tap→fullscreen→scrub
+flow can't be UITested on the sim (`ClipsFeedUITests` only covers the empty state). Build + full
+`SnappetTests` + `ClipsFeedUITests` green, 0 warnings. Device-verify: tap a playing clip → fullscreen;
+play/pause; drag the timeline → the video seeks and the HR dot follows; mute; close → back at the post.
+**Watch for a black inline/fullscreen frame (R12).**
+

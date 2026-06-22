@@ -215,6 +215,18 @@ private struct ClipShareItem: Identifiable {
     let url: URL
 }
 
+/// The Clips fullscreen presentation (prompt 94): a post's clips + HR context, opened at the tapped page.
+private struct ClipFullscreen: Identifiable {
+    let id = UUID()
+    let clips: [MediaInput]
+    let startIndex: Int
+    let series: [HRPoint]
+    let maxHR: Double
+    let restHR: Double?
+    let title: String
+    let tile: HRTile?
+}
+
 private struct ClipPostCard: View {
     let post: ClipFeedPost
     let hr: ClipFeedHR
@@ -241,6 +253,8 @@ private struct ClipPostCard: View {
     @State private var shareItem: ClipShareItem?
     @State private var preparingShare = false
     @State private var shareFailed = false
+    /// Tap a playing clip → the fullscreen player with play/pause + scrubber (prompt 94).
+    @State private var fullscreen: ClipFullscreen?
 
     private var accent: Color {
         switch post.discipline {
@@ -281,6 +295,16 @@ private struct ClipPostCard: View {
         .fullScreenCover(item: $studio) { p in
             StudioEditorView(project: p.project, context: context,
                              focusClipMediaID: p.focus, visibleClipMediaIDs: p.visible)
+        }
+        // Tap-to-fullscreen player (prompt 94): the post's clips at the tapped page, with play/pause +
+        // scrubber + the WYSIWYG HR tile. The viewer takes the audio session while open; re-assert the
+        // feed's mute state on dismiss.
+        .fullScreenCover(item: $fullscreen, onDismiss: {
+            if let pc = playingClip, !pc.muted { ClipAudioSession.activate() } else { ClipAudioSession.deactivate() }
+        }) { f in
+            MediaBrowserView.clipsViewer(clips: f.clips, startIndex: f.startIndex,
+                                         hrSeries: f.series, maxHR: f.maxHR, restHR: f.restHR,
+                                         nameFor: { _ in f.title }, tile: f.tile)
         }
         // Share-a-clip (prompt 87): the system share sheet for the exported clip; delete the temp export
         // once the sheet completes (shared or cancelled) so it doesn't accumulate in tmp.
@@ -381,6 +405,12 @@ private struct ClipPostCard: View {
                                    },
                                    onToggleMute: {
                                        if var pc = playingClip, pc.matches(post.id, idx) { pc.muted.toggle(); playingClip = pc }
+                                   },
+                                   onOpenFullscreen: {
+                                       fullscreen = ClipFullscreen(
+                                           clips: post.clips.map(\.media), startIndex: idx,
+                                           series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
+                                           title: post.title, tile: hrTile)
                                    })
                         .tag(idx)
                         .accessibilityIdentifier("clips.post.page")
@@ -512,6 +542,8 @@ private struct ClipPosterView: View {
     /// Toggle this clip's audio (prompt 93) — the speaker button + a tap on a muted autoplaying surface
     /// both call it; the feed flips `playingClip.muted` (the single source of truth) both ways.
     let onToggleMute: () -> Void
+    /// Tap the PLAYING video → open the fullscreen player with play/pause + scrubber (prompt 94).
+    let onOpenFullscreen: () -> Void
     /// Live playhead written by the inline `ClipMediaSurface`; the HR tile reads it while playing.
     @State private var liveFraction: Double = ClipHROverlay.atEndFraction
 
@@ -522,7 +554,8 @@ private struct ClipPosterView: View {
                 // The inline player when this is the feed's active video; otherwise the still poster (tap → play).
                 if isPlaying, item.media.kind == "video" {
                     ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
-                                     fraction: $liveFraction, background: .black, muted: muted, onUnmute: onToggleMute)
+                                     fraction: $liveFraction, background: .black, muted: muted,
+                                     onUnmute: onToggleMute, onSurfaceTap: onOpenFullscreen)
                         .frame(width: geo.size.width, height: geo.size.height)
                 } else {
                     ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
