@@ -92,16 +92,6 @@ struct MediaBrowserView: View {
                          restHR: clipContext?.restHR)
     }
 
-    /// The SAME fullscreen paged player, presented WITHOUT the Recap Share/Animate affordance (no
-    /// `FeedCard`) — the Clips feed's tap-to-play (prompt 83). The HR overlay slices the session HR with
-    /// the session `restHR` (matching the in-feed poster), so the fullscreen scorebug == the poster's.
-    @ViewBuilder
-    static func clipsViewer(clips: [MediaInput], startIndex: Int, hrSeries: [HRPoint], maxHR: Double,
-                            restHR: Double?, nameFor: @escaping (String) -> String) -> some View {
-        PagedMediaViewer(clips: clips, startIndex: startIndex, hrSeries: hrSeries, maxHR: maxHR,
-                         nameFor: nameFor, card: nil, clipContext: nil, restHR: restHR)
-    }
-
     private func clipHR(_ m: MediaInput) -> MediaClipHR {
         FeedMedia.clipHR(offsetSec: m.offsetSec, durationSec: m.durationSec, hrSeries: hrSeries, maxHR: maxHR)
     }
@@ -197,10 +187,7 @@ private struct PagedMediaViewer: View {
 
             TabView(selection: $index) {
                 ForEach(Array(clips.enumerated()), id: \.element.id) { i, clip in
-                    MediaPage(item: clip,
-                              overlay: overlay(for: clip),
-                              name: tagName(clip),
-                              isActive: i == index)
+                    MediaPage(item: clip, overlay: overlay(for: clip), isActive: i == index)
                         .tag(i)
                 }
             }
@@ -266,35 +253,23 @@ private struct PagedMediaViewer: View {
     }
 }
 
-/// One fullscreen page: the real clip playback (active page only) under the editor HR overlay + name
-/// tag. Reuses the `StudioPlayerLayerView`/PHAsset→AVPlayerItem path. Single-active rule: only the centered
-/// page PLAYS; when a page de-centers it's PAUSED (not torn down) so its player + looper stay resident
-/// and a swipe back resumes instantly. The player is fully released (paused, nilled, looper dropped)
-/// only when the page leaves the `TabView`'s resident set — its `.onDisappear`.
+/// One fullscreen page: the editor HR scorebug + scrim over the shared `ClipMediaSurface` (which owns the
+/// player/looper/photo + the live-HR playhead). Single-active: only the centered page's surface plays. The
+/// name + Share chrome is the parent `PagedMediaViewer`'s; this page is just the media + the scorebug.
 private struct MediaPage: View {
     let item: MediaInput
     let overlay: ClipHROverlay.Payload?
-    let name: String
     let isActive: Bool
-
-    private enum LoadState: Equatable { case loading, ready, failed }
-
-    @State private var state: LoadState = .loading
-    @State private var player: AVQueuePlayer?
-    @State private var looper: AVPlayerLooper?   // retained or looping stops
-    @State private var image: UIImage?
-    /// Live HR playhead (prompt 84): the playing clip's video time → `ClipHROverlay.fraction`, driving the
-    /// scorebug's live BPM + chart dot in sync with the video. `1.0` = the clip's at-end reading, shown
-    /// before play / when paused-by-de-center / for a photo (matching the still poster). Polled from the
-    /// player by `ticker` (cleaner under Swift-6 than capturing this struct in an `addPeriodicTimeObserver`
-    /// closure); ~0.12s = a smooth dot at a light re-render cost.
+    /// Live HR playhead, written by `ClipMediaSurface` from the player and read by the scorebug below.
     @State private var playbackFraction: Double = ClipHROverlay.atEndFraction
-    @State private var ticker = Timer.publish(every: 0.12, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
             Color.black
-            mediaLayer.ignoresSafeArea()
+            // One shared media engine (player/looper/photo + the live-HR playhead) for both surfaces.
+            ClipMediaSurface(clip: item, isActive: isActive, payload: overlay,
+                             fraction: $playbackFraction, background: .black)
+                .ignoresSafeArea()
 
             // Scrim so the title + HR overlay stay legible over bright footage.
             LinearGradient(colors: [.black.opacity(0.5), .clear, .black.opacity(0.55)],
@@ -320,100 +295,7 @@ private struct MediaPage: View {
             }
         }
         .accessibilityIdentifier("feed.media.page")
-        .task(id: item.id) { await load() }
-        // Single-active: the centered page plays; a de-centered (but still resident) page PAUSES and resets
-        // its HR playhead to the at-end reading (so a glimpsed off-center overlay isn't frozen mid-sweep).
-        .onChange(of: isActive) { _, active in
-            if active { player?.play() } else { player?.pause(); playbackFraction = ClipHROverlay.atEndFraction }
-        }
-        // Full teardown happens only when the page leaves the TabView's resident set (pause + nil player
-        // + drop looper) — not on every de-center, so neighbouring pages stay warm by design.
-        .onDisappear { teardown() }
-        // Live HR (prompt 84): while THIS centered page's video is actually playing, sweep the scorebug
-        // playhead in step with the video via the shared `ClipHROverlay.fraction`. Off-center / paused /
-        // photo / no-HR pages take the guarded early return (near-zero cost) — only the active player ticks.
-        .onReceive(ticker) { _ in
-            guard isActive, item.kind == "video", let player, player.rate != 0, let overlay else { return }
-            playbackFraction = ClipHROverlay.fraction(videoTime: player.currentTime().seconds,
-                                                      clip: item, payload: overlay)
-        }
     }
-
-    @ViewBuilder private var mediaLayer: some View {
-        if state == .loading {
-            ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if item.kind == "video", let player {
-            StudioPlayerLayerView(player: player, backgroundColor: .black)
-                .accessibilityIdentifier("feed.media.player")
-                .onTapGesture { player.rate == 0 ? player.play() : player.pause() }
-        } else if let image {
-            Image(uiImage: image).resizable().scaledToFit()
-                .accessibilityIdentifier("feed.media.photo")
-        } else {
-            placeholder
-        }
-    }
-
-    private var placeholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: item.kind == "video" ? "play.slash" : "photo")
-                .font(.system(size: 56)).foregroundStyle(.white.opacity(0.85))
-            Text("Couldn’t load this clip").font(.caption).foregroundStyle(.white.opacity(0.65))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier("feed.media.placeholder")
-    }
-
-    private func teardown() { player?.pause(); player = nil; looper = nil }
-
-    private func load() async {
-        teardown()
-        state = .loading
-        image = nil
-        playbackFraction = ClipHROverlay.atEndFraction   // the at-end reading until the video actually plays
-
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [item.localIdentifier], options: nil)
-        guard let asset = assets.firstObject else { state = .failed; return }
-
-        if item.kind == "video" {
-            let opts = PHVideoRequestOptions()
-            opts.isNetworkAccessAllowed = true             // allow iCloud-stored clips to download
-            opts.deliveryMode = .automatic
-            // AVPlayerItem isn't Sendable → box it to cross the continuation boundary (mirrors ReelExporter).
-            let boxed: Box<AVPlayerItem?> = await withCheckedContinuation { cont in
-                PHImageManager.default().requestPlayerItem(forVideo: asset, options: opts) { pItem, _ in
-                    cont.resume(returning: Box(pItem))
-                }
-            }
-            guard let playerItem = boxed.value else { state = .failed; return }
-            let queue = AVQueuePlayer()
-            looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
-            player = queue
-            state = .ready
-            if isActive { queue.play() }                   // single-active: only the centered page plays
-        } else {
-            let target = CGSize(width: 1080, height: 1920)
-            let opts = PHImageRequestOptions()
-            opts.deliveryMode = .highQualityFormat
-            opts.isNetworkAccessAllowed = true
-            let loaded: UIImage? = await withCheckedContinuation { cont in
-                PHImageManager.default().requestImage(for: asset, targetSize: target,
-                                                      contentMode: .aspectFit, options: opts) { img, _ in
-                    cont.resume(returning: img)
-                }
-            }
-            guard let loaded else { state = .failed; return }
-            image = loaded
-            state = .ready
-        }
-    }
-}
-
-/// Wraps a non-Sendable value so it can cross an async continuation boundary.
-/// Safe here: each boxed value is produced and consumed exactly once, serially.
-private struct Box<T>: @unchecked Sendable {
-    let value: T
-    init(_ value: T) { self.value = value }
 }
 
 extension HRTile {

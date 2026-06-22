@@ -6973,3 +6973,39 @@ animation only renders with real Photos + a captured HR series; the sim covers b
 
 **Why Phase 0 first.** It delivers "live HR matching the video" cheaply (no feed-architecture risk) to
 validate the feel on device, and lands the SSOT that prompt 85's inline player reuses verbatim.
+
+## 2026-06-22 — Clips Phase 1 (prompt 85): tap a poster to play INLINE (not a pop-up)
+
+**Decision.** Tapping a Clips video poster now plays it **in place** in the carousel (replacing the
+prompt-83 fullscreen pop-up); the HR scorebug goes live off the same `ClipHROverlay.fraction`. The
+`clipsViewer` fullscreen factory (prompt 83) is removed — inline supersedes it.
+
+**One player engine — `ClipMediaSurface`.** Extracted the whole media engine (the `AVQueuePlayer` +
+`AVPlayerLooper`, the async PHAsset load, `isActive` play/pause, teardown, and the live-HR `Timer.publish`
+ticker → `ClipHROverlay.fraction`) into one reusable view that drives a `@Binding fraction`. Both the
+fullscreen viewer (`MediaPage`, rewired to compose it) and the inline poster use it — ONE `AVPlayerLayer`
+lifecycle, which is the discipline that keeps inline playback off the R12 "black box" path. The caller
+frames it + lays its own chrome / HR tile over (the fullscreen normalized scorebug; the poster's bottom
+strip).
+
+**Single-active = tap-driven, NOT scroll-driven.** A `PlayingClipRef` (post id + carousel page) on
+`ClipsFeedView` is "last tapped wins": only one clip plays across the whole feed; tapping another / swiping
+the carousel off it stops the previous. **Deliberately no scroll-center coordinator** — that (the deleted
+`FeedActivePlayerCoordinator`) is exactly what rendered the R12 black box. Tap-to-play on the visible card
+is the stable, fullscreen-equivalent scenario.
+
+**Known limits / owed on-device.** Posters that stay still don't load a player (only the active clip
+does). **The inline `AVPlayerLayer` rendering is THE R12 risk and MUST be device-verified** — the sim has
+no Photos and never reproduced the black box; the fullscreen viewer remains the proven fallback.
+`ClipHROverlay` unit-tests cover the mapping; the player/inline behaviour is device-only.
+
+**Fixes from the Opus 8-angle review.** (1) **Off-screen audio:** scrolling the feed now stops the inline
+player (`.onScrollPhaseChange` clears `playingClip`) — a feed-level gesture signal, NOT per-card scroll
+geometry (which is the R12 coordinator). So a tapped clip can't keep playing audio after its card scrolls
+off. (2) **Play race:** the initial play moved from the end of the async `load()` (which captured a stale
+`isActive`) to `.onChange(of: state)`, so it reads the LIVE `isActive` — a page de-centered mid-load no
+longer auto-plays off-center. (3) **NaN guard:** the live-HR ticker skips a non-finite `currentTime()`
+(item not yet ready) so the dot doesn't flash to the chart start for one tick. Accepted (low / device-only):
+`payload` is computed per-card-render in the carousel `ForEach` (a deliberate trade — it avoids recomputing
+on every ~8Hz live-HR tick, which is the worse cost); inline teardown rides `.onDisappear` on the
+still↔player branch swap (the standard SwiftUI path the viewer also uses).

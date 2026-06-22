@@ -19,6 +19,12 @@ struct ClipFeedHR: Equatable {
     var restHR: Double?
 }
 
+/// Identifies the feed's single active inline clip — a post + the carousel page within it (prompt 85).
+struct PlayingClipRef: Equatable {
+    var postID: String
+    var page: Int
+}
+
 struct ClipsFeedView: View {
     @Environment(\.modelContext) private var context
 
@@ -26,6 +32,10 @@ struct ClipsFeedView: View {
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var kilterSessions: [KilterSession]
     @Query private var kilterLogs: [KilterLogEntry]
     @Query(sort: \WorkoutSession.startedAt, order: .reverse) private var workoutSessions: [WorkoutSession]
+    /// The feed's single active inline clip — "last tapped wins", so only ONE clip plays across the whole
+    /// feed (prompt 85). Tap-driven, NOT scroll-driven (the R12 hero's scroll-center coordinator is what
+    /// rendered a black box in the scrolling card).
+    @State private var playingClip: PlayingClipRef?
 
     var body: some View {
         NavigationStack {
@@ -37,12 +47,19 @@ struct ClipsFeedView: View {
                     ScrollView {
                         LazyVStack(spacing: 18) {
                             ForEach(posts) { post in
-                                ClipPostCard(post: post, hr: hrContext(for: post.sessionID), allMedia: allMedia)
+                                ClipPostCard(post: post, hr: hrContext(for: post.sessionID),
+                                             allMedia: allMedia, playingClip: $playingClip)
                             }
                         }
                         .padding(.vertical, 8)
                     }
                     .accessibilityIdentifier("clips.feed")
+                    // Scrolling the feed stops the inline player, so a tapped clip can't keep playing audio
+                    // after its card scrolls off-screen (prompt 85). This is a feed-level gesture signal —
+                    // NOT per-card scroll geometry, which is the R12 coordinator that rendered a black box.
+                    .onScrollPhaseChange { _, newPhase, _ in
+                        if newPhase != .idle, playingClip != nil { playingClip = nil }
+                    }
                 }
             }
             .background(SnappetColor.paper)
@@ -124,13 +141,13 @@ private struct ClipPostCard: View {
     let post: ClipFeedPost
     let hr: ClipFeedHR
     let allMedia: [SessionMedia]
+    /// The feed's single active inline clip (prompt 85) — this card plays the page that matches it.
+    @Binding var playingClip: PlayingClipRef?
 
     @Environment(\.modelContext) private var context
     @Environment(SuiteRouter.self) private var router
     @State private var page = 0
     @State private var studio: StudioPresentation?
-    /// Tapped-clip index → presents the fullscreen paged player at that clip (prompt 83). `nil` = closed.
-    @State private var viewerStart: Int?
 
     private var accent: Color {
         switch post.discipline {
@@ -205,24 +222,25 @@ private struct ClipPostCard: View {
         VStack(spacing: 8) {
             TabView(selection: $page) {
                 ForEach(Array(post.clips.enumerated()), id: \.element.id) { idx, item in
-                    ClipPosterView(item: item, post: post, hr: hr)
+                    // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
+                    // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
+                    ClipPosterView(item: item, post: post,
+                                   payload: ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
+                                                               maxHR: hr.maxHR, restHR: hr.restHR),
+                                   isPlaying: playingClip == PlayingClipRef(postID: post.id, page: idx),
+                                   onTapToPlay: {
+                                       guard item.media.kind == "video" else { return }   // photos stay still
+                                       playingClip = PlayingClipRef(postID: post.id, page: idx)
+                                   })
                         .tag(idx)
                         .accessibilityIdentifier("clips.post.page")
-                        // Tap a still poster → play it fullscreen (prompt 83). The carousel's swipe
-                        // (a drag) and this discrete tap coexist; posters themselves stay stills.
-                        .contentShape(Rectangle())
-                        .onTapGesture { viewerStart = idx }
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(height: 460)
-            // Reuse the ONE playback surface (Recap's `PagedMediaViewer`) so the single-active-player
-            // discipline lives in one place — presented without Share (out of the Clips slice).
-            .fullScreenCover(item: $viewerStart.asItem) { box in
-                MediaBrowserView.clipsViewer(
-                    clips: post.clips.map(\.media), startIndex: box.value,
-                    hrSeries: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
-                    nameFor: { _ in post.title })
+            // Swiping the carousel off the playing clip stops it (you've moved away) — keeps one live player.
+            .onChange(of: page) { _, newPage in
+                if let pc = playingClip, pc.postID == post.id, pc.page != newPage { playingClip = nil }
             }
             .overlay(alignment: .topTrailing) {
                 if post.clipCount > 1 {
@@ -289,15 +307,30 @@ private struct ClipPostCard: View {
 private struct ClipPosterView: View {
     let item: ClipFeedItem
     let post: ClipFeedPost
-    let hr: ClipFeedHR
+    /// The clip's HR overlay — built ONCE by the card (not per live-HR tick); drives the surface + the tile.
+    let payload: ClipHROverlay.Payload?
+    /// This clip is the feed's active inline clip → play it in place (prompt 85).
+    let isPlaying: Bool
+    /// Tap a still video → ask the feed to make this the active clip.
+    let onTapToPlay: () -> Void
+    /// Live playhead written by the inline `ClipMediaSurface`; the HR tile reads it while playing.
+    @State private var liveFraction: Double = ClipHROverlay.atEndFraction
 
     var body: some View {
-        // Size the poster to the actual carousel page (not a hard-coded 400×500 that overflows narrow
-        // devices and leaves side gaps on wide ones) so the media fills the page full-bleed everywhere.
+        // Size the media to the actual carousel page (not a hard-coded size) so it fills full-bleed.
         GeometryReader { geo in
             ZStack(alignment: .bottomLeading) {
-                ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
-                              size: geo.size)
+                // The inline player when this is the feed's active video; otherwise the still poster (tap → play).
+                if isPlaying, item.media.kind == "video" {
+                    ClipMediaSurface(clip: item.media, isActive: true, payload: payload,
+                                     fraction: $liveFraction, background: .black)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                } else {
+                    ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
+                                  size: geo.size)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onTapToPlay() }
+                }
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                     .allowsHitTesting(false)
                 VStack(alignment: .leading, spacing: 10) {
@@ -330,14 +363,13 @@ private struct ClipPosterView: View {
         .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    // The HR scorebug — built by the ONE `ClipHROverlay` mapping the poster, the inline player, and the
-    // fullscreen viewer all share. A still poster reads the window aggregate (`fraction = 1.0`); when this
-    // clip plays inline (prompt 85) the same tile is driven by a live `ClipHROverlay.fraction`.
+    // The HR scorebug — the ONE `ClipHROverlay` mapping the poster, the inline player, and the fullscreen
+    // viewer share. While this clip plays inline it sweeps off the live `liveFraction`; otherwise it shows
+    // the clip's at-end reading.
     @ViewBuilder private var hrOverlay: some View {
-        if let payload = ClipHROverlay.make(clip: item.media, hrSeries: hr.series, maxHR: hr.maxHR, restHR: hr.restHR) {
-            // A still poster shows the at-end reading; when this clip plays inline (prompt 85) the same
-            // tile is driven by a live `ClipHROverlay.fraction`.
-            HRTileView(tile: payload.tile, values: payload.values, fraction: ClipHROverlay.atEndFraction)
+        if let payload {
+            HRTileView(tile: payload.tile, values: payload.values,
+                       fraction: isPlaying ? liveFraction : ClipHROverlay.atEndFraction)
                 .frame(maxWidth: .infinity)
                 .frame(height: 96)
                 .allowsHitTesting(false)
