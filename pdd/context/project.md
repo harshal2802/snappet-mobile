@@ -517,9 +517,12 @@ AVPlayer playback, same HR overlay, presented without Share) — the viewer was 
 (black box in the scrolling card) → the plan is *tap-to-play inline* (not autoplay-on-scroll). **Phase 0
 (prompt 84):** `ClipHROverlay` is now the single source of truth mapping a clip → its HR overlay +
 video-playhead `fraction`, and the fullscreen viewer's scorebug goes **live** (BPM + chart dot track the
-video, the editor's behaviour). **Phase 1 (prompt 85, next):** swap the tapped poster for an inline
-player in place (replacing the fullscreen pop-up), live HR riding the same `fraction`. Reactions / share
-/ grid and the optional WYSIWYG feed-HR stay a deliberate follow-up.
+video, the editor's behaviour). **Phase 1 (prompt 85):** tapping a video poster now plays it **inline**
+in the carousel (replacing the fullscreen pop-up), live HR riding the same `fraction`. One player engine
+(`ClipMediaSurface`) backs both the inline poster and the fullscreen viewer (one `AVPlayerLayer`
+lifecycle); single-active is tap-driven (`PlayingClipRef`, last-tapped-wins), **not** scroll-driven (the
+dropped-R12 black-box lesson). The inline render is the R12 risk → **must be device-verified**. Reactions
+/ share / grid and the optional WYSIWYG feed-HR stay a deliberate follow-up.
 
 ## License
 
