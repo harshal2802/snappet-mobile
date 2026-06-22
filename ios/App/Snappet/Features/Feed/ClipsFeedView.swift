@@ -165,6 +165,12 @@ private struct StudioPresentation: Identifiable {
     let visible: Set<UUID>?
 }
 
+/// An exported clip video to share via `ShareSheet` (prompt 87).
+private struct ClipShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 private struct ClipPostCard: View {
     let post: ClipFeedPost
     let hr: ClipFeedHR
@@ -176,6 +182,10 @@ private struct ClipPostCard: View {
     @Environment(SuiteRouter.self) private var router
     @State private var page = 0
     @State private var studio: StudioPresentation?
+    /// Share-a-clip (prompt 87): the exported temp video handed to the system share sheet, + a busy flag.
+    @State private var shareItem: ClipShareItem?
+    @State private var preparingShare = false
+    @State private var shareFailed = false
 
     private var accent: Color {
         switch post.discipline {
@@ -195,6 +205,20 @@ private struct ClipPostCard: View {
             StudioEditorView(project: p.project, context: context,
                              focusClipMediaID: p.focus, visibleClipMediaIDs: p.visible)
         }
+        // Share-a-clip (prompt 87): the system share sheet for the exported clip; delete the temp export
+        // once the sheet completes (shared or cancelled) so it doesn't accumulate in tmp.
+        .sheet(item: $shareItem) { item in
+            ShareSheet(items: [item.url], onComplete: { _, _ in try? FileManager.default.removeItem(at: item.url) })
+        }
+        .overlay {
+            if preparingShare {
+                ProgressView("Preparing…").padding(20)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .alert("Couldn’t prepare this clip", isPresented: $shareFailed) {
+            Button("OK", role: .cancel) {}
+        } message: { Text("The clip couldn’t be exported to share. Try again, or open it in the Studio.") }
     }
 
     // The "yellow circle": session + exercise/climb name; the "red circle": the ⋯ options menu.
@@ -231,6 +255,7 @@ private struct ClipPostCard: View {
             // opening the editor would land on an empty timeline. Scope the edit actions to videos.
             if currentClip.media.kind == "video" {
                 Button { editCurrentClip() } label: { Label("Edit this clip", systemImage: "slider.horizontal.3") }
+                Button { shareCurrentClip() } label: { Label("Share clip", systemImage: "square.and.arrow.up") }
             }
             if editableClipIDs.count > 1 {
                 Button { editAllClips() } label: { Label("Edit all · \(editableClipIDs.count)", systemImage: "rectangle.stack") }
@@ -315,6 +340,19 @@ private struct ClipPostCard: View {
         let clip = currentClip
         guard clip.media.kind == "video" else { return }
         studio = StudioPresentation(project: project(), focus: clip.media.id, visible: [clip.media.id])
+    }
+
+    /// Share the centered clip's RAW video via the system share sheet (prompt 87) — export off the main
+    /// actor, then present `ShareSheet`. (The HR-overlay-burned share is ⋯ → Edit this clip → Studio.)
+    private func shareCurrentClip() {
+        let clip = currentClip
+        guard clip.media.kind == "video", !preparingShare else { return }
+        preparingShare = true
+        Task { @MainActor in
+            let url = await ClipShareService.exportForSharing(localIdentifier: clip.media.localIdentifier)
+            preparingShare = false
+            if let url { shareItem = ClipShareItem(url: url) } else { shareFailed = true }
+        }
     }
 
     private func editAllClips() {
