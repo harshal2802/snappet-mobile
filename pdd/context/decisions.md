@@ -7381,3 +7381,18 @@ instant reveal, no crossfade); **gate the height animation on `!isScrolling`**. 
 `composedPosts`/payloads, defer the warm mount) are the next round if a residual hitch remains. Built +
 installed on MrRobot; the one-off `ClipsCarouselDiagnosticTests` (device-only) was removed.
 
+**On-device, round 2: kill the HR-tile backdrop blur on the swipe (prompt 92, MrRobot 2026-06-22).** A
+frame-by-frame review of the user's carousel screen-recording (ffmpeg scene-detect) showed the swipe
+produces **paired scene-cuts ~33ms apart** (a discontinuity, not a glide) and confirmed autoplay is ON (the
+mute button shows → warm-loading IS active). The residual jerk was: (1) the `.ultraThinMaterial` **live
+backdrop blur** is re-rasterized every drag frame as the tile slides — the dominant per-frame GPU cost; and
+(2) my round-1 fix gating the HR overlay to `isCurrentPage` made it **pop in/out** each swipe. Fixes:
+`HRTileView` gained a **`liveBlur` flag** (default true = studio glass); the Clips inline poster passes
+**`liveBlur: false`** → a flat black-30% scrim instead of the material — which is **exactly what the export
+burns** (the export can't live-blur; comment at HRTileView.swift:53-55), so it's correct, not just cheaper —
+and **un-gated** the HR overlay (back on every page, no pop, now that it's cheap to slide). **Answer to "is
+it warm-loading prev/next?": yes when autoplay is on (`liveFor` gates on `autoplayActive`) — but that was
+never the jerk; warm-loading makes playback instant, it doesn't make the slide cheap. The jerk was the
+blur.** Settle-frame costs (cache `composedPosts`, memoize payloads, defer the warm mount) remain as the
+next round if an end-of-swipe hitch persists. Build green; built + installed on MrRobot.
+

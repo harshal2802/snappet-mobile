@@ -624,10 +624,10 @@ private struct ClipPosterView: View {
                     .allowsHitTesting(false)
                 VStack(alignment: .leading, spacing: 10) {
                     nameOverlay
-                    // The HR scorebug is a `.ultraThinMaterial` backdrop blur (GPU-heavy to re-composite as a
-                    // page slides). Render it ONLY on the centred carousel page so a swipe doesn't drag 2-3
-                    // live blur panels at once (the off-side siblings are clipped anyway).
-                    if isCurrentPage { hrOverlay }
+                    // HR scorebug on every page (so it slides smoothly with the carousel, no pop-in). It's
+                    // cheap now: the inline tile uses a flat scrim (liveBlur: false), not a live backdrop
+                    // blur, so sliding it doesn't re-rasterize a blur every frame.
+                    hrOverlay
                 }
                 .padding(12)
             }
@@ -681,7 +681,8 @@ private struct ClipPosterView: View {
     @ViewBuilder private var hrOverlay: some View {
         if let payload {
             HRTileView(tile: payload.tile, values: payload.values,
-                       fraction: playing ? liveFraction : ClipHROverlay.atEndFraction)
+                       fraction: playing ? liveFraction : ClipHROverlay.atEndFraction,
+                       liveBlur: false)   // flat scrim, not a live backdrop blur → cheap to slide (prompt 92)
                 .frame(maxWidth: .infinity)
                 .frame(height: 96)
                 .allowsHitTesting(false)
