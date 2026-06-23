@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 import UniformTypeIdentifiers
 
 /// In-app **camera video recorder** for capturing a clip mid-session (e.g. while timing a set). A thin
@@ -19,15 +20,52 @@ struct VideoRecorder: UIViewControllerRepresentable {
     let onCancel: () -> Void
 
     /// `false` on the Simulator and on any device without a camera — guard on this before presenting.
-    static var isAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+    ///
+    /// The Simulator is forced `false` explicitly: on current simulators `isSourceTypeAvailable(.camera)` can
+    /// report `true`, but actually presenting an `(.camera)` `UIImagePickerController` there has no camera to
+    /// drive and **crashes the app** — so we must never take the present path on the sim. Real hardware keeps
+    /// the genuine capability check (a real device without a camera then correctly reads `false`).
+    static var isAvailable: Bool {
+        #if targetEnvironment(simulator)
+        false
+        #else
+        UIImagePickerController.isSourceTypeAvailable(.camera)
+        #endif
+    }
+
+    /// Request camera (and, best-effort, microphone) capture authorization. **Must be granted before the
+    /// recorder is presented:** configuring the camera-only `UIImagePickerController` properties
+    /// (`cameraCaptureMode` / `cameraFlashMode`) on a camera the app isn't authorized for throws an
+    /// `NSException` → `abort()` (the device crash). `isSourceTypeAvailable(.camera)` is `true` even while
+    /// camera permission is still `.notDetermined`, so the source-availability guard alone is NOT enough —
+    /// this mirrors `SnappetScannerView`, which pre-requests `AVCaptureDevice` access. Returns whether the
+    /// **camera** is usable; the mic is requested too (recorded video has audio) but a denied mic only makes
+    /// the clip silent, so it doesn't block.
+    static func requestCaptureAccess() async -> Bool {
+        let camera = await access(for: .video)
+        guard camera else { return false }
+        _ = await access(for: .audio)   // best-effort: silent video if denied
+        return true
+    }
+
+    private static func access(for media: AVMediaType) async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: media) {
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: media)
+        default: return false   // denied / restricted
+        }
+    }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
-        // `cameraCaptureMode` is only valid once `sourceType == .camera` (set above first).
-        picker.cameraCaptureMode = .video
-        picker.mediaTypes = [UTType.movie.identifier]   // video only — no stills
-        picker.videoQuality = .typeHigh
+        // Video-only `mediaTypes` puts the camera straight into video-recording mode. We deliberately do NOT
+        // touch the camera-only *setters* `cameraCaptureMode` / `videoQuality` / `cameraFlashMode`: configuring
+        // them here throws an NSException (→ SIGABRT) on a real device — they're validated against a camera
+        // session that isn't ready at `makeUIViewController` time (confirmed from the device crash report:
+        // `-[UIImagePickerController setCameraCaptureMode:]` → objc_exception_throw → abort). The single
+        // movie media type is sufficient to record video at the default quality, with no throwing setters.
+        picker.mediaTypes = [UTType.movie.identifier]
         picker.delegate = context.coordinator
         return picker
     }

@@ -37,6 +37,9 @@ struct TimedSetCover: View {
     @State private var unitSel: WeightUnit
     /// Clips recorded with the in-app camera during this set, saved to Photos and queued to attach on STOP.
     @State private var recordedClips: [RecordedClip] = []
+    /// `true` while a just-recorded clip is still being saved to Photos. STOP & LOG is held until it lands so a
+    /// record → immediate-STOP can't commit before the clip is appended to `recordedClips` (then it'd be lost).
+    @State private var savingClip = false
 
     init(exerciseName: String, initialReps: Int, initialWeight: Double, initialUnit: WeightUnit,
          onCommit: @escaping (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double,
@@ -64,7 +67,8 @@ struct TimedSetCover: View {
                 heroTimer
                 if let bpm = app.liveWorkout.latestHR { hrChip(bpm) }
                 Spacer()
-                RecordClipButton(recordedClips: $recordedClips, idPrefix: "timedSet", attachNoun: "set")
+                RecordClipButton(recordedClips: $recordedClips, savingClip: $savingClip,
+                                 idPrefix: "timedSet", attachNoun: "set")
                 stopButton
             }
             .padding(.horizontal, 20)
@@ -175,8 +179,11 @@ struct TimedSetCover: View {
                 .font(.title3.weight(.bold)).foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 64)
                 .background(Color.red, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .opacity(savingClip ? 0.5 : 1)
         }
         .buttonStyle(.plain)
+        // Hold STOP & LOG until any in-flight clip save finishes, so the clip is in `recordedClips` before commit.
+        .disabled(savingClip)
         .accessibilityIdentifier("timedSet.stop")
     }
 }

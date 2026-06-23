@@ -4,7 +4,7 @@ import XCTest
 /// reps × weight AND timed. Drives Quick Start → add a Lifting exercise → "Time this set"
 /// (`freeform.timeThisSet`) → the `TimedSetCover` (count-up) → bump the weight → STOP & LOG → assert the
 /// logged row carries the combined "N × W kg · M:SS" measure. Fresh-store launch like the rest of the suite.
-final class TimedStrengthSetTests: XCTestCase {
+@MainActor final class TimedStrengthSetTests: XCTestCase {
     var app: XCUIApplication!
 
     override func setUp() {

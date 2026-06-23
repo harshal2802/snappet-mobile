@@ -20,7 +20,7 @@ Non-obvious choices:
   **Rules out** dismissing the cover to record (which would tear down the timer / set context).
 - **Save to Photos at record-time; tag the session at commit-time.** `SessionMedia` stores a Photos
   `localIdentifier` (bytes stay in Photos), so the recording is saved to the user's own library
-  (`MediaLibraryService.saveRecording`, add-only) **immediately** — preserved even if the set is never
+  (`MediaLibraryService.saveRecording`) **immediately** — preserved even if the set is never
   logged. The set tag (a `.manual` `SessionMedia` row) is created only at commit, when the landing
   `setIndex` is known (captured *before* `appendLog`). The covers stay SwiftData-free (consistent with
   their design); the insert lives in `FreeformPlayerView.attachRecordedClips` through the pure, tested
@@ -39,6 +39,45 @@ Non-obvious choices:
 - KG: new `video-recorder` node + edges (both covers → recorder `cover`; recorder → `MediaLibraryService`
   `uses`; `FreeformPlayerView` → `SessionMedia` `persists`); cover/service descs updated. The structured
   interval runner (`StructuredTimedRunner`) is a deliberate follow-up (multi-phase capture card), not in scope.
+
+**macOS + on-device verification + post-review hardening (same day).** The PR was authored on Linux; taking
+it through the macOS/device gate caught a **crash** the author couldn't have seen:
+- **Camera authorization must be requested BEFORE presenting the recorder.** Tapping "Record a clip" aborted
+  the app with `SIGABRT` — `-[UIImagePickerController setCameraCaptureMode:]` throws an `NSException` when the
+  camera-only properties (`cameraCaptureMode` / `cameraFlashMode`) are configured on a camera the app isn't
+  authorized for, and `UIImagePickerController.isSourceTypeAvailable(.camera)` returns `true` even while
+  permission is still `.notDetermined` — so the source-availability guard alone was insufficient. Confirmed
+  from the device crash `.ips` (lastExceptionBacktrace → `setCameraCaptureMode:` ← `VideoRecorder.makeUIViewController`).
+  Fix: `VideoRecorder.requestCaptureAccess()` (camera required, mic best-effort) is awaited in
+  `RecordClipButton.present()` and the recorder is shown only once granted (declined → an "allow access in
+  Settings" notice) — mirroring `SnappetScannerView`'s pre-auth. The **same** root cause crashed the Simulator
+  (it reports the camera source available but has none), so `VideoRecorder.isAvailable` is now also forced
+  `false` under `#if targetEnvironment(simulator)` (deterministic sim notice; never attempts the camera).
+A high-effort multi-agent review also surfaced three correctness fixes folded into the branch:
+- **Record with read-WRITE, not add-only.** The feature *displays the clip back* (set strip, Clips feed,
+  Studio), and every read-back path resolves the asset via `PHAsset.fetchAssets(withLocalIdentifiers:)` +
+  `PHImageManager`, which need read access. Add-only is write-only, so an add-only-only user would save the
+  clip and then see a permanent grey placeholder. `saveRecording` now requests `.readWrite` (mirroring
+  `PhotoLibraryService`, which the rest of the media pipeline uses); `saveVideoToPhotos` gained an
+  `accessLevel` parameter that **defaults to `.addOnly`** so the write-and-forget reel/clip-export callers are
+  unchanged. **Rules out** the original "narrowest grant" reasoning — narrowest that actually *works* here is
+  read-write, because attach implies later display.
+- **Hold the commit until the in-flight save lands.** `saveRecording` is async (it needs the saved asset id),
+  so a record → immediate-STOP could read `recordedClips` before the append and silently drop the clip from
+  the set. `RecordClipButton` now surfaces a host-owned `savingClip` binding; both covers **disable STOP /
+  STOP & LOG while a save is in flight** (reset in a `defer`, so a denied Photos prompt can't deadlock it).
+- **Upsert on attach, don't insert-or-skip.** Because the clip is saved at record-time but tagged at
+  commit-time, the live `discoverClips` tick can race ahead and insert the same asset as a window-placed
+  `.auto` row. `attachRecordedClips` now **re-pins** an already-present row to `(exID, setIndex)` as `.manual`
+  (authoritative) rather than skipping it — preserving the "filmed for THIS set" guarantee — and the in-batch
+  map also guards a duplicate identifier within one commit.
+- **Offset = recording start, not recorder-open.** `saveRecording` derives `capturedAt ≈ now − duration`
+  (floored at the present time), so the clip's session offset reflects when filming began rather than when the
+  camera was opened (which precedes any framing). Cosmetic (the row is `.manual`-pinned by index, not offset),
+  but the data was already in hand.
+- *By design, not a bug:* recording a clip then dismissing the cover **before** STOP saves the clip to Photos
+  but does not tag the set (the cover's "dismiss-before-stop logs nothing" rule). Annotated `TimedStrengthSetTests`
+  `@MainActor` to zero the file's pre-existing XCUITest concurrency warnings.
 
 ## [2026-06-21] Recap feed F8 — scroll date bar (time orientation)
 

@@ -18,13 +18,17 @@ struct RecordClipButton: View {
     /// The clips recorded so far — owned by the host cover (a `@State`), so they survive this button's own
     /// appearance/disappearance and are read at commit time.
     @Binding var recordedClips: [RecordedClip]
+    /// Surfaces the in-flight Photos-save to the host cover so it can hold STOP/commit until the clip has
+    /// landed in `recordedClips`. The save is async (it needs the saved asset id back), so without this a
+    /// record → immediate-STOP would read `recordedClips` *before* the append and silently drop the clip from
+    /// the set being logged. Host-owned (a `@State`) and reset in a `defer` even on save failure (no deadlock).
+    @Binding var savingClip: Bool
     /// a11y-id namespace + caption noun for the two covers: `("timedSet", "set")` / `("timedAttempt", "attempt")`.
     let idPrefix: String
     let attachNoun: String
 
     @State private var showingRecorder = false
     @State private var recordingStartedAt = Date()
-    @State private var saving = false
     @State private var noticeText: String?
 
     /// Stateless Photos writer (same `Sendable` service the clip-delete path uses).
@@ -32,8 +36,9 @@ struct RecordClipButton: View {
 
     /// Explicit init so the memberwise initializer isn't lowered to `private` by the `private` stored
     /// members (the codebase pattern for views with `@State private var` — `TimedSetCover`, `SetMediaStrip`).
-    init(recordedClips: Binding<[RecordedClip]>, idPrefix: String, attachNoun: String) {
+    init(recordedClips: Binding<[RecordedClip]>, savingClip: Binding<Bool>, idPrefix: String, attachNoun: String) {
         self._recordedClips = recordedClips
+        self._savingClip = savingClip
         self.idPrefix = idPrefix
         self.attachNoun = attachNoun
     }
@@ -55,15 +60,15 @@ struct RecordClipButton: View {
                     .accessibilityIdentifier("\(idPrefix).recordNotice")
             }
             Button { present() } label: {
-                Label(saving ? "Saving clip…" : "Record a clip",
-                      systemImage: saving ? "arrow.down.circle" : "video.fill")
+                Label(savingClip ? "Saving clip…" : "Record a clip",
+                      systemImage: savingClip ? "arrow.down.circle" : "video.fill")
                     .font(.headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 52)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(saving)
+            .disabled(savingClip)
             .accessibilityIdentifier("\(idPrefix).record")
         }
         .fullScreenCover(isPresented: $showingRecorder) {
@@ -73,16 +78,26 @@ struct RecordClipButton: View {
         }
     }
 
-    /// Capture the start instant and present the camera — or surface a notice when there's no camera (the
-    /// Simulator), so the affordance never silently does nothing.
+    /// Authorize then present the camera — or surface a notice when there's no camera (the Simulator) or
+    /// access is declined, so the affordance never silently does nothing or crashes.
+    ///
+    /// Camera authorization MUST be granted before presenting: `UIImagePickerController` throws when its
+    /// camera-only properties are configured on a camera the app isn't authorized for, and
+    /// `VideoRecorder.isAvailable` (source availability) is `true` even while permission is `.notDetermined`.
     private func present() {
         noticeText = nil
         guard VideoRecorder.isAvailable else {
             noticeText = "Camera isn't available on this device."
             return
         }
-        recordingStartedAt = Date()
-        showingRecorder = true
+        Task {
+            guard await VideoRecorder.requestCaptureAccess() else {
+                noticeText = "Allow camera access in Settings to record a clip."
+                return
+            }
+            recordingStartedAt = Date()
+            showingRecorder = true
+        }
     }
 
     /// Save the finished recording to Photos (preserving it immediately) and queue it for attachment. A
@@ -90,9 +105,9 @@ struct RecordClipButton: View {
     private func handleRecorded(_ url: URL) {
         showingRecorder = false
         let startedAt = recordingStartedAt
-        saving = true
+        savingClip = true
         Task {
-            defer { saving = false }
+            defer { savingClip = false }
             do {
                 let clip = try await mediaLibrary.saveRecording(at: url, capturedAt: startedAt)
                 recordedClips.append(clip)

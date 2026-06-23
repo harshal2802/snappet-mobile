@@ -1448,23 +1448,43 @@ struct FreeformPlayerView: View {
     /// File clips recorded in-app during a timed set / attempt (already saved to Photos by the cover) against
     /// `(exerciseID, setIndex)` — the set/attempt that was just logged. Each row is `.manual` (sticky, so the
     /// auto-reconciler never re-places it) and built through the pure `SessionMediaService.candidate(for:)`
-    /// (same offset-clamp + `.video` mapping as auto-discovery / manual picks). Deduped against media already
-    /// on the session so a re-run can't double-tag. `setIndex == nil` tags the exercise as a whole.
+    /// (same offset-clamp + `.video` mapping as auto-discovery / manual picks). `setIndex == nil` tags the
+    /// exercise as a whole.
+    ///
+    /// **Upsert, not insert-or-skip:** a clip is saved to Photos at record-time but only attached here at
+    /// commit-time, so the live `discoverClips` tick can race ahead and insert the same asset as a window-placed
+    /// `.auto` row first. If we merely skipped existing identifiers, the user's clip would stay on whatever set
+    /// the timeline guessed — breaking the "filmed for THIS set" promise. So when a row already exists we
+    /// re-pin it to `(exID, setIndex)` as `.manual` (authoritative); otherwise we insert. The in-call `seen`
+    /// set also guards against the same identifier appearing twice in one batch.
     private func attachRecordedClips(_ clips: [RecordedClip], toExerciseID exID: UUID, setIndex: Int?) {
         guard !clips.isEmpty else { return }
         let sid = session.id
-        let existing = Set((try? context.fetch(FetchDescriptor<SessionMedia>(
-            predicate: #Predicate { $0.sessionID == sid })))?.map(\.localIdentifier) ?? [])
-        var inserted = false
-        for clip in clips where !existing.contains(clip.localIdentifier) {
+        let existing = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        var byID = Dictionary(existing.map { ($0.localIdentifier, $0) }, uniquingKeysWith: { a, _ in a })
+        var changed = false
+        for clip in clips {
             let c = SessionMediaService.candidate(for: clip, startedAt: session.startedAt)
-            context.insert(SessionMedia(
-                sessionID: sid, localIdentifier: c.localIdentifier, kind: c.kind,
-                offsetSec: c.offsetSec, durationSec: c.durationSec, addedManually: true,
-                assignedExerciseID: exID, assignedSetIndex: setIndex, source: .manual))
-            inserted = true
+            if let row = byID[c.localIdentifier] {
+                // Already on the session (auto-discovery raced ahead, or a duplicate in this batch) — re-pin it
+                // to the set it was filmed for instead of leaving a stale auto placement.
+                row.assignedExerciseID = exID
+                row.assignedSetIndex = setIndex
+                row.assignmentSource = .manual
+                row.addedManually = true
+                if row.durationSec == nil { row.durationSec = c.durationSec }
+            } else {
+                let row = SessionMedia(
+                    sessionID: sid, localIdentifier: c.localIdentifier, kind: c.kind,
+                    offsetSec: c.offsetSec, durationSec: c.durationSec, addedManually: true,
+                    assignedExerciseID: exID, assignedSetIndex: setIndex, source: .manual)
+                context.insert(row)
+                byID[c.localIdentifier] = row
+            }
+            changed = true
         }
-        if inserted { try? context.save() }
+        if changed { try? context.save() }
     }
 
     /// Overwrite an existing climb's identity fields IN PLACE from the edit sheet (prompt 09): the same

@@ -46,6 +46,9 @@ struct TimedAttemptCover: View {
     @State private var capturedSeconds: Double?
     /// Clips recorded with the in-app camera during this attempt, saved to Photos and queued to attach on commit.
     @State private var recordedClips: [RecordedClip] = []
+    /// `true` while a just-recorded clip is still being saved to Photos. STOP is held until it lands so a
+    /// record → immediate-STOP can't move to the outcome grid and commit before the clip is in `recordedClips`.
+    @State private var savingClip = false
 
     private var isStopped: Bool { capturedSeconds != nil }
 
@@ -206,7 +209,8 @@ struct TimedAttemptCover: View {
                 .transition(.opacity)
         } else {
             VStack(spacing: 12) {
-                RecordClipButton(recordedClips: $recordedClips, idPrefix: "timedAttempt", attachNoun: "attempt")
+                RecordClipButton(recordedClips: $recordedClips, savingClip: $savingClip,
+                                 idPrefix: "timedAttempt", attachNoun: "attempt")
                 stopButton
             }
             .transition(.opacity)
@@ -226,8 +230,12 @@ struct TimedAttemptCover: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 64)
                 .background(Color.red, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .opacity(savingClip ? 0.5 : 1)
         }
         .buttonStyle(.plain)
+        // Hold STOP until any in-flight clip save finishes, so the clip is in `recordedClips` before the
+        // outcome grid can commit it.
+        .disabled(savingClip)
         .accessibilityIdentifier("timedAttempt.stop")
     }
 
