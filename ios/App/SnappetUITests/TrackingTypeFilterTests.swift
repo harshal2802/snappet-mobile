@@ -14,11 +14,12 @@ import XCTest
 /// UI-test lessons obeyed (PR 2–5): leaf ids only (each chip carries its own id; no id on a composite
 /// row); query rows type-agnostically (`descendants(matching: .any).matching(identifier:)`, not
 /// `app.cells`, since iOS 26 collapses composites); assert distinctive presence/absence of the row.
-final class TrackingTypeFilterTests: XCTestCase {
+@MainActor final class TrackingTypeFilterTests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() {
-        super.setUp()
+    // Async setUp so the @MainActor class isolates it too (a sync `setUp()` override stays nonisolated and
+    // warns on every main-actor `app` access).
+    override func setUp() async throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
@@ -45,13 +46,25 @@ final class TrackingTypeFilterTests: XCTestCase {
             "the freeform player should open")
     }
 
-    private func addExerciseMenu(_ item: String) {
+    /// Add a Timed exercise via the add-exercise menu. Since the Quick Session redesign (#175) the
+    /// "Timed exercise" item opens the pick-or-create sheet (`PickTimedExerciseSheet`) rather than dropping a
+    /// bare card, so pick a seeded suggestion (Free hold — an open count-up) and wait for the named card. Same
+    /// navigation `TimedSetTimerTests` uses.
+    private func addTimedExerciseViaPicker() {
         let menu = app.buttons["freeform.addExercise"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5), "Add exercise menu should exist")
         menu.tap()
-        let opt = app.buttons[item]
-        XCTAssertTrue(opt.waitForExistence(timeout: 4), "menu item \(item) should appear")
+        let opt = app.buttons["Timed exercise"]
+        XCTAssertTrue(opt.waitForExistence(timeout: 4), "the 'Timed exercise' menu item should appear")
         opt.tap()
+        XCTAssertTrue(app.buttons["timed.createNew"].waitForExistence(timeout: 6),
+                      "the timed pick-or-create sheet should open with 'Create new' pinned")
+        let suggestion = app.buttons["timed.suggested.seed.freehold"]
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 5), "a seeded timed suggestion should be offered")
+        suggestion.tap()
+        XCTAssertTrue(app.staticTexts["freeform.timedName"].waitForExistence(timeout: 5)
+            || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2),
+            "the picked timed exercise should land as a named card")
     }
 
     /// Tap the "Add set" button for the most recently added exercise (robust to a SwiftUI `Menu` tap
@@ -73,7 +86,7 @@ final class TrackingTypeFilterTests: XCTestCase {
         // an exact 0:45 — the live-timer path is TimedSetTimerTests' job; here we just need a Timed set).
         openFreeformPlayer()
         snap("01-freeform")
-        addExerciseMenu("Timed exercise")
+        addTimedExerciseViaPicker()
         sleep(1); snap("02-timed-added")
         tapAddSetForLastExercise()
         let manual = app.segmentedControls.buttons["Manual"]
