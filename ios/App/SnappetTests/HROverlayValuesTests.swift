@@ -122,6 +122,60 @@ final class HROverlayValuesTests: XCTestCase {
         XCTAssertEqual(v.staticValue(.avgHR, fallbackHex: "#FFFFFF")?.value, "110")   // (60+180+90)/3
     }
 
+    // MARK: - Dense-data metrics (prompt 104): effort (ClimbEffort) + HRV suite
+
+    /// A dense rising→falling clip (1 Hz, 0…60s, peak ~170 near t=30) — enough interior detail that the
+    /// effort metrics render (not sparse-hidden).
+    private func denseRisingFalling(hrv: HRVMetrics = .empty) -> HROverlayValues {
+        let samples = (0...60).map { i -> HRPoint in
+            let t = Double(i)
+            let bpm = t <= 30 ? 80 + t * 3 : 170 - (t - 30) * 2
+            return HRPoint(t: t, bpm: bpm)
+        }
+        return HROverlayValues(samples: samples, durationSec: 60, maxHR: 190, restHR: 60, hrv: hrv)
+    }
+
+    func testEffortMetricsRenderOnDenseClip() {
+        let v = denseRisingFalling()
+        XCTAssertFalse(v.isSparseChart)
+        let ttp = try? XCTUnwrap(v.staticValue(.timeToPeak, fallbackHex: "#FFF"))
+        XCTAssertEqual(ttp?.unit, "S")
+        let ttpVal = Int(ttp?.value ?? "-1") ?? -1
+        XCTAssertGreaterThanOrEqual(ttpVal, 22); XCTAssertLessThanOrEqual(ttpVal, 38)   // peak ~t=30 (smoothed)
+        let rise = try? XCTUnwrap(v.staticValue(.hrRise, fallbackHex: "#FFF"))
+        XCTAssertEqual(rise?.unit, "BPM")
+        XCTAssertGreaterThan(Int(rise?.value ?? "0") ?? 0, 50)           // ~80 → ~170
+        // Recovery is readable here (series reaches peak + 30s); value is the post-peak drop.
+        XCTAssertNotNil(v.staticValue(.hrRecovery, fallbackHex: "#FFF"))
+    }
+
+    func testEffortMetricsHiddenOnSparseClip() {
+        let sparse = HROverlayValues(samples: [HRPoint(t: 0, bpm: 135), HRPoint(t: 30, bpm: 139)],
+                                     durationSec: 30, maxHR: 190, restHR: 60)
+        XCTAssertTrue(sparse.isSparseChart)
+        XCTAssertNil(sparse.staticValue(.timeToPeak, fallbackHex: "#FFF"))
+        XCTAssertNil(sparse.staticValue(.hrRise, fallbackHex: "#FFF"))
+        XCTAssertNil(sparse.staticValue(.hrRecovery, fallbackHex: "#FFF"))
+    }
+
+    func testHRVSuiteRendersWithRRAndHidesWithout() {
+        let hrv = HRVMetrics.make(rrIntervalsMs: [800, 850, 790, 870, 760, 880, 800, 840])
+        XCTAssertNotNil(hrv.sdnn); XCTAssertNotNil(hrv.pnn50)
+        let v = denseRisingFalling(hrv: hrv)
+        XCTAssertEqual(v.staticValue(.sdnn, fallbackHex: "#FFF")?.unit, "MS")
+        XCTAssertEqual(v.staticValue(.pnn50, fallbackHex: "#FFF")?.unit, "%")
+        // No RR (the feed case, hrv == .empty) → both hidden, like the existing rmssd metric.
+        let noRR = denseRisingFalling()
+        XCTAssertNil(noRR.staticValue(.sdnn, fallbackHex: "#FFF"))
+        XCTAssertNil(noRR.staticValue(.pnn50, fallbackHex: "#FFF"))
+    }
+
+    func testNewMetricsAreStatic() {
+        for m in [HROverlayMetric.timeToPeak, .hrRise, .hrRecovery, .sdnn, .pnn50] {
+            XCTAssertFalse(m.supportsLive, "\(m) should be static")
+        }
+    }
+
     func testIsSparseChartFlagsTwoPointWindow() {
         // Two samples bracketing a 30s clip → interpolation-dominated → dashed (sparse) styling.
         let sparse = HROverlayValues(samples: [HRPoint(t: 0, bpm: 135), HRPoint(t: 30, bpm: 139)],

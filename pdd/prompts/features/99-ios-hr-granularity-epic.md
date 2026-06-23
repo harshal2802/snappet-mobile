@@ -39,12 +39,15 @@ straps already deliver ~1 Hz + RR. One real bug compounds it: the watch-side
   device-gated read; deferred re-densify on detail appear; graceful no-op for BLE-only).
 - **103 — Phase D (Opt 4) steer to BLE strap.** Bias `LiveMetricsCoordinator.resolve` toward a
   connected band for clip-grade HR (honor explicit picks) + picker affordance.
-- **104 — Phase E (M2) ClimbEffort overlay metrics.** Expose time-to-peak, HRR60/30, HR-rise as
-  overlay tiles (engine `ClimbEffort` already computes them).
-- **105 — Phase F (M3) per-second zone tint + ramp.** Dense series → smooth zone-banded stroke;
-  `HeartRateSeries.slope` ramp-rate live reading, density-gated.
-- **106 — Phase G (M4) HRV suite + recovery sharpener.** SDNN/pNN50 overlay cases (RR-gated) +
-  RecoveryReadiness RR-rebound. Chest-strap / `HKHeartbeatSeriesQuery` future.
+- **104 — Phase E–G (consolidated) new HR metrics from dense data.** Add overlay metric cases from the
+  existing engine types: **M2** time-to-peak / HR-rise / HR-recovery (from `ClimbEffort`, gated on a
+  non-sparse window) and **M4** SDNN / pNN50 (from the `HRVMetrics` the overlay already receives, RR-gated).
+  E/F/G were merged into one PR because they all churn the same `HROverlayMetric` exhaustive switches.
+  **M3's per-second zone tint already shipped in Phase B** (the zone-gradient now reads the dense
+  `chartSamples`). **Deferred (documented):** the standalone normalized-`slope` ramp readout (cadence-fragile,
+  low interpretability — the zone-tinted curve already conveys intensity dynamics) and the
+  `RecoveryReadiness` RR-rebound (needs a session HRV baseline not available at clip scope);
+  `HKHeartbeatSeriesQuery` beat-to-beat RR for watch HRV remains a future follow-on.
 
 ## Invariant across the epic
 

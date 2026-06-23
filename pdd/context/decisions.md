@@ -7634,3 +7634,21 @@ existing call site/test unchanged and a watch-only user is unaffected (gated on 
 the coordinator via `UserDefaults` (it's `@Observable`, can't use `@AppStorage`), exposed as a Toggle +
 explainer in `HeartRateSourcePicker` that also references Phase C's Health backfill. Explicit `selectedSource`
 still wins (tested). New resolve cases + full `SnappetTests` green on the iPhone 17 Pro sim.
+
+**HR→video granularity epic — Phase E–G new metrics (prompt 104, 2026-06-23).** Surfaced the metrics dense
+HR unlocks, all from engine types that already compute them. **Decision — merge E/F/G into one PR** (they all
+churn the `HROverlayMetric` exhaustive switches: `label`/`systemImage`/`explanation`/`supportsLive` in
+StudioProject + `tilePriority`/`tileCaption`/`tileValueChars` in HRTileLayout + `staticValue` in
+HROverlayValues). Added 5 static cases: **timeToPeak / hrRise / hrRecovery** (from a `ClimbEffort` built once
+in `HROverlayValues.init` over the clip window) and **sdnn / pnn50** (from the `HRVMetrics` the overlay already
+receives — they piggyback on the `.hrv` plumbing, so they hide wherever rmssd does, e.g. the feed where
+`hrv == .empty`). **Honest gating:** the effort metrics are gated on `!isSparseChart` (the Phase A/B sparse
+signal) so a "peak" can't be an interpolated endpoint; recovery additionally needs the series to reach
+peak+30/60 s (a short clip hides it). **M3's per-second zone tint already shipped in Phase B** (zoneStops now
+reads the dense `chartSamples`). **Deferred (documented):** the standalone normalized-`slope` ramp readout
+(cadence-fragile + hard to read as an absolute number; the zone-tinted curve already conveys intensity
+dynamics) and the `RecoveryReadiness` RR-rebound (needs a session HRV baseline, not available at single-clip
+scope); beat-to-beat watch RR via `HKHeartbeatSeriesQuery` stays a future follow-on (HRV is chest-strap-only
+now). Two pre-existing `allCases`-count tests updated (`HRTileResolveTests` values() → a dense window so the
+effort metrics resolve; `HRTileLayoutTests` hero-overflow → `all.count − 5`). Full `SnappetTests` green on the
+iPhone 17 Pro sim.
