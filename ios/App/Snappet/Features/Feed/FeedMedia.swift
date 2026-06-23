@@ -15,6 +15,10 @@ struct MediaInput: Sendable, Equatable, Identifiable {
     var setIndex: Int?
     var climbUUID: String?
     var localIdentifier: String
+    /// Oriented display aspect (width / height) for the Clips feed's adaptive tile sizing (prompt 92);
+    /// `nil` until `SessionMedia.aspectRatio` is backfilled. Defaulted so existing `MediaInput(...)` sites
+    /// (and the Recap viewer, which doesn't size by aspect) compile unchanged.
+    var aspect: Double? = nil
 }
 
 struct MediaClipHR: Sendable, Equatable {
@@ -53,14 +57,11 @@ enum FeedMedia {
         nameFor(groupKey(m))
     }
 
-    /// Peak/avg BPM within a clip's [offset, offset+duration] window from the session HR series.
+    /// Peak/avg/zone BPM for a clip's HR window — computed over the **same** sliced window the overlay
+    /// draws (`clipHRWindow` → `HRWindowSlicer`), so the still poster's chip and the inline / fullscreen
+    /// overlay can never disagree. `nil` when the window resolves no HR (the name-tag-only path).
     static func clipHR(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint], maxHR: Double) -> MediaClipHR {
-        guard !hrSeries.isEmpty else { return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil) }
-        let end = offsetSec + (durationSec ?? 6)
-        let inWindow = hrSeries.filter { $0.t >= offsetSec && $0.t <= end }
-        // Fall back to the nearest samples if the exact window is empty (sparse series).
-        let window = inWindow.isEmpty ? hrSeries.filter { abs($0.t - offsetSec) <= 8 } : inWindow
-        let bpms = window.map(\.bpm)
+        let bpms = clipHRWindow(offsetSec: offsetSec, durationSec: durationSec, hrSeries: hrSeries).map(\.bpm)
         guard !bpms.isEmpty else { return MediaClipHR(peakBpm: nil, avgBpm: nil, zoneRaw: nil) }
         let peak = bpms.max() ?? 0
         let avg = bpms.reduce(0, +) / Double(bpms.count)
@@ -68,28 +69,20 @@ enum FeedMedia {
                            zoneRaw: HeartRateZone.forBpm(peak, maxHR: maxHR).rawValue)
     }
 
-    /// The session HR samples that fall inside a clip's `[offsetSec, offsetSec + durationSec]` window,
-    /// **rebased to clip-local time** (`t - offsetSec`, clamped at 0). This is the pure input the
-    /// fullscreen viewer feeds to the editor's `HROverlayValues` (single HR source of truth) — so the
-    /// per-clip overlay slices the SAME series the export burn-in (R4) reads, and preview == burn.
+    /// The session HR samples inside a clip's `[offsetSec, offsetSec + durationSec]` window, **rebased to
+    /// clip-local time** `[0, span]`, routed through the project's ONE hardened slicer (`HRWindowSlicer`) —
+    /// the same slicer the Studio editor and the export burn-in (R4) use, so the feed poster, the inline /
+    /// fullscreen overlay, the export, and the *playing video* can't drift. (The prior inline strict
+    /// `t >= offset && t <= end` filter + crude ±8s fallback re-introduced the "element vanishes / HR
+    /// frozen" bug `HRWindowSlicer` exists to kill — decisions.md prompt-29 / prompt-91.)
     ///
-    /// - A photo (`durationSec == nil`) gets a small default window so a still poster still resolves an
-    ///   overlay if HR exists at that moment; a zero-duration clip collapses to the samples AT `offsetSec`.
-    /// - When the exact window holds no samples (sparse series), falls back to the nearest samples within
-    ///   ±8s of `offsetSec` — the SAME tolerance the poster chip's `clipHR` uses — so the carousel poster
-    ///   and the fullscreen overlay agree (both show HR, or both show name-tag-only). The fallback
-    ///   samples are still rebased to clip-local time (`t - offsetSec`, clamped at 0).
-    /// - Returns `[]` only when even that ±8s neighbourhood is empty (window entirely before/after the
-    ///   series, no fabricated samples) — the caller then degrades to the name tag only, never an empty chart.
+    /// Guarantees inherited from `HRWindowSlicer`: **interpolated endpoints** at the window edges, a
+    /// **≥2-point** result whenever any HR exists within the window or its ±90s edge-clamp pad (so the
+    /// chart never blanks and the playhead `maxT` reaches the window edge), and an honest **empty** `[]`
+    /// only when the window is farther than that pad from all data. A photo (`nil` duration) uses
+    /// `photoWindowSec`; a 0-duration clip collapses to a degenerate flat line at its instant.
     static func clipHRWindow(offsetSec: Double, durationSec: Double?, hrSeries: [HRPoint]) -> [HRPoint] {
-        guard !hrSeries.isEmpty else { return [] }
-        let dur = durationSec ?? Self.photoWindowSec
-        let end = offsetSec + max(0, dur)
-        let inWindow = hrSeries.filter { $0.t >= offsetSec && $0.t <= end }
-        // Mirror `clipHR`'s nearest-sample fallback (±8s) so poster chip and viewer overlay agree.
-        let window = inWindow.isEmpty ? hrSeries.filter { abs($0.t - offsetSec) <= 8 } : inWindow
-        return window
-            .map { HRPoint(t: max(0, $0.t - offsetSec), bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) }
+        HRWindowSlicer.slice(hrSeries, start: offsetSec, span: durationSec ?? Self.photoWindowSec)
     }
 
     /// The default window (seconds) used for a photo / nil-duration clip when slicing HR.

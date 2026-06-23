@@ -15,6 +15,11 @@ struct HRTileView: View {
     let values: HROverlayValues
     /// Playhead fraction within the clip (0…1) — drives the live metrics + the chart dot.
     let fraction: Double
+    /// `true` (studio preview) → a live `.ultraThinMaterial` backdrop blur. `false` (the Clips feed inline
+    /// poster) → a flat scrim fill: cheap to composite while a carousel page slides (a backdrop blur is
+    /// re-rasterized every drag frame, which janks the swipe) AND it matches what the export actually burns
+    /// (the export can't live-blur footage — it draws the same fill over a scrim).
+    var liveBlur: Bool = true
 
     var body: some View {
         GeometryReader { geo in
@@ -55,7 +60,7 @@ struct HRTileView: View {
     /// scrim (it can't live-blur the footage), so the colours match and only the blur is preview-only.
     private func glassCard(radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius)
-            .fill(.ultraThinMaterial)
+            .fill(liveBlur ? AnyShapeStyle(Material.ultraThinMaterial) : AnyShapeStyle(Color.black.opacity(0.30)))
             .overlay(RoundedRectangle(cornerRadius: radius)
                 .fill(Color(studioHex: HRTileStyle.glassFillHex).opacity(HRTileStyle.glassFillAlpha)))
             .overlay(RoundedRectangle(cornerRadius: radius)

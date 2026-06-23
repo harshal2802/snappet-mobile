@@ -37,6 +37,11 @@ final class SessionMedia {
     var offsetSec: Double
     /// Video duration in seconds; `nil` for photos.
     var durationSec: Double?
+    /// The clip's **oriented** display aspect ratio (width / height) for the Clips feed's adaptive tile
+    /// sizing (prompt 92). Additive + optional → SwiftData lightweight migration; `nil` for any clip
+    /// captured before this field existed — the feed lazy-backfills it via `ClipAspectResolver` on first
+    /// view (photos bake orientation into their pixel dims; videos resolve naturalSize × preferredTransform).
+    var aspectRatio: Double?
     /// `true` when added via the PHPicker rather than auto-discovered.
     var addedManually: Bool
     var createdAt: Date
@@ -59,7 +64,7 @@ final class SessionMedia {
     var assignedClimbUUID: String?
 
     init(id: UUID = UUID(), sessionID: UUID, localIdentifier: String,
-         kind: Kind, offsetSec: Double, durationSec: Double? = nil,
+         kind: Kind, offsetSec: Double, durationSec: Double? = nil, aspectRatio: Double? = nil,
          addedManually: Bool = false,
          assignedExerciseID: UUID? = nil, assignedSetIndex: Int? = nil,
          assignedClimbUUID: String? = nil,
@@ -70,6 +75,7 @@ final class SessionMedia {
         self.kindRaw = kind.rawValue
         self.offsetSec = max(0, offsetSec)
         self.durationSec = durationSec
+        self.aspectRatio = aspectRatio
         self.addedManually = addedManually
         self.assignedExerciseID = assignedExerciseID
         self.assignedSetIndex = assignedSetIndex

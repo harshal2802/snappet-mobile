@@ -61,11 +61,36 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// Capture time of the first clip — the feed's reverse-chronological sort key.
     var captureAt: Date
     var clips: [ClipFeedItem]
+    /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
+    /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
+    var aspect: Double
 
     var clipCount: Int { clips.count }
 }
 
 enum ClipFeedComposer {
+
+    // MARK: Adaptive tile aspect (prompt 92)
+    //
+    // Tile the carousel to the clip's REAL aspect so a portrait video fills the frame full-height with NO
+    // black bars and no crop (the look the user preferred). The clamp only guards absurd extremes: a tile
+    // can be as tall as ~2:1 (covers 9:16 phone video = 0.5625) and as wide as 1.91:1 (covers 16:9 = 1.78).
+    // A `TabView` carousel shares ONE height across a post's pages, so a post collapses to a single clamped
+    // aspect (the first clip with a known aspect); the height animates as the real aspect resolves. Pure —
+    // unit-tested in `ClipFeedComposerTests`.
+
+    static let minAspect = 0.5     // ~2:1 tall portrait — covers 9:16 phone video (0.5625) un-clamped
+    static let maxAspect = 1.91    // 1.91:1 landscape — covers 16:9 (1.78) un-clamped
+    /// 9:16 — the common phone-portrait aspect, shown until a clip's real aspect is backfilled. Defaulting to
+    /// the COMMON case means most clips' tiles don't resize (and thus don't animate-reflow) during scroll.
+    static let defaultAspect = 9.0 / 16.0
+
+    /// The one clamped aspect a post's carousel uses: the first clip with a resolved aspect, clamped to
+    /// `[minAspect, maxAspect]`; `defaultAspect` when none is known yet.
+    static func postAspect(_ clips: [MediaInput]) -> Double {
+        let raw = clips.compactMap(\.aspect).first ?? defaultAspect
+        return min(maxAspect, max(minAspect, raw))
+    }
 
     /// One session's media, snapshotted at the store edge.
     struct SessionBundle: Sendable {
@@ -125,7 +150,8 @@ enum ClipFeedComposer {
                     climbUUID: first.climbUUID,
                     exerciseID: first.exerciseId,
                     captureAt: meta.startedAt.addingTimeInterval(max(0, first.offsetSec)),
-                    clips: items))
+                    clips: items,
+                    aspect: postAspect(ordered)))
             }
         }
         return out.sorted { $0.captureAt == $1.captureAt ? $0.id < $1.id : $0.captureAt > $1.captureAt }

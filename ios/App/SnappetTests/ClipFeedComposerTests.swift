@@ -8,10 +8,10 @@ final class ClipFeedComposerTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func video(_ offset: Double, exercise: UUID? = nil, set: Int? = nil,
-                       climb: String? = nil) -> MediaInput {
+                       climb: String? = nil, aspect: Double? = nil) -> MediaInput {
         MediaInput(id: UUID(), kind: "video", offsetSec: offset, durationSec: 6,
                    exerciseId: exercise, setIndex: set, climbUUID: climb,
-                   localIdentifier: "asset-\(offset)")
+                   localIdentifier: "asset-\(offset)", aspect: aspect)
     }
 
     // MARK: - Grouping: one post per climb / exercise
@@ -128,5 +128,54 @@ final class ClipFeedComposerTests: XCTestCase {
         let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Empty", startedAt: start, angle: nil)
         XCTAssertTrue(ClipFeedComposer.posts(sessions: [.init(meta: s, clips: [])],
                                              climbMeta: [:], exerciseName: { _ in "?" }).isEmpty)
+    }
+
+    // MARK: - Adaptive tile aspect (prompt 92)
+
+    func testPostAspectKeepsNineBySixteenPortrait() {
+        // A standard 9:16 phone-portrait clip (0.5625) is within range → used AS-IS (no 4:5 floor), so the
+        // tile matches the video and fills full-height with no bars/crop.
+        XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: 9.0 / 16.0)]),
+                       9.0 / 16.0, accuracy: 0.0001)
+    }
+
+    func testPostAspectClampsExtremePortraitToMin() {
+        // Only an EXTREME-tall clip (2.5:1, 0.4) clamps up to the minAspect (0.5) tallest-tile bound.
+        XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: 0.4)]),
+                       ClipFeedComposer.minAspect, accuracy: 0.0001)
+    }
+
+    func testPostAspectClampsLandscapeTo191() {
+        // A 21:9 ultrawide (2.33) clamps DOWN to the 1.91 widest-tile bound.
+        XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: 21.0 / 9.0)]),
+                       ClipFeedComposer.maxAspect, accuracy: 0.0001)
+    }
+
+    func testPostAspectPassesThroughWithinRange() {
+        // A 1:1 square (1.0) is inside [0.8, 1.91] → used as-is.
+        XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: 1.0)]), 1.0, accuracy: 0.0001)
+    }
+
+    func testPostAspectDefaultsWhenUnknown() {
+        // No clip has a resolved aspect yet → the 4:5 default (until backfilled).
+        XCTAssertEqual(ClipFeedComposer.postAspect([video(0, climb: "c", aspect: nil)]),
+                       ClipFeedComposer.defaultAspect, accuracy: 0.0001)
+    }
+
+    func testPostAspectUsesFirstResolvedClip() {
+        // The carousel shares ONE height → the first clip WITH a known aspect wins (the 2nd here, since
+        // the first is still nil), clamped to range.
+        let clips = [video(0, climb: "c", aspect: nil), video(10, climb: "c", aspect: 1.2)]
+        XCTAssertEqual(ClipFeedComposer.postAspect(clips), 1.2, accuracy: 0.0001)
+    }
+
+    func testComposedPostCarriesResolvedAspect() {
+        // End-to-end through posts(): a 9:16 clip's true aspect is carried through un-clamped (within range).
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "S", startedAt: start, angle: 40)
+        let bundle = ClipFeedComposer.SessionBundle(meta: s, clips: [video(10, climb: "c", aspect: 9.0 / 16.0)])
+        let posts = ClipFeedComposer.posts(
+            sessions: [bundle],
+            climbMeta: ["c": .init(name: "C", gradeLabel: "6a", angle: 40)], exerciseName: { _ in "?" })
+        XCTAssertEqual(posts.first?.aspect ?? 0, 9.0 / 16.0, accuracy: 0.0001)
     }
 }

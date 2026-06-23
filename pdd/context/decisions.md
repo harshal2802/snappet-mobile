@@ -7121,3 +7121,425 @@ on scroll so audio can't blare; leaves muted autoplay for the visibility transfe
 new page muted) instead of stopping. The cross-card visibility race is already handled by the
 `postID`-matched guard (one full-width card exceeds 0.7 at a time); the fullscreen viewer + Recap are
 untouched (default `muted: false`, `onUnmute: {}`).
+
+## 2026-06-22 — Clips HR overlay tracks the video (prompt 91) — one slicer, the prompt-29 regression undone
+
+**Symptom (user-reported).** On the Clips feed the HR scorebug/curve "is not matching the video": the live
+BPM + chart dot freeze (often at the very start, curve blank) or sit at a near-constant value, feeling
+disconnected from the footage.
+
+**Root cause (deep review + adversarial verify — NOT the obvious suspect).** `offsetSec`/`durationSec` are
+populated correctly on every capture path (`creationDate − startedAt`, `asset.duration`) and `HRPoint.t`
+shares the same session origin, so the window *alignment* was sound. The bug: `ClipHROverlay.make` sliced
+HR with a **second, naive** slicer — `FeedMedia.clipHRWindow`'s strict `t≥offset && t≤end` filter + a crude
+±8s-of-`offset` fallback — instead of the project's ONE hardened `HRWindowSlicer` the Studio/export already
+use. That re-introduced the exact strict-window regression prompt-29 fixed. Concretely: (1) on sparse/real
+band data the strict window misses and the ±8s fallback can return a **single** sample → `maxT = 0` →
+`ClipHROverlay.fraction` hits its `maxT > 0` guard and returns `0` → the dot **freezes at the left edge**
+and the curve (needs ≥2 points) **doesn't draw**; (2) even with data, `maxT` (last in-window sample's
+clip-local t) `< durationSec`, so the dot **pins at the chart's right edge** for the tail of every loop.
+
+**Fix.** `FeedMedia.clipHRWindow` now delegates to `HRWindowSlicer.slice(hrSeries, start: offsetSec,
+span: durationSec ?? photoWindowSec)`, and `FeedMedia.clipHR` (the still poster's peak/avg chip) computes
+over that SAME sliced window. The slicer rebases to `[0, span]`, **brackets the window with interpolated
+endpoints** (so a window that spans the data reaches `t == span == durationSec == the AVPlayerLooper loop
+boundary`), **guarantees ≥2 points** (no single-sample freeze, no blank curve), and stays honestly empty
+only when the window is `> ±90s` (≈ the media-discovery pad) outside coverage. `ClipHROverlay.fraction`
+itself is unchanged — it already divides folded video time by the window's `maxT`, which now reaches the
+window edge, so the dot tracks 1:1. Net: the feed overlay, the export burn-in, and the playing video now
+share one slicer (WYSIWYG) and can't drift.
+
+**Behavior changes baked into tests.** Within coverage the slicer **interpolates instead of blanking**
+(the old "no sample within ±8s → empty" cases now draw an interpolated line); a single overlapping sample
+→ a ≥2-point flat line spanning the clip; out-of-coverage stays empty only beyond ±90s (an edge clip
+within the pad holds a flat last-known line). `FeedMediaTests` (5 cases) + `ClipHROverlayTests` (+1
+regression: single-sample no longer freezes) updated to the hardened-slicer contract; full `SnappetTests`
+green, 0 warnings.
+
+**Owed on-device.** The live sweep is device-verifiable only (the sim has no Photos/real clips): play a
+real clip inline + fullscreen and confirm the BPM/curve/dot move with the video (no frozen overlay), and
+that the poster chip matches.
+
+## 2026-06-22 — Clips adaptive tile sizing (prompt 92) — no black bars, persist-the-aspect
+
+**Symptom (user-reported).** Every Clips post rendered in a fixed full-width × **460pt** box with an
+aspect-**fit** video, so a portrait clip showed pillarbox bars (the reported screenshot) and a landscape
+clip would letterbox.
+
+**Approach — persist the aspect, don't read it on the render path.** No dimension was stored on a clip,
+and the only orientation-correct aspect source (`StudioComposer.sourceAspect`) is async — unsuitable to
+call per-row during scroll. So: (1) `SessionMedia` gains an additive optional `aspectRatio: Double?`
+(width/height, oriented) → SwiftData **lightweight migration** (the `assignedClimbUUID` pattern). (2) New
+**`ClipAspectResolver`** actor (Services, device I/O) resolves the oriented aspect — photo via
+`PHAsset.pixelWidth/pixelHeight` (orientation baked in), video via `naturalSize × preferredTransform` —
+cached by id. (3) The feed **lazy-backfills** it: `ClipPostCard.task(id:)` resolves the post's first clip's
+aspect on appearance and writes it back to `SessionMedia.aspectRatio` (one-shot, persisted), so **existing**
+clips converge with no app-wide migration and no capture-path churn; the `@Query` re-render resizes the
+tile. (4) Pure math stays in the composer: `MediaInput` carries `aspect`, and `ClipFeedComposer.postAspect`
+clamps the first clip's aspect IG-style to **[0.8 (4:5) … 1.91 (1.91:1)]** (default 0.8) onto
+`ClipFeedPost.aspect`. (5) `ClipPostCard` measures its full-bleed width (a `PreferenceKey`) and sets the
+carousel `.frame(height: width / post.aspect)`, replacing the fixed `460`. `.resizeAspect` stays — once the
+box matches the clip aspect there are no bars.
+
+**Decisions / trade-offs.** A `TabView` carousel shares ONE height across pages, so a post collapses to a
+single clamped aspect (the **first** clip's); a rare mixed-orientation post keeps that height and the
+off-aspect page fits-with-minor-bars (accepted — most posts are single-orientation). Backfill is **first
+clip only** (the one that drives the tile height) → minimal asset reads. The aspect is **not** round-tripped
+through `SnappetBackup` (it re-resolves lazily on first view — a restore just re-backfills). The schema doc
+(`snappet-core-schema.md`) tracks only HighlightEngine core types, not app `@Model`s, so the new field is
+recorded here, not there.
+
+**Owed on-device.** The sim has no Photos library, so the resolver returns nil and every tile shows the
+4:5 default (UITests stay green on that). Device-verify: a portrait clip → tall tile, a landscape clip →
+short tile, both with **no black bars**; existing clips resize once on first view. `ClipFeedComposer`
+clamp/pick/default is unit-tested (6 cases); full `SnappetTests` + `ClipsFeedUITests` green, 0 warnings.
+
+## 2026-06-22 — Clips audio + mute toggle (prompt 93) — reverses the silent-switch decision, IG-style
+
+**Symptom (user-reported).** "Audio from video is missing" + a request to mute/unmute "the way Instagram
+does it".
+
+**Root cause.** The app **never configured an `AVAudioSession`** (a full-tree grep found zero
+`setCategory`), so playback ran on the default ambient category, which the hardware ring/silent switch
+silences — clip audio was inaudible even when `player.isMuted == false`. This was a recorded deliberate
+choice the Clips feed inherited (decisions.md:4703, "audio respects the silent switch — no audio-session
+override"); prompt 93 **reverses it for Clips**. The mute plumbing was already correct (single source of
+truth `playingClip.muted`), and there was no "tap-to-play stays muted" bug — the gap was the session +
+a visible control.
+
+**Fix.** (1) New **`ClipAudioSession`** (Services): `activate()` → `setCategory(.playback)` +
+`setActive(true)` (plays over the silent switch, takes audio focus); `deactivate()` →
+`setActive(false, .notifyOthersOnDeactivation)` (restores the user's music). Failures swallowed — an
+audio-session hiccup must never crash playback. (2) Driven by the **single source of truth**: a
+`.onChange(of: playingClip)` in `ClipsFeedView` activates when a clip is unmuted and deactivates otherwise
+(re-muted / scrolled away → `playingClip` clears / left the feed via `.onDisappear`) — one place, no
+scattered calls. **Chosen behavior (confirmed with the user): interrupt** other audio while unmuted, like
+Instagram/TikTok (plain `.playback`, not `.mixWithOthers`/`.duckOthers`). (3) A **top-leading**
+`speaker.slash.fill`/`speaker.wave.2.fill` toggle in `ClipPosterView`, shown only on the **playing** video,
+generalizes the old `onUnmute` closure to **`onToggleMute`** (flips `playingClip.muted` both ways); a tap on
+a muted autoplay surface still unmutes via the same closure. Placed top-leading so it can't collide with the
+bottom HR scorebug (full-width) or the top-trailing page counter.
+
+**Why the control lives in the caller, not `ClipMediaSurface`.** The surface is shared with the fullscreen
+`MediaPage`, and the feed's scroll-stop/transfer logic reads `playingClip.muted` — so mute state stays in
+the caller (the established prompt-90 discipline).
+
+**Owed on-device.** Audio + the silent switch + other-app interruption can't be unit-tested: on a device
+with music playing and the phone on silent, unmuting a clip should play its audio and pause the music;
+re-muting / scrolling away should resume it; the toggle icon should track state across autoplay + tap. Full
+`SnappetTests` + `ClipsFeedUITests` green, 0 warnings.
+
+## 2026-06-22 — Clips tap-to-fullscreen + transport (prompt 94) — reuse the viewer, add play/pause + scrubber
+
+**Ask (user).** Tap a playing clip → fullscreen, with play/pause and a scrubbable timeline.
+
+**Reuse, don't rebuild.** The Recap `PagedMediaViewer`/`MediaPage` (MediaBrowserView.swift) already presents
+a `fullScreenCover` paged player that plays the real clip, is single-active, and pins the `ClipHROverlay`
+scorebug — it was missing exactly the two controls asked for. So a new `MediaBrowserView.clipsViewer(...)`
+factory builds it with `card: nil` (no Recap Share), the session's **WYSIWYG `hrTile`**, and a new
+`transport: true` flag. **Not** `AVPlayerViewController`/`VideoPlayer` — the system transport can't composite
+the burned HR overlay (the reason the app uses the controls-free `StudioPlayerLayerView` everywhere).
+
+**Transport.** New `ClipPlaybackController` (`@Observable`) + `MediaTransportBar` (play/pause · `m:ss`
+scrubber · `m:ss` · mute). For clean `0…duration` scrubbing the fullscreen page plays a **non-looping**
+`AVPlayer` (a new `controller` param on the shared `ClipMediaSurface` switches it from the inline
+`AVPlayerLooper`); the surface attaches that player to the controller, which observes time via
+`addPeriodicTimeObserver` (`MainActor.assumeIsolated` — the observer fires on `.main`). **The HR dot follows
+the scrub for free**: the surface's existing playhead ticker reads the same `player.currentTime()` (a seek
+moves it), and its rate-gate is relaxed when a controller drives it so the dot tracks even while paused.
+`ClipMediaSurface.player` widened `AVQueuePlayer? → AVPlayer?` to hold either.
+
+**Interaction.** A new `onSurfaceTap` override on `ClipMediaSurface`: in the FEED, tapping the **playing**
+inline video opens fullscreen (`ClipsFeedView.fullScreenCover(item: ClipFullscreen)` scoped to the post's
+clips at the current page). The **still-poster tap still plays inline** (prompt 85 preserved) and the inline
+**mute toggle** (prompt 93) stays — so a non-autoplay still is *tap → play, tap → fullscreen* (two steps), an
+autoplay clip is *tap → fullscreen* (one). Literal reading of the user's "tap the playing video →
+fullscreen"; one-tap-from-still is a trivial follow-up if wanted.
+
+**Audio.** The Clips fullscreen viewer takes the audio session on appear (`transport`-gated, so Recap is
+untouched) and the feed re-asserts its mute state on the cover's `onDismiss`. The bar's mute button toggles
+the fullscreen player directly.
+
+**Owed on-device.** The sim has no Photos, so the feed is empty there — the interactive tap→fullscreen→scrub
+flow can't be UITested on the sim (`ClipsFeedUITests` only covers the empty state). Build + full
+`SnappetTests` + `ClipsFeedUITests` green, 0 warnings. Device-verify: tap a playing clip → fullscreen;
+play/pause; drag the timeline → the video seeks and the HR dot follows; mute; close → back at the post.
+**Watch for a black inline/fullscreen frame (R12).**
+
+**Adversarial review fixes (folded into the prompt-94 PR; a 15-agent review of the 91-94 diff confirmed 7
+real bugs).** (1) **Doubled audio/decode** — `onOpenFullscreen` now sets `playingClip = nil` first so the
+inline looping player tears down (a `.fullScreenCover` presents OVER the tree → the inline surface got no
+`.onDisappear`, so it kept decoding + emitting audio under the fullscreen player). (2) **Paused clip
+auto-resumed on page-swipe-away-and-back** — `ClipMediaSurface.onChange(of: isActive)` now resumes only when
+`controller == nil || controller?.isPlaying` (the inline looping path still always resumes; initial autoplay
+is unaffected — it flows through `onChange(of: state)`). (3+4) **Scrubber range / dead Play-at-end** — the
+controller's duration now comes from the item's **real** `asset.load(.duration)` (PHAsset.durationSec is
+approximate → broke the end-of-clip replay gate + the scrubber's 0…duration map), falling back to the stored
+value. (5) **HR dot wrapped to 0 at the exact end** of the non-looping fullscreen clip — `ClipHROverlay.fraction`
+gained a `loops` flag (`controller == nil`): looping folds (`videoTime == loop → 0`, matching the looper),
+non-looping **clamps** (rests at 1.0 on the last frame). (6) **Inverted tile aspect for rotated videos** —
+`ClipAspectResolver` no longer falls back to a video's pre-rotation `pixelWidth/Height` (which the feed
+persists); it returns `nil` so the tile keeps the 4:5 default, and it **negatively caches** unresolved ids so
+an iCloud-only clip isn't re-read on every scroll-back. (The aspect fix logically belongs to prompt 92 but is
+applied in the prompt-94 PR to keep the stacked branches intact.) All sim-green after: build + full
+`SnappetTests` + `ClipsFeedUITests`, 0 warnings.
+
+**On-device sizing follow-up (prompt 92, MrRobot 2026-06-22).** The first device build STILL pillarboxed a
+portrait clip — two compounding causes: (a) the IG-style clamp floored the aspect at **0.8 (4:5)**, so a 9:16
+video (0.5625) got a 4:5 tile → aspect-fit left side bars; and (b) `ClipAspectResolver`'s `requestAVAsset` +
+`loadTracks` path returned a **track-less asset on-device** → a nil aspect → the feed used the default 0.8.
+Fixes: (1) `ClipAspectResolver` now reads the **oriented poster-frame size** via
+`PHImageManager.requestImage(.aspectFit, .highQualityFormat)` (a single callback, correct for video AND
+photo — the rendered poster is always display-oriented), success-cached; (2) the clamp widened to
+**[0.5 … 1.91]** so a 9:16 portrait video keeps its true (tall) aspect and the tile matches it; (3)
+`StudioPlayerLayerView` gained a `videoGravity` param and the Clips inline player passes `.resizeAspectFill`
+(via a `fill` flag on `ClipMediaSurface`) so a clip **fills its aspect-matched tile with no black bars**
+(the fullscreen viewer keeps aspect-fit to show the whole clip). Net: tile matches the video → fills exactly
+→ no bars, no crop in steady state. Composer clamp tests updated; built + installed on MrRobot.
+
+**On-device autoplay-flicker follow-up (prompt 90, MrRobot 2026-06-22).** With autoplay ON, scrolling made
+videos start/stop with a flicker: every card crossing the 0.7 visibility threshold mid-scroll swapped
+still→player (load→spinner→video) and the leaving card swapped back — rapid churn on a fling. Two fixes:
+(1) **Settle-gated autoplay** — the feed publishes `isScrolling` (from `onScrollPhaseChange`); a card only
+**starts** muted autoplay when the scroll is **idle** (`onScrollVisibilityChange` gates `start` on
+`!isScrolling`, and an `onChange(of: isScrolling)` starts the on-screen card on settle). A card leaving the
+screen still clears, and the originally-playing clip keeps playing until it scrolls off — so at most one
+start + one stop per scroll gesture, no mid-fling churn. (2) **No swap flash** — `ClipPosterView` now keeps
+the `ClipThumbnail` still as the ALWAYS-present ZStack base with the player overlaid on top (was an
+either/or swap), and `ClipMediaSurface`'s loading state is **transparent** (`Color.clear`, was a
+`ProgressView`) so the still shows through while the player loads — no spinner/black flash on start, and the
+still reappears instantly on stop. Build + `ClipsFeedUITests` green; built + installed on MrRobot.
+
+**On-device scroll-feel follow-up — match the Instagram feed (prompt 90/92, MrRobot 2026-06-22).** Even
+after the above, scrolling "felt weird". Studying an IG-feed screen recording (frames via ffmpeg): IG feed
+media is a **consistent ~4:5** tile (header above + action bar/caption below stay visible — NOT a
+full-screen 9:16), so the feed never reflows. My earlier "match the full video aspect" made tiles full-9:16
+**and** re-grew them as each aspect resolved async (with a 0.2s animation) → reflow-during-scroll = the weird
+feel. Reverted to the IG model: (1) clamp back to **4:5 [0.8 … 1.91]** with `defaultAspect == minAspect`
+(0.8) so a portrait clip's tile is 4:5 from first render and **never resizes** when its aspect resolves
+(the inline `.resizeAspectFill` crops the 9:16 to 4:5 → no bars, consistent height — exactly IG); (2)
+**removed the `.animation(value: carouselHeight)`** (no animated grow); (3) **measure the feed width ONCE**
+at the feed level (a `GeometryReader` wrapping the `ScrollView`, passed down as `contentWidth`) instead of a
+per-card `PreferenceKey` that popped the height on first layout. Trade-off vs the previous build: a 9:16
+clip is now **cropped** to 4:5 (top/bottom), the IG convention — if the full clip is wanted back, widen
+`minAspect` toward 0.5625 and keep `.resizeAspectFill` (taller tiles, no crop). Composer clamp tests
+reverted; `ClipFeedComposerTests` + `ClipsFeedUITests` + build green; built + installed on MrRobot.
+
+**On-device: reverted to full-aspect tiles + WARM adjacent players (prompt 90/92, MrRobot 2026-06-22).** The
+user preferred the full-height (no-crop) tiles over the IG 4:5 crop, so: clamp widened back to **[0.5 …
+1.91]** (a 9:16 clip fills full-height, no bars, no crop) and the **height animation restored**
+(`.animation(value: carouselHeight)`). To make the scroll/carousel feel smooth without the IG-style
+consistent height, added **warm (preloaded) players** — the real win paired with the settle-gating: while
+you scroll, neighbouring clips' players load **paused** so the one you settle on / swipe to plays instantly
+(no still→video lag). `ClipMediaSurface` already loads on mount and plays on `isActive` flip, so a clip is
+"warm" simply by mounting it with `isActive:false`. `ClipPosterView` split `isPlaying` → **`live`** (mount
+the player) + **`playing`** (isActive); only the playing clip is interactive (tap→fullscreen, mute, HR
+sweep) and warm clips `allowsHitTesting(false)` (taps fall through to the still). `ClipPostCard.liveFor(idx)`
+bounds the warm set: the on-screen post warms current page ± its carousel neighbours; any near-screen post
+(new low `onScrollVisibilityChange(threshold: 0.02)` signal) warms just its current page; **gated on
+`autoplayActive`** (no extra players when autoplay is off) — so ~3 players on the centred post + 1 per
+visible neighbour (1 playing, rest paused). ⚠️ **R12 watch:** this is the multi-inline-player scenario the
+codebase warns about — must be device-verified with autoplay ON for a black inline frame before trusting it.
+Build + `ClipFeedComposerTests` + `ClipsFeedUITests` green; built + installed on MrRobot.
+
+**On-device: kill the residual scroll/carousel flicker at the root (prompt 90/92, MrRobot 2026-06-22).**
+Still flickering — three root causes, all fixed so the feed shows **stable posters during scroll** (only a
+single already-playing video translates; everything else is a still): (1) **Warm players load INVISIBLY** —
+the warm `ClipMediaSurface` is `.opacity(playing ? 1 : 0)` so it preloads behind the still and only reveals
+(0.2s crossfade) when it actually becomes the active clip; before this, warm players showed their first video
+frame as they mounted/unmounted mid-scroll = flashing. (2) **Don't stop the playing clip mid-scroll** — the
+`onScrollVisibilityChange(0.7)` handler no longer clears `playingClip` when a card drops below 70% (that
+froze the video to its poster on every card you flung past); the playing clip keeps playing as it translates
+and the settle handler switches to the newly-centred clip cleanly. (3) **Default tile aspect → 9:16** (the
+common phone-portrait, was 4:5) so a portrait clip's tile matches the default from first render and **doesn't
+animate-grow** when its aspect resolves (that reflow-during-scroll was the other flicker). The height
+animation stays (for the rare landscape resize). Net: warm = loaded-but-hidden, so the smoothness (instant
+play on settle/swipe) is kept while the visual churn is gone. `ClipFeedComposerTests` + build green; on MrRobot.
+
+**On-device: carousel-swipe flicker (prompt 90/94, MrRobot 2026-06-22).** The blanket `opacity(playing?1:0)`
+fixed the vertical scroll but flickered carousel swipes: a sibling page's warm player was hidden, so a swipe
+had to **crossfade it in from invisible while it started playing** — the poster↔moving-video blend was the
+flicker. Refined: hide a warm player ONLY when it's the **vertically-visible current page of a feed
+NEIGHBOUR** (`!playing && isCurrentPage && !postOnScreen`). Carousel siblings are off to the side (clipped
+by the `TabView`), so they never cause scroll-flash — they now stay **visible at their paused frame**, and a
+swipe just slides an already-correct frame into place and starts playing (no crossfade). `ClipPosterView`
+gained `isCurrentPage` (idx == page) + `postOnScreen` (the card's `isOnScreen`). Build + `ClipsFeedUITests`
+green; built + installed on MrRobot.
+
+**On-device: the carousel "flicker" was a JERK (dropped frames), fixed at the perf root (prompt 90/92,
+MrRobot 2026-06-22).** A device UITest (`xcresulttool` screenshot burst) ruled out a black flash — it's a
+dropped-frame stutter. A 4-agent perf review (`clips-swipe-perf` workflow) found the swipe-frame costs:
+(1) every carousel page rendered an `HRTileView` whose `glassCard` is a live **`.ultraThinMaterial` backdrop
+blur** + shadows — `TabView(.page)` keeps ±1 siblings resident, so ~3 blur panels re-composite **every drag
+frame**; (2) my "visible warm siblings" change put **2-3 live `AVPlayerLayer`s** into that compositing too;
+(3) `.animation(value: carouselHeight)` implicitly re-lays-out the paged container when aspect resolves;
+(4) at settle, `composedPosts()` (called unconditionally in `body`) + per-page `ClipHROverlay.make` + a new
+`AVPlayer` mount all land on the page-change `playingClip` write. Drag-frame fixes (this round, low-risk):
+**render the glass HR tile only on `isCurrentPage`** (no sliding blur panels on siblings); **warm siblings
+`opacity 0`** (their `AVPlayerLayer` is skipped in compositing — the still poster is the visible frame —
+instant reveal, no crossfade); **gate the height animation on `!isScrolling`**. Settle-frame costs (memoize
+`composedPosts`/payloads, defer the warm mount) are the next round if a residual hitch remains. Built +
+installed on MrRobot; the one-off `ClipsCarouselDiagnosticTests` (device-only) was removed.
+
+**On-device, round 2: kill the HR-tile backdrop blur on the swipe (prompt 92, MrRobot 2026-06-22).** A
+frame-by-frame review of the user's carousel screen-recording (ffmpeg scene-detect) showed the swipe
+produces **paired scene-cuts ~33ms apart** (a discontinuity, not a glide) and confirmed autoplay is ON (the
+mute button shows → warm-loading IS active). The residual jerk was: (1) the `.ultraThinMaterial` **live
+backdrop blur** is re-rasterized every drag frame as the tile slides — the dominant per-frame GPU cost; and
+(2) my round-1 fix gating the HR overlay to `isCurrentPage` made it **pop in/out** each swipe. Fixes:
+`HRTileView` gained a **`liveBlur` flag** (default true = studio glass); the Clips inline poster passes
+**`liveBlur: false`** → a flat black-30% scrim instead of the material — which is **exactly what the export
+burns** (the export can't live-blur; comment at HRTileView.swift:53-55), so it's correct, not just cheaper —
+and **un-gated** the HR overlay (back on every page, no pop, now that it's cheap to slide). **Answer to "is
+it warm-loading prev/next?": yes when autoplay is on (`liveFor` gates on `autoplayActive`) — but that was
+never the jerk; warm-loading makes playback instant, it doesn't make the slide cheap. The jerk was the
+blur.** Settle-frame costs (cache `composedPosts`, memoize payloads, defer the warm mount) remain as the
+next round if an end-of-swipe hitch persists. Build green; built + installed on MrRobot.
+
+**On-device, round 3 — the jerk is MAIN-THREAD work on the page change, not compositing (prompt 92,
+MrRobot 2026-06-22).** Two decisive user observations: (a) removing the blur didn't help (so the GPU
+blur wasn't it), and (b) a **slow swipe is smooth and the next clip plays mid-swipe, but a normal/fast
+swipe jerks**. That speed-dependence is the tell: a fast swipe runs a **fast-snap animation** that competes
+with the main thread, and the carousel page change does heavy main-thread work right on that snap frame —
+so frames drop. The work: a page change writes `playingClip`, which re-runs `ClipsFeedView.body` →
+`composedPosts()` (buckets all media, sorts logs, runs the composer) **+** per-page `ClipHROverlay.make`
+(HR-window slice + `WorkoutHRStats`) **+** mounting a NEW `AVPlayer` for the next carousel neighbour. Fixes:
+(1) **cache the derived feed** — `cachedPosts`/`cachedHRContext`/`cachedHRTiles`/`cachedPayloads` rebuilt by
+`rebuildFeed()` ONLY when a cheap Equatable `feedKey` (counts + resolved-aspect count + newest project
+`updatedAt`) changes, via `.task` + `.onChange(of: feedKey)` — so a `playingClip`/`page` write no longer
+recomputes the feed or re-slices every clip's HR payload; (2) **defer the warm-neighbour mount** — `liveFor`
+warms the current page immediately but the ±1 neighbours off a **`warmPage`** copy updated ~400ms AFTER the
+swipe settles, so the next `AVPlayer` is created off the snap frame. (The earlier video↔poster opacity fix
+stays — outgoing clip pauses in place.) Build + `ClipsFeedUITests` green; built + installed on MrRobot.
+
+
+**On-device, round 4 — mask the carousel takeover with an `isReadyForDisplay`-gated crossfade (prompt
+92, MrRobot 2026-06-22, deep-research-backed).** After rounds 1–3 (blur off, feed cached, warm mount
+deferred) reduced the paired scene-cuts to a single, smaller discontinuity, the residual flicker was the
+**moment the next clip "takes over."** A 5-angle deep-research workflow (98 agents, adversarial 3-vote
+verify) returned ONE high-confidence, Apple-sourced fix and **refuted the big rewrites**: TabView(.page)
+"performs poorly even on M1" → *refuted 0-3*; "TikTok needs UICollectionView not SwiftUI" → *refuted 0-3*;
+"player pooling saves tens of ms" → *refuted 0-3*; network prefetch windows → *not applicable to local
+PHAsset video*. The surviving fix (Apple `AVPlayerLayer.isReadyForDisplay` docs + WWDC 2019 §503): **a layer
+mounted while `isReadyForDisplay == false` presents NO content until it flips true — that ~1-frame gap is the
+flash.** Implementation: `StudioPlayerLayerView` gained a Coordinator that **KVO-observes
+`isReadyForDisplay`** and fires `onReadyForDisplayChange` on the main actor (re-binding on player re-point so a
+recycled layer resets to not-ready); `ClipMediaSurface` holds the video **transparent (`layerReady=false`) so
+the caller's `ClipThumbnail` poster shows through**, then **dissolves the video in over 0.18s** when the first
+frame is ready. frame-0 ≈ poster ⇒ a clean dissolve, not the earlier mid-playback ghost. This is *exactly*
+the "transition animation to mask the flicker" the user asked for, done the Apple-recommended way — and it
+needed **no carousel rewrite** (TabView stays). Deliberately did NOT add `AVPlayer.preroll` yet (kept the
+change focused on the verified #1 lever); it's the next lever if the play-start still hitches at takeover.
+Sim + device builds green; built + installed + launched on MrRobot for user verification.
+
+**On-device, round 5 — eliminate the takeover flick at the SOURCE: frame-0 posters (prompt 95, MrRobot
+2026-06-22).** 120fps frame analysis proved the slide is frame-CLEAN (no dropped/blank frame); the residual
+"flick" is a content discontinuity at the instant a swipe centers the next clip. A 7-agent design workflow
+(1 mapper · 3 coded approaches · 3 adversarial judges) localized the root: `ClipThumbnail`'s video still came
+from `AssetPosterLoader.poster` → `PHImageManager.requestImage`, which for a VIDEO returns Photos' arbitrary
+key-frame thumbnail — **not frame-0** — so the round-4 `isReadyForDisplay` crossfade revealed the player's
+*actual* frame-0 over a *different* still = a visible image JUMP (only on normal/fast swipes, where the page
+centers on its poster before the warm player decodes; slow swipes were already smooth — the user's exact
+tell). Judges (2 of 3, third concurring) chose **eliminate** over **mask**, and ALL THREE flagged a
+`.simultaneousGesture(DragGesture)` on the `TabView(.page)` as the one ship risk (scroll/hit-test
+contention) → deferred. Shipped: (1) **`AssetPosterLoader.videoFrameZero`** — `requestAVAsset` +
+`AVAssetImageGenerator` at `CMTime.zero`, zero tolerance, `appliesPreferredTrackTransform`, 3× size, cached,
+**falls back to `poster()`** (SceneScorer convention); `ClipThumbnail` video → frame-0, photos unchanged. Now
+the still == the frame the layer first displays ⇒ the crossfade is image-identical = invisible, AND an
+un-warmed fast-swipe page centers on the CORRECT frame (no race to win). (2) **`preroll(atRate:1.0,
+completionHandler: nil)`** on the looping queue — pre-decode so first `play()` has no static→motion stutter
+(a judge caught that the `await queue.preroll(...)` the design agents wrote does NOT compile — `preroll` is
+closure-only, no async overload). (3) **HR-dot easing** — `.animation(.easeOut(0.18), value: playing)` on the
+scorebug so it glides into the live sweep instead of snapping; the `playingClip`/`fraction` SSOT untouched.
+**Decision — frame-0 is local-only** (`isNetworkAccessAllowed=false`, mirroring `poster()` for fast posters):
+an iCloud-only/not-yet-downloaded clip degrades to the Photos thumbnail until local (the live player allows
+network, so its frame-0 may briefly differ for that one clip) — accepted edge. Deferred the earlier-warm
+gesture; revisit only if a residual flick survives on very fast flicks of heavy clips (and prefer a
+non-gesture warm). Sim + device builds green; built + installed + launched on MrRobot for frame-check.
+
+**Round 5.1 — two on-device crashes opening Clips, fixed (prompt 95, MrRobot 2026-06-22).** The first
+round-5 install crashed on opening the Clips tab. Pulled the device crash reports
+(`xcrun devicectl device copy from --domain-type systemCrashLogs`) — two distinct bugs, both in the
+round-5 additions, neither caught by sim (sim has no Photos so `videoFrameZero` no-ops there):
+(1) **SIGTRAP / `dispatch_assert_queue` in `AssetPosterLoader.videoFrameZero`** — `AssetPosterLoader` is
+`@MainActor`, so the `requestAVAsset` (and `generateCGImagesAsynchronously`) completion CLOSURES inherited
+MainActor isolation, but `PHImageManager` delivers them on a BACKGROUND queue → Swift 6's runtime executor
+check trapped. (This is why the other `requestAVAsset` sites — `ReelExporter`/`SceneScorer`, NOT `@MainActor`
+— never crashed, and why `poster()`'s `requestImage` survives: it delivers on main.) Fix: moved the
+PHImageManager/AVAssetImageGenerator work into a **`nonisolated` static `extractFrameZero`** that returns a
+Sendable `UIImage`, so the callbacks run non-isolated on their background queues and nothing non-Sendable
+crosses back. (2) **`NSInvalidArgumentException`: "AVPlayer cannot service a preroll request until its status
+is ReadyToPlay"** — the round-5 `queue.preroll(atRate:1.0, completionHandler:nil)` was called right after
+constructing the `AVQueuePlayer`, before its item was ready → AVPlayer THROWS. **`preroll` REMOVED** (it's a
+secondary lever; the frame-0 poster + `layerReady` gate are the real takeover fix). A status-gated preroll can
+be re-added later only if a play-start hitch proves perceptible on device. Process note: the takeover
+smoothness AND these crashes are device-only — sim cannot validate this path; device-burn on MrRobot is
+mandatory. Rebuilt; Clips tab now opens + stays alive on MrRobot (verified pid alive, no new crash log).
+
+**Round 6 — the playing-swipe "flicker" was a ~250ms MAIN-THREAD STALL, not a flash (prompt 96, MrRobot
+2026-06-22).** User: "not smooth when video is playing or live play is on." Frame analysis of a 60fps
+on-device recording proved there is NO discrete flicker frame (no black/poster/white flash anywhere — the
+round-5.x `layerReady` LATCH already removed the loop-seam poster flash). The real defect: at each carousel
+swipe the screen FROZE ~200–317ms then JUMPED to the new clip — the paged-slide animation never rendered.
+(Caveat learned: iOS screen recordings are VFR + emit a ≤50ms frame when static, so a stall reads as REPEATED
+frames, not a PTS gap; measure freeze duration by resampling to CFR 60fps and counting near-identical runs
+that end in a content jump — NOT by PTS gaps.) A 5-agent trace workflow localized it: the incoming page's
+`AVQueuePlayer`+`AVPlayerLooper` was built COLD on the MainActor **on the swipe-snap frame**, because the
+warm-ahead timer was **400ms — longer than the measured ~250ms swipe cadence**, so a fast swipe always reached
+an un-warmed page and the heavy looper build (track/format setup + a 2nd decoder spinning up while the old one
+plays) blocked main across the snap. Both reviewers REJECTED pre-warm-ALL-clips (R12), pause-during-scroll (no
+TabView horizontal scroll-phase signal), the `.simultaneousGesture` (scroll-contention risk), and an off-main
+player pool (R12 black-box) — it's a TIMING bug, not warm-set-size or scroll-system. Shipped (3 low-risk):
+(1) **warm defer 400ms → 80ms** (ClipsFeedView `onChange(of:page)`) so the page you swipe to is pre-built
+BEFORE the snap; the `if page==newPage` guard still skips pages you fling past; ±1 bound kept (R12); (2)
+**`await Task.yield()` before the AVQueuePlayer/AVPlayerLooper build** in `ClipMediaSurface.load()` so even a
+cold mount defers the heavy build one runloop turn and the slide renders (isActive/muted/state read live after
+the hop — no off-center autoplay regression); (3) **off-main force-decode of the frame-0 poster** in
+`AssetPosterLoader.decoded()` (CGContext bake in the nonisolated helper) so round-5's `AVAssetImageGenerator`
+bitmap doesn't decode on the snap commit; kept 3× size (matches the layer for the crossfade). Also folded in
+the round-5.x **latch** (`onReadyForDisplayChange` only ever sets `layerReady=true`; reset only on teardown)
+that killed the loop-seam poster flash. **Measured before/after on the swipe windows: swipe-stall freezes
+10→0, longest 317ms→0ms, time-frozen-while-swiping 15%→0%; the slide now renders frame-by-frame.** Device-only
+(sim has no Photos); built + installed + verified on MrRobot.
+
+**Round 7 — the swipe freeze was a WHOLE-FEED re-render cascade + a main-thread player build (prompt 97,
+MrRobot 2026-06-22).** After rounds 1–6 didn't stick, frame analysis of a fresh recording proved (right-edge
+crop) that during a swipe the carousel does NOT slide AND the playing video is frozen — i.e. a true
+MAIN-THREAD BLOCK (~250–600ms), then a jump. (Measurement caveat re-confirmed: iOS recordings are VFR and
+emit a frame every ~50ms when static, so a stall reads as REPEATED frames; resample to CFR 60fps and look for
+frozen runs that end in a content jump.) Two code-visible causes neither of rounds 1–6 had touched:
+**(1) Re-render cascade.** `playingClip` + `isScrolling` were plain `@State` on `ClipsFeedView`; a `@State`
+write UNCONDITIONALLY re-runs the whole view `body`, so every swipe re-evaluated the entire feed `ForEach` of
+post cards — each a `TabView(.page)` of AVPlayer-backed pages. The prompt-92 *caches* cached the DATA but the
+VIEW TREE still re-evaluated. Fix: lifted both into `@MainActor @Observable final class ClipFeedPlayback`,
+passed DOWN BY REFERENCE (a `let`, which establishes no SwiftUI dependency), and read `playback.playing` ONLY
+in the leaf `ClipPosterView` computeds (`playing`/`live`/`muted`). `ClipPostCard.body` reads only
+`playback.isScrolling` (which a horizontal carousel swipe never flips — it's driven by the OUTER vertical
+scroll), and `liveFor`→`warmLive` uses card `@State` only. Net: a swipe re-renders ONLY the two affected leaf
+pages, NOT the feed body and NOT sibling cards. Audio session moved to the model's `playing` didSet (with a
+`!= oldValue` guard) so no `.onChange(of: playing)` re-reads it in the feed body. **Verified by a 3-reviewer
+adversarial workflow: correct-ships, no regression (tap-play/mute/fullscreen/autoplay/HR all equivalent), no
+retain cycle, no must-fix.** **(2) Residual player build.** The reviewers flagged (autoplay-ON only — which
+is the user's repro) that the synchronous `AVQueuePlayer`+`AVPlayerLooper` build (track/format + KVO/boundary
+observers + enqueue) can STILL land on the snap frame when you reach an un-warmed page, and the prompt-96
+`Task.yield`/80ms-warm are a race, not a guarantee. Fix: **build the player OFF the main thread** —
+construct on `DispatchQueue.global(qos:.userInitiated)` inside a `withCheckedContinuation` (muted snapshot +
+boxed `AVPlayerItem` cross the `@Sendable` hop), then assign the boxed `(AVQueuePlayer, AVPlayerLooper)` to
+`@State` back on main. The player is only USED (layer assign, play/pause) on main, after. Confirmed CRASH-FREE
+on MrRobot (off-main `AVPlayerLooper` construction was the one safety risk — pulled systemCrashLogs, none new).
+Builds green (sim+device); installed + launched + alive on MrRobot. Pending: user device recording to confirm
+the freeze is gone (sim can't validate — no Photos).
+
+**Round 7b — warm the incoming clip earlier so the snap "completes" smoothly (prompt 97 cont., MrRobot
+2026-06-22).** After round 7 killed the freeze, the user reported the SECOND HALF of the swipe (the snap
+after the gesture) feels abrupt on fast/normal swipes but fine super-slow — the tell that the incoming
+player hadn't DECODED its first frame before the snap (slow swipes gave it the lead time). Fix: `warmLive`
+now warms the ±1 neighbours off the CURRENT `page` DIRECTLY (removed the round-3 80ms-delayed `warmPage`
+copy + state + Task) — safe now that the build is off-main + cascade-free (prompt 97), so eager warming
+can't block the slide. Warming during the DWELL lets the neighbour's AVPlayerLayer reach isReadyForDisplay
+(decode frame-0) BEFORE the swipe, so a fast swipe lands on an already-decoded frame. Also lengthened the
+`layerReady` reveal crossfade 0.18s→0.32s ease-in-out so the rare un-warmed reveal completes softly. NOTE
+for next step: the raw SNAP GEOMETRY speed is fixed by the stock `TabView(.page)` (UIKit-internal, not
+tunable); if the slide itself still feels too fast after this, the next move is a custom UIScrollView-backed
+pager (directional-locked vs the vertical feed) with a tunable snap duration/curve. Builds green; installed
+on MrRobot.

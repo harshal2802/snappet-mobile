@@ -30,14 +30,28 @@ struct ClipMediaSurface: View {
     /// A tap on a muted (autoplaying) surface calls this so the CALLER can flip `playingClip.muted` (the
     /// single source of truth) — keeping the feed's "stop on scroll" / "transfer" logic accurate.
     var onUnmute: () -> Void = {}
+    /// Fullscreen transport (prompt 94): non-nil → play this clip on a NON-looping `AVPlayer` and attach it
+    /// here so the caller's `MediaTransportBar` can play/pause + scrub. nil (the feed/Recap inline) loops.
+    var controller: ClipPlaybackController? = nil
+    /// Overrides the default tap (play/pause): the Clips feed passes this to open fullscreen on a tap.
+    var onSurfaceTap: (() -> Void)? = nil
+    /// Fill the surface (aspect-FILL, crop) rather than aspect-fit (letterbox). The Clips feed tile passes
+    /// `true` so a clip fills its aspect-matched tile with NO black bars (prompt 92 device fix); the
+    /// fullscreen viewer keeps the default `false` so the whole clip is visible.
+    var fill: Bool = false
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
-    @State private var player: AVQueuePlayer?
+    @State private var player: AVPlayer?
     @State private var looper: AVPlayerLooper?   // retained or looping stops
     @State private var image: UIImage?
     @State private var state: LoadState = .loading
     @State private var ticker = Timer.publish(every: 0.12, on: .main, in: .common).autoconnect()
+    /// Mirrors `AVPlayerLayer.isReadyForDisplay`: false until the first frame is decoded. The video layer
+    /// stays transparent (so the caller's poster shows through) until this flips, then crossfades in —
+    /// Apple's recommended poster→video handoff (WWDC 2019 §503), which removes the ~1-frame carousel-swipe
+    /// flash of an empty just-mounted layer. Deep-research (2026-06-22) ranked this the #1 flicker fix.
+    @State private var layerReady = false
 
     var body: some View {
         content
@@ -45,7 +59,11 @@ struct ClipMediaSurface: View {
             // Single-active: play while centered/active; on de-activate, pause and reset the playhead to the
             // at-end reading so a glimpsed off-active overlay isn't frozen mid-sweep.
             .onChange(of: isActive) { _, active in
-                if active { player?.play() } else { player?.pause(); fraction = ClipHROverlay.atEndFraction }
+                // Inline (looping) always resumes; the fullscreen transport resumes only if the user hadn't
+                // paused it — so a deliberate pause survives a page swipe away + back (prompt 94 review).
+                if active {
+                    if controller == nil || controller?.isPlaying == true { player?.play() }
+                } else { player?.pause(); fraction = ClipHROverlay.atEndFraction }
             }
             // Start playback when the item becomes ready — read here (not at the end of the async `load`) so
             // the play decision uses the LIVE `isActive`: a page can de-center mid-load, and the captured
@@ -57,23 +75,44 @@ struct ClipMediaSurface: View {
             // Live HR: while THIS active surface's video plays, sweep the playhead via the shared mapping.
             // Inactive / paused / photo / no-HR take the guarded early return (near-zero cost).
             .onReceive(ticker) { _ in
-                guard isActive, clip.kind == "video", let player, player.rate != 0, let payload else { return }
+                guard isActive, clip.kind == "video", let player, let payload else { return }
+                // Inline loops + sweeps only while playing; the fullscreen transport tracks SEEKS even while
+                // paused (so the HR dot follows the scrubber) → don't gate on rate when a controller drives it.
+                if player.rate == 0, controller == nil { return }
                 let t = player.currentTime().seconds
                 guard t.isFinite else { return }   // item not ready yet → keep the last fraction (no 0-flash)
-                fraction = ClipHROverlay.fraction(videoTime: t, clip: clip, payload: payload)
+                fraction = ClipHROverlay.fraction(videoTime: t, clip: clip, payload: payload, loops: controller == nil)
             }
     }
 
     @ViewBuilder private var content: some View {
         if state == .loading {
-            ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Transparent while loading so the caller's still poster (feed) / black backing (fullscreen)
+            // shows through — no spinner flash when an autoplay clip starts (prompt 90 polish).
+            Color.clear
         } else if clip.kind == "video", let player {
-            StudioPlayerLayerView(player: player, backgroundColor: background)
+            StudioPlayerLayerView(player: player, backgroundColor: background,
+                                  videoGravity: fill ? .resizeAspectFill : .resizeAspect,
+                                  // LATCH: only ever set true. `isReadyForDisplay` momentarily drops to false at
+                                  // every AVPlayerLooper loop seam (the item is swapped) — honouring that would
+                                  // flash the layer to opacity 0 → the frame-0 poster shows through → a flicker
+                                  // ON EVERY LOOP while playing. Latching true means the reveal still waits for
+                                  // the first frame, but a mid-playback false never hides the live video again.
+                                  // Reset to false only on teardown() (new clip / disappear).
+                                  onReadyForDisplayChange: { ready in if ready { layerReady = true } })
+                // Hold the poster until the first frame is decoded, then dissolve the video in — no empty-layer
+                // flash when a carousel page (or the autoplay clip) takes over. frame-0 ≈ poster ⇒ no ghost. A
+                // gentle ~0.32s ease-in-out so that on the rare fast swipe where the incoming frame isn't
+                // decoded before the snap, the video "completes" softly instead of popping in (prompt 97 polish).
+                .opacity(layerReady ? 1 : 0)
+                .animation(.easeInOut(duration: 0.32), value: layerReady)
                 .accessibilityIdentifier("feed.media.player")
                 .onTapGesture {
-                    // First tap on a muted (autoplaying) clip unmutes it (the caller flips playingClip.muted,
-                    // the single source of truth); otherwise toggle play/pause.
-                    if muted { onUnmute() }
+                    // Clips feed: tap the playing video → open fullscreen (onSurfaceTap). Otherwise (the
+                    // fullscreen / Recap surface): first tap on a muted autoplay clip unmutes (the caller
+                    // flips playingClip.muted, the single source of truth); else toggle play/pause.
+                    if let onSurfaceTap { onSurfaceTap() }
+                    else if muted { onUnmute() }
                     else { player.rate == 0 ? player.play() : player.pause() }
                 }
         } else if let image {
@@ -94,7 +133,7 @@ struct ClipMediaSurface: View {
         .accessibilityIdentifier("feed.media.placeholder")
     }
 
-    private func teardown() { player?.pause(); player = nil; looper = nil }
+    private func teardown() { controller?.detach(); player?.pause(); player = nil; looper = nil; layerReady = false }
 
     private func load() async {
         teardown()
@@ -115,10 +154,40 @@ struct ClipMediaSurface: View {
                 }
             }
             guard let playerItem = boxed.value else { state = .failed; return }
-            let queue = AVQueuePlayer()
-            queue.isMuted = muted                                            // autoplay starts muted
-            looper = AVPlayerLooper(player: queue, templateItem: playerItem)   // seamless loop
-            player = queue
+            if let controller {
+                // Fullscreen (prompt 94): a NON-looping player so the scrubber maps cleanly to 0…duration.
+                let single = AVPlayer(playerItem: playerItem)
+                single.isMuted = muted
+                player = single
+                // Use the item's REAL duration — PHAsset.durationSec is approximate and would break the
+                // end-of-clip replay + the scrubber range (prompt 94 review). Fall back to the stored value.
+                let real = (try? await playerItem.asset.load(.duration))?.seconds
+                let dur = (real?.isFinite == true && real! > 0) ? real! : (clip.durationSec ?? 0)
+                controller.attach(single, duration: dur)
+            } else {
+                // Build the AVQueuePlayer + AVPlayerLooper OFF the main thread, then hop back to assign @State.
+                // The looper build (track/format setup + KVO/boundary observers + enqueuing the looped copy) is
+                // the heavy SYNCHRONOUS cost that, on the MainActor, blocked the carousel swipe-snap frame even
+                // when warmed (the residual ~250ms freeze-then-jump on autoplay-on). On a background queue it
+                // never blocks the slide regardless of warm timing; the player is only USED (assigned to the
+                // layer, play/pause) on main, after this. `muted` snapshot + boxed item cross the @Sendable hop.
+                let isMuted = muted
+                let itemBox = Box(playerItem)
+                let built: Box<(AVQueuePlayer, AVPlayerLooper)> = await withCheckedContinuation { cont in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let queue = AVQueuePlayer()
+                        queue.isMuted = isMuted                                           // autoplay starts muted
+                        let lp = AVPlayerLooper(player: queue, templateItem: itemBox.value)   // seamless loop
+                        cont.resume(returning: Box((queue, lp)))
+                    }
+                }
+                looper = built.value.1
+                player = built.value.0
+                // NB: no `preroll` here — AVPlayer THROWS ("cannot service a preroll request until its status is
+                // ReadyToPlay") if prerolled before the item is ready. The frame-0 poster + `layerReady` gate are
+                // the actual takeover fix; a status-gated preroll can be added later only if a play-start hitch
+                // proves perceptible on device.
+            }
             state = .ready   // `.onChange(of: state)` starts playback iff still active (live isActive)
         } else {
             let target = CGSize(width: 1080, height: 1920)

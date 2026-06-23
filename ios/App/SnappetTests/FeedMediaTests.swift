@@ -70,12 +70,13 @@ final class FeedMediaTests: XCTestCase {
         XCTAssertEqual(window.first?.bpm, 100 + 50)  // bpm value carried through unchanged
     }
 
-    func testZeroDurationPhotoCollapsesToTheSampleAtOffset() {
-        // A zero-duration clip resolves to the sample(s) AT its offset (the still poster's moment).
+    func testZeroDurationPhotoResolvesAFlatLineAtItsInstant() {
+        // A zero-duration clip resolves to a degenerate ≥2-point flat line at its instant — the slicer's
+        // ≥2-point guarantee, so the still poster's chart/aggregates still draw (was a single sample).
         let window = FeedMedia.clipHRWindow(offsetSec: 30, durationSec: 0, hrSeries: ramp(from: 0, to: 260))
-        XCTAssertEqual(window.count, 1)
+        XCTAssertEqual(window.count, 2)
         XCTAssertEqual(window.first?.t, 0)
-        XCTAssertEqual(window.first?.bpm, 100 + 30)
+        XCTAssertEqual(window.first?.bpm ?? 0, 130, accuracy: 0.01)   // 100 + 30, the instant's bpm
     }
 
     func testNilDurationPhotoUsesDefaultWindow() {
@@ -85,33 +86,45 @@ final class FeedMediaTests: XCTestCase {
         XCTAssertEqual(window.first?.t, 0)
     }
 
-    func testSparseHRSeriesKeepsOnlyTrulyInWindowSamples() {
-        // Sparse series (every 20s). Clip [25, 65] only contains t=40, t=60 → 2 samples, rebased.
+    func testSparseHRSeriesInterpolatesWindowEndpoints() {
+        // Sparse series (every 20s). Clip [25, 65] contains t=40, t=60 (→ clip-local 15, 35) PLUS the
+        // slicer's interpolated endpoints at the window edges (clip-local 0 and 40), so the chart has a
+        // correctly-anchored line instead of starting/ending mid-gap.
         let sparse = [0, 20, 40, 60, 80, 100].map { HRPoint(t: Double($0), bpm: Double(120 + $0)) }
         let window = FeedMedia.clipHRWindow(offsetSec: 25, durationSec: 40, hrSeries: sparse)
-        XCTAssertEqual(window.map(\.t), [15, 35])    // (40-25), (60-25)
+        XCTAssertEqual(window.map(\.t), [0, 15, 35, 40])         // interp@25, t40→15, t60→35, interp@65
+        XCTAssertEqual(window.first?.bpm ?? 0, 145, accuracy: 0.01)   // interp 140→160 at (25-20)/20
+        XCTAssertEqual(window.last?.bpm ?? 0, 185, accuracy: 0.01)    // interp 180→200 at (65-60)/20
     }
 
-    func testSparseWindowWithNoExactSamplesFallsBackToNearestWithin8s() {
-        // The exact [offset, offset+dur] window holds NO samples, but a sample sits within ±8s of the
-        // offset. The window must fall back to it (matching the poster chip's `clipHR`), so the poster
-        // and the fullscreen overlay agree (both show HR, not chip-yes / overlay-blank).
-        let sparse = [0.0, 30.0, 90.0].map { HRPoint(t: $0, bpm: 100 + $0) }
-        // Clip at [33, 35]: nothing in-window, but t=30 is within 8s of offset 33.
+    func testWithinCoverageWindowInterpolatesInsteadOfBlanking() {
+        // The exact [offset, offset+dur] window holds NO raw samples, but it lies INSIDE the series'
+        // coverage, so the hardened slicer interpolates the window edges (it never blanks within
+        // coverage). The poster chip resolves its peak from the SAME interpolated window → both agree.
+        let sparse = [0.0, 30.0, 90.0].map { HRPoint(t: $0, bpm: 100 + $0) }   // bpm 100, 130, 190
         let window = FeedMedia.clipHRWindow(offsetSec: 33, durationSec: 2, hrSeries: sparse)
-        XCTAssertFalse(window.isEmpty)               // now non-empty via the ±8s fallback
-        XCTAssertEqual(window.count, 1)
-        XCTAssertEqual(window.first?.bpm, 130)       // the t=30 sample
-        XCTAssertEqual(window.first?.t, 0)           // rebased to clip-local (max(0, 30-33))
-        // The poster chip resolves a peak from the SAME fallback → both agree.
-        XCTAssertEqual(FeedMedia.clipHR(offsetSec: 33, durationSec: 2, hrSeries: sparse, maxHR: 190).peakBpm, 130)
+        XCTAssertEqual(window.count, 2)
+        XCTAssertEqual(window.map(\.t), [0, 2])
+        XCTAssertEqual(window.first?.bpm ?? 0, 133, accuracy: 0.01)   // interp 130→190 at (33-30)/60
+        XCTAssertEqual(window.last?.bpm ?? 0, 135, accuracy: 0.01)    // interp at (35-30)/60
+        XCTAssertEqual(FeedMedia.clipHR(offsetSec: 33, durationSec: 2, hrSeries: sparse, maxHR: 190).peakBpm, 135)
     }
 
-    func testWindowStillEmptyWhenNoSampleWithin8s() {
-        // No sample inside the window AND none within ±8s of the offset → truly empty (name-tag-only).
+    func testWindowEmptyOnlyWhenFartherThanTheEdgeClampPad() {
+        // Out of coverage by MORE than the ±90s edge-clamp pad → honestly empty (name-tag-only): a clip
+        // filmed minutes after HR stopped, or a cross-day manual pick.
         let sparse = [0.0, 30.0, 90.0].map { HRPoint(t: $0, bpm: 100 + $0) }
-        // Clip at [50, 55]: in-window empty, and nearest samples (t=30, t=90) are both >8s from offset 50.
-        XCTAssertTrue(FeedMedia.clipHRWindow(offsetSec: 50, durationSec: 5, hrSeries: sparse).isEmpty)
+        XCTAssertTrue(FeedMedia.clipHRWindow(offsetSec: 200, durationSec: 5, hrSeries: sparse).isEmpty)
+    }
+
+    func testEdgeClipWithinPadHoldsAFlatLastKnownLine() {
+        // Just past the last sample but within the ±90s discovery pad → a flat "last known" 2-point line
+        // (the edge sample held across the clip), so a legit edge clip shows HR instead of going blank.
+        let sparse = [0.0, 30.0, 90.0].map { HRPoint(t: $0, bpm: 100 + $0) }   // last bpm 190 @ t=90
+        let window = FeedMedia.clipHRWindow(offsetSec: 120, durationSec: 4, hrSeries: sparse)
+        XCTAssertEqual(window.count, 2)
+        XCTAssertEqual(window.map(\.bpm), [190, 190])           // held last-known across the clip
+        XCTAssertEqual(window.map(\.t), [0, 4])
     }
 
     func testWindowCarriesRRIntervalsThrough() {
