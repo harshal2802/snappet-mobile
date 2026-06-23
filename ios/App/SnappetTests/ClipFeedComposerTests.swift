@@ -8,10 +8,18 @@ final class ClipFeedComposerTests: XCTestCase {
     private let start = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func video(_ offset: Double, exercise: UUID? = nil, set: Int? = nil,
-                       climb: String? = nil, aspect: Double? = nil) -> MediaInput {
+                       climb: String? = nil, aspect: Double? = nil, asset: String? = nil) -> MediaInput {
+        // `asset` forces a specific PHAsset localIdentifier (the dedup key); defaults to per-offset so
+        // existing tests keep distinct assets. The row `id` is always fresh → two rows can share an asset.
         MediaInput(id: UUID(), kind: "video", offsetSec: offset, durationSec: 6,
                    exerciseId: exercise, setIndex: set, climbUUID: climb,
-                   localIdentifier: "asset-\(offset)", aspect: aspect)
+                   localIdentifier: asset ?? "asset-\(offset)", aspect: aspect)
+    }
+
+    /// How many times a given PHAsset `localIdentifier` appears across ALL posts' clips (must be ≤ 1 after
+    /// dedup — one physical video shows once across the whole feed).
+    private func occurrences(of asset: String, in posts: [ClipFeedPost]) -> Int {
+        posts.flatMap(\.clips).filter { $0.media.localIdentifier == asset }.count
     }
 
     // MARK: - Grouping: one post per climb / exercise
@@ -40,7 +48,7 @@ final class ClipFeedComposerTests: XCTestCase {
         XCTAssertEqual(starfish.climbUUID, "starfish")
     }
 
-    // MARK: - Ordering: clips by offset, posts newest-capture first
+    // MARK: - Ordering: clips by offset, posts newest-SESSION first
 
     func testClipsOrderedByOffsetWithAttemptLabels() {
         let s = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Session", startedAt: start, angle: 40)
@@ -59,21 +67,113 @@ final class ClipFeedComposerTests: XCTestCase {
         XCTAssertEqual(posts[0].captureAt, start.addingTimeInterval(10))
     }
 
-    func testPostsSortedNewestCaptureFirstAcrossSessions() {
+    func testPostsSortedNewestSessionFirstAcrossSessions() {
         let older = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Leg Day",
                                         startedAt: start, angle: nil)
         let newer = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Push Day",
                                         startedAt: start.addingTimeInterval(3600), angle: nil)
         let ex = UUID()
         let posts = ClipFeedComposer.posts(
-            sessions: [.init(meta: older, clips: [video(5, exercise: ex, set: 0)]),
-                       .init(meta: newer, clips: [video(5, exercise: ex, set: 0)])],
+            sessions: [.init(meta: older, clips: [video(5, exercise: ex, set: 0, asset: "a")]),
+                       .init(meta: newer, clips: [video(5, exercise: ex, set: 0, asset: "b")])],
             climbMeta: [:],
             exerciseName: { _ in "Back Squat" })
 
         XCTAssertEqual(posts.count, 2)
-        XCTAssertEqual(posts.first?.subtitle, "Push Day")       // newer session first
+        XCTAssertEqual(posts.first?.subtitle, "Push Day")       // newer SESSION first
         XCTAssertEqual(posts.last?.subtitle, "Leg Day")
+    }
+
+    // The sort key is the SESSION's start/end, NOT the clip capture offset (R5). A session that STARTED
+    // later sorts first even if its first clip's capture time is EARLIER than another session's.
+    func testPostsSortedBySessionStartNotCaptureOffset() {
+        // earlyStart session began at `start` but its clip was filmed 8000s in → captureAt = start+8000.
+        let earlyStart = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Early Start", startedAt: start, angle: nil)
+        // lateStart session began at start+7200 with a clip 5s in → captureAt = start+7205 (EARLIER capture).
+        let lateStart = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Late Start",
+                                            startedAt: start.addingTimeInterval(7200), angle: nil)
+        let ex = UUID()
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: earlyStart, clips: [video(8000, exercise: ex, set: 0, asset: "x")]),
+                       .init(meta: lateStart, clips: [video(5, exercise: ex, set: 0, asset: "y")])],
+            climbMeta: [:], exerciseName: { _ in "Squat" })
+
+        // Old captureAt sort would put Early Start first (start+8000 > start+7205). Session-start sort flips it.
+        XCTAssertEqual(posts.map(\.subtitle), ["Late Start", "Early Start"])
+        XCTAssertGreaterThan(posts[1].captureAt, posts[0].captureAt)   // proves capture order is NOT the key
+    }
+
+    // Sessions sharing a startedAt are tie-broken by session END time (later end first), then capture.
+    func testPostsTieBrokenBySessionEnd() {
+        let s = start.addingTimeInterval(100)
+        let endsSooner = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Ends Sooner",
+                                             startedAt: s, endedAt: s.addingTimeInterval(200), angle: nil)
+        let endsLater = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Ends Later",
+                                            startedAt: s, endedAt: s.addingTimeInterval(900), angle: nil)
+        let ex = UUID()
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: endsSooner, clips: [video(5, exercise: ex, set: 0, asset: "p")]),
+                       .init(meta: endsLater, clips: [video(5, exercise: ex, set: 0, asset: "q")])],
+            climbMeta: [:], exerciseName: { _ in "Squat" })
+
+        XCTAssertEqual(posts.map(\.subtitle), ["Ends Later", "Ends Sooner"])   // later end wins the tie
+    }
+
+    // MARK: - Duplicate-asset collapse (R2/R4): one physical video shows once across the whole feed
+
+    // The SAME asset tagged to a climb AND sitting in General within one session collapses to ONE clip,
+    // under the assigned (climb) bucket — an assigned clip beats a General one.
+    func testDuplicateAssetWithinSessionAppearsOnce() {
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Boulder", startedAt: start, angle: 40)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: s, clips: [
+                video(10, climb: "c", asset: "dup"),   // assigned to climb c
+                video(10, asset: "dup"),               // same asset, General
+            ])],
+            climbMeta: ["c": .init(name: "Crux", gradeLabel: "6c", angle: 40)],
+            exerciseName: { _ in "?" })
+
+        XCTAssertEqual(occurrences(of: "dup", in: posts), 1)         // shows ONCE, not twice
+        XCTAssertEqual(posts.count, 1)                               // no leftover General post
+        XCTAssertEqual(posts.first?.title, "Crux")                  // survived under its climb (assigned wins)
+        XCTAssertEqual(posts.first?.clipCount, 1)
+    }
+
+    // The same asset assigned to TWO different sets (a buggy/legacy duplicate row, or what a non-exclusive
+    // reassign would leave) shows ONCE — proving R3's "removed from the previous set" holds at the feed.
+    func testDuplicateAssetAcrossTwoSetsAppearsOnce() {
+        let exA = UUID(), exB = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Leg Day", startedAt: start, angle: nil)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: s, clips: [
+                video(10, exercise: exA, set: 0, asset: "moved"),
+                video(10, exercise: exB, set: 1, asset: "moved"),
+            ])],
+            climbMeta: [:], exerciseName: { id in id == exA ? "Squat" : "Lunge" })
+
+        XCTAssertEqual(occurrences(of: "moved", in: posts), 1)      // exactly one set keeps it
+        XCTAssertEqual(posts.flatMap(\.clips).count, 1)            // only one clip total
+    }
+
+    // The same asset discovered into two adjacent sessions (the ±90s pad overlap) shows ONCE — under the
+    // MORE-RECENT session (later startedAt wins the tie when both are equally assigned).
+    func testDuplicateAssetAcrossSessionsAppearsOnce() {
+        let older = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Older", startedAt: start, angle: 40)
+        let newer = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Newer",
+                                        startedAt: start.addingTimeInterval(3600), angle: 40)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: older, clips: [video(10, climb: "a", asset: "shared"),
+                                                  video(20, climb: "a", asset: "olderOnly")]),
+                       .init(meta: newer, clips: [video(5, climb: "b", asset: "shared")])],
+            climbMeta: ["a": .init(name: "A", gradeLabel: "6a", angle: 40),
+                        "b": .init(name: "B", gradeLabel: "6b", angle: 40)],
+            exerciseName: { _ in "?" })
+
+        XCTAssertEqual(occurrences(of: "shared", in: posts), 1)     // not double-posted across sessions
+        // The survivor lives in the NEWER session's post (climb B); the older session keeps only its own clip.
+        let sharedPost = posts.first { $0.clips.contains { $0.media.localIdentifier == "shared" } }
+        XCTAssertEqual(sharedPost?.sessionID, newer.id)
+        XCTAssertEqual(occurrences(of: "olderOnly", in: posts), 1)  // the older session's unique clip survives
     }
 
     // MARK: - Gym set labels + exercise name resolution

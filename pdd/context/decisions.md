@@ -7543,3 +7543,28 @@ for next step: the raw SNAP GEOMETRY speed is fixed by the stock `TabView(.page)
 tunable); if the slide itself still feels too fast after this, the next move is a custom UIScrollView-backed
 pager (directional-locked vs the vertical feed) with a tunable snap duration/curve. Builds green; installed
 on MrRobot.
+
+**Clips — no duplicate media→set matching + session-time feed order (prompt 98, 2026-06-22).** A deep
+review of how a photo/video maps to a set/climb found the *matching* correct (gym = interval ownership
+`SessionMediaAssignment`; Kilter = window containment `KilterMediaAssignment`; reassign overwrites the
+single `(assignedExerciseID, assignedSetIndex)` / `assignedClimbUUID` pointer, so it's already exclusive at
+the model level) — the only duplication risk is duplicate **rows** for one PHAsset `localIdentifier`, from
+three places: (1) `SetMediaStrip.attach` deduped against the **one set** its `@Query` is scoped to (re-attach
+to another set in the same session → 2nd row); (2) auto-discovery deduped **per-session**, so an asset in the
+±90 s pad overlap (`SessionMediaService.padSec`) of two adjacent sessions was tagged into both; (3)
+`ClipFeedComposer.posts` had **no** `localIdentifier` dedup and sorted by `captureAt` (session start + first
+clip offset), not session time. **Decision — fix layered (prevent at source AND guarantee at the read
+surface), because legacy duplicate rows can already exist on disk:** the durable net is a PURE
+`ClipFeedComposer.dedupedByAsset` that collapses duplicate `localIdentifier`s across the WHOLE feed before
+grouping — survivor rule **assigned-beats-General, then more-recent session (later `startedAt`), then smaller
+media id** (stable). The source guards stop *new* dupes: `SetMediaStrip.attach` now dedups against the whole
+**session**; the three auto-discovery paths (`SessionDetailView`, `FreeformPlayerView.discoverClips`,
+`KilterBoardController.discoverMedia`) dedup **globally** (any session) — but **manual picks stay
+session-scoped** (hand-adding the same asset to two sessions is deliberate user intent). **Feed order (R5):**
+added `endedAt` to `ClipFeedSessionMeta` and `sessionStartedAt`/`sessionEndedAt` to `ClipFeedPost`; the sort
+is now `postOrder` = session start ↓, session end ↓, capture ↓, id ↑ (so all of a session's posts cluster and
+sessions order by recency; `captureAt` is kept only for the "N clips · <when>" meta line). Pure changes
+unit-tested in `ClipFeedComposerTests` (within-session, across-sets, across-session dedup + session start/end
+sort incl. a later-started session whose first clip captured earlier); 62 media/feed unit tests green on the
+iPhone 17 Pro sim. Android Clips feed has no Kotlin port — out of scope. Device-pending: confirm on MrRobot
+(sim has no Photos, so real PHAsset discovery + the cross-session ±90 s overlap can't be exercised in the sim).

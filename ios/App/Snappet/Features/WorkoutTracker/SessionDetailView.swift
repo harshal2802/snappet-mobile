@@ -643,7 +643,17 @@ private struct SessionMediaSection: View {
         if changed { try? context.save() }
     }
 
+    /// Identifiers already tagged to THIS session — the dedup set for a MANUAL pick (the user may legitimately
+    /// add the same asset to two different sessions by hand, so manual stays session-scoped).
     private var existingIdentifiers: Set<String> { Set(media.map(\.localIdentifier)) }
+
+    /// Identifiers tagged to ANY session — the dedup set for AUTO-discovery, so a clip in the ±90s pad
+    /// overlap of two adjacent sessions is auto-tagged into one session, not both (R2/R4: one physical
+    /// video → one set). A global fetch is fine at these media volumes.
+    private var allMediaIdentifiers: Set<String> {
+        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
+        return Set(rows.map(\.localIdentifier))
+    }
 
     @MainActor
     private func autoDiscover(prompt: Bool) async {
@@ -668,7 +678,7 @@ private struct SessionMediaSection: View {
         do {
             let found = try await app.sessionMedia.discover(
                 startedAt: session.startedAt, completedAt: session.completedAt,
-                existingIdentifiers: existingIdentifiers)
+                existingIdentifiers: allMediaIdentifiers)
             insert(found, addedManually: false)
             if prompt {
                 message = found.isEmpty

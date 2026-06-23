@@ -112,7 +112,13 @@ struct SetMediaStrip: View {
     /// kind/duration and maps its capture time to a session-relative offset; we stamp the set
     /// assignment as `manual` so it's sticky against post-session reconciliation.
     private func attach(_ ids: [String]) {
-        let existing = Set(media.map(\.localIdentifier))
+        // Dedup against media already tagged anywhere in this SESSION (not just THIS set — the `media`
+        // @Query is set-scoped), so re-attaching an asset already on another set / General doesn't insert a
+        // second row with the same localIdentifier (R2: one physical video → one set). Mirrors
+        // SessionDetailView / FreeformPlayerView's whole-session existingIdentifiers.
+        let sid = session.id
+        let existing = Set((try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid })))?.map(\.localIdentifier) ?? [])
         let cands = app.sessionMedia.candidates(
             forIdentifiers: ids, startedAt: session.startedAt, existingIdentifiers: existing)
         for c in cands {

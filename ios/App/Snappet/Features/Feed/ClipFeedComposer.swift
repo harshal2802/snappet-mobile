@@ -20,6 +20,11 @@ struct ClipFeedSessionMeta: Sendable, Equatable {
     /// Routine name (gym) or the Kilter session title; the caller supplies a sensible fallback.
     var title: String
     var startedAt: Date
+    /// Session end — gym `WorkoutSession.completedAt` / Kilter `KilterSession.endedAt`. `nil` for a still
+    /// -running session → the feed sort falls back to `startedAt`. The feed orders posts by session start
+    /// then end (NOT the clip capture offset), so all of a session's posts cluster together (prompt: feed
+    /// sorted by session start/end). Defaulted so existing call sites compile unchanged.
+    var endedAt: Date? = nil
     /// Kilter board angle for the subtitle (nil for gym).
     var angle: Int?
 }
@@ -58,8 +63,13 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     var overlayDetail: String
     var climbUUID: String?
     var exerciseID: UUID?
-    /// Capture time of the first clip — the feed's reverse-chronological sort key.
+    /// Capture time of the first clip — shown in the post's "N clips · <when>" meta line. This is NO LONGER
+    /// the feed sort key (it's the session's start/end below); kept only for the relative-time display.
     var captureAt: Date
+    /// The owning session's start / end — the feed's sort keys (R5: "sorted by session start and end time").
+    /// `sessionEndedAt` is `nil` for a still-running session (the sort falls back to `sessionStartedAt`).
+    var sessionStartedAt: Date
+    var sessionEndedAt: Date?
     var clips: [ClipFeedItem]
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
@@ -107,6 +117,10 @@ enum ClipFeedComposer {
     static func posts(sessions: [SessionBundle],
                       climbMeta: [String: ClipFeedClimbMeta],
                       exerciseName: (UUID) -> String) -> [ClipFeedPost] {
+        // R2/R4: collapse duplicate physical assets so one video shows ONCE across the whole feed, before
+        // any grouping — covers a within-session dup (one asset on two sets) AND a cross-session dup (the
+        // ±90s discovery-window overlap tagging one asset into two sessions).
+        let sessions = dedupedByAsset(sessions)
         var out: [ClipFeedPost] = []
         for bundle in sessions where !bundle.clips.isEmpty {
             let meta = bundle.meta
@@ -150,12 +164,68 @@ enum ClipFeedComposer {
                     climbUUID: first.climbUUID,
                     exerciseID: first.exerciseId,
                     captureAt: meta.startedAt.addingTimeInterval(max(0, first.offsetSec)),
+                    sessionStartedAt: meta.startedAt,
+                    sessionEndedAt: meta.endedAt,
                     clips: items,
                     aspect: postAspect(ordered)))
             }
         }
-        return out.sorted { $0.captureAt == $1.captureAt ? $0.id < $1.id : $0.captureAt > $1.captureAt }
+        return out.sorted(by: postOrder)
     }
+
+    /// Feed order (R5): newest SESSION first — sort by session **start**, then session **end**, so a post's
+    /// position is its session's place in time (NOT the clip capture offset). All of a session's posts share
+    /// the same start+end, so they cluster; capture-time then id break ties within a session, keeping the
+    /// order stable + deterministic.
+    static func postOrder(_ a: ClipFeedPost, _ b: ClipFeedPost) -> Bool {
+        if a.sessionStartedAt != b.sessionStartedAt { return a.sessionStartedAt > b.sessionStartedAt }
+        let aEnd = a.sessionEndedAt ?? a.sessionStartedAt, bEnd = b.sessionEndedAt ?? b.sessionStartedAt
+        if aEnd != bEnd { return aEnd > bEnd }
+        if a.captureAt != b.captureAt { return a.captureAt > b.captureAt }
+        return a.id < b.id
+    }
+
+    // MARK: Duplicate-asset collapse (R2/R4)
+
+    /// Remove duplicate physical assets so one video appears once across the WHOLE feed. A `localIdentifier`
+    /// is the PHAsset identity, so two `MediaInput`s sharing it are the same video — whether on two sets of
+    /// one session or discovered into two adjacent sessions (the ±90s pad overlap). Deterministic survivor:
+    /// an **assigned** clip (tied to an exercise/climb) beats a General one (show the video under its set,
+    /// not the generic session bucket); then the **more-recent** session (later `startedAt`); then the
+    /// smaller media id (stable). Pure → unit-tested in `ClipFeedComposerTests`.
+    static func dedupedByAsset(_ sessions: [SessionBundle]) -> [SessionBundle] {
+        var winner: [String: (sessionIndex: Int, clip: MediaInput)] = [:]
+        for (s, bundle) in sessions.enumerated() {
+            for clip in bundle.clips {
+                let key = clip.localIdentifier
+                if let cur = winner[key] {
+                    if challengerWins(s, clip, over: cur, sessions: sessions) { winner[key] = (s, clip) }
+                } else {
+                    winner[key] = (s, clip)
+                }
+            }
+        }
+        return sessions.enumerated().map { s, bundle in
+            SessionBundle(meta: bundle.meta, clips: bundle.clips.filter {
+                guard let w = winner[$0.localIdentifier] else { return false }
+                return w.sessionIndex == s && w.clip.id == $0.id
+            })
+        }
+    }
+
+    /// Does the challenger clip beat the incumbent for the same `localIdentifier`? (Survivor rule above.)
+    private static func challengerWins(_ s: Int, _ clip: MediaInput,
+                                       over incumbent: (sessionIndex: Int, clip: MediaInput),
+                                       sessions: [SessionBundle]) -> Bool {
+        let cAssigned = isAssigned(clip), iAssigned = isAssigned(incumbent.clip)
+        if cAssigned != iAssigned { return cAssigned }                          // assigned beats general
+        let cStart = sessions[s].meta.startedAt, iStart = sessions[incumbent.sessionIndex].meta.startedAt
+        if cStart != iStart { return cStart > iStart }                          // more-recent session wins
+        return clip.id.uuidString < incumbent.clip.id.uuidString                // stable
+    }
+
+    /// A clip is "assigned" when it's tied to a specific exercise/set or climb (vs the General bucket).
+    private static func isAssigned(_ m: MediaInput) -> Bool { m.exerciseId != nil || m.climbUUID != nil }
 
     /// Header line 2: session title + a board-angle suffix for climbing.
     private static func subtitle(meta: ClipFeedSessionMeta, climb: ClipFeedClimbMeta?) -> String {

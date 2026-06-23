@@ -1701,8 +1701,10 @@ struct FreeformPlayerView: View {
     @MainActor private func discoverClips() async {
         guard app.sessionMedia.canAutoDiscover else { return }
         let sid = session.id
-        let existing = (try? context.fetch(FetchDescriptor<SessionMedia>(
-            predicate: #Predicate { $0.sessionID == sid }))) ?? []
+        // Auto-discovery dedups GLOBALLY (any session, not just this one) so a clip in the ±90s pad overlap
+        // of two adjacent sessions is auto-tagged into one, not both (R2/R4). Re-discovery of this session's
+        // own clips still skips them (the global set is a superset of the session's own).
+        let existing = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
         let existingIDs = Set(existing.map(\.localIdentifier))
         guard let found = try? await app.sessionMedia.discover(
             startedAt: session.startedAt, completedAt: nil, existingIdentifiers: existingIDs) else { return }
