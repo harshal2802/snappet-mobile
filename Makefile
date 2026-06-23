@@ -17,13 +17,23 @@
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
+# Run targets serially even under `make -j`: combined targets like `release` rely on ordering
+# (build Android before the irreversible iOS upload); xcodebuild/gradle still parallelize internally.
+.NOTPARALLEL:
 
 # ── Overridable configuration ────────────────────────────────────────────────
 # Override on the command line, e.g.  make ios-sim SIMULATOR='iPhone 16'  CONFIG=Release
-SIMULATOR ?= iPhone 16 Pro          # `xcrun simctl list devices` for installed names
-CONFIG    ?= Debug                  # Debug | Release
-SCHEME    ?= Snappet                # app+watch+widgets+tests; SnappetWatch is watch-only
-BUILD     ?=                        # release build number (required by ios-release-alpha)
+# NOTE: keep these comments on their OWN lines. An inline `# ...` after a value bakes the
+# whitespace between the value and the `#` into the variable (GNU Make keeps it), which then
+# survives into the quoted `-destination '...name=$(SIMULATOR)'` and breaks the device match.
+# `xcrun simctl list devices` for installed simulator names
+SIMULATOR ?= iPhone 16 Pro
+# Debug | Release
+CONFIG    ?= Debug
+# app+watch+widgets+tests; SnappetWatch is watch-only
+SCHEME    ?= Snappet
+# release build number (required by ios-release-alpha)
+BUILD     ?=
 
 # iOS layout
 IOS_DIR      := ios/App
@@ -47,6 +57,17 @@ define require_macos
 @if [ "$$(uname -s)" != "Darwin" ]; then \
 	echo "✗ '$@' needs macOS + Xcode — iOS/watchOS targets can't build on $$(uname -s)."; \
 	echo "  Engine tests run anywhere: 'make engine-test'. See CLAUDE.md → 'Building & testing'."; \
+	exit 1; \
+fi
+endef
+
+# Refuse a production release from a tree whose committed signing/identity source has been mutated
+# (e.g. a leftover `ios-release-alpha` overlay that sed-edited project.yml → com.snappet.app.alpha).
+# Otherwise xcodegen would regenerate, and fastlane would ship, a build under the wrong bundle id.
+define require_clean_release
+@if ! git diff --quiet HEAD -- $(IOS_DIR)/project.yml $(IOS_DIR)/SnappetWatch/Info.plist; then \
+	echo "✗ '$@' refused: $(IOS_DIR)/project.yml or SnappetWatch/Info.plist has uncommitted changes"; \
+	echo "  (a leftover alpha overlay?). Restore: git checkout -- $(IOS_DIR)/project.yml $(IOS_DIR)/SnappetWatch/Info.plist"; \
 	exit 1; \
 fi
 endef
@@ -149,9 +170,11 @@ ios-screenshots: ios-generate ## Capture App Store screenshots (fastlane snapsho
 	cd $(IOS_DIR) && fastlane screenshots
 
 .PHONY: ios-release
-ios-release: ios-generate ## Archive Release + upload to TestFlight (fastlane beta; needs ASC_* env)
+ios-release: ## Archive Release + upload to TestFlight (fastlane beta; needs ASC_* env)
 	$(require_macos)
+	$(require_clean_release)
 	@: $${ASC_KEY_ID:?set ASC_KEY_ID}   ; : $${ASC_ISSUER_ID:?set ASC_ISSUER_ID} ; : $${ASC_KEY_PATH:?set ASC_KEY_PATH}
+	cd $(IOS_DIR) && $(XCGEN) generate
 	cd $(IOS_DIR) && fastlane beta
 
 .PHONY: ios-release-alpha
@@ -193,8 +216,8 @@ android-install: android-debug ## Install + launch the debug APK on a device/emu
 android-run: android-install ## Alias for android-install
 
 .PHONY: android-test
-android-test: ## Run the JVM unit tests (:app:test)
-	cd $(ANDROID_DIR) && $(GRADLE) :app:test
+android-test: ## Run the JVM unit tests (:app:testDebugUnitTest)
+	cd $(ANDROID_DIR) && $(GRADLE) :app:testDebugUnitTest
 
 .PHONY: android-test-ui
 android-test-ui: ## Run the instrumented Compose UI tests on a device/emulator
@@ -218,8 +241,10 @@ build: ios-sim android-debug ## Build both apps (iOS simulator + Android debug)
 .PHONY: test
 test: engine-test ios-test android-test ## Run engine + iOS + Android unit tests
 
+# Build the Android bundle FIRST: it's the non-publishing step and the likelier to fail, so a broken
+# Android build aborts before the irreversible iOS TestFlight upload (don't half-ship a release).
 .PHONY: release
-release: ios-release android-bundle ## Cut a release: iOS → TestFlight, Android → Play bundle
+release: android-bundle ios-release ## Cut a release: Android → Play bundle, then iOS → TestFlight
 
 .PHONY: clean
 clean: ios-clean android-clean ## Clean both platforms' build artifacts
