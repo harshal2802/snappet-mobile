@@ -9,7 +9,13 @@ final class HRTileResolveTests: XCTestCase {
 
     private func values(maxHR: Double? = 190, restHR: Double? = 60,
                         kcal: Double? = 240, hrv: HRVMetrics = .empty) -> HROverlayValues {
-        let samples = [HRPoint(t: 0, bpm: 60), HRPoint(t: 30, bpm: 180), HRPoint(t: 60, bpm: 90)]
+        // A DENSE rising→falling 1 Hz window (peak ~180 at t=30) so the prompt-104 effort metrics
+        // (time-to-peak / HR-rise / HR-recovery — gated on a non-sparse window) resolve alongside the rest.
+        let samples = (0...60).map { i -> HRPoint in
+            let t = Double(i)
+            let bpm = t <= 30 ? 90 + t * 3 : 180 - (t - 30) * 2
+            return HRPoint(t: t, bpm: bpm)
+        }
         return HROverlayValues(samples: samples, durationSec: 60, maxHR: maxHR, restHR: restHR,
                                kcal: kcal, hrv: hrv)
     }

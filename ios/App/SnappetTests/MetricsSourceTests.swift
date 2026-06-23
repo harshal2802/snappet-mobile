@@ -346,6 +346,37 @@ final class MetricsSourceSelectionTests: XCTestCase {
             .appleWatch)
     }
 
+    // prompt 103 — opt-in "prefer band for detailed clips"
+
+    func testPreferBandPicksBLEOverUsableWatch() {
+        XCTAssertEqual(
+            LiveMetricsCoordinator.resolve(selected: nil, watchUsable: true, hasBLEDevice: true,
+                                           preferBandForDetail: true),
+            .ble)
+    }
+
+    func testPreferBandFallsThroughToWatchWhenNoBand() {
+        // The preference does nothing without a known band — no surprise for watch-only users.
+        XCTAssertEqual(
+            LiveMetricsCoordinator.resolve(selected: nil, watchUsable: true, hasBLEDevice: false,
+                                           preferBandForDetail: true),
+            .appleWatch)
+    }
+
+    func testPreferBandStillHonorsExplicitWatchPick() {
+        XCTAssertEqual(
+            LiveMetricsCoordinator.resolve(selected: .appleWatch, watchUsable: true, hasBLEDevice: true,
+                                           preferBandForDetail: true),
+            .appleWatch)
+    }
+
+    func testDefaultOffKeepsWatchFirstWhenBandPresent() {
+        XCTAssertEqual(
+            LiveMetricsCoordinator.resolve(selected: nil, watchUsable: true, hasBLEDevice: true,
+                                           preferBandForDetail: false),
+            .appleWatch)
+    }
+
     @MainActor
     func testCoordinatorForwardsToActiveSource() {
         // Hermetic: back the BLE source with a clean, throwaway BandMemory so a *real* remembered

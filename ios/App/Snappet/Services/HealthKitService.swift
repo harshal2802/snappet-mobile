@@ -108,8 +108,19 @@ final class HealthKitService: @unchecked Sendable {
 
     /// Heart-rate samples for a workout, as engine `HRSample`s (t = seconds from start).
     func heartRateSamples(for summary: WorkoutSummary) async throws -> [HRSample] {
+        try await heartRateSamples(start: summary.start, end: summary.end)
+    }
+
+    /// Heart-rate samples in an arbitrary `[start, end]` window, as engine `HRSample`s
+    /// (`t` = seconds from `start`). The post-hoc read the watch-HR densification uses (HR-granularity
+    /// epic / prompt 102): the on-wrist `HKWorkoutSession` stores HR at its full native cadence
+    /// (~1 per 1–5 s), denser than the live `WCSession` relay surfaced — so re-reading the session
+    /// window recovers the detail the relay thinned. RR is not in `heartRate` samples (watch path has
+    /// none anyway). Empty when Health is unavailable / unauthorized / nothing stored for the window.
+    func heartRateSamples(start: Date, end: Date) async throws -> [HRSample] {
+        guard HKHealthStore.isHealthDataAvailable(), end > start else { return [] }
         let hrType = HKQuantityType(.heartRate)
-        let pred = HKQuery.predicateForSamples(withStart: summary.start, end: summary.end, options: .strictStartDate)
+        let pred = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         let samples = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[HKSample], Error>) in
             let q = HKSampleQuery(sampleType: hrType, predicate: pred,
@@ -120,7 +131,7 @@ final class HealthKitService: @unchecked Sendable {
         }
         let unit = HKUnit.count().unitDivided(by: .minute())
         return samples.compactMap { $0 as? HKQuantitySample }.map { s in
-            HRSample(t: s.startDate.timeIntervalSince(summary.start),
+            HRSample(t: s.startDate.timeIntervalSince(start),
                      bpm: s.quantity.doubleValue(for: unit))
         }
     }

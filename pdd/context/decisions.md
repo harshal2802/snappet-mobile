@@ -7568,3 +7568,87 @@ unit-tested in `ClipFeedComposerTests` (within-session, across-sets, across-sess
 sort incl. a later-started session whose first clip captured earlier); 62 media/feed unit tests green on the
 iPhone 17 Pro sim. Android Clips feed has no Kotlin port — out of scope. Device-pending: confirm on MrRobot
 (sim has no Photos, so real PHAsset discovery + the cross-session ±90 s overlap can't be exercised in the sim).
+
+**HR→video granularity epic — Phase A capture fixes (prompt 100, 2026-06-23).** A deep review (workflow
+`wf_0d9641d0-75a` + direct read) of why a ~30 s climbing clip's HR overlay is a near-straight 2-point line
+(AVG 135 / PEAK 139) established it is **capture sparsity, not rendering/persistence**: `WorkoutHRStats.points`
+is a strict 1:1 copy (no downsampling); the Clips feed reads `hrSeries` after `end()` flushed the full buffer;
+`HRWindowSlicer` is correct. The flat line is the slicer's two **interpolated endpoints** when zero raw samples
+land inside the window — the Apple-Watch signature (`HKLiveWorkoutBuilder.mostRecentQuantity()` surfaces HR only
+~every 5–15 s; a BLE strap is ~1 Hz). **Two decisions this phase:** (1) **Real bug fixed** — watch-side
+`WatchConnectivityLink.send` discarded `sendMessage` failures with `{ _ in }` and only fell back to
+`transferUserInfo` in the *unreachable* branch, so a sample lost to a transient reachability dip during the send
+vanished (the doc-comment promised a fallback the code didn't do). Now the error handler re-queues via
+`transferUserInfo`, mirroring the phone side (`AppleWatchMetricsSource.send`). Device-verifiable only (needs a
+real watch under reachability churn). (2) Added a PURE `HRCadence` diagnostic (count / span / samples-per-sec /
+median + max gap + `isSparse(windowSec:)`) so the app can *measure* capture density — reused by Phase B to style
+an interpolation-dominated window honestly, and surfaceable in a debug view to confirm cadence on device.
+**Known minor edge (not fixed):** the Clips feed reads `hrSeries` derive-on-read from `@Query`; a clip opened for
+a *still-live* session is only as fresh as the last `syncLiveHR` (on each log / detail open) — forcing a flush
+from the derive-on-read feed view is the wrong layer, and ended sessions (the reported case) are unaffected.
+1466 `SnappetTests` green on the iPhone 17 Pro sim; `SnappetWatch` target builds.
+
+**HR→video granularity epic — Phase B display resample + honest sparse styling (prompt 101, 2026-06-23).**
+The clip HR curve drew straight from the few-point sliced window, so a sparse window was a flat 2-point line
+AND the playhead dot **snapped** between the two points at the midpoint. **Decision — resample for display,
+keep aggregates raw, dash the honest-sparse case.** Added pure `HRChartGeometry.displaySeries` — a dense
+uniform-grid resample over `[0, maxT]` via the engine's existing `HeartRateSeries` resampler+smoother (one
+resampler, not a second; capped ~240 pts so a full-session editor chart can't balloon; **endpoints preserved**
+so the playhead `fraction` — which divides by `maxT` — stays aligned). `HROverlayValues` computes `chartSamples`
++ `cadence` ONCE in init (a value type, never per SwiftUI render — the carousel-perf lesson), and
+`bpm(atFraction:)` now reads `chartSamples` so the live BPM number matches the gliding dot. `PremiumHRCurve`
+(preview) and `StudioOverlays.tileChartLayer` (export) both draw from the dense series and **dash + dim** the
+stroke when `HRCadence.isSparse(windowSec:)` — signalling "estimated between sparse samples" instead of passing
+two interpolated endpoints off as measured data. **Invariant held:** AVG/PEAK/zone/kcal stay computed from the
+RAW sliced samples (`WorkoutHRStats.make`); the curve's peak LABEL shows the raw peak via `rawPeakBpm` so
+smoothing can't shave it. **Adds no data** — a 2-point window resamples to *collinear* points (still a straight,
+now dashed, line); the only win there is a smoothly-moving dot. 1472 `SnappetTests` green + the Studio
+walkthrough UITest (the HR overlay + export render path) green on the iPhone 17 Pro sim. Device-pending: the
+visual confirmation (gliding dot, dashed sparse line, smooth dense curve) needs a real clip with HR (the sim has
+no Photos/HR), like the reported screenshot.
+
+**HR→video granularity epic — Phase C watch HealthKit densification (prompt 102, 2026-06-23).** The
+Apple-Watch live `WCSession` relay surfaces HR only ~every 5–15 s, so a watch session's persisted `hrSeries`
+is sparse; the on-wrist `HKWorkoutSession` stored the full series (~1/1–5 s). **Decision — backfill the
+denser stored series after the session ends.** Added `HealthKitService.heartRateSamples(start:end:)` (a
+windowed read; the existing `heartRateSamples(for:)` now calls it), a PURE `HRSeriesDensify.denser(live:
+healthKit:)` (keep the COMPLETE series — HK-empty→live, live-empty→HK, else more-samples; tie keeps live —
+NOT a union, since both are the same beats), and `KilterSessionManager.densifyHRFromHealthKit(sessionID:in:)`
+gated to **ended + `appleWatch` + not-already-dense** (`HRCadence.perSecond < 0.5`, so a re-open or a prior
+densify skips the HK query). **Why the guards:** BLE is skipped because it's already ~1 Hz AND carries RR a
+HealthKit `heartRate` read lacks (densifying would drop RR + risk mixing sources); the dense-skip avoids
+redundant HK queries. **Triggers:** best-effort from `end()` (a `Task` — the @MainActor isolation lets it
+reuse the main `ModelContext` with no Sendable break) for the already-synced case, plus a catch-up from the
+`KilterSessionDetailView` `.task` once Health has had time to sync (re-saving `hrSeries` makes the Clips feed
+`@Query` re-render dense). **Known caveat (device-gated):** HealthKit sync isn't instant, so a watch clip in
+the *feed* may show the Phase-B resampled (gliding, dashed) line until the session is opened once (or HK syncs
+post-end), at which point it densifies permanently. The HealthKit read is **device-only** (no watch/HK in the
+sim) — only the pure `denser` chooser + the wiring's type-safety are verified here. `HRSeriesDensifyTests` +
+the full `SnappetTests` green on the iPhone 17 Pro sim.
+
+**HR→video granularity epic — Phase D prefer-band opt-in (prompt 103, 2026-06-23).** A BLE chest strap is the
+densest clip-grade source (~1 Hz + RR), but `resolve` auto-prefers the watch. **Decision — opt-in, never a
+silent default flip.** Added `preferBandForDetail: Bool = false` to `LiveMetricsCoordinator.resolve`: when on
+**and** a band is known (and no explicit pick), it returns `.ble` ahead of the watch; the default keeps every
+existing call site/test unchanged and a watch-only user is unaffected (gated on `hasBLEDevice`). Persisted on
+the coordinator via `UserDefaults` (it's `@Observable`, can't use `@AppStorage`), exposed as a Toggle +
+explainer in `HeartRateSourcePicker` that also references Phase C's Health backfill. Explicit `selectedSource`
+still wins (tested). New resolve cases + full `SnappetTests` green on the iPhone 17 Pro sim.
+
+**HR→video granularity epic — Phase E–G new metrics (prompt 104, 2026-06-23).** Surfaced the metrics dense
+HR unlocks, all from engine types that already compute them. **Decision — merge E/F/G into one PR** (they all
+churn the `HROverlayMetric` exhaustive switches: `label`/`systemImage`/`explanation`/`supportsLive` in
+StudioProject + `tilePriority`/`tileCaption`/`tileValueChars` in HRTileLayout + `staticValue` in
+HROverlayValues). Added 5 static cases: **timeToPeak / hrRise / hrRecovery** (from a `ClimbEffort` built once
+in `HROverlayValues.init` over the clip window) and **sdnn / pnn50** (from the `HRVMetrics` the overlay already
+receives — they piggyback on the `.hrv` plumbing, so they hide wherever rmssd does, e.g. the feed where
+`hrv == .empty`). **Honest gating:** the effort metrics are gated on `!isSparseChart` (the Phase A/B sparse
+signal) so a "peak" can't be an interpolated endpoint; recovery additionally needs the series to reach
+peak+30/60 s (a short clip hides it). **M3's per-second zone tint already shipped in Phase B** (zoneStops now
+reads the dense `chartSamples`). **Deferred (documented):** the standalone normalized-`slope` ramp readout
+(cadence-fragile + hard to read as an absolute number; the zone-tinted curve already conveys intensity
+dynamics) and the `RecoveryReadiness` RR-rebound (needs a session HRV baseline, not available at single-clip
+scope); beat-to-beat watch RR via `HKHeartbeatSeriesQuery` stays a future follow-on (HRV is chest-strap-only
+now). Two pre-existing `allCases`-count tests updated (`HRTileResolveTests` values() → a dense window so the
+effort metrics resolve; `HRTileLayoutTests` hero-overflow → `all.count − 5`). Full `SnappetTests` green on the
+iPhone 17 Pro sim.

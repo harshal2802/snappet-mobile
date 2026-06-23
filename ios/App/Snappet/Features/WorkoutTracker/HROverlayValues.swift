@@ -21,6 +21,24 @@ struct HROverlayValues {
     let hrv: HRVMetrics
 
     private let stats: WorkoutHRStats?
+    /// Per-window effort derived from the RAW samples (prompt 104): time-to-peak / HR-rise / HR-recovery,
+    /// computed ONCE in init. Gated on a non-sparse window when rendered, so it never reports a peak that's
+    /// just an interpolated endpoint.
+    private let effort: ClimbEffort
+
+    /// The **dense, uniform-grid** version of `samples` the chart + playhead dot render from, so the
+    /// curve is smooth and the dot glides instead of snapping between sparse raw points (prompt 101).
+    /// Resampled ONCE here (a value type built when the payload is made) — never per SwiftUI render.
+    /// Aggregates still come from raw `samples`, never this.
+    let chartSamples: [HRPoint]
+    /// How densely this clip window was actually sampled — drives the honest sparse styling.
+    let cadence: HRCadence
+    /// Whether the window is too sparsely sampled to be a *measured* curve (the line is interpolation):
+    /// the overlay dashes it instead of presenting two interpolated endpoints as real data.
+    var isSparseChart: Bool { cadence.isSparse(windowSec: durationSec) }
+    /// The peak bpm over the RAW window (not the smoothed chart series) — the value the curve's peak
+    /// label shows, kept consistent with the scorebug's PEAK so smoothing can't shave it.
+    var rawPeakBpm: Double? { stats?.maxBpm }
 
     init(samples: [HRPoint], durationSec: Double, maxHR: Double?, restHR: Double?,
          kcal: Double? = nil, hrv: HRVMetrics = .empty) {
@@ -31,6 +49,11 @@ struct HROverlayValues {
         self.kcal = kcal
         self.hrv = hrv
         self.stats = WorkoutHRStats.make(from: samples, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
+        self.chartSamples = HRChartGeometry.displaySeries(samples)
+        self.cadence = HRCadence.summarize(samples)
+        self.effort = ClimbEffort.make(
+            from: samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: durationSec, restBpm: restHR, maxBpm: maxHR)
     }
 
     /// A resolved overlay reading: the string(s) to draw + the `#RRGGBB` colour. Equatable so the
@@ -65,8 +88,9 @@ struct HROverlayValues {
     /// the resolved tile so the export's zone-banded chart tints against the SAME bound as the preview.
     var resolvedMaxHR: Double { effectiveMaxHR }
 
-    /// Smoothed bpm at a playhead fraction (0…1) — reuses the chart's interpolation.
-    func bpm(atFraction f: Double) -> Double? { HRChartGeometry.sampleBPM(samples, atFraction: f) }
+    /// Smoothed bpm at a playhead fraction (0…1) — reuses the chart's interpolation over the SAME dense
+    /// `chartSamples` the curve + dot draw from, so the live BPM number matches the gliding dot (prompt 101).
+    func bpm(atFraction f: Double) -> Double? { HRChartGeometry.sampleBPM(chartSamples, atFraction: f) }
 
     private func hrrFraction(bpm: Double) -> Double? {
         guard let restHR, let mx = maxHR, mx > restHR else { return nil }
@@ -139,6 +163,27 @@ struct HROverlayValues {
             return Reading(text: "\(n) kcal", hex: fallbackHex, value: "\(n)", unit: "KCAL")
         case .recovery:
             return live(.recovery, atFraction: 1, fallbackHex: fallbackHex)   // end-of-clip state
+        case .timeToPeak:
+            // Effort metrics need real interior detail — hide on an interpolation-dominated window.
+            guard !isSparseChart, let t = effort.timeToPeak, t >= 0 else { return nil }
+            let n = Int(t.rounded())
+            return Reading(text: "\(n)s to peak", hex: fallbackHex, value: "\(n)", unit: "S")
+        case .hrRise:
+            guard !isSparseChart, let r = effort.hrRise, r > 0 else { return nil }
+            let n = Int(r.rounded())
+            return Reading(text: "+\(n) bpm rise", hex: fallbackHex, value: "\(n)", unit: "BPM")
+        case .hrRecovery:
+            guard !isSparseChart, let d = effort.hrRecovery60 ?? effort.hrRecovery30, d > 0 else { return nil }
+            let n = Int(d.rounded())
+            return Reading(text: "\(n) bpm drop", hex: fallbackHex, value: "\(n)", unit: "BPM")
+        case .sdnn:
+            guard let s = hrv.sdnn else { return nil }
+            let n = Int(s.rounded())
+            return Reading(text: "SDNN \(n) ms", hex: fallbackHex, value: "\(n)", unit: "MS")
+        case .pnn50:
+            guard let p = hrv.pnn50 else { return nil }
+            let n = Int((p * 100).rounded())
+            return Reading(text: "pNN50 \(n)%", hex: fallbackHex, value: "\(n)", unit: "%")
         }
     }
 

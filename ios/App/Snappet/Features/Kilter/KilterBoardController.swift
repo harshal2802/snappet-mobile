@@ -410,6 +410,9 @@ final class KilterSessionManager {
     /// and a BLE calorie estimate on `end`, and to send the resolved max HR to the watch + Live
     /// Activity. A strong ref to an AppModel-owned singleton (outlives this manager — no cycle).
     private var userProfile: UserProfileStore?
+    /// Post-hoc HealthKit reader (AppModel-owned `health`), used to densify a watch session's sparse HR
+    /// series after it ends (prompt 102). `nil` leaves the live buffer as-is (the pre-densify behavior).
+    private var health: HealthKitService?
 
     /// Whether *this* session started the live-metrics source — so `end()` only flushes/stops HR it
     /// owns. Guards against a Kilter session that opened while a WorkoutTracker workout was already
@@ -423,11 +426,13 @@ final class KilterSessionManager {
     func bind(liveWorkout: LiveMetricsCoordinator,
               liveActivity: KilterLiveActivityController,
               media: SessionMediaService,
-              userProfile: UserProfileStore? = nil) {
+              userProfile: UserProfileStore? = nil,
+              health: HealthKitService? = nil) {
         self.liveWorkout = liveWorkout
         self.liveActivity = liveActivity
         self.media = media
         self.userProfile = userProfile
+        self.health = health
     }
 
     /// Returns `true` only when this call **created a fresh session** — `false` when a session was
@@ -570,6 +575,41 @@ final class KilterSessionManager {
         // Auto-discover photos/videos shot during the session window and tag them to the session + the
         // climb they fall within. Best-effort; only runs with full Photos access.
         discoverMedia(for: session, in: context)
+        // Watch sessions persist a SPARSE live-relay HR series; once HealthKit has synced the on-wrist
+        // workout, backfill the denser stored series (prompt 102). Best-effort + idempotent: HK often
+        // hasn't synced yet at `end()`, so the session-detail `.task` re-attempts the catch-up. No-op for
+        // BLE / already-dense sessions (guarded inside).
+        let sid = session.id
+        Task { await densifyHRFromHealthKit(sessionID: sid, in: context) }
+    }
+
+    /// Backfill a finished **watch** session's sparse HR series from HealthKit's complete on-wrist series
+    /// (prompt 102). The live `WCSession` relay surfaces HR only ~every 5–15 s, but the `HKWorkoutSession`
+    /// stored ~1 per 1–5 s — so re-reading the session window recovers the interior detail the relay
+    /// thinned (the flat clip-overlay fix for watch users). Idempotent and cheap to re-run:
+    ///
+    /// - **BLE / unknown source** → skip (BLE is already dense AND carries RR a HealthKit read lacks).
+    /// - **Already dense** (`HRCadence.perSecond ≥ 0.5`) → skip, so a re-open or a prior densify doesn't
+    ///   re-query HealthKit.
+    /// - else read `[startedAt, endedAt]`, keep the **denser** of {stored, HealthKit}, save only if it grew.
+    ///
+    /// Device-gated: returns a no-op on the simulator / without a synced `HKWorkout`. Pure choice logic is
+    /// `HRSeriesDensify.denser`, unit-tested.
+    func densifyHRFromHealthKit(sessionID: UUID, in context: ModelContext) async {
+        guard let health else { return }
+        guard let session = (try? context.fetch(FetchDescriptor<KilterSession>(
+            predicate: #Predicate { $0.id == sessionID })))?.first,
+              let endedAt = session.endedAt,
+              session.metricsSourceRaw == MetricsSourceKind.appleWatch.rawValue else { return }
+        // Already dense enough? Don't bother HealthKit (covers re-opens + the post-densify state).
+        if HRCadence.summarize(session.hrSeries).perSecond >= 0.5 { return }
+        let hk = (try? await health.heartRateSamples(start: session.startedAt, end: endedAt)) ?? []
+        guard !hk.isEmpty else { return }
+        let merged = HRSeriesDensify.denser(live: session.hrSeries,
+                                            healthKit: WorkoutHRStats.points(from: hk))
+        guard merged.count > session.hrSeries.count else { return }
+        session.hrSeries = merged
+        try? context.save()
     }
 
     // MARK: - Planned session (KilterPlan)
