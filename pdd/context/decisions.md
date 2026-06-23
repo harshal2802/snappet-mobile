@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-23] Root Makefile wraps (doesn't replace) the build/release tooling (prompt 105)
+
+**Decision** (user request: "a Makefile for building both iOS and Android for device and simulator, and a
+release command"). Added a single repo-root `Makefile` as a discoverable entrypoint
+(`make help` lists all targets) over the **existing** commands — XcodeGen/xcodebuild/`swift test`
+(iOS/engine), Gradle (Android), fastlane (iOS release). It is a thin wrapper, not a new build system.
+
+Non-obvious choices:
+- **Wrap, never fork.** Every target shells out to the command already documented in `README.md` /
+  `android/README.md` / `CLAUDE.md` / `ios/App/fastlane`. The Makefile contains no build logic of its
+  own, so it can't drift from (or duplicate) the fastlane lanes, the alpha overlay, or the Gradle
+  config. **Rules out** re-encoding signing/packaging steps in `make`.
+- **macOS guard on iOS targets, portable everywhere else.** A `require_macos` check makes every
+  iOS/watchOS target fail fast with an actionable message on Linux (instead of an opaque
+  `xcodebuild: command not found`), while `engine-test` (pure SPM `swift test`), the Android targets,
+  and `help`/`doctor` run on any box with the right toolchain — matching the real platform constraints.
+- **`release` = the two real release paths.** `make release` runs fastlane `beta` (Release archive →
+  TestFlight) for iOS and `:app:bundleRelease` (Play bundle) for Android. The `.alpha` TestFlight
+  identity stays a local, uncommitted overlay: `make ios-release-alpha BUILD=<n>` runs
+  `scripts/alpha-build-overlay.sh` first (committed identity stays `com.snappet.app`, per 2026-06-15).
+- **Inputs come from the environment, never the file.** `JAVA_HOME`/`ANDROID_HOME` and the ASC API-key
+  env vars (`ASC_KEY_ID`/`ASC_ISSUER_ID`/`ASC_KEY_PATH`) are validated at runtime (`: $${VAR:?…}`),
+  not hardcoded — the dev box's Homebrew JDK/SDK paths don't leak into the repo.
+- **No knowledge-graph node.** Build tooling has no user-facing surface, so `docs/knowledge-graph/data.js`
+  is intentionally untouched (the graph tracks screens/services/data-flow, not the build).
+
 ## [2026-06-23] Record a video clip while logging a timed set/attempt (prompt 98)
 
 **Decision** (user request: "while logging a timed set, open the camera to record a video and come back to
