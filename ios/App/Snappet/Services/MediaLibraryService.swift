@@ -1,5 +1,6 @@
 import Foundation
 import Photos
+import AVFoundation
 
 /// Saves a generated/edited video (the B3 edited clip or the B4 highlight reel) into the user's
 /// **own** Photos library — entirely on-device (B5, RESEARCH §3.6). This is the "download" half of
@@ -17,6 +18,14 @@ final class MediaLibraryService: Sendable {
     /// Wraps a non-Sendable PhotoKit value (PHAsset / editing input·output) so it can cross a
     /// continuation / `performChanges` closure boundary under Swift 6 — same pattern as `StudioComposer`.
     private struct Box<T>: @unchecked Sendable { let value: T }
+
+    /// A mutable reference cell for carrying a value **out** of a `performChanges` change block (which can't
+    /// return one). Written inside the block, read after the `await` completes (the block has finished, so
+    /// there's no concurrent access) — the OUT-param sibling of `Box`.
+    private final class MutableBox<T>: @unchecked Sendable {
+        var value: T
+        init(_ value: T) { self.value = value }
+    }
 
     enum SaveError: LocalizedError {
         case denied
@@ -37,21 +46,42 @@ final class MediaLibraryService: Sendable {
         }
     }
 
-    /// Save the video at `url` (a temp `.mp4` from `StudioComposer.export` / `ReelExporter.export`)
-    /// into the Photos library. Requests **add-only** authorization first; throws `SaveError.denied`
-    /// if the user declines, or `SaveError.failed` if the change-block fails. On-device only.
-    func saveVideoToPhotos(_ url: URL) async throws {
+    /// Save the video at `url` (a temp `.mp4` from `StudioComposer.export` / `ReelExporter.export`, or a
+    /// fresh camera recording) into the Photos library. Requests **add-only** authorization first; throws
+    /// `SaveError.denied` if the user declines, or `SaveError.failed` if the change-block fails. Returns the
+    /// created asset's `localIdentifier` (from its in-block placeholder, which matches the committed asset) so
+    /// a caller can tag the new clip to a session; existing callers ignore it (`@discardableResult`).
+    /// On-device only.
+    @discardableResult
+    func saveVideoToPhotos(_ url: URL) async throws -> String? {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else { throw SaveError.denied }
 
+        let idBox = MutableBox<String?>(nil)
         do {
             try await PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetCreationRequest.forAsset()
                 request.addResource(with: .video, fileURL: url, options: nil)
+                idBox.value = request.placeholderForCreatedAsset?.localIdentifier
             }
         } catch {
             throw SaveError.failed(error.localizedDescription)
         }
+        return idBox.value
+    }
+
+    /// Save a freshly **camera-recorded** movie at `url` into Photos (add-only) and describe it as a
+    /// `RecordedClip`: the saved asset id + the wall-clock instant recording began (`capturedAt` → a
+    /// session-relative offset when the caller attaches it) + its measured duration (read from the file via
+    /// `AVURLAsset`, so no Photos read access is needed). Saving the recording immediately means the clip is
+    /// preserved in the user's own library even if the set is never logged. On-device only.
+    func saveRecording(at url: URL, capturedAt: Date) async throws -> RecordedClip {
+        let cmDuration = try? await AVURLAsset(url: url).load(.duration)
+        let durationSec = cmDuration
+            .map(CMTimeGetSeconds)
+            .flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        guard let id = try await saveVideoToPhotos(url) else { throw SaveError.failed("no asset id") }
+        return RecordedClip(localIdentifier: id, capturedAt: capturedAt, durationSec: durationSec)
     }
 
     /// **Overwrite in place**: replace the original Photos asset's video content with the edited

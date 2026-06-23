@@ -38,7 +38,9 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Snappet connects over Bluetooth to your heart-rate band (chest straps, Polar, Garmin, and similar) for live heart rate during a workout, and to a Kilter Board to light up climbs. Everything stays on your device.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Snappet uses the camera to scan a receipt (to pull out the line items and split them) and to scan a Kilter climb's QR code a friend shared. Everything is processed on your device; nothing is stored or uploaded.</string>
+	<string>Snappet uses the camera to record a video clip while you log a workout set, to scan a receipt (to pull out the line items and split them), and to scan a Kilter climb's QR code a friend shared. Everything is processed on your device; nothing is uploaded.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Snappet records sound with the video clips you film during a workout. The recording is saved only to your own photo library — nothing leaves your device.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Snappet matches your Kilter board to where you are, fully on your device — your location never leaves your phone.</string>
 	<key>NSHealthShareUsageDescription</key>

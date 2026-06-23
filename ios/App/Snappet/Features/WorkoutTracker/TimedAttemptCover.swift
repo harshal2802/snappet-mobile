@@ -17,14 +17,21 @@ import HighlightEngine
 ///
 /// **Never silently drop a captured effort:** dismissing (Peek / swipe-down) AFTER a Stop save-as-attempt;
 /// dismissing BEFORE a Stop logs nothing. No milestone celebration here — Phase 3 owns that.
+///
+/// **Record a clip mid-attempt:** while the timer runs, a "Record a clip" button opens the in-app camera
+/// (`RecordClipButton` → `VideoRecorder`) over this cover — the wall-clock timer keeps running underneath,
+/// so finishing the recording drops the user back on the live attempt. Recordings are saved to Photos
+/// immediately and queued in `recordedClips`; committing the outcome hands them up so they attach to the
+/// attempt being logged.
 struct TimedAttemptCover: View {
     let climbName: String
     let climbType: ClimbType
     let gradeLabel: String?
     /// 1-based ordinal of THIS attempt ("try N") — `attemptNumber == 1` reads "try 1" with no "of N".
     let attemptNumber: Int
-    /// The same commit funnel the inline outcome strip uses: `logAttempt(toExerciseID:status:durationSec:)`.
-    let onCommit: (_ status: KilterAscentStatus, _ durationSec: Double?) -> Void
+    /// The same commit funnel the inline outcome strip uses: `logAttempt(toExerciseID:status:durationSec:)`,
+    /// plus any clips recorded during the attempt (the owner attaches them to the just-logged attempt).
+    let onCommit: (_ status: KilterAscentStatus, _ durationSec: Double?, _ clips: [RecordedClip]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -37,6 +44,8 @@ struct TimedAttemptCover: View {
     /// Seconds captured at Stop. `nil` while the timer is still running (pre-Stop). Once set, the cover is
     /// in its "outcome" phase and any dismissal must save-as-attempt rather than drop the effort.
     @State private var capturedSeconds: Double?
+    /// Clips recorded with the in-app camera during this attempt, saved to Photos and queued to attach on commit.
+    @State private var recordedClips: [RecordedClip] = []
 
     private var isStopped: Bool { capturedSeconds != nil }
 
@@ -72,10 +81,13 @@ struct TimedAttemptCover: View {
             UIApplication.shared.isIdleTimerDisabled = false
             vm.endTicking()
             // Never silently drop a captured effort: a dismissal after Stop (Peek / swipe-down) logs the
-            // attempt with the captured duration. Cleared first so a subsequent outcome-tap can't double-log.
+            // attempt with the captured duration AND any recorded clips. Cleared first so a subsequent
+            // outcome-tap can't double-log / double-attach.
             if let captured = capturedSeconds {
                 capturedSeconds = nil
-                onCommit(.attempt, captured)
+                let clips = recordedClips
+                recordedClips = []
+                onCommit(.attempt, captured, clips)
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -193,8 +205,11 @@ struct TimedAttemptCover: View {
             outcomeGrid
                 .transition(.opacity)
         } else {
-            stopButton
-                .transition(.opacity)
+            VStack(spacing: 12) {
+                RecordClipButton(recordedClips: $recordedClips, idPrefix: "timedAttempt", attachNoun: "attempt")
+                stopButton
+            }
+            .transition(.opacity)
         }
     }
 
@@ -278,12 +293,15 @@ struct TimedAttemptCover: View {
         }
     }
 
-    /// Commit the chosen outcome with the captured duration, then dismiss. Clears `capturedSeconds` first
-    /// so the `onDisappear` save-as-attempt guard doesn't double-log this same effort.
+    /// Commit the chosen outcome with the captured duration + any recorded clips, then dismiss. Clears
+    /// `capturedSeconds` and `recordedClips` first so the `onDisappear` save-as-attempt guard doesn't
+    /// double-log / double-attach this same effort.
     private func commit(_ status: KilterAscentStatus) {
         let captured = capturedSeconds
+        let clips = recordedClips
         capturedSeconds = nil
-        onCommit(status, captured)
+        recordedClips = []
+        onCommit(status, captured, clips)
         dismiss()
     }
 }

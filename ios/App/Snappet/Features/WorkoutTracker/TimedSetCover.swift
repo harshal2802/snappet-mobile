@@ -11,14 +11,21 @@ import UIKit
 ///
 /// Count-UP is the open-effort mentality (time-under-tension); a prescribed *target hold* (count-down) is a
 /// later refinement. Dismissing before STOP logs nothing; STOP commits once and dismisses (no double-log).
+///
+/// **Record a clip mid-set:** a "Record a clip" button opens the in-app camera (`RecordClipButton` →
+/// `VideoRecorder`) over this cover — the wall-clock timer keeps running underneath, so finishing the
+/// recording drops the user right back on the live set. Each recording is saved to Photos immediately and
+/// queued in `recordedClips`; STOP & LOG hands them up so they attach to the very set being logged.
 struct TimedSetCover: View {
     let exerciseName: String
     /// Seeded from the card's quick-add (last set / prefill), editable here before/while timing.
     let initialReps: Int
     let initialWeight: Double
     let initialUnit: WeightUnit
-    /// Commits the timed set: reps/weight (nil when zeroed → bodyweight / time-only) + the captured seconds.
-    let onCommit: (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double) -> Void
+    /// Commits the timed set: reps/weight (nil when zeroed → bodyweight / time-only) + the captured seconds
+    /// + any clips recorded during the set (the owner attaches them to the just-logged set).
+    let onCommit: (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double,
+                   _ clips: [RecordedClip]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -28,9 +35,12 @@ struct TimedSetCover: View {
     @State private var reps: Int
     @State private var weight: Double
     @State private var unitSel: WeightUnit
+    /// Clips recorded with the in-app camera during this set, saved to Photos and queued to attach on STOP.
+    @State private var recordedClips: [RecordedClip] = []
 
     init(exerciseName: String, initialReps: Int, initialWeight: Double, initialUnit: WeightUnit,
-         onCommit: @escaping (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double) -> Void) {
+         onCommit: @escaping (_ reps: Int?, _ weight: Double?, _ unit: WeightUnit, _ durationSec: Double,
+                              _ clips: [RecordedClip]) -> Void) {
         self.exerciseName = exerciseName
         self.initialReps = initialReps
         self.initialWeight = initialWeight
@@ -54,6 +64,7 @@ struct TimedSetCover: View {
                 heroTimer
                 if let bpm = app.liveWorkout.latestHR { hrChip(bpm) }
                 Spacer()
+                RecordClipButton(recordedClips: $recordedClips, idPrefix: "timedSet", attachNoun: "set")
                 stopButton
             }
             .padding(.horizontal, 20)
@@ -157,7 +168,7 @@ struct TimedSetCover: View {
         Button {
             let captured = vm.stop()
             Haptics.tap()
-            onCommit(reps > 0 ? reps : nil, weight > 0 ? weight : nil, unitSel, captured)
+            onCommit(reps > 0 ? reps : nil, weight > 0 ? weight : nil, unitSel, captured, recordedClips)
             dismiss()
         } label: {
             Text("STOP & LOG")

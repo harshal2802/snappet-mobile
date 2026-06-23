@@ -4,6 +4,42 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-23] Record a video clip while logging a timed set/attempt (prompt 98)
+
+**Decision** (user request: "while logging a timed set, open the camera to record a video and come back to
+the original set in the running session"). Added an in-app camera recorder reachable from the timed-effort
+FOCUS covers — `TimedSetCover` (the explicit ask) **and** `TimedAttemptCover` (the direct climb parallel,
+which shares the whole mechanism). A "Record a clip" button (`RecordClipButton`) opens a thin
+`UIImagePickerController(.camera, .video)` (`VideoRecorder`) **over** the cover; finishing the recording
+returns to the **still-running set**, and the clip attaches to that very set on commit.
+
+Non-obvious choices:
+- **"Come back to the set" is free from the wall-clock timer.** Presenting the recorder as a
+  `.fullScreenCover` over the cover doesn't fire the cover's `onDisappear`, and `StopwatchViewModel` derives
+  elapsed from `Date`, so the set timer keeps running underneath — no save/restore of the cover state.
+  **Rules out** dismissing the cover to record (which would tear down the timer / set context).
+- **Save to Photos at record-time; tag the session at commit-time.** `SessionMedia` stores a Photos
+  `localIdentifier` (bytes stay in Photos), so the recording is saved to the user's own library
+  (`MediaLibraryService.saveRecording`, add-only) **immediately** — preserved even if the set is never
+  logged. The set tag (a `.manual` `SessionMedia` row) is created only at commit, when the landing
+  `setIndex` is known (captured *before* `appendLog`). The covers stay SwiftData-free (consistent with
+  their design); the insert lives in `FreeformPlayerView.attachRecordedClips` through the pure, tested
+  `SessionMediaService.candidate(for:)`. **Rules out** pre-tagging a phantom set index from inside the
+  cover, and rules out copying bytes into the app's store.
+- **`.manual` provenance** so the post-session auto-reconciler (which only re-places `.auto` rows) never
+  moves a recording off the set it was filmed for; deduped by `localIdentifier` so a later auto-discovery
+  can't double-tag it.
+- **`saveVideoToPhotos` now returns the new asset id** (`@discardableResult`, via the in-block
+  `placeholderForCreatedAsset.localIdentifier`); a `MutableBox: @unchecked Sendable` carries it out of the
+  `performChanges` block (the OUT sibling of the existing `Box`). Existing reel/clip callers ignore it.
+- **Device-only, stated honestly.** The Simulator has no camera (`VideoRecorder.isAvailable == false`), so
+  the button is always shown but a tap there surfaces a notice (`timedSet.recordNotice`) instead of
+  presenting — the record → save → attach path can only be verified on hardware. Added
+  `NSMicrophoneUsageDescription` (recorded video has audio) and broadened `NSCameraUsageDescription`.
+- KG: new `video-recorder` node + edges (both covers → recorder `cover`; recorder → `MediaLibraryService`
+  `uses`; `FreeformPlayerView` → `SessionMedia` `persists`); cover/service descs updated. The structured
+  interval runner (`StructuredTimedRunner`) is a deliberate follow-up (multi-phase capture card), not in scope.
+
 ## [2026-06-21] Recap feed F8 — scroll date bar (time orientation)
 
 **Decision** (user feedback: a long feed had no time anchor while scrolling). Added **one adaptive date
