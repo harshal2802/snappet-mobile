@@ -427,6 +427,13 @@ enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
     case hrv            // RMSSD (ms) over the clip window (chest-strap RR only)
     case calories       // HR-based energy estimate (kcal) — needs a profile
     case recovery       // recovery-ready state (rested for the next effort)
+    // Dense-data metrics (HR-granularity epic, prompt 104) — from ClimbEffort over the clip window.
+    case timeToPeak     // seconds into the clip until HR peaked
+    case hrRise         // bpm climbed to the peak (the surge)
+    case hrRecovery     // bpm dropped after the peak (recovery between efforts)
+    // Full HRV suite (chest-strap RR only) — from the same HRVMetrics .hrv already uses.
+    case sdnn           // HRV: SDNN (ms)
+    case pnn50          // HRV: pNN50 (%)
 
     var id: String { rawValue }
 
@@ -443,6 +450,11 @@ enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
         case .hrv: return "HRV"
         case .calories: return "Calories"
         case .recovery: return "Recovery"
+        case .timeToPeak: return "Time to peak"
+        case .hrRise: return "HR rise"
+        case .hrRecovery: return "HR recovery"
+        case .sdnn: return "HRV (SDNN)"
+        case .pnn50: return "HRV (pNN50)"
         }
     }
 
@@ -452,9 +464,12 @@ enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
         case .bpm, .avgHR, .maxHR: return "heart.fill"
         case .zone, .hrr: return "speedometer"
         case .redline, .strain: return "flame.fill"
-        case .hrv: return "waveform.path.ecg"
+        case .hrv, .sdnn, .pnn50: return "waveform.path.ecg"
         case .calories: return "bolt.fill"
         case .recovery: return "checkmark.circle.fill"
+        case .timeToPeak: return "stopwatch"
+        case .hrRise: return "arrow.up.heart.fill"
+        case .hrRecovery: return "arrow.down.heart.fill"
         }
     }
 
@@ -472,6 +487,11 @@ enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
         case .hrv:      return "Heart-rate variability (RMSSD) — a recovery/stress signal (chest strap only)."
         case .calories: return "Estimated energy burned this clip, in kcal (needs your profile)."
         case .recovery: return "Whether your heart rate has settled enough for the next hard effort."
+        case .timeToPeak: return "How long into the clip your heart rate peaked."
+        case .hrRise:   return "How far your heart rate climbed to its peak in this clip."
+        case .hrRecovery: return "How much your heart rate dropped after the peak (recovery between efforts)."
+        case .sdnn:     return "Heart-rate variability (SDNN) — overall variability (chest strap only)."
+        case .pnn50:    return "Share of beats differing >50 ms (pNN50) — a recovery signal (chest strap only)."
         }
     }
 
@@ -479,7 +499,8 @@ enum HROverlayMetric: String, Codable, CaseIterable, Sendable, Identifiable {
     var supportsLive: Bool {
         switch self {
         case .bpm, .zone, .hrr, .recovery: return true
-        case .avgHR, .maxHR, .redline, .strain, .hrv, .calories: return false
+        case .avgHR, .maxHR, .redline, .strain, .hrv, .calories,
+             .timeToPeak, .hrRise, .hrRecovery, .sdnn, .pnn50: return false
         }
     }
 

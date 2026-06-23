@@ -213,10 +213,12 @@ struct ClipsFeedView: View {
         for (sid, clips) in bySession {
             if let k = kilterByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .kilter,
-                    title: k.title ?? "Kilter session", startedAt: k.startedAt, angle: k.angle), clips: clips))
+                    title: k.title ?? "Kilter session", startedAt: k.startedAt, endedAt: k.endedAt,
+                    angle: k.angle), clips: clips))
             } else if let w = workoutByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .gym,
-                    title: w.routineName, startedAt: w.startedAt, angle: nil), clips: clips))
+                    title: w.routineName, startedAt: w.startedAt, endedAt: w.completedAt,
+                    angle: nil), clips: clips))
             }
             // else: media whose session was deleted — skip (no orphan posts).
         }

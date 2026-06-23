@@ -130,7 +130,13 @@ struct KilterSessionDetailView: View {
         }
         // Opening the summary of a live session flushes HR so far onto it, so the HR chart + any clip
         // opened from here show heart rate during the session (not only after it ends). No-op once ended.
-        .task(id: sessionID) { sessions.syncLiveHR(in: modelContext) }
+        // For an ENDED watch session, also backfill the sparse live-relay series from HealthKit's complete
+        // on-wrist series now that it has had time to sync (prompt 102) — re-saving makes the Clips feed
+        // re-render with the dense series. No-op for BLE / already-dense / non-watch.
+        .task(id: sessionID) {
+            sessions.syncLiveHR(in: modelContext)
+            await sessions.densifyHRFromHealthKit(sessionID: sessionID, in: modelContext)
+        }
         // The shared app-global HR-profile editor, presented from the default-ceiling affordance
         // (#75). Edits write through `AppModel.userProfile` live, so an open summary re-renders
         // its zones immediately for a still-active session.

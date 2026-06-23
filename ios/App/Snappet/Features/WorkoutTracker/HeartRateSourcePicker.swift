@@ -39,6 +39,7 @@ struct HeartRateSourcePicker: View {
                 }
 
                 bandsSection
+                detailPreferenceSection
             }
             .navigationTitle("Heart-rate source")
             .navigationBarTitleDisplayMode(.inline)
@@ -49,6 +50,26 @@ struct HeartRateSourcePicker: View {
             }
             .onAppear { ble.startScan() }
             .onDisappear { ble.stopScan() }
+        }
+    }
+
+    // MARK: - Detail preference
+
+    /// Opt-in to prefer a connected band for the most detailed clip HR (prompt 103). Off by default;
+    /// only changes the automatic default (an explicit source tap still wins) and only when a band is known.
+    @ViewBuilder
+    private var detailPreferenceSection: some View {
+        Section {
+            Toggle(isOn: Binding(get: { coordinator.preferBandForDetail },
+                                 set: { coordinator.preferBandForDetail = $0 })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Prefer band for detailed clips").font(.headline)
+                    Text("Use a connected heart-rate band when available").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("hrSourcePreferBand")
+        } footer: {
+            Text("A heart-rate band records about once a second — the most detailed heart rate for your clips. An Apple Watch records a bit less often, so Snappet also backfills watch sessions from Health when it can.")
         }
     }
 

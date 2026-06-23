@@ -43,7 +43,13 @@ final class WatchConnectivityLink: NSObject, WCSessionDelegate, @unchecked Senda
     private func send(_ message: LiveWorkoutMessage) {
         guard let session, session.activationState == .activated else { return }
         if session.isReachable {
-            session.sendMessage(message.payload, replyHandler: nil) { _ in }
+            // Delivery can still fail if the phone drops reachability between the check and the send
+            // (a brief radio hiccup). Re-queue via `transferUserInfo` instead of discarding the error,
+            // so a live HR sample isn't silently lost — mirroring the phone side
+            // (`AppleWatchMetricsSource.send`). Without this the watch path thins the captured series.
+            session.sendMessage(message.payload, replyHandler: nil) { [weak session] _ in
+                session?.transferUserInfo(message.payload)
+            }
         } else {
             session.transferUserInfo(message.payload)
         }

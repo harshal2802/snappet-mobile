@@ -161,11 +161,12 @@ final class HRTileLayoutTests: XCTestCase {
     }
 
     func testHeroCardParksOverflowBehindEnlargeAffordance() {
-        // Toggle all 10 on: the hero card shows its 5-metric tier and parks the other 5.
+        // Toggle every metric on: the hero card shows its 5-metric tier and parks the rest behind the
+        // enlarge affordance (the catalog grew with the prompt-104 dense-data metrics).
         let r = HRTileLayout.layout(template: .hero, enabledMetrics: all,
                                     tileRect: CGRect(x: 0, y: 0, width: 540, height: 360), hasChart: true)
         XCTAssertEqual(r.slots.count, 5)
-        XCTAssertEqual(r.hiddenCount, 5)
+        XCTAssertEqual(r.hiddenCount, all.count - 5)
     }
 
     func testZoneRingDefaultSpawnHasNoFalseEnlargeHint() {

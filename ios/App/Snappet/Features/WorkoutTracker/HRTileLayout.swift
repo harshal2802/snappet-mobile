@@ -481,6 +481,11 @@ extension HROverlayMetric {
         case .hrv:      return 7
         case .calories: return 8
         case .recovery: return 9
+        case .timeToPeak: return 10
+        case .hrRise:   return 11
+        case .hrRecovery: return 12
+        case .sdnn:     return 13
+        case .pnn50:    return 14
         }
     }
 
@@ -497,6 +502,11 @@ extension HROverlayMetric {
         case .hrv:      return "HRV"
         case .calories: return "KCAL"
         case .recovery: return "REC"
+        case .timeToPeak: return "TTP"
+        case .hrRise:   return "RISE"
+        case .hrRecovery: return "DROP"
+        case .sdnn:     return "SDNN"
+        case .pnn50:    return "PNN50"
         }
     }
 
@@ -516,6 +526,11 @@ extension HROverlayMetric {
         case .hrv:      return 3     // "199"
         case .calories: return 4     // "1999"
         case .recovery: return 10    // "Recovering"
+        case .timeToPeak: return 3   // "180"
+        case .hrRise:   return 3     // "120"
+        case .hrRecovery: return 3   // "120"
+        case .sdnn:     return 3     // "199"
+        case .pnn50:    return 3     // "100"
         }
     }
 }

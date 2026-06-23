@@ -37,9 +37,10 @@ struct HRTileView: View {
                                radius: HRTileStyle.tileRadius(w: rect.width, h: rect.height))
                 }
                 if tile.showChart, let chartRect = layout.chartRect {
-                    PremiumHRCurve(samples: values.samples, maxHR: values.resolvedMaxHR,
+                    PremiumHRCurve(samples: values.chartSamples, maxHR: values.resolvedMaxHR,
                                    fraction: fraction, zoneColored: tile.zoneColored,
-                                   sparkline: chartRect.height < rect.height * 0.30)
+                                   sparkline: chartRect.height < rect.height * 0.30,
+                                   rawPeakBpm: values.rawPeakBpm, sparse: values.isSparseChart)
                         .frame(width: chartRect.width, height: chartRect.height)
                         .position(x: chartRect.midX, y: chartRect.midY)
                 }
@@ -281,12 +282,20 @@ struct HRTileView: View {
 /// soft area fill, a glow so it floats over footage, and a glowing playhead dot. Draws on left→right to
 /// the playhead `fraction` (matching the export's `strokeEnd` draw-on), so preview == export.
 struct PremiumHRCurve: View {
+    /// The points the curve draws from — pass the **dense** `HROverlayValues.chartSamples` so the line is
+    /// smooth and the dot glides (prompt 101). Aggregates never come from here.
     let samples: [HRPoint]
     let maxHR: Double
     let fraction: Double
     let zoneColored: Bool
     /// A compact register tucked under a hero (thinner stroke, no peak label / baseline rule).
     var sparkline: Bool = false
+    /// The RAW window's peak bpm, shown by the peak label (so smoothing the drawn curve can't shave the
+    /// number off the scorebug's PEAK). `nil` falls back to the drawn series' peak.
+    var rawPeakBpm: Double? = nil
+    /// Whether this window is interpolation-dominated (`HRCadence.isSparse`): the curve is drawn **dashed**
+    /// and dimmer, signalling "estimated between sparse samples" instead of presenting it as measured data.
+    var sparse: Bool = false
 
     var body: some View {
         GeometryReader { geo in
@@ -298,21 +307,26 @@ struct PremiumHRCurve: View {
             let dotZone = HeartRateZone.forBpm(HRChartGeometry.sampleBPM(samples, atFraction: f), maxHR: maxHR)
             let dotColor = zoneColored ? dotZone.color : Color(studioHex: "#FF3B30")
             let glow = zoneColored ? (peakZone(pts).color) : Color(studioHex: "#FF3B30")
+            // Dashed + dimmer for an interpolation-only (sparse) window — honest "estimated" styling.
+            let dash: [CGFloat] = sparse ? [lw * 2.2, lw * 1.8] : []
             if pts.count >= 2 {
                 ZStack {
                     // Area fill — a flat low-alpha zone wash (both sides use a flat fill so preview ==
                     // export; a CAGradientLayer's vertical orientation is flip-ambiguous in the tool tree).
                     SmoothHRArea(norm: pts)
-                        .fill(glow.opacity(HRTileStyle.areaTopAlpha * 0.55))
+                        .fill(glow.opacity(HRTileStyle.areaTopAlpha * (sparse ? 0.22 : 0.55)))
                     // The zone-banded stroke + glow. The FULL curve draws (no `strokeEnd` draw-on) so the
                     // per-frame SwiftUI preview and the Core-Animation export match during playback — only
                     // the dot moves; see `decisions.md`.
                     SmoothHRCurve(norm: pts)
                         .stroke(strokeStyle(stops: stops, flat: !zoneColored),
-                                style: StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round))
+                                style: StrokeStyle(lineWidth: lw, lineCap: sparse ? .butt : .round,
+                                                   lineJoin: .round, dash: dash))
+                        .opacity(sparse ? 0.7 : 1)
                         .shadow(color: glow.opacity(HRTileStyle.curveGlowAlpha), radius: sparkline ? 2 : 3)
-                    // Baked peak label (full curve only).
-                    if !sparkline, let pk = HRChartGeometry.peakIndex(pts), let peak = HRChartGeometry.peakBPM(samples) {
+                    // Baked peak label (full curve only) — the RAW peak, not the smoothed curve's.
+                    if !sparkline, let pk = HRChartGeometry.peakIndex(pts),
+                       let peak = rawPeakBpm ?? HRChartGeometry.peakBPM(samples) {
                         Text("\(Int(peak.rounded()))")
                             .font(.system(size: max(9, h * 0.16), weight: .bold, design: .rounded)).monospacedDigit()
                             .foregroundStyle(.white.opacity(0.9))
