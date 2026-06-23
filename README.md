@@ -225,4 +225,7 @@ conventions.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Source-available under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**. Free to use,
+modify, and share for any **non-commercial** purpose (personal, hobby, research, education).
+**Commercial or for-profit use requires separate written permission** from the copyright holder —
+open an issue to request a commercial license. (Source-available, not an OSI "open source" license.)

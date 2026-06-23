@@ -539,4 +539,8 @@ reactions, #2 WYSIWYG, #3 autoplay) is now built; only a favorites filter remain
 
 ## License
 
-TBD.
+Source-available under the **PolyForm Noncommercial License 1.0.0** (`/LICENSE`). Free for any
+non-commercial use (personal, hobby, research, education, nonprofit); commercial / for-profit use
+requires a separate written commercial license from the copyright holder (Harshal Chourasiya). This
+is a *source-available* license, **not** an OSI "open source" license — it restricts commercial use by
+design. Prior MIT-licensed commits remain under MIT for the versions in which they were published.

@@ -4,6 +4,31 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-06-23] Relicensed from MIT to PolyForm Noncommercial 1.0.0
+
+**Decision** (user: keep it free / source-available for personal use, but require written permission to
+use it commercially / distribute for profit). Replaced the repo's MIT license with the **PolyForm
+Noncommercial License 1.0.0** (lawyer-drafted; SPDX `PolyForm-Noncommercial-1.0.0`). It grants free
+use/modification/distribution for any **noncommercial** purpose (personal, hobby, research, education,
+nonprofit) and gates **all commercial use** behind a separate license — i.e. the "written permission".
+The `LICENSE` file carries a `Required Notice:` copyright line (PolyForm's mechanism for making the
+copyright notice travel with copies) plus a short preamble pointing commercial users to request a license.
+
+Non-obvious choices / consequences:
+- **It's "source-available", not "open source".** The OSI definition (and the term "open source") forbids
+  discriminating against commercial use, so we deliberately do NOT call this open source — README and
+  `project.md` say "source-available". Rules out OSI/FOSS badges and any MIT/Apache-compatible claims.
+- **The line is commercial vs noncommercial, not "distribution only".** The user phrased it as "distribute
+  for profit", but the standardized, lawyer-vetted PolyForm line covers *any* commercial use (incl. internal
+  for-profit business use), which is broader and safer than a bespoke "for-profit distribution" clause we'd
+  have to draft ourselves. Chosen over the Prosperity Public License (adds a 30-day commercial trial) and a
+  custom clause (un-vetted) — the asked/answered options.
+- **MIT can't be revoked retroactively.** Every commit already published under MIT stays MIT for those
+  versions; only commits from here forward carry PolyForm. Solo authorship (all commits are Harshal across
+  two name/email spellings) means no third-party consent was needed to relicense.
+- Sole copyright holder named in the notice: **Harshal Chourasiya** (was `harshal2802` in the MIT header).
+- No knowledge-graph change: licensing doesn't touch a screen/service/watch/widget or any data-flow edge.
+
 ## [2026-06-21] Recap feed F8 — scroll date bar (time orientation)
 
 **Decision** (user feedback: a long feed had no time anchor while scrolling). Added **one adaptive date
