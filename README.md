@@ -124,6 +124,10 @@ Wear OS / Media3 equivalent) is **device-only** and not yet validated on physica
 
 ## Getting started
 
+A root **`Makefile`** wraps every common build/test/release verb for both platforms — run
+`make help` to see them (e.g. `make ios-sim`, `make android-debug`, `make test`, `make release`).
+The raw commands below are what those targets run under the hood.
+
 ### iOS (+ watchOS) — requires macOS + Xcode
 
 The Xcode project is generated from `ios/App/project.yml` via
