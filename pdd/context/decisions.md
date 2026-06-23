@@ -7568,3 +7568,22 @@ unit-tested in `ClipFeedComposerTests` (within-session, across-sets, across-sess
 sort incl. a later-started session whose first clip captured earlier); 62 media/feed unit tests green on the
 iPhone 17 Pro sim. Android Clips feed has no Kotlin port — out of scope. Device-pending: confirm on MrRobot
 (sim has no Photos, so real PHAsset discovery + the cross-session ±90 s overlap can't be exercised in the sim).
+
+**HR→video granularity epic — Phase A capture fixes (prompt 100, 2026-06-23).** A deep review (workflow
+`wf_0d9641d0-75a` + direct read) of why a ~30 s climbing clip's HR overlay is a near-straight 2-point line
+(AVG 135 / PEAK 139) established it is **capture sparsity, not rendering/persistence**: `WorkoutHRStats.points`
+is a strict 1:1 copy (no downsampling); the Clips feed reads `hrSeries` after `end()` flushed the full buffer;
+`HRWindowSlicer` is correct. The flat line is the slicer's two **interpolated endpoints** when zero raw samples
+land inside the window — the Apple-Watch signature (`HKLiveWorkoutBuilder.mostRecentQuantity()` surfaces HR only
+~every 5–15 s; a BLE strap is ~1 Hz). **Two decisions this phase:** (1) **Real bug fixed** — watch-side
+`WatchConnectivityLink.send` discarded `sendMessage` failures with `{ _ in }` and only fell back to
+`transferUserInfo` in the *unreachable* branch, so a sample lost to a transient reachability dip during the send
+vanished (the doc-comment promised a fallback the code didn't do). Now the error handler re-queues via
+`transferUserInfo`, mirroring the phone side (`AppleWatchMetricsSource.send`). Device-verifiable only (needs a
+real watch under reachability churn). (2) Added a PURE `HRCadence` diagnostic (count / span / samples-per-sec /
+median + max gap + `isSparse(windowSec:)`) so the app can *measure* capture density — reused by Phase B to style
+an interpolation-dominated window honestly, and surfaceable in a debug view to confirm cadence on device.
+**Known minor edge (not fixed):** the Clips feed reads `hrSeries` derive-on-read from `@Query`; a clip opened for
+a *still-live* session is only as fresh as the last `syncLiveHR` (on each log / detail open) — forcing a flush
+from the derive-on-read feed view is the wrong layer, and ended sessions (the reported case) are unaffected.
+1466 `SnappetTests` green on the iPhone 17 Pro sim; `SnappetWatch` target builds.
