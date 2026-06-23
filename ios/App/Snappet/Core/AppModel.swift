@@ -104,7 +104,8 @@ final class AppModel {
         kilterSessions.bind(liveWorkout: liveWorkout,
                             liveActivity: kilterLiveActivity,
                             media: sessionMedia,
-                            userProfile: userProfile)
+                            userProfile: userProfile,
+                            health: health)
 
         // Capture the services (not self), and the timer weakly — the closure is stored on
         // the timer itself, so a strong capture would be a retain cycle.

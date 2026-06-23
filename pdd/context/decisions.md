@@ -7606,3 +7606,22 @@ now dashed, line); the only win there is a smoothly-moving dot. 1472 `SnappetTes
 walkthrough UITest (the HR overlay + export render path) green on the iPhone 17 Pro sim. Device-pending: the
 visual confirmation (gliding dot, dashed sparse line, smooth dense curve) needs a real clip with HR (the sim has
 no Photos/HR), like the reported screenshot.
+
+**HR→video granularity epic — Phase C watch HealthKit densification (prompt 102, 2026-06-23).** The
+Apple-Watch live `WCSession` relay surfaces HR only ~every 5–15 s, so a watch session's persisted `hrSeries`
+is sparse; the on-wrist `HKWorkoutSession` stored the full series (~1/1–5 s). **Decision — backfill the
+denser stored series after the session ends.** Added `HealthKitService.heartRateSamples(start:end:)` (a
+windowed read; the existing `heartRateSamples(for:)` now calls it), a PURE `HRSeriesDensify.denser(live:
+healthKit:)` (keep the COMPLETE series — HK-empty→live, live-empty→HK, else more-samples; tie keeps live —
+NOT a union, since both are the same beats), and `KilterSessionManager.densifyHRFromHealthKit(sessionID:in:)`
+gated to **ended + `appleWatch` + not-already-dense** (`HRCadence.perSecond < 0.5`, so a re-open or a prior
+densify skips the HK query). **Why the guards:** BLE is skipped because it's already ~1 Hz AND carries RR a
+HealthKit `heartRate` read lacks (densifying would drop RR + risk mixing sources); the dense-skip avoids
+redundant HK queries. **Triggers:** best-effort from `end()` (a `Task` — the @MainActor isolation lets it
+reuse the main `ModelContext` with no Sendable break) for the already-synced case, plus a catch-up from the
+`KilterSessionDetailView` `.task` once Health has had time to sync (re-saving `hrSeries` makes the Clips feed
+`@Query` re-render dense). **Known caveat (device-gated):** HealthKit sync isn't instant, so a watch clip in
+the *feed* may show the Phase-B resampled (gliding, dashed) line until the session is opened once (or HK syncs
+post-end), at which point it densifies permanently. The HealthKit read is **device-only** (no watch/HK in the
+sim) — only the pure `denser` chooser + the wiring's type-safety are verified here. `HRSeriesDensifyTests` +
+the full `SnappetTests` green on the iPhone 17 Pro sim.
