@@ -537,6 +537,30 @@ unmute; reuses the proven `ClipMediaSurface`. **The inline render under scroll i
 device-verified before defaulting ON.** All of the Clips inline-render + follow-up plan (#1 grid/share/
 reactions, #2 WYSIWYG, #3 autoplay) is now built; only a favorites filter remains optional.
 
+🟢 **Record a clip while logging a timed set/attempt (2026-06-23, prompt 98).** iOS. Closes the in-app
+capture gap on the timed-effort FOCUS covers: a reusable **`RecordClipButton`** opens an in-app camera
+(**`VideoRecorder`** — a thin `UIImagePickerController(.camera, .video)`, the recording analogue of
+`MediaPicker`) **over** `TimedSetCover` (the explicit ask) and `TimedAttemptCover` (the climb parallel).
+Because the cover's stopwatch is wall-clock-backed, presenting the recorder keeps the set timer running, so
+finishing a recording drops the user **back on the still-running set**. Each recording is saved to the
+user's own Photos library immediately (`MediaLibraryService.saveRecording`, **read-write** so the clip is
+readable back for thumbnails/feed/Studio — so it's never lost even if the set isn't logged) and queued as a
+plain `RecordedClip`; the cover hands the clips up at commit
+(STOP & LOG / the outcome commit / the climb cover's never-drop `onDisappear`), and
+`FreeformPlayerView.attachRecordedClips` files them as **`.manual` `SessionMedia`** on the just-logged
+set/attempt (index captured before `appendLog`, **upsert** so an auto-discovery race can't unpin it) through
+the pure, tested `SessionMediaService.candidate(for:)` — so the clip shows under that set's `SetMediaStrip`
+and rides the existing Studio/reel/Clips paths. The covers stay SwiftData-free; `saveVideoToPhotos` now
+returns the new asset id (a `MutableBox` carries it out of `performChanges`). Added
+`NSMicrophoneUsageDescription`; KG node + edges added. **Verified (2026-06-23, macOS Xcode 26.5 + a physical
+iPhone 13 Pro Max "MrRobot", iOS 26.5):** full `SnappetTests` + `TimedStrengthSetTests` green on the iPhone 17
+Pro sim (incl. `RecordedClipAttachTests` + the sim no-camera guard); **on device**, "Record a clip" opens the
+camera and records, then returns to the still-running set. The macOS/device gate caught a real crash the Linux
+author couldn't: configuring the throwing `UIImagePickerController` camera-only setters
+(`cameraCaptureMode`/`videoQuality`) on a not-yet-ready camera session `SIGABRT`-ed the app — fixed by recording
+via `mediaTypes=[movie]` only, forcing `isAvailable=false` on the Simulator, and requesting camera/mic
+authorization before presenting (see `decisions.md`). The structured interval runner is a deliberate follow-up.
+
 ## License
 
 TBD.

@@ -4,7 +4,7 @@ import XCTest
 /// reps × weight AND timed. Drives Quick Start → add a Lifting exercise → "Time this set"
 /// (`freeform.timeThisSet`) → the `TimedSetCover` (count-up) → bump the weight → STOP & LOG → assert the
 /// logged row carries the combined "N × W kg · M:SS" measure. Fresh-store launch like the rest of the suite.
-final class TimedStrengthSetTests: XCTestCase {
+@MainActor final class TimedStrengthSetTests: XCTestCase {
     var app: XCUIApplication!
 
     override func setUp() {
@@ -71,5 +71,25 @@ final class TimedStrengthSetTests: XCTestCase {
         let combined = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '× 5 kg · '")).firstMatch
         XCTAssertTrue(combined.waitForExistence(timeout: 6),
                       "the timed strength set should log a combined reps × weight · duration row")
+    }
+
+    /// The timed-set cover offers a "Record a clip" affordance (camera → attach to this set). The camera
+    /// itself is device-only — the Simulator has no camera — so here we assert the button is present and
+    /// that tapping it surfaces the guard notice (the deterministic sim path); the real record → save →
+    /// attach flow is device-pending.
+    func testTimedSetCoverOffersRecordClipButton() {
+        openFreeformPlayer()
+        addLiftingExercise()
+
+        app.buttons["freeform.timeThisSet"].tap()
+        XCTAssertTrue(app.staticTexts["timedSet.timer"].waitForExistence(timeout: 5),
+                      "the timed-set cover should open")
+
+        let record = app.buttons["timedSet.record"]
+        XCTAssertTrue(record.waitForExistence(timeout: 4),
+                      "the timed-set cover should offer a Record a clip button")
+        record.tap()
+        XCTAssertTrue(app.staticTexts["timedSet.recordNotice"].waitForExistence(timeout: 4),
+                      "tapping Record on the Simulator (no camera) should surface the guard notice")
     }
 }

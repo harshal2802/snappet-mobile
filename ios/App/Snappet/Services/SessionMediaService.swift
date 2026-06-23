@@ -83,6 +83,17 @@ final class SessionMediaService: Sendable {
         .sorted { $0.offsetSec < $1.offsetSec }
     }
 
+    /// Map an in-session **camera recording** (`RecordedClip`, already saved to Photos) to a `Candidate`
+    /// relative to `startedAt` — the same plain-value shape auto-discovery and manual picks produce, so a
+    /// recorded clip attaches through the one funnel. Always `.video`; the offset clamps ≥ 0 (a clip whose
+    /// recording began just before `startedAt` pins to 0). Pure (no Photos/SwiftData) → unit-tested.
+    static func candidate(for clip: RecordedClip, startedAt: Date) -> Candidate {
+        Candidate(localIdentifier: clip.localIdentifier,
+                  kind: .video,
+                  offsetSec: offset(of: clip.capturedAt, startedAt: startedAt),
+                  durationSec: clip.durationSec)
+    }
+
     // MARK: - Photos access (reuses PhotoLibraryService's value-first request)
 
     private let photos = PhotoLibraryService()
