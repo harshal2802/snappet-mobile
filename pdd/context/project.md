@@ -535,7 +535,12 @@ OFF, nav-bar toggle), muted, suppressed under Reduce Motion / Low Power — the 
 its clip muted (a per-card `.onScrollVisibilityChange`, NOT the R12 scroll-center coordinator); tap to
 unmute; reuses the proven `ClipMediaSurface`. **The inline render under scroll is THE R12 risk → must be
 device-verified before defaulting ON.** All of the Clips inline-render + follow-up plan (#1 grid/share/
-reactions, #2 WYSIWYG, #3 autoplay) is now built; only a favorites filter remains optional.
+reactions, #2 WYSIWYG, #3 autoplay) is now built; only a favorites filter remains optional. **No HR on
+photos (prompt 105):** the live HR scorebug now renders on **videos only** — a captured photo is a single
+instant (no playhead; AVG/PEAK would be over a synthetic 6 s window it never spanned), so it shows the
+name tag only. Gated at the one `ClipHROverlay.make` mapping (returns `nil` for `kind != "video"`), so the
+feed poster AND the fullscreen viewer drop it consistently; the small peak-BPM grid-thumbnail badge is
+unchanged.
 
 ## License
 

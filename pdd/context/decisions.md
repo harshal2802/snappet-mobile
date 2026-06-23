@@ -7652,3 +7652,20 @@ scope); beat-to-beat watch RR via `HKHeartbeatSeriesQuery` stays a future follow
 now). Two pre-existing `allCases`-count tests updated (`HRTileResolveTests` values() → a dense window so the
 effort metrics resolve; `HRTileLayoutTests` hero-overflow → `all.count − 5`). Full `SnappetTests` green on the
 iPhone 17 Pro sim.
+
+**Clips — no HR overlay on photos (prompt 105, 2026-06-23).** A user reported the Clips feed stamps a live
+HR scorebug (BPM + sweeping chart + AVG/PEAK) on captured **photos**, which "doesn't make sense". It doesn't:
+a still is a single instant, not a span of effort — there's no playhead for the dot to track, and the AVG/PEAK
+are computed over a *synthetic* `FeedMedia.photoWindowSec` (6 s) window the photo never spanned, so the overlay
+presents measured-over-time data the still doesn't carry. **Decision — gate the ONE mapping, not the call
+sites.** Added `guard clip.kind == "video" else { return nil }` at the top of `ClipHROverlay.make`. `nil` is
+already the established "no HR → name tag only" path that **both** callers handle with no extra wiring
+(`ClipsFeedView`'s `if let payload`, `MediaPage`'s `if let overlay`), so one change drops the scorebug from
+photos in the feed AND the fullscreen viewer *consistently* (the SSOT can't drift between them). Safe
+everywhere: the feed only mounts `ClipMediaSurface` for `kind == "video"`, and in fullscreen a photo's payload
+only fed the video playhead `fraction` it doesn't have. **Scope kept tight:** the tiny peak-BPM badge on the
+secondary "Media" grid thumbnails (`FeedMedia.clipHR` → `MediaBrowserView.tile`/`FeedMediaCarousel`) is a
+different, small metadata chip — left unchanged, not the prominent scorebug flagged. Covered by a new pure
+`ClipHROverlayTests.testMakeReturnsNilForPhotosEvenWithHR` (a photo with HR in-window → `nil`; the same
+window/HR on a video still builds a payload). **Device-pending:** the visual confirmation (photo = name-only,
+video = live overlay) needs a real session with both kinds — the sim has no Photos/HR.

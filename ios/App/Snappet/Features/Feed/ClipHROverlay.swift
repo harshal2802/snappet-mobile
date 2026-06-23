@@ -29,6 +29,12 @@ enum ClipHROverlay {
     /// default, and what the Recap viewer passes) keeps the fixed `.feedClipScorebug`.
     static func make(clip: MediaInput, hrSeries: [HRPoint], maxHR: Double, restHR: Double?,
                      tile: HRTile? = nil) -> Payload? {
+        // Photos get NO overlay. A photo is a single instant, not a span of effort — a live HR scorebug
+        // (a sweeping BPM + chart, AVG/PEAK computed over a *synthetic* `photoWindowSec` window) reads as
+        // measured-over-time data the still doesn't carry, and there's no playhead for the dot to track.
+        // Only a clip that plays through real time (a video) earns the overlay; a photo degrades to the
+        // name tag, the same graceful path as the no-HR `nil` below. (Every caller already handles `nil`.)
+        guard clip.kind == "video" else { return nil }
         let window = FeedMedia.clipHRWindow(offsetSec: clip.offsetSec, durationSec: clip.durationSec,
                                             hrSeries: hrSeries)
         guard !window.isEmpty else { return nil }
