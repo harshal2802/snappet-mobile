@@ -36,6 +36,15 @@ final class LiveMetricsCoordinator: MetricsSource {
     /// else BLE if a band was chosen). Setting it pins the source.
     var selectedSource: MetricsSourceKind?
 
+    /// Opt-in (default off): when a heart-rate **band** is known, prefer it over the Apple Watch for the
+    /// automatic default — a band streams ~1 Hz + RR, the densest clip-grade HR (HR-granularity epic /
+    /// prompt 103). Never overrides an explicit `selectedSource`, and changes nothing when no band is
+    /// known, so it can't surprise a watch-only user. Persisted in `UserDefaults`.
+    var preferBandForDetail: Bool = UserDefaults.standard.bool(forKey: LiveMetricsCoordinator.preferBandKey) {
+        didSet { UserDefaults.standard.set(preferBandForDetail, forKey: Self.preferBandKey) }
+    }
+    private static let preferBandKey = "preferBandForClipHR"
+
     /// Whether a workout session is currently driving a source (`start()` called, `stop()` not
     /// yet). Source-agnostic — the resume guard reads this instead of the watch-specific
     /// `connectionState`, so a **BLE** session isn't needlessly restarted on resume (which would
@@ -61,7 +70,8 @@ final class LiveMetricsCoordinator: MetricsSource {
     var activeKind: MetricsSourceKind {
         Self.resolve(selected: selectedSource,
                      watchUsable: watch.watchUsable,
-                     hasBLEDevice: ble.hasKnownBand)
+                     hasBLEDevice: ble.hasKnownBand,
+                     preferBandForDetail: preferBandForDetail)
     }
 
     /// Pure source-selection rule (unit-testable, no device):
@@ -72,8 +82,13 @@ final class LiveMetricsCoordinator: MetricsSource {
     /// drives the UI's "no source" message — the same as A1's behavior).
     nonisolated static func resolve(selected: MetricsSourceKind?,
                                     watchUsable: Bool,
-                                    hasBLEDevice: Bool) -> MetricsSourceKind {
+                                    hasBLEDevice: Bool,
+                                    preferBandForDetail: Bool = false) -> MetricsSourceKind {
         if let selected { return selected }
+        // Opt-in (prompt 103): when the user wants the densest clip-grade HR, a known band (~1 Hz + RR)
+        // beats the watch as the automatic default. Off by default + gated on a known band, so it never
+        // surprises a watch user.
+        if preferBandForDetail, hasBLEDevice { return .ble }
         if watchUsable { return .appleWatch }
         if hasBLEDevice { return .ble }
         return .appleWatch

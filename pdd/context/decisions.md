@@ -7625,3 +7625,12 @@ the *feed* may show the Phase-B resampled (gliding, dashed) line until the sessi
 post-end), at which point it densifies permanently. The HealthKit read is **device-only** (no watch/HK in the
 sim) — only the pure `denser` chooser + the wiring's type-safety are verified here. `HRSeriesDensifyTests` +
 the full `SnappetTests` green on the iPhone 17 Pro sim.
+
+**HR→video granularity epic — Phase D prefer-band opt-in (prompt 103, 2026-06-23).** A BLE chest strap is the
+densest clip-grade source (~1 Hz + RR), but `resolve` auto-prefers the watch. **Decision — opt-in, never a
+silent default flip.** Added `preferBandForDetail: Bool = false` to `LiveMetricsCoordinator.resolve`: when on
+**and** a band is known (and no explicit pick), it returns `.ble` ahead of the watch; the default keeps every
+existing call site/test unchanged and a watch-only user is unaffected (gated on `hasBLEDevice`). Persisted on
+the coordinator via `UserDefaults` (it's `@Observable`, can't use `@AppStorage`), exposed as a Toggle +
+explainer in `HeartRateSourcePicker` that also references Phase C's Health backfill. Explicit `selectedSource`
+still wins (tested). New resolve cases + full `SnappetTests` green on the iPhone 17 Pro sim.
