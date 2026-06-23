@@ -7587,3 +7587,22 @@ an interpolation-dominated window honestly, and surfaceable in a debug view to c
 a *still-live* session is only as fresh as the last `syncLiveHR` (on each log / detail open) — forcing a flush
 from the derive-on-read feed view is the wrong layer, and ended sessions (the reported case) are unaffected.
 1466 `SnappetTests` green on the iPhone 17 Pro sim; `SnappetWatch` target builds.
+
+**HR→video granularity epic — Phase B display resample + honest sparse styling (prompt 101, 2026-06-23).**
+The clip HR curve drew straight from the few-point sliced window, so a sparse window was a flat 2-point line
+AND the playhead dot **snapped** between the two points at the midpoint. **Decision — resample for display,
+keep aggregates raw, dash the honest-sparse case.** Added pure `HRChartGeometry.displaySeries` — a dense
+uniform-grid resample over `[0, maxT]` via the engine's existing `HeartRateSeries` resampler+smoother (one
+resampler, not a second; capped ~240 pts so a full-session editor chart can't balloon; **endpoints preserved**
+so the playhead `fraction` — which divides by `maxT` — stays aligned). `HROverlayValues` computes `chartSamples`
++ `cadence` ONCE in init (a value type, never per SwiftUI render — the carousel-perf lesson), and
+`bpm(atFraction:)` now reads `chartSamples` so the live BPM number matches the gliding dot. `PremiumHRCurve`
+(preview) and `StudioOverlays.tileChartLayer` (export) both draw from the dense series and **dash + dim** the
+stroke when `HRCadence.isSparse(windowSec:)` — signalling "estimated between sparse samples" instead of passing
+two interpolated endpoints off as measured data. **Invariant held:** AVG/PEAK/zone/kcal stay computed from the
+RAW sliced samples (`WorkoutHRStats.make`); the curve's peak LABEL shows the raw peak via `rawPeakBpm` so
+smoothing can't shave it. **Adds no data** — a 2-point window resamples to *collinear* points (still a straight,
+now dashed, line); the only win there is a smoothly-moving dot. 1472 `SnappetTests` green + the Studio
+walkthrough UITest (the HR overlay + export render path) green on the iPhone 17 Pro sim. Device-pending: the
+visual confirmation (gliding dot, dashed sparse line, smooth dense curve) needs a real clip with HR (the sim has
+no Photos/HR), like the reported screenshot.

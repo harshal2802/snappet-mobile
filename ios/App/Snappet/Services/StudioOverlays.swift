@@ -542,7 +542,11 @@ enum StudioOverlays {
                                        slotStartSec: Double, slotDurationSec: Double) -> CALayer {
         let container = CALayer(); container.frame = outer
         let rect = container.bounds          // no inset — the preview maps into the full chart rect too (WYSIWYG)
-        let pts = HRChartGeometry.normalizedPoints(samples)
+        // Draw from the SAME dense resampled series the preview's `PremiumHRCurve` uses (prompt 101), so
+        // the burned-in curve + gliding dot match. Aggregates (peak label / glow zone) stay on RAW samples.
+        let chart = HRChartGeometry.displaySeries(samples)
+        let sparse = HRCadence.summarize(samples).isSparse(windowSec: samples.last?.t ?? 0)
+        let pts = HRChartGeometry.normalizedPoints(chart)
         func local(_ n: CGPoint) -> CGPoint {
             CGPoint(x: rect.minX + n.x * rect.width, y: rect.minY + n.y * rect.height)   // n.y=1 → top (bottom-left)
         }
@@ -550,6 +554,8 @@ enum StudioOverlays {
         let mapped = pts.map(local)
         let smooth = HRChartGeometry.smoothedPath(through: mapped)
         let lw: CGFloat = sparkline ? HRTileStyle.lineWidthSpark : HRTileStyle.lineWidthFull
+        // Dashed for an interpolation-only window — the export twin of the preview's honest sparse styling.
+        let dashPattern: [NSNumber]? = sparse ? [NSNumber(value: Double(lw * 2.2)), NSNumber(value: Double(lw * 1.8))] : nil
         let peakZone = HeartRateZone.forBpm(HRChartGeometry.peakBPM(samples), maxHR: maxHR)
         let glowColor = zoneColored ? uiColor(peakZone.colorHex) : uiColor("#FF3B30")
 
@@ -563,7 +569,7 @@ enum StudioOverlays {
         }
         let area = CAShapeLayer()
         area.frame = container.bounds; area.path = areaPath
-        area.fillColor = glowColor.withAlphaComponent(HRTileStyle.areaTopAlpha * 0.55).cgColor
+        area.fillColor = glowColor.withAlphaComponent(HRTileStyle.areaTopAlpha * (sparse ? 0.22 : 0.55)).cgColor
         area.strokeColor = UIColor.clear.cgColor
         container.addSublayer(area)
 
@@ -571,7 +577,9 @@ enum StudioOverlays {
         let glow = CAShapeLayer()
         glow.frame = container.bounds; glow.path = smooth
         glow.strokeColor = glowColor.cgColor; glow.fillColor = UIColor.clear.cgColor
-        glow.lineWidth = lw; glow.lineCap = .round; glow.lineJoin = .round
+        glow.lineWidth = lw; glow.lineCap = sparse ? .butt : .round; glow.lineJoin = .round
+        glow.lineDashPattern = dashPattern
+        glow.opacity = sparse ? 0.7 : 1
         glow.shadowColor = glowColor.cgColor; glow.shadowRadius = sparkline ? 2 : 3
         glow.shadowOpacity = Float(HRTileStyle.curveGlowAlpha); glow.shadowOffset = .zero
         container.addSublayer(glow)
@@ -581,8 +589,9 @@ enum StudioOverlays {
         let strokeMask = CAShapeLayer()
         strokeMask.frame = container.bounds; strokeMask.path = smooth
         strokeMask.strokeColor = UIColor.black.cgColor; strokeMask.fillColor = UIColor.clear.cgColor
-        strokeMask.lineWidth = lw; strokeMask.lineCap = .round; strokeMask.lineJoin = .round
-        let stops = zoneColored ? HRChartGeometry.zoneStops(samples, maxHR: maxHR) : []
+        strokeMask.lineWidth = lw; strokeMask.lineCap = sparse ? .butt : .round; strokeMask.lineJoin = .round
+        strokeMask.lineDashPattern = dashPattern
+        let stops = zoneColored ? HRChartGeometry.zoneStops(chart, maxHR: maxHR) : []
         if stops.count >= 2 {
             let grad = CAGradientLayer()
             grad.frame = container.bounds
@@ -612,7 +621,9 @@ enum StudioOverlays {
         // recoloured by the bpm UNDER the dot — both via x-keyed keyframes, so the burned-in dot tracks
         // the same point AND the same zone colour the preview's live dot shows (preview == export). The
         // white disc is static; the halo (the dot's own bg) + the core animate their colour.
-        let sorted = samples.sorted { $0.t < $1.t }
+        // Key off the SAME dense `chart` series `pts` came from, so dot index ↔ bpm stay aligned (and the
+        // dot glides + recolours smoothly, matching the preview).
+        let sorted = chart.sorted { $0.t < $1.t }
         let halo = sparkline ? 11.0 : 16.0, white = sparkline ? 7.0 : 10.0, core = sparkline ? 4.0 : 6.0
         func dotColorAt(_ i: Int) -> UIColor {
             zoneColored ? uiColor(HeartRateZone.forBpm(sorted[i].bpm, maxHR: maxHR).colorHex) : uiColor("#FF3B30")

@@ -70,13 +70,21 @@ final class HROverlayValuesTests: XCTestCase {
         XCTAssertNil(values(hrv: .empty).staticValue(.hrv, fallbackHex: "#FFF"))
     }
 
-    func testLiveBpmTracksPlayhead() {
+    func testLiveBpmTracksPlayhead() throws {
         let v = values()
-        // At the peak (t≈30 → fraction 0.5) the live bpm reads ~180; near the start it's much lower.
-        let mid = try! XCTUnwrap(v.live(.bpm, atFraction: 0.5, fallbackHex: "#FFF"))
-        XCTAssertTrue(mid.text.contains("180"))
-        let start = try! XCTUnwrap(v.live(.bpm, atFraction: 0.0, fallbackHex: "#FFF"))
-        XCTAssertNotEqual(start.text, mid.text)   // the value changes over the clip
+        // The live bpm tracks the playhead over the SAME dense series the curve+dot draw from (prompt 101):
+        // near the mid-clip peak (t≈30 → fraction 0.5) it's high (lightly smoothed below the raw 180 peak),
+        // near the start it's low, and it changes across the clip. The raw 180 peak is preserved in the
+        // PEAK aggregate (testChartSamplesDensifyButAggregatesStayRaw), not shaved off it.
+        let mid = try XCTUnwrap(v.bpm(atFraction: 0.5))
+        let start = try XCTUnwrap(v.bpm(atFraction: 0.0))
+        XCTAssertGreaterThan(mid, 170)            // near the 180 peak
+        XCTAssertLessThan(start, 75)              // near the 60 start
+        XCTAssertGreaterThan(mid - start, 50)     // clearly rises across the clip
+        // The live Reading text still updates over the clip.
+        let midText = try XCTUnwrap(v.live(.bpm, atFraction: 0.5, fallbackHex: "#FFF"))
+        let startText = try XCTUnwrap(v.live(.bpm, atFraction: 0.0, fallbackHex: "#FFF"))
+        XCTAssertNotEqual(startText.text, midText.text)
     }
 
     func testLiveHRRNilWithoutBounds() {
@@ -100,5 +108,28 @@ final class HROverlayValuesTests: XCTestCase {
         var el = HROverlayElement(metric: .bpm)
         el.animated = false                                            // live in preview, fixed in export
         XCTAssertEqual(values().segments(for: el).count, 1)
+    }
+
+    // MARK: - Dense chart series + honest sparse styling (prompt 101)
+
+    func testChartSamplesDensifyButAggregatesStayRaw() {
+        let v = values()   // 3 raw samples over 60s, peak 180
+        XCTAssertGreaterThan(v.chartSamples.count, v.samples.count, "chart series should be densified")
+        XCTAssertEqual(v.chartSamples.last!.t, 60, accuracy: 1e-6, "endpoints span the window for fraction alignment")
+        // PEAK/AVG remain from the RAW samples — smoothing the drawn curve must not shave them.
+        XCTAssertEqual(v.rawPeakBpm ?? 0, 180, accuracy: 1e-9)
+        XCTAssertEqual(v.staticValue(.maxHR, fallbackHex: "#FFFFFF")?.value, "180")
+        XCTAssertEqual(v.staticValue(.avgHR, fallbackHex: "#FFFFFF")?.value, "110")   // (60+180+90)/3
+    }
+
+    func testIsSparseChartFlagsTwoPointWindow() {
+        // Two samples bracketing a 30s clip → interpolation-dominated → dashed (sparse) styling.
+        let sparse = HROverlayValues(samples: [HRPoint(t: 0, bpm: 135), HRPoint(t: 30, bpm: 139)],
+                                     durationSec: 30, maxHR: 190, restHR: 60)
+        XCTAssertTrue(sparse.isSparseChart)
+        // A ~1 Hz window is a measured curve → solid (not sparse).
+        let dense = HROverlayValues(samples: (0...30).map { HRPoint(t: Double($0), bpm: 130) },
+                                    durationSec: 30, maxHR: 190, restHR: 60)
+        XCTAssertFalse(dense.isSparseChart)
     }
 }

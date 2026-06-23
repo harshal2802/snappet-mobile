@@ -22,6 +22,20 @@ struct HROverlayValues {
 
     private let stats: WorkoutHRStats?
 
+    /// The **dense, uniform-grid** version of `samples` the chart + playhead dot render from, so the
+    /// curve is smooth and the dot glides instead of snapping between sparse raw points (prompt 101).
+    /// Resampled ONCE here (a value type built when the payload is made) — never per SwiftUI render.
+    /// Aggregates still come from raw `samples`, never this.
+    let chartSamples: [HRPoint]
+    /// How densely this clip window was actually sampled — drives the honest sparse styling.
+    let cadence: HRCadence
+    /// Whether the window is too sparsely sampled to be a *measured* curve (the line is interpolation):
+    /// the overlay dashes it instead of presenting two interpolated endpoints as real data.
+    var isSparseChart: Bool { cadence.isSparse(windowSec: durationSec) }
+    /// The peak bpm over the RAW window (not the smoothed chart series) — the value the curve's peak
+    /// label shows, kept consistent with the scorebug's PEAK so smoothing can't shave it.
+    var rawPeakBpm: Double? { stats?.maxBpm }
+
     init(samples: [HRPoint], durationSec: Double, maxHR: Double?, restHR: Double?,
          kcal: Double? = nil, hrv: HRVMetrics = .empty) {
         self.samples = samples
@@ -31,6 +45,8 @@ struct HROverlayValues {
         self.kcal = kcal
         self.hrv = hrv
         self.stats = WorkoutHRStats.make(from: samples, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
+        self.chartSamples = HRChartGeometry.displaySeries(samples)
+        self.cadence = HRCadence.summarize(samples)
     }
 
     /// A resolved overlay reading: the string(s) to draw + the `#RRGGBB` colour. Equatable so the
@@ -65,8 +81,9 @@ struct HROverlayValues {
     /// the resolved tile so the export's zone-banded chart tints against the SAME bound as the preview.
     var resolvedMaxHR: Double { effectiveMaxHR }
 
-    /// Smoothed bpm at a playhead fraction (0…1) — reuses the chart's interpolation.
-    func bpm(atFraction f: Double) -> Double? { HRChartGeometry.sampleBPM(samples, atFraction: f) }
+    /// Smoothed bpm at a playhead fraction (0…1) — reuses the chart's interpolation over the SAME dense
+    /// `chartSamples` the curve + dot draw from, so the live BPM number matches the gliding dot (prompt 101).
+    func bpm(atFraction f: Double) -> Double? { HRChartGeometry.sampleBPM(chartSamples, atFraction: f) }
 
     private func hrrFraction(bpm: Double) -> Double? {
         guard let restHR, let mx = maxHR, mx > restHR else { return nil }

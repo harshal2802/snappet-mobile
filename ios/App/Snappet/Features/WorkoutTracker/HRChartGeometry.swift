@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import HighlightEngine
 
 /// **Pure** geometry for the heart-rate chart overlay — Foundation/CoreGraphics only (no AVFoundation
 /// / SwiftUI), so the line-mapping + the time→bpm sampling are unit-tested without a device. Both the
@@ -48,6 +49,37 @@ enum HRChartGeometry {
             }
         }
         return sorted.last!.bpm
+    }
+
+    /// A **dense, uniform-grid** version of a sliced clip window for *display* — so the curve renders
+    /// smoothly and the playhead dot **glides** instead of snapping between a handful of raw points
+    /// (HR-granularity epic / prompt 101). Reuses the engine's `HeartRateSeries` resampler+smoother
+    /// (one resampler, not a second), then samples it back onto an `[HRPoint]` grid spanning `[0, maxT]`.
+    ///
+    /// Honesty: this adds **no** data. A 2-point (interpolation-only) window resamples to *collinear*
+    /// points — still a straight line — so a sparse window can't masquerade as a measured curve (the
+    /// overlay dashes it via `HRCadence.isSparse`). The win for sparse data is purely a smoothly-moving
+    /// dot; for moderately/densely sampled windows it also smooths the curve and the zone-gradient stops.
+    ///
+    /// **Endpoints are preserved** (`t == 0` and `t == maxT`) so the chart still spans the full width and
+    /// the playhead `fraction` (which divides by the window's `maxT`) stays aligned. Bounded to ~`maxPoints`
+    /// (raising `dt` for long editor/session windows) so a full-session chart can't balloon the path.
+    /// `< 2` samples or `maxT == 0` → the input is returned unchanged. Pure → unit-tested.
+    static func displaySeries(_ samples: [HRPoint], maxPoints: Int = 240, minDt: Double = 0.5,
+                              smoothingWindowSec: Double = 2) -> [HRPoint] {
+        guard samples.count >= 2 else { return samples }
+        let sorted = samples.sorted { $0.t < $1.t }
+        guard let maxT = sorted.last?.t, maxT > 0 else { return samples }
+        let dt = Swift.max(minDt, maxT / Double(Swift.max(2, maxPoints)))
+        let hs = sorted.map { HRSample(t: $0.t, bpm: $0.bpm) }
+        let series = HeartRateSeries.make(from: hs, duration: maxT, dt: dt,
+                                          smoothingWindowSec: smoothingWindowSec,
+                                          restBpm: nil, maxBpm: nil)
+        let n = Swift.max(2, Int((maxT / dt).rounded()) + 1)
+        return (0..<n).map { i in
+            let t = Double(i) / Double(n - 1) * maxT
+            return HRPoint(t: t, bpm: series.bpm(at: t))
+        }
     }
 
     /// Normalized y (0…1, 1 = top) for a bpm value, using the chart's padded range.
