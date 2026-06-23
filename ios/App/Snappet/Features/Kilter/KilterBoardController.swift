@@ -816,9 +816,13 @@ final class KilterSessionManager {
         }
     }
 
+    /// Every `localIdentifier` already stored as `SessionMedia` in ANY session — auto-discovery dedups
+    /// **globally** so an asset in the ±90s pad overlap of two adjacent sessions is stored once, not tagged
+    /// into both (R2/R4: one physical video → one set). Re-discovery of a session's own clips still skips
+    /// them (this set is a superset of the session's own). The `sessionID` is unused now but kept so the
+    /// call site reads intent; a global fetch is fine at the small media volumes here.
     private func existingMediaIdentifiers(sessionID: UUID, in context: ModelContext) -> Set<String> {
-        let rows = (try? context.fetch(
-            FetchDescriptor<SessionMedia>(predicate: #Predicate { $0.sessionID == sessionID }))) ?? []
+        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
         return Set(rows.map(\.localIdentifier))
     }
 }
