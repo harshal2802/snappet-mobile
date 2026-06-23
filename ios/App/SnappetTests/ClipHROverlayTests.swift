@@ -17,6 +17,19 @@ final class ClipHROverlayTests: XCTestCase {
         XCTAssertNil(ClipHROverlay.make(clip: clip(), hrSeries: [], maxHR: 190, restHR: 60))
     }
 
+    /// A PHOTO never gets the HR overlay — even with HR squarely inside its window — because a still is a
+    /// single instant, not a span of effort, and there's no playhead to track. The SAME window + HR on a
+    /// VIDEO does build a payload, proving it's the photo *kind* (not missing data) that suppresses it.
+    func testMakeReturnsNilForPhotosEvenWithHR() {
+        let series = (8...18).map { HRPoint(t: Double($0), bpm: 120 + Double($0)) }   // covers [10,16]
+        let photo = MediaInput(id: UUID(), kind: "photo", offsetSec: 10, durationSec: nil,
+                               exerciseId: nil, setIndex: nil, climbUUID: nil, localIdentifier: "asset")
+        XCTAssertNil(ClipHROverlay.make(clip: photo, hrSeries: series, maxHR: 190, restHR: 60))
+        // Control: a video over the same window/HR still builds an overlay.
+        XCTAssertNotNil(ClipHROverlay.make(clip: clip(offset: 10, dur: 6), hrSeries: series,
+                                           maxHR: 190, restHR: 60))
+    }
+
     func testMakeBuildsClipLocalWindowValuesAndScorebugTile() throws {
         let series = (8...18).map { HRPoint(t: Double($0), bpm: 120 + Double($0)) }   // around [10,16]
         let p = try XCTUnwrap(ClipHROverlay.make(clip: clip(offset: 10, dur: 6),
