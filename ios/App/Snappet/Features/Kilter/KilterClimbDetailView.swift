@@ -72,6 +72,11 @@ struct KilterClimbDetailView: View {
     @State private var showingRename = false
     @State private var renameText = ""
     @State private var showingDeleteCreated = false
+    /// All-time ascent history for the currently shown climb — drives flash gate + ascent chip.
+    @State private var climbHasAnyAttempt: Bool = false
+    @State private var climbIsSent: Bool = false
+    @State private var climbIsFlashed: Bool = false
+    @State private var climbAttemptCount: Int = 0
 
     private var currentStat: KilterClimbStat? { stats.first { $0.angle == selectedAngle } }
     private var isFavorite: Bool { favorites.contains { $0.climbUUID == currentUUID } }
@@ -182,9 +187,10 @@ struct KilterClimbDetailView: View {
             statRow
             metaRow
             sessionStatusRow
+            boardCard
+            ascentStatusChip
             logButtons
             gradeChart
-            illuminateSection
             if let link = betaLinks.first, let url = URL(string: link) {
                 Link(destination: url) {
                     Label("Beta video", systemImage: "play.rectangle")
@@ -474,13 +480,39 @@ struct KilterClimbDetailView: View {
 
     private var logButtons: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                logButton(.flash, "bolt.fill")
-                logButton(.sent, "checkmark")
-            }
-            HStack(spacing: 10) {
-                logButton(.project, "target")
-                logButton(.attempt, "arrow.uturn.up")
+            if climbIsSent {
+                // State C: already sent — secondary actions only, no Send it! emphasis
+                HStack(spacing: 10) {
+                    logButton(.sent, "checkmark", label: "Log again")
+                    logButton(.attempt, "arrow.uturn.up")
+                }
+                HStack(spacing: 10) {
+                    logButton(.project, "target")
+                    flashButtonDisabled(reason: climbIsFlashed ? "Already flashed" : "Already sent")
+                }
+            } else if climbHasAnyAttempt {
+                // State B: attempted but not sent — Send it! is the primary action
+                Button { log(.sent) } label: {
+                    Label("Send it!", systemImage: "checkmark.circle.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .accessibilityIdentifier("kilter.log.sent")
+                HStack(spacing: 10) {
+                    logButton(.attempt, "arrow.uturn.up")
+                    logButton(.project, "target")
+                }
+                flashButtonDisabled(reason: "Flash not available — you've already attempted this climb")
+            } else {
+                // State A: never tried — all options available, Flash eligible
+                HStack(spacing: 10) {
+                    logButton(.flash, "bolt.fill")
+                    logButton(.sent, "checkmark")
+                }
+                HStack(spacing: 10) {
+                    logButton(.project, "target")
+                    logButton(.attempt, "arrow.uturn.up")
+                }
             }
             if let logConfirmation {
                 Label(logConfirmation, systemImage: "checkmark.circle.fill")
@@ -494,6 +526,21 @@ struct KilterClimbDetailView: View {
             autoStartCapsule
         }
         .padding(.horizontal)
+        .animation(.snappy, value: climbHasAnyAttempt)
+        .animation(.snappy, value: climbIsSent)
+    }
+
+    /// Disabled Flash button with a brief inline reason — always full-width so layout doesn't shift.
+    private func flashButtonDisabled(reason: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "bolt.slash.fill").foregroundStyle(.secondary)
+            Text(reason).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .font(.caption.weight(.medium))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+        .accessibilityIdentifier("kilter.log.flash.disabled")
     }
 
     /// Undoable "Session started" confirmation, shown when a log auto-started a session (#75) —
@@ -531,63 +578,174 @@ struct KilterClimbDetailView: View {
         }
     }
 
-    private func logButton(_ status: KilterAscentStatus, _ image: String) -> some View {
+    private func logButton(_ status: KilterAscentStatus, _ image: String, label: String? = nil) -> some View {
         Button { log(status) } label: {
-            Label(status.label, systemImage: image).frame(maxWidth: .infinity)
+            Label(label ?? status.label, systemImage: image).frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
         .tint(status.isSend ? .green : .orange)
         .accessibilityIdentifier("kilter.log.\(status.rawValue)")
     }
 
-    @ViewBuilder private var illuminateSection: some View {
-        // Simulators / devices with no BLE radio never show the section — there's nothing to connect to.
+    /// Compact board connection card shown above the log buttons — persistent so the climber can
+    /// reconnect mid-session without scrolling to the bottom.
+    @ViewBuilder private var boardCard: some View {
         if board.state != .unsupported {
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 switch board.state {
                 case .connected:
-                    primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
-                        lightAndCapture()
-                    }
-                    wrongHoldsControl
-                    Button("Disconnect board") { board.disconnect() }
-                        .font(.caption)
+                    HStack(spacing: 10) {
+                        Circle().fill(.green).frame(width: 8, height: 8)
+                        Text("Board connected · \(selectedAngle)°")
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        Button {
+                            lightAndCapture()
+                        } label: {
+                            Label("Light up", systemImage: "lightbulb.fill")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(SnappetColor.moduleAccent("kilter").opacity(0.18),
+                                            in: Capsule())
+                                .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("kilter.illuminate")
+                        Button {
+                            board.disconnect()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
                         .accessibilityIdentifier("kilter.board.disconnect")
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(Color.green.opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SnappetRadius.md)
+                            .stroke(Color.green.opacity(0.30), lineWidth: 1)
+                    )
 
                 case .scanning, .connecting:
-                    busyRow(board.state == .scanning ? "Searching for your board…" : "Connecting…")
-                    Button("Cancel") { board.cancel() }
-                        .font(.caption)
-                        .accessibilityIdentifier("kilter.board.cancel")
+                    HStack(spacing: 10) {
+                        ProgressView().scaleEffect(0.8)
+                        Text(board.state == .scanning ? "Searching for board…" : "Connecting…")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel") { board.cancel() }
+                            .font(.caption)
+                            .accessibilityIdentifier("kilter.board.cancel")
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(SnappetColor.surfaceMuted,
+                                in: RoundedRectangle(cornerRadius: SnappetRadius.md))
 
                 case .failed(let message):
-                    statusNote(message, systemImage: "exclamationmark.triangle.fill", tint: .orange)
-                    primaryButton("Try again", systemImage: "arrow.clockwise") { board.connect() }
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Spacer()
+                        Button {
+                            board.connect()
+                        } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Color.orange.opacity(0.15), in: Capsule())
+                                .foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(Color.orange.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: SnappetRadius.md)
+                            .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                    )
 
                 case .bluetoothOff:
-                    statusNote("Bluetooth is off. Turn it on in Control Center or Settings to connect your board.",
-                               systemImage: "wifi.slash", tint: .secondary)
+                    HStack(spacing: 10) {
+                        Image(systemName: "wifi.slash").foregroundStyle(.secondary)
+                        Text("Bluetooth is off — turn it on to connect your board")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(SnappetColor.surfaceMuted,
+                                in: RoundedRectangle(cornerRadius: SnappetRadius.md))
 
                 case .unauthorized:
-                    statusNote("Snappet needs Bluetooth access to connect to your board.",
-                               systemImage: "lock.fill", tint: .secondary)
-                    Button("Open Settings") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.fill").foregroundStyle(.secondary)
+                        Text("Snappet needs Bluetooth access to connect your board")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        }
+                        .font(.caption.weight(.semibold))
                     }
-                    .font(.caption)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(SnappetColor.surfaceMuted,
+                                in: RoundedRectangle(cornerRadius: SnappetRadius.md))
 
-                default:   // .idle
-                    primaryButton("Connect board", systemImage: "antenna.radiowaves.left.and.right") {
+                default: // .idle
+                    Button {
                         board.connect()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .foregroundStyle(.secondary)
+                            Text("Connect Kilter Board")
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(SnappetColor.surfaceMuted,
+                                    in: RoundedRectangle(cornerRadius: SnappetRadius.md))
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("kilter.board.connect")
+                }
+
+                // Wrong-holds fix exposed only when connected
+                if case .connected = board.state {
+                    wrongHoldsControl.padding(.horizontal, 14).padding(.top, 6)
                 }
             }
             .padding(.horizontal)
             .animation(.snappy, value: board.state)
-            // Mirror a protocol switch made here to the controller immediately (the root view also
-            // observes this, but the detail screen shouldn't depend on it being mounted); re-lights live.
             .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
         }
+    }
+
+    /// A compact chip showing the climber's all-time ascent status on this climb.
+    @ViewBuilder private var ascentStatusChip: some View {
+        if climbIsSent {
+            Label(climbIsFlashed ? "Flashed" : "Sent · \(climbAttemptCount) attempts",
+                  systemImage: climbIsFlashed ? "bolt.fill" : "checkmark.circle.fill")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Color.green.opacity(0.15), in: Capsule())
+                .foregroundStyle(.green)
+                .accessibilityIdentifier("kilter.ascentStatus")
+        } else if climbHasAnyAttempt {
+            Label(climbAttemptCount == 1 ? "1 attempt · not sent" : "\(climbAttemptCount) attempts · not sent",
+                  systemImage: "arrow.uturn.up.circle")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Color.orange.opacity(0.15), in: Capsule())
+                .foregroundStyle(.orange)
+                .accessibilityIdentifier("kilter.ascentStatus")
+        }
+        // State A (never tried): no chip — blank slate, no need to state the obvious
     }
 
     /// Escape hatch when the board lights the wrong holds: a quiet "wrong holds?" link that reveals the
@@ -631,33 +789,6 @@ struct KilterClimbDetailView: View {
         }
     }
 
-    private func primaryButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage).frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("kilter.illuminate")
-    }
-
-    /// In-flight row: a spinner + status text, framed like the buttons it replaces.
-    private func busyRow(_ text: String) -> some View {
-        HStack(spacing: 8) {
-            ProgressView()
-            Text(text).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-        .accessibilityIdentifier("kilter.board.connecting")
-    }
-
-    private func statusNote(_ text: String, systemImage: String, tint: Color) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption)
-            .foregroundStyle(tint)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .multilineTextAlignment(.leading)
-    }
 
     // MARK: - Actions
 
@@ -701,6 +832,29 @@ struct KilterClimbDetailView: View {
         dismiss()
     }
 
+    /// Fetch all-time log entries for this climb and update the flash-gate state.
+    private func fetchClimbHistory() {
+        let uuid = currentUUID
+        // Fetch by climbUUID only — computed properties (status.isSend) can't appear in #Predicate
+        // (which compiles to SQL). Raw-value filtering happens in Swift after the fetch.
+        let descriptor = FetchDescriptor<KilterLogEntry>(
+            predicate: #Predicate { $0.climbUUID == uuid })
+        let entries = (try? modelContext.fetch(descriptor)) ?? []
+        let sentRaw = KilterAscentStatus.sent.rawValue
+        let flashRaw = KilterAscentStatus.flash.rawValue
+        let attemptRaw = KilterAscentStatus.attempt.rawValue
+        // An attempt or any send (including flash) forfeits Flash eligibility on future tries.
+        // Project entries are bookmarks only and do NOT forfeit Flash.
+        let hasSend = entries.contains { $0.statusRaw == sentRaw || $0.statusRaw == flashRaw }
+        let hasAttempt = entries.contains { $0.statusRaw == attemptRaw }
+        climbIsSent = hasSend
+        climbIsFlashed = entries.contains { $0.statusRaw == flashRaw }
+        climbHasAnyAttempt = hasAttempt || hasSend
+        // Count total attempt events (not entries): each entry's `attempts` field tracks how many
+        // times the climber tapped Attempt/Send on that session's row.
+        climbAttemptCount = entries.reduce(0) { $0 + $1.attempts }
+    }
+
     private func load() {
         guard let c = resolveClimb(currentUUID) else { return }
         climb = c
@@ -726,6 +880,7 @@ struct KilterClimbDetailView: View {
         } else {
             selectedAngle = stats.max { $0.ascents < $1.ascents }?.angle ?? sharedAngle
         }
+        fetchClimbHistory()
         // Keep a connected board in sync with the climb on screen (initial open + each swipe).
         // Illumination ONLY — no capture (F1): opening/swiping to a climb's detail while connected isn't
         // a deliberate "I worked this" action; only the explicit "Light up this climb" tap records one.
@@ -792,6 +947,7 @@ struct KilterClimbDetailView: View {
                                            status: status, gradeLabel: grade, date: now,
                                            sessionId: sessions.currentId, in: modelContext)
         try? modelContext.save()
+        fetchClimbHistory()
         // Tick the active planned session, if this run came from "Plan a session": flips the matching
         // KilterPlanItem to sent/attempted so the plan-home shows it done. No-op for an ad-hoc session
         // or an off-plan climb. Read off the plan, never re-derived from logs + the recommender.
