@@ -1,6 +1,6 @@
 # Project: Snappet Mobile (iOS)
 
-**Last updated**: 2026-06-11
+**Last updated**: 2026-06-30
 **Type**: Native iOS app (Swift / SwiftUI) — the native companion to the [Snappet web hub](https://github.com/harshal2802/Snappet).
 
 ## What we're building
@@ -565,6 +565,26 @@ author couldn't: configuring the throwing `UIImagePickerController` camera-only 
 (`cameraCaptureMode`/`videoQuality`) on a not-yet-ready camera session `SIGABRT`-ed the app — fixed by recording
 via `mediaTypes=[movie]` only, forcing `isAvailable=false` on the Simulator, and requesting camera/mic
 authorization before presenting (see `decisions.md`). The structured interval runner is a deliberate follow-up.
+
+🟢 **Opt-in exercise library download (2026-06-30, `exercises-dataset-snappet`, prompt
+`pdd/prompts/features/exercises-dataset-import.md`).** iOS. The bundled catalog ships 873 exercises
+(Free Exercise DB). A richer dataset — [hasaneyldrm/exercises-dataset](https://github.com/hasaneyldrm/exercises-dataset),
+1,324 exercises with animated GIF demos — is hosted on the Snappet web repo
+(`harshal2802/Snappet/exercises-dataset/data/exercises.json`; converted by the one-time
+`experiments/exercises-convert/convert.py` script). The mobile app ships the 873 bundled exercises
+unchanged; a narrow network exception (mirrors the Kilter pattern; see `decisions.md` 2026-06-30)
+enables a single user-initiated GET to fetch the hosted JSON (~800 KB). The Library section shows an
+**ExerciseLibraryDownloadBanner** (hidden once installed); tapping it opens **ExerciseLibraryImportView**
+with a progress indicator, installed-state card (count / size / remove), and an Advanced section for the
+source URL. After download, `ExerciseCatalog.downloaded` is populated from disk and
+`ExerciseResolver.allMerged` returns bundled + downloaded + custom (2,197 exercises). Filter / search /
+Spotlight all work on the merged catalog (`SpotlightIndexer` updated). `ExerciseDetailView` shows a
+still-image thumbnail (`AsyncImage`) and a "Watch animated demo" Safari link for exercises with
+`imageURL` / `gifURL`. Removing the library via the import view returns to the bundled-only state.
+No new SwiftData models; no background sync; health + media still never leave the device. IDs prefixed
+`ext-` (e.g. `ext-0001`) avoid collision with the bundled slug-IDs. **Simulator-pending**: end-to-end
+download + merge on a real network call (the GIF/image URLs are live only after the web-repo setup is
+run); device-pending: the animated demo in Safari + Spotlight indexing of the downloaded exercises.
 
 ## License
 

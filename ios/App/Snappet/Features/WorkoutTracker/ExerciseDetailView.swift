@@ -19,6 +19,35 @@ struct ExerciseDetailView: View {
 
     var body: some View {
         List {
+            // Still thumbnail — only present on downloaded (ext-*) exercises.
+            if let raw = exercise.imageURL, let url = URL(string: raw) {
+                Section {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable()
+                                .scaledToFit()
+                                .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
+                        case .failure:
+                            EmptyView()
+                        default:
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 120)
+                        }
+                    }
+                    // GIF link — opens the animated demo in Safari (GIF animation needs a
+                    // native player or library; Safari is the simplest no-dependency path).
+                    if let gifRaw = exercise.gifURL, let gifURL = URL(string: gifRaw) {
+                        Link(destination: gifURL) {
+                            Label("Watch animated demo", systemImage: "play.circle")
+                        }
+                        .accessibilityIdentifier("exercise.gifLink")
+                    }
+                } header: {
+                    Text("Demo")
+                }
+            }
+
             Section {
                 LabeledContent("Category", value: exercise.category.display)
                 LabeledContent("Level", value: exercise.level.display)

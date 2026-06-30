@@ -743,6 +743,14 @@ const nodes = [
   { id: "wt-plan", label: "WorkoutPlanView", type: "screen", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/WorkoutPlanView.swift", desc: "Smart-planning screen (workout-redesign E7) — the I/O EDGE. Reads WorkoutSession history (@Query) + resolves Exercise.primaryMuscles via the @MainActor ExerciseResolver, flattening both into the device-free value types the pure core consumes; shows the 'Today' verb card (DisciplineHero + ramp tint + why + freshest-muscle StatRibbon), then the recommender's suggestion as an EDITABLE DRAFT — strategy chips + constraint chips re-generate it, a natural-language tweak field runs WorkoutPlanIntelligence (degrading to the heuristic), and each row can be swapped / ±set / removed. 'Start this session' seeds a freeform session from the plan's [RoutineExercise] via RoutineSessionBuilder; 'Save as routine' opens the pre-filled RoutineEditorView. The suggestion is never forced (the locked decision). Reached from the dashboard 'Plan a session' entry (workout.dashboardPlan) + the Home 'Today' workoutPlan card. UITest: WorkoutPlanFlowTests (generate → strategy chip → tweak → save).", tags: ["screen","planner","editable-draft","io-edge","pulse-pro"] },
 
+  // --- Opt-in exercise library download (2026-06-30, exercises-dataset-snappet) ---
+  { id: "exercise-library-store", label: "ExerciseLibraryStore", type: "service", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/ExerciseLibraryStore.swift", desc: "Manages the opt-in downloaded exercise catalog on disk (AppSupport/ExerciseLibrary/catalog.json + catalog.meta.json). Mirrors KilterCatalogStore but simpler — the catalog is JSON not SQLite. isInstalled / load() / install(from:meta:) / clear() + didChangeNotification posted after install/removal. The bundled 873 exercises stay in ExerciseCatalog; this store owns the extra 1,324 from the Snappet-hosted dataset.", tags: ["store","catalog","download","offline"] },
+  { id: "exercise-library-provider", label: "ExerciseCatalogInstaller + Provider", type: "service", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/ExerciseLibraryProvider.swift", desc: "ExerciseCatalogProvider protocol + NetworkExerciseCatalogProvider (the ONLY network egress for this feature — one user-initiated GET to the Snappet web repo) + ExerciseCatalogInstaller (@Observable, fetch→validate→install) + ExerciseLibraryValidator (ensures the downloaded file is a valid Exercise JSON array). Mirrors KilterCatalogProvider/KilterCatalogInstaller.", tags: ["network","provider","installer","validated"] },
+  { id: "exercise-library-import", label: "ExerciseLibraryImportView", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/ExerciseLibraryImportView.swift", desc: "Opt-in gate sheet: 'Download exercise library' with a progress bar, installed-state card (count, size, remove), and an Advanced section for the source URL. ExerciseLibraryDownloadBanner is the compact inline row shown at the bottom of WorkoutLibraryView when the library is not installed.", tags: ["sheet","gate","download","banner"] },
+
   // --- Workout redesign E6: share a routine via QR (#186) ---
   { id: "snappet-shareable", label: "SnappetShareable + QRCodeImage", type: "core", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Core/SnappetShareable.swift", desc: "Workout-redesign E6: the generalization of Kilter's offline QR stack. A tiny SnappetShareable protocol (url + init?(decoding:) + default encoded) that BOTH KilterClimbLink (a catalog REFERENCE) and SharedRoutine (a whole compact routine) conform to, so one QR renderer + one scanner + one route pattern serve both. QRCodeImage.make(for:) lifts the old KilterShareView.qrImage(for:) (CoreImage qrCodeGenerator, nearest-neighbor upscale, pure black-on-white modules) into a shared helper. Pure value + codec → unit-testable without a camera.", tags: ["pure","protocol","qr","share","tested"] },
@@ -1538,6 +1546,13 @@ const links = [
   { source: "wt-freeform-done-summary", target: "wt-routine-editor", type: "present", label: "review the pre-filled routine (E5)" },
   { source: "wt-session-to-routine", target: "wt-routine-exercise", type: "uses", label: "emits the keystone composite (E5)" },
   { source: "wt-session-to-routine", target: "wt-routine-session-builder", type: "uses", label: "the inverse — round-trip preserves discipline (E5)" },
+  // ── Opt-in exercise library download (2026-06-30, exercises-dataset-snappet) ──
+  { source: "wt-home", target: "exercise-library-import", type: "present", label: "Download exercise library sheet" },
+  { source: "wt-browse", target: "exercise-library-import", type: "present", label: "ExerciseLibraryDownloadBanner tap" },
+  { source: "exercise-library-import", target: "exercise-library-provider", type: "uses", label: "ExerciseCatalogInstaller" },
+  { source: "exercise-library-provider", target: "exercise-library-store", type: "persists", label: "install catalog.json" },
+  { source: "exercise-library-store", target: "wt-exercise-detail", type: "feeds", label: "downloaded exercises (imageURL / gifURL)" },
+  { source: "spotlight-indexer", target: "exercise-library-store", type: "uses", label: "ExerciseCatalog.downloaded" },
 ];
 
 // Expose for the renderer (also works as an ES module if imported).

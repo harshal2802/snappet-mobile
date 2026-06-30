@@ -101,6 +101,7 @@ struct WorkoutHomeView: View {
     @State private var section: WorkoutSection = .dashboard
     @State private var showingNewRoutine = false
     @State private var showingNewExercise = false
+    @State private var showingLibraryImport = false
     /// A planner "Save as routine" pre-fill — opens the routine editor seeded with the plan (E7). `nil` ⇒
     /// the plain "New Routine" path (no pre-fill).
     @State private var plannerPrefill: PlannerRoutinePrefill?
@@ -200,6 +201,11 @@ struct WorkoutHomeView: View {
         .sheet(isPresented: $showingNewExercise) {
             ExerciseEditorView(existing: nil)
         }
+        .sheet(isPresented: $showingLibraryImport) {
+            ExerciseLibraryImportView {
+                ExerciseCatalog.reloadDownloaded()
+            }
+        }
         // The import-confirm preview for a routine arriving over QR / a snappet:// link (E6). Never
         // silent: the user reviews it (incl. the "not in your library" landing) and confirms an insert.
         .sheet(item: $importingRoutine) { shared in
@@ -256,6 +262,13 @@ struct WorkoutHomeView: View {
         .task {
             seedStarters()
             consumePendingResume()
+        }
+        // Reload the downloaded exercise catalog after an install or removal so the
+        // resolver's allMerged picks up the change on the next SwiftUI render.
+        .onReceive(NotificationCenter.default.publisher(
+            for: ExerciseLibraryStore.didChangeNotification)
+        ) { _ in
+            ExerciseCatalog.reloadDownloaded()
         }
         // Consume the one-shot routine-import intent (E6, the `pendingKilterClimb` pattern): `initial: true`
         // covers cold start (the intent was set before this view existed), the change closure the warm case
@@ -331,7 +344,8 @@ struct WorkoutHomeView: View {
         case .browse:
             WorkoutLibraryView(resolver: resolver, history: history, unit: unit,
                                open: { router.push(LibraryItemRoute(item: $0)) },
-                               openSession: { id in router.push(SessionRoute(id: id)) })
+                               openSession: { id in router.push(SessionRoute(id: id)) },
+                               showingLibraryImport: $showingLibraryImport)
         case .routines:
             RoutinesSectionView(routines: routines, resolver: resolver, unit: unit,
                                 open: { router.push($0) },

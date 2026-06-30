@@ -4,6 +4,9 @@ import Foundation
 /// `exercises.json` in the app bundle so the app works fully offline — the on-device-only
 /// constraint). Loaded once, lazily, and cached. Remote exercise photos are intentionally
 /// dropped on iOS; the UI uses category SF Symbols instead.
+///
+/// Downloaded exercises (opt-in, from the Snappet web repo) are tracked separately in
+/// `ExerciseCatalog.downloaded` and merged by `ExerciseResolver.allMerged`.
 enum ExerciseCatalog {
     /// All bundled exercises, sorted by name. Decoded on first access.
     @MainActor static let all: [Exercise] = load()
@@ -11,6 +14,22 @@ enum ExerciseCatalog {
     /// Fast id → exercise lookup for the bundled set.
     @MainActor static let byID: [String: Exercise] =
         Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+    /// Downloaded exercises from the opt-in exercise library. Loaded from
+    /// `ExerciseLibraryStore` on first access and refreshed when the store posts
+    /// `didChangeNotification` (after install or removal).
+    @MainActor static var downloaded: [Exercise] = ExerciseLibraryStore.shared.load()
+
+    /// Fast id → exercise lookup for the downloaded set (separate from bundled so the
+    /// lookup never returns a stale bundled entry after a library update).
+    @MainActor static var downloadedByID: [String: Exercise] {
+        Dictionary(downloaded.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// Reload the downloaded exercises from disk (called on `didChangeNotification`).
+    @MainActor static func reloadDownloaded() {
+        downloaded = ExerciseLibraryStore.shared.load()
+    }
 
     @MainActor private static func load() -> [Exercise] {
         guard let url = Bundle.main.url(forResource: "exercises", withExtension: "json"),

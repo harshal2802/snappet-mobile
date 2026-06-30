@@ -96,6 +96,11 @@ struct Exercise: Identifiable, Hashable, Sendable {
     let instructions: [String]
     let category: ExerciseCategory
     var isCustom: Bool = false
+    /// Absolute URL to a still thumbnail (JPEG). Present only on exercises from the
+    /// opt-in downloaded library (ext-* ids); always nil for the 873 bundled exercises.
+    var imageURL: String? = nil
+    /// Absolute URL to an animated GIF demonstrating the movement. Same source as imageURL.
+    var gifURL: String? = nil
 
     var allMuscles: [Muscle] { primaryMuscles + secondaryMuscles }
 
@@ -113,6 +118,7 @@ extension Exercise: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, name, force, level, mechanic, equipment
         case primaryMuscles, secondaryMuscles, instructions, category, isCustom
+        case imageURL, gifURL
     }
 
     init(from decoder: Decoder) throws {
@@ -128,6 +134,8 @@ extension Exercise: Codable {
         instructions = (try? c.decode([String].self, forKey: .instructions)) ?? []
         category = ExerciseCategory(rawValue: (try? c.decode(String.self, forKey: .category)) ?? "strength") ?? .strength
         isCustom = (try? c.decodeIfPresent(Bool.self, forKey: .isCustom)) ?? false
+        imageURL = try? c.decodeIfPresent(String.self, forKey: .imageURL)
+        gifURL = try? c.decodeIfPresent(String.self, forKey: .gifURL)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -143,6 +151,8 @@ extension Exercise: Codable {
         try c.encode(instructions, forKey: .instructions)
         try c.encode(category.rawValue, forKey: .category)
         try c.encode(isCustom, forKey: .isCustom)
+        try c.encodeIfPresent(imageURL, forKey: .imageURL)
+        try c.encodeIfPresent(gifURL, forKey: .gifURL)
     }
 }
 

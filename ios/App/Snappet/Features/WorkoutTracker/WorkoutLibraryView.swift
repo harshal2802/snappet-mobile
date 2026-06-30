@@ -13,6 +13,8 @@ struct WorkoutLibraryView: View {
     let unit: WeightUnit
     let open: (LibraryItem) -> Void
     let openSession: (UUID) -> Void
+    /// Bound to `WorkoutHomeView.showingLibraryImport` so the banner can open the sheet.
+    @Binding var showingLibraryImport: Bool
 
     /// Saved timed exercises, newest-used first — folded into the timed discipline + recents ordering.
     @Query(sort: \TimedExerciseCatalog.lastUsedAt, order: .reverse) private var timed: [TimedExerciseCatalog]
@@ -64,6 +66,14 @@ struct WorkoutLibraryView: View {
                 }
             } header: {
                 Text("\(results.count) \(discipline?.label.lowercased() ?? "item")\(results.count == 1 ? "" : "s")")
+            }
+
+            // Download banner — shown only when the opt-in library is not yet installed and
+            // the user hasn't filtered/searched (so it doesn't interrupt an active search).
+            if query.isEmpty && facets.isEmpty && !ExerciseLibraryStore.shared.isInstalled {
+                Section {
+                    ExerciseLibraryDownloadBanner(showingImport: $showingLibraryImport)
+                }
             }
         }
         .listStyle(.plain)

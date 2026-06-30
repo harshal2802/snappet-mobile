@@ -13,7 +13,9 @@ enum SpotlightIndexer {
     static func reindex(context: ModelContext) {
         guard !isUITestLaunch else { return }
 
-        var items = ExerciseCatalog.all.map { item(for: SpotlightCatalog.exerciseSpec($0)) }
+        // Index both the bundled catalog and any opt-in downloaded exercises.
+        var items = (ExerciseCatalog.all + ExerciseCatalog.downloaded)
+            .map { item(for: SpotlightCatalog.exerciseSpec($0)) }
 
         let createdClimbs = (try? context.fetch(FetchDescriptor<KilterCreatedClimb>())) ?? []
         items += createdClimbs.map {
