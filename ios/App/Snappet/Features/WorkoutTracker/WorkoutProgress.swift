@@ -112,8 +112,9 @@ enum WorkoutMath {
     }
 }
 
-/// Resolves an `exerciseId` (bundled or custom) to a displayable `Exercise`. Custom exercises
-/// come from the SwiftData store; the bundled ones from `ExerciseCatalog`.
+/// Resolves an `exerciseId` (bundled, downloaded, or custom) to a displayable `Exercise`.
+/// Custom exercises come from the SwiftData store; bundled ones from `ExerciseCatalog.all`;
+/// downloaded ones from `ExerciseCatalog.downloaded` (opt-in library, `ExerciseLibraryStore`).
 @MainActor
 struct ExerciseResolver {
     private let customByID: [String: Exercise]
@@ -121,14 +122,14 @@ struct ExerciseResolver {
         customByID = Dictionary(custom.map { ($0.id, $0.asExercise) }, uniquingKeysWith: { a, _ in a })
     }
 
-    /// The merged browse list: bundled catalog + custom exercises, sorted by name.
+    /// The merged browse list: bundled catalog + downloaded library + custom exercises, sorted by name.
     var allMerged: [Exercise] {
-        (ExerciseCatalog.all + customByID.values)
+        (ExerciseCatalog.all + ExerciseCatalog.downloaded + customByID.values)
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     func exercise(id: String) -> Exercise? {
-        customByID[id] ?? ExerciseCatalog.byID[id]
+        customByID[id] ?? ExerciseCatalog.byID[id] ?? ExerciseCatalog.downloadedByID[id]
     }
 
     /// Human name for an id, falling back to a de-slugged id if the exercise is missing
