@@ -7812,3 +7812,24 @@ creating one to the first `connect()` (so browsing never fires the permission pr
 simulator sat in `.idle` forever and the F1 strip showed "Board not connected + Connect" instead of
 collapsing to the session pitch, contradicting prompt 02's acceptance. Compile-time seeding answers the
 known-at-compile-time question without instantiating the manager; device behavior is untouched.
+
+**Clips feed performance (prompt 106, 2026-07-02).** Four throughput decisions, no UX change. **(P1)
+Feed composition moved off the MainActor as snapshot → `Task.detached` compose → assign,** with
+cancel-and-restart + a 200 ms debounce on `feedKey` changes: the per-post aspect backfill saves one
+`SessionMedia` each, and every save re-ran the full rebuild on main (M unresolved posts = M synchronous
+recomputes on first scroll — the freeze). Debouncing the *rebuild* fixes the storm without touching the
+backfill; `Task.detached` (not a nonisolated-async hop) so the compose stays off-main regardless of the
+language mode's isolation-inheritance default. The HR context now covers only media-bearing sessions —
+building it for every historical session decoded every `hrSeries` blob per rebuild for posts that don't
+exist. **(P2) `HRWindowSlicer` keeps its exact contract but skips the per-call sort when input is already
+time-ordered** (live capture appends in order; the Clips feed slices every clip of every session per
+rebuild, so the unconditional O(n log n) sort was the rebuild hot spot on ~1 Hz sessions) and finds
+window bounds/interpolation brackets by binary search. Parity locked by a shuffled-input test. **(P3)
+The post carousel is windowed to ±2 pages** — `TabView(.page)` is eager, so a 50-clip post (one session,
+50 untagged videos → one "general" post) mounted 50 poster views and fired 50 concurrent zero-tolerance
+frame-0 decodes; off-window pages are flat placeholders with the same tag/identity so paging is
+unchanged. Chosen over the deferred custom UIScrollView pager (decisions round 7b) deliberately: that
+pager is a snap-feel fix and stays queued; windowing inside the stock TabView doesn't preempt it. The
+page-dot row hides above 8 clips (the n/N counter already carries position). **(P4) The frame-0 poster
+cache is now an `NSCache` costed in bitmap bytes (~150 MB cap)** — the unbounded dictionary held ~10 MB
+per video forever (~500 MB for a 50-video session → jetsam risk); eviction just re-decodes on demand.

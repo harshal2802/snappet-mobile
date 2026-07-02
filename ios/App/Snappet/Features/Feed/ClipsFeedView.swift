@@ -12,8 +12,9 @@ import SwiftData
 // edge, compose with the pure `ClipFeedComposer`. The session stays the single source of truth — no new
 // store. Read-only vertical slice: reactions / share / explore-grid are a follow-up.
 
-/// Per-session HR context the posters slice their scorebug window from.
-struct ClipFeedHR: Equatable {
+/// Per-session HR context the posters slice their scorebug window from. `Sendable` — it crosses the
+/// off-main feed-composition hop (prompt 106).
+struct ClipFeedHR: Equatable, Sendable {
     var series: [HRPoint]
     var maxHR: Double
     var restHR: Double?
@@ -83,6 +84,10 @@ struct ClipsFeedView: View {
     @State private var cachedHRContext: [UUID: ClipFeedHR] = [:]
     @State private var cachedHRTiles: [UUID: HRTile] = [:]
     @State private var cachedPayloads: [UUID: ClipHROverlay.Payload] = [:]
+    /// The in-flight rebuild (prompt 106): cancel-and-restart so a burst of `feedKey` changes (each
+    /// post's aspect backfill saves one `SessionMedia` → one `feedKey` tick each) coalesces into ONE
+    /// background composition instead of M consecutive full recomputes.
+    @State private var rebuildTask: Task<Void, Never>?
     /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
     /// suppressed under Reduce Motion / Low Power.
     @AppStorage("clips.autoplay") private var autoplayEnabled = false
@@ -146,8 +151,10 @@ struct ClipsFeedView: View {
             .background(SnappetColor.paper)
             // Build the cached feed on first appearance and ONLY when the underlying @Query data changes —
             // never on a playingClip/page write (prompt 92 perf: keeps the heavy composition off the swipe).
+            // Composition runs on a background task; data-driven rebuilds debounce so a burst of saves
+            // (the aspect backfill) coalesces into one recompute (prompt 106).
             .task { rebuildFeed() }
-            .onChange(of: feedKey) { _, _ in rebuildFeed() }
+            .onChange(of: feedKey) { _, _ in rebuildFeed(debounce: true) }
             // Audio session (prompt 93): driven from `ClipFeedPlayback.playing`'s didSet (NOT an `.onChange`
             // here — that would re-read `playing` and re-introduce the whole-feed invalidation prompt 97 removes).
             .onDisappear { ClipAudioSession.deactivate() }
@@ -186,11 +193,31 @@ struct ClipsFeedView: View {
 
     // MARK: Derivation (derive-on-read; no persistence)
 
-    private func composedPosts() -> [ClipFeedPost] {
-        // Bucket media by its owning session (MediaInput drops sessionID, so do it at the @Model edge).
+    /// Everything the off-main composition needs, snapshotted from the `@Model`s on the MainActor
+    /// (prompt 106). Plain `Sendable` values only — the compose step must not touch SwiftData.
+    private struct FeedSnapshot: Sendable {
+        var bundles: [ClipFeedComposer.SessionBundle]
+        var climbMeta: [String: ClipFeedClimbMeta]
+        var exerciseNames: [UUID: String]
+        /// Per-session HR context — **media-bearing sessions only**. Building it for every historical
+        /// session decoded every `hrSeries` blob per rebuild (and retained them) for posts that don't exist.
+        var hr: [UUID: ClipFeedHR]
+        var tiles: [UUID: HRTile]
+    }
+
+    /// The background composition's result, assigned back to the caches on the MainActor in one shot.
+    private struct ComposedFeed: Sendable {
+        var posts: [ClipFeedPost]
+        var hr: [UUID: ClipFeedHR]
+        var tiles: [UUID: HRTile]
+        var payloads: [UUID: ClipHROverlay.Payload]
+    }
+
+    /// Snapshot the @Query models into plain values at the store edge (MediaInput drops sessionID,
+    /// so the by-session bucketing happens here too).
+    private func makeSnapshot() -> FeedSnapshot {
         var bySession: [UUID: [MediaInput]] = [:]
         for m in allMedia { bySession[m.sessionID, default: []].append(MediaInput.from(m)) }
-        guard !bySession.isEmpty else { return [] }
 
         // climbUUID → name/grade/angle, snapshotted from the logs (latest log wins).
         var climbMeta: [String: ClipFeedClimbMeta] = [:]
@@ -210,20 +237,44 @@ struct ClipsFeedView: View {
         let workoutByID = Dictionary(workoutSessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
 
         var bundles: [ClipFeedComposer.SessionBundle] = []
+        var hr: [UUID: ClipFeedHR] = [:]
         for (sid, clips) in bySession {
             if let k = kilterByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .kilter,
                     title: k.title ?? "Kilter session", startedAt: k.startedAt, endedAt: k.endedAt,
                     angle: k.angle), clips: clips))
+                hr[sid] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
             } else if let w = workoutByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .gym,
                     title: w.routineName, startedAt: w.startedAt, endedAt: w.completedAt,
                     angle: nil), clips: clips))
+                hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
             }
             // else: media whose session was deleted — skip (no orphan posts).
         }
-        return ClipFeedComposer.posts(sessions: bundles, climbMeta: climbMeta,
-                                      exerciseName: { exerciseName[$0] ?? "Exercise" })
+        return FeedSnapshot(bundles: bundles, climbMeta: climbMeta, exerciseNames: exerciseName,
+                            hr: hr, tiles: sessionHRTile)
+    }
+
+    /// The heavy part — compose the posts + slice every clip's HR payload. Pure over the snapshot, so it
+    /// runs on a background task (prompt 106): the feed's first build and every data-driven rebuild used
+    /// to do all of this synchronously on the MainActor, which froze the UI on media-heavy libraries.
+    nonisolated private static func compose(_ snap: FeedSnapshot) -> ComposedFeed {
+        let names = snap.exerciseNames
+        let posts = ClipFeedComposer.posts(sessions: snap.bundles, climbMeta: snap.climbMeta,
+                                           exerciseName: { names[$0] ?? "Exercise" })
+        var payloads: [UUID: ClipHROverlay.Payload] = [:]
+        for post in posts {
+            let hr = snap.hr[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
+            let tile = snap.tiles[post.sessionID]
+            for item in post.clips {
+                if let p = ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
+                                              maxHR: hr.maxHR, restHR: hr.restHR, tile: tile) {
+                    payloads[item.media.id] = p
+                }
+            }
+        }
+        return ComposedFeed(posts: posts, hr: snap.hr, tiles: snap.tiles, payloads: payloads)
     }
 
     /// A cheap Equatable signature of the @Query inputs — recompute the cached feed only when this changes
@@ -240,30 +291,27 @@ struct ClipsFeedView: View {
                 newestEdit: studioProjects.first?.updatedAt)
     }
 
-    /// Rebuild the cached posts + per-session HR context/tile + per-clip HR payloads in ONE pass. Called on
-    /// first appearance and whenever `feedKey` changes — so the expensive composition + per-clip
-    /// `ClipHROverlay.make` (HR-window slice + stats) happens off the swipe path.
-    private func rebuildFeed() {
-        let posts = composedPosts()
-        let tiles = sessionHRTile
-        var hrCtx: [UUID: ClipFeedHR] = [:]
-        for k in kilterSessions { hrCtx[k.id] = ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR) }
-        for w in workoutSessions { hrCtx[w.id] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR) }
-        var payloads: [UUID: ClipHROverlay.Payload] = [:]
-        for post in posts {
-            let hr = hrCtx[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
-            let tile = tiles[post.sessionID]
-            for item in post.clips {
-                if let p = ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
-                                              maxHR: hr.maxHR, restHR: hr.restHR, tile: tile) {
-                    payloads[item.media.id] = p
-                }
+    /// Rebuild the cached posts + per-session HR context/tile + per-clip HR payloads — snapshot on the
+    /// MainActor, compose on a background task, assign back in one shot (prompt 106). Cancel-and-restart:
+    /// a burst of `feedKey` changes (the per-post aspect backfill) coalesces via `debounce` into one
+    /// rebuild; the first appearance builds immediately so the feed paints without an artificial delay.
+    /// `Task.detached` (not a nonisolated-async hop) so the compose is off-main regardless of the
+    /// language mode's isolation-inheritance default.
+    private func rebuildFeed(debounce: Bool = false) {
+        rebuildTask?.cancel()
+        rebuildTask = Task { @MainActor in
+            if debounce {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled else { return }
             }
+            let snap = makeSnapshot()
+            let composed = await Task.detached(priority: .userInitiated) { Self.compose(snap) }.value
+            guard !Task.isCancelled else { return }   // a newer rebuild superseded this one
+            cachedPosts = composed.posts
+            cachedHRContext = composed.hr
+            cachedHRTiles = composed.tiles
+            cachedPayloads = composed.payloads
         }
-        cachedPosts = posts
-        cachedHRContext = hrCtx
-        cachedHRTiles = tiles
-        cachedPayloads = payloads
     }
 
     /// sessionID → the session's SAVED Studio HR tile (the WYSIWYG override, prompt 89), present only when
@@ -273,15 +321,6 @@ struct ClipsFeedView: View {
                    uniquingKeysWith: { a, _ in a })
     }
 
-    private func hrContext(for sid: UUID) -> ClipFeedHR {
-        if let k = kilterSessions.first(where: { $0.id == sid }) {
-            return ClipFeedHR(series: k.hrSeries, maxHR: k.maxHR ?? 190, restHR: k.restHR)
-        }
-        if let w = workoutSessions.first(where: { $0.id == sid }) {
-            return ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
-        }
-        return ClipFeedHR(series: [], maxHR: 190, restHR: nil)
-    }
 }
 
 // MARK: - One post (header · carousel · meta · ⋯ menu)
@@ -513,35 +552,48 @@ private struct ClipPostCard: View {
         VStack(spacing: 8) {
             TabView(selection: $page) {
                 ForEach(Array(post.clips.enumerated()), id: \.element.id) { idx, item in
-                    // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
-                    // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
-                    ClipPosterView(item: item, post: post,
-                                   playback: playback, postID: post.id, postIndex: idx,
-                                   payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
-                                   warmLive: warmLive(idx),
-                                   isCurrentPage: idx == page,
-                                   postOnScreen: isOnScreen,
-                                   onTapToPlay: {
-                                       guard item.media.kind == "video" else { return }   // photos stay still
-                                       playback.playing = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
-                                   },
-                                   onToggleMute: {
-                                       if var pc = playback.playing, pc.matches(post.id, idx) { pc.muted.toggle(); playback.playing = pc }
-                                   },
-                                   onOpenFullscreen: {
-                                       // Stop the inline player first so it isn't decoding + emitting audio
-                                       // UNDER the fullscreen player (doubled audio/decode — prompt 94 review).
-                                       // The snapshot below carries its own clips/startIndex, so it's
-                                       // independent of playback.playing; clearing it releases the inline audio
-                                       // session via ClipFeedPlayback.playing's didSet.
-                                       playback.playing = nil
-                                       fullscreen = ClipFullscreen(
-                                           clips: post.clips.map(\.media), startIndex: idx,
-                                           series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
-                                           title: post.title, tile: hrTile)
-                                   })
-                        .tag(idx)
-                        .accessibilityIdentifier("clips.post.page")
+                    // `TabView(.page)` is EAGER — it builds every page up front, so a clip-heavy post (a
+                    // session with 50 untagged videos = one 50-page post) mounted 50 poster views and fired
+                    // 50 concurrent frame-0 decodes the moment the card scrolled in (prompt 106). Window it:
+                    // only pages within ±2 of the current one are real; the rest are flat placeholders with
+                    // the same identity/tag, so paging and indices are unchanged and a page materializes
+                    // (and only then loads its poster) as the window reaches it. The warm/live player bound
+                    // (±1, `warmLive`) sits strictly inside this window, so playback behavior is untouched.
+                    if abs(idx - page) <= 2 {
+                        // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
+                        // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
+                        ClipPosterView(item: item, post: post,
+                                       playback: playback, postID: post.id, postIndex: idx,
+                                       payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
+                                       warmLive: warmLive(idx),
+                                       isCurrentPage: idx == page,
+                                       postOnScreen: isOnScreen,
+                                       onTapToPlay: {
+                                           guard item.media.kind == "video" else { return }   // photos stay still
+                                           playback.playing = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
+                                       },
+                                       onToggleMute: {
+                                           if var pc = playback.playing, pc.matches(post.id, idx) { pc.muted.toggle(); playback.playing = pc }
+                                       },
+                                       onOpenFullscreen: {
+                                           // Stop the inline player first so it isn't decoding + emitting audio
+                                           // UNDER the fullscreen player (doubled audio/decode — prompt 94 review).
+                                           // The snapshot below carries its own clips/startIndex, so it's
+                                           // independent of playback.playing; clearing it releases the inline audio
+                                           // session via ClipFeedPlayback.playing's didSet.
+                                           playback.playing = nil
+                                           fullscreen = ClipFullscreen(
+                                               clips: post.clips.map(\.media), startIndex: idx,
+                                               series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
+                                               title: post.title, tile: hrTile)
+                                       })
+                            .tag(idx)
+                            .accessibilityIdentifier("clips.post.page")
+                    } else {
+                        Color.black
+                            .tag(idx)
+                            .accessibilityIdentifier("clips.post.page")
+                    }
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -568,7 +620,10 @@ private struct ClipPostCard: View {
                         .padding(10)
                 }
             }
-            if post.clipCount > 1 {
+            // One dot per clip stops scaling fast — 50 clips would draw a ~550 pt row that overflows the
+            // card. Above 8 the dots go; the "n/N" counter overlay (always on for multi-clip posts) carries
+            // the position instead.
+            if post.clipCount > 1, post.clipCount <= 8 {
                 HStack(spacing: 5) {
                     ForEach(0..<post.clipCount, id: \.self) { i in
                         Circle().fill(i == page ? accent : SnappetColor.textSecondary.opacity(0.35))

@@ -37,7 +37,20 @@ enum AssetPosterLoader {
         }
     }
 
-    private static var frameZeroCache: [String: UIImage] = [:]
+    /// Frame-0 posters are big — a full-tile 3× baked bitmap is ~10 MB — so an unbounded dictionary held
+    /// ~500 MB for a 50-video session and never let go (memory-pressure / jetsam risk, prompt 106).
+    /// `NSCache` is byte-cost-bounded and evicts automatically under system memory pressure; a re-request
+    /// after eviction just re-decodes (the same path as a cold load).
+    private static let frameZeroCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 150 * 1024 * 1024   // ~15 full-tile posters; smaller tiles keep many more
+        return cache
+    }()
+
+    /// The cache cost of a baked poster: its decoded bitmap size in bytes.
+    private static func bitmapCost(_ img: UIImage) -> Int {
+        Int(img.size.width * img.scale) * Int(img.size.height * img.scale) * 4
+    }
 
     /// The clip's EXACT first frame (t=0) as the poster — vs `poster(...)`, whose `PHImageManager` thumbnail is,
     /// for a VIDEO, an arbitrary Photos-chosen key frame. The Clips carousel uses this so the still each page
@@ -48,7 +61,7 @@ enum AssetPosterLoader {
     /// memoizes by `localIdentifier` so swiping back never re-decodes. `appliesPreferredTrackTransform` + the
     /// 3× `maximumSize` match the player layer's orientation + the tile's Retina fill, so they register exactly.
     static func videoFrameZero(localIdentifier: String, pointSize: CGSize) async -> UIImage? {
-        if let cached = frameZeroCache[localIdentifier] { return cached }   // MainActor cache read
+        if let cached = frameZeroCache.object(forKey: localIdentifier as NSString) { return cached }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = assets.firstObject else {
             return await poster(localIdentifier: localIdentifier, pointSize: pointSize)
@@ -61,7 +74,7 @@ enum AssetPosterLoader {
         guard let img = await extractFrameZero(asset: asset, pointSize: pointSize) else {
             return await poster(localIdentifier: localIdentifier, pointSize: pointSize)
         }
-        frameZeroCache[localIdentifier] = img   // MainActor cache write
+        frameZeroCache.setObject(img, forKey: localIdentifier as NSString, cost: bitmapCost(img))
         return img
     }
 
