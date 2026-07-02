@@ -7833,3 +7833,17 @@ pager is a snap-feel fix and stays queued; windowing inside the stock TabView do
 page-dot row hides above 8 clips (the n/N counter already carries position). **(P4) The frame-0 poster
 cache is now an `NSCache` costed in bitmap bytes (~150 MB cap)** — the unbounded dictionary held ~10 MB
 per video forever (~500 MB for a 50-video session → jetsam risk); eviction just re-decodes on demand.
+
+**Clips feed performance, round 2 (prompt 106, 2026-07-02, same day).** Device check: vertical scroll
+smooth, but the carousel got MORE jittery — the round-1 P3 windowing was the cause. Windowing the VIEW
+(`if abs(idx-page) <= 2 { ClipPosterView } else { Color.black }`) makes the branch a SwiftUI identity
+boundary: every snap commit destroyed two pages and mounted two fresh ones (plus their poster tasks)
+exactly on the settle frame — re-introducing the mount-on-snap churn the prompt-97 discipline exists to
+prevent. Fix: window the **work**, not the view. Every page keeps its `ClipPosterView` mounted with
+stable identity; a new `loadPoster` flag (±3 of the current page) gates only the poster-bitmap request
+(`ClipThumbnail.enabled`, defaulted true for the grid/Recap/browser callers; its `.task` keys on the
+flag so entering the window fires the previously no-op load). The scale properties hold — ≤7 bitmap
+requests per post instead of 50, players still ±1, NSCache cap unchanged — the ~50 placeholder page
+skeletons themselves are cheap vector views (they were always mounted pre-106). Residual snap FEEL
+(stock `TabView(.page)` snap curve, "feels fast") remains the separately-queued custom UIScrollView
+pager (round 7b) — unchanged by this.

@@ -139,6 +139,11 @@ struct ClipThumbnail: View {
     let localIdentifier: String
     let kind: String
     let size: CGSize
+    /// Whether to actually REQUEST the poster bitmap. The Clips carousel windows this to pages near the
+    /// current one (prompt 106) so a 50-clip post doesn't fire 50 concurrent frame-0 decodes on mount;
+    /// the view renders its placeholder gradient until enabled. Defaulted so other callers (grid, Recap
+    /// carousel, browser strip — all row-lazy already) are unchanged.
+    var enabled: Bool = true
     @State private var image: UIImage?
 
     var body: some View {
@@ -154,11 +159,12 @@ struct ClipThumbnail: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .task(id: localIdentifier) { await load() }
+        // Keyed on `enabled` too, so a page entering the load window re-fires the (previously no-op) task.
+        .task(id: "\(enabled)-\(localIdentifier)") { await load() }
     }
 
     private func load() async {
-        guard image == nil else { return }
+        guard enabled, image == nil else { return }
         // Video: use the EXACT frame-0 (not Photos' arbitrary thumbnail) so the still equals the frame the
         // player layer first displays → the carousel's poster→video reveal is invisible (no takeover flick).
         // Photos keep the thumbnail; the frame-0 path itself falls back to `poster(...)` if it can't decode.

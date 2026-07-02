@@ -553,47 +553,46 @@ private struct ClipPostCard: View {
             TabView(selection: $page) {
                 ForEach(Array(post.clips.enumerated()), id: \.element.id) { idx, item in
                     // `TabView(.page)` is EAGER — it builds every page up front, so a clip-heavy post (a
-                    // session with 50 untagged videos = one 50-page post) mounted 50 poster views and fired
-                    // 50 concurrent frame-0 decodes the moment the card scrolled in (prompt 106). Window it:
-                    // only pages within ±2 of the current one are real; the rest are flat placeholders with
-                    // the same identity/tag, so paging and indices are unchanged and a page materializes
-                    // (and only then loads its poster) as the window reaches it. The warm/live player bound
-                    // (±1, `warmLive`) sits strictly inside this window, so playback behavior is untouched.
-                    if abs(idx - page) <= 2 {
-                        // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
-                        // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
-                        ClipPosterView(item: item, post: post,
-                                       playback: playback, postID: post.id, postIndex: idx,
-                                       payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
-                                       warmLive: warmLive(idx),
-                                       isCurrentPage: idx == page,
-                                       postOnScreen: isOnScreen,
-                                       onTapToPlay: {
-                                           guard item.media.kind == "video" else { return }   // photos stay still
-                                           playback.playing = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
-                                       },
-                                       onToggleMute: {
-                                           if var pc = playback.playing, pc.matches(post.id, idx) { pc.muted.toggle(); playback.playing = pc }
-                                       },
-                                       onOpenFullscreen: {
-                                           // Stop the inline player first so it isn't decoding + emitting audio
-                                           // UNDER the fullscreen player (doubled audio/decode — prompt 94 review).
-                                           // The snapshot below carries its own clips/startIndex, so it's
-                                           // independent of playback.playing; clearing it releases the inline audio
-                                           // session via ClipFeedPlayback.playing's didSet.
-                                           playback.playing = nil
-                                           fullscreen = ClipFullscreen(
-                                               clips: post.clips.map(\.media), startIndex: idx,
-                                               series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
-                                               title: post.title, tile: hrTile)
-                                       })
-                            .tag(idx)
-                            .accessibilityIdentifier("clips.post.page")
-                    } else {
-                        Color.black
-                            .tag(idx)
-                            .accessibilityIdentifier("clips.post.page")
-                    }
+                    // session with 50 untagged videos = one 50-page post) fired 50 concurrent frame-0
+                    // decodes the moment the card scrolled in (prompt 106). The scale fix is to window the
+                    // HEAVY WORK, not the view: every page keeps its (cheap) `ClipPosterView` mounted with
+                    // STABLE identity, and only the poster-bitmap load is gated to ±3 of the current page
+                    // (`loadPoster`). The first cut of this windowed the VIEW instead — an `if/else` swapping
+                    // `ClipPosterView` ↔ placeholder — but branch changes are identity changes: every snap
+                    // commit destroyed two pages and mounted two fresh ones ON the settle frame, which read
+                    // as carousel jitter (round 2; the same identity discipline prompt 97 is built on). The
+                    // warm/live player bound (±1, `warmLive`) is unchanged.
+                    //
+                    // Tap a still video poster → it plays INLINE here (prompt 85), becoming the feed's single
+                    // active clip; tapping the playing video pauses/resumes it (handled inside the surface).
+                    ClipPosterView(item: item, post: post,
+                                   playback: playback, postID: post.id, postIndex: idx,
+                                   payload: payloads[item.media.id],   // precomputed off the swipe path (perf)
+                                   warmLive: warmLive(idx),
+                                   loadPoster: abs(idx - page) <= 3,
+                                   isCurrentPage: idx == page,
+                                   postOnScreen: isOnScreen,
+                                   onTapToPlay: {
+                                       guard item.media.kind == "video" else { return }   // photos stay still
+                                       playback.playing = PlayingClipRef(postID: post.id, page: idx)   // tap → unmuted
+                                   },
+                                   onToggleMute: {
+                                       if var pc = playback.playing, pc.matches(post.id, idx) { pc.muted.toggle(); playback.playing = pc }
+                                   },
+                                   onOpenFullscreen: {
+                                       // Stop the inline player first so it isn't decoding + emitting audio
+                                       // UNDER the fullscreen player (doubled audio/decode — prompt 94 review).
+                                       // The snapshot below carries its own clips/startIndex, so it's
+                                       // independent of playback.playing; clearing it releases the inline audio
+                                       // session via ClipFeedPlayback.playing's didSet.
+                                       playback.playing = nil
+                                       fullscreen = ClipFullscreen(
+                                           clips: post.clips.map(\.media), startIndex: idx,
+                                           series: hr.series, maxHR: hr.maxHR, restHR: hr.restHR,
+                                           title: post.title, tile: hrTile)
+                                   })
+                        .tag(idx)
+                        .accessibilityIdentifier("clips.post.page")
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -717,6 +716,10 @@ private struct ClipPosterView: View {
     /// Card-decided WARM mount (preloaded + paused), from the card's own @State only (no `playback.playing`).
     /// `live` below OR-s this with `playing` so the active clip always mounts even when not warm.
     let warmLive: Bool
+    /// Whether this page should LOAD its poster bitmap (±3 of the current page — prompt 106 round 2).
+    /// The view itself stays mounted regardless (stable identity, no snap-frame churn); a far page just
+    /// shows the placeholder gradient until the window reaches it and the thumbnail request fires.
+    let loadPoster: Bool
     /// This poster is the carousel's CURRENT page (idx == page). A non-current page is a carousel sibling
     /// sitting OFF to the side (clipped by the TabView) — its warm player can stay visible (paused frame) so
     /// a swipe reveals an already-correct frame, no crossfade.
@@ -750,7 +753,7 @@ private struct ClipPosterView: View {
                 // player loads (the surface's loading state is transparent) and reappears instantly when the
                 // clip stops — eliminating the spinner/black flash on every autoplay start/stop.
                 ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
-                              size: geo.size)
+                              size: geo.size, enabled: loadPoster)
                     .contentShape(Rectangle())
                     .onTapGesture { onTapToPlay() }
                 // The inline player, overlaid on the still whenever this clip is LIVE (playing OR warm). A

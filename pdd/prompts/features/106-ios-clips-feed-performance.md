@@ -52,9 +52,12 @@ One PR, five moves — no behavior change beyond smoothness:
   time-sorted (O(n) check, no allocation), binary-search the interior window bounds and the
   `value(at:)` bracketing pair. Contract byte-identical — existing `HRWindowSlicerTests` must
   pass unchanged; add an unsorted-input parity test.
-- **P3 — carousel windowing.** In `ClipPostCard.carousel`, render the real `ClipPosterView` only
-  within ±2 pages of `page`; a black placeholder (same tag/identity) beyond. Warm/live player
-  bounds (±1) sit inside the window, so playback behavior is unchanged. Hide the dot row when
+- **P3 — carousel work-windowing (round 2).** In `ClipPostCard.carousel`, every page keeps its
+  `ClipPosterView` mounted with **stable identity**; only the poster-bitmap load is windowed
+  (`loadPoster`, ±3 of `page`, threaded to `ClipThumbnail.enabled`). Round 1 windowed the *view*
+  (an `if/else` swapping poster ↔ placeholder), but a branch change is an identity change — every
+  snap commit destroyed two pages and mounted two fresh ones on the settle frame, which read as
+  carousel jitter on device. Warm/live player bounds (±1) unchanged. Hide the dot row when
   `clipCount > 8` (the "n/N" counter overlay already covers it).
 - **P4 — bounded poster cache.** `frameZeroCache` becomes an `NSCache` (cost = bitmap bytes,
   `totalCostLimit` ≈ 150 MB) so memory pressure evicts old posters instead of jetsamming the app.
@@ -78,8 +81,8 @@ One PR, five moves — no behavior change beyond smoothness:
       coalesce into one rebuild.
 - [ ] `HRWindowSlicer` returns identical output for sorted and unsorted input; all existing
       slicer tests pass unchanged.
-- [ ] A 50-clip post mounts ≤ 5 real carousel pages; posters beyond the window load only when
-      the window reaches them.
+- [ ] A 50-clip post requests ≤ 7 poster bitmaps (±3 window); posters beyond the window load only
+      when the window reaches them. Page identity is stable across swipes (no snap-frame mounts).
 - [ ] The frame-zero poster cache is cost-bounded (~150 MB) and evicts under pressure.
 - [ ] `cachedHRContext` holds only media-bearing sessions.
 - [ ] App changes type-check against the iOS SDK (0 new warnings); unit suite green.
