@@ -7865,3 +7865,21 @@ warm surface unmounts exactly on the snap frame), and `load()`'s synchronous `PH
 off-main. Method note (reusable): motion-energy profiling = `fps=60,scale,gray,tblend=difference,
 signalstats` → per-frame YAVG; a stall is YAVG≈0 runs inside a motion burst, a jump-cut is a lone spike
 with zero neighbours.
+
+**Clips search & filter (prompt 107, 2026-07-02).** Wireframed first (docs/ux-research/clips-search-filter/,
+4 dark-mode frames with literal SnappetColor hex). Decisions: **(1) visible chip strip, not a toolbar
+glyph** — the #264 Kilter round proved hidden filters don't get used; the strip is the feed's first
+LazyVStack row so it scrolls away and costs no space while browsing, and hides under `isSearching` (one
+control in charge at a time). **(2) Pure keystone `ClipFeedFilter`** with an inactive fast path that
+returns the input array untouched and never calls `isFavorite` — so the default feed registers no
+reaction-store SwiftUI dependency and pays zero filtering cost; with ♥ on, reading the store in body is
+deliberate (toggling a heart live-updates the filtered feed). **(3) Posts stay whole** — the media-kind
+chips (Videos/Photos) match a post when ANY clip is that kind, never filtering clips inside a post
+(carousel, attempt labels, and counts stay intact; a "post" is the unit users recognize). **(4)
+Discipline (Climbs/Gym) maps to `ClipFeedPost.kind`**, not `discipline` — the general/untagged bucket of
+a Kilter session is still a climbing post to the user. **(5) Session-scoped @State** (resets on relaunch,
+like IG search) — persisting a filter risks a mysteriously "empty" feed next week. **(6) Filter change
+stops the active inline clip** — narrowing can remove the playing card, so `playing` must never point at
+a filtered-out page. The explore grid receives the SAME filtered array (feed/grid can't disagree). Search
+matching = `localizedStandardContains` over title + subtitle (case/diacritic-insensitive) — no tokenizer,
+no index; O(posts) per keystroke is trivial at feed scale.

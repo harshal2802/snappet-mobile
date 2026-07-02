@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Clips · Search &amp; Filter · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values; Clips is media-dark) */
+    --coral:#FF7A6B;
+    --amber:#F59E0B;          /* Kilter / climbing accent */
+    --ember:#FF9645;          /* Workout / gym accent */
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    --glass:rgba(20,20,24,.72);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1a1424,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:1500px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb3a8 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16px;max-width:1050px;margin:0 0 14px}
+  .sub b{color:#fff}
+  .wrap{max-width:1500px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--coral);color:#2a0f0a;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,122,107,.4)}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--coral);font-weight:650}
+
+  /* device */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .screen>.status,.screen>.navbar,.screen>.search,.screen>.chips,.screen>.resline,.screen>.card{flex:none}
+  .status{height:44px;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .navbar{padding:6px 18px 8px;display:flex;align-items:center;justify-content:space-between}
+  .navbar .t{font-size:30px;font-weight:800;letter-spacing:-.02em}
+  .navicons{display:flex;gap:14px;color:var(--ink);font-size:17px}
+  .tabbar{margin-top:auto;background:rgba(18,18,20,.94);border-top:1px solid var(--hair);display:flex;justify-content:space-around;padding:9px 8px 24px}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:#8a8a90}
+  .tab.on{color:var(--coral)} .tab .ic{font-size:19px}
+
+  /* search field (pull-down drawer) */
+  .search{margin:2px 16px 8px;background:var(--muted);border:1px solid var(--hair);border-radius:12px;
+    display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:14px;color:var(--t2)}
+  .search.active{border-color:#4a4a52;color:var(--ink)}
+  .search .caret{display:inline-block;width:2px;height:16px;background:var(--coral);animation:none;margin-left:1px}
+  .search .cancel{margin-left:auto;color:var(--coral);font-size:14px;font-weight:600}
+
+  /* chip strip */
+  .chips{display:flex;gap:8px;padding:2px 16px 10px;overflow:hidden}
+  .chip{flex:none;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:650;
+    background:var(--muted);border:1px solid var(--hair);color:var(--t2)}
+  .chip.on{background:rgba(255,122,107,.16);border-color:var(--coral);color:var(--coral)}
+  .chip.on.amber{background:rgba(245,158,11,.14);border-color:var(--amber);color:var(--amber)}
+  .chip.on.ember{background:rgba(255,150,69,.14);border-color:var(--ember);color:var(--ember)}
+  .chip .h{font-size:13px}
+
+  /* result count row */
+  .resline{display:flex;align-items:center;gap:8px;padding:0 18px 8px;font-size:12.5px;color:var(--t2)}
+  .resline b{color:var(--ink)}
+  .resline .clear{margin-left:auto;color:var(--coral);font-weight:650}
+
+  /* post card */
+  .card{margin:0 0 16px}
+  .phead{display:flex;align-items:center;gap:10px;padding:0 16px 8px}
+  .pglyph{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;
+    border:1.5px solid var(--amber);background:rgba(245,158,11,.16);color:var(--amber)}
+  .pglyph.gym{border-color:var(--ember);background:rgba(255,150,69,.14);color:var(--ember)}
+  .ptitle{font-size:14px;font-weight:800;line-height:1.2}
+  .psub{font-size:11.5px;color:var(--t2)}
+  .pacts{margin-left:auto;display:flex;gap:12px;color:var(--ink);font-size:15px}
+  .pacts .fav{color:#ff4d5e}
+  .tile{position:relative;height:300px;background:linear-gradient(160deg,#3b3f47,#22242a 55%,#191b20);overflow:hidden}
+  .tile.short{height:210px}
+  .tile .wallshape{position:absolute;inset:0;background:
+    radial-gradient(90px 60px at 18% 32%,rgba(245,158,11,.28),transparent 70%),
+    radial-gradient(120px 80px at 74% 56%,rgba(93,102,120,.5),transparent 72%),
+    radial-gradient(70px 46px at 42% 78%,rgba(157,130,240,.22),transparent 70%)}
+  .tile .name{position:absolute;left:12px;bottom:86px;background:rgba(0,0,0,.42);border-radius:10px;padding:8px 10px}
+  .tile .name .n1{font-size:15px;font-weight:800;color:#fff}
+  .tile .name .n2{font-size:11px;font-weight:600;color:rgba(255,255,255,.85)}
+  .tile .chipset{position:absolute;left:12px;bottom:64px;background:#fff;color:#111;border-radius:6px;padding:2px 7px;font-size:9.5px;font-weight:800}
+  .tile .hr{position:absolute;left:12px;right:12px;bottom:10px;height:48px;background:rgba(10,10,12,.62);
+    border:1px solid rgba(255,255,255,.1);border-radius:12px;display:flex;align-items:center;gap:10px;padding:0 12px}
+  .tile .hr .bpm{font-size:16px;font-weight:800;color:#fff}
+  .tile .hr .z{font-size:9px;font-weight:800;color:#5BC074;border:1px solid rgba(91,192,116,.5);padding:1px 6px;border-radius:99px}
+  .tile .hr .spark{flex:1;height:22px;background:
+    linear-gradient(transparent 46%,rgba(91,192,116,.65) 47%,rgba(91,192,116,.65) 53%,transparent 54%) no-repeat;
+    border-bottom:1px dashed rgba(91,192,116,.5)}
+  .tile .count{position:absolute;top:10px;right:12px;background:rgba(0,0,0,.5);border-radius:99px;color:#fff;font-size:10px;font-weight:800;padding:3px 8px}
+  .tile .play{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;
+    background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .pmeta{padding:7px 16px 0;font-size:11.5px;color:var(--t2)}
+
+  /* no-results */
+  .noresults{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 34px;text-align:center}
+  .noresults .big{font-size:44px}
+  .noresults .h{font-size:17px;font-weight:750;color:var(--ink)}
+  .noresults .d{font-size:13px;color:var(--t2)}
+  .noresults .btn{margin-top:6px;background:rgba(255,122,107,.16);border:1px solid var(--coral);color:var(--coral);
+    font-size:13.5px;font-weight:700;border-radius:999px;padding:9px 18px}
+
+  .keyb{background:#1c1d22;border-top:1px solid #2c2d33;padding:8px 6px 10px;display:grid;grid-template-columns:repeat(10,1fr);gap:5px}
+  .keyb span{background:#3a3b42;border-radius:5px;height:30px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#dcdce2}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">Clips — Search &amp; Filter</h1>
+  <p class="sub"><b>Optional, zero-cost when idle:</b> the feed looks exactly as it does today until you either pull down
+    (revealing the standard iOS search field) or tap a filter chip. Search matches the post's <b>climb / exercise name and
+    session title</b>; chips filter by <b>Favorites ♥ · Climbs · Gym · Videos · Photos</b> (one discipline + one media kind at a
+    time, favorites stacks with anything). An active search/filter shows an honest <b>“N of M posts · Clear”</b> line, and a
+    no-match result offers one-tap recovery. Same pattern language as the Kilter browse chips (#264): filters visible, not
+    buried in a toolbar glyph.</p>
+  <div class="wrap">
+    <div class="gallery">
+
+      <!-- 1 · default -->
+      <div class="step">
+        <div class="stepnum">1</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><div class="t">Clips</div><div class="navicons"><span>▶︎</span><span>▦</span></div></div>
+          <div class="chips">
+            <div class="chip"><span class="h">♥</span> Favorites</div>
+            <div class="chip"><span class="h">🧗</span> Climbs</div>
+            <div class="chip"><span class="h">🏋️</span> Gym</div>
+            <div class="chip"><span class="h">▶</span> Videos</div>
+            <div class="chip"><span class="h">📷</span> Photos</div>
+          </div>
+          <div class="card">
+            <div class="phead">
+              <div class="pglyph">🧗</div>
+              <div><div class="ptitle">Black v6</div><div class="psub">Tuesday Session · 40°</div></div>
+              <div class="pacts"><span class="fav">♥</span><span>⋯</span></div>
+            </div>
+            <div class="tile">
+              <div class="wallshape"></div>
+              <div class="count">2/3</div>
+              <div class="name"><div class="n1">Black v6</div><div class="n2">6c · 40°</div></div>
+              <div class="hr"><div class="bpm">139<span style="font-size:9px;font-weight:650;color:#aaa"> BPM</span></div><div class="spark"></div><div class="z">Z3 · AEROBIC</div></div>
+            </div>
+            <div class="pmeta">3 clips · 2 days ago</div>
+          </div>
+          <div class="card">
+            <div class="phead">
+              <div class="pglyph gym">🏋️</div>
+              <div><div class="ptitle">Bench Press</div><div class="psub">Push Day A</div></div>
+              <div class="pacts"><span>♡</span><span>⋯</span></div>
+            </div>
+            <div class="tile short">
+              <div class="wallshape" style="filter:hue-rotate(160deg)"></div>
+              <div class="play">▶</div>
+              <div class="chipset" style="bottom:auto;top:10px;left:12px">Set 3</div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="ic">⌂</span>Home</div>
+            <div class="tab on"><span class="ic">▶</span>Clips</div>
+            <div class="tab"><span class="ic">▤</span>Recap</div>
+            <div class="tab"><span class="ic">▦</span>Apps</div>
+          </div>
+        </div></div>
+        <p class="caption"><b>Default — nothing new demanded.</b> One compact chip strip above the feed (scrolls away with content).
+          Search is the standard iOS pull-down — invisible until you want it. Feed, cards, autoplay: untouched.</p>
+      </div>
+
+      <!-- 2 · search -->
+      <div class="step">
+        <div class="stepnum">2</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><div class="t">Clips</div><div class="navicons"><span>▶︎</span><span>▦</span></div></div>
+          <div class="search active">🔍 black<span class="caret"></span><span class="cancel">Cancel</span></div>
+          <div class="resline"><b>2 of 24</b> posts match “black”<span class="clear">Clear</span></div>
+          <div class="card">
+            <div class="phead">
+              <div class="pglyph">🧗</div>
+              <div><div class="ptitle">Black v6</div><div class="psub">Tuesday Session · 40°</div></div>
+              <div class="pacts"><span class="fav">♥</span><span>⋯</span></div>
+            </div>
+            <div class="tile short">
+              <div class="wallshape"></div>
+              <div class="count">2/3</div>
+              <div class="name" style="bottom:64px"><div class="n1">Black v6</div><div class="n2">6c · 40°</div></div>
+              <div class="hr"><div class="bpm">139<span style="font-size:9px;font-weight:650;color:#aaa"> BPM</span></div><div class="spark"></div><div class="z">Z3</div></div>
+            </div>
+            <div class="pmeta">3 clips · 2 days ago</div>
+          </div>
+          <div class="card">
+            <div class="phead">
+              <div class="pglyph">🧗</div>
+              <div><div class="ptitle">Black v4 slab</div><div class="psub">Friday Mileage · 25°</div></div>
+              <div class="pacts"><span>♡</span><span>⋯</span></div>
+            </div>
+            <div class="tile short" style="height:150px">
+              <div class="wallshape" style="filter:hue-rotate(40deg)"></div>
+              <div class="play">▶</div>
+            </div>
+          </div>
+          <div class="keyb">
+            <span>Q</span><span>W</span><span>E</span><span>R</span><span>T</span><span>Y</span><span>U</span><span>I</span><span>O</span><span>P</span>
+            <span>A</span><span>S</span><span>D</span><span>F</span><span>G</span><span>H</span><span>J</span><span>K</span><span>L</span><span>⌫</span>
+          </div>
+          <div class="tabbar" style="padding-top:6px">
+            <div class="tab"><span class="ic">⌂</span>Home</div>
+            <div class="tab on"><span class="ic">▶</span>Clips</div>
+            <div class="tab"><span class="ic">▤</span>Recap</div>
+            <div class="tab"><span class="ic">▦</span>Apps</div>
+          </div>
+        </div></div>
+        <p class="caption"><b>Search = pull down, type.</b> Matches the <span class="k">climb/exercise name</span> and the
+          <span class="k">session title</span>, case-insensitive, live as you type. The result line is honest (“2 of 24”) and
+          Clear resets everything in one tap. Chip strip hides while searching — one control in charge at a time.</p>
+      </div>
+
+      <!-- 3 · chips active -->
+      <div class="step">
+        <div class="stepnum">3</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><div class="t">Clips</div><div class="navicons"><span>▶︎</span><span>▦</span></div></div>
+          <div class="chips">
+            <div class="chip on"><span class="h">♥</span> Favorites</div>
+            <div class="chip on amber"><span class="h">🧗</span> Climbs</div>
+            <div class="chip"><span class="h">🏋️</span> Gym</div>
+            <div class="chip"><span class="h">▶</span> Videos</div>
+            <div class="chip"><span class="h">📷</span> Photos</div>
+          </div>
+          <div class="resline"><b>5 of 24</b> posts<span class="clear">Clear</span></div>
+          <div class="card">
+            <div class="phead">
+              <div class="pglyph">🧗</div>
+              <div><div class="ptitle">Black v6</div><div class="psub">Tuesday Session · 40°</div></div>
+              <div class="pacts"><span class="fav">♥</span><span>⋯</span></div>
+            </div>
+            <div class="tile">
+              <div class="wallshape"></div>
+              <div class="count">2/3</div>
+              <div class="name"><div class="n1">Black v6</div><div class="n2">6c · 40°</div></div>
+              <div class="hr"><div class="bpm">139<span style="font-size:9px;font-weight:650;color:#aaa"> BPM</span></div><div class="spark"></div><div class="z">Z3 · AEROBIC</div></div>
+            </div>
+            <div class="pmeta">3 clips · 2 days ago</div>
+          </div>
+          <div class="card">
+            <div class="phead">
+              <div class="pglyph">🧗</div>
+              <div><div class="ptitle">Orange V5</div><div class="psub">Comp Night · 45°</div></div>
+              <div class="pacts"><span class="fav">♥</span><span>⋯</span></div>
+            </div>
+            <div class="tile short" style="height:170px">
+              <div class="wallshape" style="filter:hue-rotate(-25deg)"></div>
+              <div class="play">▶</div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="ic">⌂</span>Home</div>
+            <div class="tab on"><span class="ic">▶</span>Clips</div>
+            <div class="tab"><span class="ic">▤</span>Recap</div>
+            <div class="tab"><span class="ic">▦</span>Apps</div>
+          </div>
+        </div></div>
+        <p class="caption"><b>Chips stack sensibly.</b> ♥ Favorites (coral) + Climbs (amber wayfinding) = “my favorite climbing
+          posts”. Climbs/Gym are mutually exclusive (tap the other to switch, tap again to turn off) — same for Videos/Photos.
+          The count line appears only while something is active.</p>
+      </div>
+
+      <!-- 4 · no results -->
+      <div class="step">
+        <div class="stepnum">4</div>
+        <div class="device"><div class="screen">
+          <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><div class="t">Clips</div><div class="navicons"><span>▶︎</span><span>▦</span></div></div>
+          <div class="search active">🔍 deadlift<span class="caret"></span><span class="cancel">Cancel</span></div>
+          <div class="noresults">
+            <div class="big">🔍</div>
+            <div class="h">No posts match “deadlift”</div>
+            <div class="d">Try a different name, or clear the search and filters to see all 24 posts.</div>
+            <div class="btn">Clear search &amp; filters</div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="ic">⌂</span>Home</div>
+            <div class="tab on"><span class="ic">▶</span>Clips</div>
+            <div class="tab"><span class="ic">▤</span>Recap</div>
+            <div class="tab"><span class="ic">▦</span>Apps</div>
+          </div>
+        </div></div>
+        <p class="caption"><b>Dead ends have an exit.</b> A no-match state names what failed and offers one-tap recovery —
+          never a silent empty feed. (The grid ▦ sheet inherits whatever search/filter is active, so it always agrees with
+          the feed.)</p>
+      </div>
+
+    </div>
+  </div>
+</header>
+</body>
+</html>
