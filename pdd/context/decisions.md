@@ -7770,3 +7770,36 @@ different, small metadata chip — left unchanged, not the prominent scorebug fl
 `ClipHROverlayTests.testMakeReturnsNilForPhotosEvenWithHR` (a photo with HR in-window → `nil`; the same
 window/HR on a video still builds a payload). **Device-pending:** the visual confirmation (photo = name-only,
 video = live overlay) needs a real session with both kinds — the sim has no Photos/HR.
+
+**Kilter UX feedback — four fixes (kilter-ux-feedback prompts 01–04, 2026-07-02).** Real-user test surfaced
+four issues; all four were wireframed (`docs/ux-research/kilter-ux-feedback/wireframes.html`) and approved
+before implementation. **(F3, "resets board to 12x14") Decision — per-layout size memory resolved at READ
+time, not a smarter overwrite.** The bug was `syncBoardSize()` overwriting the single global
+`kilter.productSizeId` with `defaultSizeId` (lowest `product_size_id` = the 12×14) whenever the value wasn't
+valid for the current layout — including while the catalog was unreadable (empty size list). New
+`KilterSizeMemory` (UserDefaults map `layoutId → sizeId`, injectable, `KilterBoardMemory` pattern) + pure
+`choose(remembered:current:available:)`: empty `available` → nil = leave the selection alone; remembered
+wins; valid current carries over; else default (the one legitimate reset, surfaced via a transient notice
+instead of failing silently). The global key stays as "size in effect" for render/LED paths — no migration.
+`applyRestore` mirrors a recognized board's size into the map BEFORE the layout-change sync so P1 board
+memory (finer-grained truth) can't be overridden by an older per-layout entry. **(F1) Decision — the board
+strip REUSES the idle-session slot** (zero new vertical cost, the F4 complaint said the root is already
+chrome-heavy): dot + words + the state's one action beside Start session; `.unsupported` (simulator)
+collapses to the old pitch so UI tests hold. The active session bar shows the recognized board's label
+(`connectedBoardLabel`, set in `recognizeBoard`, cleared on disconnect) instead of the generic "Session" —
+a BLE connect auto-starts a session, so strip and bar never fight. Climb detail gets a glass status pill ON
+the board render (connect / cancel / re-send by state); the deep `illuminateSection` stays as the full
+control. **(F4) Decision — compact chip strip, not a collapsible rail**: a DisclosureGroup would keep the
+200 pt cost one tap away and add state; the chips keep both jobs (open + ⚡ re-light) at ~36 pt and the full
+cards already live in On the Board. ⚡ confirms via a shared transient `RootNotice` (also used by F3's
+reset), honest about whether holds actually lit (`wasConnected` semantics unchanged). Root's
+`KilterThumbnailCache` use dropped. **(F2) Decisions — Filters moves from toolbar glyph to a badged leading
+chip** (same `kilter.filtersButton` id); Layout+Size merge into one Board chip; **Min/Max grade chips →
+one two-thumb slider** whose crossed-thumb rule is pure (`KilterGradeRange.clamp`: the dragged end pushes
+the other along, visibly mid-drag — replacing the old after-the-fact `onChange` coupling, which is
+therefore removed); search drawer → `.always`; both sheets apply through a live "Show N climbs" button
+reading the root's existing `count`; the sheet's segmented "Show only" (All/Saved/Mine) binds the SAME
+`savedOnly`/`mineOnly` state as the pinned chips, so the two surfaces cannot drift. New pure tests:
+`KilterSizeMemoryTests` (incl. the reported regression as a round-trip) and `KilterGradeRangeTests`.
+**Device-pending:** type-check + test runs need macOS/Xcode (authored on a Linux box); BLE strip/pill
+transitions need a physical board.

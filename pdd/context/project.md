@@ -566,6 +566,30 @@ author couldn't: configuring the throwing `UIImagePickerController` camera-only 
 via `mediaTypes=[movie]` only, forcing `isAvailable=false` on the Simulator, and requesting camera/mic
 authorization before presenting (see `decisions.md`). The structured interval runner is a deliberate follow-up.
 
+🟡 **Kilter UX-feedback fixes — connection, filters, size memory, compact rail (2026-07-02,
+kilter-ux-feedback prompts 01–04).** iOS. A real-user test of the Kilter mini-app reported four issues,
+verbatim: connecting hard to see · filtering not obvious · "resets board to 12x14" · the recent-climbs rail
+eats the list. All four were wireframed first (`docs/ux-research/kilter-ux-feedback/wireframes.html`,
+approved before implementation), then fixed: **(01)** new `KilterSizeMemory` — a per-layout
+`UserDefaults` size map behind the global `kilter.productSizeId`, with a pure
+`choose(remembered:current:available:)` rule that leaves the selection alone while the catalog is
+unreadable, restores each layout's own size, and only falls back to the default when the size truly isn't
+offered (surfaced via a transient notice); root + Settings share the rule, `applyRestore` mirrors P1 board
+restores into the map. **(02)** the root's idle session slot is now a **board + session strip** (status
+dot + words + Connect/Cancel/Settings beside Start session; simulator collapses to the old pitch), the
+active session bar names the recognized board, and the climb detail gets a **glass status pill on the
+board render** (connect / cancel / re-send by state). **(03)** the ~200 pt full-card re-light rail is a
+**single-line chip strip** (dot + name opens the climb, ⚡ re-lights with an honest confirm notice; All ›
+→ the unchanged On the Board timeline). **(04)** search is always visible, the toolbar funnel became a
+badged leading **Filters chip**, Layout+Size merged into one **Board** chip, Min/Max became one
+**Grade-range** chip opening a two-thumb slider (`KilterGradeRange`, pure snap/clamp rules), and both
+sheets apply through a live "Show N climbs" count; the Filters sheet gained a "Show only" (All/Saved/Mine)
+segment bound to the same state as the pinned chips. New pure tests: `KilterSizeMemoryTests` (incl. the
+reported regression as a round-trip) + `KilterGradeRangeTests`. KG nodes/edges updated
+(kilter-size-memory, kilter-grade-range; catalog/detail/filters rewritten). **Device-pending:** authored
+on a Linux box — type-check + `SnappetTests`/UITests need macOS/Xcode; the BLE strip/pill transitions and
+a real re-light need a physical board. Android mirror is a follow-up (iOS is the lead platform).
+
 ## License
 
 TBD.

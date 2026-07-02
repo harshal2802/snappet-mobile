@@ -205,6 +205,9 @@ struct KilterClimbDetailView: View {
         return VStack(spacing: 8) {
             KilterBoardView(geometry: geometry, holds: holds)
                 .frame(maxHeight: 380)
+                // Connection state where the eye already is (UX feedback "connecting to the board was
+                // hard to see": the only Connect control sat 8 blocks down this scroll).
+                .overlay(alignment: .topTrailing) { boardStatusPill.padding(8) }
                 .overlay(alignment: .leading) { if hasPrev { chevron("chevron.left") { goToSibling(-1) } } }
                 .overlay(alignment: .trailing) { if hasNext { chevron("chevron.right") { goToSibling(1) } } }
                 .contentShape(Rectangle())
@@ -225,6 +228,60 @@ struct KilterClimbDetailView: View {
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                     .accessibilityIdentifier("kilter.position")
             }
+        }
+    }
+
+    /// A glass status pill on the board render — the answer to "am I connected?" without scrolling.
+    /// Idle/failed → one-tap Connect; busy → progress (tap cancels); connected → "On the board", tap
+    /// re-sends the holds. The full section below (wrong-holds fixes, disconnect) is unchanged; this
+    /// is the fast path, not a replacement. Hidden when there's no radio (simulator).
+    @ViewBuilder private var boardStatusPill: some View {
+        if board.state != .unsupported {
+            Button { boardPillTapped() } label: {
+                HStack(spacing: 5) {
+                    switch board.state {
+                    case .connected:
+                        Image(systemName: "lightbulb.fill")
+                        Text("On the board")
+                    case .scanning, .connecting:
+                        ProgressView().controlSize(.mini)
+                        Text("Connecting…")
+                    case .bluetoothOff:
+                        Image(systemName: "wifi.slash")
+                        Text("Bluetooth off")
+                    case .unauthorized:
+                        Image(systemName: "lock.fill")
+                        Text("Allow Bluetooth")
+                    default:
+                        Image(systemName: "bolt.fill")
+                        Text("Connect board")
+                    }
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(board.isConnected ? .green : SnappetColor.moduleAccent("kilter"))
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.15)))
+            }
+            .buttonStyle(.plain)
+            .animation(.snappy, value: board.state)
+            .accessibilityIdentifier("kilter.board.pill")
+        }
+    }
+
+    private func boardPillTapped() {
+        switch board.state {
+        case .connected:
+            board.illuminate(holds)
+            Haptics.tap()
+        case .idle, .failed:
+            board.connect()
+        case .scanning, .connecting:
+            board.cancel()
+        case .unauthorized:
+            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+        default:
+            break   // .bluetoothOff — Control Center is the fix; the pill just says so.
         }
     }
 
