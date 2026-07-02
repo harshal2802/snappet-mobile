@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Kilter UX Feedback · Four Fixes · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values lead; this deck is dark-mode-first) */
+    --coral:#FF7A6B; --coral-l:#FF5A4D;
+    --amber:#F59E0B; --amber-deep:#B45309;        /* Kilter (climb) — WAYFINDING accent */
+    --ember:#FF9645;                              /* Workout */
+    --azure:#589BF2; --violet:#9D82F0; --teal:#3CB5C9;
+    --fresh:#5BC074; --moderate:#F59E0B; --hard:#FF6A5C; --limit:#9B1C16;
+    --flash:#E6B422; --send:#5BC074; --proj:#F59E0B; --attempt:#8A8A90;
+    --h-start:#5BC074; --h-hand:#56A0FF; --h-finish:#C77DFF; --h-foot:#FF9645;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    --glass:rgba(20,20,24,.72); --glasshair:rgba(255,255,255,.12);
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#241a10,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1380px;margin:0 auto;padding:0 28px}
+  header.page{padding:58px 28px 8px;max-width:1380px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffce8a 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16.5px;max-width:1000px;margin:0 0 14px}
+  .sub b{color:#fff}
+  .quote{background:#16161b;border:1px solid #2a2a31;border-left:3px solid var(--amber);border-radius:10px;
+    padding:8px 13px;margin:6px 0;font-size:13.5px;color:#c7cad3;font-style:italic}
+  .quote b{color:#fff;font-style:normal}
+  .flowhead{margin:56px 0 4px;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+  .flowtitle{font-size:25px;font-weight:780;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:1000px;margin:0 0 12px;font-size:14.5px}
+  .flowdesc b{color:#e9eaee} .flowdesc code{background:#1c1c22;border-radius:5px;padding:1px 5px;font-size:12.5px;color:#ffce8a}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--amber);color:#1a1208;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(245,158,11,.45)}
+  .stepnum.before{background:#54555c;color:#fff;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--amber);font-weight:650}
+
+  /* ---------- device ---------- */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .device.dimmed .screen>*:not(.sheet):not(.dimlayer){filter:brightness(.7)}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 4px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .nav{display:flex;align-items:center;gap:10px;padding:7px 16px 8px;flex:0 0 auto;font-size:15px}
+  .nav .bk{color:var(--amber);font-weight:600;font-size:14px}
+  .nav .ttl{font-weight:760;font-size:17px;letter-spacing:-.01em}
+  .nav .sp{flex:1}
+  .nav .ic{color:var(--ink);opacity:.85;font-size:16px}
+  .content{flex:1 1 auto;overflow:hidden;padding:2px 14px 8px;position:relative}
+  .dimlayer{position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:10}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#1c1c21;border-radius:22px 22px 0 0;
+    border-top:1px solid var(--hair);padding:13px 15px 18px;z-index:20;box-shadow:0 -18px 40px rgba(0,0,0,.6)}
+  .grab{width:38px;height:4px;border-radius:2px;background:#3a3a42;margin:0 auto 10px}
+  .sheettitle{display:flex;align-items:center;font-weight:760;font-size:15px;margin-bottom:4px}
+  .sheettitle .rst{margin-left:auto;color:var(--amber);font-weight:650;font-size:13px}
+
+  /* ---------- shared components ---------- */
+  .lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);font-weight:800}
+  .search{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:11px;padding:8px 12px;font-size:13px;color:var(--t2);margin:2px 0 4px}
+  .chiprow{display:flex;gap:7px;flex-wrap:nowrap;overflow:hidden;margin:8px 0 2px}
+  .chip{background:var(--muted);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:650;color:var(--ink);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex:0 0 auto}
+  .chip.on{background:var(--amber);color:#1a1208}
+  .chip .cv{color:var(--t2);font-weight:700}
+  .chip .dn{opacity:.65;font-size:9px;margin-left:1px}
+  .chip.fchip{background:transparent;border:1.5px solid var(--amber);color:var(--amber)}
+  .chip .badge{background:var(--coral);color:#1a1208;font-weight:800;font-size:10px;border-radius:8px;padding:1px 6px;margin-left:2px}
+  .countline{display:flex;align-items:center;font-size:11px;color:var(--t2);font-weight:650;margin:6px 2px 2px}
+  .countline .clr{margin-left:auto;color:var(--amber);font-weight:700}
+
+  .cta{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--coral);color:#1a1208;font-weight:780;border-radius:14px;padding:13px;font-size:15px;box-shadow:0 10px 24px -10px rgba(255,122,107,.55)}
+  .cta.sm{padding:9px 13px;font-size:13px;border-radius:12px}
+  .cta.amber{background:var(--amber);color:#1a1208;box-shadow:0 10px 24px -10px rgba(245,158,11,.5)}
+
+  /* board + session strip (F1) */
+  .bstrip{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:9px 11px;margin:8px 0}
+  .bstrip.live{border-color:rgba(91,192,116,.5);background:rgba(91,192,116,.07)}
+  .bdot{width:10px;height:10px;border-radius:50%;background:#8A8A90;flex:0 0 auto}
+  .bdot.on{background:var(--fresh);box-shadow:0 0 9px var(--fresh)}
+  .bdot.busy{background:var(--amber);box-shadow:0 0 9px var(--amber)}
+  .bs-t{display:flex;flex-direction:column;min-width:0}
+  .bs-t b{font-size:12.5px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bs-t span{font-size:10.5px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bs-cta{margin-left:auto;background:var(--amber);color:#1a1208;font-weight:800;font-size:12px;border-radius:10px;padding:7px 12px;flex:0 0 auto}
+  .bs-cta.co{background:var(--coral)}
+  .bs-cta.ghost{background:transparent;border:1.5px solid var(--hair);color:var(--t2);font-weight:700}
+
+  /* compact on-the-board strip (F4 after) */
+  .minirail{display:flex;align-items:center;gap:7px;margin:7px 0 2px;overflow:hidden}
+  .mrchip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 10px;font-size:11.5px;font-weight:650;white-space:nowrap;flex:0 0 auto}
+  .mrchip .zap{color:var(--amber);font-weight:800}
+  .mrdot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+  .mrdot.send{background:var(--send)} .mrdot.att{background:var(--proj)} .mrdot.lit{background:#8A8A90}
+  .mrsee{font-size:11.5px;color:var(--amber);font-weight:700;white-space:nowrap;flex:0 0 auto}
+
+  /* old tall rail (F4 before) */
+  .railhead{display:flex;align-items:center;margin:8px 2px 4px}
+  .railhead .see{margin-left:auto;font-size:11.5px;color:var(--amber);font-weight:700}
+  .railcards{display:flex;gap:10px;overflow:hidden;margin:2px 0 4px}
+  .railcard{width:104px;flex:0 0 auto}
+  .railcard .nm{font-size:11px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .railcard .st{margin-top:4px}
+  .railbtn{margin-top:5px;background:var(--amber);color:#1a1208;font-weight:800;font-size:10.5px;border-radius:9px;padding:5px 0;text-align:center}
+
+  /* climb list rows */
+  .crow{display:flex;align-items:center;gap:9px;padding:9px 2px;border-bottom:1px solid var(--hair)}
+  .crow .nm{font-weight:700;font-size:13.5px;line-height:1.25}
+  .crow .by{font-size:10.5px;color:var(--t2)}
+  .crow .cr{margin-left:auto;text-align:right;flex:0 0 auto}
+  .grade{display:inline-block;background:var(--muted);border-radius:999px;padding:3px 9px;font-size:11.5px;font-weight:750;font-variant-numeric:tabular-nums}
+  .qs{font-size:10px;color:var(--t2);margin-top:3px;font-weight:600}
+  .star{color:#E6B422}
+  .sectionhdr{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--t2);font-weight:800;margin:9px 2px 2px}
+
+  /* status (ascent style) chips */
+  .st{display:inline-flex;align-items:center;gap:4px;font-weight:750;font-size:10.5px;border-radius:7px;padding:2px 7px}
+  .st-send{background:rgba(91,192,116,.18);color:var(--send)}
+  .st-proj{background:rgba(245,158,11,.18);color:var(--proj)}
+  .st-attempt{background:rgba(138,138,144,.2);color:#c2c2c8}
+
+  /* mini board render */
+  .board{position:relative;width:100%;border-radius:12px;background:
+    repeating-linear-gradient(0deg,#1b1b20 0 1px,transparent 1px 15px),
+    repeating-linear-gradient(90deg,#1b1b20 0 1px,transparent 1px 15px),
+    linear-gradient(160deg,#242019,#171716);border:1px solid #322a1c;overflow:hidden}
+  .board .hold{position:absolute;width:13px;height:13px;border-radius:50%;transform:translate(-50%,-50%);
+    border:2.2px solid var(--c);box-shadow:0 0 7px 1px var(--c);background:rgba(0,0,0,.15)}
+  .hold.start{--c:var(--h-start)} .hold.hand{--c:var(--h-hand)} .hold.finish{--c:var(--h-finish)} .hold.foot{--c:var(--h-foot);width:10px;height:10px}
+  .boardpill{position:absolute;top:8px;right:8px;z-index:5;display:inline-flex;align-items:center;gap:6px;
+    background:rgba(0,0,0,.62);border:1px solid var(--glasshair);border-radius:999px;padding:5px 10px;font-size:11px;font-weight:750;backdrop-filter:blur(8px)}
+  .boardpill .bdot{width:8px;height:8px}
+  .boardpill .act{color:var(--amber)}
+
+  /* forms & controls */
+  .seg{display:flex;background:var(--muted);border-radius:12px;padding:3px;gap:3px;font-size:12.5px;font-weight:650;margin:8px 0}
+  .seg span{flex:1;text-align:center;padding:7px 4px;border-radius:9px;color:var(--t2)}
+  .seg span.on{background:#3a3a42;color:#fff}
+  .formrow{display:flex;align-items:center;gap:9px;padding:11px 2px;border-bottom:1px solid var(--hair);font-size:13.5px}
+  .formrow .fr{margin-left:auto;color:var(--t2);font-weight:650;font-size:13px}
+  .formrow .fr.on{color:var(--amber)}
+  .toggle{margin-left:auto;width:42px;height:25px;border-radius:13px;background:#3a3a42;position:relative;flex:0 0 auto}
+  .toggle.on{background:var(--fresh)}
+  .toggle::after{content:"";position:absolute;top:2.5px;left:2.5px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .toggle.on::after{left:auto;right:2.5px}
+  .radio{width:18px;height:18px;border-radius:50%;border:2px solid #4a4a52;margin-left:auto;flex:0 0 auto}
+  .radio.on{border-color:var(--amber);background:radial-gradient(circle at center,var(--amber) 0 5px,transparent 6px)}
+
+  /* dual-thumb range slider */
+  .rslider{margin:16px 6px 6px}
+  .rtrack{position:relative;height:5px;border-radius:3px;background:#3a3a42}
+  .rfill{position:absolute;top:0;bottom:0;background:var(--amber);border-radius:3px}
+  .knob{position:absolute;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.55)}
+  .knoblbl{position:absolute;top:-26px;transform:translateX(-50%);font-size:12px;font-weight:800;color:var(--amber)}
+  .rlabels{display:flex;justify-content:space-between;font-size:10px;color:var(--t2);font-weight:700;margin-top:9px}
+
+  .note{background:var(--muted);border-radius:12px;padding:9px 12px;font-size:11.5px;color:var(--t2);margin:8px 0}
+  .note b{color:var(--ink)}
+  .toast{position:absolute;left:24px;right:24px;bottom:18px;z-index:22;background:var(--glass);border:1px solid var(--glasshair);
+    border-radius:14px;padding:10px 13px;font-size:12px;font-weight:650;backdrop-filter:blur(14px);display:flex;align-items:center;gap:8px}
+  .toast .ck{color:var(--fresh);font-weight:800}
+  .pressed{outline:2px solid var(--coral);outline-offset:2px;border-radius:999px}
+  .measure{position:absolute;right:-26px;display:flex;flex-direction:column;align-items:center;color:var(--hard);font-size:10px;font-weight:800}
+  .measure .line{width:2px;background:var(--hard);flex:1;opacity:.8}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">Kilter UX feedback — four fixes</h1>
+  <p class="sub">A real climber used the Kilter mini-app and hit four walls. Each flow below shows the fix on the
+    <b>Pulse&nbsp;Pro language</b> (kilter amber <b>#F59E0B</b> wayfinding, coral CTA, dark-mode-first, real <code>SnappetColor</code> tokens).
+    <b>F3 is mostly a logic fix</b> — its wireframe shows the behavior contract, not new chrome.</p>
+  <div class="quote"><b>1.</b> “Connecting to the board was hard to see” — the only Connect button lives 8 blocks deep in a climb's detail scroll; the browse screen has no connection surface at all.</div>
+  <div class="quote"><b>2.</b> “Filtering was not obvious” — filters are split across a chip row that looks like static text, a toolbar icon, and a search field hidden until you pull down.</div>
+  <div class="quote"><b>3.</b> “Resets board to 12 x 14” — the size preference is one global value; any layout switch (or a transient catalog reload) stomps it back to the layout default.</div>
+  <div class="quote"><b>4.</b> “Most recent climbs takes a lot of screen real estate on the list” — the re-light rail is ~200 pt tall and always expanded, leaving ~3 climb rows visible.</div>
+</header>
+
+<div class="wrap">
+
+  <!-- ================================================================ F1 -->
+  <div class="flowhead">Flow F1 · Board connection you can actually see</div>
+  <h2 class="flowtitle">One persistent board strip on the browse screen</h2>
+  <p class="flowdesc">Today <code>board.connect()</code> is only reachable from <code>illuminateSection</code> —
+    the <b>8th block</b> down the climb-detail scroll (below the render, legend, angle picker, stats, logging and the grade chart).
+    The fix: the root's session slot becomes a <b>board + session strip</b> — connection state (gray / pulsing amber / green) with a
+    one-tap <b>Connect</b>, next to Start session. The climb detail mirrors state in a <b>glass pill on the board render itself</b>,
+    so "am I connected?" is answered where the climber is looking. No new screens; the strip reuses the existing
+    <code>KilterBoardController.state</code> machine.</p>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device" data-shot="f1a_root_disconnected">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> V4–V7</span>
+            </div>
+            <div class="bstrip">
+              <span class="bdot"></span>
+              <div class="bs-t"><b>Board not connected</b><span>Connect to light up holds as you browse</span></div>
+              <span class="bs-cta pressed">⚡ Connect</span>
+              <span class="bs-cta co">▶ Session</span>
+            </div>
+            <div class="minirail">
+              <span class="lbl">On the board</span>
+              <span class="mrchip"><i class="mrdot send"></i> Sleepwalker <b class="zap">⚡</b></span>
+              <span class="mrchip"><i class="mrdot att"></i> Gaston Alley <b class="zap">⚡</b></span>
+              <span class="mrsee">All ›</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="crow"><div><div class="nm">Crimp City Limits</div><div class="by">by ana.boulders</div></div>
+              <div class="cr"><span class="grade">V7 · 7A+</span><div class="qs"><span class="star">★★☆</span> · 4.7k</div></div></div>
+            <div class="crow"><div><div class="nm">Full Send Fiesta</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C</span><div class="qs"><span class="star">★☆☆</span> · 2.2k</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Idle.</b> The strip lives where the session bar already is — <span class="k">zero new vertical cost</span>.
+        Gray dot + plain words: <b>“Board not connected.”</b> One tap on <span class="k">⚡ Connect</span> starts the BLE scan; ▶ starts a session as before.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device" data-shot="f1b_root_connecting">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> V4–V7</span>
+            </div>
+            <div class="bstrip">
+              <span class="bdot busy"></span>
+              <div class="bs-t"><b>Searching for your board…</b><span>Keep Bluetooth on · usually a few seconds</span></div>
+              <span class="bs-cta ghost">Cancel</span>
+            </div>
+            <div class="minirail">
+              <span class="lbl">On the board</span>
+              <span class="mrchip"><i class="mrdot send"></i> Sleepwalker <b class="zap">⚡</b></span>
+              <span class="mrchip"><i class="mrdot att"></i> Gaston Alley <b class="zap">⚡</b></span>
+              <span class="mrsee">All ›</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="crow"><div><div class="nm">Crimp City Limits</div><div class="by">by ana.boulders</div></div>
+              <div class="cr"><span class="grade">V7 · 7A+</span><div class="qs"><span class="star">★★☆</span> · 4.7k</div></div></div>
+            <div class="crow"><div><div class="nm">Full Send Fiesta</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C</span><div class="qs"><span class="star">★☆☆</span> · 2.2k</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Scanning / connecting.</b> The dot pulses <span class="k">amber</span>, the copy says what's happening,
+        and Cancel is right there. Browse stays fully usable — the strip never blocks.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device" data-shot="f1c_root_connected">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> V4–V7</span>
+            </div>
+            <div class="bstrip live">
+              <span class="bdot on"></span>
+              <div class="bs-t"><b>Summit Bouldering · 12×12</b><span>Connected · session 12:41 · 6 climbs · ♥ 142</span></div>
+              <span class="bs-cta ghost">End</span>
+            </div>
+            <div class="minirail">
+              <span class="lbl">On the board</span>
+              <span class="mrchip"><i class="mrdot send"></i> Sleepwalker <b class="zap">⚡</b></span>
+              <span class="mrchip"><i class="mrdot att"></i> Gaston Alley <b class="zap">⚡</b></span>
+              <span class="mrsee">All ›</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="crow"><div><div class="nm">Crimp City Limits</div><div class="by">by ana.boulders</div></div>
+              <div class="cr"><span class="grade">V7 · 7A+</span><div class="qs"><span class="star">★★☆</span> · 4.7k</div></div></div>
+            <div class="crow"><div><div class="nm">Full Send Fiesta</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C</span><div class="qs"><span class="star">★☆☆</span> · 2.2k</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Connected.</b> Green dot + the remembered board's name (from <code>KilterBoardMemory</code>).
+        Because a BLE connect already auto-starts a session (#75), the connected strip and the session bar
+        <span class="k">merge into one row</span> — status, timer, climb count, HR, End. Tap the strip → live summary; tap the name → board menu (disconnect · rename).</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">4</div>
+      <div class="device" data-shot="f1d_detail_pill">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Kilter</span><span class="ttl">Sleepwalker</span><span class="sp"></span><span class="ic">▤</span><span class="ic">☆</span></div>
+          <div class="content">
+            <div class="board" style="height:328px">
+              <div class="boardpill"><span class="bdot"></span> Not connected · <span class="act">Connect</span></div>
+              <span class="hold start" style="left:22%;top:88%"></span>
+              <span class="hold start" style="left:38%;top:84%"></span>
+              <span class="hold foot" style="left:30%;top:94%"></span>
+              <span class="hold foot" style="left:55%;top:90%"></span>
+              <span class="hold hand" style="left:33%;top:66%"></span>
+              <span class="hold hand" style="left:48%;top:55%"></span>
+              <span class="hold hand" style="left:41%;top:42%"></span>
+              <span class="hold hand" style="left:57%;top:32%"></span>
+              <span class="hold finish" style="left:50%;top:12%"></span>
+            </div>
+            <div class="seg"><span>20°</span><span>30°</span><span class="on">40°</span><span>45°</span><span>50°</span></div>
+            <div class="crow" style="border-bottom:none;padding-top:4px">
+              <div><div class="nm">V5 · 6C+ at 40°</div><div class="by">★★★ quality · 12,412 ascents · by benji_sets</div></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:2px">
+              <div class="cta sm" style="flex:1;background:var(--fresh)">✓ Send</div>
+              <div class="cta sm" style="flex:1;background:var(--proj)">◐ Attempt</div>
+            </div>
+            <div class="note" style="margin-top:10px"><b>Pill states:</b> ◌ Not connected · Connect &nbsp;→&nbsp; ◍ Connecting… &nbsp;→&nbsp; ● Lit on your board.
+              Same <code>board.state</code> machine, now visible at the render instead of 8 blocks down.</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Climb detail.</b> A glass <span class="k">status pill on the board render</span> —
+        the first thing the eye lands on. When connected it reads <b>● Lit on your board</b> and tapping it re-sends the holds.
+        The full section (wrong-holds fixes, disconnect) stays below for the rare cases.</div>
+    </div>
+  </div>
+
+  <!-- ================================================================ F2 -->
+  <div class="flowhead">Flow F2 · Filtering that looks filterable</div>
+  <h2 class="flowtitle">One Filters entry, chips that read as controls, search always visible</h2>
+  <p class="flowdesc">Today the criteria are split three ways: five look-alike chips (<code>Layout · Size · Angle · Min · Max</code>),
+    a toolbar funnel icon for the <i>other</i> four criteria, and a search field hidden behind a pull-down
+    (<code>navigationBarDrawer(displayMode: .automatic)</code>). The fix: <b>(a)</b> search pinned always-visible;
+    <b>(b)</b> a leading <b>⛛ Filters chip with a live active-count badge</b> as the single obvious entry;
+    <b>(c)</b> chips get <b>▾ affordances</b> and merge — Layout+Size into one <b>Board</b> chip, Min+Max into one <b>Grade range</b> chip;
+    <b>(d)</b> the sheet gains the quick criteria too, with a live <b>“Show N climbs”</b> apply button so narrowing is felt immediately.</p>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum before">A</div>
+      <div class="device" data-shot="f2a_before">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⛛</span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="chiprow">
+              <span class="chip"><span class="cv">Layout</span> Original</span>
+              <span class="chip"><span class="cv">Size</span> 12 x 12</span>
+              <span class="chip"><span class="cv">Angle</span> 40°</span>
+              <span class="chip"><span class="cv">Min</span> V4</span>
+              <span class="chip"><span class="cv">Max</span> V7</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="note" style="margin-top:14px"><b>Why it fails:</b> the search field only appears if you happen to pull down ·
+              the chips render as flat text (no ▾, no pressed state) · four more criteria hide behind a toolbar glyph among
+              <b>four</b> other toolbar glyphs · Saved/Mine toggles overflow off-screen on the scrolling row.</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Today (before).</b> Nothing on this screen <i>asks</i> to be tapped —
+        the tester read the chip row as a summary line, not as five menus.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device" data-shot="f2b_after_root">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters <i class="badge">2</i></span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip on">Grade V4–V7 <span class="dn">▾</span></span>
+              <span class="chip">★ Saved</span>
+            </div>
+            <div class="bstrip">
+              <span class="bdot"></span>
+              <div class="bs-t"><b>Board not connected</b><span>Connect to light up holds as you browse</span></div>
+              <span class="bs-cta">⚡ Connect</span>
+              <span class="bs-cta co">▶ Session</span>
+            </div>
+            <div class="countline">62 climbs <span class="clr">Clear all</span></div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="crow"><div><div class="nm">Crimp City Limits</div><div class="by">by ana.boulders</div></div>
+              <div class="cr"><span class="grade">V7 · 7A+</span><div class="qs"><span class="star">★★☆</span> · 4.7k</div></div></div>
+            <div class="crow"><div><div class="nm">Full Send Fiesta</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C</span><div class="qs"><span class="star">★☆☆</span> · 2.2k</div></div></div>
+            <div class="crow"><div><div class="nm">Toe Hook Tango</div><div class="by">by mika_v</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 6.3k</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>After.</b> Search is <span class="k">always visible</span>. The amber-outline
+        <span class="k">⛛ Filters · 2</span> chip is the one obvious entry (badge = active refinements).
+        Board+Size merge into one chip, Min/Max into one <b>Grade</b> chip that fills amber when narrowed.
+        Every chip carries a <b>▾</b>. Count line gains <b>Clear all</b>.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device dimmed" data-shot="f2c_grade_sheet">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters <i class="badge">2</i></span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip on">Grade V4–V7 <span class="dn">▾</span></span>
+            </div>
+            <div class="countline">62 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span></div></div>
+            <div class="dimlayer"></div>
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="sheettitle">Grade range <span class="rst">Reset</span></div>
+              <div class="rslider" style="margin-top:34px">
+                <div class="rtrack">
+                  <div class="rfill" style="left:24%;right:38%"></div>
+                  <span class="knob" style="left:24%"><span class="knoblbl">V4</span></span>
+                  <span class="knob" style="left:62%"><span class="knoblbl">V7</span></span>
+                </div>
+                <div class="rlabels"><span>V0</span><span>V4</span><span>V8</span><span>V12</span><span>V17</span></div>
+              </div>
+              <div class="formrow" style="border-bottom:none;padding-bottom:2px">Show as <span class="fr on">V-grade + Font</span></div>
+              <div class="cta amber" style="margin-top:8px">Show 62 climbs</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Grade chip → range sheet.</b> One two-thumb slider replaces the Min/Max
+        chip pair (whose drag-the-other-end coupling confused the tester). The apply button carries the
+        <span class="k">live count</span> — you feel the filter narrowing before you commit.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device dimmed" data-shot="f2d_filters_sheet">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip pressed">⛛ Filters <i class="badge">2</i></span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+            </div>
+            <div class="dimlayer"></div>
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="sheettitle">Filters <span class="rst">Reset all</span></div>
+              <div class="lbl" style="margin-top:6px">Sort by</div>
+              <div class="seg"><span class="on">Popular</span><span>Quality</span><span>Hardest</span><span>Newest</span></div>
+              <div class="lbl" style="margin-top:4px">Refine</div>
+              <div class="formrow">🏅 Classics only <span class="toggle on"></span></div>
+              <div class="formrow">Min ascents <span class="fr on">50+</span></div>
+              <div class="formrow">Min quality <span class="fr">Any</span></div>
+              <div class="formrow" style="border-bottom:none">Show only <span class="fr">★ Saved · 🔨 Mine · Off</span></div>
+              <div class="cta amber" style="margin-top:8px">Show 38 climbs</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Filters sheet, unified.</b> Everything not on a chip lives here — sort,
+        classics, min ascents/quality, and the Saved/Mine switch (rescued from the overflow-prone chip row).
+        Same live-count apply button. The badge on the chip always equals the count of active rows here.</div>
+    </div>
+  </div>
+
+  <!-- ================================================================ F3 -->
+  <div class="flowhead">Flow F3 · A board size that sticks</div>
+  <h2 class="flowtitle">Per-layout size memory — never silently reset again</h2>
+  <p class="flowdesc"><b>Root cause found in code:</b> the size is ONE global key (<code>kilter.productSizeId</code>), and
+    <code>syncBoardSize()</code> (run on appear and on every layout change) <b>overwrites</b> it with the layout default —
+    the lowest <code>product_size_id</code>, i.e. <b>“12 x 14”</b> — whenever the stored size isn't valid for the
+    <i>current</i> layout, including the moment the catalog hasn't finished loading (empty size list → forced reset).
+    The fix is behavioral: <b>store the choice per layout</b> (<code>kilter.productSizeId.&lt;layoutId&gt;</code>), resolve staleness
+    <i>at read time</i> via the existing <code>effectiveSizeId</code> instead of overwriting the preference, and skip the guard
+    entirely while the catalog is unavailable. The wireframe shows the contract the tester expected.</p>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device" data-shot="f3a_homewall">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip pressed"><span class="cv">Board</span> Homewall 7×10 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 30° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> Any</span>
+            </div>
+            <div class="note" style="margin-top:10px"><b>Board menu (open):</b><br><br>
+              <b>Layout</b> &nbsp;Original · <span style="color:var(--amber);font-weight:700">Homewall ✓</span><br>
+              <b>Size</b> &nbsp;&nbsp;&nbsp;7 x 10 <span style="color:var(--amber);font-weight:700">✓</span> · 8 x 10<br><br>
+              One chip, both decisions — size shown only when the layout offers a choice (unchanged rule).</div>
+            <div class="countline">96 climbs</div>
+            <div class="crow"><div><div class="nm">Attic Antics</div><div class="by">by home_setter</div></div>
+              <div class="cr"><span class="grade">V3 · 6A+</span><div class="qs"><span class="star">★★☆</span> · 900</div></div></div>
+            <div class="crow"><div><div class="nm">Garage Days</div><div class="by">by mika_v</div></div>
+              <div class="cr"><span class="grade">V5 · 6C</span><div class="qs"><span class="star">★★★</span> · 1.4k</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Step 1 — switch away.</b> The climber flips to the <span class="k">Homewall</span> layout to
+        browse. Its own remembered size (7×10) loads. Nothing about the Original layout's choice is touched.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device" data-shot="f3b_back_original">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip on"><span class="cv" style="color:#1a1208;opacity:.7">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> V4–V7</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="crow"><div><div class="nm">Crimp City Limits</div><div class="by">by ana.boulders</div></div>
+              <div class="cr"><span class="grade">V7 · 7A+</span><div class="qs"><span class="star">★★☆</span> · 4.7k</div></div></div>
+            <div class="toast"><span class="ck">✓</span> Original restored — 12 × 12 at 40°, just as you left it</div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Step 2 — switch back.</b> Original returns with <span class="k">12×12 intact</span> — not 12×14.
+        A one-shot toast confirms the restore (and would say <b>“size reset to 12×14 — your old size isn't offered here”</b>
+        in the one legitimate reset case: a catalog swap that removed the size). Angle stays remembered per board via
+        <code>KilterBoardMemory</code> as today.</div>
+    </div>
+  </div>
+
+  <!-- ================================================================ F4 -->
+  <div class="flowhead">Flow F4 · Give the list its screen back</div>
+  <h2 class="flowtitle">“Recently on the board” collapses to a 36 pt chip strip</h2>
+  <p class="flowdesc">Today the re-light rail renders full cards — a 110 pt board thumbnail + name + status chip + a
+    Re-light button — <b>~200 pt of chrome</b> that appears whenever the climber has ever lit a hold, on top of the
+    session bar and count line. On a 6.1″ phone that leaves <b>~3 climb rows</b> visible. The fix: the rail becomes a
+    <b>single-line chip strip</b> (status dot + name + ⚡ re-light), and the full-card experience moves one tap away —
+    it already exists as the <b>On the Board</b> screen. Tap a chip → open the climb; tap its ⚡ → re-light without leaving browse.</p>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum before">A</div>
+      <div class="device" data-shot="f4a_before">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⛛</span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="chiprow">
+              <span class="chip"><span class="cv">Layout</span> Original</span>
+              <span class="chip"><span class="cv">Size</span> 12 x 12</span>
+              <span class="chip"><span class="cv">Angle</span> 40°</span>
+              <span class="chip"><span class="cv">Min</span> V4</span>
+            </div>
+            <div class="bstrip">
+              <span class="bdot" style="background:var(--coral)"></span>
+              <div class="bs-t"><b>Live HR, per-climb timing &amp; a highlight reel</b></div>
+              <span class="bs-cta co">▶ Start</span>
+            </div>
+            <div class="railhead"><span class="lbl">Recently on the board</span><span class="see">See all ›</span></div>
+            <div class="railcards">
+              <div class="railcard">
+                <div class="board" style="height:112px">
+                  <span class="hold start" style="left:30%;top:85%"></span><span class="hold hand" style="left:45%;top:55%"></span>
+                  <span class="hold hand" style="left:60%;top:38%"></span><span class="hold finish" style="left:52%;top:14%"></span>
+                </div>
+                <div class="nm">Sleepwalker</div><span class="st st-send">✓ Sent</span>
+                <div class="railbtn">↻ Re-light</div>
+              </div>
+              <div class="railcard">
+                <div class="board" style="height:112px">
+                  <span class="hold start" style="left:25%;top:88%"></span><span class="hold hand" style="left:38%;top:60%"></span>
+                  <span class="hold hand" style="left:55%;top:40%"></span><span class="hold finish" style="left:48%;top:12%"></span>
+                </div>
+                <div class="nm">Gaston Alley</div><span class="st st-proj">◐ Attempt</span>
+                <div class="railbtn">↻ Re-light</div>
+              </div>
+              <div class="railcard">
+                <div class="board" style="height:112px">
+                  <span class="hold start" style="left:35%;top:86%"></span><span class="hold hand" style="left:50%;top:58%"></span>
+                  <span class="hold finish" style="left:55%;top:15%"></span>
+                </div>
+                <div class="nm">Toe Hook Ta…</div><span class="st st-attempt">○ Lit</span>
+                <div class="railbtn">↻ Re-light</div>
+              </div>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow" style="border-bottom:none;opacity:.5"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>Today (before).</b> ~200 pt of rail + bars before the first climb row —
+        the list the screen is <i>for</i> gets barely three rows. This is the tester's “takes a lot of screen real estate.”</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device" data-shot="f4b_after">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> V4–V7</span>
+            </div>
+            <div class="bstrip">
+              <span class="bdot"></span>
+              <div class="bs-t"><b>Board not connected</b><span>Connect to light up holds as you browse</span></div>
+              <span class="bs-cta">⚡ Connect</span>
+              <span class="bs-cta co">▶ Session</span>
+            </div>
+            <div class="minirail">
+              <span class="lbl">On the board</span>
+              <span class="mrchip"><i class="mrdot send"></i> Sleepwalker <b class="zap">⚡</b></span>
+              <span class="mrchip"><i class="mrdot att"></i> Gaston Alley <b class="zap">⚡</b></span>
+              <span class="mrsee">All ›</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="crow"><div><div class="nm">Crimp City Limits</div><div class="by">by ana.boulders</div></div>
+              <div class="cr"><span class="grade">V7 · 7A+</span><div class="qs"><span class="star">★★☆</span> · 4.7k</div></div></div>
+            <div class="crow"><div><div class="nm">Full Send Fiesta</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C</span><div class="qs"><span class="star">★☆☆</span> · 2.2k</div></div></div>
+            <div class="crow" style="border-bottom:none"><div><div class="nm">Toe Hook Tango</div><div class="by">by mika_v</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 6.3k</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>After.</b> Same jobs, <span class="k">36 pt</span>: status dot (green sent / amber attempt / gray lit),
+        name, and an always-visible <span class="k">⚡</span> per chip for one-tap re-light. Tap the chip body → the climb.
+        <b>All ›</b> → the unchanged full On the Board screen. Six climb rows now fit where three did.</div>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device" data-shot="f4c_relight_confirm">
+        <div class="island"></div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="r"><span>5G</span><span>100%</span></span></div>
+          <div class="nav"><span class="bk">‹ Library</span><span class="ttl">Kilter Board</span><span class="sp"></span><span class="ic">⏱</span><span class="ic">＋</span><span class="ic">⋯</span></div>
+          <div class="content">
+            <div class="search">⌕ &nbsp;Search climbs or setters</div>
+            <div class="chiprow">
+              <span class="chip fchip">⛛ Filters</span>
+              <span class="chip"><span class="cv">Board</span> Original 12×12 <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Angle</span> 40° <span class="dn">▾</span></span>
+              <span class="chip"><span class="cv">Grade</span> V4–V7</span>
+            </div>
+            <div class="bstrip live">
+              <span class="bdot on"></span>
+              <div class="bs-t"><b>Summit Bouldering · 12×12</b><span>Connected · session 26:03 · 9 climbs · ♥ 128</span></div>
+              <span class="bs-cta ghost">End</span>
+            </div>
+            <div class="minirail">
+              <span class="lbl">On the board</span>
+              <span class="mrchip pressed"><i class="mrdot send"></i> Sleepwalker <b class="zap">⚡</b></span>
+              <span class="mrchip"><i class="mrdot att"></i> Gaston Alley <b class="zap">⚡</b></span>
+              <span class="mrsee">All ›</span>
+            </div>
+            <div class="countline">214 climbs</div>
+            <div class="crow"><div><div class="nm">Sleepwalker</div><div class="by">by benji_sets</div></div>
+              <div class="cr"><span class="grade">V5 · 6C+</span><div class="qs"><span class="star">★★★</span> · 12.4k</div></div></div>
+            <div class="crow"><div><div class="nm">Amber Arete</div><div class="by">by kaya.h</div></div>
+              <div class="cr"><span class="grade">V6 · 7A</span><div class="qs"><span class="star">★★☆</span> · 8.1k</div></div></div>
+            <div class="crow"><div><div class="nm">Pocket Rocket</div><div class="by">by setter_dan</div></div>
+              <div class="cr"><span class="grade">V4 · 6B+</span><div class="qs"><span class="star">★★★</span> · 21.9k</div></div></div>
+            <div class="toast"><span class="ck">✓</span> Sleepwalker is on the board &nbsp;·&nbsp; <b style="color:var(--amber)">Open climb</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>⚡ tapped while connected.</b> The holds light instantly (same
+        <code>relightRecent</code> path + haptic), confirmed by a toast with an <b>Open climb</b> shortcut —
+        the browse position is never lost. Disconnected, the ⚡ instead offers <b>Connect &amp; light</b>.</div>
+    </div>
+  </div>
+
+  <div class="flowhead" style="margin-top:64px">Scope &amp; sequencing</div>
+  <p class="flowdesc" style="margin-bottom:60px">
+    <b>F3</b> (size memory) is the smallest and highest-anger fix — pure logic + tests, no visual risk.
+    <b>F4</b> (compact rail) and <b>F1</b> (board strip) touch the same root-view real estate and land best together.
+    <b>F2</b> (filters) is the largest; its chip merge (Board, Grade) can ship first with the sheet unification as a follow-up.
+    Each fix ships as its own PDD prompt + PR per <code>pdd/README.md</code>; the knowledge graph
+    (<code>docs/knowledge-graph/data.js</code>) is updated with the changed browse/detail surfaces in the same change.</p>
+</div>
+</body>
+</html>
