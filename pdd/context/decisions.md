@@ -7847,3 +7847,21 @@ requests per post instead of 50, players still ±1, NSCache cap unchanged — th
 skeletons themselves are cheap vector views (they were always mounted pre-106). Residual snap FEEL
 (stock `TabView(.page)` snap curve, "feels fast") remains the separately-queued custom UIScrollView
 pager (round 7b) — unchanged by this.
+
+**Clips feed performance, round 3 (prompt 106, 2026-07-02).** Round 2 killed the identity churn but the
+device recording still showed the carousel "teleporting". Frame-level analysis of the VFR screen recording
+(CFR-60 + tblend motion energy) gave the signature: a one-frame jump-cut (frame delta ~30× normal) followed
+by ~100 ms of total freeze, then the 0.32 s poster→video dissolve — the ENTIRE snap deceleration was eaten
+by a main-thread stall at selection commit. Root cause: **`ClipAudioSession.deactivate()` ran
+`AVAudioSession.setActive(false)` unguarded on the main thread, and `ClipFeedPlayback.playing`'s didSet
+calls it on EVERY page change** (muted autoplay → the else branch) — `setActive` round-trips to
+mediaserverd (~50–200 ms). The session was never even active for muted autoplay, so the per-swipe call was
+pure waste. Fix: `ClipAudioSession` is now `@MainActor` with an `active` state guard (unchanged state =
+free no-op) and does the real mediaserverd round-trip on a background serial queue (serial ⇒ rapid
+activate/deactivate land in call order; the guard tracks intent, which is safe since we're the only in-app
+writer). Two smaller same-frame stalls fixed with it: `ClipMediaSurface.teardown()` hands the final
+AVQueuePlayer/looper reference to a background queue (deinit tears down KVO/decoders synchronously, and a
+warm surface unmounts exactly on the snap frame), and `load()`'s synchronous `PHAsset.fetchAssets` moved
+off-main. Method note (reusable): motion-energy profiling = `fps=60,scale,gray,tblend=difference,
+signalstats` → per-frame YAVG; a stall is YAVG≈0 runs inside a motion burst, a jump-cut is a lone spike
+with zero neighbours.

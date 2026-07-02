@@ -61,6 +61,13 @@ One PR, five moves — no behavior change beyond smoothness:
   `clipCount > 8` (the "n/N" counter overlay already covers it).
 - **P4 — bounded poster cache.** `frameZeroCache` becomes an `NSCache` (cost = bitmap bytes,
   `totalCostLimit` ≈ 150 MB) so memory pressure evicts old posters instead of jetsamming the app.
+- **P6 — snap-frame stalls (round 3, from device frame analysis).** The carousel "teleported":
+  one-frame jump-cut + ~100 ms freeze at every snap commit. Cause: `ClipAudioSession.deactivate()`
+  ran `AVAudioSession.setActive(false)` (a ~50–200 ms mediaserverd round-trip) unguarded on the
+  main thread, invoked by `ClipFeedPlayback.playing`'s didSet on every page change. Fix: state
+  guard (muted→muted is a free no-op) + the real call on a background serial queue. Same-frame
+  companions: `ClipMediaSurface.teardown()` releases the player/looper off-main (warm surfaces
+  unmount on the snap frame) and `load()`'s `PHAsset.fetchAssets` moved off-main.
 - **P5 — trims.** Build the HR context/payloads only for sessions that actually have media;
   delete the dead `hrContext(for:)`.
 
