@@ -7883,3 +7883,24 @@ stops the active inline clip** — narrowing can remove the playing card, so `pl
 a filtered-out page. The explore grid receives the SAME filtered array (feed/grid can't disagree). Search
 matching = `localizedStandardContains` over title + subtitle (case/diacritic-insensitive) — no tokenizer,
 no index; O(posts) per keystroke is trivial at feed scale.
+
+**Workout guide photos: downloadable `.spack` pack, not bundled and not per-image fetches (prompt 108,
+2026-07-02).** Guide photos for the 873-exercise catalog reuse the Kilter delivery posture: strictly
+user-initiated one-time download from the Board Explorer Pages host (`…/Snappet/exercise-photos/`,
+`workoutPhotoPackHost`, overridable via the `workout.photos.host` default), cached in Application
+Support, offline forever after, removable in Workout Settings. Unlike Kilter there's **no legal caveat**
+— the photos are the Free Exercise DB's own images (public domain, the exact dataset `exercises.json`
+was built from, so ids match 1:1 and `Exercise` needs no model change). Decisions: **(1) one custom
+container (`SPHOTOS1` magic + 4B LE index length + index JSON + concatenated JPEGs), built by
+`tools/workout/build_photo_pack.py`** — iOS has no built-in unzip/untar, JPEGs don't gzip further, and
+~1,700 individual GETs against Pages is a miserable install; we control both ends, so a 12-byte header +
+JSON index is the whole format. **(2) The pack stays one file; photos are sliced out on demand** with
+`FileHandle` range reads through the pure `ExercisePhotoPack` index + a bounded `NSCache` — no
+extraction step, no doubling disk during install, no 1,700 loose files. Slice ranges are bounds-checked
+against the real file size and the index is parsed **before** the `.part` file replaces a good pack, so
+a truncated download can never brick photos. **(3) Download size is not shown until the user acts** —
+the CTA copy is static and the manifest GET happens inside the install tap, keeping "no passive
+network" literally true (nothing is fetched by merely opening a screen). **(4) One
+`ExercisePhotoInstaller` singleton phase** feeds both the detail-view CTA and the Settings section so a
+download started in one place is visible in the other. Player strip deliberately has no CTA
+(mid-workout is not a download moment), and custom exercises never show photo UI.

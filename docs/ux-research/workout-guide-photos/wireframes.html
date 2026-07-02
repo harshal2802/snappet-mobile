@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout guide photos — wireframes</title>
+<style>
+  :root{
+    --ink:#F4F3F1; --textSecondary:#A6A5A1; --hairline:#34343A;
+    --surface:#1E1E22; --paper:#121214; --surfaceMuted:#26262B;
+    --workout:#FF9645; --blue:#0A84FF; --red:#FF6A5C;
+  }
+  *{box-sizing:border-box; -webkit-font-smoothing:antialiased;}
+  html,body{margin:0;background:#0A0A0C;color:var(--ink);
+    font-family:-apple-system,"SF Pro Text","SF Pro Display",system-ui,"Segoe UI",Roboto,sans-serif;}
+  .page{max-width:1900px;margin:0 auto;padding:40px 24px 80px;}
+  h1.title{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px;}
+  .sub{color:#8b8b90;font-size:15px;margin:0 0 34px;max-width:880px;line-height:1.5;}
+  .sub b{color:var(--workout);font-weight:600;}
+  code{color:#c4c4ca;background:#1c1c20;border-radius:4px;padding:1px 5px;font-size:.9em;}
+  .stage{display:flex;gap:54px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+  .col{display:flex;flex-direction:column;align-items:center;width:393px;}
+  .cap{margin-top:18px;width:393px;}
+  .cap .ct{font-size:15px;font-weight:650;margin:0 0 8px;color:var(--ink);}
+  .cap ul{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:7px;}
+  .cap li{font-size:13px;color:#9a9aa0;line-height:1.45;padding-left:24px;position:relative;}
+  .cap li::before{content:"";position:absolute;left:0;top:4px;width:14px;height:14px;border-radius:5px;
+    background:var(--workout);box-shadow:0 0 0 3px rgba(255,150,69,.16);}
+  .cap li.keep::before{background:#48484e;box-shadow:none;border-radius:3px;width:10px;height:10px;left:2px;top:6px;}
+  .cap li b{color:var(--ink);font-weight:600;}
+
+  /* ---------- phone (content-height) ---------- */
+  .phone{width:393px;background:#000;border-radius:56px;padding:11px;
+    box-shadow:0 0 0 12px #1b1b1d,0 30px 80px rgba(0,0,0,.6);}
+  .screen{border-radius:46px;overflow:hidden;background:var(--paper);display:flex;flex-direction:column;position:relative;
+    padding-bottom:26px;}
+  .status{height:54px;display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 32px 9px;font-size:15px;font-weight:600;color:#fff;flex:0 0 auto;}
+  .status .r{display:flex;gap:7px;align-items:center;}
+  .bars{display:flex;gap:2px;align-items:flex-end;height:12px;}
+  .bars i{width:3px;background:#fff;border-radius:1px;}
+  .bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:7px}.bars i:nth-child(3){height:9px}.bars i:nth-child(4){height:12px}
+  .batt{width:25px;height:12px;border:1.6px solid rgba(255,255,255,.6);border-radius:3px;position:relative;padding:1.5px;}
+  .batt::after{content:"";position:absolute;right:-3px;top:3.5px;width:2px;height:5px;background:rgba(255,255,255,.5);border-radius:0 1px 1px 0;}
+  .batt i{display:block;height:100%;width:78%;background:#fff;border-radius:1px;}
+
+  .navbar{height:46px;display:flex;align-items:center;justify-content:center;position:relative;flex:0 0 auto;}
+  .navbar .ttl{font-size:17px;font-weight:600;}
+  .navbar .back{position:absolute;left:18px;color:var(--blue);font-size:16px;}
+  .navbar .edit{position:absolute;right:18px;color:var(--blue);font-size:17px;}
+
+  .form{padding:4px 18px 8px;}
+  .sec{margin-top:20px;}
+  .sec:first-child{margin-top:8px;}
+  .hdr{font-size:13px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--textSecondary);
+    padding:0 6px 7px;}
+  .card{background:var(--surface);border-radius:13px;overflow:hidden;}
+  .row{padding:12px 14px;display:flex;align-items:center;gap:10px;min-height:46px;}
+  .row + .row{border-top:.5px solid var(--hairline);}
+  .row .lbl{font-size:16px;color:var(--ink);}
+  .row .val{margin-left:auto;font-size:16px;color:var(--textSecondary);}
+  .row .val.ember{color:var(--workout);font-weight:600;}
+  .foot{font-size:12.5px;color:var(--textSecondary);padding:7px 6px 0;line-height:1.4;}
+
+  /* ---------- photo placeholders ---------- */
+  .ph{position:relative;background:
+      radial-gradient(120% 90% at 30% 20%, #3a3a40 0%, #232327 55%, #1a1a1e 100%);
+    display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  .ph svg{width:62%;height:62%;opacity:.9;}
+  .ph .postag{position:absolute;left:10px;top:10px;font-size:10px;font-weight:700;letter-spacing:.06em;
+    color:#1a1208;background:var(--workout);border-radius:5px;padding:2px 7px;}
+  .ph .cam{position:absolute;right:10px;bottom:8px;font-size:10.5px;color:rgba(244,243,241,.45);font-weight:600;}
+
+  /* pager */
+  .pager{border-radius:13px;overflow:hidden;background:var(--surface);}
+  .pager .ph{height:236px;}
+  .dots{display:flex;gap:6px;justify-content:center;padding:9px 0 10px;background:var(--surface);}
+  .dots i{width:7px;height:7px;border-radius:50%;background:#4a4a50;}
+  .dots i.on{background:var(--workout);}
+  .peekstrip{position:absolute;right:-1px;top:0;bottom:0;width:26px;
+    background:linear-gradient(90deg,rgba(18,18,20,0) 0%, rgba(18,18,20,.55) 100%);}
+
+  /* CTA row */
+  .cta .ic{width:34px;height:34px;border-radius:9px;background:rgba(255,150,69,.14);
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:var(--workout);font-size:17px;}
+  .cta .tx{display:flex;flex-direction:column;gap:2px;}
+  .cta .tx .a{font-size:16px;font-weight:500;color:var(--workout);}
+  .cta .tx .b{font-size:12.5px;color:var(--textSecondary);}
+  .prog{height:4px;border-radius:2px;background:#2e2e33;margin:10px 14px 12px;overflow:hidden;}
+  .prog i{display:block;height:100%;width:36%;background:var(--workout);border-radius:2px;}
+
+  /* instruction rows */
+  .inst{display:flex;gap:10px;align-items:baseline;padding:8px 14px;}
+  .inst + .inst{border-top:.5px solid var(--hairline);}
+  .inst .n{font-size:12px;font-weight:700;color:var(--workout);width:16px;text-align:right;flex:0 0 auto;}
+  .inst .t{font-size:14.5px;color:var(--ink);line-height:1.4;}
+
+  /* ---------- player ---------- */
+  .player{padding:6px 18px 8px;display:flex;flex-direction:column;gap:14px;}
+  .hrpill{align-self:center;display:flex;gap:8px;align-items:center;background:var(--surface);
+    border:.5px solid var(--hairline);border-radius:20px;padding:6px 14px;font-size:13.5px;font-weight:600;}
+  .hrpill .hz{color:#5BC074;}
+  .extitle{font-size:22px;font-weight:700;letter-spacing:-.01em;}
+  .exsub{font-size:13px;color:var(--textSecondary);margin-top:2px;}
+  .pips{display:flex;gap:7px;margin-top:8px;}
+  .pips i{width:22px;height:6px;border-radius:3px;background:#38383e;}
+  .pips i.done{background:var(--workout);}
+  .inputs{display:flex;gap:10px;}
+  .inputs .f{flex:1;background:var(--surface);border-radius:11px;padding:10px 12px;}
+  .inputs .f .k{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--textSecondary);}
+  .inputs .f .v{font-size:20px;font-weight:700;margin-top:2px;}
+  .cbtn{background:var(--workout);color:#241303;font-size:16px;font-weight:700;text-align:center;
+    border-radius:12px;padding:13px 0;}
+  .howto{background:var(--surface);border-radius:13px;padding:13px 0 4px;}
+  .howto .h{font-size:16px;font-weight:650;padding:0 14px 10px;}
+  .strip{display:flex;gap:8px;padding:0 14px 10px;}
+  .strip .ph{width:110px;height:82px;border-radius:9px;flex:0 0 auto;}
+  .howto .inst .t{color:var(--textSecondary);}
+
+  /* settings toggle-ish rows */
+  .dl-btn{margin-left:auto;color:var(--blue);font-size:16px;}
+  .destr{color:var(--red);font-size:16px;}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1 class="title">Workout guide photos — downloadable pack (Kilter-style)</h1>
+  <p class="sub">Guide photos for the 873-exercise catalog, <b>not bundled with the app</b>: a one-time,
+  user-initiated download of a single photo pack from the same GitHub Pages host as the Kilter board data
+  (<code>…/Snappet/exercise-photos/</code>), cached in Application&nbsp;Support, fully offline afterward,
+  removable from Settings. Photos below are placeholders — the real pack uses the Free&nbsp;Exercise&nbsp;DB
+  start/end position photos, resized to ~640&nbsp;px.</p>
+
+  <div class="stage">
+
+    <!-- ============ 1. detail, pack NOT installed ============ -->
+    <div class="col">
+      <div class="phone"><div class="screen">
+        <div class="status"><span>9:41</span><span class="r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"><i></i></span></span></div>
+        <div class="navbar"><span class="back">‹ Library</span><span class="ttl">Bench Press</span></div>
+        <div class="form">
+          <div class="sec">
+            <div class="card cta">
+              <div class="row">
+                <div class="ic">⤓</div>
+                <div class="tx">
+                  <span class="a">Download guide photos</span>
+                  <span class="b">1,712 photos for 856 exercises · 38 MB · one-time</span>
+                </div>
+              </div>
+            </div>
+            <div class="foot">Photos stay on this device and work offline. Manage or remove them in Workout Settings.</div>
+          </div>
+          <div class="sec">
+            <div class="card">
+              <div class="row"><span class="lbl">Category</span><span class="val">Strength</span></div>
+              <div class="row"><span class="lbl">Level</span><span class="val">Beginner</span></div>
+              <div class="row"><span class="lbl">Equipment</span><span class="val">Barbell</span></div>
+              <div class="row"><span class="lbl">Force</span><span class="val">Push</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="hdr">Muscles</div>
+            <div class="card">
+              <div class="row"><span class="lbl">Primary</span><span class="val ember">Chest</span></div>
+              <div class="row"><span class="lbl">Secondary</span><span class="val">Shoulders, Triceps</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="hdr">Instructions</div>
+            <div class="card">
+              <div class="inst"><span class="n">1</span><span class="t">Lie back on a flat bench holding the bar with a medium-width grip.</span></div>
+              <div class="inst"><span class="n">2</span><span class="t">Lift the bar from the rack and hold it straight over you, arms locked.</span></div>
+              <div class="inst"><span class="n">3</span><span class="t">Come down slowly until the bar touches your middle chest.</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="ct">1 · Exercise detail — pack not installed</div>
+        <ul>
+          <li><b>Compact CTA row</b> at the top of <code>ExerciseDetailView</code>: photo count + real size from the host <code>manifest.json</code>.</li>
+          <li>Tapping starts the download in place — the row shows a thin progress bar; no separate screen.</li>
+          <li>Hidden for custom exercises (they have no upstream photos).</li>
+          <li class="keep">Everything below is today's detail view, unchanged.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============ 2. detail, installed ============ -->
+    <div class="col">
+      <div class="phone"><div class="screen">
+        <div class="status"><span>9:41</span><span class="r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"><i></i></span></span></div>
+        <div class="navbar"><span class="back">‹ Library</span><span class="ttl">Bench Press</span></div>
+        <div class="form">
+          <div class="sec">
+            <div class="pager">
+              <div class="ph">
+                <span class="postag">START</span>
+                <svg viewBox="0 0 200 120" fill="none" stroke="#c9c9cf" stroke-width="4" stroke-linecap="round">
+                  <rect x="30" y="86" width="140" height="8" rx="4" fill="#3c3c42" stroke="none"/>
+                  <circle cx="66" cy="60" r="10"/>
+                  <line x1="76" y1="66" x2="132" y2="70"/>
+                  <line x1="96" y1="68" x2="96" y2="34"/>
+                  <line x1="112" y1="69" x2="112" y2="34"/>
+                  <line x1="84" y1="34" x2="124" y2="34" stroke-width="6"/>
+                  <circle cx="78" cy="34" r="7" fill="#c9c9cf" stroke="none"/>
+                  <circle cx="130" cy="34" r="7" fill="#c9c9cf" stroke="none"/>
+                </svg>
+                <span class="cam">photo 1 of 2</span>
+                <span class="peekstrip"></span>
+              </div>
+              <div class="dots"><i class="on"></i><i></i></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="card">
+              <div class="row"><span class="lbl">Category</span><span class="val">Strength</span></div>
+              <div class="row"><span class="lbl">Level</span><span class="val">Beginner</span></div>
+              <div class="row"><span class="lbl">Equipment</span><span class="val">Barbell</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="hdr">Muscles</div>
+            <div class="card">
+              <div class="row"><span class="lbl">Primary</span><span class="val ember">Chest</span></div>
+              <div class="row"><span class="lbl">Secondary</span><span class="val">Shoulders, Triceps</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="hdr">Instructions</div>
+            <div class="card">
+              <div class="inst"><span class="n">1</span><span class="t">Lie back on a flat bench holding the bar with a medium-width grip.</span></div>
+              <div class="inst"><span class="n">2</span><span class="t">Lift the bar from the rack and hold it straight over you, arms locked.</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="ct">2 · Exercise detail — photos installed</div>
+        <ul>
+          <li><b>Swipeable pager</b> (<code>TabView(.page)</code>) replaces the CTA: photo 1 = start position, photo 2 = end position.</li>
+          <li>Images sliced on demand from the single cached pack file — no 1,700 loose files, bounded <code>NSCache</code> for decodes.</li>
+          <li>Exercises with no upstream photos just show no pager (row hidden, not empty).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============ 3. workout player ============ -->
+    <div class="col">
+      <div class="phone"><div class="screen">
+        <div class="status"><span>9:41</span><span class="r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"><i></i></span></span></div>
+        <div class="navbar"><span class="ttl">Push Day · 12:34</span></div>
+        <div class="player">
+          <div class="hrpill">❤️ 128 <span class="hz">Zone 2</span> · Polar H10</div>
+          <div>
+            <div class="extitle">Incline Dumbbell Press</div>
+            <div class="exsub">Set 2 of 4 · last time 22.5 kg × 10</div>
+            <div class="pips"><i class="done"></i><i class="done"></i><i></i><i></i></div>
+          </div>
+          <div class="inputs">
+            <div class="f"><div class="k">Reps</div><div class="v">10</div></div>
+            <div class="f"><div class="k">Weight · kg</div><div class="v">22.5</div></div>
+          </div>
+          <div class="cbtn">Complete set</div>
+          <div class="howto">
+            <div class="h">How to</div>
+            <div class="strip">
+              <div class="ph"><span class="postag">START</span>
+                <svg viewBox="0 0 200 120" fill="none" stroke="#c9c9cf" stroke-width="5" stroke-linecap="round">
+                  <line x1="60" y1="100" x2="120" y2="60"/>
+                  <circle cx="132" cy="50" r="10"/>
+                  <line x1="112" y1="72" x2="100" y2="46"/>
+                  <circle cx="98" cy="40" r="6" fill="#c9c9cf" stroke="none"/>
+                </svg>
+              </div>
+              <div class="ph"><span class="postag">END</span>
+                <svg viewBox="0 0 200 120" fill="none" stroke="#c9c9cf" stroke-width="5" stroke-linecap="round">
+                  <line x1="60" y1="100" x2="120" y2="60"/>
+                  <circle cx="132" cy="50" r="10"/>
+                  <line x1="118" y1="66" x2="126" y2="20"/>
+                  <circle cx="127" cy="14" r="6" fill="#c9c9cf" stroke="none"/>
+                </svg>
+              </div>
+            </div>
+            <div class="inst"><span class="n">1</span><span class="t">Sit on an incline bench with a dumbbell in each hand atop your thighs.</span></div>
+            <div class="inst"><span class="n">2</span><span class="t">Raise the dumbbells to shoulder width, palms facing away from you.</span></div>
+            <div class="inst"><span class="n">3</span><span class="t">Push the dumbbells up with your chest and lock your arms at the top.</span></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="ct">3 · Guided player — photo strip in "How to"</div>
+        <ul>
+          <li><b>Small start/end strip</b> above the existing numbered steps in the player's <code>instructions</code> card.</li>
+          <li>Only rendered when the pack is installed and the exercise has photos — <b>no download CTA mid-workout</b>.</li>
+          <li class="keep">HR pill, set pips, inputs, Complete set: today's player, unchanged.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============ 4. workout settings ============ -->
+    <div class="col">
+      <div class="phone"><div class="screen">
+        <div class="status"><span>9:41</span><span class="r"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"><i></i></span></span></div>
+        <div class="navbar"><span class="back">‹ Workout</span><span class="ttl">Settings</span></div>
+        <div class="form">
+          <div class="sec">
+            <div class="hdr">Preferences</div>
+            <div class="card">
+              <div class="row"><span class="lbl">Weight unit</span><span class="val">kg</span></div>
+              <div class="row"><span class="lbl">Rest timer</span><span class="val">90 s</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="hdr">Guide photos</div>
+            <div class="card">
+              <div class="row">
+                <span class="lbl">Installed</span>
+                <span class="val">38 MB · 1,712 photos</span>
+              </div>
+              <div class="row"><span class="lbl" style="color:var(--blue)">Check for updates</span></div>
+              <div class="row"><span class="destr">Remove downloaded photos</span></div>
+            </div>
+            <div class="foot">Start/end photos for the exercise catalog (Free Exercise DB, public domain).
+              Downloaded once from the Snappet data host; nothing is uploaded.</div>
+          </div>
+          <div class="sec">
+            <div class="hdr">Your data</div>
+            <div class="card">
+              <div class="row"><span class="lbl">Export sessions</span><span class="val">›</span></div>
+              <div class="row"><span class="lbl">Custom exercises</span><span class="val">4 ›</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="ct">4 · Workout Settings — pack management</div>
+        <ul>
+          <li><b>"Guide photos" section</b>: status (size + photo count from the manifest), update check, remove.</li>
+          <li>Before install the section shows the same download button + progress as the detail CTA (one shared phase state, so the two can't drift).</li>
+          <li>Mirrors the Kilter generator-model management row (download once · reclaim space).</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
