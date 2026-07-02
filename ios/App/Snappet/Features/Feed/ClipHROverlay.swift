@@ -15,7 +15,8 @@ enum ClipHROverlay {
 
     /// The render-ready HR overlay for one clip: the feed scorebug tile + its resolved values. `nil` when
     /// the clip's window holds no HR (the caller degrades to the name tag only — never an empty chart).
-    struct Payload {
+    /// `Sendable` — the Clips feed builds these on a background task (prompt 106).
+    struct Payload: Sendable {
         var tile: HRTile
         var values: HROverlayValues
     }

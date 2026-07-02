@@ -41,7 +41,11 @@ enum HRWindowSlicer {
         let span = max(0.001, span)               // guard div-by-zero downstream (photos pass a default)
         let start = max(0, start)
         let end = start + span
-        let sorted = series.sorted { $0.t < $1.t }
+        // Live capture appends samples in time order, so the input is almost always already sorted —
+        // and the Clips feed slices EVERY clip of every session per rebuild, so the unconditional
+        // O(n log n) sort+copy per call was the feed-rebuild hot spot on long (~1 Hz) sessions. An
+        // O(n) sortedness check with no allocation keeps the sort only for genuinely unordered input.
+        let sorted = isSortedByT(series) ? series : series.sorted { $0.t < $1.t }
         guard let first = sorted.first, let last = sorted.last else { return [] }
 
         // Rebase an absolute-time point into the clip-local `[0, span]` frame.
@@ -63,23 +67,26 @@ enum HRWindowSlicer {
         }
 
         // ── In coverage: interpolate the window endpoints + keep the interior samples. ──
-        // Linear interpolation / endpoint-hold at an absolute time (same rule as `HRChartGeometry`).
+        // Linear interpolation / endpoint-hold at an absolute time (same rule as `HRChartGeometry`),
+        // finding the bracketing pair by binary search (the linear scan was O(n) per endpoint).
         func value(at t: Double) -> HRPoint {
             if t <= first.t { return first }
             if t >= last.t { return last }
-            for i in 0 ..< (sorted.count - 1) {
-                let a = sorted[i], b = sorted[i + 1]
-                if t >= a.t, t <= b.t {
-                    let s = b.t - a.t
-                    let f = s > 0 ? (t - a.t) / s : 0
-                    return HRPoint(t: t, bpm: a.bpm + (b.bpm - a.bpm) * f, rrIntervalsMs: a.rrIntervalsMs)
-                }
-            }
-            return last
+            let i = firstIndex(sorted, withTGreaterThan: t)   // 1 … count-1 here (t is strictly interior)
+            let a = sorted[i - 1], b = sorted[i]
+            let s = b.t - a.t
+            let f = s > 0 ? (t - a.t) / s : 0
+            return HRPoint(t: t, bpm: a.bpm + (b.bpm - a.bpm) * f, rrIntervalsMs: a.rrIntervalsMs)
         }
 
         var pts: [HRPoint] = [rebased(value(at: start))]
-        for s in sorted where s.t > start && s.t < end { pts.append(rebased(s)) }
+        // Interior samples (strictly inside the window) — binary-search the lower bound, then walk
+        // forward to `end` instead of filtering the whole series.
+        var i = firstIndex(sorted, withTGreaterThan: start)
+        while i < sorted.count, sorted[i].t < end {
+            pts.append(rebased(sorted[i]))
+            i += 1
+        }
         pts.append(rebased(value(at: end)))
 
         // Collapse to a flat line if the window only ever touched a single distinct sample value
@@ -88,5 +95,25 @@ enum HRWindowSlicer {
         let distinctT = Set(pts.map { ($0.t * 1000).rounded() })
         if distinctT.count < 2 { return flat(pts[0]) }
         return pts
+    }
+
+    /// Whether the series is already non-decreasing in `t` (the live-capture common case).
+    private static func isSortedByT(_ series: [HRPoint]) -> Bool {
+        var prev = -Double.infinity
+        for p in series {
+            if p.t < prev { return false }
+            prev = p.t
+        }
+        return true
+    }
+
+    /// The first index whose `t` is strictly greater than `t` (`count` when none) — classic upper bound.
+    private static func firstIndex(_ series: [HRPoint], withTGreaterThan t: Double) -> Int {
+        var lo = 0, hi = series.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if series[mid].t <= t { lo = mid + 1 } else { hi = mid }
+        }
+        return lo
     }
 }

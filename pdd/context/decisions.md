@@ -7812,3 +7812,56 @@ creating one to the first `connect()` (so browsing never fires the permission pr
 simulator sat in `.idle` forever and the F1 strip showed "Board not connected + Connect" instead of
 collapsing to the session pitch, contradicting prompt 02's acceptance. Compile-time seeding answers the
 known-at-compile-time question without instantiating the manager; device behavior is untouched.
+
+**Clips feed performance (prompt 106, 2026-07-02).** Four throughput decisions, no UX change. **(P1)
+Feed composition moved off the MainActor as snapshot → `Task.detached` compose → assign,** with
+cancel-and-restart + a 200 ms debounce on `feedKey` changes: the per-post aspect backfill saves one
+`SessionMedia` each, and every save re-ran the full rebuild on main (M unresolved posts = M synchronous
+recomputes on first scroll — the freeze). Debouncing the *rebuild* fixes the storm without touching the
+backfill; `Task.detached` (not a nonisolated-async hop) so the compose stays off-main regardless of the
+language mode's isolation-inheritance default. The HR context now covers only media-bearing sessions —
+building it for every historical session decoded every `hrSeries` blob per rebuild for posts that don't
+exist. **(P2) `HRWindowSlicer` keeps its exact contract but skips the per-call sort when input is already
+time-ordered** (live capture appends in order; the Clips feed slices every clip of every session per
+rebuild, so the unconditional O(n log n) sort was the rebuild hot spot on ~1 Hz sessions) and finds
+window bounds/interpolation brackets by binary search. Parity locked by a shuffled-input test. **(P3)
+The post carousel is windowed to ±2 pages** — `TabView(.page)` is eager, so a 50-clip post (one session,
+50 untagged videos → one "general" post) mounted 50 poster views and fired 50 concurrent zero-tolerance
+frame-0 decodes; off-window pages are flat placeholders with the same tag/identity so paging is
+unchanged. Chosen over the deferred custom UIScrollView pager (decisions round 7b) deliberately: that
+pager is a snap-feel fix and stays queued; windowing inside the stock TabView doesn't preempt it. The
+page-dot row hides above 8 clips (the n/N counter already carries position). **(P4) The frame-0 poster
+cache is now an `NSCache` costed in bitmap bytes (~150 MB cap)** — the unbounded dictionary held ~10 MB
+per video forever (~500 MB for a 50-video session → jetsam risk); eviction just re-decodes on demand.
+
+**Clips feed performance, round 2 (prompt 106, 2026-07-02, same day).** Device check: vertical scroll
+smooth, but the carousel got MORE jittery — the round-1 P3 windowing was the cause. Windowing the VIEW
+(`if abs(idx-page) <= 2 { ClipPosterView } else { Color.black }`) makes the branch a SwiftUI identity
+boundary: every snap commit destroyed two pages and mounted two fresh ones (plus their poster tasks)
+exactly on the settle frame — re-introducing the mount-on-snap churn the prompt-97 discipline exists to
+prevent. Fix: window the **work**, not the view. Every page keeps its `ClipPosterView` mounted with
+stable identity; a new `loadPoster` flag (±3 of the current page) gates only the poster-bitmap request
+(`ClipThumbnail.enabled`, defaulted true for the grid/Recap/browser callers; its `.task` keys on the
+flag so entering the window fires the previously no-op load). The scale properties hold — ≤7 bitmap
+requests per post instead of 50, players still ±1, NSCache cap unchanged — the ~50 placeholder page
+skeletons themselves are cheap vector views (they were always mounted pre-106). Residual snap FEEL
+(stock `TabView(.page)` snap curve, "feels fast") remains the separately-queued custom UIScrollView
+pager (round 7b) — unchanged by this.
+
+**Clips feed performance, round 3 (prompt 106, 2026-07-02).** Round 2 killed the identity churn but the
+device recording still showed the carousel "teleporting". Frame-level analysis of the VFR screen recording
+(CFR-60 + tblend motion energy) gave the signature: a one-frame jump-cut (frame delta ~30× normal) followed
+by ~100 ms of total freeze, then the 0.32 s poster→video dissolve — the ENTIRE snap deceleration was eaten
+by a main-thread stall at selection commit. Root cause: **`ClipAudioSession.deactivate()` ran
+`AVAudioSession.setActive(false)` unguarded on the main thread, and `ClipFeedPlayback.playing`'s didSet
+calls it on EVERY page change** (muted autoplay → the else branch) — `setActive` round-trips to
+mediaserverd (~50–200 ms). The session was never even active for muted autoplay, so the per-swipe call was
+pure waste. Fix: `ClipAudioSession` is now `@MainActor` with an `active` state guard (unchanged state =
+free no-op) and does the real mediaserverd round-trip on a background serial queue (serial ⇒ rapid
+activate/deactivate land in call order; the guard tracks intent, which is safe since we're the only in-app
+writer). Two smaller same-frame stalls fixed with it: `ClipMediaSurface.teardown()` hands the final
+AVQueuePlayer/looper reference to a background queue (deinit tears down KVO/decoders synchronously, and a
+warm surface unmounts exactly on the snap frame), and `load()`'s synchronous `PHAsset.fetchAssets` moved
+off-main. Method note (reusable): motion-energy profiling = `fps=60,scale,gray,tblend=difference,
+signalstats` → per-frame YAVG; a stall is YAVG≈0 runs inside a motion burst, a jump-cut is a lone spike
+with zero neighbours.

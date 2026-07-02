@@ -104,4 +104,21 @@ final class HRWindowSlicerTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Sorted fast-path parity (prompt 106)
+
+    /// The slicer skips its sort when the input is already time-ordered (the live-capture common case).
+    /// Unordered input must still produce EXACTLY what the equivalent sorted input does — same points,
+    /// same interpolated endpoints — across in-coverage, edge-clamp, and out-of-coverage windows.
+    func testUnsortedInputMatchesSortedInput() {
+        let sorted = stride(from: 0.0, through: 120.0, by: 5.0).map {
+            HRPoint(t: $0, bpm: 100 + ($0.truncatingRemainder(dividingBy: 30)))
+        }
+        let shuffled = sorted.shuffled()
+        for (start, span) in [(12.0, 30.0), (0.0, 5.0), (118.0, 30.0), (150.0, 10.0), (300.0, 10.0)] {
+            let a = HRWindowSlicer.slice(sorted, start: start, span: span)
+            let b = HRWindowSlicer.slice(shuffled, start: start, span: span)
+            XCTAssertEqual(a, b, "unsorted parity broke at slice(start:\(start), span:\(span))")
+        }
+    }
 }

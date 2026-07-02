@@ -133,15 +133,36 @@ struct ClipMediaSurface: View {
         .accessibilityIdentifier("feed.media.placeholder")
     }
 
-    private func teardown() { controller?.detach(); player?.pause(); player = nil; looper = nil; layerReady = false }
+    private func teardown() {
+        controller?.detach()
+        player?.pause()
+        // Release the player + looper OFF the main thread (prompt 106 round 3): dropping the last
+        // reference to an AVQueuePlayer/AVPlayerLooper synchronously tears down its KVO/boundary
+        // observers and decode resources (~tens of ms), and a warm surface unmounts exactly when the
+        // carousel's warm window shifts — i.e. on the swipe's snap-commit frame. Handing the final
+        // reference to a background queue moves the deinit there; nothing touches the pair after this.
+        if player != nil || looper != nil {
+            let box = Box((player, looper))
+            DispatchQueue.global(qos: .utility).async { _ = box }
+        }
+        player = nil
+        looper = nil
+        layerReady = false
+    }
 
     private func load() async {
         teardown()
         state = .loading
         image = nil
         fraction = ClipHROverlay.atEndFraction   // the at-end reading until the video actually plays
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [clip.localIdentifier], options: nil)
-        guard let asset = assets.firstObject else { state = .failed; return }
+        // Fetch the PHAsset off-main (it's a synchronous Photos-library query, a few ms): a warm surface
+        // mounts when the carousel's warm window shifts — the snap-commit frame — so even small sync work
+        // here stacks onto the same frame the audio-session/teardown fixes just cleared (prompt 106 r3).
+        let localIdentifier = clip.localIdentifier
+        let fetched: Box<PHAsset?> = await Task.detached(priority: .userInitiated) {
+            Box(PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject)
+        }.value
+        guard let asset = fetched.value else { state = .failed; return }
 
         if clip.kind == "video" {
             let opts = PHVideoRequestOptions()
