@@ -45,7 +45,15 @@ final class KilterBoardController: NSObject {
     private static let scanTimeout: Duration = .seconds(12)
     private static let connectTimeout: Duration = .seconds(12)
 
+    /// The simulator has no BLE radio, but CoreBluetooth only reports `.unsupported` after a
+    /// `CBCentralManager` exists — and creating one is deferred to the first `connect()` so the
+    /// permission prompt never fires from mere browsing. Seed the known-at-compile-time answer
+    /// instead, so radio-less devices show the session pitch (not a Connect that can't work).
+    #if targetEnvironment(simulator)
+    private(set) var state: State = .unsupported
+    #else
     private(set) var state: State = .idle
+    #endif
     var isConnected: Bool { state == .connected }
     /// Which Aurora payload dialect to send. Default `.v3` (current boards); switched to `.v2` when a
     /// user with an older board reports the wrong holds lighting up. Persisted by the UI layer, which

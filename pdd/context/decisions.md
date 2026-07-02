@@ -7803,3 +7803,12 @@ reading the root's existing `count`; the sheet's segmented "Show only" (All/Save
 `KilterSizeMemoryTests` (incl. the reported regression as a round-trip) and `KilterGradeRangeTests`.
 **Device-pending:** type-check + test runs need macOS/Xcode (authored on a Linux box); BLE strip/pill
 transitions need a physical board.
+
+**Kilter UX feedback — macOS verification pass (2026-07-02).** Build + full suites green on the iPhone 17
+Pro simulator; screenshots in `docs/ux-research/kilter-ux-feedback/`. One real gap found and fixed:
+**`KilterBoardController.state` now seeds `.unsupported` under `#if targetEnvironment(simulator)`.**
+CoreBluetooth only reports `.unsupported` after a `CBCentralManager` exists, and the controller defers
+creating one to the first `connect()` (so browsing never fires the permission prompt) — so a radio-less
+simulator sat in `.idle` forever and the F1 strip showed "Board not connected + Connect" instead of
+collapsing to the session pitch, contradicting prompt 02's acceptance. Compile-time seeding answers the
+known-at-compile-time question without instantiating the manager; device behavior is untouched.
