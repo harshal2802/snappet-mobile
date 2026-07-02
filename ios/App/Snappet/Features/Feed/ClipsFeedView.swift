@@ -76,6 +76,9 @@ struct ClipsFeedView: View {
     @State private var scrollTarget: String?
     /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
     @State private var reactions = ClipReactionStore()
+    /// Optional search + chip filter (prompt 107) — pure value state; `.searchable` binds `query`,
+    /// the chip strip binds the rest. Session-scoped by design (resets on relaunch, like IG search).
+    @State private var filter = ClipFeedFilter()
     /// Cached derived feed (prompt 92 perf). Composing posts + slicing each clip's HR payload is the heavy
     /// part; do it ONLY when the @Query data changes — NOT on every `playingClip`/`page` write. A carousel
     /// swipe writes `playingClip`, which re-runs `body`; recomputing the feed there landed the work on the
@@ -99,6 +102,11 @@ struct ClipsFeedView: View {
 
     var body: some View {
         let posts = cachedPosts
+        // Optional search + filter (prompt 107): the visible set. Zero-cost when idle — an inactive
+        // filter returns `posts` untouched and never consults the reaction store (so no extra SwiftUI
+        // dependency is registered). With `favoritesOnly` on, reading `reactions` here is deliberate:
+        // toggling a heart live-updates the filtered feed.
+        let visible = filter.apply(posts, isFavorite: reactions.isFavorite)
         return NavigationStack {
             Group {
                 if posts.isEmpty {
@@ -110,20 +118,38 @@ struct ClipsFeedView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 18) {
-                                ForEach(posts) { post in
-                                    ClipPostCard(post: post,
-                                                 hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
-                                                 allMedia: allMedia, playback: playback,
-                                                 reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
-                                                 payloads: cachedPayloads,
-                                                 autoplayActive: autoplayActive,
-                                                 contentWidth: feedGeo.size.width)
-                                        .id(post.id)
+                                // Filter chips — visible, not buried in a toolbar glyph (the #264 lesson);
+                                // scrolls away with content so browsing costs no vertical space. Hidden
+                                // while the search field is up (one control in charge at a time).
+                                ClipFilterChipStrip(filter: $filter)
+                                if filter.isActive {
+                                    resultLine(visible: visible.count, total: posts.count)
+                                }
+                                if visible.isEmpty, filter.isActive {
+                                    noMatchState
+                                } else {
+                                    ForEach(visible) { post in
+                                        ClipPostCard(post: post,
+                                                     hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
+                                                     allMedia: allMedia, playback: playback,
+                                                     reactions: reactions, hrTile: cachedHRTiles[post.sessionID],
+                                                     payloads: cachedPayloads,
+                                                     autoplayActive: autoplayActive,
+                                                     contentWidth: feedGeo.size.width)
+                                            .id(post.id)
+                                    }
                                 }
                             }
                             .padding(.vertical, 8)
                         }
                         .accessibilityIdentifier("clips.feed")
+                        // The standard iOS pull-down search field — invisible until wanted (prompt 107).
+                        .searchable(text: $filter.query,
+                                    placement: .navigationBarDrawer(displayMode: .automatic),
+                                    prompt: "Search climbs, exercises & sessions")
+                        // Narrowing the feed can remove the playing post's card mid-playback; stop the
+                        // active clip so playback state never points at a filtered-out page.
+                        .onChange(of: filter) { _, _ in playback.playing = nil }
                         // Track scroll phase: stop an UNMUTED clip (tap-to-play) so audio can't blare while
                         // scrolling (prompt 85), and publish `isScrolling` so cards only START muted autoplay
                         // once the scroll SETTLES (no mid-scroll still↔player churn — prompt 90 polish).
@@ -177,7 +203,8 @@ struct ClipsFeedView: View {
                 }
             }
             .sheet(isPresented: $showGrid) {
-                ClipsGridView(posts: posts, onPick: { scrollTarget = $0 })
+                // The grid inherits the active search/filter (prompt 107) so it always agrees with the feed.
+                ClipsGridView(posts: visible, onPick: { scrollTarget = $0 })
             }
         }
     }
@@ -189,6 +216,42 @@ struct ClipsFeedView: View {
             Text("Film a workout or a climb and your clips show up here — each one with your live heart rate and the climb or exercise name.")
         }
         .accessibilityIdentifier("clips.empty")
+    }
+
+    // MARK: Search + filter chrome (prompt 107)
+
+    /// The honest "N of M posts · Clear" line, shown only while something narrows the feed.
+    private func resultLine(visible: Int, total: Int) -> some View {
+        HStack(spacing: 6) {
+            Text("\(visible) of \(total) post\(total == 1 ? "" : "s")")
+                .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.ink)
+            if !filter.trimmedQuery.isEmpty {
+                Text("match “\(filter.trimmedQuery)”")
+                    .font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+            }
+            Spacer()
+            Button("Clear") { filter = .cleared }
+                .font(.caption.weight(.bold)).foregroundStyle(SnappetColor.brand)
+                .accessibilityIdentifier("clips.filter.clear")
+        }
+        .padding(.horizontal, SnappetSpacing.lg)
+        .accessibilityIdentifier("clips.filter.results")
+    }
+
+    /// Dead ends get an exit: name what failed + one-tap recovery — never a silent empty feed.
+    private var noMatchState: some View {
+        ContentUnavailableView {
+            Label(filter.trimmedQuery.isEmpty ? "No matching clips" : "No posts match “\(filter.trimmedQuery)”",
+                  systemImage: "magnifyingglass")
+        } description: {
+            Text("Try a different name, or clear the search and filters to see every post.")
+        } actions: {
+            Button("Clear search & filters") { filter = .cleared }
+                .buttonStyle(.borderedProminent).tint(SnappetColor.brand)
+                .accessibilityIdentifier("clips.filter.emptyClear")
+        }
+        .padding(.top, 60)
+        .accessibilityIdentifier("clips.filter.empty")
     }
 
     // MARK: Derivation (derive-on-read; no persistence)
@@ -321,6 +384,66 @@ struct ClipsFeedView: View {
                    uniquingKeysWith: { a, _ in a })
     }
 
+}
+
+// MARK: - Filter chip strip (prompt 107)
+
+/// The Clips filter chips: ♥ Favorites · Climbs · Gym · Videos · Photos. Visible above the feed (the
+/// #264 lesson — filters people can SEE get used), scrolls away with content, and hides entirely while
+/// the search field is up (one control in charge at a time; matches the wireframe). Discipline and
+/// media-kind pairs are mutually exclusive by construction (one enum value each); Favorites stacks
+/// with anything. Tapping an active chip turns it off.
+private struct ClipFilterChipStrip: View {
+    @Binding var filter: ClipFeedFilter
+    @Environment(\.isSearching) private var isSearching
+
+    var body: some View {
+        if !isSearching {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    chip("Favorites", icon: "heart.fill", accent: SnappetColor.brand,
+                         on: filter.favoritesOnly, id: "clips.filter.favorites") {
+                        filter.favoritesOnly.toggle()
+                    }
+                    chip("Climbs", icon: "figure.climbing", accent: SnappetColor.kilter,
+                         on: filter.discipline == .climbs, id: "clips.filter.climbs") {
+                        filter.discipline = filter.discipline == .climbs ? .all : .climbs
+                    }
+                    chip("Gym", icon: "figure.strengthtraining.traditional", accent: SnappetColor.workout,
+                         on: filter.discipline == .gym, id: "clips.filter.gym") {
+                        filter.discipline = filter.discipline == .gym ? .all : .gym
+                    }
+                    chip("Videos", icon: "play.rectangle", accent: SnappetColor.brand,
+                         on: filter.kind == .videos, id: "clips.filter.videos") {
+                        filter.kind = filter.kind == .videos ? .all : .videos
+                    }
+                    chip("Photos", icon: "photo", accent: SnappetColor.brand,
+                         on: filter.kind == .photos, id: "clips.filter.photos") {
+                        filter.kind = filter.kind == .photos ? .all : .photos
+                    }
+                }
+                .padding(.horizontal, SnappetSpacing.lg)
+            }
+            .accessibilityIdentifier("clips.filter.chips")
+        }
+    }
+
+    private func chip(_ label: String, icon: String, accent: Color, on: Bool,
+                      id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+                Text(label).font(.caption.weight(.semibold))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .foregroundStyle(on ? accent : SnappetColor.textSecondary)
+            .background(on ? accent.opacity(0.16) : SnappetColor.surfaceMuted, in: Capsule())
+            .overlay(Capsule().strokeBorder(on ? accent : SnappetColor.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
 }
 
 // MARK: - One post (header · carousel · meta · ⋯ menu)
