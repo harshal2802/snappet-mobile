@@ -16,7 +16,7 @@ struct KilterSettingsView: View {
     @AppStorage("kilter.layout") private var layoutId: Int = 1
     @AppStorage("kilter.angle") private var angle: Int = 40
     /// The user's physical board size (`product_size_id`) — drives which LED map is sent so the right
-    /// holds light. Seeded to the layout's default; reset when the layout changes.
+    /// holds light. Restored per layout via `KilterSizeMemory`; the layout default only seeds it.
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.gradeFormat") private var gradeFormatRaw = KilterGradeFormat.both.rawValue
     @AppStorage("kilter.apiLevel") private var apiLevelRaw = KilterProtocol.APILevel.v3.rawValue
@@ -29,6 +29,9 @@ struct KilterSettingsView: View {
 
     // P1 board detection (auto-detect a previously-connected board).
     @State private var boardMemory = KilterBoardMemory()
+    /// Per-layout board-size memory — shared store with the root (both read/write the same
+    /// `UserDefaults` map), so a size chosen here is what browsing restores and vice versa.
+    @State private var sizeMemory = KilterSizeMemory()
     @State private var location = KilterLocationService()
     /// Bumped on rename / forget so the remembered-boards list re-renders (it reads off UserDefaults).
     @State private var boardsVersion = 0
@@ -220,9 +223,16 @@ struct KilterSettingsView: View {
         }
         .navigationTitle("Kilter Settings")
         .navigationBarTitleDisplayMode(.inline)
-        // Keep the board-size selection valid for the chosen layout (seed on open, reset on layout change).
+        // Keep the board-size selection valid for the chosen layout (seed on open, restore on layout
+        // change — never a blind reset; see syncBoardSize).
         .onAppear(perform: syncBoardSize)
         .onChange(of: layoutId) { syncBoardSize() }
+        // Record a direct size pick for the chosen layout (idempotent with the root's identical hook).
+        .onChange(of: productSizeId) { _, newSize in
+            if catalog.sizes(forLayout: layoutId).contains(where: { $0.id == newSize }) {
+                sizeMemory.remember(sizeId: newSize, forLayout: layoutId)
+            }
+        }
         .confirmationDialog("Clear all logged history?", isPresented: $confirmingClear,
                             titleVisibility: .visible) {
             Button("Clear history", role: .destructive) { clearHistory() }
@@ -258,12 +268,17 @@ struct KilterSettingsView: View {
         }
     }
 
-    /// Snap `productSizeId` to a size that exists for the current layout — seeds it to the default when
-    /// unset, and resets it when the user switches to a layout that doesn't offer the old size.
+    /// Resolve the size selection through the per-layout memory — the SAME rule the root runs, so the
+    /// two screens can't disagree. Restores the chosen layout's remembered size, keeps a still-valid
+    /// current one, else falls back to the layout default; does nothing while the catalog can't list
+    /// sizes (the old reset here is one of the paths that stomped a chosen size back to the 12×14
+    /// default — UX feedback "resets board to 12 x 14").
     private func syncBoardSize() {
-        if !catalog.sizes(forLayout: layoutId).contains(where: { $0.id == productSizeId }) {
-            productSizeId = catalog.defaultSizeId(forLayout: layoutId)
-        }
+        let ids = catalog.sizes(forLayout: layoutId).map(\.id)
+        guard let pick = KilterSizeMemory.choose(remembered: sizeMemory.recall(forLayout: layoutId),
+                                                 current: productSizeId, available: ids) else { return }
+        if productSizeId != pick { productSizeId = pick }
+        sizeMemory.remember(sizeId: pick, forLayout: layoutId)
     }
 
     /// Human-readable location authorization status for the Board-detection section.

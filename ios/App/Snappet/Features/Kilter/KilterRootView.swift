@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import HighlightEngine
 
 /// Route values pushed onto the App Library's shared `SuiteRouter` path.
@@ -9,6 +10,21 @@ struct KilterSettingsRoute: Hashable {}
 /// A finished (or active) board session's rich summary — HR zones, grade pyramid, per-climb
 /// timeline, media + highlight reel.
 struct KilterSessionRoute: Hashable { let id: UUID }
+
+/// A transient bottom notice on the Kilter root — a legitimate board-size reset, or the compact
+/// rail's re-light confirm — with an optional climb shortcut. Equatable so `.task(id:)` restarts
+/// the auto-dismiss when a newer notice replaces the current one.
+private struct RootNotice: Equatable {
+    var message: String
+    var systemImage: String
+    var openUUID: String?
+
+    init(message: String, systemImage: String, openUUID: String? = nil) {
+        self.message = message
+        self.systemImage = systemImage
+        self.openUUID = openUUID
+    }
+}
 
 /// Kilter Board catalog: browse climbs from the user-installed, read-only catalog, filtered by layout,
 /// angle, and grade (plus a Saved filter), and open a climb for the board render + logging.
@@ -30,10 +46,6 @@ struct KilterRootView: View {
     @Query(sort: \KilterLitEvent.litAt, order: .reverse) private var litEvents: [KilterLitEvent]
 
     private let catalog = KilterCatalog.shared
-    /// The shared board-render cache (F5) for the "Recently on the board" rail's thumbnails, so each
-    /// climb's `catalog.climb/holds/boardGeometry` resolves from SQLite ONCE (keyed by `uuid|sizeId`) —
-    /// not per row per re-render. The same type the gallery (P2) and On the Board timeline use.
-    @State private var railThumbs = KilterThumbnailCache()
     /// Whether a catalog is installed — flips the view between the browse list and the opt-in
     /// `KilterCatalogSyncView`. Kept current via `KilterCatalogStore.didChangeNotification`.
     @State private var catalogInstalled = KilterCatalogStore.shared.isInstalled
@@ -42,6 +54,15 @@ struct KilterRootView: View {
     /// P1 board memory: recognizes a board this phone has connected to before and restores its layout +
     /// size, pre-selecting the usual angle. `UserDefaults`-backed (no `@Model`); injectable for tests.
     @State private var boardMemory = KilterBoardMemory()
+    /// Per-layout board-size memory (UX feedback "resets board to 12×14"): each layout keeps the size
+    /// the user last chose for it, so browsing another layout never destroys this one's selection.
+    @State private var sizeMemory = KilterSizeMemory()
+    /// The connected board's friendly name for the board strip / session bar — set on recognition
+    /// (known label, else the derived default), cleared on disconnect.
+    @State private var connectedBoardLabel: String?
+    /// A transient bottom notice (a legitimate size reset, a re-light confirm) with an optional
+    /// climb shortcut. One at a time; auto-dismisses.
+    @State private var notice: RootNotice?
     /// P1 coarse, on-device place match for the **pre-connect** arrival suggestion. Degrades to BLE-only
     /// when location is denied/unavailable; the coarse place never leaves the phone.
     @State private var location = KilterLocationService()
@@ -61,8 +82,10 @@ struct KilterRootView: View {
     @AppStorage("kilter.angle") private var angle: Int = 40
     @AppStorage("kilter.layout") private var layoutId: Int = 1
     /// The user's physical board size (`product_size_id`) — drives the on-screen render size *and* the
-    /// LED map. Picked inline on the filter bar (when the layout has >1 size), cached, seeded to the
-    /// layout default, reset when the layout changes. Shared with Settings + the detail screen.
+    /// LED map. Picked inline on the Board chip (when the layout has >1 size); the value in effect is
+    /// this key, but each layout's choice is remembered in `KilterSizeMemory` and restored on layout
+    /// switch — never blindly reset to the layout default (UX feedback "resets board to 12×14").
+    /// Shared with Settings + the detail screen.
     @AppStorage("kilter.productSizeId") private var productSizeId = 0
     @AppStorage("kilter.minGrade") private var minGrade: Int = 10
     @AppStorage("kilter.maxGrade") private var maxGrade: Int = 33
@@ -70,6 +93,7 @@ struct KilterRootView: View {
     /// default; the off switch (Settings) skips location entirely (BLE-only recognition still works).
     @AppStorage("kilter.suggestOnArrival") private var suggestOnArrival = true
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.openURL) private var openURL
     @State private var savedOnly = false
     /// Browse only climbs the user created (mutually exclusive with `savedOnly`).
     @State private var mineOnly = false
@@ -121,6 +145,8 @@ struct KilterRootView: View {
     @State private var minAscents = 0
     @State private var minQuality = 0.0
     @State private var showingFilters = false
+    /// The Grade chip's range sheet (one two-thumb slider replacing the coupled Min/Max chip pair).
+    @State private var showingGradeRange = false
 
     // Discovery + display preference.
     @State private var cotd: KilterListItem?
@@ -176,16 +202,11 @@ struct KilterRootView: View {
             }
         }
         .navigationTitle("Kilter Board")
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic),
+        // Always visible (UX feedback "filtering was not obvious"): the pull-down-to-reveal drawer
+        // hid search from the tester entirely.
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search climbs or setters")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showingFilters = true } label: {
-                    Label("Filters", systemImage: filter.activeExtras > 0
-                          ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                }
-                .accessibilityIdentifier("kilter.filtersButton")
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button { router.push(KilterHistoryRoute()) } label: {
                     Label("History", systemImage: "clock.arrow.circlepath")
@@ -236,7 +257,12 @@ struct KilterRootView: View {
         }
         .sheet(isPresented: $showingFilters) {
             KilterFiltersSheet(sort: $sort, benchmarksOnly: $benchmarksOnly,
-                               minAscents: $minAscents, minQuality: $minQuality)
+                               minAscents: $minAscents, minQuality: $minQuality,
+                               savedOnly: $savedOnly, mineOnly: $mineOnly, count: count)
+        }
+        .sheet(isPresented: $showingGradeRange) {
+            KilterGradeRangeSheet(minGrade: $minGrade, maxGrade: $maxGrade,
+                                  scale: gradeScale, format: gradeFormat, count: count)
         }
         .sheet(isPresented: $showingCreate) {
             CreateClimbView(onCreated: { uuid in
@@ -342,6 +368,7 @@ struct KilterRootView: View {
             // user ends it explicitly via the bar / summary / History).
             board.onConnectionChange = { connected in
                 if connected { sessions.start(angle: angle, source: "ble", layoutId: layoutId, in: modelContext) }
+                else { connectedBoardLabel = nil }
             }
             // P1: on a confirmed connect, recognize the board and (if known) restore its layout/size +
             // pre-select the usual angle, then surface the one-tap confirm ribbon. An unknown board is
@@ -366,8 +393,15 @@ struct KilterRootView: View {
         .onDisappear { app.kilterScreenVisible = false }
         // A protocol change from Settings (or the detail "wrong holds?" fix) re-lights the board live.
         .onChange(of: apiLevelRaw) { board.setAPILevel(apiLevel) }
-        // Switching layout can invalidate the chosen size (each layout offers different ones) — reseed.
+        // Switching layout resolves the size through the per-layout memory (restore, not reset).
         .onChange(of: layoutId) { syncBoardSize() }
+        // Record every valid size selection for the current layout, wherever it came from (the Board
+        // chip, the detail screen's "wrong holds?" fix, Settings) — the map mirrors the last good choice.
+        .onChange(of: productSizeId) { _, newSize in
+            if sizes.contains(where: { $0.id == newSize }) {
+                sizeMemory.remember(sizeId: newSize, forLayout: layoutId)
+            }
+        }
         // Keep the Live Activity's HR / climb count current while any Kilter screen is up (the root
         // view stays in the nav stack), throttled inside the controller.
         .onChange(of: app.liveWorkout.latestHR) { pushLiveActivity() }
@@ -420,13 +454,26 @@ struct KilterRootView: View {
         if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
     }
 
-    /// Snap `productSizeId` to a size that exists for the current layout — seeds it to the layout default
-    /// when unset, and resets it when the layout no longer offers the old size. Same guard Settings uses,
-    /// so the inline Size chip and Settings can't disagree.
+    /// Resolve the size selection for the current layout through the per-layout memory: restore the
+    /// layout's remembered size, keep a still-valid current one, else fall back to the layout default.
+    /// While the catalog can't list sizes this does NOTHING — the old reset-to-default here is exactly
+    /// how a transient reload stomped a chosen 12×12 back to the 12×14 default (UX feedback). The one
+    /// legitimate fallback (a remembered size the installed catalog no longer offers) surfaces a brief
+    /// notice instead of failing silently. Settings runs the same rule, so the two can't disagree.
     private func syncBoardSize() {
-        if !catalog.sizes(forLayout: layoutId).contains(where: { $0.id == productSizeId }) {
-            productSizeId = catalog.defaultSizeId(forLayout: layoutId)
+        let ids = sizes.map(\.id)
+        let remembered = sizeMemory.recall(forLayout: layoutId)
+        guard let pick = KilterSizeMemory.choose(remembered: remembered, current: productSizeId,
+                                                 available: ids) else { return }
+        if let remembered, pick != remembered {
+            let name = sizes.first { $0.id == pick }?.name ?? "the default"
+            withAnimation(.snappy) {
+                notice = RootNotice(message: "Board size reset to \(name) — the size you used isn't in this catalog.",
+                                    systemImage: "exclamationmark.triangle.fill")
+            }
         }
+        if productSizeId != pick { productSizeId = pick }
+        sizeMemory.remember(sizeId: pick, forLayout: layoutId)
     }
 
     // MARK: - P1 board recognition (auto-detect)
@@ -436,6 +483,8 @@ struct KilterRootView: View {
     /// the confirmed angle + current coarse place) so the next visit recognizes it.
     private func recognizeBoard(identifier: UUID, serial: String?) {
         let known = boardMemory.recall(identifier: identifier, serial: serial)
+        // Name the connection for the board strip / session bar ("Summit Bouldering", not just a dot).
+        connectedBoardLabel = known?.label ?? defaultBoardLabel(serial: serial)
         if let known {
             applyRestore(known)
             withAnimation(.snappy) { pendingConfirm = (id: identifier, board: known) }
@@ -474,6 +523,9 @@ struct KilterRootView: View {
     private func applyRestore(_ board: RememberedBoard) {
         layoutId = board.layoutId
         productSizeId = catalog.effectiveSizeId(forLayout: board.layoutId, requested: board.productSizeId)
+        // Mirror the restore into the per-layout memory BEFORE the layout-change `syncBoardSize` runs,
+        // so the layout's older remembered size can't override the board this phone just recognized.
+        sizeMemory.remember(sizeId: productSizeId, forLayout: layoutId)
         if let usual = board.usualAngle, let pre = Self.nearestAngle(to: usual, in: availableAngles) {
             angle = pre
         }
@@ -517,10 +569,13 @@ struct KilterRootView: View {
         withAnimation(.snappy) { arrivalSuggestion = nil }
     }
 
-    /// Re-open the reader after the installed catalog changes, then refresh the list.
+    /// Re-open the reader after the installed catalog changes, then refresh the list. Re-resolving the
+    /// size here (not just on appear) means an install that lands while browsing seeds it immediately —
+    /// and a catalog swap that dropped the remembered size surfaces its one legitimate reset notice.
     private func reloadCatalog() {
         catalog.reload()
         catalogInstalled = KilterCatalogStore.shared.isInstalled
+        syncBoardSize()
         refresh()
     }
 
@@ -532,10 +587,12 @@ struct KilterRootView: View {
             //  • the post-connect confirm ribbon when a known board restored its layout/size.
             if let suggestion = arrivalSuggestion { arrivalSuggestionCard(suggestion) }
             if let pending = pendingConfirm { boardConfirmRibbon(pending) }
-            // The slot between the filters and the list belongs to the session: the green live
-            // bar when one is active, a first-class **Start session** control when idle (#75 —
-            // start/end no longer hide in the More menu; the bars own the lifecycle).
-            if sessions.isActive { sessionBar } else { idleSessionBar }
+            // The slot between the filters and the list belongs to the board + session: the green
+            // live bar when a session is active (now carrying the connected board's name), and the
+            // board strip when idle — connection state + one-tap Connect + Start session (#75 +
+            // UX feedback "connecting to the board was hard to see": the strip shares the row Start
+            // already owned, so visibility costs no extra vertical space).
+            if sessions.isActive { sessionBar } else { boardSessionStrip }
             recentlyOnTheBoardRail
             countBar
             List {
@@ -591,29 +648,80 @@ struct KilterRootView: View {
                 }
             }
         }
+        // Transient bottom notices (size reset, re-light confirm) float over the list, never in it.
+        .overlay(alignment: .bottom) {
+            if let notice { noticeView(notice) }
+        }
     }
 
-    /// The idle counterpart of `sessionBar` (#75): one visible **Start session** button + the
-    /// one-line pitch for what a session buys (the rich layer a menu-buried Start silently cost).
-    /// Same start path as everything else — `start` folds recovery, so a stale open session is
-    /// adopted/closed per the #54 policy, never forked.
-    private var idleSessionBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "figure.climbing")
-                .font(.subheadline)
+    /// A one-line transient notice with an optional "Open" climb shortcut. Auto-dismisses; a newer
+    /// notice replaces the current one (the `.task(id:)` restarts).
+    private func noticeView(_ n: RootNotice) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: n.systemImage)
                 .foregroundStyle(SnappetColor.moduleAccent("kilter"))
-            Text("Live HR, per-climb timing & a highlight reel")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(n.message)
+                .font(.caption.weight(.medium))
                 .lineLimit(2)
-            Spacer()
+            if let uuid = n.openUUID {
+                Button("Open") {
+                    withAnimation(.snappy) { notice = nil }
+                    router.push(KilterClimbRoute(uuid: uuid))
+                }
+                .font(.caption.weight(.bold))
+                .accessibilityIdentifier("kilter.notice.open")
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .pulseGlassChrome(reduceTransparency: reduceTransparency)
+        .padding(.horizontal).padding(.bottom, 8)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .task(id: n) {
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.snappy) { notice = nil }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kilter.notice")
+    }
+
+    /// The idle counterpart of `sessionBar` (#75 + UX feedback): the board's connection state made
+    /// visible on the browse screen — a status dot, plain words, and the state's one action (Connect /
+    /// Cancel / Settings) — beside the first-class **Start session** button. Shares the row Start
+    /// already owned, so seeing the connection costs no extra vertical space. On a device with no BLE
+    /// radio (simulator) the board half collapses to the original session pitch. Same start path as
+    /// everything else — `start` folds recovery, so a stale open session is adopted/closed per the
+    /// #54 policy, never forked.
+    private var boardSessionStrip: some View {
+        HStack(spacing: 10) {
+            if board.state == .unsupported {
+                Image(systemName: "figure.climbing")
+                    .font(.subheadline)
+                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                Text("Live HR, per-climb timing & a highlight reel")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            } else {
+                boardStatusDot
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(boardStripTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(boardStripSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            boardStripAction
             Button {
                 // Discard the created-fresh flag: the explicit Start button needs no undo capsule
                 // (that's the auto-log path only), and the non-Void return would otherwise conflict
                 // with this Void action closure.
                 withAnimation(.snappy) { _ = sessions.start(angle: angle, source: "manual", layoutId: layoutId, in: modelContext) }
             } label: {
-                Label("Start session", systemImage: "play.fill")
+                Label(board.state == .unsupported ? "Start session" : "Start", systemImage: "play.fill")
                     .font(.subheadline.weight(.semibold))
             }
             .buttonStyle(.borderedProminent)
@@ -621,6 +729,77 @@ struct KilterRootView: View {
             .accessibilityIdentifier("kilter.session.start")
         }
         .padding(.horizontal).padding(.vertical, 6)
+        .animation(.snappy, value: board.state)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kilter.board.strip")
+    }
+
+    /// The strip's status dot: green when connected, pulsing amber while scanning/connecting, gray
+    /// otherwise — never the only signal (the title says the state in words).
+    private var boardStatusDot: some View {
+        let status: (color: Color, busy: Bool) = switch board.state {
+        case .connected: (.green, false)
+        case .scanning, .connecting: (SnappetColor.moduleAccent("kilter"), true)
+        default: (Color.secondary, false)
+        }
+        return Image(systemName: "circle.fill")
+            .font(.caption2)
+            .foregroundStyle(status.color)
+            .symbolEffect(.pulse, options: .repeating, isActive: status.busy)
+    }
+
+    private var boardStripTitle: String {
+        switch board.state {
+        case .connected: return connectedBoardLabel ?? "Board connected"
+        case .scanning: return "Searching for your board…"
+        case .connecting: return "Connecting…"
+        case .failed: return "Couldn't connect"
+        case .bluetoothOff: return "Bluetooth is off"
+        case .unauthorized: return "Bluetooth access needed"
+        default: return "Board not connected"
+        }
+    }
+
+    private var boardStripSubtitle: String {
+        switch board.state {
+        case .connected: return "Connected — climbs light up as you open them"
+        case .scanning, .connecting: return "Keep Bluetooth on · usually a few seconds"
+        case .failed(let message): return message
+        case .bluetoothOff: return "Turn it on in Control Center to connect"
+        case .unauthorized: return "Allow Bluetooth for Snappet in Settings"
+        default: return "Connect to light up holds as you browse"
+        }
+    }
+
+    /// The board half's single action for the current state (none while connected — a session is
+    /// already starting — or when Bluetooth is off, where Control Center is the fix).
+    @ViewBuilder private var boardStripAction: some View {
+        switch board.state {
+        case .idle, .failed:
+            Button {
+                board.connect()
+            } label: {
+                Label("Connect", systemImage: "bolt.fill")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(SnappetColor.moduleAccent("kilter"))
+            .accessibilityIdentifier("kilter.board.stripConnect")
+        case .scanning, .connecting:
+            Button("Cancel") { board.cancel() }
+                .font(.subheadline)
+                .controlSize(.small)
+                .accessibilityIdentifier("kilter.board.stripCancel")
+        case .unauthorized:
+            Button("Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+            .font(.subheadline)
+            .controlSize(.small)
+        default:
+            EmptyView()
+        }
     }
 
     // MARK: - P5 "Recently on the board" re-light rail
@@ -631,70 +810,62 @@ struct KilterRootView: View {
                                 logs: allEntries.map(KilterClimbLog.from), limit: 8)
     }
 
-    /// A horizontal rail of the most-recent climbs lit on the board, each a one-tap **re-light**, with a
-    /// "See all" link into the full On the Board timeline (wireframe `05b_recent_rail`). Hidden until the
-    /// climber has lit something.
+    /// A single-line strip of the most-recent climbs lit on the board (UX feedback "takes a lot of
+    /// screen real estate": the previous full-card rail — 110 pt thumbnail + status chip + button per
+    /// card — cost ~200 pt of the browse list). Each chip's name opens the climb; its ⚡ re-lights it;
+    /// "All ›" opens the unchanged full On the Board timeline (wireframe `f4b_after`). Hidden until
+    /// the climber has lit something.
     @ViewBuilder private var recentlyOnTheBoardRail: some View {
         let rows = recentRail
         if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("RECENTLY ON THE BOARD")
-                        .font(.caption.weight(.bold)).tracking(0.5)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button { router.push(KilterOnTheBoardRoute()) } label: {
-                        HStack(spacing: 2) { Text("See all"); Image(systemName: "chevron.right").font(.caption2) }
-                            .font(.caption.weight(.semibold))
-                    }
-                    .accessibilityIdentifier("kilter.board.seeAll")
-                }
-                .padding(.horizontal)
+            HStack(spacing: 8) {
+                Text("ON THE BOARD")
+                    .font(.caption2.weight(.bold)).tracking(0.5)
+                    .foregroundStyle(.secondary)
+                    .layoutPriority(1)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(rows) { row in recentRailCard(row) }
+                    HStack(spacing: 8) {
+                        ForEach(rows) { row in recentChip(row) }
                     }
-                    .padding(.horizontal)
                 }
+                Button { router.push(KilterOnTheBoardRoute()) } label: {
+                    HStack(spacing: 2) { Text("All"); Image(systemName: "chevron.right").font(.caption2) }
+                        .font(.caption.weight(.semibold))
+                }
+                .layoutPriority(1)
+                .accessibilityIdentifier("kilter.board.seeAll")
             }
-            .padding(.vertical, 6)
+            .padding(.horizontal).padding(.vertical, 4)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kilter.board.recentRail")
         }
     }
 
-    private func recentRailCard(_ row: KilterOnTheBoard.Row) -> some View {
+    /// One strip chip: status dot + name (opens the climb) and an always-on ⚡ (re-lights it). The
+    /// status also rides the name's accessibility label, so the dot is never the only signal.
+    private func recentChip(_ row: KilterOnTheBoard.Row) -> some View {
         let e = row.event
-        return VStack(alignment: .leading, spacing: 6) {
-            recentRailThumbnail(e).frame(width: 96, height: 110)
-            Text(e.climbName).font(.caption.weight(.semibold)).lineLimit(1)
-            Text(row.status.label)
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background(statusTint(row.status).opacity(0.16), in: Capsule())
-                .foregroundStyle(statusTint(row.status))
-            Button { relightRecent(e) } label: {
-                Label("Re-light", systemImage: "arrow.clockwise")
-                    .font(.caption.weight(.semibold))
-                    .frame(maxWidth: .infinity)
+        return HStack(spacing: 6) {
+            Button { router.push(KilterClimbRoute(uuid: e.climbUUID)) } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(statusTint(row.status)).frame(width: 7, height: 7)
+                    Text(e.climbName).font(.caption.weight(.medium)).lineLimit(1)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .tint(SnappetColor.moduleAccent("kilter"))
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(e.climbName), \(row.status.label)")
+            .accessibilityIdentifier("kilter.board.railCard")
+            Button { relightRecent(e) } label: {
+                Image(systemName: "bolt.fill")
+                    .font(.caption)
+                    .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Re-light \(e.climbName)")
             .accessibilityIdentifier("kilter.board.rail.relight")
         }
-        .frame(width: 110)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("kilter.board.railCard")
-    }
-
-    @ViewBuilder private func recentRailThumbnail(_ e: KilterOnTheBoard.LitEvent) -> some View {
-        if let render = railThumbs.render(forCatalogUUID: e.climbUUID, sizeId: e.sizeId, catalog: catalog) {
-            KilterBoardView(geometry: render.geometry, holds: render.holds)
-        } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(SnappetColor.surfaceMuted)
-                .overlay(Image(systemName: "square.grid.3x3").foregroundStyle(.secondary))
-        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color(.secondarySystemBackground), in: Capsule())
     }
 
     private func statusTint(_ status: KilterOnTheBoard.Status) -> Color {
@@ -718,6 +889,13 @@ struct KilterRootView: View {
                        sessionId: sessions.currentId, wasConnected: board.isConnected,
                        in: modelContext)
         Haptics.tap()
+        // The compact chip gives no inline feedback (the old card's button at least changed under the
+        // thumb) — confirm the ⚡ with a toast, honest about whether holds actually lit.
+        withAnimation(.snappy) {
+            notice = RootNotice(message: board.isConnected ? "\(e.climbName) is on the board"
+                                                           : "Saved to On the Board — connect to light holds",
+                                systemImage: "bolt.fill", openUUID: e.climbUUID)
+        }
     }
 
     // MARK: - P1 board-detect surfaces
@@ -822,7 +1000,10 @@ struct KilterRootView: View {
                     Image(systemName: "record.circle").foregroundStyle(.green)
                         .symbolEffect(.pulse, options: .repeating)
                         .font(.subheadline)
-                    Text("Session").font(.subheadline.weight(.semibold))
+                    // The connected board's name IS the session's place — say it here (the strip that
+                    // would show connection state is hidden while the session bar owns the slot).
+                    Text(board.isConnected ? (connectedBoardLabel ?? "Board connected") : "Session")
+                        .font(.subheadline.weight(.semibold)).lineLimit(1)
                     Text(s.startedAt, style: .timer).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                     Text("· \(count) climb\(count == 1 ? "" : "s")").font(.subheadline).foregroundStyle(.secondary)
                     Spacer()
@@ -865,53 +1046,47 @@ struct KilterRootView: View {
     }
 
     private var filterBar: some View {
-        // The Layout/Angle/Grade menus scroll horizontally; the Saved toggle is pinned at the trailing
-        // edge so it's always reachable (it used to overflow off-screen on narrower devices).
+        // Chips that read as CONTROLS (UX feedback "filtering was not obvious"): every menu chip
+        // carries a ▾, the Filters entry leads the row as an outlined chip with a live badge (it was
+        // one funnel glyph among four toolbar icons), Layout+Size merge into one Board chip and
+        // Min/Max into one Grade-range chip. The Saved/Mine pins stay at the trailing edge, always
+        // reachable (they used to overflow off-screen on narrower devices).
         HStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
+                    Button { showingFilters = true } label: {
+                        chip("", refineCount > 0 ? "Filters · \(refineCount)" : "Filters",
+                             filled: refineCount > 0, systemImage: "line.3.horizontal.decrease")
+                    }
+                    .accessibilityIdentifier("kilter.filtersButton")
+
+                    // One chip, both board decisions — the size picker appears only when the layout
+                    // offers a choice (unchanged rule). Drives the render size and the LED map.
                     Menu {
                         Picker("Layout", selection: $layoutId) {
                             ForEach(layouts) { Text($0.name).tag($0.id) }
                         }
-                    } label: { chip("Layout", layouts.first { $0.id == layoutId }?.name ?? "—") }
-                    .accessibilityIdentifier("kilter.layout")
-
-                    // Board size, right beside Layout — only when the layout offers a choice. Drives the
-                    // size the board renders at (and the LED map); persisted in `kilter.productSizeId`.
-                    if sizes.count > 1 {
-                        Menu {
+                        if sizes.count > 1 {
                             Picker("Board size", selection: $productSizeId) {
                                 ForEach(sizes) { Text($0.label).tag($0.id) }
                             }
-                        } label: { chip("Size", sizes.first { $0.id == productSizeId }?.name ?? "—") }
-                        .accessibilityIdentifier("kilter.size")
-                    }
+                        }
+                    } label: { chip("Board", boardChipValue, chevron: true) }
+                    .accessibilityIdentifier("kilter.layout")
 
                     Menu {
                         Picker("Angle", selection: $angle) {
                             ForEach(availableAngles, id: \.self) { Text("\($0)°").tag($0) }
                         }
-                    } label: { chip("Angle", "\(angle)°") }
+                    } label: { chip("Angle", "\(angle)°", chevron: true) }
                     .accessibilityIdentifier("kilter.angle")
 
-                    // Lower/upper grade are two independent chips. Selecting a min above the current
-                    // max (or a max below the min) drags the other end along so the range stays valid.
-                    Menu {
-                        Picker("Min grade", selection: $minGrade) {
-                            ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
-                        }
-                    } label: { chip("Min", catalog.gradeLabel(Double(minGrade))) }
-                    .accessibilityIdentifier("kilter.minGrade")
-                    .onChange(of: minGrade) { _, newMin in if newMin > maxGrade { maxGrade = newMin } }
-
-                    Menu {
-                        Picker("Max grade", selection: $maxGrade) {
-                            ForEach(gradeScale, id: \.difficulty) { Text($0.label).tag($0.difficulty) }
-                        }
-                    } label: { chip("Max", catalog.gradeLabel(Double(maxGrade))) }
-                    .accessibilityIdentifier("kilter.maxGrade")
-                    .onChange(of: maxGrade) { _, newMax in if newMax < minGrade { minGrade = newMax } }
+                    // One range chip (filled while narrowed) opening the two-thumb slider sheet — the
+                    // old Min/Max chip pair dragged each other's value along, which read as a bug.
+                    Button { showingGradeRange = true } label: {
+                        chip("Grade", gradeChipValue, filled: gradeNarrowed, chevron: true)
+                    }
+                    .accessibilityIdentifier("kilter.gradeRange")
                 }
                 .padding(.leading)
                 .padding(.vertical, 8)
@@ -928,6 +1103,32 @@ struct KilterRootView: View {
             .accessibilityIdentifier("kilter.savedToggle")
             .padding(.trailing)
         }
+    }
+
+    /// Refinements active beyond the browse context — the Filters chip's badge (sheet extras plus the
+    /// Saved/Mine narrowing the sheet's "Show only" row also controls).
+    private var refineCount: Int {
+        filter.activeExtras + ((savedOnly || mineOnly) ? 1 : 0)
+    }
+
+    /// "Original" alone, or "Original · 12 x 12" when the layout offers more than one size.
+    private var boardChipValue: String {
+        let layoutName = layouts.first { $0.id == layoutId }?.name ?? "—"
+        guard sizes.count > 1, let sizeName = sizes.first(where: { $0.id == productSizeId })?.name
+        else { return layoutName }
+        return "\(layoutName) · \(sizeName)"
+    }
+
+    /// "V4–V7" while narrowed, "Any" at the scale's full span.
+    private var gradeChipValue: String {
+        gradeNarrowed
+            ? "\(kilterDisplayGrade(catalog.gradeLabel(Double(minGrade)), gradeFormat))–\(kilterDisplayGrade(catalog.gradeLabel(Double(maxGrade)), gradeFormat))"
+            : "Any"
+    }
+
+    private var gradeNarrowed: Bool {
+        guard let lo = gradeScale.first?.difficulty, let hi = gradeScale.last?.difficulty else { return false }
+        return minGrade > lo || maxGrade < hi
     }
 
     /// Live count of climbs matching the current search + filters, with a quick **Clear** when any
@@ -961,11 +1162,15 @@ struct KilterRootView: View {
         sort = .popular; benchmarksOnly = false; minAscents = 0; minQuality = 0
     }
 
-    private func chip(_ title: String, _ value: String, filled: Bool = false, systemImage: String? = nil) -> some View {
+    /// `chevron` marks a chip that opens a menu/sheet — the ▾ is what makes it read as a control
+    /// (the bare value chips tested as static text).
+    private func chip(_ title: String, _ value: String, filled: Bool = false, systemImage: String? = nil,
+                      chevron: Bool = false) -> some View {
         HStack(spacing: 4) {
             if let systemImage { Image(systemName: systemImage) }
-            if !title.isEmpty { Text(title).foregroundStyle(.secondary) }
+            if !title.isEmpty { Text(title).foregroundStyle(filled ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary)) }
             Text(value).fontWeight(.medium)
+            if chevron { Image(systemName: "chevron.down").font(.caption2).opacity(0.6) }
         }
         .font(.subheadline)
         .padding(.horizontal, 12).padding(.vertical, 7)
@@ -1073,17 +1278,31 @@ struct KilterStars: View {
     }
 }
 
-/// Bottom sheet of advanced browse criteria: sort order, a classics/benchmarks toggle, and minimum
-/// ascents/quality. The quick layout/angle/grade/saved chips stay inline; this holds the rest so the
-/// filter row doesn't get crowded.
+/// Bottom sheet of advanced browse criteria: sort order, a classics/benchmarks toggle, minimum
+/// ascents/quality, and a "Show only" (All / Saved / Mine) row. The quick Board/Angle/Grade chips
+/// stay inline; the live-count apply button makes each refinement's narrowing felt before committing
+/// (UX feedback "filtering was not obvious").
 struct KilterFiltersSheet: View {
     @Binding var sort: KilterSort
     @Binding var benchmarksOnly: Bool
     @Binding var minAscents: Int
     @Binding var minQuality: Double
+    @Binding var savedOnly: Bool
+    @Binding var mineOnly: Bool
+    /// Live match count from the root (the bindings ARE the browse state, so the root recounts as
+    /// each control changes and this sheet re-renders with it).
+    let count: Int
     @Environment(\.dismiss) private var dismiss
 
     private let ascentChoices = [0, 10, 50, 100, 500, 1000]
+
+    private enum ShowOnly: Hashable { case all, saved, mine }
+    /// The mutually-exclusive Saved/Mine narrowing as one control (same exclusivity rule as the
+    /// pinned chips, which stay in sync automatically — it's the same state).
+    private var showOnly: Binding<ShowOnly> {
+        Binding(get: { savedOnly ? .saved : (mineOnly ? .mine : .all) },
+                set: { v in savedOnly = v == .saved; mineOnly = v == .mine })
+    }
 
     var body: some View {
         NavigationStack {
@@ -1110,6 +1329,15 @@ struct KilterFiltersSheet: View {
                         Text("★ 3").tag(3.0)
                     }
                 }
+                Section("Show only") {
+                    Picker("Show only", selection: showOnly) {
+                        Text("All climbs").tag(ShowOnly.all)
+                        Text("Saved").tag(ShowOnly.saved)
+                        Text("Mine").tag(ShowOnly.mine)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("kilter.filter.showOnly")
+                }
             }
             .navigationTitle("Filters")
             .navigationBarTitleDisplayMode(.inline)
@@ -1117,11 +1345,24 @@ struct KilterFiltersSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Reset") {
                         sort = .popular; benchmarksOnly = false; minAscents = 0; minQuality = 0
+                        savedOnly = false; mineOnly = false
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }.accessibilityIdentifier("kilter.filter.done")
                 }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button { dismiss() } label: {
+                    Text(count == 1 ? "Show 1 climb" : "Show \(count) climbs")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.moduleAccent("kilter"))
+                .padding(.horizontal).padding(.vertical, 8)
+                .background(.bar)
+                .accessibilityIdentifier("kilter.filter.show")
             }
             .presentationDetents([.medium, .large])
         }
