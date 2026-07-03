@@ -19,6 +19,8 @@ struct ExerciseDetailView: View {
 
     var body: some View {
         List {
+            guidePhotoSection
+
             Section {
                 LabeledContent("Category", value: exercise.category.display)
                 LabeledContent("Level", value: exercise.level.display)
@@ -91,6 +93,51 @@ struct ExerciseDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Routines that reference it will keep the name but lose the link.")
+        }
+    }
+
+    /// Guide photos (downloaded pack): pager when installed + this exercise has photos, a
+    /// download CTA when the pack is missing (never for custom exercises — they have no
+    /// upstream photos). Both surfaces share `ExercisePhotoInstaller.shared` with Settings.
+    @ViewBuilder private var guidePhotoSection: some View {
+        let installer = ExercisePhotoInstaller.shared
+        if installer.isInstalled {
+            let count = ExercisePhotoStore.shared.photoCount(exerciseId: exercise.id)
+            if count > 0 {
+                Section {
+                    GuidePhotoPager(exerciseId: exercise.id, count: count)
+                        .listRowInsets(EdgeInsets())
+                }
+            }
+        } else if !exercise.isCustom {
+            Section {
+                downloadCTA(installer)
+            } footer: {
+                Text("Photos stay on this device and work offline. Manage them in Workout Settings.")
+            }
+        }
+    }
+
+    @ViewBuilder private func downloadCTA(_ installer: ExercisePhotoInstaller) -> some View {
+        switch installer.phase {
+        case .working(let fraction):
+            GuidePhotoInstallProgress(fraction: fraction)
+        default:
+            Button {
+                Task { await installer.install() }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "photo.badge.arrow.down")
+                        .font(.title3).foregroundStyle(SnappetColor.workout)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Download guide photos").foregroundStyle(SnappetColor.workout)
+                        Text("Start/end photos for the whole catalog · one-time")
+                            .font(.caption).foregroundStyle(.secondary)
+                        GuidePhotoInstallError(phase: installer.phase)
+                    }
+                }
+            }
+            .accessibilityIdentifier("downloadGuidePhotos")
         }
     }
 

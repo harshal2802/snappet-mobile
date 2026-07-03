@@ -594,6 +594,8 @@ struct WorkoutPlayerView: View {
     private func instructions(_ exercise: Exercise) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("How to").font(.headline)
+            // Guide photos when the downloaded pack has them — no download CTA mid-workout.
+            GuidePhotoStrip(exerciseId: exercise.id)
             ForEach(Array(exercise.instructions.prefix(4).enumerated()), id: \.offset) { idx, step in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("\(idx + 1)").font(.caption.bold()).foregroundStyle(SnappetColor.workout)

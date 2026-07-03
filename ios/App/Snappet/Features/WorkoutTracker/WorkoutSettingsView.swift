@@ -75,6 +75,14 @@ struct WorkoutSettingsView: View {
             }
 
             Section {
+                guidePhotoRows
+            } header: {
+                Text("Guide photos")
+            } footer: {
+                Text("Start/end photos for the exercise catalog (Free Exercise DB, public domain). Downloaded once from the Snappet data host; nothing is uploaded, and they work offline.")
+            }
+
+            Section {
                 LabeledContent("Exercise catalog", value: "873 exercises")
             } footer: {
                 Text("Exercise data from the Free Exercise DB (yuhonas/free-exercise-db), bundled for offline use. Everything stays on your device.")
@@ -82,6 +90,40 @@ struct WorkoutSettingsView: View {
         }
         .sheet(isPresented: $showingHRSource) {
             HeartRateSourcePicker()
+        }
+    }
+
+    /// Download / status / remove for the guide-photo pack. Renders the same
+    /// `ExercisePhotoInstaller.shared` phase as the exercise-detail CTA so the two can't drift.
+    @ViewBuilder private var guidePhotoRows: some View {
+        let installer = ExercisePhotoInstaller.shared
+        switch installer.phase {
+        case .working(let fraction):
+            GuidePhotoInstallProgress(fraction: fraction)
+        default:
+            if let manifest = installer.installedManifest {
+                LabeledContent("Installed",
+                               value: "\(manifest.sizeLabel) · \(manifest.photoCount) photos")
+                Button("Update photos") {
+                    Task { await installer.install() }
+                }
+                .accessibilityIdentifier("updateGuidePhotos")
+                // A failed UPDATE must be visible here too — the pack stays installed, but the
+                // user needs to know the refresh didn't happen.
+                GuidePhotoInstallError(phase: installer.phase)
+                Button("Remove downloaded photos", role: .destructive) {
+                    installer.remove()
+                }
+                .accessibilityIdentifier("removeGuidePhotos")
+            } else {
+                Button {
+                    Task { await installer.install() }
+                } label: {
+                    Label("Download guide photos", systemImage: "photo.badge.arrow.down")
+                }
+                .accessibilityIdentifier("downloadGuidePhotosSettings")
+                GuidePhotoInstallError(phase: installer.phase)
+            }
         }
     }
 }
