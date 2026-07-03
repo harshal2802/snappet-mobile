@@ -381,6 +381,13 @@ struct SessionExercise: Codable, Hashable, Identifiable, Sendable {
     /// (like `gym`/`wall`). `nil` ⇒ unset. Additive optional → SwiftData lightweight migration.
     var setter: String?
 
+    /// Planned set/leg/hold count for this exercise **in this session** (Quick Session pager, prompt
+    /// 109) — drives the plan-progress segments and the plan-complete nudge. Distinct from `targetSets`
+    /// (the routine prescription seeded by "Edit details"): `plannedSets` is the freeform, per-session
+    /// intent set from the pager's plan editor. `nil` ⇒ no plan (open-ended). Additive optional →
+    /// migration-safe (old blobs decode with `nil`). Not applicable to climbs (no plan row).
+    var plannedSets: Int?
+
     // MARK: - Timed metadata (Quick Session redesign Phase 5). A `.duration` exercise IS the timed
     // exercise (the timed analogue of the climb-first hierarchy); its `sets` are the timed holds logged
     // underneath it. Captured once in the pick-or-create sheet, inherited by every set. Additive
