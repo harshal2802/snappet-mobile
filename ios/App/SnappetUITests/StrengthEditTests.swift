@@ -57,8 +57,8 @@ final class StrengthEditTests: XCTestCase {
         nameField.typeText("Front Squat")
         app.buttons["editStrength.save"].tap()
 
-        // The card header (a tap-to-expand Button whose label is the name) now reads the new name.
-        let header = app.buttons["freeform.entityName"]
+        // The page title (a plain label on the pager page) now reads the new name.
+        let header = app.staticTexts["freeform.entityName"]
         XCTAssertTrue(header.waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Front Squat", "Edit details should rename the exercise")
     }
