@@ -56,9 +56,12 @@ enum ExercisePhotoPack {
         for (id, slices) in raw.exercises {
             var exercise: [Range<Int64>] = []
             for slice in slices {
-                let start = blobStart + slice.offset
-                let end = start + slice.length
-                guard slice.offset >= 0, slice.length > 0, end <= packSize else {
+                // Overflow-checked: offsets come from a downloaded file, so a hostile/corrupt
+                // index near Int64.max must reject cleanly, not trap on the addition.
+                let (start, overflow1) = blobStart.addingReportingOverflow(slice.offset)
+                let (end, overflow2) = start.addingReportingOverflow(slice.length)
+                guard slice.offset >= 0, slice.length > 0, !overflow1, !overflow2,
+                      end <= packSize else {
                     throw PackError.truncated
                 }
                 exercise.append(start..<end)

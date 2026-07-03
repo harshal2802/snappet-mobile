@@ -35,10 +35,43 @@ struct GuidePhotoView: View {
         }
         .clipped()
         .task(id: "\(exerciseId)#\(slot)") {
+            // Reset first: on identity reuse (e.g. the player advancing exercises) the old
+            // exercise's photo must not linger while the new one decodes.
+            image = nil
             let id = exerciseId, slot = slot
             image = await Task.detached(priority: .userInitiated) {
                 ExercisePhotoStore.shared.photo(exerciseId: id, slot: slot)
             }.value
+        }
+    }
+
+    /// One place owns the slot → badge mapping (pack convention: photos are start → end order).
+    static func slotLabel(_ slot: Int, count: Int) -> String? {
+        count >= 2 ? (slot == 0 ? "START" : "END") : nil
+    }
+}
+
+/// The one rendering of the installer's in-flight download (shared by the exercise-detail CTA
+/// and the Settings section, so progress presentation can't drift between them).
+struct GuidePhotoInstallProgress: View {
+    let fraction: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Downloading guide photos…").font(.callout)
+            ProgressView(value: fraction)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// The one rendering of a failed install/update (nothing when the phase isn't `.failed`).
+struct GuidePhotoInstallError: View {
+    let phase: ExercisePhotoInstaller.Phase
+
+    var body: some View {
+        if case .failed(let message) = phase {
+            Text(message).font(.caption).foregroundStyle(.red)
         }
     }
 }
@@ -48,14 +81,11 @@ struct GuidePhotoPager: View {
     let exerciseId: String
     let count: Int
 
-    private func label(_ slot: Int) -> String? {
-        count >= 2 ? (slot == 0 ? "START" : "END") : nil
-    }
-
     var body: some View {
         TabView {
             ForEach(0..<count, id: \.self) { slot in
-                GuidePhotoView(exerciseId: exerciseId, slot: slot, label: label(slot))
+                GuidePhotoView(exerciseId: exerciseId, slot: slot,
+                               label: GuidePhotoView.slotLabel(slot, count: count))
             }
         }
         .tabViewStyle(.page)
@@ -80,7 +110,7 @@ struct GuidePhotoStrip: View {
             HStack(spacing: 8) {
                 ForEach(0..<count, id: \.self) { slot in
                     GuidePhotoView(exerciseId: exerciseId, slot: slot,
-                                   label: count >= 2 ? (slot == 0 ? "START" : "END") : nil)
+                                   label: GuidePhotoView.slotLabel(slot, count: count))
                         .frame(width: 116, height: 84)
                         .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.sm))
                 }

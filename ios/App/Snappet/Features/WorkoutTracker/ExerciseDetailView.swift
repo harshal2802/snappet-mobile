@@ -121,11 +121,7 @@ struct ExerciseDetailView: View {
     @ViewBuilder private func downloadCTA(_ installer: ExercisePhotoInstaller) -> some View {
         switch installer.phase {
         case .working(let fraction):
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Downloading guide photos…").font(.callout)
-                ProgressView(value: fraction)
-            }
-            .padding(.vertical, 2)
+            GuidePhotoInstallProgress(fraction: fraction)
         default:
             Button {
                 Task { await installer.install() }
@@ -137,9 +133,7 @@ struct ExerciseDetailView: View {
                         Text("Download guide photos").foregroundStyle(SnappetColor.workout)
                         Text("Start/end photos for the whole catalog · one-time")
                             .font(.caption).foregroundStyle(.secondary)
-                        if case .failed(let message) = installer.phase {
-                            Text(message).font(.caption).foregroundStyle(.red)
-                        }
+                        GuidePhotoInstallError(phase: installer.phase)
                     }
                 }
             }

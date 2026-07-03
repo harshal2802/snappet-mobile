@@ -48,7 +48,13 @@ final class ExercisePhotoStore: @unchecked Sendable {
         config.timeoutIntervalForRequest = 120
         config.waitsForConnectivity = true
         self.session = URLSession(configuration: config)
-        images.countLimit = 60   // ~a few screens of decoded 640px guides
+        // Cost-bounded like AssetPosterLoader (prompt 106): a count limit doesn't bound memory
+        // for decoded bitmaps. ~24 MB ≈ dozens of ≤640px guides.
+        images.totalCostLimit = 24 * 1024 * 1024
+    }
+
+    private static func bitmapCost(_ img: UIImage) -> Int {
+        Int(img.size.width * img.scale) * Int(img.size.height * img.scale) * 4
     }
 
     var packURL: URL { dir.appendingPathComponent("photos.spack") }
@@ -84,11 +90,14 @@ final class ExercisePhotoStore: @unchecked Sendable {
         defer { try? handle.close() }
         let range = ranges[slot]
         guard (try? handle.seek(toOffset: UInt64(range.lowerBound))) != nil,
-              let data = try? handle.read(upToCount: Int(range.upperBound - range.lowerBound)),
+              let data = try? Self.readFully(handle, count: Int(range.upperBound - range.lowerBound)),
               let image = UIImage(data: data) else { return nil }
-        images.setObject(image, forKey: key)
+        images.setObject(image, forKey: key, cost: Self.bitmapCost(image))
         return image
     }
+
+    /// Pre-parse the index off the caller's critical path (no-op when already cached / no pack).
+    func warmIndex() { _ = index() }
 
     /// Parse (once) and cache the pack index; nil when no pack is installed or it's unreadable.
     private func index() -> ExercisePhotoPack.Index? {
@@ -103,14 +112,24 @@ final class ExercisePhotoStore: @unchecked Sendable {
         defer { try? handle.close() }
         let attrs = try? FileManager.default.attributesOfItem(atPath: packURL.path)
         let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-        guard let header = try handle.read(upToCount: ExercisePhotoPack.headerLength) else {
-            throw ExercisePhotoPack.PackError.truncated
-        }
+        let header = try readFully(handle, count: ExercisePhotoPack.headerLength)
         let indexLength = try ExercisePhotoPack.indexLength(header: header)
-        guard let json = try handle.read(upToCount: indexLength), json.count == indexLength else {
-            throw ExercisePhotoPack.PackError.truncated
-        }
+        let json = try readFully(handle, count: indexLength)
+        guard json.count == indexLength else { throw ExercisePhotoPack.PackError.truncated }
         return try ExercisePhotoPack.parseIndex(json, packSize: size)
+    }
+
+    /// `FileHandle.read(upToCount:)` may legally return fewer bytes than asked — loop until the
+    /// requested count (or EOF, which callers treat as truncation).
+    private static func readFully(_ handle: FileHandle, count: Int) throws -> Data {
+        var data = Data(capacity: count)
+        while data.count < count {
+            guard let chunk = try handle.read(upToCount: count - data.count), !chunk.isEmpty else {
+                break
+            }
+            data.append(chunk)
+        }
+        return data
     }
 
     // MARK: - Install / remove
@@ -140,9 +159,17 @@ final class ExercisePhotoStore: @unchecked Sendable {
 
         try? FileManager.default.removeItem(at: packURL)
         try FileManager.default.moveItem(at: tmp, to: packURL)
-        let stamp = try JSONEncoder().encode(manifest)
-        try stamp.write(to: stampURL)
+        do {
+            let stamp = try JSONEncoder().encode(manifest)
+            try stamp.write(to: stampURL)
+        } catch {
+            // Never leave a pack without its stamp — the two are the single "installed" truth.
+            try? FileManager.default.removeItem(at: packURL)
+            invalidateCaches()
+            throw error
+        }
         invalidateCaches()
+        _ = index()   // warm the new index here (off-main) so no view body pays the first parse
         return manifest
     }
 
@@ -214,7 +241,11 @@ final class ExercisePhotoInstaller {
     init(store: ExercisePhotoStore = .shared) {
         self.store = store
         installedManifest = store.isInstalled ? store.installedManifest : nil
-        if installedManifest != nil { phase = .installed }
+        if installedManifest != nil {
+            phase = .installed
+            // Warm the pack index off-main so the first view body pays a dict lookup, not a parse.
+            Task.detached(priority: .utility) { [store] in store.warmIndex() }
+        }
     }
 
     var isInstalled: Bool { installedManifest != nil }

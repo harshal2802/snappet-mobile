@@ -99,11 +99,7 @@ struct WorkoutSettingsView: View {
         let installer = ExercisePhotoInstaller.shared
         switch installer.phase {
         case .working(let fraction):
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Downloading…").font(.callout)
-                ProgressView(value: fraction)
-            }
-            .padding(.vertical, 2)
+            GuidePhotoInstallProgress(fraction: fraction)
         default:
             if let manifest = installer.installedManifest {
                 LabeledContent("Installed",
@@ -112,6 +108,9 @@ struct WorkoutSettingsView: View {
                     Task { await installer.install() }
                 }
                 .accessibilityIdentifier("updateGuidePhotos")
+                // A failed UPDATE must be visible here too — the pack stays installed, but the
+                // user needs to know the refresh didn't happen.
+                GuidePhotoInstallError(phase: installer.phase)
                 Button("Remove downloaded photos", role: .destructive) {
                     installer.remove()
                 }
@@ -123,9 +122,7 @@ struct WorkoutSettingsView: View {
                     Label("Download guide photos", systemImage: "photo.badge.arrow.down")
                 }
                 .accessibilityIdentifier("downloadGuidePhotosSettings")
-                if case .failed(let message) = installer.phase {
-                    Text(message).font(.caption).foregroundStyle(.red)
-                }
+                GuidePhotoInstallError(phase: installer.phase)
             }
         }
     }
