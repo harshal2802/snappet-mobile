@@ -61,6 +61,10 @@ final class LiveClimbStatsTests: XCTestCase {
         // Log a Sent V4. The ribbon should appear reading "1 send".
         addClimbAndLog(grade: "V4", name: "Cave", outcome: "sent")
 
+        // The ribbon is docked on the OVERVIEW page (pager, prompt 109) — jump there via the rail.
+        let overviewChip = app.buttons["freeform.rail.0"]
+        XCTAssertTrue(overviewChip.waitForExistence(timeout: 4), "the rail should offer the overview chip")
+        overviewChip.tap()
         let ribbon = app.buttons["freeform.statsRibbon"]
         XCTAssertTrue(ribbon.waitForExistence(timeout: 6),
                       "the live stats ribbon should appear once climbing is logged")

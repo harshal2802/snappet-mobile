@@ -137,8 +137,9 @@ struct SetMediaStrip: View {
 /// confirmation). A `ViewModifier` so the strip's thumbnail stays simple and the menu attaches to either a
 /// video Button or a plain photo thumbnail. When `enabled` is false (lifting/timed/guided strips) it's a
 /// pass-through, so those strips have no menu. The thumbnail carries `freeform.clipMenu` so the menu is
-/// queryable; each leaf has its own id (the leaf-only a11y rule).
-private struct ClipContextMenu: ViewModifier {
+/// queryable; each leaf has its own id (the leaf-only a11y rule). Internal (not file-private) since the
+/// pager's exercise-scoped `ExerciseMediaShelf` attaches the same lifecycle menu to its thumbnails.
+struct ClipContextMenu: ViewModifier {
     let clip: SessionMedia
     let enabled: Bool
     let moveTargets: [ClipMoveTarget]

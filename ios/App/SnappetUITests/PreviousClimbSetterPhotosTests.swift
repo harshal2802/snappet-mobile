@@ -133,10 +133,15 @@ final class PreviousClimbSetterPhotosTests: XCTestCase {
         let addBtn = revealElement("addClimb.add")
         XCTAssertTrue(addBtn.exists, "the 'Add climb' CTA should be present")
         addBtn.tap()
-        let cards = app.buttons.matching(identifier: "freeform.climbName")
-        XCTAssertTrue(cards.element(boundBy: 1).waitForExistence(timeout: 6),
-                      "re-logging a previous climb should create a second distinct card, not mutate the first")
-        XCTAssertGreaterThanOrEqual(cards.count, 2, "two climb cards should now be present")
+        // The pager auto-advances to the new climb's page; its title reads the re-logged name…
+        let name = app.staticTexts["freeform.climbName"]
+        XCTAssertTrue(name.waitForExistence(timeout: 6),
+                      "re-logging a previous climb should land on the new climb's page")
+        XCTAssertEqual(name.label, "Cave Project", "the re-logged climb keeps the previous climb's name")
+        // …and the rail now has 2 exercise chips (overview · climb · climb · add = 4 chips), proving a
+        // second distinct climb exists rather than the first being mutated (pager, prompt 109).
+        let chips = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'freeform.rail.'"))
+        XCTAssertGreaterThanOrEqual(chips.count, 4, "two climb chips should now be on the rail")
         snap("05-relogged-second-card")
     }
 }

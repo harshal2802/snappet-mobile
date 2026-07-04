@@ -7904,3 +7904,35 @@ network" literally true (nothing is fetched by merely opening a screen). **(4) O
 `ExercisePhotoInstaller` singleton phase** feeds both the detail-view CTA and the Settings section so a
 download started in one place is visible in the other. Player strip deliberately has no CTA
 (mid-workout is not a download moment), and custom exercises never show photo UI.
+
+**Quick Session pager: one exercise per full-screen page, not a scrolling list (prompt 109,
+2026-07-03).** Direct user feedback ("very cluttery and hard to navigate") killed the expandable-card
+List: it showed every exercise × every set at once and buried the current effort. The rewrite is a
+navigation-shell change only — every mutation, sheet, cover, clip pipeline, rest timer, milestone and
+Live-Activity path is re-homed, not rebuilt. Decisions: **(1) TabView(.page) with a pure page model**
+(`QuickSessionPager.Page` overview/exercise/add) — page 0 is the session overview (title, elapsed hero,
+ribbons, jump rows, Finish) and swiping past the last exercise lands on the add page (the old
+empty-state grid generalized), so growing the session is part of the same gesture. Pages are light
+forms, so the Clips-feed pager hazard (heavy AVPlayer pages re-rendering) doesn't apply; the exercise
+RAIL doubles as the page indicator (`freeform.rail.<i>`), giving direct jumps without hunting.
+**(2) `plannedSets: Int?` on `SessionExercise`** — the freeform per-session intent, deliberately
+distinct from `targetSets` (the routine prescription seeded by Edit details); additive-optional so old
+blobs decode nil. Plans apply to strength/timed/run, never climbs. The plan default is last session's
+set count (`QuickSessionPager.defaultPlan`, adhoc-* matched by displayName). A met plan collapses the
+hero into a nudge that advances to `nextIncomplete` (forward-then-wrap) — never traps you in the page;
+"+1 extra set" just bumps the plan. **(3) History is quiet by default**: previous sets render only as
+one ghost-chip row (keeping the `freeform.setRow` id/count contract the UITests assert) with the full
+ledger + per-set ▲/▼ deltas vs last session in an opt-in drawer. Deltas compare same-unit weight or
+duration only — a cross-unit pair shows no delta rather than a wrong one. **(4) The pager is forced
+dark** (`preferredColorScheme(.dark)`) — it's a full-screen FOCUS moment like `TimedAttemptCover`, and
+the user-approved wireframes are dark-glass; the rest of the app stays adaptive. **(5) Identifier
+preservation over test rewrites**: every control that survived kept its `freeform.*` id (steppers,
+outcome grid, addExercise dialog, finish, menus…), so 12 of 16 freeform UITest files run unchanged;
+only expansion-shaped queries (`freeform.expand`, name-as-button, cross-page counting) were updated —
+counting per-page elements is meaningless in a pager since TabView only materializes current ±1, so
+those assertions moved to the rail. **(6) Structured intervals kept their full-screen runner cover**
+(not the wireframe's embedded ring) and run legs kept the entry sheet — both flows already exist,
+are tested, and the covers ARE the focus mode; embedding them is polish, not parity. **(7) The page
+record button attaches clips to the exercise as a whole** (`assignedSetIndex = nil`, `.manual`) — the
+current page's exercise is unambiguous, while "the set being filmed" is not; the deep-tap menu re-pins
+to a specific set when it matters.

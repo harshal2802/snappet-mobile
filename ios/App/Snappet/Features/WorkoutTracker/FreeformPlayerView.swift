@@ -51,12 +51,26 @@ struct FreeformPlayerView: View {
     /// The "Pick or create a timed exercise" sheet (Quick Session redesign Phase 5): the timed-first
     /// entry point both the empty-state Timed card and the add-menu's "Timed exercise" button now present.
     @State private var addingTimed = false
-    /// Which entity cards are expanded (by `SessionExercise.id`) to their effort list + footer — shared
-    /// across disciplines (Workout-Type Parity). A new climb/exercise auto-expands; "Add & log first
-    /// attempt" also auto-opens its inline outcome strip.
-    @State private var expandedEntities: Set<UUID> = []
-    /// Climbs showing their inline outcome strip (the "+ Log attempt" footer toggled open).
-    @State private var loggingAttemptFor: Set<UUID> = []
+    // MARK: Pager state (prompt 109)
+    /// The current pager page — overview · one page per exercise (added order) · the add page.
+    /// Simple value state; the pages themselves are light (no players), so the Clips-feed
+    /// re-render hazard doesn't apply.
+    @State private var page: QuickSessionPager.Page = .overview
+    /// Whether the initial landing page was chosen (empty session → add page; resumed → last exercise).
+    @State private var pagedIn = false
+    /// The exercise a plan-editor sheet is open for.
+    @State private var planEditing: PlanEditTarget?
+    /// The exercise a history drawer is open for.
+    @State private var historyFor: HistoryTarget?
+    /// The catalog exercise a guide (photos + how-to) drawer is open for.
+    @State private var guideFor: GuideTarget?
+    /// The exercise whose page shows the rest-morph hero while a rest runs (set by `startRest`).
+    @State private var restExerciseID: UUID?
+    /// The armed rest total, for the rest ring's progress fraction.
+    @State private var restTotalSec: TimeInterval = 0
+    /// Clips recorded from the page-level record button, attached to the CURRENT page's exercise.
+    @State private var pageClips: [RecordedClip] = []
+    @State private var savingPageClip = false
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
     @State private var timingAttemptFor: TimedAttemptTarget?
     /// The strength/generic exercise a "Time this set" FOCUS cover is open for (Workout-Type Parity P3).
@@ -131,64 +145,10 @@ struct FreeformPlayerView: View {
     }
 
     private var loggingContent: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-            List {
-                titleSection
-                // Live stats ribbon docked above the cards. Climbing keeps its rich tappable ribbon (Phase
-                // 3 → LiveClimbStatsSheet); other disciplines get a lean aggregate ribbon (Workout-Type
-                // Parity P8): strength volume·sets, running distance·pace, timed TUT·sets.
-                if FreeformClimbStats.hasClimbing(session) { statsRibbonSection }
-                else { disciplineRibbonSection }
-                if session.exercises.isEmpty { emptyStateHero }
-                ForEach(session.exercises) { ex in exerciseSection(ex) }
-            }
-            // Keep the scroll content clear of the floating command bar: without enough bottom margin a
-            // tap on the last exercise's controls can fall through to the Finish button beneath it.
-            .contentMargins(.bottom, 96, for: .scrollContent)
-            // Auto-scroll to a newly added exercise so it (and its controls) are on-screen as the logbook
-            // grows — otherwise a new exercise can land off the bottom of a long list (and a List renders
-            // off-screen rows lazily, so the freshly-added section isn't even there until scrolled to).
-            .onChange(of: session.exercises.count) { old, new in
-                if new > old, let lastID = session.exercises.last?.id {
-                    withAnimation { proxy.scrollTo(lastID, anchor: .center) }
-                }
-            }
-            .navigationTitle(session.routineName)
-            .navigationBarTitleDisplayMode(.inline)
-            // The persistent command bar (§A): wall-clock timer · compact HR chip · always-on Finish.
-            // Reuses the module's `safeAreaInset(edge: .bottom)` banner idiom.
-            .safeAreaInset(edge: .bottom) { commandBar }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { onMinimize() } label: { Label("Minimize", systemImage: "chevron.down") }
-                        .accessibilityIdentifier("minimizeWorkout")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { togglePause() } label: {
-                        Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
-                    }
-                    .accessibilityIdentifier("pauseWorkout")
-                }
-                // Add-exercise lives in the toolbar (§A): always one tap away regardless of how long the
-                // logbook grows — a bottom-of-list Menu becomes unreachable once the list scrolls. A
-                // confirmationDialog (not a Menu) because SwiftUI toolbar-Menu item actions fire
-                // unreliably under XCUITest (the action sometimes no-ops); the dialog's buttons are
-                // dependable. Label is "New exercise" (not "Add …") so it doesn't collide with the
-                // picker's nav-bar "Add (N)" commit the UITests match by `BEGINSWITH 'Add'`.
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAddMenu = true } label: {
-                        Label("New exercise", systemImage: "plus")
-                    }
-                    .accessibilityIdentifier("freeform.addExercise")
-                }
-            }
-            }
-            // At-logging milestone banner (Phase 3 §3): a brief glass headline over the top of the
-            // logbook for a genuine new best (first-of-grade send / new hardest / flash). The burst +
-            // haptic fire via `.celebrates(on:)`; Reduce Motion shows the static text + haptic only.
-            .overlay(alignment: .top) { milestoneBanner }
-        }
+        pagerShell
+        // The pager is a dark-glass full-screen moment like the FOCUS covers (the approved wireframes
+        // are dark-glass; light surfaces stay light everywhere else in the app).
+        .preferredColorScheme(.dark)
         .celebrates(on: milestoneTrigger)
         .interactiveDismissDisabled()
         .sheet(isPresented: $pickingLift) {
@@ -326,17 +286,69 @@ struct FreeformPlayerView: View {
         } message: { _ in
             Text("“Remove from session” keeps the video in your Photos library. “Delete from Photos” permanently removes it (iOS will ask once more).")
         }
+        // The plan-editor sheet (prompt 109): tapping "of N" / the plan row sets the target; Save
+        // writes `plannedSets` in place. Defaults to last session's set count for this exercise.
+        .sheet(item: $planEditing) { target in
+            if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
+                PlanEditorSheet(
+                    noun: QuickSessionPager.effortNoun(for: ex),
+                    initial: ex.plannedSets,
+                    lastTime: QuickSessionPager.defaultPlan(exerciseId: ex.exerciseId,
+                                                            displayName: ex.displayName,
+                                                            history: history),
+                    onSave: { setPlan(target.exerciseID, $0) })
+            }
+        }
+        // The history drawer (prompt 109): the full ledger with per-set deltas vs the previous
+        // session + swipe-to-delete — the density the old expanding cards had, now opt-in.
+        .sheet(item: $historyFor) { target in
+            if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
+                HistoryDrawerView(
+                    exerciseName: resolver.name(for: ex.exerciseId, override: ex.displayName),
+                    rows: drawerRows(ex),
+                    aggregate: nil,
+                    hasComparison: drawerRows(ex).contains { $0.delta != nil },
+                    onDelete: { deleteSets(ex, at: $0) })
+            }
+        }
+        // The guide drawer (prompt 109): the ⓘ next to a catalog exercise's name — guide photos
+        // (prompt 108 pack) + the first how-to steps, without leaving the set.
+        .sheet(item: $guideFor) { target in
+            GuideDrawer(exercise: target.exercise)
+        }
         .onAppear {
             app.workoutNotifications.requestAuthorization()
             recomputePrefills()
             recomputeClimbStats()
             rebuildPreviousClimbs()
             pushLiveActivity()
+            // Land somewhere useful once per presentation: an empty session opens on the add page
+            // (the type chooser IS the empty state); a resumed session on its latest exercise.
+            if !pagedIn {
+                pagedIn = true
+                page = session.exercises.last.map { .exercise($0.id) } ?? .add
+            }
         }
-        .onChange(of: session.exercises.count) { _, _ in
+        .onChange(of: session.exercises.count) { old, new in
             recomputePrefills()
             recomputeClimbStats()
             rebuildPreviousClimbs()
+            // Auto-advance the pager to a newly added exercise so its hero is immediately loggable.
+            if new > old, let last = session.exercises.last {
+                withAnimation { page = .exercise(last.id) }
+            }
+            // Removing the exercise whose page we're on strands the tag — fall back to overview.
+            if case .exercise(let id) = page, !session.exercises.contains(where: { $0.id == id }) {
+                withAnimation { page = .overview }
+            }
+        }
+        // Clips recorded from a page's record button attach to THAT exercise (as a whole — the
+        // deep-tap menu can re-pin them to a specific set). Only the current page's button is
+        // interactable, so the current page's exercise is the right owner.
+        .onChange(of: pageClips.count) { _, count in
+            guard count > 0, case .exercise(let id) = page else { pageClips.removeAll(); return }
+            attachRecordedClips(pageClips, toExerciseID: id, setIndex: nil)
+            pageClips.removeAll()
         }
         // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
         // live HR and the paused state push as they change. The overall timer self-ticks off
@@ -359,55 +371,780 @@ struct FreeformPlayerView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Pager shell & chrome (prompt 109)
 
-    /// Inline-editable session title (§A). Commits to `WorkoutSession.routineName` (default "Quick
-    /// session") and refreshes the Live Activity's live state. NOTE: the Lock-Screen session title is an
-    /// immutable ActivityKit *attribute* fixed at start — it won't change mid-session; only the live
-    /// fields (HR / current exercise / paused) refresh here. A leaf TextField.
-    private var titleSection: some View {
-        Section {
-            TextField("Session name", text: $session.routineName)
-                .font(.title3.weight(.semibold))
-                .submitLabel(.done)
-                .onSubmit { persist(); pushLiveActivity() }
-                .accessibilityIdentifier("freeform.sessionTitle")
+    /// The full-screen pager: ambient discipline-tinted backdrop · glass nav · the exercise rail
+    /// (the page indicator) · one page per exercise · glass dock. Replaces the old scrolling List.
+    private var pagerShell: some View {
+        ZStack {
+            ambientBackground
+            VStack(spacing: 0) {
+                glassNav
+                    .padding(.horizontal, 12)
+                    .padding(.top, 4)
+                PagerRailView(
+                    chips: QuickSessionPager.railChips(for: session.exercises) { ex in
+                        resolver.name(for: ex.exerciseId, override: ex.displayName)
+                    },
+                    current: page,
+                    tint: railTint,
+                    onTap: { target in withAnimation { page = target } })
+                    .padding(.top, 10)
+                pagerPages
+                glassDock
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
+        }
+        // At-logging milestone banner (Phase 3 §3), unchanged: a brief glass headline for a genuine
+        // new best; the burst + haptic fire via the screen-level `.celebrates(on:)`.
+        .overlay(alignment: .top) { milestoneBanner }
+    }
+
+    /// The paged content. Pages are light (forms — no players), so plain selection state is safe
+    /// here (the Clips-feed re-render hazard was about AVPlayer feeds).
+    private var pagerPages: some View {
+        TabView(selection: $page) {
+            overviewPage
+                .tag(QuickSessionPager.Page.overview)
+            ForEach(session.exercises) { ex in
+                exercisePage(ex)
+                    .tag(QuickSessionPager.Page.exercise(ex.id))
+            }
+            AddExercisePage(
+                onLifting: { pickingLift = true },
+                onClimbing: { rebuildPreviousClimbs(); addingClimb = true },
+                onRunning: { addRun() },
+                onTimed: { addingTimed = true },
+                onDance: { addOpenEffort(.dance) },
+                onOther: { addOpenEffort(.other) })
+                .tag(QuickSessionPager.Page.add)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+    }
+
+    /// The soft ambient tint behind everything — follows the current page's discipline accent so
+    /// swiping into climbing "feels amber" (wayfinding, per the two-axis color contract).
+    private var ambientBackground: some View {
+        ZStack {
+            SnappetColor.paper.ignoresSafeArea()
+            RadialGradient(colors: [currentAccent.opacity(0.16), .clear],
+                           center: UnitPoint(x: 0.85, y: -0.05), startRadius: 0, endRadius: 440)
+                .ignoresSafeArea()
+                .animation(.easeInOut(duration: 0.4), value: currentAccent)
         }
     }
 
-    // MARK: - Live stats ribbon (Phase 3)
-
-    /// The docked climbing stats ribbon: a full-width tappable row — hero "N sends", "hardest <grade>"
-    /// (omitted until a send exists), and an inline mini-pyramid (bars by grade). Before the first send
-    /// it teaches ("Send one to start your pyramid"). Reads the cached `climbStats` (recomputed on
-    /// `session.exercises` change). Tapping presents the expanded `LiveClimbStatsSheet`.
-    private var statsRibbonSection: some View {
-        Section {
-            Button { showingClimbStats = true } label: { statsRibbonContent }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.statsRibbon")
-                .accessibilityLabel(statsRibbonAccessibilityLabel)
+    /// The current page's discipline accent (climbs use the Kilter amber like their grade pill).
+    private var currentAccent: Color {
+        if case .exercise(let id) = page,
+           let ex = session.exercises.first(where: { $0.id == id }) {
+            return ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent
         }
+        return SnappetColor.workout
     }
 
-    /// The lean aggregate stats ribbon for a non-climbing session (Workout-Type Parity P8) — a one-line
-    /// glanceable total for the dominant discipline (strength volume·sets / running distance·pace / timed
-    /// TUT·sets). Non-tappable (the full breakdown is the completion summary); hidden until there's a
-    /// logged effort. Climbing keeps its own rich tappable ribbon.
-    @ViewBuilder
-    private var disciplineRibbonSection: some View {
-        if let r = disciplineRibbon {
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: r.icon).foregroundStyle(r.accent)
-                    Text(r.text).font(.subheadline.weight(.medium)).monospacedDigit()
-                    Spacer(minLength: 4)
+    private func railTint(_ chip: QuickSessionPager.RailChip) -> Color {
+        if case .exercise(let id) = chip.page,
+           let ex = session.exercises.first(where: { $0.id == id }) {
+            return ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent
+        }
+        return chip.page == .add ? SnappetColor.brand : SnappetColor.workout
+    }
+
+    /// The floating glass nav: minimize ⌄ · session title + live elapsed/HR line · the Finish pill.
+    private var glassNav: some View {
+        HStack(spacing: 10) {
+            Button { onMinimize() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("minimizeWorkout")
+            .accessibilityLabel("Minimize")
+            Spacer(minLength: 4)
+            VStack(spacing: 1) {
+                Text(session.routineName)
+                    .font(.subheadline.weight(.bold)).lineLimit(1)
+                HStack(spacing: 5) {
+                    if isPaused {
+                        Image(systemName: "pause.fill").font(.system(size: 9)).foregroundStyle(.yellow)
+                    }
+                    Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(SnappetColor.textSecondary)
+                        .accessibilityIdentifier("overallWorkoutTimer")
+                    if let bpm = app.liveWorkout.latestHR {
+                        Text("· ♥ \(Int(bpm.rounded()))")
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(SnappetColor.textSecondary)
+                    }
                 }
-                .padding(.vertical, 2)
-                .accessibilityIdentifier("freeform.disciplineRibbon")
+            }
+            Spacer(minLength: 4)
+            Button { finishTapped() } label: {
+                Text("Finish")
+                    .font(.subheadline.weight(.bold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
+                    .background(.white.opacity(0.1), in: Capsule())
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.14)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.finish")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .pagerGlass(cornerRadius: 24)
+    }
+
+    /// The glass dock: live-HR chip (→ metrics panel) · rest countdown while resting · the auto-rest
+    /// toggle · pause · add-exercise (the dialog anchor the UITests drive).
+    private var glassDock: some View {
+        HStack(spacing: 10) {
+            hrChip
+            if restRunning, let remaining = restTimer.reading.remaining {
+                HStack(spacing: 4) {
+                    Image(systemName: "hourglass").font(.caption2)
+                    Text(SetMeasure.formatDuration(remaining))
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .contentTransition(.numericText())
+                }
+                .foregroundStyle(SnappetColor.perfFresh)
+            }
+            Spacer(minLength: 4)
+            Button { restAutoStart.toggle(); Haptics.tap() } label: {
+                Image(systemName: restAutoStart ? "hourglass.circle.fill" : "hourglass.circle")
+                    .font(.title3)
+                    .foregroundStyle(restAutoStart ? SnappetColor.workout : .secondary)
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.restToggle")
+            .accessibilityLabel(restAutoStart ? "Auto rest timer on" : "Auto rest timer off")
+            Button { togglePause() } label: {
+                Image(systemName: isPaused ? "play.fill" : "pause.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(.white.opacity(0.08), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("pauseWorkout")
+            .accessibilityLabel(isPaused ? "Resume" : "Pause")
+            Button { showingAddMenu = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(width: 34, height: 34)
+                    .background(SnappetColor.brand.opacity(0.2), in: Circle())
+                    .overlay(Circle().strokeBorder(SnappetColor.brand.opacity(0.5)))
+                    .foregroundStyle(SnappetColor.brand)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.addExercise")
+            .accessibilityLabel("New exercise")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .pagerGlass(cornerRadius: 24)
+    }
+
+    /// The compact live-HR chip (zone-tinted, recovery dot) — taps into the metrics panel. Hidden
+    /// until a live sample arrives, exactly like the old command bar's chip.
+    @ViewBuilder
+    private var hrChip: some View {
+        if let bpm = app.liveWorkout.latestHR {
+            let profile = app.userProfile.profile
+            let zone = HeartRateZone.forBpm(bpm, maxHR: profile.resolvedMaxHR ?? HeartRateZone.defaultMaxHR)
+            let recovery = RecoveryReadiness.evaluate(currentBpm: bpm, restBpm: profile.restingBound,
+                                                      maxBpm: profile.resolvedMaxHR)
+            Button { showingMetrics = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "heart.fill").foregroundStyle(zone.color)
+                    Text("\(Int(bpm.rounded()))")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.primary)
+                    if zone != .none {
+                        Text("Z\(zone.rawValue)").font(.caption2.weight(.bold))
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(zone.color.opacity(0.18), in: Capsule())
+                            .foregroundStyle(zone.color)
+                    }
+                    if recovery.state != .unknown {
+                        Circle().fill(recovery.state == .ready ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.hrChip")
+        }
+    }
+
+    // MARK: - Overview page (page 0)
+
+    /// The leftmost page: editable session title, the elapsed hero, the discipline roll-up, one
+    /// tap-to-jump row per exercise (with plan segments), and the big Finish.
+    private var overviewPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                TextField("Session name", text: $session.routineName)
+                    .font(.title3.weight(.semibold))
+                    .submitLabel(.done)
+                    .onSubmit { persist(); pushLiveActivity() }
+                    .accessibilityIdentifier("freeform.sessionTitle")
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .pagerGlass(cornerRadius: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ELAPSED")
+                        .font(.system(size: 10, weight: .heavy)).tracking(1.4)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                    Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
+                        .font(.system(size: 46, weight: .bold, design: .rounded)).monospacedDigit()
+                        .shadow(color: SnappetColor.workout.opacity(0.3), radius: 14, y: 4)
+                }
+                // Climbing keeps its rich tappable ribbon (→ LiveClimbStatsSheet); other disciplines
+                // the lean aggregate line — both re-homed from the old List's docked sections.
+                if FreeformClimbStats.hasClimbing(session) {
+                    Button { showingClimbStats = true } label: { statsRibbonContent }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .pagerGlass(cornerRadius: 18)
+                        .accessibilityIdentifier("freeform.statsRibbon")
+                        .accessibilityLabel(statsRibbonAccessibilityLabel)
+                } else if let r = disciplineRibbon {
+                    HStack(spacing: 12) {
+                        Image(systemName: r.icon).foregroundStyle(r.accent)
+                        Text(r.text).font(.subheadline.weight(.medium)).monospacedDigit()
+                        Spacer(minLength: 4)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .pagerGlass(cornerRadius: 18)
+                    .accessibilityIdentifier("freeform.disciplineRibbon")
+                }
+                if session.exercises.isEmpty {
+                    Text("Swipe left to add your first exercise →")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 24)
+                } else {
+                    ForEach(session.exercises) { ex in overviewRow(ex) }
+                }
+                Button { finishTapped() } label: {
+                    Text("Finish workout").font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.brand)
+                .accessibilityIdentifier("freeform.finishSession")
+                .padding(.top, 6)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+    }
+
+    /// One overview row: discipline tile · name + metric line · plan segments (or a chevron).
+    /// Tapping jumps the pager to that exercise's page.
+    private func overviewRow(_ ex: SessionExercise) -> some View {
+        Button { withAnimation { page = .exercise(ex.id) } } label: {
+            HStack(spacing: 11) {
+                Image(systemName: ex.discipline == .climb ? ex.climbType.symbol : ex.discipline.symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(railTint(.init(page: .exercise(ex.id), symbol: "", title: "",
+                                                    detail: nil, done: false)))
+                    .frame(width: 36, height: 36)
+                    .background(.white.opacity(0.06),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                        .font(.subheadline.weight(.bold)).lineLimit(1)
+                        .foregroundStyle(SnappetColor.ink)
+                    Text(overviewMetrics(ex))
+                        .font(.caption).monospacedDigit()
+                        .foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if let plan = QuickSessionPager.planState(for: ex),
+                   let planned = plan.planned, planned > 0 {
+                    PlanSegmentsView(done: plan.done, planned: planned, accent: ex.discipline.accent)
+                } else {
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 13).padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pagerGlass(cornerRadius: 20)
+        .accessibilityIdentifier("freeform.overviewRow")
+    }
+
+    /// The overview row's one-line roll-up, per discipline.
+    private func overviewMetrics(_ ex: SessionExercise) -> String {
+        switch ex.discipline {
+        case .climb:
+            var parts = [attemptCountLabel(ex)]
+            if let status = ex.resolvedClimbStatus { parts.append(ex.climbType.statusLabel(status)) }
+            return parts.joined(separator: " · ")
+        case .run:
+            let meters = RunStats.totalDistanceMeters(ex)
+            guard meters > 0 else { return "Not started" }
+            var s = SetMeasure.formatDistance(meters, unit: distanceUnit)
+            if let pace = RunStats.avgPaceSecPerKm(ex) {
+                s += " · " + SetMeasure.formatPace(secPerKm: pace, unit: distanceUnit)
+            }
+            return s
+        case .strength:
+            guard let top = StrengthStats.topSet(ex) else { return "Not started" }
+            let plan = QuickSessionPager.planState(for: ex)
+            let lead = plan?.label() ?? ""
+            return "\(lead) · top \(SetMeasure.summary(top, kind: .repsWeight, unit: unit))"
+        default:
+            guard !ex.sets.isEmpty else { return "Not started" }
+            var parts = ["\(ex.sets.count) \(ex.sets.count == 1 ? "set" : "sets")"]
+            if let hold = timedHoldTotal(ex) { parts.append(hold) }
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    // MARK: - Exercise pages (prompt 109)
+
+    /// One full-screen page per exercise: header (identity + plan) · the current-effort hero ·
+    /// media shelf + record · the ghost ledger. The hero is discipline-specific; everything else
+    /// is one shared skeleton.
+    private func exercisePage(_ ex: SessionExercise) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                pageHeader(ex)
+                pageHero(ex)
+                ExerciseMediaShelf(
+                    session: session, exerciseID: ex.id,
+                    noun: QuickSessionPager.effortNoun(for: ex),
+                    onEdit: { presentStudio($0) },
+                    moveTargets: clipMoveTargets(for: ex),
+                    moveTargetsLabel: moveTargetsLabel(ex),
+                    onReassign: { reassignClip($0, to: $1, set: $2) },
+                    onRequestDelete: { pendingClipDeletion = $0 })
+                RecordClipButton(recordedClips: $pageClips, savingClip: $savingPageClip,
+                                 idPrefix: "freeform.page",
+                                 attachNoun: QuickSessionPager.effortNoun(for: ex))
+                ghostLedger(ex)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func moveTargetsLabel(_ ex: SessionExercise) -> String {
+        switch ex.discipline {
+        case .climb: return "Move to attempt…"
+        case .run:   return "Move to leg…"
+        default:     return "Move to set…"
+        }
+    }
+
+    /// The page header: discipline tag · name (+ ⓘ guide for catalog exercises, swatch/location
+    /// for climbs) · the ⋯ menu · the plan row (or the climb's status line).
+    @ViewBuilder
+    private func pageHeader(_ ex: SessionExercise) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(ex.discipline == .climb
+                     ? "\(ex.climbType.label) · \(ex.gym?.isEmpty == false ? ex.gym! : "Climb")"
+                     : ex.discipline.label)
+                    .font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundStyle(ex.discipline == .climb ? SnappetColor.kilter : ex.discipline.accent)
+                Spacer()
+                pageMenu(ex)
+            }
+            HStack(spacing: 8) {
+                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
+                    .font(.title2.bold()).lineLimit(2)
+                    .accessibilityIdentifier(nameIdentifier(ex))
+                if ex.discipline == .climb { colorSwatch(ex) }
+                if ex.discipline == .strength, let catalog = resolver.exercise(id: ex.exerciseId) {
+                    Button { guideFor = GuideTarget(exercise: catalog) } label: {
+                        Image(systemName: "info.circle")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("freeform.guide")
+                    .accessibilityLabel("How to")
+                }
+                Spacer(minLength: 0)
+            }
+            if ex.discipline == .climb {
+                climbLocationLine(ex)
+                HStack(spacing: 8) {
+                    statusBadge(ex)
+                    Text(attemptCountLabel(ex)).font(.caption).foregroundStyle(.secondary)
+                    if let time = climbTimeOnWall(ex) {
+                        Text("· \(time)").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                planRow(ex)
             }
         }
     }
+
+    /// The per-discipline name identifier the UITests already query.
+    private func nameIdentifier(_ ex: SessionExercise) -> String {
+        switch ex.discipline {
+        case .climb: return "freeform.climbName"
+        case .timed, .dance, .other: return "freeform.timedName"
+        default: return "freeform.entityName"
+        }
+    }
+
+    /// The ⋯ menu per discipline — same items/ids as the old card headers.
+    @ViewBuilder
+    private func pageMenu(_ ex: SessionExercise) -> some View {
+        switch ex.discipline {
+        case .climb:
+            Menu {
+                climbMenuContent(ex)
+            } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                .accessibilityIdentifier("freeform.climbMenu")
+                .accessibilityLabel("Climb options")
+        case .strength:
+            Menu {
+                Button {
+                    let pf = prefills[ex.exerciseId]
+                    editingStrength = EditStrengthTarget(
+                        exerciseID: ex.id,
+                        catalogName: resolver.name(for: ex.exerciseId),
+                        initial: AddStrengthParams(from: ex),
+                        lastReps: pf?.reps, lastWeight: pf?.weight, lastUnit: pf?.unit)
+                } label: {
+                    Label("Edit details", systemImage: "pencil")
+                }
+                .accessibilityIdentifier("freeform.editEntity")
+                Button(role: .destructive) { removeExercise(ex) } label: {
+                    Label("Remove exercise", systemImage: "trash")
+                }
+            } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                .accessibilityIdentifier("freeform.entityMenu")
+                .accessibilityLabel("Exercise options")
+        default:
+            Menu {
+                Button(role: .destructive) { removeExercise(ex) } label: {
+                    Label("Remove exercise", systemImage: "trash")
+                }
+            } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
+                .accessibilityIdentifier("freeform.entityMenu")
+                .accessibilityLabel("Exercise options")
+        }
+    }
+
+    /// The plan row: segments + the tappable "set N of M ✎" label → the plan editor.
+    private func planRow(_ ex: SessionExercise) -> some View {
+        let plan = QuickSessionPager.planState(for: ex)
+            ?? QuickSessionPager.PlanState(done: ex.completedSetCount, planned: nil)
+        return HStack(spacing: 8) {
+            if let planned = plan.planned, planned > 0 {
+                PlanSegmentsView(done: plan.done, planned: planned, accent: ex.discipline.accent)
+            }
+            Button { planEditing = PlanEditTarget(exerciseID: ex.id) } label: {
+                HStack(spacing: 3) {
+                    Text(plan.label(noun: QuickSessionPager.effortNoun(for: ex)))
+                    Image(systemName: "pencil").font(.system(size: 9))
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(plan.isComplete ? SnappetColor.perfFresh : SnappetColor.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("freeform.planEdit")
+            .accessibilityLabel("Edit planned \(QuickSessionPager.effortNoun(for: ex)) count")
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Discipline heroes
+
+    /// Route the page's hero by discipline; a running rest morphs any plannable hero into the rest
+    /// ring, and a met plan into the done-nudge.
+    @ViewBuilder
+    private func pageHero(_ ex: SessionExercise) -> some View {
+        switch ex.discipline {
+        case .strength: strengthHero(ex)
+        case .climb:    climbHero(ex)
+        case .run:      runHero(ex)
+        case .timed, .dance, .other: timedHero(ex)
+        }
+    }
+
+    @ViewBuilder
+    private func strengthHero(_ ex: SessionExercise) -> some View {
+        if restRunning, restExerciseID == ex.id {
+            restHero(ex)
+        } else if let plan = QuickSessionPager.planState(for: ex), plan.isComplete {
+            planCompleteNudge(ex, plan: plan)
+        } else {
+            let seed = quickAddSeed(for: ex)
+            let plan = QuickSessionPager.planState(for: ex)
+            StrengthHeroCard(
+                setLabel: heroSetLabel(done: ex.completedSetCount, planned: plan?.planned),
+                reps: seed.reps, weight: seed.weight, unit: seed.unit, hint: seed.hint,
+                onLog: { appendLog($0, toExerciseID: ex.id) },
+                onTime: { reps, weight, unitSel in
+                    timingSetFor = TimedSetTarget(exerciseID: ex.id, reps: reps,
+                                                  weight: weight, unit: unitSel)
+                },
+                onLogDifferent: {
+                    logging = LogTarget(exerciseID: ex.id, kind: .repsWeight, exerciseId: ex.exerciseId)
+                })
+                // Re-seed the steppers to the latest set after each log/delete (the QuickAddRow rule).
+                .id("hero-\(ex.id)-\(ex.sets.count)")
+            if let last = ex.sets.last {
+                repeatButton(ex, last: last, kind: .repsWeight)
+            }
+        }
+    }
+
+    private func climbHero(_ ex: SessionExercise) -> some View {
+        VStack(spacing: 12) {
+            pageGradePill(ex)
+            Text("ATTEMPT · #\(ex.sets.count + 1)")
+                .font(.system(size: 11, weight: .heavy)).tracking(1.4)
+                .foregroundStyle(SnappetColor.textSecondary)
+            OutcomeGridView(type: ex.climbType) { status in
+                logAttempt(toExerciseID: ex.id, status: status, durationSec: nil)
+            }
+            HStack(spacing: 8) {
+                pagerGhostButton("Timed attempt", symbol: "stopwatch") {
+                    timingAttemptFor = TimedAttemptTarget(exerciseID: ex.id, type: ex.climbType)
+                }
+                .accessibilityIdentifier("freeform.timedAttempt")
+                if let last = ex.sets.last {
+                    pagerGhostButton("Repeat last", symbol: "arrow.clockwise") {
+                        appendLog(SetMeasure.duplicate(last), toExerciseID: ex.id)
+                    }
+                    .accessibilityIdentifier("freeform.repeatSet")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func timedHero(_ ex: SessionExercise) -> some View {
+        if restRunning, restExerciseID == ex.id {
+            restHero(ex)
+        } else if let plan = QuickSessionPager.planState(for: ex), plan.isComplete {
+            planCompleteNudge(ex, plan: plan)
+        } else {
+            let structured = ex.timedSpec?.mode.isStructured == true
+            VStack(spacing: 12) {
+                if let spec = ex.timedSpec {
+                    HStack(spacing: 6) {
+                        Image(systemName: "timer").font(.caption)
+                        Text(spec.summary).font(.caption.weight(.bold))
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .pagerGlass(cornerRadius: 999)
+                }
+                Text(heroSetLabel(done: ex.completedSetCount,
+                                  planned: QuickSessionPager.planState(for: ex)?.planned,
+                                  noun: QuickSessionPager.effortNoun(for: ex)))
+                    .font(.system(size: 11, weight: .heavy)).tracking(1.4)
+                    .textCase(.uppercase)
+                    .foregroundStyle(SnappetColor.textSecondary)
+                Button {
+                    // Structured specs run the full-cover interval runner; the simple modes keep the
+                    // stopwatch/manual LogSetSheet — same routing as the old timed card's Add set.
+                    if let spec = ex.timedSpec, spec.mode.isStructured {
+                        runningInterval = IntervalRunTarget(
+                            exerciseID: ex.id, spec: spec,
+                            name: resolver.name(for: ex.exerciseId, override: ex.displayName))
+                    } else {
+                        logging = LogTarget(exerciseID: ex.id, kind: .duration,
+                                            exerciseId: ex.exerciseId, timedSpec: ex.timedSpec)
+                    }
+                } label: {
+                    Label(structured ? "Start intervals" : "Add set",
+                          systemImage: structured ? "play.fill" : "plus.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.brand)
+                .accessibilityIdentifier("freeform.addSet")
+                if let last = ex.sets.last {
+                    repeatButton(ex, last: last, kind: .duration)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func runHero(_ ex: SessionExercise) -> some View {
+        if restRunning, restExerciseID == ex.id {
+            restHero(ex)
+        } else if let plan = QuickSessionPager.planState(for: ex), plan.isComplete {
+            planCompleteNudge(ex, plan: plan)
+        } else {
+            VStack(spacing: 12) {
+                Text(heroSetLabel(done: ex.completedSetCount,
+                                  planned: QuickSessionPager.planState(for: ex)?.planned,
+                                  noun: "leg"))
+                    .font(.system(size: 11, weight: .heavy)).tracking(1.4)
+                    .textCase(.uppercase)
+                    .foregroundStyle(SnappetColor.textSecondary)
+                HStack(spacing: 10) {
+                    runStat("Distance",
+                            RunStats.totalDistanceMeters(ex) > 0
+                                ? SetMeasure.formatDistance(RunStats.totalDistanceMeters(ex), unit: distanceUnit)
+                                : "—")
+                    runStat("Pace",
+                            RunStats.avgPaceSecPerKm(ex).map {
+                                SetMeasure.formatPace(secPerKm: $0, unit: distanceUnit)
+                            } ?? "—")
+                }
+                Button { loggingRunLeg = RunLegTarget(exerciseID: ex.id) } label: {
+                    Label("Log leg \(ex.sets.count + 1)", systemImage: "plus.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.brand)
+                .accessibilityIdentifier("freeform.logLeg")
+            }
+        }
+    }
+
+    private func runStat(_ caption: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(caption.uppercased())
+                .font(.system(size: 10, weight: .heavy)).tracking(1.2)
+                .foregroundStyle(SnappetColor.textSecondary)
+            Text(value)
+                .font(.system(size: 26, weight: .bold, design: .rounded)).monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .pagerGlass(cornerRadius: 18)
+    }
+
+    /// "SET 3" / "SET 3 OF 5" — the hero's current-effort label.
+    private func heroSetLabel(done: Int, planned: Int?, noun: String = "set") -> String {
+        if let planned, planned > 0 { return "\(noun) \(min(done + 1, planned)) of \(planned)" }
+        return "\(noun) \(done + 1)"
+    }
+
+    /// The plan-met state: summary card + advance CTA (+1 extra set bumps the plan back open).
+    private func planCompleteNudge(_ ex: SessionExercise,
+                                   plan: QuickSessionPager.PlanState) -> some View {
+        let nextID = QuickSessionPager.nextIncomplete(after: ex.id, in: session.exercises)
+        let nextName = nextID
+            .flatMap { nid in session.exercises.first { $0.id == nid } }
+            .map { resolver.name(for: $0.exerciseId, override: $0.displayName) }
+        return PlanCompleteNudge(
+            headline: "Plan complete — \(plan.planned ?? plan.done) \(QuickSessionPager.effortNoun(for: ex))s",
+            sublabel: heroSummaryLine(ex),
+            nextTitle: nextName.map { "Next: \($0) →" } ?? "Finish workout",
+            onNext: {
+                if let nextID { withAnimation { page = .exercise(nextID) } } else { finishTapped() }
+            },
+            onExtraSet: { setPlan(ex.id, (ex.plannedSets ?? plan.done) + 1) })
+    }
+
+    /// The nudge's one-line best ("Best: 8 × 65 kg" / total hold / total distance).
+    private func heroSummaryLine(_ ex: SessionExercise) -> String? {
+        switch ex.discipline {
+        case .strength:
+            return StrengthStats.topSet(ex).map {
+                "Best: \(SetMeasure.summary($0, kind: .repsWeight, unit: unit))"
+            }
+        case .run:
+            let meters = RunStats.totalDistanceMeters(ex)
+            return meters > 0 ? "Total: \(SetMeasure.formatDistance(meters, unit: distanceUnit))" : nil
+        default:
+            return timedHoldTotal(ex).map { "Total hold: \($0)" }
+        }
+    }
+
+    private func restHero(_ ex: SessionExercise) -> some View {
+        let seed = quickAddSeed(for: ex)
+        let nextUp: String? = ex.kind == .repsWeight
+            ? "Up next: \(seed.reps) × \(seed.weight > 0 ? "\(SetMeasure.formatWeight(seed.weight)) \(seed.unit.display)" : "body") prefilled"
+            : nil
+        return RestHeroView(
+            remaining: restTimer.reading.remaining ?? 0,
+            total: restTotalSec,
+            done: restTimer.reading.reachedZero,
+            nextUpText: nextUp,
+            onMinus: { adjustRest(by: -RestTimerDefaults.stepSeconds) },
+            onPlus: { adjustRest(by: RestTimerDefaults.stepSeconds) },
+            onSkip: { dismissRest() })
+    }
+
+    /// The big grade pill on the climb page (the caption-sized `freeform.gradePill` grown to hero).
+    private func pageGradePill(_ ex: SessionExercise) -> some View {
+        Text(ex.climbGradeLabel ?? "—")
+            .font(.system(size: 28, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18).padding(.vertical, 8)
+            .background(!ex.climbType.isRoute ? SnappetColor.kilter : SnappetColor.budget,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityIdentifier("freeform.gradePill")
+    }
+
+    private func repeatButton(_ ex: SessionExercise, last: SetLog, kind: SetKind) -> some View {
+        pagerGhostButton(FreeformSummary.repeatLabel(for: last, kind: kind, unit: unit),
+                         symbol: "arrow.clockwise") {
+            repeatLastSet(ex)
+        }
+        .accessibilityIdentifier("freeform.repeatSet")
+    }
+
+    private func pagerGhostButton(_ title: String, symbol: String,
+                                  action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 42)
+        }
+        .buttonStyle(.plain)
+        .pagerGlass(cornerRadius: 14)
+    }
+
+    // MARK: - Ghost ledger + drawer rows
+
+    private func ghostLedger(_ ex: SessionExercise) -> some View {
+        let noun = QuickSessionPager.effortNoun(for: ex)
+        return GhostLedgerView(
+            title: "Previous \(noun)s",
+            items: ex.sets.enumerated().map { i, set in
+                .init(id: i, text: ledgerText(set, ex: ex), done: set.completedAt != nil)
+            },
+            onHistory: { historyFor = HistoryTarget(exerciseID: ex.id) })
+    }
+
+    /// One set's compact ledger text, per discipline (the row formats the old cards used).
+    private func ledgerText(_ set: SetLog, ex: SessionExercise) -> String {
+        switch ex.discipline {
+        case .climb:    return SetMeasure.attemptRow(set, type: ex.climbType)
+        case .run:      return SetMeasure.runSummary(set, unit: distanceUnit)
+        case .strength: return SetMeasure.summary(set, kind: .repsWeight, unit: unit)
+        default:        return SetMeasure.summary(set, kind: .duration, unit: unit)
+        }
+    }
+
+    private func drawerRows(_ ex: SessionExercise) -> [HistoryDrawerView.Row] {
+        let previous = QuickSessionPager.lastSessionSets(
+            exerciseId: ex.exerciseId, displayName: ex.displayName, history: history) ?? []
+        let deltas = QuickSessionPager.deltas(current: ex.sets, previous: previous, kind: ex.kind)
+        return ex.sets.enumerated().map { i, set in
+            .init(id: i, summary: ledgerText(set, ex: ex), delta: deltas[i])
+        }
+    }
+
+    // MARK: - Live stats ribbon (Phase 3 — content re-homed onto the overview page)
 
     /// The dominant non-climbing discipline's aggregate line, or `nil` when nothing's logged yet.
     private var disciplineRibbon: (icon: String, accent: Color, text: String)? {
@@ -517,45 +1254,6 @@ struct FreeformPlayerView: View {
         }
     }
 
-    /// Discoverable empty-state canvas (§A): three labelled type cards instead of a buried menu. They
-    /// call the same mutators as the `freeform.addExercise` menu items; their accessibility labels are
-    /// distinct from the menu-item labels so XCUITest queries stay unambiguous.
-    private var emptyStateHero: some View {
-        Section {
-            VStack(spacing: 12) {
-                Text("Start your session").font(.headline)
-                Text("Pick what you're tracking — add more as you go.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                // The six-discipline chooser (Workout-Type Parity Phase 5): a 2-column grid so every type
-                // reads at a glance. Existing card ids are preserved for the UITests; new disciplines add
-                // their own. Each card calls the same mutator as its add-menu item.
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    typeCard("Lifting", symbol: WorkoutDiscipline.strength.symbol,
-                             id: "freeform.cardLifting", accLabel: "Start lifting") { pickingLift = true }
-                    typeCard("Climbing", symbol: WorkoutDiscipline.climb.symbol,
-                             id: "freeform.cardClimbing", accLabel: "Start climbing") {
-                        rebuildPreviousClimbs()   // fresh previews/counts on open (media added mid-session)
-                        addingClimb = true
-                    }
-                    typeCard("Running", symbol: WorkoutDiscipline.run.symbol,
-                             id: "freeform.cardRunning", accLabel: "Start a run") { addRun() }
-                    typeCard("Timed", symbol: WorkoutDiscipline.timed.symbol,
-                             id: "freeform.cardTimed", accLabel: "Start a timed exercise") {
-                        addingTimed = true
-                    }
-                    typeCard("Dance", symbol: WorkoutDiscipline.dance.symbol,
-                             id: "freeform.cardDance", accLabel: "Start a dance session") { addOpenEffort(.dance) }
-                    typeCard("Other", symbol: WorkoutDiscipline.other.symbol,
-                             id: "freeform.cardOther", accLabel: "Start another activity") { addOpenEffort(.other) }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .listRowBackground(Color.clear)
-        }
-    }
-
     /// Seed values for an exercise's inline quick-add (§B). The weight AND its unit come from the SAME
     /// source (this session's last set, else the cross-session prefill, else bodyweight) so the pair
     /// never crosses — e.g. a prefill weight recorded in lb is never shown beside this session's kg.
@@ -577,459 +1275,10 @@ struct FreeformPlayerView: View {
         return (reps, 0, last?.weightUnit ?? pf?.unit ?? ex.targetWeightUnit ?? unit, hint)
     }
 
-    private func typeCard(_ title: String, symbol: String, id: String,
-                          accLabel: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: symbol).font(.title2).foregroundStyle(SnappetColor.workout)
-                Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 14)
-            .snappetTile()
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
-        .accessibilityLabel(accLabel)
-    }
-
-    @ViewBuilder
-    private func exerciseSection(_ ex: SessionExercise) -> some View {
-        // Route by DISCIPLINE (Workout-Type Parity): each discipline renders its own expandable entity
-        // card. Legacy entities derive their discipline from `kind` (repsWeight→strength, duration→timed,
-        // climbAttempt→climb), so this stays back-compatible. Dance/Other fall back to the timed card until
-        // they get their own light card (Phase 5).
-        switch ex.discipline {
-        case .climb:    climbSection(ex)
-        case .strength: strengthSection(ex)
-        case .run:      runSection(ex)
-        case .timed, .dance, .other: timedSection(ex)
-        }
-    }
-
-    // MARK: - Timed card (Quick Session redesign Phase 5)
-
-    /// A named timed exercise renders like a climb card: a header (timer icon · name · the spec's
-    /// structure summary · "N sets" · total hold time) with its timed sets underneath; "Add set" runs the
-    /// timer (the simple `StopwatchView` Timer path — the structured repeaters/tabata/emom runner is
-    /// Phase 6, armed to count down for max-hang / count-down targets), and a one-tap Repeat.
-    private func timedSection(_ ex: SessionExercise) -> some View {
-        Section {
-            ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                HStack {
-                    Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .frame(width: 20, alignment: .leading)
-                    Text(SetMeasure.summary(set, kind: .duration, unit: unit))
-                        .font(.body.weight(.medium))
-                    Spacer()
-                }
-                .accessibilityIdentifier("freeform.setRow")
-            }
-            .onDelete { offsets in deleteSets(ex, at: offsets) }
-
-            Button {
-                // Quick Session redesign Phase 6: a structured spec (repeaters/tabata/emom) runs the
-                // full-cover interval runner; the simple modes keep the Phase-5 `LogSetSheet` stopwatch.
-                if let spec = ex.timedSpec, spec.mode.isStructured {
-                    runningInterval = IntervalRunTarget(exerciseID: ex.id, spec: spec,
-                                                        name: resolver.name(for: ex.exerciseId, override: ex.displayName))
-                } else {
-                    logging = LogTarget(exerciseID: ex.id, kind: .duration, exerciseId: ex.exerciseId,
-                                        timedSpec: ex.timedSpec)
-                }
-            } label: {
-                Label("Add set", systemImage: "plus.circle.fill")
-            }
-            .accessibilityIdentifier("freeform.addSet")
-
-            // One-tap repeat of the most recent timed hold (re-logs its duration), via the shared funnel.
-            if let last = ex.sets.last {
-                Button {
-                    repeatLastSet(ex)
-                } label: {
-                    Label(FreeformSummary.repeatLabel(for: last, kind: .duration, unit: unit),
-                          systemImage: "arrow.clockwise")
-                }
-                .accessibilityIdentifier("freeform.repeatSet")
-            }
-
-            if let lastIndex = ex.sets.indices.last {
-                SetMediaStrip(session: session, exerciseID: ex.id, setIndex: lastIndex,
-                              onEdit: { presentStudio($0) })
-                    .id("set-media-\(ex.id)-\(lastIndex)")
-            }
-        } header: {
-            timedHeader(ex)
-        }
-    }
-
-    /// The timed card header: timer icon · name · the spec's structure summary · "N sets" · total hold time.
-    private func timedHeader(_ ex: SessionExercise) -> some View {
-        let spec = ex.timedSpec
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
-                Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
-                    .accessibilityIdentifier("freeform.timedName")
-                Spacer()
-                Menu {
-                    Button(role: .destructive) { removeExercise(ex) } label: {
-                        Label("Remove exercise", systemImage: "trash")
-                    }
-                } label: { Image(systemName: "ellipsis.circle") }
-            }
-            HStack(spacing: 6) {
-                if let spec { Text(spec.summary) }
-                Text("· \(ex.sets.count) \(ex.sets.count == 1 ? "set" : "sets")")
-                if let hold = timedHoldTotal(ex) { Text("· \(hold)") }
-            }
-            .font(.caption).foregroundStyle(.secondary)
-        }
-        .textCase(nil)
-    }
-
     /// Total logged hold time across this timed exercise's sets — the timed analogue of time-on-climb.
     private func timedHoldTotal(_ ex: SessionExercise) -> String? {
         let total = ex.sets.compactMap { $0.durationSec }.reduce(0, +)
         return total > 0 ? SetMeasure.formatDuration(total) : nil
-    }
-
-    // MARK: - Strength card (Workout-Type Parity Phase 2)
-
-    /// A strength exercise renders as an **expandable card** mirroring the climb card: a rolled-up header
-    /// (discipline icon · tap-to-expand name · chevron · ⋯) with rolled-up chips (top set · N sets · e1RM)
-    /// that toggles open to the set list + the keyboard-free quick-add + footer. A newly-added exercise
-    /// auto-expands (`addLifting`) so quick-add is immediately reachable. Each set carries its own media
-    /// strip (per-set clips, like the climb card's per-attempt strip).
-    @ViewBuilder
-    private func strengthSection(_ ex: SessionExercise) -> some View {
-        let expanded = expandedEntities.contains(ex.id)
-        Section {
-            strengthHeader(ex, expanded: expanded)
-
-            if expanded {
-                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                    HStack {
-                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            .frame(width: 20, alignment: .leading)
-                        Text(SetMeasure.summary(set, kind: .repsWeight, unit: unit))
-                            .font(.body.weight(.medium))
-                        Spacer()
-                    }
-                    .accessibilityIdentifier("freeform.setRow")
-                    // Per-set media (parity): a clip filmed during / attached to THIS set shows under it,
-                    // keyed by exercise+set so its @Query re-scopes. The climb card already does this per
-                    // attempt; strength now gets the strip on EVERY set, not just the last.
-                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
-                                  onEdit: { presentStudio($0) },
-                                  moveTargets: clipMoveTargets(for: ex), moveTargetsLabel: "Move to set…",
-                                  onReassign: { reassignClip($0, to: $1, set: $2) },
-                                  onRequestDelete: { pendingClipDeletion = $0 })
-                        .id("strength-media-\(ex.id)-\(i)")
-                }
-                .onDelete { offsets in deleteSets(ex, at: offsets) }
-
-                // Faster entry (§B): keyboard-free inline steppers seeded from this session's last set or
-                // the cross-session prefill, logging through the one `appendLog` funnel. `.id(ex.sets.count)`
-                // re-seeds to the latest after each log/delete. The sheet ("Log something different") stays
-                // for precise / non-default entry.
-                let seed = quickAddSeed(for: ex)
-                QuickAddRow(reps: seed.reps, weight: seed.weight, unitSel: seed.unit, hint: seed.hint) { log in
-                    appendLog(log, toExerciseID: ex.id)
-                }
-                .id(ex.sets.count)
-
-                Button {
-                    logging = LogTarget(exerciseID: ex.id, kind: .repsWeight, exerciseId: ex.exerciseId)
-                } label: {
-                    Label("Log something different", systemImage: "plus.circle.fill")
-                }
-                .accessibilityIdentifier("freeform.addSet")
-
-                // Timing is an orthogonal axis (Workout-Type Parity Phase 3): "Time this set" opens the
-                // count-up FOCUS cover and logs a set carrying reps × weight AND the measured duration.
-                Button {
-                    let seed = quickAddSeed(for: ex)
-                    timingSetFor = TimedSetTarget(exerciseID: ex.id, reps: seed.reps,
-                                                  weight: seed.weight, unit: seed.unit)
-                } label: {
-                    Label("Time this set", systemImage: "stopwatch")
-                }
-                .accessibilityIdentifier("freeform.timeThisSet")
-
-                // One-tap repeat of the most recent set — duplicates it (fresh completedAt) without opening
-                // the sheet. Value-labelled via the pure FreeformSummary so it reads like the set it
-                // duplicates ("Repeat 8 × 60 kg"). Matched by id in tests.
-                if let last = ex.sets.last {
-                    Button {
-                        repeatLastSet(ex)
-                    } label: {
-                        Label(FreeformSummary.repeatLabel(for: last, kind: .repsWeight, unit: unit),
-                              systemImage: "arrow.clockwise")
-                    }
-                    .accessibilityIdentifier("freeform.repeatSet")
-                }
-            }
-        } header: {
-            EmptyView()
-        }
-    }
-
-    /// The rolled-up strength header: discipline icon · tap-to-expand name (`freeform.entityName`) ·
-    /// chevron (`freeform.expand`) · ⋯ menu (`freeform.entityMenu`), plus a rolled-up chip line
-    /// (top set · N sets · e1RM) — the strength analogue of the climb header.
-    private func strengthHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
-                Button { toggleExpanded(ex) } label: {
-                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
-                        .font(.headline).foregroundStyle(.primary).lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.entityName")
-                Spacer(minLength: 4)
-                Button { toggleExpanded(ex) } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.expand")
-                .accessibilityLabel(expanded ? "Collapse exercise" : "Expand exercise")
-                Menu {
-                    Button {
-                        let pf = prefills[ex.exerciseId]
-                        editingStrength = EditStrengthTarget(
-                            exerciseID: ex.id,
-                            catalogName: resolver.name(for: ex.exerciseId),
-                            initial: AddStrengthParams(from: ex),
-                            lastReps: pf?.reps, lastWeight: pf?.weight, lastUnit: pf?.unit)
-                    } label: {
-                        Label("Edit details", systemImage: "pencil")
-                    }
-                    .accessibilityIdentifier("freeform.editEntity")
-                    Button(role: .destructive) { removeExercise(ex) } label: {
-                        Label("Remove exercise", systemImage: "trash")
-                    }
-                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
-                    .accessibilityIdentifier("freeform.entityMenu")
-                    .accessibilityLabel("Exercise options")
-            }
-            strengthRollup(ex)
-        }
-        .textCase(nil)
-        .padding(.vertical, 2)
-    }
-
-    /// The rolled-up chips for a collapsed strength card — top set · set count · e1RM. Hidden until a set
-    /// is logged (a fresh card auto-expands to its quick-add, so an empty collapsed header is transient).
-    @ViewBuilder
-    private func strengthRollup(_ ex: SessionExercise) -> some View {
-        if let top = StrengthStats.topSet(ex) {
-            HStack(spacing: 6) {
-                EntityRollupChip("top \(SetMeasure.summary(top, kind: .repsWeight, unit: unit))",
-                                 tint: ex.discipline.accent)
-                EntityRollupChip("\(ex.sets.count) \(ex.sets.count == 1 ? "set" : "sets")")
-                if let orm = StrengthStats.estimatedOneRepMax(ex) {
-                    EntityRollupChip("e1RM \(SetMeasure.formatWeight(orm.value.rounded())) \(orm.unit.display)",
-                                     tint: ex.discipline.accent, systemImage: "trophy.fill")
-                }
-            }
-        }
-    }
-
-    // MARK: - Run card (Workout-Type Parity Phase 4)
-
-    /// A running exercise renders as an **expandable card** like the others: a rolled-up header (icon ·
-    /// tap-to-expand name · chevron · ⋯) with rolled-up chips (total distance · avg pace · N legs) that
-    /// expands to the leg list (distance · time · derived pace per leg) + per-leg media + "Log a leg".
-    @ViewBuilder
-    private func runSection(_ ex: SessionExercise) -> some View {
-        let expanded = expandedEntities.contains(ex.id)
-        Section {
-            runHeader(ex, expanded: expanded)
-
-            if expanded {
-                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                    HStack {
-                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            .frame(width: 20, alignment: .leading)
-                        Text(SetMeasure.runSummary(set, unit: distanceUnit))
-                            .font(.body.weight(.medium))
-                        Spacer()
-                    }
-                    .accessibilityIdentifier("freeform.setRow")
-                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
-                                  onEdit: { presentStudio($0) },
-                                  moveTargets: clipMoveTargets(for: ex), moveTargetsLabel: "Move to leg…",
-                                  onReassign: { reassignClip($0, to: $1, set: $2) },
-                                  onRequestDelete: { pendingClipDeletion = $0 })
-                        .id("run-media-\(ex.id)-\(i)")
-                }
-                .onDelete { offsets in deleteSets(ex, at: offsets) }
-
-                Button {
-                    loggingRunLeg = RunLegTarget(exerciseID: ex.id)
-                } label: {
-                    Label("Log a leg", systemImage: "plus.circle.fill")
-                }
-                .accessibilityIdentifier("freeform.logLeg")
-            }
-        } header: {
-            EmptyView()
-        }
-    }
-
-    private func runHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: ex.discipline.symbol).foregroundStyle(ex.discipline.accent)
-                Button { toggleExpanded(ex) } label: {
-                    Text(resolver.name(for: ex.exerciseId, override: ex.displayName))
-                        .font(.headline).foregroundStyle(.primary).lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.entityName")
-                Spacer(minLength: 4)
-                Button { toggleExpanded(ex) } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.expand")
-                .accessibilityLabel(expanded ? "Collapse run" : "Expand run")
-                Menu {
-                    Button(role: .destructive) { removeExercise(ex) } label: {
-                        Label("Remove run", systemImage: "trash")
-                    }
-                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
-                    .accessibilityIdentifier("freeform.entityMenu")
-                    .accessibilityLabel("Run options")
-            }
-            runRollup(ex)
-        }
-        .textCase(nil)
-        .padding(.vertical, 2)
-    }
-
-    /// The rolled-up chips for a collapsed run card — total distance · avg pace · N legs. Hidden until a
-    /// leg is logged.
-    @ViewBuilder
-    private func runRollup(_ ex: SessionExercise) -> some View {
-        let meters = RunStats.totalDistanceMeters(ex)
-        if meters > 0 {
-            HStack(spacing: 6) {
-                EntityRollupChip(SetMeasure.formatDistance(meters, unit: distanceUnit),
-                                 tint: ex.discipline.accent)
-                if let pace = RunStats.avgPaceSecPerKm(ex) {
-                    EntityRollupChip(SetMeasure.formatPace(secPerKm: pace, unit: distanceUnit),
-                                     tint: ex.discipline.accent)
-                }
-                EntityRollupChip("\(ex.sets.count) \(ex.sets.count == 1 ? "leg" : "legs")")
-            }
-        }
-    }
-
-    // MARK: - Climb card (Quick Session redesign Phase 1)
-
-    /// A climb renders as an **expandable card**: a rolled-up header (type icon · inline-editable name ·
-    /// grade pill · status badge · "N attempts" · time-on-climb) that toggles open to the attempt list +
-    /// a footer ("+ Log attempt" → inline outcome strip · "Timed attempt" · one-tap "Repeat last").
-    /// Attempts are stamped with the climb's grade so the pure send/pyramid/milestone reads stay
-    /// per-`SetLog`; the per-attempt row (`SetMeasure.attemptRow`) shows only the outcome + duration.
-    @ViewBuilder
-    private func climbSection(_ ex: SessionExercise) -> some View {
-        let expanded = expandedEntities.contains(ex.id)
-        Section {
-            climbHeader(ex, expanded: expanded)
-
-            if expanded {
-                ForEach(Array(ex.sets.enumerated()), id: \.offset) { i, set in
-                    HStack {
-                        Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            .frame(width: 20, alignment: .leading)
-                        Text(SetMeasure.attemptRow(set, type: ex.climbType))
-                            .font(.body.weight(.medium))
-                        Spacer()
-                    }
-                    .accessibilityIdentifier("freeform.setRow")
-                    // Per-attempt media (prompt 09): a clip filmed during / attached to THIS attempt shows
-                    // under it; a video tap opens the Studio editor. Auto-assignment already tags
-                    // `.climbAttempt` sets (`SessionMediaAssignment.completions`), so this is a pure UI add.
-                    // Keyed by exercise+attempt so its @Query re-scopes per attempt. Device-only for the
-                    // PHPicker/Photos pick; the affordance renders everywhere.
-                    // Deep-tap clip lifecycle (prompt 11): the move-targets are this climb's attempts, and
-                    // the reassign/delete closures pin `.manual`/`.general` (sticky) or host the Photos-aware
-                    // delete confirmation.
-                    SetMediaStrip(session: session, exerciseID: ex.id, setIndex: i,
-                                  onEdit: { presentStudio($0) },
-                                  moveTargets: clipMoveTargets(for: ex),
-                                  onReassign: { reassignClip($0, to: $1, set: $2) },
-                                  onRequestDelete: { pendingClipDeletion = $0 })
-                        .id("climb-media-\(ex.id)-\(i)")
-                }
-                .onDelete { offsets in deleteSets(ex, at: offsets) }
-
-                climbFooter(ex)
-            }
-        } header: {
-            EmptyView()
-        }
-    }
-
-    /// The rolled-up climb header: type icon · name LABEL (`freeform.climbName`) · grade pill · status
-    /// badge · "N attempts" · time-on-climb. The name + chevron together are the expand/collapse
-    /// affordance (prompt 10 — tapping the name no longer inline-edits it; editing the name is now solely
-    /// via the ⋯ menu → "Edit details"). The remove/edit menu stays an individually tappable leaf.
-    private func climbHeader(_ ex: SessionExercise, expanded: Bool) -> some View {
-        let name = ex.displayName ?? SetMeasure.climbName("")
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: ex.climbType.symbol).foregroundStyle(SnappetColor.workout)
-                // Name + chevron = the expand/collapse affordance (prompt 10). The name is a plain,
-                // non-editing label (still `freeform.climbName`, now a label not a field) so it stays
-                // queryable; tapping it (or the chevron) toggles the card.
-                Button {
-                    toggleExpanded(ex)
-                } label: {
-                    Text(name)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                // The id lives on the tappable label so it stays queryable (`freeform.climbName`); it's
-                // now a tap-to-expand control whose `.label` is the climb name, not a text field (prompt 10).
-                .accessibilityIdentifier("freeform.climbName")
-                Spacer(minLength: 4)
-                colorSwatch(ex)
-                gradePill(ex)
-                Button {
-                    toggleExpanded(ex)
-                } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.climbExpand")
-                .accessibilityLabel(expanded ? "Collapse climb" : "Expand climb")
-                Menu {
-                    climbMenuContent(ex)
-                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
-                    .accessibilityIdentifier("freeform.climbMenu")
-                    .accessibilityLabel("Climb options")
-            }
-            climbLocationLine(ex)
-            HStack(spacing: 8) {
-                statusBadge(ex)
-                Text(attemptCountLabel(ex))
-                    .font(.caption).foregroundStyle(.secondary)
-                if let time = climbTimeOnWall(ex) {
-                    Text("· \(time)").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .textCase(nil)
-        .padding(.vertical, 2)
     }
 
     /// The climb header ⋯ menu items (extracted to keep `climbHeader`'s opaque-result type-check fast):
@@ -1087,71 +1336,6 @@ struct FreeformPlayerView: View {
         }
     }
 
-    /// The footer of an expanded climb card: "+ Log attempt" → an inline outcome strip (four type-aware
-    /// buttons, NO grade prompt), a "Timed attempt" button, and a one-tap "Repeat last".
-    @ViewBuilder
-    private func climbFooter(_ ex: SessionExercise) -> some View {
-        if loggingAttemptFor.contains(ex.id) {
-            // The inline outcome strip — four type-aware outcome buttons. Each appends an attempt stamped
-            // with the climb's grade (no per-attempt grade entry); a leaf button per outcome.
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Outcome").font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    ForEach(KilterAscentStatus.allCases, id: \.self) { status in
-                        Button {
-                            logAttempt(toExerciseID: ex.id, status: status, durationSec: nil)
-                            loggingAttemptFor.remove(ex.id)
-                        } label: {
-                            Text(ex.climbType.statusLabel(status))
-                                .font(.caption.weight(.medium))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(SnappetColor.surfaceMuted, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("freeform.outcome.\(status.rawValue)")
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        } else {
-            Button {
-                loggingAttemptFor.insert(ex.id)
-            } label: {
-                Label("Log attempt", systemImage: "plus.circle.fill")
-            }
-            .accessibilityIdentifier("freeform.logAttempt")
-        }
-
-        Button {
-            timingAttemptFor = TimedAttemptTarget(exerciseID: ex.id, type: ex.climbType)
-        } label: {
-            Label("Timed attempt", systemImage: "stopwatch")
-        }
-        .accessibilityIdentifier("freeform.timedAttempt")
-
-        // One-tap repeat of the most recent attempt (re-logs its outcome + duration, stamped grade).
-        if let last = ex.sets.last {
-            Button {
-                appendLog(SetMeasure.duplicate(last), toExerciseID: ex.id)
-            } label: {
-                Label("Repeat \(SetMeasure.attemptRow(last, type: ex.climbType))",
-                      systemImage: "arrow.clockwise")
-            }
-            .accessibilityIdentifier("freeform.repeatSet")
-        }
-    }
-
-    /// The grade pill: the climb's grade label on a `SnappetColor.kilter` (boulder) / cool (route) capsule.
-    private func gradePill(_ ex: SessionExercise) -> some View {
-        let isBoulder = !ex.climbType.isRoute
-        return Text(ex.climbGradeLabel ?? "—")
-            .font(.caption.weight(.bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(isBoulder ? SnappetColor.kilter : SnappetColor.budget, in: Capsule())
-            .accessibilityIdentifier("freeform.gradePill")
-    }
 
     /// The rolled-up status badge from the climb's resolved (best) outcome, type-relabelled. Hidden
     /// until an attempt is logged.
@@ -1187,125 +1371,6 @@ struct FreeformPlayerView: View {
         let stamps = ex.sets.compactMap(\.completedAt).sorted()
         guard let first = stamps.first, let last = stamps.last, last > first else { return nil }
         return SetMeasure.formatDuration(last.timeIntervalSince(first))
-    }
-
-    /// The persistent bottom command bar (§A): wall-clock total timer · compact live-HR chip · the
-    /// always-available Finish. The timer/HR are non-interactive labels (a labelled composite is fine —
-    /// the leaf-only rule is about interactive controls); Finish keeps its `freeform.finish` id. A thin
-    /// rest-timer banner (Phase 7) floats ABOVE it (an overlay, not a stacked row) while a rest count-down
-    /// is active — so the bar's `safeAreaInset` height (which the List's bottom content-margin is sized
-    /// to) is unchanged when there's no rest, keeping the last set's controls hittable.
-    private var commandBar: some View {
-        commandBarRow
-            .background(.bar)
-            .overlay(alignment: .top) {
-                if restRunning {
-                    restBar.alignmentGuide(.top) { $0[.bottom] }   // sit just above the bar
-                }
-            }
-    }
-
-    /// The non-blocking rest count-down banner (Phase 7): a label · −/+ nudges (remembered per context) ·
-    /// a dismiss. Shown only while a rest is running; logging the next set is never gated by it. At zero
-    /// it reads "Rest done" (the at-zero haptic already fired in the view model).
-    private var restBar: some View {
-        let remaining = restTimer.reading.remaining ?? 0
-        let done = restTimer.reading.reachedZero
-        return HStack(spacing: 10) {
-            Image(systemName: "hourglass").foregroundStyle(SnappetColor.workout)
-            if done {
-                Text("Rest done").font(.subheadline.weight(.semibold)).foregroundStyle(SnappetColor.workout)
-            } else {
-                Text("Rest").font(.subheadline).foregroundStyle(.secondary)
-                Text(SetMeasure.formatDuration(remaining))
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .contentTransition(.numericText())
-                    .accessibilityIdentifier("freeform.restTimer")
-            }
-            Spacer(minLength: 8)
-            if !done {
-                Button { adjustRest(by: -RestTimerDefaults.stepSeconds) } label: {
-                    Image(systemName: "minus.circle.fill").font(.title3)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("freeform.restMinus")
-                .accessibilityLabel("Shorten rest")
-                Button { adjustRest(by: RestTimerDefaults.stepSeconds) } label: {
-                    Image(systemName: "plus.circle.fill").font(.title3)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("freeform.restPlus")
-                .accessibilityLabel("Lengthen rest")
-            }
-            Button { dismissRest() } label: {
-                Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("freeform.restDismiss")
-            .accessibilityLabel("Dismiss rest timer")
-        }
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .background(SnappetColor.workout.opacity(0.10))
-    }
-
-    private var commandBarRow: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: isPaused ? "pause.fill" : "stopwatch")
-                    .foregroundStyle(isPaused ? .yellow : SnappetColor.workout)
-                Text(timerInterval: session.startedAt...Date.distantFuture, countsDown: false)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-            }
-            .accessibilityIdentifier("overallWorkoutTimer")
-
-            Spacer(minLength: 8)
-
-            if let bpm = app.liveWorkout.latestHR {
-                let profile = app.userProfile.profile
-                let zone = HeartRateZone.forBpm(bpm, maxHR: profile.resolvedMaxHR ?? HeartRateZone.defaultMaxHR)
-                let recovery = RecoveryReadiness.evaluate(currentBpm: bpm, restBpm: profile.restingBound,
-                                                          maxBpm: profile.resolvedMaxHR)
-                Button { showingMetrics = true } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "heart.fill").foregroundStyle(zone.color)
-                        Text("\(Int(bpm.rounded()))")
-                            .font(.subheadline.weight(.semibold).monospacedDigit()).foregroundStyle(.primary)
-                        if zone != .none {
-                            Text("Z\(zone.rawValue)").font(.caption2.weight(.bold))
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(zone.color.opacity(0.18), in: Capsule())
-                                .foregroundStyle(zone.color)
-                        }
-                        if recovery.state != .unknown {
-                            Circle().fill(recovery.state == .ready ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("freeform.hrChip")
-            }
-
-            // Auto-rest opt-in (Phase 7): a glanceable toggle so the remembered count-down can be turned
-            // on/off without leaving the player. Dimmed when off; a filled hourglass when armed.
-            Button { restAutoStart.toggle(); Haptics.tap() } label: {
-                Image(systemName: restAutoStart ? "hourglass.circle.fill" : "hourglass.circle")
-                    .font(.title3)
-                    .foregroundStyle(restAutoStart ? SnappetColor.workout : .secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("freeform.restToggle")
-            .accessibilityLabel(restAutoStart ? "Auto rest timer on" : "Auto rest timer off")
-
-            Button { finishTapped() } label: {
-                Text("Finish").font(.headline)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.workout)
-            .accessibilityIdentifier("freeform.finish")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
     }
 
     // MARK: - Completion moment (§D)
@@ -1355,9 +1420,6 @@ struct FreeformPlayerView: View {
                 exerciseId: ex.id, targetSets: 0, targetReps: "", targetRestSeconds: 0,
                 sets: [], displayName: nil, kindRaw: SetKind.repsWeight.rawValue)
             session.exercises.append(entity)
-            // Auto-expand the new strength card so its quick-add is immediately reachable (parity with the
-            // climb card's auto-expand). The card is expandable from this phase on.
-            expandedEntities.insert(entity.id)
         }
         persist()
         pushLiveActivity()   // the new exercise becomes the current one → refresh the Lock Screen label
@@ -1372,7 +1434,6 @@ struct FreeformPlayerView: View {
             sets: [], displayName: "Run", kindRaw: SetKind.duration.rawValue)
         entity.disciplineRaw = WorkoutDiscipline.run.rawValue
         session.exercises.append(entity)
-        expandedEntities.insert(entity.id)
         persist()
         pushLiveActivity()
     }
@@ -1386,7 +1447,6 @@ struct FreeformPlayerView: View {
             sets: [], displayName: discipline.label, kindRaw: SetKind.duration.rawValue)
         entity.disciplineRaw = discipline.rawValue
         session.exercises.append(entity)
-        expandedEntities.insert(entity.id)
         persist()
         pushLiveActivity()
     }
@@ -1413,8 +1473,9 @@ struct FreeformPlayerView: View {
         climb.climbColorRaw = params.color?.rawValue
         climb.setter = params.setter
         session.exercises.append(climb)
-        expandedEntities.insert(climb.id)
-        if logFirstAttempt { loggingAttemptFor.insert(climb.id) }
+        // The pager auto-advances to the new climb's page, where the outcome grid is always
+        // visible — `logFirstAttempt` needs no extra state (prompt 109).
+        _ = logFirstAttempt
         // File the photos the user attached in the sheet as climb-level media now that the climb has an id.
         // The sheet can't mint the id, so it returned `localIdentifier`s; resolve kind/offset via the same
         // mapping the per-set strip uses, and pin `.manual` so the post-session auto-assigner leaves them put.
@@ -1546,12 +1607,13 @@ struct FreeformPlayerView: View {
                          climbGradeLabel: ex.climbGradeLabel,
                          climbStatusRaw: status.rawValue, climbAttempts: 1),
                   toExerciseID: id)
-        expandedEntities.insert(id)
     }
 
-    private func toggleExpanded(_ ex: SessionExercise) {
-        if expandedEntities.contains(ex.id) { expandedEntities.remove(ex.id) }
-        else { expandedEntities.insert(ex.id) }
+    /// Set / clear an exercise's per-session planned count (prompt 109). Values ≤ 0 clear the plan.
+    private func setPlan(_ exID: UUID, _ planned: Int?) {
+        guard let idx = session.exercises.firstIndex(where: { $0.id == exID }) else { return }
+        session.exercises[idx].plannedSets = planned.flatMap { $0 > 0 ? $0 : nil }
+        persist()
     }
 
     private func removeExercise(_ ex: SessionExercise) {
@@ -1601,6 +1663,8 @@ struct FreeformPlayerView: View {
         let ctx = restContext(for: ex)
         let seconds = RestTimerDefaults.remembered(for: ctx, in: restDefaults)
         restContext = ctx
+        restExerciseID = ex.id      // the page whose hero morphs into the rest ring (prompt 109)
+        restTotalSec = TimeInterval(seconds)
         restTimer.reset()
         restTimer.arm(target: TimeInterval(seconds))
         restTimer.start()
@@ -1613,6 +1677,7 @@ struct FreeformPlayerView: View {
         guard let ctx = restContext else { return }
         let remaining = restTimer.reading.remaining ?? 0
         let next = RestTimerDefaults.clamp(Int(remaining.rounded()) + delta)
+        restTotalSec = TimeInterval(next)
         restTimer.reset()
         restTimer.arm(target: TimeInterval(next))
         restTimer.start()
@@ -1628,6 +1693,7 @@ struct FreeformPlayerView: View {
         restTimer.reset()
         restRunning = false
         restContext = nil
+        restExerciseID = nil
     }
 
     /// Recompute milestones against prior history and celebrate each one not yet celebrated this
@@ -2016,72 +2082,22 @@ private struct RunLegTarget: Identifiable {
     let exerciseID: UUID
 }
 
-/// Keyboard-free inline quick-add for reps & weight (§B): `[−] value [+]` steppers + a one-tap Log that
-/// funnels through `appendLog`. Custom leaf `+`/`−` buttons (not a native `Stepper`) so each control has
-/// its own queryable accessibilityIdentifier (`freeform.quickReps.plus`, …) and the value text carries
-/// the base id — the leaf-only a11y rule. Its own `@State` (re-seeded by the parent's `.id(ex.sets.count)`)
-/// so adjusting once and tapping Log repeatedly logs a quick loop without the keyboard. The Log button
-/// label stays plain ("Log set") so it never collides with a set row's value text in tests.
-private struct QuickAddRow: View {
-    let onLog: (SetLog) -> Void
-    let hint: String?
-    @State private var reps: Int
-    @State private var weight: Double
-    @State private var unitSel: WeightUnit
+/// The exercise a plan-editor sheet is open for (prompt 109).
+private struct PlanEditTarget: Identifiable {
+    let exerciseID: UUID
+    var id: UUID { exerciseID }
+}
 
-    init(reps: Int, weight: Double, unitSel: WeightUnit, hint: String?,
-         onLog: @escaping (SetLog) -> Void) {
-        self.hint = hint
-        self.onLog = onLog
-        _reps = State(initialValue: max(0, reps))
-        _weight = State(initialValue: max(0, weight))
-        _unitSel = State(initialValue: unitSel)
-    }
+/// The exercise a history drawer is open for (prompt 109).
+private struct HistoryTarget: Identifiable {
+    let exerciseID: UUID
+    var id: UUID { exerciseID }
+}
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let hint {
-                Text(hint).font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("lastTimeHint")
-            }
-            stepper(idBase: "freeform.quickReps", label: "Reps", value: "\(reps)",
-                    dec: { reps = max(0, reps - 1) }, inc: { reps = min(999, reps + 1) })
-            stepper(idBase: "freeform.quickWeight", label: "Weight",
-                    value: weight > 0 ? "\(SetMeasure.formatWeight(weight)) \(unitSel.display)" : "Body",
-                    dec: { weight = max(0, weight - 2.5) }, inc: { weight = min(2000, weight + 2.5) })
-            Button {
-                onLog(SetLog(actualReps: reps > 0 ? reps : nil,
-                             actualWeight: weight > 0 ? weight : nil,
-                             weightUnit: unitSel))
-            } label: {
-                Label("Log set", systemImage: "bolt.fill").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .tint(SnappetColor.workout)
-            .accessibilityIdentifier("freeform.quickLog")
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func stepper(idBase: String, label: String, value: String,
-                         dec: @escaping () -> Void, inc: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
-            Text(label).font(.subheadline).foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            Spacer(minLength: 0)
-            Button(action: dec) { Image(systemName: "minus.circle.fill").font(.title3) }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("\(idBase).minus")
-                .accessibilityLabel("Decrease \(label.lowercased())")
-            Text(value).font(.subheadline.weight(.semibold).monospacedDigit())
-                .frame(minWidth: 80)
-                .accessibilityIdentifier(idBase)
-            Button(action: inc) { Image(systemName: "plus.circle.fill").font(.title3) }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("\(idBase).plus")
-                .accessibilityLabel("Increase \(label.lowercased())")
-        }
-    }
+/// The catalog exercise a guide drawer (photos + how-to) is open for (prompt 109).
+private struct GuideTarget: Identifiable {
+    let exercise: Exercise
+    var id: String { exercise.id }
 }
 
 /// How a `.duration` set's seconds are entered: time it live with the stopwatch (default), or type

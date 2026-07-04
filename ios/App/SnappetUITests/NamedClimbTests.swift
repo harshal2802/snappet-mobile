@@ -101,9 +101,9 @@ final class NamedClimbTests: XCTestCase {
         let row = app.descendants(matching: .any).matching(identifier: "freeform.setRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 4), "the logged attempt should appear as a row under the card")
 
-        // The header name is now a tap-to-expand LABEL (prompt 10) — a button whose `.label` is the climb
-        // name, no longer a text field — reading the name captured in the sheet.
-        let nameLabel = app.buttons["freeform.climbName"]
+        // The name is a plain page-title label on the pager page (prompt 109 — pages don't expand),
+        // reading the name captured in the sheet.
+        let nameLabel = app.staticTexts["freeform.climbName"]
         XCTAssertTrue(nameLabel.waitForExistence(timeout: 4), "the climb card should show its name label")
         XCTAssertEqual(nameLabel.label, "Cave Project",
                        "the header label reads the name captured in the Add-a-climb sheet")
@@ -122,8 +122,8 @@ final class NamedClimbTests: XCTestCase {
         save.tap()
         snap("05-renamed")
 
-        // The header label now reads the new name (Cave Project → Slab), edited in place.
-        let renamed = app.buttons["freeform.climbName"]
+        // The page title now reads the new name (Cave Project → Slab), edited in place.
+        let renamed = app.staticTexts["freeform.climbName"]
         XCTAssertTrue(renamed.waitForExistence(timeout: 6), "the climb card should still show its name label")
         XCTAssertEqual(renamed.label, "Slab", "the renamed climb name should show on the header label")
     }
