@@ -64,6 +64,16 @@ enum SessionMediaAssignment {
         }
         return result
     }
+
+    /// Where a media row pinned to set `index` points after deleting the sets at `removed`
+    /// (0-based offsets into the same `sets` array): `nil` when the pinned set itself was deleted
+    /// (the row falls back to the exercise as a whole), otherwise the index shifted down past the
+    /// deletions so it keeps naming the same surviving set. The player applies this to the
+    /// session's `SessionMedia` rows in the same mutation as the deletion.
+    static func reindexAfterDeletion(_ index: Int, removing removed: IndexSet) -> Int? {
+        guard !removed.contains(index) else { return nil }
+        return index - removed.count(in: 0..<index)
+    }
 }
 
 /// One destination a clip can be **moved to** within a climb — i.e. one of the climb's attempts (prompt

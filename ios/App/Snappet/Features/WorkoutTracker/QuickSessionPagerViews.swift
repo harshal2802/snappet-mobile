@@ -53,6 +53,9 @@ struct PagerRailView: View {
             .onChange(of: current) { _, page in
                 withAnimation { proxy.scrollTo(page, anchor: .center) }
             }
+            // Center the current chip on first layout too — a rail that (re)appears already deep in
+            // the session (e.g. returning from the finish summary's Keep going) gets no onChange.
+            .onAppear { proxy.scrollTo(current, anchor: .center) }
         }
     }
 
