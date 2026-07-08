@@ -76,6 +76,12 @@ struct TimedAttemptCover: View {
         .preferredColorScheme(.dark)
         .onAppear {
             vm.start()
+            // Re-appearing from under a full-screen cover (the RecordClipButton camera): `start()`
+            // no-ops while the run survives, so the ticker torn down by `onDisappear` must be
+            // restarted or the hero digits freeze at the moment the camera opened (the wall-clock
+            // capture stays correct — only the display stalls). Same family as the prompt-110
+            // rest-ticker freeze; a no-op on first appearance (`start()` already runs the ticker).
+            vm.resumeTicking()
             // Keep the screen awake while timing an attempt off the wall — a sleeping screen mid-effort
             // hid the live timer (Phase-6 device note). Cheaply reverted on disappear. (Phase 7)
             UIApplication.shared.isIdleTimerDisabled = true

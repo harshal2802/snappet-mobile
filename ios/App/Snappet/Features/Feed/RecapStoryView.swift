@@ -63,7 +63,10 @@ struct RecapStoryView: View {
             guard !reduceMotion, !scenes.isEmpty else { return }    // Reduce Motion → manual tap only
             if playback.tick(0.05) { dismiss() }
         }
-        .sheet(item: $shareCard) { ShareComposerView(card: $0) }
+        // Share pauses the clock (the tap handler below); resume when the composer closes —
+        // otherwise the story sits frozen for its remainder (nothing else clears the pause:
+        // hold-to-pause's release already fired before the sheet came up). (#271)
+        .sheet(item: $shareCard, onDismiss: { playback.resume() }) { ShareComposerView(card: $0) }
         .accessibilityIdentifier("story.player")
     }
 
