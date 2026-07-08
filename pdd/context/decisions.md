@@ -7954,3 +7954,25 @@ no shelf can render but the feed still counts as assigned. Chosen over migrating
 to stable per-set ids — the raw index has exactly one mutation site, so keeping it honest there is
 strictly cheaper than a schema migration. **(3) The rail centers on `.onAppear` too** — `onChange`
 alone missed the re-created rail that first renders already deep in a session (Keep-going return).
+
+## 2026-07-07 — Bug-hunt Wave 1: the frozen-timer family closed at its remaining hosts (prompt 111, #271)
+
+A whole-repo bug hunt (issues #271–#274) found the prompt-110 rest-ticker freeze was one instance of
+a **family**: a display clock torn down / paused on the way out with no resume on the way back, while
+the underlying wall-clock state stays correct — so the bug reads as "the timer stopped" when nothing
+but the *digits* stopped. Wave 1 closes the two remaining hosts as one job. **(1) The FOCUS covers
+call `resumeTicking()` in `.onAppear`** — `RecordClipButton`'s camera is a `.fullScreenCover`, so
+presenting it fires the host cover's `.onDisappear` → `endTicking()`; on return `start()` no-ops
+(the run survived, and its `!isRunning` guard is correct — a re-appear must not re-anchor
+`startedAt`), which is exactly why the resume must be a *separate* call rather than folding a
+restart into `start()`. The call is a no-op on first appearance, so appear stays idempotent.
+**(2) `StopwatchViewModel.isTicking` is exposed as a test seam** (`ticker != nil`): the
+run-survives / ticker-dead / resume contract is now pinned in `StopwatchViewModelTests` as
+synchronous state assertions — deliberately NOT by sleeping on real 200 ms ticks, which would trade
+a deterministic contract test for a flaky timing test. **(3) Story navigation is an implicit
+resume** — "Share scene" pauses `StoryPlayback` for the composer sheet, and nothing on the return
+path resumed it (hold-to-pause's release had already fired). Fixed in two layers on purpose: the
+sheet's `onDismiss` resumes (the actual bug), AND the pure `next()`/`back()` now clear `isPaused`,
+so any *future* pause caller that forgets its resume degrades to "frozen until the next deliberate
+tap" instead of "frozen for the rest of the story". Display-only throughout: no run-state, index,
+or elapsed semantics changed.

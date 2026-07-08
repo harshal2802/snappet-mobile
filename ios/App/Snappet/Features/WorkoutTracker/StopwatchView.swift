@@ -34,6 +34,12 @@ final class StopwatchViewModel {
         StopwatchTiming.reading(startedAt: startedAt, accumulated: accumulated, now: now, mode: mode)
     }
 
+    /// Whether the ~200 ms display-refresh task is alive. The run state (`isRunning`, wall-clock
+    /// math) is independent of it — a host tears the ticker down on disappear and must
+    /// `resumeTicking()` on reappear or the digits freeze (the frozen-timer family, #271).
+    /// Exposed so that contract is testable without sleeping on real ticks.
+    var isTicking: Bool { ticker != nil }
+
     /// Set or clear a count-down target. `nil` → count up. Only allowed while stopped.
     func arm(target: TimeInterval?) {
         guard !isRunning else { return }

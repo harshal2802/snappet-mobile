@@ -32,13 +32,17 @@ struct StoryPlayback: Equatable, Sendable {
     }
 
     /// Tap-right. Returns true when it should dismiss (advanced past the last scene).
+    /// An explicit navigation is also an implicit resume — without it, a story paused for the
+    /// share sheet (#271) would sit frozen on every scene the user taps through afterwards.
     mutating func next() -> Bool {
+        isPaused = false
         if index < sceneCount - 1 { index += 1; elapsed = 0; return false }
         return true
     }
 
-    /// Tap-left.
+    /// Tap-left. Resumes like `next()` — deliberate navigation ends a pause.
     mutating func back() {
+        isPaused = false
         if index > 0 { index -= 1 }
         elapsed = 0
     }
