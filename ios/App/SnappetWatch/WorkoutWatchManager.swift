@@ -46,12 +46,14 @@ final class WorkoutWatchManager: NSObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var startDate: Date?
-    /// Running sum/count of HR samples, for the average shown on the metrics page.
-    private var hrSum: Double = 0
-    private var hrCount: Int = 0
-    /// Set synchronously the instant a start is requested (before the async auth await)
-    /// so a second start arriving mid-authorization can't spawn a 2nd `HKWorkoutSession`.
-    private var starting = false
+    /// Running sample-weighted average for the metrics page (pure, `Shared/`). Folded only
+    /// when a builder batch actually collected a new HR statistic — kcal-only batches must
+    /// not re-count the stale `latestHR` (#272).
+    private var hrAverage = WatchHRAverage()
+    /// Pure start/stop gate (`Shared/`): blocks duplicate starts while `start()`'s async
+    /// authorization window is open AND absorbs a stop arriving inside that window, so the
+    /// stop cancels the start instead of being dropped (#272).
+    private var gate = WatchWorkoutStartGate()
 
     /// The relay back to the phone. The manager forwards each new HR/energy sample here.
     let link = WatchConnectivityLink()
@@ -96,8 +98,7 @@ final class WorkoutWatchManager: NSObject {
     // MARK: - Start / end
 
     func start(activityType raw: UInt, maxHR: Double? = nil, restHR: Double? = nil) {
-        guard !isRunning, !starting else { return }
-        starting = true
+        guard gate.beginStart(isRunning: isRunning) else { return }
         self.maxHR = maxHR
         self.restHR = restHR
         Task {
@@ -107,7 +108,13 @@ final class WorkoutWatchManager: NSObject {
     }
 
     private func startSession(activityType: HKWorkoutActivityType) {
-        defer { starting = false }
+        // A stop relayed while the authorization window was open already cancelled this
+        // start — don't create the HKWorkoutSession at all (pre-fix it ran orphaned on the
+        // wrist until manually ended).
+        guard gate.completeStart() == .proceed else {
+            resetState()
+            return
+        }
         let config = HKWorkoutConfiguration()
         config.activityType = activityType
         config.locationType = .unknown
@@ -126,8 +133,7 @@ final class WorkoutWatchManager: NSObject {
             builder.beginCollection(withStart: start) { _, _ in }
             isRunning = true
             paused = false
-            hrSum = 0
-            hrCount = 0
+            hrAverage.reset()
             avgHR = 0
         } catch {
             isRunning = false
@@ -152,7 +158,13 @@ final class WorkoutWatchManager: NSObject {
     }
 
     func end() {
-        guard let session, let builder else { return }
+        guard let session, let builder else {
+            // A stop with no live session yet: if a start's async window is open, absorb it
+            // so startSession abandons instead of starting a workout that was already
+            // cancelled (pre-fix the stop was silently dropped). A stray stop stays a no-op.
+            gate.absorbEndDuringStart()
+            return
+        }
         session.end()
         builder.endCollection(withEnd: Date()) { [weak self] _, _ in
             builder.finishWorkout { _, _ in }
@@ -162,7 +174,7 @@ final class WorkoutWatchManager: NSObject {
 
     private func resetState() {
         isRunning = false
-        starting = false
+        gate.reset()
         paused = false
         session = nil
         builder = nil
@@ -171,21 +183,22 @@ final class WorkoutWatchManager: NSObject {
         latestHR = 0
         avgHR = 0
         energyKcal = 0
-        hrSum = 0
-        hrCount = 0
+        hrAverage.reset()
     }
 
-    /// Forward the latest metrics to the phone, stamping the watch-relative offset, and fold the
-    /// new HR sample into the running average shown on the metrics page.
-    fileprivate func relay() {
-        if latestHR > 0 {
-            hrSum += latestHR
-            hrCount += 1
-            avgHR = hrSum / Double(hrCount)
+    /// Forward the latest metrics to the phone, stamping the watch-relative offset. `hrUpdated`
+    /// says whether THIS builder batch collected a new HR statistic: only then does the reading
+    /// fold into the on-watch average and ride the wire as a sample. Kcal-only batches send
+    /// `hrBpm: 0` — the shared "no new HR in this message" sentinel the phone's `ingest` honors
+    /// (records energy, appends no phantom sample).
+    fileprivate func relay(hrUpdated: Bool) {
+        if hrUpdated {
+            hrAverage.fold(latestHR)
+            avgHR = hrAverage.average
         }
         let t = startDate.map { Date().timeIntervalSince($0) } ?? 0
         elapsed = t
-        link.sendMetrics(hrBpm: latestHR, energyKcal: energyKcal, t: t)
+        link.sendMetrics(hrBpm: hrUpdated ? latestHR : 0, energyKcal: energyKcal, t: t)
     }
 }
 
@@ -241,7 +254,7 @@ extension WorkoutWatchManager: HKLiveWorkoutBuilderDelegate {
             guard let self else { return }
             if let newHR { self.latestHR = newHR }
             if let newKcal { self.energyKcal = newKcal }
-            self.relay()
+            self.relay(hrUpdated: newHR != nil)
         }
     }
 }

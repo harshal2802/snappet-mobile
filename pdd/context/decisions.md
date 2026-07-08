@@ -7976,3 +7976,27 @@ sheet's `onDismiss` resumes (the actual bug), AND the pure `next()`/`back()` now
 so any *future* pause caller that forgets its resume degrades to "frozen until the next deliberate
 tap" instead of "frozen for the rest of the story". Display-only throughout: no run-state, index,
 or elapsed semantics changed.
+
+## 2026-07-08 — Bug-hunt Wave 2: the watch relay's two weak seams (prompt 112, #272)
+
+`WorkoutWatchManager` had two correctness holes at exactly the places the relay is asynchronous.
+**(1) A stop inside the start window now cancels the start instead of being dropped.** `end()`
+guarded `let session, let builder` — both `nil` for the whole async window `start()` opens
+(the `requestAuthorization` await + MainActor hop), so the realistic phone-queued `start`+`stop`
+pair (watch unreachable → `transferUserInfo` replays both on wake) processed the stop mid-auth,
+dropped it, then started an HR-collecting `HKWorkoutSession` nobody would ever end. The decision
+is extracted into a pure `WatchWorkoutStartGate` (in `Shared/` — the watch target has no test
+target, and `Shared/` compiles into the phone so `SnappetTests` pins the contract):
+`absorbEndDuringStart()` remembers the stop, `completeStart()` returns `.abandon`, and
+`startSession` then **never creates the session at all** — chosen over start-then-immediately-end
+because an abandoned start leaves no phantom HealthKit workout to clean up. **(2) The HR average
+and the wire are gated on "this batch actually collected HR".** `didCollectDataOf` fires for
+kcal-only batches too; `relay()` used to re-fold the unchanged `latestHR` (event-weighted
+average) and re-send it, which the phone appended as a fresh `HRSample` at a new `t` — padding
+the persisted series with readings the sensor never took and defeating `HRCadence`'s honest
+sparse-window styling. Now `relay(hrUpdated:)` folds/sends HR only on real updates, and
+**`hrBpm <= 0` is the wire's explicit "no new HR in this message" sentinel** — no new
+`LiveWorkoutMessage` key (old/new sides stay mutually compatible; 0 bpm is never a valid human
+reading). The phone's `ingest` honors it: energy lands, `latestHR` keeps the last real reading,
+no sample is appended — which also closes the pre-existing hole where kcal-only batches *before
+the watch's first HR reading* appended 0-bpm phantom samples to the buffer.

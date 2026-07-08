@@ -438,6 +438,20 @@ final class MetricsSourceSelectionTests: XCTestCase {
         XCTAssertEqual(source.samples.last?.t ?? -1, 30, accuracy: 0.001)
     }
 
+    /// Kcal-only relays (watch builder batches with no new HR statistic) ride the wire as
+    /// `hrBpm: 0` — energy must land, but never a phantom 0-bpm sample or a `latestHR` reset (#272).
+    @MainActor
+    func testKcalOnlyRelayRecordsEnergyWithoutPhantomHRSample() {
+        let start = Date(timeIntervalSince1970: 5_000)
+        let source = AppleWatchMetricsSource()
+        source.start(LiveMetricsContext(startedAt: start, activityType: .climbing))
+        source.ingest(hrBpm: 140, energyKcal: 10, watchOffset: 30, receivedAt: start.addingTimeInterval(30))
+        source.ingest(hrBpm: 0, energyKcal: 12, watchOffset: 35, receivedAt: start.addingTimeInterval(35))
+        XCTAssertEqual(source.latestHR, 140)     // keeps the last real reading
+        XCTAssertEqual(source.energy, 12)        // energy still lands
+        XCTAssertEqual(source.samples.count, 1)  // no phantom 0-bpm sample appended
+    }
+
     /// The coordinator's `start(_:)` (used directly by Kilter sessions) also flips `isSessionActive`.
     @MainActor
     func testContextStartTracksSessionActive() {
