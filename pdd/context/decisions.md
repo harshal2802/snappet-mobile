@@ -7936,3 +7936,21 @@ are tested, and the covers ARE the focus mode; embedding them is polish, not par
 record button attaches clips to the exercise as a whole** (`assignedSetIndex = nil`, `.manual`) — the
 current page's exercise is unambiguous, while "the set being filmed" is not; the deep-tap menu re-pins
 to a specific set when it matters.
+
+**Freeform bug-hunt fixes: resumable rest ticker + honest media pins (prompt 110, 2026-07-07).**
+Proactive pre-release review of the merged pager surfaced three defects, fixed together as one job.
+**(1) `StopwatchViewModel.resumeTicking()`** — `endTicking()` (on the player's `.onDisappear`, which
+also fires behind every fullScreenCover and the finish summary) was never paired with a restart, so a
+rest that survived the disappearance kept correct wall-clock math but frozen digits (and a missed
+at-zero haptic). The resume is display-only: it never touches `startedAt`/`accumulated`, so it cannot
+drift the timer; it re-runs `checkZero()` first so a count-down that crossed zero while covered still
+fires its one haptic. The host calls it in `.onAppear` — the disappear/appear pair is now symmetric.
+**(2) Media pins are remapped at the only set-deletion site** (`SessionMediaAssignment
+.reindexAfterDeletion`, pure + unit-tested): a pin on a deleted set falls back to the exercise as a
+whole (nil index — honest "general", never silently the successor set), and pins above shift down to
+keep naming the same physical set. `removeExercise` unties the removed exercise's rows to General
+(the `reassignClip(_, to: nil)` convention) instead of leaving a dangling `assignedExerciseID` that
+no shelf can render but the feed still counts as assigned. Chosen over migrating `assignedSetIndex`
+to stable per-set ids — the raw index has exactly one mutation site, so keeping it honest there is
+strictly cheaper than a schema migration. **(3) The rail centers on `.onAppear` too** — `onChange`
+alone missed the re-created rail that first renders already deep in a session (Keep-going return).

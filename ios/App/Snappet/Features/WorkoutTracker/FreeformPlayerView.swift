@@ -322,6 +322,10 @@ struct FreeformPlayerView: View {
             recomputeClimbStats()
             rebuildPreviousClimbs()
             pushLiveActivity()
+            // The rest ticker is torn down whenever this screen disappears (a full-screen cover, the
+            // finish summary's Keep going); a rest that survived that must restart its display refresh
+            // or the ring/dock chip freezes at the last shown second.
+            restTimer.resumeTicking()
             // Land somewhere useful once per presentation: an empty session opens on the add page
             // (the type chooser IS the empty state); a resumed session on its latest exercise.
             if !pagedIn {
@@ -1619,6 +1623,14 @@ struct FreeformPlayerView: View {
     private func removeExercise(_ ex: SessionExercise) {
         guard let idx = indexOf(ex) else { return }
         session.exercises.remove(at: idx)
+        // Untie the removed exercise's media back to General: a dangling `assignedExerciseID` keeps
+        // the clip out of every shelf while still counting as "assigned" everywhere else. Same
+        // convention as the deep-tap "Remove from attempt only" (`reassignClip(_, to: nil, set: nil)`).
+        for row in mediaRows(assignedTo: ex.id) {
+            row.assignedExerciseID = nil
+            row.assignedSetIndex = nil
+            row.assignmentSource = .general
+        }
         persist()
         pushLiveActivity()   // the current (last) exercise may have changed
     }
@@ -1741,7 +1753,23 @@ struct FreeformPlayerView: View {
     private func deleteSets(_ ex: SessionExercise, at offsets: IndexSet) {
         guard let idx = indexOf(ex) else { return }
         session.exercises[idx].sets.remove(atOffsets: offsets)
+        // Keep pinned media honest across the deletion: a clip pinned to a deleted set falls back to
+        // the exercise as a whole; clips pinned to later sets shift down with them. Without this,
+        // every pin above a deleted index silently points at (and labels itself with) the wrong set.
+        for row in mediaRows(assignedTo: ex.id) {
+            guard let pinned = row.assignedSetIndex else { continue }
+            let remapped = SessionMediaAssignment.reindexAfterDeletion(pinned, removing: offsets)
+            if remapped != pinned { row.assignedSetIndex = remapped }
+        }
         persist()
+    }
+
+    /// This session's media rows assigned to `exerciseID` (any set or the exercise as a whole).
+    private func mediaRows(assignedTo exerciseID: UUID) -> [SessionMedia] {
+        let sid = session.id
+        let exID: UUID? = exerciseID
+        return (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.assignedExerciseID == exID }))) ?? []
     }
 
     private func finish(saved: Bool) {

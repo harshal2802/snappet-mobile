@@ -86,6 +86,27 @@ final class SessionMediaAssignmentTests: XCTestCase {
         XCTAssertTrue(out.isEmpty)
     }
 
+    // MARK: - reindexAfterDeletion(_:removing:)
+
+    func testReindexPinBelowDeletionIsUntouched() {
+        XCTAssertEqual(SessionMediaAssignment.reindexAfterDeletion(0, removing: IndexSet([2])), 0)
+    }
+
+    func testReindexPinAboveDeletionShiftsDown() {
+        XCTAssertEqual(SessionMediaAssignment.reindexAfterDeletion(3, removing: IndexSet([1])), 2)
+    }
+
+    func testReindexPinOnDeletedSetFallsBackToExercise() {
+        XCTAssertNil(SessionMediaAssignment.reindexAfterDeletion(2, removing: IndexSet([2])))
+    }
+
+    func testReindexAcrossMultipleDeletions() {
+        // Sets 0 and 2 deleted: a pin on set 4 has two deletions below it → new index 2.
+        XCTAssertEqual(SessionMediaAssignment.reindexAfterDeletion(4, removing: IndexSet([0, 2])), 2)
+        // A pin on set 1 has one deletion below it → new index 0.
+        XCTAssertEqual(SessionMediaAssignment.reindexAfterDeletion(1, removing: IndexSet([0, 2])), 0)
+    }
+
     // MARK: - Helpers
 
     private func set(_ completionOffset: Double) -> SetLog {

@@ -87,6 +87,17 @@ final class StopwatchViewModel {
         ticker = nil
     }
 
+    /// Restart the refresh task after `endTicking()` when the run itself survived the disappearance —
+    /// e.g. the hosting screen was behind a full-screen cover (or the finish summary) and came back.
+    /// Without this the wall-clock math stays correct but the digits freeze at the last tick. Also
+    /// fires the at-zero haptic if a count-down crossed its target while the screen was away.
+    func resumeTicking() {
+        guard isRunning, ticker == nil else { return }
+        now = .now
+        checkZero()
+        runTicker()
+    }
+
     private func runTicker() {
         ticker?.cancel()
         ticker = Task { @MainActor [weak self] in
