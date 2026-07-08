@@ -143,9 +143,14 @@ final class AppleWatchMetricsSource: NSObject, MetricsSource {
     /// Ingest one relayed metrics message. Pure given `sessionStart`, so it is
     /// unit-testable without a device: it computes the HR sample's offset on the
     /// *session* timeline and appends it to the buffer.
+    ///
+    /// `hrBpm <= 0` is the wire's "no new HR in this message" sentinel (a kcal-only builder
+    /// batch, or a batch before the watch's first HR reading): record the energy, but keep
+    /// the last real `latestHR` and never append a phantom 0-bpm sample (#272).
     func ingest(hrBpm: Double, energyKcal: Double, watchOffset t: Double, receivedAt: Date = .now) {
-        latestHR = hrBpm
         energy = energyKcal
+        guard hrBpm > 0 else { return }
+        latestHR = hrBpm
         let offset = Self.sessionOffset(watchOffset: t, sessionStart: sessionStart, receivedAt: receivedAt)
         samples.append(HRSample(t: offset, bpm: hrBpm))
     }
