@@ -140,6 +140,36 @@ enum QuickSessionPager {
         return word.count > 10 ? String(word.prefix(9)) + "…" : word
     }
 
+    // MARK: - Page-recorded clip routing (prompt 113, #273)
+
+    /// One attach batch for clips recorded from a page's record button: where they file, and in
+    /// what order.
+    struct PageClipGroup: Equatable, Sendable {
+        /// The exercise to pin to — the page the recorder was **presented** from. `nil` ⇒ that
+        /// exercise was deleted while the Photos save was in flight; the clips file to the
+        /// session unassigned instead (a recorded clip is never dropped).
+        var exerciseID: UUID?
+        var clips: [RecordedClip]
+    }
+
+    /// Route queued page recordings to their attach targets. `queued` is keyed by the exercise
+    /// whose page the recorder was opened on (the record-time owner) — the CURRENT page plays no
+    /// part, so swiping away during the async Photos save can neither re-pin a clip to the wrong
+    /// exercise nor discard it (the old shared-binding bug, #273). Owners no longer in the
+    /// session route to `exerciseID: nil`. Clips sort by capture time within a group; groups by
+    /// their earliest capture, so multi-owner batches attach in recording order.
+    static func pageClipAttachPlan(queued: [UUID: [RecordedClip]],
+                                   liveExerciseIDs: Set<UUID>) -> [PageClipGroup] {
+        queued
+            .filter { !$0.value.isEmpty }
+            .map { owner, clips in
+                PageClipGroup(exerciseID: liveExerciseIDs.contains(owner) ? owner : nil,
+                              clips: clips.sorted { $0.capturedAt < $1.capturedAt })
+            }
+            .sorted { ($0.clips.first?.capturedAt ?? .distantPast)
+                    < ($1.clips.first?.capturedAt ?? .distantPast) }
+    }
+
     // MARK: - History-drawer deltas
 
     /// Direction of a per-set change vs the previous session, for the drawer's comparison column.
