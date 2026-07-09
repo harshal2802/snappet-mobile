@@ -137,7 +137,6 @@ final class KilterGeneratorAssets: Sendable {
             }
         }
         if !buffer.isEmpty { try handle.write(contentsOf: buffer); received += Int64(buffer.count) }
-        try? handle.close()
         guard received > 0 else { throw KilterGeneratorAssetError.emptyDownload }
         // Atomic-ish swap so a half-written file is never treated as installed.
         try? FileManager.default.removeItem(at: dest)

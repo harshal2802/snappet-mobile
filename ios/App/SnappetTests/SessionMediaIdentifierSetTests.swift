@@ -45,4 +45,16 @@ final class SessionMediaIdentifierSetTests: XCTestCase {
     func testEmptyStoreYieldsEmptySet() {
         XCTAssertEqual(SessionMedia.allIdentifiers(in: ModelContext(container)), [])
     }
+
+    /// Pins that the `propertiesToFetch` projection still sees PENDING (inserted-but-unsaved) rows.
+    /// The discovery loop inserts then saves in one MainActor stretch, but if a `save()` ever fails
+    /// (disk full), the pending rows are the only thing standing between the next tick and a
+    /// duplicate auto-tag of the same physical asset — this must not regress to a store-only read.
+    func testPendingUnsavedInsertsAreVisible() {
+        let context = ModelContext(container)
+        context.insert(SessionMedia(sessionID: UUID(), localIdentifier: "pending-1",
+                                    kind: .video, offsetSec: 0))
+        // Deliberately NO save() before reading.
+        XCTAssertTrue(SessionMedia.allIdentifiers(in: context).contains("pending-1"))
+    }
 }

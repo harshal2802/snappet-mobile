@@ -829,7 +829,8 @@ final class KilterSessionManager {
         let startedAt = session.startedAt
         let completedAt = session.endedAt
         let windows = climbWindows(for: session, in: context)
-        let existing = existingMediaIdentifiers(sessionID: sessionID, in: context)
+        // Global — not session-scoped — dedup set (R2/R4): see `SessionMedia.allIdentifiers`.
+        let existing = SessionMedia.allIdentifiers(in: context)
         Task { @MainActor in
             guard let candidates = try? await media.discover(
                 startedAt: startedAt, completedAt: completedAt, existingIdentifiers: existing)
@@ -862,14 +863,5 @@ final class KilterSessionManager {
                 startOffset: max(0, s.timeIntervalSince(start)),
                 endOffset: max(0, end.timeIntervalSince(start)))
         }
-    }
-
-    /// Every `localIdentifier` already stored as `SessionMedia` in ANY session — auto-discovery dedups
-    /// **globally** so an asset in the ±90s pad overlap of two adjacent sessions is stored once, not tagged
-    /// into both (R2/R4: one physical video → one set). Re-discovery of a session's own clips still skips
-    /// them (this set is a superset of the session's own). The `sessionID` is unused now but kept so the
-    /// call site reads intent; a global fetch is fine at the small media volumes here.
-    private func existingMediaIdentifiers(sessionID: UUID, in context: ModelContext) -> Set<String> {
-        SessionMedia.allIdentifiers(in: context)
     }
 }
