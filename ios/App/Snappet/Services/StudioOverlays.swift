@@ -562,18 +562,14 @@ enum StudioOverlays {
         if let window, window.isExtended, let maxT = chart.map(\.t).max(), maxT > 0 {
             let fs = window.footageStartFraction(maxT: maxT)
             let fe = window.footageEndFraction(maxT: maxT)
-            func pane(from a: Double, to b: Double, hex: String, alpha: CGFloat) {
-                guard b - a > 0.001 else { return }
+            for p in HRWindowRegionStyle.panes(footageStart: fs, footageEnd: fe) {
                 let l = CALayer()
-                l.frame = CGRect(x: rect.minX + a * rect.width, y: rect.minY,
-                                 width: (b - a) * rect.width, height: rect.height)
-                l.backgroundColor = uiColor(hex).withAlphaComponent(alpha).cgColor
+                l.frame = CGRect(x: rect.minX + p.from * rect.width, y: rect.minY,
+                                 width: (p.to - p.from) * rect.width, height: rect.height)
+                l.backgroundColor = uiColor(p.hex).withAlphaComponent(p.alpha).cgColor
                 container.addSublayer(l)
             }
-            pane(from: 0, to: fs, hex: HRWindowRegionStyle.leadHex, alpha: HRWindowRegionStyle.leadAlpha)
-            pane(from: fs, to: fe, hex: HRWindowRegionStyle.footageHex, alpha: HRWindowRegionStyle.footageAlpha)
-            pane(from: fe, to: 1, hex: HRWindowRegionStyle.tailHex, alpha: HRWindowRegionStyle.tailAlpha)
-            for x in [fs, fe] where x > 0.001 && x < 0.999 {
+            for x in HRWindowRegionStyle.tickXs(footageStart: fs, footageEnd: fe) {
                 let tick = CALayer()
                 tick.frame = CGRect(x: rect.minX + x * rect.width - HRWindowRegionStyle.tickWidth / 2,
                                     y: rect.minY, width: HRWindowRegionStyle.tickWidth, height: rect.height)
@@ -667,7 +663,7 @@ enum StudioOverlays {
         var last = -1.0; let eps = 1e-4
         for k in keys {
             let kt = min(1, max(0, k.keyTime))
-            if kt > last + eps || positions.isEmpty {
+            if kt > last + eps {
                 positions.append(NSValue(cgPoint: local(CGPoint(x: k.x, y: k.y))))
                 let c = dotColor(k.bpm)
                 haloColors.append(c.withAlphaComponent(0.35).cgColor); coreColors.append(c.cgColor)

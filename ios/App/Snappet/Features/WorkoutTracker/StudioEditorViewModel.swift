@@ -293,10 +293,11 @@ final class StudioEditorViewModel {
     }
 
     /// A clip's capture offset (seconds from session start) via its backing `SessionMedia`, falling
-    /// back to the `localIdentifier` map for an unlinked clip (`StudioHRPlacement.resolveOffsets` is
-    /// the pure, tested form of this rule).
+    /// back to the `localIdentifier` map for an unlinked clip — routed through the pure, tested rule
+    /// (`StudioHRPlacement.resolveOffset`) so the shipping policy IS the tested one.
     private func captureOffset(of clip: TimelineClip) -> Double? {
-        clip.sessionMediaID.flatMap { mediaOffsets[$0] } ?? mediaOffsetsByLocalID[clip.localIdentifier]
+        StudioHRPlacement.resolveOffset(of: clip, byMediaID: mediaOffsets,
+                                        byLocalID: mediaOffsetsByLocalID)
     }
     /// True when the session has enough HR data to draw a chart.
     var hasHRData: Bool { hrSeries.count >= 2 }
@@ -820,59 +821,71 @@ final class StudioEditorViewModel {
 
     // MARK: - Extended HR window (prompt 115)
 
-    /// The clip the HR-window controls target: the video clip under the playhead — the SAME clip the
-    /// preview tile shows (`previewHR`), so what the sliders change is what the user is looking at.
-    var hrWindowTargetClip: TimelineClip? {
-        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips.filter { !$0.isPhoto },
-                                             sourceDurations: sourceDurations,
-                                             transitions: snapshot.transitions)
-        let p = placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }) ?? placed.last
-        return p?.clip
+    /// The HR-window editor context for the targeted clip — computed ONCE per render and passed into
+    /// `HRWindowControls` (it rebuilds the placed timeline, so callers must not poll it per field).
+    /// `clipID` pins every slider write to THIS clip: the target is resolved when the view renders,
+    /// not per slider tick, so a moving playhead can't retarget a drag mid-gesture. The lead/tail here
+    /// are the EFFECTIVE values the chart actually draws (lead clamps at session start, tail at the
+    /// recorded-HR edge); the stored/requested values ride alongside for the sliders + clamp hints.
+    struct HRWindowEditorInfo: Equatable {
+        var clipID: UUID
+        /// Requested (stored-or-default) values — what the sliders show and write.
+        var lead: Double
+        var tail: Double
+        /// Effective values — what the mini-map and the chart's panes actually cover.
+        var effectiveLead: Double
+        var effectiveTail: Double
+        var footageSec: Double
+        var scope: HRMetricsScope
+        /// True when the clip stores any non-default value (shows the Reset row).
+        var isCustomized: Bool
     }
 
-    /// The HR-window editor context for the targeted clip: effective lead/tail/scope, the footage
-    /// span (for the mini-map), and how much tail the session's recorded HR can actually cover past
-    /// the footage (drives the honest "0:30 → 0:12 recorded" clamp hint). `nil` when there's no
-    /// targetable video clip with a resolvable capture offset.
-    var hrWindowInfo: (lead: Double, tail: Double, footageSec: Double,
-                       scope: HRMetricsScope, availableTailSec: Double)? {
-        guard let clip = hrWindowTargetClip, let offset = captureOffset(of: clip) else { return nil }
-        let base = StudioHRPlacement.captureWindow(offset: offset, trimStart: clip.trimStart,
+    /// The context for the clip the HR-window section targets: the video clip under the playhead —
+    /// the SAME clip the preview tile shows (shared `placedClipUnderPlayhead`), so what the sliders
+    /// change is what the user is looking at. `nil` when there's no targetable video clip with a
+    /// resolvable capture offset.
+    var hrWindowInfo: HRWindowEditorInfo? {
+        guard let clip = placedClipUnderPlayhead()?.clip, let offset = captureOffset(of: clip) else { return nil }
+        let ext = StudioHRPlacement.extendedWindow(offset: offset, trimStart: clip.trimStart,
                                                    trimEnd: clip.trimEnd,
-                                                   sourceDuration: sourceDurations[clip.id])
+                                                   sourceDuration: sourceDurations[clip.id],
+                                                   leadSec: clip.hrWindowLeadSec,
+                                                   tailSec: clip.hrWindowTailSec)
         let coverageEnd = hrSeries.last?.t ?? 0
-        return (clip.hrWindowLeadSec, clip.hrWindowTailSec, base.span, clip.hrMetricsScope,
-                max(0, coverageEnd - (base.start + base.span)))
+        let footageEnd = ext.start + ext.window.leadSec + ext.window.footageSec
+        return HRWindowEditorInfo(
+            clipID: clip.id,
+            lead: clip.hrWindowLeadSec, tail: clip.hrWindowTailSec,
+            effectiveLead: ext.window.leadSec,
+            effectiveTail: min(clip.hrWindowTailSec, max(0, coverageEnd - footageEnd)),
+            footageSec: ext.window.footageSec, scope: clip.hrMetricsScope,
+            isCustomized: clip.hrLeadSec != nil || clip.hrTailSec != nil || clip.hrMetricsScopeRaw != nil)
     }
 
-    /// True when the targeted clip stores any non-default HR-window value (shows the Reset row).
-    var hrWindowIsCustomized: Bool {
-        guard let c = hrWindowTargetClip else { return false }
-        return c.hrLeadSec != nil || c.hrTailSec != nil || c.hrMetricsScopeRaw != nil
+    /// Set one HR-window field on the clip `id` (resolved by the view at render time — NOT re-resolved
+    /// here, so a moving playhead can't retarget a slider drag), preserving the others' stored state
+    /// (a stored `nil` stays `nil` = "track the default"). Overlay-only edit: the HR burn isn't in the
+    /// playback composition, so no preview rebuild.
+    func setHRWindowLead(_ seconds: Double, clipID: UUID) {
+        mutateHRWindow(clipID: clipID) { (min(HRClipWindow.maxLeadSec, max(0, seconds)), $0.hrTailSec, $0.hrMetricsScopeRaw) }
     }
-
-    /// Set one HR-window field on the targeted clip, preserving the others' stored state (a stored
-    /// `nil` stays `nil` = "track the default"). Overlay-only edit: the HR burn isn't in the playback
-    /// composition, so no preview rebuild.
-    func setHRWindowLead(_ seconds: Double) {
-        mutateHRWindow { (min(HRClipWindow.maxLeadSec, max(0, seconds)), $0.hrTailSec, $0.hrMetricsScopeRaw) }
+    func setHRWindowTail(_ seconds: Double, clipID: UUID) {
+        mutateHRWindow(clipID: clipID) { ($0.hrLeadSec, min(HRClipWindow.maxTailSec, max(0, seconds)), $0.hrMetricsScopeRaw) }
     }
-    func setHRWindowTail(_ seconds: Double) {
-        mutateHRWindow { ($0.hrLeadSec, min(HRClipWindow.maxTailSec, max(0, seconds)), $0.hrMetricsScopeRaw) }
+    func setHRWindowScope(_ scope: HRMetricsScope, clipID: UUID) {
+        mutateHRWindow(clipID: clipID) { ($0.hrLeadSec, $0.hrTailSec, scope.rawValue) }
     }
-    func setHRWindowScope(_ scope: HRMetricsScope) {
-        mutateHRWindow { ($0.hrLeadSec, $0.hrTailSec, scope.rawValue) }
+    /// Reset the clip to the defaults (clears the stored values, so future default changes flow through).
+    func resetHRWindow(clipID: UUID) {
+        mutateHRWindow(clipID: clipID) { _ in (nil, nil, nil) }
     }
-    /// Reset the targeted clip to the defaults (clears the stored values, so future default changes
-    /// flow through).
-    func resetHRWindow() {
-        mutateHRWindow { _ in (nil, nil, nil) }
-    }
-    private func mutateHRWindow(_ next: (TimelineClip) -> (lead: Double?, tail: Double?, scopeRaw: String?)) {
-        guard let clip = hrWindowTargetClip else { return }
+    private func mutateHRWindow(clipID: UUID,
+                                _ next: (TimelineClip) -> (lead: Double?, tail: Double?, scopeRaw: String?)) {
+        guard let clip = snapshot.clips.first(where: { $0.id == clipID }) else { return }
         let v = next(clip)
         editOverlaysOnly {
-            StudioProjectEditor.setClipHRWindow($0, id: clip.id, leadSec: v.lead, tailSec: v.tail,
+            StudioProjectEditor.setClipHRWindow($0, id: clipID, leadSec: v.lead, tailSec: v.tail,
                                                 scope: v.scopeRaw.flatMap(HRMetricsScope.init(rawValue:)))
         }
     }
@@ -1006,15 +1019,22 @@ final class StudioEditorViewModel {
         var scope: HRMetricsScope
     }
 
+    /// The video clip whose output slot contains the playhead (last clip when the playhead is at the
+    /// very end) — the ONE "clip under the playhead" rule shared by the preview tile (`previewHR`)
+    /// and the HR-window controls (`hrWindowInfo`), so the sliders can't target a different clip than
+    /// the tile renders.
+    private func placedClipUnderPlayhead() -> StudioGeometry.PlacedClip? {
+        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips.filter { !$0.isPhoto },
+                                             sourceDurations: sourceDurations,
+                                             transitions: snapshot.transitions)
+        return placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }) ?? placed.last
+    }
+
     /// Per-clip HR for the **preview** chart (WYSIWYG with export): the clip under the playhead sliced
     /// to its own extended window, with the clip-local playhead time + duration so the dot tracks
     /// within the footage span. Falls back to the whole-session series for a clip with no media link.
     var previewHR: PreviewHR {
-        let placed = StudioGeometry.timeline(clips: visibleSnapshotClips.filter { !$0.isPhoto },
-                                             sourceDurations: sourceDurations,
-                                             transitions: snapshot.transitions)
-        guard let p = placed.first(where: { currentTime >= $0.startSec && currentTime < $0.endSec }) ?? placed.last,
-              let offset = captureOffset(of: p.clip) else {
+        guard let p = placedClipUnderPlayhead(), let offset = captureOffset(of: p.clip) else {
             return PreviewHR(samples: hrSeries, currentTime: currentTime,
                              totalDuration: max(0.01, totalDuration), window: nil, scope: .default)
         }
@@ -1029,24 +1049,15 @@ final class StudioEditorViewModel {
                          scope: p.clip.hrMetricsScope)
     }
 
-    /// Per-clip overlay VALUES for the preview badges (the clip under the playhead) — so the preview
-    /// badges read that clip's own avg/max/zone/calories/HRV, matching the per-clip export.
-    var previewOverlayValues: HROverlayValues {
+    /// The preview tile's VALUES + playhead fraction, computed together from ONE `previewHR` pass
+    /// (one timeline build, one slice, one `HROverlayValues` init per render — the split accessors
+    /// each redid all of it). The fraction routes through `values.chartFraction(forVideoFraction:)`,
+    /// the SAME remap the export's segments use, so the maxT rule lives in exactly one place.
+    var previewTile: (values: HROverlayValues, fraction: Double) {
         let p = previewHR
-        return scopedOverlayValues(samples: p.samples, window: p.window, scope: p.scope)
-    }
-
-    /// Playhead fraction for the preview tile — the clip-local VIDEO fraction mapped onto the chart's
-    /// x-axis (identity without an extended window): the dot enters at the lead/footage boundary and
-    /// parks at the footage/tail boundary, exactly like the export's keyframes.
-    var previewElementFraction: Double {
-        let p = previewHR
+        let values = scopedOverlayValues(samples: p.samples, window: p.window, scope: p.scope)
         let videoF = p.totalDuration > 0 ? min(1, max(0, p.currentTime / p.totalDuration)) : 0
-        guard let w = p.window, w.isExtended else { return videoF }
-        // `displaySeries` preserves the endpoint sample, so the raw slice's last `t` IS the chart's
-        // x-axis denominator (`HROverlayValues.chartMaxT`) — no need to resample here per render.
-        let maxT = p.samples.last?.t ?? 0
-        return w.chartFraction(videoFraction: videoF, maxT: maxT)
+        return (values, values.chartFraction(forVideoFraction: videoF))
     }
 
     // MARK: Picture-in-picture (a second video composited over the main track)

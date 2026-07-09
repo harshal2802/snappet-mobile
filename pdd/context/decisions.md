@@ -8078,3 +8078,15 @@ media link used to silently degrade the export to the session-wide burn (the use
 "whole-session chart + 584 kcal on a 30 s clip"). The Clips feed and Recap/reel exporters pass
 no window and render exactly as before; teaching the feed to honor per-clip windows is a named
 follow-up.
+
+**Review-fix addendum (same day):** the HR-window sliders **commit on drag-end** (live label, one
+undo entry + one save per drag — the trim slider's house pattern; per-tick commits flooded undo) and
+every write is **pinned to the clip id resolved at render time** (`HRWindowEditorInfo.clipID`), so a
+moving playhead can't retarget a drag mid-gesture. The tool's mini-map shows the **effective**
+lead/tail (post-clamp — what the panes actually draw), with hints when they differ from the requested
+values. The Variant-A pane/tick GEOMETRY (not just colors) moved into one pure helper
+(`HRWindowRegionStyle.panes/tickXs` — also dedupes a degenerate fs==fe tick, which doubled as a
+SwiftUI ForEach-identity collision) consumed by both renderers, and the preview canvas reads ONE
+`previewTile` accessor (values + fraction from a single `previewHR` pass, fraction via
+`values.chartFraction` — the same remap the export uses) instead of two accessors that each rebuilt
+the timeline. `captureOffset` now routes through the pure `StudioHRPlacement.resolveOffset`.

@@ -150,6 +150,32 @@ final class HRClipWindowTests: XCTestCase {
         XCTAssertNil(s.clips[0].hrMetricsScopeRaw)
     }
 
+    // MARK: - Region pane geometry (the ONE Variant-A geometry both renderers consume)
+
+    /// Panes: zero-width segments drop; a normal window yields lead/footage/tail in order.
+    func testRegionPanesDropZeroWidthSegments() {
+        let normal = HRWindowRegionStyle.panes(footageStart: 0.1, footageEnd: 0.6)
+        XCTAssertEqual(normal.count, 3)
+        XCTAssertEqual(normal.map(\.hex), [HRWindowRegionStyle.leadHex,
+                                           HRWindowRegionStyle.footageHex,
+                                           HRWindowRegionStyle.tailHex])
+        // No lead (fs = 0) → the lead pane drops; footage reaching the edge (fe = 1) → tail drops.
+        XCTAssertEqual(HRWindowRegionStyle.panes(footageStart: 0, footageEnd: 1).count, 1)
+        // Degenerate footage (fs == fe) → the footage pane itself drops, no zero-width artifacts.
+        let degenerate = HRWindowRegionStyle.panes(footageStart: 1, footageEnd: 1)
+        XCTAssertEqual(degenerate.map(\.hex), [HRWindowRegionStyle.leadHex])
+    }
+
+    /// Ticks: edge-adjacent xs drop, and a degenerate window (fs == fe) yields ONE tick — never two
+    /// coincident values (which would collide as SwiftUI ForEach identities).
+    func testRegionTickXsDropEdgesAndDedupe() {
+        XCTAssertEqual(HRWindowRegionStyle.tickXs(footageStart: 0.1, footageEnd: 0.6), [0.1, 0.6])
+        XCTAssertEqual(HRWindowRegionStyle.tickXs(footageStart: 0, footageEnd: 0.6), [0.6])
+        XCTAssertEqual(HRWindowRegionStyle.tickXs(footageStart: 0.1, footageEnd: 1), [0.1])
+        XCTAssertEqual(HRWindowRegionStyle.tickXs(footageStart: 0.5, footageEnd: 0.5), [0.5])
+        XCTAssertTrue(HRWindowRegionStyle.tickXs(footageStart: 1, footageEnd: 1).isEmpty)
+    }
+
     // MARK: - Playhead keyframes (the export dot)
 
     /// Without a window the keyframes are the pre-115 behaviour: one per chart point, keyTime = x.

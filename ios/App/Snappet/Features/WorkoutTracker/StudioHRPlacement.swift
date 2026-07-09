@@ -102,10 +102,18 @@ enum StudioHRPlacement {
                                byLocalID: [String: Double]) -> [UUID: Double] {
         var out: [UUID: Double] = [:]
         for clip in clips {
-            if let offset = clip.sessionMediaID.flatMap({ byMediaID[$0] }) ?? byLocalID[clip.localIdentifier] {
+            if let offset = resolveOffset(of: clip, byMediaID: byMediaID, byLocalID: byLocalID) {
                 out[clip.id] = offset
             }
         }
         return out
+    }
+
+    /// The single-clip form of the rule above — the ONE implementation every production call site
+    /// (`StudioEditorViewModel.captureOffset`) routes through, so the tested policy can't drift from
+    /// the shipping one.
+    static func resolveOffset(of clip: TimelineClip, byMediaID: [UUID: Double],
+                              byLocalID: [String: Double]) -> Double? {
+        clip.sessionMediaID.flatMap { byMediaID[$0] } ?? byLocalID[clip.localIdentifier]
     }
 }

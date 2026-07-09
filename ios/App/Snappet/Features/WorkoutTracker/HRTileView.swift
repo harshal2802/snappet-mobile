@@ -361,34 +361,27 @@ struct PremiumHRCurve: View {
     }
 
     /// The "Variant A" region panes: faint zone-tinted washes (lead / footage / tail) + 1px ember
-    /// boundary ticks at the footage edges. Styling from the shared `HRWindowRegionStyle`, fractions
-    /// against the chart's `maxT` — identical to the export's pane layers.
+    /// boundary ticks at the footage edges. GEOMETRY comes from the shared pure
+    /// `HRWindowRegionStyle.panes/tickXs` (the same call the export makes), so preview == file.
     @ViewBuilder
     private func regionPanes(window: HRClipWindow, maxT: Double, w: CGFloat, h: CGFloat) -> some View {
         let fs = window.footageStartFraction(maxT: maxT)
         let fe = window.footageEndFraction(maxT: maxT)
-        let panes: [(from: Double, to: Double, hex: String, alpha: CGFloat)] = [
-            (0, fs, HRWindowRegionStyle.leadHex, HRWindowRegionStyle.leadAlpha),
-            (fs, fe, HRWindowRegionStyle.footageHex, HRWindowRegionStyle.footageAlpha),
-            (fe, 1, HRWindowRegionStyle.tailHex, HRWindowRegionStyle.tailAlpha)
-        ]
+        let panes = HRWindowRegionStyle.panes(footageStart: fs, footageEnd: fe)
+        let ticks = HRWindowRegionStyle.tickXs(footageStart: fs, footageEnd: fe)
         ZStack {
             ForEach(panes.indices, id: \.self) { i in
                 let p = panes[i]
-                if p.to - p.from > 0.001 {
-                    Rectangle()
-                        .fill(Color(studioHex: p.hex).opacity(p.alpha))
-                        .frame(width: (p.to - p.from) * w, height: h)
-                        .position(x: (p.from + p.to) / 2 * w, y: h / 2)
-                }
+                Rectangle()
+                    .fill(Color(studioHex: p.hex).opacity(p.alpha))
+                    .frame(width: (p.to - p.from) * w, height: h)
+                    .position(x: (p.from + p.to) / 2 * w, y: h / 2)
             }
-            ForEach([fs, fe], id: \.self) { x in
-                if x > 0.001 && x < 0.999 {
-                    Rectangle()
-                        .fill(Color(studioHex: HRWindowRegionStyle.tickHex).opacity(HRWindowRegionStyle.tickAlpha))
-                        .frame(width: HRWindowRegionStyle.tickWidth, height: h)
-                        .position(x: x * w, y: h / 2)
-                }
+            ForEach(ticks.indices, id: \.self) { i in
+                Rectangle()
+                    .fill(Color(studioHex: HRWindowRegionStyle.tickHex).opacity(HRWindowRegionStyle.tickAlpha))
+                    .frame(width: HRWindowRegionStyle.tickWidth, height: h)
+                    .position(x: ticks[i] * w, y: h / 2)
             }
         }
     }

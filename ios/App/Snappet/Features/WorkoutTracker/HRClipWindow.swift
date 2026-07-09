@@ -83,6 +83,33 @@ enum HRWindowRegionStyle {
     static let tickHex = "#FF9645"
     static let tickAlpha: CGFloat = 0.9
     static let tickWidth: CGFloat = 1
+
+    /// One region pane, in chart-fraction space (`from`…`to` of the chart width).
+    struct Pane: Equatable, Sendable {
+        var from: Double
+        var to: Double
+        var hex: String
+        var alpha: CGFloat
+    }
+
+    /// The pane segments for a chart whose footage occupies `[fs, fe]` of its x-axis — the ONE
+    /// geometry both renderers consume (SwiftUI `PremiumHRCurve` + the Core-Animation export), so the
+    /// epsilon/order/gating can't drift between preview and file. Zero-width panes are dropped.
+    static func panes(footageStart fs: Double, footageEnd fe: Double) -> [Pane] {
+        [Pane(from: 0, to: fs, hex: leadHex, alpha: leadAlpha),
+         Pane(from: fs, to: fe, hex: footageHex, alpha: footageAlpha),
+         Pane(from: fe, to: 1, hex: tailHex, alpha: tailAlpha)]
+            .filter { $0.to - $0.from > 0.001 }
+    }
+
+    /// The boundary-tick x positions (chart fractions) for footage edges `fs`/`fe`: edge-adjacent
+    /// ticks are dropped and a degenerate window (fs == fe) yields ONE tick, not two coincident ones
+    /// (which would also collide as SwiftUI `ForEach` identities).
+    static func tickXs(footageStart fs: Double, footageEnd fe: Double) -> [Double] {
+        var xs = [fs, fe].filter { $0 > 0.001 && $0 < 0.999 }
+        if xs.count == 2, abs(xs[0] - xs[1]) < 0.0001 { xs.removeLast() }
+        return xs
+    }
 }
 
 /// Which samples a clip tile's **aggregates** (AVG / PEAK / KCAL / HRV / effort) are computed over.
