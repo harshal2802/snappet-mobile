@@ -164,7 +164,8 @@ enum StudioOverlays {
                                                  localRect: flip(chartRect), zoneColored: tile.zoneColored,
                                                  sparkline: chartRect.height < h * 0.30,
                                                  totalDuration: totalDuration,
-                                                 slotStartSec: slotStartSec, slotDurationSec: slotDur))
+                                                 slotStartSec: slotStartSec, slotDurationSec: slotDur,
+                                                 window: tile.window))
         }
 
         for slot in result.slots {
@@ -539,7 +540,8 @@ enum StudioOverlays {
     /// preview matches. `localRect` is bottom-left, inside the tile container.
     private static func tileChartLayer(samples: [HRPoint], maxHR: Double, localRect outer: CGRect,
                                        zoneColored: Bool, sparkline: Bool, totalDuration: Double,
-                                       slotStartSec: Double, slotDurationSec: Double) -> CALayer {
+                                       slotStartSec: Double, slotDurationSec: Double,
+                                       window: HRClipWindow? = nil) -> CALayer {
         let container = CALayer(); container.frame = outer
         let rect = container.bounds          // no inset — the preview maps into the full chart rect too (WYSIWYG)
         // Draw from the SAME dense resampled series the preview's `PremiumHRCurve` uses (prompt 101), so
@@ -552,6 +554,34 @@ enum StudioOverlays {
         }
         guard pts.count >= 2 else { return container }
         let mapped = pts.map(local)
+
+        // Extended-window region panes (prompt 115, "Variant A"): faint tinted washes for the
+        // off-camera lead/tail, a slightly brighter footage pane, and 1px ember boundary ticks — the
+        // export twin of the preview's `HRWindowRegionPanes`. Behind the area/curve layers. The curve
+        // stays full-strength everywhere: the HR data is real, only the camera coverage differs.
+        if let window, window.isExtended, let maxT = chart.map(\.t).max(), maxT > 0 {
+            let fs = window.footageStartFraction(maxT: maxT)
+            let fe = window.footageEndFraction(maxT: maxT)
+            func pane(from a: Double, to b: Double, hex: String, alpha: CGFloat) {
+                guard b - a > 0.001 else { return }
+                let l = CALayer()
+                l.frame = CGRect(x: rect.minX + a * rect.width, y: rect.minY,
+                                 width: (b - a) * rect.width, height: rect.height)
+                l.backgroundColor = uiColor(hex).withAlphaComponent(alpha).cgColor
+                container.addSublayer(l)
+            }
+            pane(from: 0, to: fs, hex: HRWindowRegionStyle.leadHex, alpha: HRWindowRegionStyle.leadAlpha)
+            pane(from: fs, to: fe, hex: HRWindowRegionStyle.footageHex, alpha: HRWindowRegionStyle.footageAlpha)
+            pane(from: fe, to: 1, hex: HRWindowRegionStyle.tailHex, alpha: HRWindowRegionStyle.tailAlpha)
+            for x in [fs, fe] where x > 0.001 && x < 0.999 {
+                let tick = CALayer()
+                tick.frame = CGRect(x: rect.minX + x * rect.width - HRWindowRegionStyle.tickWidth / 2,
+                                    y: rect.minY, width: HRWindowRegionStyle.tickWidth, height: rect.height)
+                tick.backgroundColor = uiColor(HRWindowRegionStyle.tickHex)
+                    .withAlphaComponent(HRWindowRegionStyle.tickAlpha).cgColor
+                container.addSublayer(tick)
+            }
+        }
         let smooth = HRChartGeometry.smoothedPath(through: mapped)
         let lw: CGFloat = sparkline ? HRTileStyle.lineWidthSpark : HRTileStyle.lineWidthFull
         // Dashed for an interpolation-only window — the export twin of the preview's honest sparse styling.
@@ -623,19 +653,23 @@ enum StudioOverlays {
         // white disc is static; the halo (the dot's own bg) + the core animate their colour.
         // Key off the SAME dense `chart` series `pts` came from, so dot index ↔ bpm stay aligned (and the
         // dot glides + recolours smoothly, matching the preview).
-        let sorted = chart.sorted { $0.t < $1.t }
+        // Keyframes from the shared pure mapping (prompt 115): identity without an extended window
+        // (dot sweeps the whole chart, keyTime = x); with one, the dot enters at the lead/footage
+        // boundary, sweeps only the footage span, and PARKS at the footage/tail boundary — the tail
+        // (where the off-camera peak lives) stays drawn but is never swept.
+        let keys = HRChartGeometry.playheadKeyframes(chart, window: window)
         let halo = sparkline ? 11.0 : 16.0, white = sparkline ? 7.0 : 10.0, core = sparkline ? 4.0 : 6.0
-        func dotColorAt(_ i: Int) -> UIColor {
-            zoneColored ? uiColor(HeartRateZone.forBpm(sorted[i].bpm, maxHR: maxHR).colorHex) : uiColor("#FF3B30")
+        func dotColor(_ bpm: Double) -> UIColor {
+            zoneColored ? uiColor(HeartRateZone.forBpm(bpm, maxHR: maxHR).colorHex) : uiColor("#FF3B30")
         }
-        // Strictly-increasing x keyframes (drop duplicate timestamps so CA keeps the animation).
+        // Strictly-increasing keyTimes (drop duplicates so CA keeps the animation).
         var positions: [NSValue] = [], haloColors: [CGColor] = [], coreColors: [CGColor] = [], keyTimes: [NSNumber] = []
         var last = -1.0; let eps = 1e-4
-        for (i, p) in pts.enumerated() where i < sorted.count {
-            let kt = min(1, max(0, p.x))
-            if kt > last + eps {
-                positions.append(NSValue(cgPoint: mapped[i]))
-                let c = dotColorAt(i)
+        for k in keys {
+            let kt = min(1, max(0, k.keyTime))
+            if kt > last + eps || positions.isEmpty {
+                positions.append(NSValue(cgPoint: local(CGPoint(x: k.x, y: k.y))))
+                let c = dotColor(k.bpm)
                 haloColors.append(c.withAlphaComponent(0.35).cgColor); coreColors.append(c.cgColor)
                 keyTimes.append(NSNumber(value: kt)); last = kt
             }
@@ -651,7 +685,7 @@ enum StudioOverlays {
         coreDisc.frame = CGRect(x: (halo - core) / 2, y: (halo - core) / 2, width: core, height: core)
         coreDisc.cornerRadius = core / 2; coreDisc.backgroundColor = coreColors.first ?? UIColor.white.cgColor
         dot.addSublayer(coreDisc)
-        dot.position = mapped[0]
+        dot.position = keys.first.map { local(CGPoint(x: $0.x, y: $0.y)) } ?? mapped[0]
         if keyTimes.count >= 2 {
             keyTimes[0] = 0; keyTimes[keyTimes.count - 1] = 1
             func keyed(_ key: String, _ values: [Any]) -> CAKeyframeAnimation {

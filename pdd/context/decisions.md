@@ -8045,3 +8045,36 @@ build and `.onChange(of: muted)` no-ops while `player` is nil, so an unmute tap 
 window was lost; the `.onChange(of: state)` `.ready` handler now re-applies the LIVE `muted` —
 the same live-read discipline the surface already used for `isActive` (onChange closures are
 rebuilt each body evaluation, so they read current values, not load-time captures).
+
+## 2026-07-09 — Studio extended HR window: tail ADDS past clip_end · fractions divide by the chart's maxT · Variant A styling (prompt 115)
+
+A clip's HR chart can now show `[clip_start − lead, clip_end + tail]` while the live dot sweeps
+only the footage. The non-obvious choices: **(1) The tail adds past `clip_end`.** The request
+sketch said `clip_end − end_offset`, but the goal — "the HR effect of a hard move shows after
+the video is over" — requires extending forward; modeled as `+ tail` with user approval.
+**(2) Every window fraction divides by the chart's `maxT`** (the last SLICED sample's
+window-local `t`), never the nominal span: `HRWindowSlicer` endpoint-holds at the data edge, so
+a tail past HR coverage shrinks the drawn window — dividing by the span would desync the dot,
+panes, and curve from each other. One denominator everywhere (`HRClipWindow` +
+`HROverlayValues.chartMaxT`), same rule `ClipHROverlay.fraction` already pinned for the feed.
+**(3) Off-camera regions are tinted panes + boundary ticks, curve SOLID ("Variant A").** Dashing
+was rejected because dash already means "sparse/interpolated" in both renderers — off-camera
+data is real, only camera coverage differs; dimming was rejected because the tail (the payoff)
+would vanish over busy footage. Style constants live in ONE place (`HRWindowRegionStyle`) read
+by both the SwiftUI preview and the CA export. **(4) Defaults (lead 5 s / tail 30 s / metrics
+over the FULL window) apply to existing projects** — stored per-clip values are optional
+(`nil` = "track the default", `Reset` clears rather than pinning), so old projects pick up the
+feature and future default changes flow through; 0/0 reproduces pre-115 output byte-identically.
+**(5) Metrics scope is a stats-samples swap, not a metric-by-metric fork:** `HROverlayValues`
+gains `statsSamples`/`statsDurationSec` (footage-only slice under `.clip`) while the chart/live
+readings keep the window samples — one init parameter instead of threading scope through every
+resolver; the end-of-clip recovery reading resolves at the footage boundary under `.clip`.
+**(6) The export dot's keyframes come from a pure function** (`HRChartGeometry.playheadKeyframes`:
+enter at the lead boundary at keyTime 0, park at the tail boundary at keyTime 1, boundary y/bpm
+interpolated) so the confinement math is unit-tested and the preview (`chartFraction`) and burn
+can't drift. Shipped WITH the unlinked-clip fix: capture offsets resolve by `sessionMediaID`
+**falling back to the PHAsset `localIdentifier`** (`StudioHRPlacement.resolveOffsets`) — a lost
+media link used to silently degrade the export to the session-wide burn (the user-reported
+"whole-session chart + 584 kcal on a 30 s clip"). The Clips feed and Recap/reel exporters pass
+no window and render exactly as before; teaching the feed to honor per-clip windows is a named
+follow-up.

@@ -550,6 +550,13 @@ private struct HRTileBuilder: View {
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40)
             }
 
+            // Extended HR window (prompt 115) — per-clip lead-in/tail + metrics scope. Targets the
+            // clip under the playhead (the same clip the preview tile shows).
+            if vm.hrWindowInfo != nil {
+                Divider().overlay(Color.white.opacity(0.1))
+                HRWindowControls(vm: vm)
+            }
+
             Divider().overlay(Color.white.opacity(0.1))
             Text("Metrics").font(.subheadline.weight(.semibold))
             Text("Toggle what to show — the caption under each explains what it means.")
@@ -566,6 +573,107 @@ private struct HRTileBuilder: View {
             Text("Drag the tile on the preview to move it; drag a corner to resize.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// The extended-HR-window controls (prompt 115): a mini-map of the window (lead | footage | tail),
+/// the Lead-in / Tail sliders, the metrics-scope picker, and a Reset row. Per-clip — targets the video
+/// clip under the playhead (the same clip the preview tile shows), so dragging a slider updates the
+/// visible chart live (WYSIWYG with the export).
+private struct HRWindowControls: View {
+    @Bindable var vm: StudioEditorViewModel
+
+    var body: some View {
+        if let info = vm.hrWindowInfo {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("HR window").font(.subheadline.weight(.semibold))
+                    Text("this clip").font(.caption2).foregroundStyle(.secondary)
+                }
+                // Mini-map: the window's three regions at their real proportions, the same tints the
+                // chart's panes use.
+                GeometryReader { geo in
+                    let span = max(0.001, info.lead + info.footageSec + info.tail)
+                    HStack(spacing: 0) {
+                        regionCell(seconds: info.lead, span: span, width: geo.size.width,
+                                   label: info.lead > 0 ? "−\(timecode(info.lead))" : nil,
+                                   hex: HRWindowRegionStyle.leadHex, alpha: 0.18)
+                        regionCell(seconds: info.footageSec, span: span, width: geo.size.width,
+                                   label: "FOOTAGE \(timecode(info.footageSec))",
+                                   hex: HRWindowRegionStyle.footageHex, alpha: 0.22)
+                        regionCell(seconds: info.tail, span: span, width: geo.size.width,
+                                   label: info.tail > 0 ? "+\(timecode(info.tail))" : nil,
+                                   hex: HRWindowRegionStyle.tailHex, alpha: 0.14)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.12)))
+                }
+                .frame(height: 26)
+                .accessibilityIdentifier("hrWindowMiniMap")
+
+                slider(label: "Lead-in", value: info.lead, range: 0...HRClipWindow.maxLeadSec,
+                       id: "hrWindowLead") { vm.setHRWindowLead($0) }
+                slider(label: "Tail", value: info.tail, range: 0...HRClipWindow.maxTailSec,
+                       id: "hrWindowTail") { vm.setHRWindowTail($0) }
+                if info.availableTailSec < info.tail {
+                    // Honest clamp hint: the session's recorded HR ends inside the requested tail.
+                    Text("Recorded HR covers \(timecode(info.availableTailSec)) of the \(timecode(info.tail)) tail — the chart stops at the data.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("hrWindowClampHint")
+                }
+                Text("The chart shows HR beyond the footage; the live dot still tracks the video.")
+                    .font(.caption2).foregroundStyle(.secondary)
+
+                HStack(spacing: 10) {
+                    Text("Metrics over").font(.caption)
+                    Picker("Metrics over", selection: Binding(
+                        get: { info.scope }, set: { vm.setHRWindowScope($0) })) {
+                        ForEach(HRMetricsScope.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("hrWindowScope")
+                }
+                if vm.hrWindowIsCustomized {
+                    HStack {
+                        Text("Defaults: lead \(timecode(HRClipWindow.defaultLeadSec)) · tail \(timecode(HRClipWindow.defaultTailSec))")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Reset") { vm.resetHRWindow() }
+                            .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.workout)
+                            .accessibilityIdentifier("hrWindowReset")
+                    }
+                }
+            }
+        }
+    }
+
+    private func regionCell(seconds: Double, span: Double, width: CGFloat,
+                            label: String?, hex: String, alpha: Double) -> some View {
+        ZStack {
+            Color(studioHex: hex).opacity(alpha)
+            if let label {
+                Text(label).font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(studioHex: hex))
+                    .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, 2)
+            }
+        }
+        .frame(width: max(0, seconds / span) * width)
+    }
+
+    private func slider(label: String, value: Double, range: ClosedRange<Double>,
+                        id: String, set: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.caption).frame(width: 64, alignment: .leading)
+            Slider(value: Binding(get: { value }, set: set), in: range, step: 1)
+                .accessibilityIdentifier(id)
+            Text(timecode(value))
+                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40)
+        }
+    }
+
+    private func timecode(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 }
 

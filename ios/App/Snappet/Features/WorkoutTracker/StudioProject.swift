@@ -87,6 +87,13 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
     /// Ken-Burns / zoom scale over the clip's output time (empty = static). Value = scale factor.
     var scaleKeyframes: [StudioKeyframe]
 
+    // Extended HR window (prompt 115) — how far the clip's HR chart reaches beyond the footage.
+    // Optional → migration-safe Codable change (old persisted clips decode `nil` = the defaults);
+    // read through `hrWindowLeadSec` / `hrWindowTailSec` / `hrMetricsScope` below.
+    var hrLeadSec: Double?
+    var hrTailSec: Double?
+    var hrMetricsScopeRaw: String?
+
     init(id: UUID = UUID(), sessionMediaID: UUID?, localIdentifier: String, isPhoto: Bool,
          order: Int, trimStart: Double = 0, trimEnd: Double? = nil, speed: Double = 1,
          photoDurationSec: Double = 3,
@@ -115,6 +122,19 @@ struct TimelineClip: Codable, Hashable, Sendable, Identifiable {
     var filter: StudioFilter {
         get { StudioFilter(rawValue: filterRaw) ?? .none }
         set { filterRaw = newValue.rawValue }
+    }
+    /// Effective HR-window lead-in (seconds before `clip_start` the chart shows). `nil` = default.
+    var hrWindowLeadSec: Double {
+        min(HRClipWindow.maxLeadSec, max(0, hrLeadSec ?? HRClipWindow.defaultLeadSec))
+    }
+    /// Effective HR-window tail (seconds after `clip_end` the chart shows). `nil` = default.
+    var hrWindowTailSec: Double {
+        min(HRClipWindow.maxTailSec, max(0, hrTailSec ?? HRClipWindow.defaultTailSec))
+    }
+    /// Which samples the tile's aggregates cover. `nil` = the scope default (full window).
+    var hrMetricsScope: HRMetricsScope {
+        get { hrMetricsScopeRaw.flatMap(HRMetricsScope.init(rawValue:)) ?? .default }
+        set { hrMetricsScopeRaw = newValue.rawValue }
     }
     var cropRect: CGRect {
         get { CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight) }
