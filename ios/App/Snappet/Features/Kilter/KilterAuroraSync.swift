@@ -167,11 +167,13 @@ final class HostedCatalogClient {
         for try await byte in bytes {
             buffer.append(byte)
             if buffer.count >= (1 << 16) {
-                handle.write(buffer); received += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
+                // Throwing write, not the legacy `write(_:)` — a catalog is ~165 MB and a full disk
+                // mid-download would raise an uncatchable NSFileHandleOperationException (hard crash).
+                try handle.write(contentsOf: buffer); received += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
                 if total > 0 { progress(min(1, Double(received) / Double(total))) }
             }
         }
-        if !buffer.isEmpty { handle.write(buffer); received += Int64(buffer.count) }
+        if !buffer.isEmpty { try handle.write(contentsOf: buffer); received += Int64(buffer.count) }
         guard received > 0 else { throw HostedCatalogError.emptyDownload }
         progress(1)
     }
@@ -213,7 +215,12 @@ final class HostedCatalogClient {
                         return outSize - Int(stream.avail_out)
                     }
                     guard let produced else { threw = HostedCatalogError.badGzip; return }
-                    if produced > 0 { output.write(Data(outBuffer[0..<produced])) }
+                    // The decompressed catalog is even larger than the download — same throwing-write
+                    // discipline (the closure is non-throwing, so route through `threw`).
+                    if produced > 0 {
+                        do { try output.write(contentsOf: Data(outBuffer[0..<produced])) }
+                        catch { threw = error; return }
+                    }
                     if produced == 0 && !finished { break }   // need more input
                 }
             }

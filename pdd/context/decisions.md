@@ -8022,3 +8022,26 @@ row's timeline placement beats un-pinning to nowhere); **(2) the FOCUS covers ar
 they already attach at commit with an explicit target, and `RecordedClip`/`RecordClipButton`
 carry no new owner field precisely so that surface can't drift. Multi-owner batches (record on
 A, swipe, record on B mid-save) attach each group to its own owner in recording order.
+
+## 2026-07-08 — Bug-hunt Wave 4: throwing FileHandle writes · one identifier-only dedup fetch · live-mute re-apply (prompt 114, #274)
+
+Three P2 hardenings, one wave. **(1) Streaming writes must throw, never raise.** The three
+streaming downloaders (`ExercisePhotoStore`, `HostedCatalogClient`, `KilterGeneratorAssets`)
+and the `gunzip` inflate loop wrote via the **legacy** `FileHandle.write(_:)`, which raises an
+ObjC `NSFileHandleOperationException` on a failed write — uncatchable from Swift, so a full
+disk mid-download (~52 MB pack / ~165 MB catalog, MORE decompressed) hard-crashed instead of
+landing on the installer's error phase. Rule going forward: file writes in any download/export
+loop use the throwing `write(contentsOf:)`; inside a non-throwing closure, route the error out
+through a captured `threw` (see `gunzip`). One `close()` owner per handle (the `defer`).
+**(2) The global auto-discovery dedup set has ONE implementation:**
+`SessionMedia.allIdentifiers(in:)`, an identifier-only fetch (`propertiesToFetch`) — the live
+session's ~20 s discovery tick runs on the MainActor and a full-object whole-table fetch scales
+with the entire media library (the same pattern prompt 106 evicted from the Clips feed). The
+global — not session-scoped — semantics (R2/R4: one physical asset → one session) are pinned by
+`SessionMediaIdentifierSetTests`; `SessionDetailView` + `KilterBoardController` share the
+helper so the three sites can't drift. **(3) Player state set during an async load is re-read
+at ready-time.** `ClipMediaSurface.load()` snapshots `muted` before the background player
+build and `.onChange(of: muted)` no-ops while `player` is nil, so an unmute tap in the load
+window was lost; the `.onChange(of: state)` `.ready` handler now re-applies the LIVE `muted` —
+the same live-read discipline the surface already used for `isActive` (onChange closures are
+rebuilt each body evaluation, so they read current values, not load-time captures).

@@ -649,11 +649,8 @@ private struct SessionMediaSection: View {
 
     /// Identifiers tagged to ANY session — the dedup set for AUTO-discovery, so a clip in the ±90s pad
     /// overlap of two adjacent sessions is auto-tagged into one session, not both (R2/R4: one physical
-    /// video → one set). A global fetch is fine at these media volumes.
-    private var allMediaIdentifiers: Set<String> {
-        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
-        return Set(rows.map(\.localIdentifier))
-    }
+    /// video → one set). Identifier-only fetch via the shared helper (prompt 114).
+    private var allMediaIdentifiers: Set<String> { SessionMedia.allIdentifiers(in: context) }
 
     @MainActor
     private func autoDiscover(prompt: Bool) async {

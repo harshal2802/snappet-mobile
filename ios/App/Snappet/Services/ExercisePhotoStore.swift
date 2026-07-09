@@ -207,12 +207,14 @@ final class ExercisePhotoStore: @unchecked Sendable {
         for try await byte in bytes {
             buffer.append(byte)
             if buffer.count >= (1 << 16) {
-                handle.write(buffer); received += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
+                // `write(contentsOf:)`, not the legacy `write(_:)` — the legacy call raises an ObjC
+                // NSFileHandleOperationException on a write failure (disk full mid-download) that Swift
+                // cannot catch; the throwing variant surfaces it as a normal error to the caller.
+                try handle.write(contentsOf: buffer); received += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
                 if total > 0 { progress(min(1, Double(received) / Double(total))) }
             }
         }
-        if !buffer.isEmpty { handle.write(buffer); received += Int64(buffer.count) }
-        try? handle.close()
+        if !buffer.isEmpty { try handle.write(contentsOf: buffer); received += Int64(buffer.count) }
         guard received > 0 else { throw ExercisePhotoStoreError.emptyDownload }
         progress(1)
     }

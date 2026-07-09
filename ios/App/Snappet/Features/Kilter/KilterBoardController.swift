@@ -870,7 +870,6 @@ final class KilterSessionManager {
     /// them (this set is a superset of the session's own). The `sessionID` is unused now but kept so the
     /// call site reads intent; a global fetch is fine at the small media volumes here.
     private func existingMediaIdentifiers(sessionID: UUID, in context: ModelContext) -> Set<String> {
-        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? []
-        return Set(rows.map(\.localIdentifier))
+        SessionMedia.allIdentifiers(in: context)
     }
 }
