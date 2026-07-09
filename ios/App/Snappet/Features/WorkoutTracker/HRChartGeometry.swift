@@ -128,6 +128,59 @@ enum HRChartGeometry {
         samples.map(\.bpm).filter { $0 > 0 }.max()
     }
 
+    // MARK: - Extended-window playhead keyframes (prompt 115)
+
+    /// One keyframe of the export's playhead-dot animation: the dot's normalized chart position
+    /// (`x = t / maxT`, `y` = normalized bpm, 1 = top), the bpm under it (zone recolouring), and the
+    /// `keyTime` in **footage** time (0…1 of the clip's output slot).
+    struct PlayheadKey: Equatable, Sendable {
+        var x: Double
+        var y: Double
+        var bpm: Double
+        var keyTime: Double
+    }
+
+    /// The playhead-dot keyframes over a (possibly extended) window. Without a window — or an
+    /// unextended one — every chart point keys at its own `x` (the pre-115 behaviour: the dot sweeps
+    /// the whole chart across the clip's slot). With an extended window the dot **enters at the
+    /// lead/footage boundary (keyTime 0), sweeps only the footage span, and parks at the footage/tail
+    /// boundary (keyTime 1)**; boundary position/bpm are linearly interpolated between the bracketing
+    /// chart points. Degenerate footage span (data ends before the footage starts) parks the dot at
+    /// the boundary for the whole slot. Empty for < 2 drawable points. Pure → unit-tested.
+    static func playheadKeyframes(_ chart: [HRPoint], window: HRClipWindow?) -> [PlayheadKey] {
+        let sorted = chart.sorted { $0.t < $1.t }
+        let pts = normalizedPoints(sorted)
+        guard pts.count == sorted.count, !pts.isEmpty else { return [] }
+        let base = zip(pts, sorted).map { (p, s) in
+            PlayheadKey(x: p.x, y: p.y, bpm: s.bpm, keyTime: p.x)
+        }
+        guard let window, window.isExtended, let maxT = sorted.last?.t, maxT > 0 else { return base }
+
+        // Linear interpolation of (y, bpm) at a chart fraction, endpoint-held outside the points.
+        func key(at x: Double, keyTime: Double) -> PlayheadKey {
+            if x <= base[0].x { return PlayheadKey(x: base[0].x, y: base[0].y, bpm: base[0].bpm, keyTime: keyTime) }
+            if let last = base.last, x >= last.x { return PlayheadKey(x: last.x, y: last.y, bpm: last.bpm, keyTime: keyTime) }
+            let i = base.firstIndex { $0.x > x } ?? base.count - 1
+            let a = base[i - 1], b = base[i]
+            let span = b.x - a.x
+            let f = span > 0 ? (x - a.x) / span : 0
+            return PlayheadKey(x: x, y: a.y + (b.y - a.y) * f, bpm: a.bpm + (b.bpm - a.bpm) * f, keyTime: keyTime)
+        }
+
+        let fs = window.footageStartFraction(maxT: maxT)
+        let fe = window.footageEndFraction(maxT: maxT)
+        guard fe - fs > 1e-6 else {
+            // No sweepable footage span on this chart — park at the boundary for the whole slot.
+            return [key(at: fs, keyTime: 0), key(at: fs, keyTime: 1)]
+        }
+        var keys: [PlayheadKey] = [key(at: fs, keyTime: 0)]
+        for k in base where k.x > fs && k.x < fe {
+            keys.append(PlayheadKey(x: k.x, y: k.y, bpm: k.bpm, keyTime: (k.x - fs) / (fe - fs)))
+        }
+        keys.append(key(at: fe, keyTime: 1))
+        return keys
+    }
+
     /// One stop of the **zone-banded stroke gradient** (the curve greens through the aerobic plateau
     /// and reddens into the peak): a normalized x (0…1) along the curve and the repo zone colour at the
     /// bpm there. Pure — no SwiftUI; the renderers turn the hex into their platform colour.

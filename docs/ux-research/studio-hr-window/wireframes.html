@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Studio · Extended HR Window · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — literal hex from SnappetColor.swift (dark values; Studio is media-dark) */
+    --coral:#FF7A6B;
+    --ember:#FF9645;          /* Workout / gym accent — the Studio's accent */
+    --amber:#F59E0B;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    /* HeartRateZone.colorHex — the cool→hot ramp burned into exports */
+    --z1:#007AFF; --z2:#30B0C7; --z3:#34C759; --z4:#FF9500; --z5:#FF3B30;
+    --glass:rgba(20,20,24,.72);
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1a1424,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:1500px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc9a8 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16px;max-width:1050px;margin:0 0 14px}
+  .sub b{color:#fff}
+  .wrap{max-width:1500px;margin:0 auto;padding:0 28px}
+  h2.sect{font-size:22px;font-weight:800;margin:44px 0 6px;letter-spacing:-.01em}
+  .sectsub{color:#b2b3bd;font-size:14px;max-width:1000px;margin:0 0 18px}
+  .sectsub b{color:#fff}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:336px;position:relative}
+  .step.wide{width:520px}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--ember);color:#2a1607;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,150,69,.4)}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--ember);font-weight:650}
+
+  /* ---------- concept diagram ---------- */
+  .concept{background:var(--surface);border:1px solid var(--hair);border-radius:20px;padding:26px 28px 20px;margin-top:20px;overflow-x:auto}
+  .concept svg{display:block;min-width:900px;width:100%}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin-top:12px;font-size:12.5px;color:var(--t2)}
+  .legend .li{display:flex;align-items:center;gap:7px}
+  .sw{width:14px;height:14px;border-radius:4px;flex:none}
+
+  /* ---------- device ---------- */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .studiobar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:6px 16px 8px}
+  .studiobar .t{font-size:17px;font-weight:800}
+  .studiobar .x{color:var(--t2);font-size:14px}
+  .studiobar .save{color:var(--ember);font-size:14px;font-weight:700}
+
+  /* preview canvas (the video) */
+  .preview{position:relative;flex:none;height:342px;margin:0 12px;border-radius:16px;overflow:hidden;
+    background:linear-gradient(165deg,#4a4038 0%,#2c2a30 46%,#17181d 100%)}
+  .preview .figure{position:absolute;inset:0;background:
+    radial-gradient(120px 90px at 62% 40%,rgba(255,190,140,.30),transparent 70%),
+    radial-gradient(80px 120px at 58% 66%,rgba(120,110,130,.45),transparent 72%),
+    radial-gradient(60px 40px at 30% 30%,rgba(245,158,11,.22),transparent 70%)}
+  .preview .board{position:absolute;left:8%;top:10%;width:32%;height:56%;
+    background:linear-gradient(170deg,#6d5a43,#4b3d2e);border-radius:6px;opacity:.85;transform:rotate(-4deg)}
+  .preview .board i{position:absolute;width:9px;height:9px;border-radius:50%;background:rgba(0,0,0,.35);box-shadow:inset 0 1px 2px rgba(255,255,255,.25)}
+  .playbtn{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;
+    background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff}
+
+  /* ---------- the HR tile (scorebug w/ extended chart) ---------- */
+  .hrtile{position:absolute;left:10px;right:10px;bottom:10px;border-radius:14px;padding:8px 12px 7px;
+    background:linear-gradient(180deg,rgba(14,14,18,.55),rgba(10,10,14,.72));
+    border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(6px)}
+  .hrtile .toprow{display:flex;align-items:baseline;justify-content:space-between}
+  .hrtile .bpm{font-size:22px;font-weight:850;color:#fff;letter-spacing:-.02em}
+  .hrtile .bpm small{font-size:9px;font-weight:700;color:rgba(255,255,255,.6);margin-left:2px}
+  .hrtile .zchip{font-size:9px;font-weight:800;padding:2px 8px;border-radius:99px;border:1px solid}
+  .hrtile .chart{position:relative;margin:4px 0 3px}
+  .hrtile .chart svg{display:block;width:100%;height:56px}
+  .hrtile .stats{display:flex;justify-content:space-between;padding-top:2px}
+  .hrtile .stat{text-align:center}
+  .hrtile .stat .v{font-size:12.5px;font-weight:800;color:#fff}
+  .hrtile .stat .v em{font-style:normal;font-size:8px;color:rgba(255,255,255,.55);margin-left:1px}
+  .hrtile .stat .l{font-size:8px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.55)}
+  .hrtile .stat .v.hl{color:var(--z4)}
+  .hrtile.selected{outline:1.5px solid var(--ember);outline-offset:1px}
+  .hrtile .handle{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--ember);border:2px solid #000}
+  .hrtile .handle.tl{left:-5px;top:-5px}.hrtile .handle.br{right:-5px;bottom:-5px}
+
+  /* timeline strip under preview */
+  .strip{flex:none;display:flex;align-items:center;gap:6px;padding:10px 14px 4px}
+  .strip .clip{height:44px;border-radius:8px;flex:1;position:relative;overflow:hidden;
+    background:repeating-linear-gradient(90deg,#3a352f 0 26px,#2e2a26 26px 52px);border:1.5px solid var(--ember)}
+  .strip .clip .ph{position:absolute;top:0;bottom:0;left:38%;width:2px;background:#fff}
+  .strip .clip2{height:44px;border-radius:8px;width:52px;background:repeating-linear-gradient(90deg,#33373d 0 20px,#282c31 20px 40px);border:1px solid var(--hair)}
+  .strip .add{width:32px;height:44px;border-radius:8px;border:1px dashed var(--hair);color:var(--t2);display:flex;align-items:center;justify-content:center}
+  .timecode{flex:none;text-align:center;font-size:10.5px;color:var(--t2);padding:2px 0 6px;font-variant-numeric:tabular-nums}
+
+  /* tool tabs row */
+  .tools{flex:none;display:flex;gap:6px;padding:4px 12px 8px;overflow:hidden}
+  .tool{flex:none;padding:7px 13px;border-radius:99px;font-size:12px;font-weight:700;background:var(--muted);border:1px solid var(--hair);color:var(--t2)}
+  .tool.on{background:rgba(255,150,69,.16);border-color:var(--ember);color:var(--ember)}
+
+  /* HR tool sheet */
+  .sheet{flex:1;min-height:0;background:var(--surface);border-top:1px solid var(--hair);border-radius:18px 18px 0 0;
+    padding:10px 16px 12px;overflow:hidden;display:flex;flex-direction:column}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 8px;flex:none}
+  .sheet h4{margin:2px 0 6px;font-size:13.5px;font-weight:800}
+  .sheet h4 small{font-weight:600;color:var(--t2);font-size:11px;margin-left:6px}
+  .row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px}
+  .row .lab{width:74px;color:var(--ink);font-weight:650;flex:none}
+  .row .val{width:44px;text-align:right;color:var(--t2);font-variant-numeric:tabular-nums;font-size:11.5px;flex:none}
+  .slider{flex:1;height:26px;position:relative}
+  .slider .trk{position:absolute;left:0;right:0;top:11px;height:4px;border-radius:2px;background:#3a3a42}
+  .slider .fill{position:absolute;left:0;top:11px;height:4px;border-radius:2px;background:var(--ember)}
+  .slider .knob{position:absolute;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .seg{display:flex;background:var(--muted);border-radius:9px;padding:2px;font-size:11.5px;font-weight:700}
+  .seg span{flex:1;text-align:center;padding:5px 8px;border-radius:7px;color:var(--t2)}
+  .seg span.on{background:#3f3f47;color:#fff}
+  .toggle{margin-left:auto;width:42px;height:25px;border-radius:99px;background:#3a3a42;position:relative;flex:none}
+  .toggle.on{background:var(--z3)}
+  .toggle i{position:absolute;top:2.5px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .toggle.on i{left:auto;right:3px}
+  .hint{font-size:10.5px;color:var(--t2);margin:2px 0 4px}
+  .hint b{color:var(--ember)}
+  .divider{height:1px;background:var(--hair);margin:8px 0;flex:none}
+  .resetrow{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--t2)}
+  .resetrow .r{color:var(--ember);font-weight:700}
+
+  /* mini window-preview inside the sheet (the strip showing lead|clip|tail) */
+  .winbar{display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--hair);margin:6px 0 2px;font-size:9px;font-weight:800}
+  .winbar div{display:flex;align-items:center;justify-content:center}
+  .winbar .lead{background:rgba(48,176,199,.18);color:var(--z2)}
+  .winbar .foot{background:rgba(255,150,69,.22);color:var(--ember);border-left:1.5px solid var(--ember);border-right:1.5px solid var(--ember)}
+  .winbar .tail{background:rgba(255,59,48,.14);color:#ff8d85}
+
+  /* variant cards */
+  .variants{display:flex;flex-wrap:wrap;gap:26px;margin-top:20px}
+  .vcard{width:400px;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:16px 18px}
+  .vcard.reco{border-color:var(--ember);box-shadow:0 0 0 1px var(--ember)}
+  .vcard h3{margin:0 0 2px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .vcard .badge{font-size:9.5px;font-weight:800;letter-spacing:.05em;background:rgba(255,150,69,.16);color:var(--ember);
+    border:1px solid var(--ember);border-radius:99px;padding:2px 8px}
+  .vcard p{font-size:12px;color:var(--t2);margin:4px 0 10px}
+  .vcard p b{color:#fff}
+  .vchart{background:linear-gradient(180deg,rgba(14,14,18,.9),rgba(10,10,14,.95));border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 12px}
+  .vchart svg{display:block;width:100%;height:64px}
+
+  /* rules table */
+  .rules{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:8px 20px;margin-top:18px;max-width:1050px}
+  .rules table{width:100%;border-collapse:collapse;font-size:13px}
+  .rules td,.rules th{padding:10px 12px;border-bottom:1px solid var(--hair);text-align:left;vertical-align:top}
+  .rules tr:last-child td{border-bottom:none}
+  .rules th{color:var(--t2);font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+  .rules td:first-child{font-weight:700;white-space:nowrap;color:#fff}
+  .rules code{background:var(--muted);border-radius:5px;padding:1px 6px;font-size:12px;color:#ffd9c2}
+  .note{max-width:1050px;background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.4);border-radius:14px;
+    padding:14px 18px;margin-top:18px;font-size:13.5px;color:#e9d9cd}
+  .note b{color:var(--ember)}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Studio — Extended HR Window (per clip)</h1>
+  <p class="sub"><b>The idea:</b> a hard move's heart-rate story doesn't end when the camera stops. Each clip's HR chart can now
+    show a <b>wider window than the footage</b> — a configurable <b>lead-in</b> before the clip starts and a <b>tail</b> after it
+    ends — while the <b>live playhead + BPM still track the video exactly</b> across the footage span. Configured per clip in the
+    Studio's HR tool, burned into the export, with honest visual styling for the "off-camera" regions.</p>
+</header>
+
+<div class="wrap">
+  <h2 class="sect">1 · The window model</h2>
+  <p class="sectsub">One clip, three regions. <b>HR window = [clip_start − lead, clip_end + tail]</b>, clamped to the session's HR
+    coverage. (Your note said <code style="background:#26262B;border-radius:5px;padding:1px 6px">clip_end − end_offset</code> — since the
+    goal is to show HR <i>after</i> the video is over, the tail must <b>add</b> past clip_end; modeled that way here.)
+    The chart draws the whole window; the animated dot + live BPM sweep <b>only the footage region</b>, in lockstep with video time.</p>
+
+  <div class="concept">
+    <svg viewBox="0 0 1000 300" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="zramp" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#30B0C7"/><stop offset=".38" stop-color="#34C759"/>
+          <stop offset=".68" stop-color="#FF9500"/><stop offset=".84" stop-color="#FF3B30"/>
+          <stop offset="1" stop-color="#FF9500"/>
+        </linearGradient>
+      </defs>
+      <!-- session band -->
+      <text x="20" y="34" fill="#A6A5A1" font-size="13" font-weight="700">SESSION HR (whole session · 42 min)</text>
+      <rect x="20" y="44" width="960" height="46" rx="8" fill="#26262B"/>
+      <path d="M24 78 L80 74 L140 68 L200 76 L260 62 L320 70 L380 58 L440 66 L500 60 L520 56 L560 64 L600 50 L640 58 L660 52 L680 46 L700 54 L740 62 L800 56 L860 66 L920 60 L976 68"
+            fill="none" stroke="#5a5a64" stroke-width="2"/>
+      <!-- window highlight on the session band -->
+      <rect x="540" y="44" width="200" height="46" rx="6" fill="rgba(255,150,69,.10)" stroke="#FF9645" stroke-dasharray="4 3"/>
+      <rect x="576" y="44" width="110" height="46" fill="rgba(255,150,69,.18)" stroke="#FF9645" stroke-width="1.5"/>
+      <text x="631" y="108" fill="#FF9645" font-size="12" font-weight="800" text-anchor="middle">footage (clip 0:00–0:28)</text>
+      <!-- offsets braces -->
+      <line x1="540" y1="120" x2="576" y2="120" stroke="#30B0C7" stroke-width="2"/>
+      <text x="558" y="136" fill="#30B0C7" font-size="11.5" font-weight="700" text-anchor="middle">lead 0:05</text>
+      <line x1="686" y1="120" x2="740" y2="120" stroke="#FF6A5C" stroke-width="2"/>
+      <text x="713" y="136" fill="#FF6A5C" font-size="11.5" font-weight="700" text-anchor="middle">tail 0:30</text>
+      <!-- projection lines -->
+      <line x1="540" y1="96" x2="60" y2="180" stroke="#4a4a52" stroke-dasharray="3 4"/>
+      <line x1="740" y1="96" x2="940" y2="180" stroke="#4a4a52" stroke-dasharray="3 4"/>
+
+      <!-- clip chart -->
+      <text x="20" y="172" fill="#A6A5A1" font-size="13" font-weight="700">CLIP HR CHART (what the tile draws · window = 1:03)</text>
+      <rect x="60" y="180" width="880" height="86" rx="10" fill="#101014" stroke="#34343A"/>
+      <!-- regions: lead 8%, footage 44%, tail 48% of window duration -->
+      <rect x="60" y="180" width="72" height="86" fill="rgba(48,176,199,.10)"/>
+      <rect x="132" y="180" width="392" height="86" fill="rgba(255,150,69,.10)"/>
+      <rect x="524" y="180" width="416" height="86" fill="rgba(255,59,48,.07)"/>
+      <line x1="132" y1="180" x2="132" y2="266" stroke="#FF9645" stroke-width="1.5"/>
+      <line x1="524" y1="180" x2="524" y2="266" stroke="#FF9645" stroke-width="1.5"/>
+      <!-- curve: rises during clip, PEAKS in the tail, decays -->
+      <path d="M64 246 L90 244 L110 240 L132 238 L160 236 L185 230 L210 232 L240 226 L270 222 L300 224 L330 216 L360 210 L390 206 L420 200 L450 202 L480 196 L510 192 L524 190 L544 182 L562 186 L580 192 L600 196 L640 200 L680 204 L720 210 L760 216 L800 222 L850 228 L900 232 L936 236"
+            fill="none" stroke="url(#zramp)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="544" cy="182" r="4.5" fill="#FF3B30"/>
+      <text x="544" y="174" fill="#FF3B30" font-size="11.5" font-weight="800" text-anchor="middle">164 peak · +9s after clip</text>
+      <!-- playhead dot -->
+      <circle cx="330" cy="216" r="6" fill="#fff"/>
+      <text x="330" y="282" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">▶ live dot sweeps footage only</text>
+      <text x="96" y="196" fill="#30B0C7" font-size="10.5" font-weight="700" text-anchor="middle">lead-in</text>
+      <text x="732" y="196" fill="#ff8d85" font-size="10.5" font-weight="700" text-anchor="middle">tail (after the video ends)</text>
+    </svg>
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:rgba(48,176,199,.35)"></span>lead-in — HR before the camera rolled</span>
+      <span class="li"><span class="sw" style="background:rgba(255,150,69,.45)"></span>footage — the video; live dot + BPM track here</span>
+      <span class="li"><span class="sw" style="background:rgba(255,59,48,.30)"></span>tail — HR after the clip; where a hard move's peak usually lands</span>
+      <span class="li"><span class="sw" style="background:#fff;border-radius:50%"></span>playhead dot (maps video 0:00→0:28 onto the footage region)</span>
+    </div>
+  </div>
+
+  <h2 class="sect">2 · In the Studio editor</h2>
+  <p class="sectsub">The HR tool grows one new section — <b>HR window</b> — under the existing tile design/metrics controls.
+    Two steppers-with-slider (lead, tail), a live mini-map of the window, and a <b>Metrics over</b> scope switch. All per-clip:
+    the values apply to the clip selected on the timeline, and the tile preview updates live (WYSIWYG with export).</p>
+
+  <div class="gallery">
+
+    <!-- STEP 1: editor with HR window section -->
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="studiobar"><span class="x">✕</span><span class="t">Studio</span><span class="save">Export</span></div>
+        <div class="preview">
+          <div class="figure"></div>
+          <div class="board"><i style="left:18%;top:22%"></i><i style="left:58%;top:34%"></i><i style="left:34%;top:58%"></i><i style="left:70%;top:72%"></i></div>
+          <div class="playbtn">▶</div>
+          <div class="hrtile selected">
+            <div class="handle tl"></div><div class="handle br"></div>
+            <div class="toprow">
+              <span class="bpm">142<small>BPM</small></span>
+              <span class="zchip" style="color:var(--z4);border-color:rgba(255,149,0,.5)">Z4 · THRESHOLD</span>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 280 56">
+                <rect x="0" y="0" width="24" height="56" fill="rgba(48,176,199,.12)"/>
+                <rect x="24" y="0" width="122" height="56" fill="rgba(255,150,69,.12)"/>
+                <rect x="146" y="0" width="134" height="56" fill="rgba(255,59,48,.08)"/>
+                <line x1="24" y1="0" x2="24" y2="56" stroke="#FF9645" stroke-width="1"/>
+                <line x1="146" y1="0" x2="146" y2="56" stroke="#FF9645" stroke-width="1"/>
+                <path d="M2 44 L14 42 L24 41 L38 39 L52 36 L66 37 L80 33 L94 30 L108 27 L122 24 L136 21 L146 19 L156 13 L164 15 L176 19 L192 24 L210 29 L228 33 L248 37 L268 40 L278 41"
+                      fill="none" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+                <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#30B0C7"/><stop offset=".35" stop-color="#34C759"/>
+                  <stop offset=".52" stop-color="#FF9500"/><stop offset=".57" stop-color="#FF3B30"/>
+                  <stop offset=".75" stop-color="#FF9500"/><stop offset="1" stop-color="#34C759"/>
+                </linearGradient></defs>
+                <circle cx="156" cy="13" r="3" fill="#FF3B30"/>
+                <text x="156" y="8" fill="#FF3B30" font-size="7" font-weight="800" text-anchor="middle">164</text>
+                <circle cx="96" cy="30" r="4" fill="#fff"/>
+              </svg>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="v">54<em>%</em></div><div class="l">HRR</div></div>
+              <div class="stat"><div class="v">131<em>BPM</em></div><div class="l">AVG</div></div>
+              <div class="stat"><div class="v hl">164<em>BPM</em></div><div class="l">PEAK</div></div>
+              <div class="stat"><div class="v">9<em>KCAL</em></div><div class="l">KCAL</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="strip"><div class="clip"><div class="ph"></div></div><div class="clip2"></div><div class="add">＋</div></div>
+        <div class="timecode">0:11 / 0:28</div>
+        <div class="tools"><span class="tool">Trim</span><span class="tool">Text</span><span class="tool on">HR ✓</span><span class="tool">PiP</span><span class="tool">Filter</span></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <h4>HR window <small>this clip</small></h4>
+          <div class="winbar">
+            <div class="lead" style="width:9%">−0:05</div>
+            <div class="foot" style="width:43%">FOOTAGE 0:28</div>
+            <div class="tail" style="width:48%">+0:30</div>
+          </div>
+          <div class="row"><span class="lab">Lead-in</span>
+            <div class="slider"><div class="trk"></div><div class="fill" style="width:17%"></div><div class="knob" style="left:15%"></div></div>
+            <span class="val">0:05</span></div>
+          <div class="row"><span class="lab">Tail</span>
+            <div class="slider"><div class="trk"></div><div class="fill" style="width:25%"></div><div class="knob" style="left:23%"></div></div>
+            <span class="val">0:30</span></div>
+          <p class="hint">Chart shows HR beyond the footage. The live dot still tracks the video — <b>peak +9s after clip</b>.</p>
+          <div class="divider"></div>
+          <div class="row" style="gap:12px"><span class="lab" style="width:auto">Metrics over</span>
+            <div class="seg" style="flex:1"><span>Clip only</span><span class="on">Full window</span></div></div>
+          <p class="hint">AVG · PEAK · KCAL computed over the full window (includes the tail's 164 peak).</p>
+          <div class="divider"></div>
+          <div class="resetrow"><span>Defaults: lead 0:05 · tail 0:30</span><span class="r">Reset</span></div>
+        </div>
+      </div></div>
+      <p class="caption"><b>The HR tool with the new “HR window” section.</b> The mini-map strip mirrors the tile's chart regions
+        1:1. Sliders snap to 1-second steps; the tile chart re-slices live as you drag. The <span class="k">peak now lands in the
+        tail</span> — visible on the preview immediately.</p>
+    </div>
+
+    <!-- STEP 2: playback mid-clip -->
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="studiobar"><span class="x">✕</span><span class="t">Studio</span><span class="save">Export</span></div>
+        <div class="preview" style="height:560px">
+          <div class="figure"></div>
+          <div class="board"><i style="left:18%;top:22%"></i><i style="left:58%;top:34%"></i><i style="left:34%;top:58%"></i><i style="left:70%;top:72%"></i></div>
+          <div class="hrtile">
+            <div class="toprow">
+              <span class="bpm">147<small>BPM</small></span>
+              <span class="zchip" style="color:var(--z4);border-color:rgba(255,149,0,.5)">Z4 · THRESHOLD</span>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 280 56">
+                <rect x="0" y="0" width="24" height="56" fill="rgba(48,176,199,.12)"/>
+                <rect x="24" y="0" width="122" height="56" fill="rgba(255,150,69,.12)"/>
+                <rect x="146" y="0" width="134" height="56" fill="rgba(255,59,48,.08)"/>
+                <line x1="24" y1="0" x2="24" y2="56" stroke="#FF9645" stroke-width="1"/>
+                <line x1="146" y1="0" x2="146" y2="56" stroke="#FF9645" stroke-width="1"/>
+                <path d="M2 44 L14 42 L24 41 L38 39 L52 36 L66 37 L80 33 L94 30 L108 27 L122 24 L136 21 L146 19 L156 13 L164 15 L176 19 L192 24 L210 29 L228 33 L248 37 L268 40 L278 41"
+                      fill="none" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+                <circle cx="156" cy="13" r="3" fill="#FF3B30"/>
+                <circle cx="128" cy="23" r="4.5" fill="#fff"/>
+              </svg>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="v">54<em>%</em></div><div class="l">HRR</div></div>
+              <div class="stat"><div class="v">131<em>BPM</em></div><div class="l">AVG</div></div>
+              <div class="stat"><div class="v hl">164<em>BPM</em></div><div class="l">PEAK</div></div>
+              <div class="stat"><div class="v">9<em>KCAL</em></div><div class="l">KCAL</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="timecode" style="padding-top:8px">▶ 0:24 / 0:28 — dot approaching the footage boundary</div>
+      </div></div>
+      <p class="caption"><b>Playing, near the end of the footage.</b> Live BPM (147) and the white dot track video time inside the
+        footage region only. The tail — with the <span class="k">164 peak still ahead</span> — is already visible, telling the
+        story before the video even ends.</p>
+    </div>
+
+    <!-- STEP 3: video ended -->
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="studiobar"><span class="x">✕</span><span class="t">Studio</span><span class="save">Export</span></div>
+        <div class="preview" style="height:560px">
+          <div class="figure" style="opacity:.75"></div>
+          <div class="board" style="opacity:.6"><i style="left:18%;top:22%"></i><i style="left:58%;top:34%"></i><i style="left:34%;top:58%"></i><i style="left:70%;top:72%"></i></div>
+          <div class="playbtn">↻</div>
+          <div class="hrtile">
+            <div class="toprow">
+              <span class="bpm">151<small>BPM</small></span>
+              <span class="zchip" style="color:var(--z5);border-color:rgba(255,59,48,.5)">Z5 · MAX ↗</span>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 280 56">
+                <rect x="0" y="0" width="24" height="56" fill="rgba(48,176,199,.12)"/>
+                <rect x="24" y="0" width="122" height="56" fill="rgba(255,150,69,.12)"/>
+                <rect x="146" y="0" width="134" height="56" fill="rgba(255,59,48,.08)"/>
+                <line x1="24" y1="0" x2="24" y2="56" stroke="#FF9645" stroke-width="1"/>
+                <line x1="146" y1="0" x2="146" y2="56" stroke="#FF9645" stroke-width="1"/>
+                <path d="M2 44 L14 42 L24 41 L38 39 L52 36 L66 37 L80 33 L94 30 L108 27 L122 24 L136 21 L146 19 L156 13 L164 15 L176 19 L192 24 L210 29 L228 33 L248 37 L268 40 L278 41"
+                      fill="none" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+                <circle cx="156" cy="13" r="3" fill="#FF3B30"/>
+                <text x="156" y="8" fill="#FF3B30" font-size="7" font-weight="800" text-anchor="middle">164 · +9s</text>
+                <circle cx="146" cy="19" r="4.5" fill="#fff"/>
+              </svg>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="v">54<em>%</em></div><div class="l">HRR</div></div>
+              <div class="stat"><div class="v">131<em>BPM</em></div><div class="l">AVG</div></div>
+              <div class="stat"><div class="v hl">164<em>BPM</em></div><div class="l">PEAK</div></div>
+              <div class="stat"><div class="v">9<em>KCAL</em></div><div class="l">KCAL</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="timecode" style="padding-top:8px">■ 0:28 / 0:28 — dot parks at the boundary; the tail tells the rest</div>
+      </div></div>
+      <p class="caption"><b>Video over, story not over.</b> The dot parks at the footage/tail boundary (last real on-camera
+        reading, 151 ↗). The tail region stays lit with the <span class="k">off-camera peak annotated “164 · +9s”</span> — exactly
+        your “the effort shows after the video” idea, made visible.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sect">3 · How the off-camera regions should read — pick one</h2>
+  <p class="sectsub">The chart must stay <b>honest</b>: viewers should never think the peak happened on camera. Three treatments
+    for the lead/tail regions (all keep the footage region full-strength with thin ember boundary lines):</p>
+
+  <div class="variants">
+    <div class="vcard reco">
+      <h3>A · Tinted panes + boundary ticks <span class="badge">RECOMMENDED</span></h3>
+      <p>Lead/tail get a faint zone-tinted wash; footage pane slightly brighter; 1px ember boundaries. <b>Curve stays solid
+        everywhere</b> — the HR data is real, only the camera coverage differs. Cheapest to render in both SwiftUI and the
+        Core-Animation burn (plain CALayer fills).</p>
+      <div class="vchart"><svg viewBox="0 0 360 64">
+        <rect x="0" y="0" width="30" height="64" fill="rgba(48,176,199,.13)"/>
+        <rect x="30" y="0" width="158" height="64" fill="rgba(255,150,69,.13)"/>
+        <rect x="188" y="0" width="172" height="64" fill="rgba(255,59,48,.09)"/>
+        <line x1="30" y1="0" x2="30" y2="64" stroke="#FF9645"/><line x1="188" y1="0" x2="188" y2="64" stroke="#FF9645"/>
+        <path d="M3 50 L18 48 L30 47 L50 44 L70 41 L90 42 L110 37 L130 33 L150 29 L170 25 L188 22 L200 15 L212 17 L230 22 L250 27 L275 33 L300 38 L330 43 L356 46" fill="none" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="200" cy="15" r="3.5" fill="#FF3B30"/>
+      </svg></div>
+    </div>
+    <div class="vcard">
+      <h3>B · Dimmed curve outside footage</h3>
+      <p>No panes; the <b>curve itself drops to 45% opacity</b> outside the footage. Cleaner look, but on busy video the dimmed
+        tail can disappear — which defeats the feature's whole point (the tail IS the payoff).</p>
+      <div class="vchart"><svg viewBox="0 0 360 64">
+        <line x1="30" y1="0" x2="30" y2="64" stroke="#4a4a52"/><line x1="188" y1="0" x2="188" y2="64" stroke="#4a4a52"/>
+        <path d="M3 50 L18 48 L30 47" fill="none" stroke="#30B0C7" stroke-width="2.5" opacity=".45"/>
+        <path d="M30 47 L50 44 L70 41 L90 42 L110 37 L130 33 L150 29 L170 25 L188 22" fill="none" stroke="url(#g1)" stroke-width="2.5"/>
+        <path d="M188 22 L200 15 L212 17 L230 22 L250 27 L275 33 L300 38 L330 43 L356 46" fill="none" stroke="#FF6A5C" stroke-width="2.5" opacity=".45"/>
+        <circle cx="200" cy="15" r="3.5" fill="#FF3B30" opacity=".6"/>
+      </svg></div>
+    </div>
+    <div class="vcard">
+      <h3>C · Dashed off-camera curve</h3>
+      <p>Off-camera segments draw <b>dashed</b> (the export already uses dash for interpolation-sparse windows — this would
+        overload that meaning: dashed = "estimated" today, would also mean "off-camera" tomorrow. Risky semantics).</p>
+      <div class="vchart"><svg viewBox="0 0 360 64">
+        <line x1="30" y1="0" x2="30" y2="64" stroke="#4a4a52"/><line x1="188" y1="0" x2="188" y2="64" stroke="#4a4a52"/>
+        <path d="M3 50 L18 48 L30 47" fill="none" stroke="#30B0C7" stroke-width="2.5" stroke-dasharray="4 4"/>
+        <path d="M30 47 L50 44 L70 41 L90 42 L110 37 L130 33 L150 29 L170 25 L188 22" fill="none" stroke="url(#g1)" stroke-width="2.5"/>
+        <path d="M188 22 L200 15 L212 17 L230 22 L250 27 L275 33 L300 38 L330 43 L356 46" fill="none" stroke="#FF6A5C" stroke-width="2.5" stroke-dasharray="4 4"/>
+        <circle cx="200" cy="15" r="3.5" fill="#FF3B30"/>
+      </svg></div>
+    </div>
+  </div>
+
+  <h2 class="sect">4 · Defaults, rules &amp; plumbing</h2>
+  <div class="rules"><table>
+    <tr><th>Rule</th><th>Behaviour</th></tr>
+    <tr><td>Defaults</td><td>Lead <code>0:05</code> (range 0–0:30) · Tail <code>0:30</code> (range 0–2:00) — HR typically peaks 10–30s after a max-effort move, so the default tail already captures your use-case with zero configuration. <code>0 / 0</code> reproduces today's exact behaviour.</td></tr>
+    <tr><td>Storage</td><td>Per-clip on the Studio project: <code>TimelineClip.hrLeadSec</code> / <code>hrTailSec</code> / <code>hrMetricsScope</code> (optional → migration-safe; nil = defaults). Window math extends <code>StudioHRPlacement.captureWindow</code>: <code>[offset + trimStart − lead, offset + trimEnd + tail]</code>, still through <code>HRWindowSlicer</code>.</td></tr>
+    <tr><td>Clamping</td><td>Window clamps to the session's HR coverage (no fabricated flat lines past the data). If lead/tail get fully clamped away, the sliders show the effective value (e.g. “0:30 → 0:12 available”).</td></tr>
+    <tr><td>Playhead mapping</td><td><code>fraction = (lead + videoTime·speed⁻¹…) / windowSpan</code> — dot enters at the lead/footage boundary, parks at the footage/tail boundary (non-looping) or wraps (looping preview). Live BPM samples only footage-region time.</td></tr>
+    <tr><td>Metrics scope</td><td><b>Clip only</b>: AVG/PEAK/KCAL/HRV over the footage window (today's per-clip behaviour). <b>Full window</b> (default when tail &gt; 0): over the whole extended window — the tile's PEAK then honestly includes the off-camera 164. The zone chip follows the same scope.</td></tr>
+    <tr><td>Export = preview</td><td>Both read the same per-clip window (<code>StudioHRPlacement</code> feeds preview <i>and</i> <code>StudioOverlays.hrTileLayer</code>), so WYSIWYG holds. The Clips feed keeps its own capture-window slice for now (follow-up: teach <code>ClipHROverlay</code> to honor saved per-clip windows).</td></tr>
+    <tr><td>No-HR degrade</td><td>Empty window → no tile (existing behaviour). A clip with HR only in the tail still draws (slicer's ≥2-point guarantee), dot parks at the boundary.</td></tr>
+  </table></div>
+
+  <div class="note"><b>Prerequisite bug (your export screenshot):</b> your exported clip burned the <b>whole-session</b> chart +
+    session totals (584 kcal) because the Studio fell back to the session-wide tile — the timeline clip lost its
+    <code style="background:rgba(0,0,0,.3);border-radius:4px;padding:1px 5px">sessionMediaID</code> link, so per-clip slicing bailed.
+    That fallback must be fixed (recover the offset via <code style="background:rgba(0,0,0,.3);border-radius:4px;padding:1px 5px">localIdentifier</code>)
+    as part of this work — otherwise lead/tail would silently do nothing on unlinked clips.</div>
+</div>
+
+<svg width="0" height="0"><defs>
+  <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#30B0C7"/><stop offset=".35" stop-color="#34C759"/>
+    <stop offset=".52" stop-color="#FF9500"/><stop offset=".57" stop-color="#FF3B30"/>
+    <stop offset=".75" stop-color="#FF9500"/><stop offset="1" stop-color="#34C759"/>
+  </linearGradient>
+</defs></svg>
+
+</body>
+</html>

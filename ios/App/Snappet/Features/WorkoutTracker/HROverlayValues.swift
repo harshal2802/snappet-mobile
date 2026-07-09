@@ -16,15 +16,23 @@ struct HROverlayValues {
     let maxHR: Double?
     let restHR: Double?
     /// HR-based calorie estimate for this clip window (profile-gated; `nil` hides the calories element).
+    /// With a `.clip` metrics scope the caller computes this over the footage-only samples.
     let kcal: Double?
     /// HRV over this clip window (chest-strap RR only; `.empty` hides the HRV element).
     let hrv: HRVMetrics
+    /// The clip's **extended** HR window (prompt 115), when the chart shows more than the footage.
+    /// `nil` (every pre-existing caller: the feed, the reel exporter, the session-wide tile) keeps the
+    /// identity behaviour — window == footage, no fraction remap, no region panes.
+    let window: HRClipWindow?
 
     private let stats: WorkoutHRStats?
     /// Per-window effort derived from the RAW samples (prompt 104): time-to-peak / HR-rise / HR-recovery,
     /// computed ONCE in init. Gated on a non-sparse window when rendered, so it never reports a peak that's
     /// just an interpolated endpoint.
     private let effort: ClimbEffort
+    /// The playhead fraction a *static* live reading (e.g. the end-of-clip recovery state) resolves at:
+    /// the footage-end boundary under a `.clip` scope (footage-scoped stats), else the window end.
+    private let staticLiveFraction: Double
 
     /// The **dense, uniform-grid** version of `samples` the chart + playhead dot render from, so the
     /// curve is smooth and the dot glides instead of snapping between sparse raw points (prompt 101).
@@ -40,20 +48,43 @@ struct HROverlayValues {
     /// label shows, kept consistent with the scorebug's PEAK so smoothing can't shave it.
     var rawPeakBpm: Double? { stats?.maxBpm }
 
+    /// `statsSamples` (prompt 115): when set, the **aggregates** (stats + effort) are computed over
+    /// these samples instead of `samples` — the `.clip` metrics scope passes the footage-only slice
+    /// while the chart still draws the full window. `statsDurationSec` is that slice's span (defaults
+    /// to `durationSec`). The chart / live readings / sparse styling always follow `samples`.
     init(samples: [HRPoint], durationSec: Double, maxHR: Double?, restHR: Double?,
-         kcal: Double? = nil, hrv: HRVMetrics = .empty) {
+         kcal: Double? = nil, hrv: HRVMetrics = .empty,
+         window: HRClipWindow? = nil,
+         statsSamples: [HRPoint]? = nil, statsDurationSec: Double? = nil) {
         self.samples = samples
         self.durationSec = durationSec
         self.maxHR = maxHR
         self.restHR = restHR
         self.kcal = kcal
         self.hrv = hrv
-        self.stats = WorkoutHRStats.make(from: samples, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
+        self.window = window
+        let scoped = statsSamples ?? samples
+        self.stats = WorkoutHRStats.make(from: scoped, maxHR: maxHR ?? HeartRateZone.defaultMaxHR)
         self.chartSamples = HRChartGeometry.displaySeries(samples)
         self.cadence = HRCadence.summarize(samples)
         self.effort = ClimbEffort.make(
-            from: samples.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
-            start: 0, end: durationSec, restBpm: restHR, maxBpm: maxHR)
+            from: scoped.map { HRSample(t: $0.t, bpm: $0.bpm, rrIntervalsMs: $0.rrIntervalsMs) },
+            start: 0, end: statsDurationSec ?? durationSec, restBpm: restHR, maxBpm: maxHR)
+        let maxT = self.chartSamples.last?.t ?? durationSec
+        self.staticLiveFraction = (statsSamples != nil && window != nil)
+            ? (window?.footageEndFraction(maxT: maxT) ?? 1) : 1
+    }
+
+    /// The chart's x-axis denominator — the last drawn sample's window-local timestamp (see
+    /// `HRChartGeometry.normalizedPoints`). Every window fraction is computed against THIS, so the
+    /// dot, the panes, and the curve can't drift when coverage clamps the window.
+    var chartMaxT: Double { chartSamples.last?.t ?? durationSec }
+
+    /// Map a **video-progress** fraction (0…1 of the footage) onto the chart's x-axis — the one
+    /// remap the preview and the export both use. Identity without an extended window.
+    func chartFraction(forVideoFraction f: Double) -> Double {
+        guard let window, window.isExtended else { return min(1, max(0, f)) }
+        return window.chartFraction(videoFraction: f, maxT: chartMaxT)
     }
 
     /// A resolved overlay reading: the string(s) to draw + the `#RRGGBB` colour. Equatable so the
@@ -162,7 +193,8 @@ struct HROverlayValues {
             let n = Int(kcal.rounded())
             return Reading(text: "\(n) kcal", hex: fallbackHex, value: "\(n)", unit: "KCAL")
         case .recovery:
-            return live(.recovery, atFraction: 1, fallbackHex: fallbackHex)   // end-of-clip state
+            // End-of-scope state: the footage end under a `.clip` scope, else the window end.
+            return live(.recovery, atFraction: staticLiveFraction, fallbackHex: fallbackHex)
         case .timeToPeak:
             // Effort metrics need real interior detail — hide on an interpolation-dominated window.
             guard !isSparseChart, let t = effort.timeToPeak, t >= 0 else { return nil }
@@ -209,9 +241,13 @@ struct HROverlayValues {
     /// readings over time (consecutive equal readings coalesced), tiled to cover `[0,1]`. Drives the
     /// export's opacity-keyframed text layers. Pure + deterministic → unit-tested.
     func segments(for element: HROverlayElement, steps: Int = 60) -> [Segment] {
+        // Segment start/end stay in VIDEO-fraction domain (the export gates them onto the clip's
+        // output slot); the READING at each step resolves at the chart fraction the playhead would
+        // actually be at — under an extended window that's `[lead, lead + footage]`, so a live metric
+        // tracks the on-camera span only (prompt 115). Identity without a window.
         guard element.isAnimated else {
             // Static text for the whole clip (live-but-not-animated shows its clip-start reading).
-            let f = element.isLive ? 0.0 : 0.0
+            let f = element.isLive ? chartFraction(forVideoFraction: 0) : 0.0
             guard let r = reading(for: element, atFraction: f) else { return [] }
             return [Segment(reading: r, start: 0, end: 1)]
         }
@@ -219,7 +255,9 @@ struct HROverlayValues {
         var raw: [(reading: Reading, f: Double)] = []
         for i in 0..<n {
             let f = Double(i) / Double(n - 1)
-            if let r = reading(for: element, atFraction: f) { raw.append((r, f)) }
+            if let r = reading(for: element, atFraction: chartFraction(forVideoFraction: f)) {
+                raw.append((r, f))
+            }
         }
         guard !raw.isEmpty else { return [] }
         // Coalesce consecutive equal readings into segments starting at each group's first fraction.
@@ -257,7 +295,7 @@ struct HROverlayValues {
         return ResolvedHRTile(templateRaw: tile.templateRaw, centerX: tile.centerX, centerY: tile.centerY,
                               width: tile.width, height: tile.height, showChart: tile.showChart,
                               zoneColored: tile.zoneColored, maxHR: resolvedMaxHR,
-                              opacity: tile.opacity, metrics: resolved)
+                              opacity: tile.opacity, window: window, metrics: resolved)
     }
 }
 
@@ -285,6 +323,10 @@ struct ResolvedHRTile: Sendable, Equatable {
     /// Whole-tile opacity the user set — applied to the export's content layer so the burn-in matches
     /// the preview. Defaulted to fully opaque for back-compat.
     var opacity: Double = 1.0
+    /// The clip's extended HR window (prompt 115) — the export chart draws the region panes and
+    /// confines the playhead dot to the footage span from this. `nil` (session-wide tile, feed,
+    /// reel exporter) renders exactly as before.
+    var window: HRClipWindow? = nil
     var metrics: [ResolvedTileMetric]
 
     var template: HRTileTemplate { HRTileTemplate(rawValue: templateRaw) ?? .hero }

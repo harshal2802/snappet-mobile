@@ -40,7 +40,8 @@ struct HRTileView: View {
                     PremiumHRCurve(samples: values.chartSamples, maxHR: values.resolvedMaxHR,
                                    fraction: fraction, zoneColored: tile.zoneColored,
                                    sparkline: chartRect.height < rect.height * 0.30,
-                                   rawPeakBpm: values.rawPeakBpm, sparse: values.isSparseChart)
+                                   rawPeakBpm: values.rawPeakBpm, sparse: values.isSparseChart,
+                                   window: values.window)
                         .frame(width: chartRect.width, height: chartRect.height)
                         .position(x: chartRect.midX, y: chartRect.midY)
                 }
@@ -296,6 +297,10 @@ struct PremiumHRCurve: View {
     /// Whether this window is interpolation-dominated (`HRCadence.isSparse`): the curve is drawn **dashed**
     /// and dimmer, signalling "estimated between sparse samples" instead of presenting it as measured data.
     var sparse: Bool = false
+    /// The clip's extended HR window (prompt 115): draws the "Variant A" region panes (lead/footage/tail
+    /// washes + boundary ticks). The caller is responsible for passing a `fraction` already mapped onto
+    /// the chart's x-axis (`HROverlayValues.chartFraction(forVideoFraction:)`). `nil` = no panes.
+    var window: HRClipWindow? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -311,6 +316,11 @@ struct PremiumHRCurve: View {
             let dash: [CGFloat] = sparse ? [lw * 2.2, lw * 1.8] : []
             if pts.count >= 2 {
                 ZStack {
+                    // Extended-window region panes (prompt 115, "Variant A") — behind everything, the
+                    // preview twin of the export's pane layers in `StudioOverlays.tileChartLayer`.
+                    if let window, window.isExtended, let maxT = samples.map(\.t).max(), maxT > 0 {
+                        regionPanes(window: window, maxT: maxT, w: w, h: h)
+                    }
                     // Area fill — a flat low-alpha zone wash (both sides use a flat fill so preview ==
                     // export; a CAGradientLayer's vertical orientation is flip-ambiguous in the tool tree).
                     SmoothHRArea(norm: pts)
@@ -348,6 +358,32 @@ struct PremiumHRCurve: View {
 
     private func peakZone(_ pts: [CGPoint]) -> HeartRateZone {
         HeartRateZone.forBpm(HRChartGeometry.peakBPM(samples), maxHR: maxHR)
+    }
+
+    /// The "Variant A" region panes: faint zone-tinted washes (lead / footage / tail) + 1px ember
+    /// boundary ticks at the footage edges. GEOMETRY comes from the shared pure
+    /// `HRWindowRegionStyle.panes/tickXs` (the same call the export makes), so preview == file.
+    @ViewBuilder
+    private func regionPanes(window: HRClipWindow, maxT: Double, w: CGFloat, h: CGFloat) -> some View {
+        let fs = window.footageStartFraction(maxT: maxT)
+        let fe = window.footageEndFraction(maxT: maxT)
+        let panes = HRWindowRegionStyle.panes(footageStart: fs, footageEnd: fe)
+        let ticks = HRWindowRegionStyle.tickXs(footageStart: fs, footageEnd: fe)
+        ZStack {
+            ForEach(panes.indices, id: \.self) { i in
+                let p = panes[i]
+                Rectangle()
+                    .fill(Color(studioHex: p.hex).opacity(p.alpha))
+                    .frame(width: (p.to - p.from) * w, height: h)
+                    .position(x: (p.from + p.to) / 2 * w, y: h / 2)
+            }
+            ForEach(ticks.indices, id: \.self) { i in
+                Rectangle()
+                    .fill(Color(studioHex: HRWindowRegionStyle.tickHex).opacity(HRWindowRegionStyle.tickAlpha))
+                    .frame(width: HRWindowRegionStyle.tickWidth, height: h)
+                    .position(x: ticks[i] * w, y: h / 2)
+            }
+        }
     }
 
     @ViewBuilder

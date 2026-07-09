@@ -23,6 +23,13 @@ struct StudioClipHRContent: Sendable, Equatable {
     var tile: ResolvedHRTile? = nil
 }
 
+/// One video clip's extended-window HR slice (prompt 115): the samples plus the window geometry the
+/// renderers need to draw the region panes and confine the playhead to the footage span.
+struct SampledClipHR: Sendable, Equatable {
+    var samples: [HRPoint]
+    var window: HRClipWindow
+}
+
 enum StudioHRPlacement {
 
     /// The session-time window `[start, start + span]` covering a clip's **visible** footage: the
@@ -37,6 +44,22 @@ enum StudioHRPlacement {
         return (offset + max(0, trimStart), span)
     }
 
+    /// The **extended** HR window for a clip (prompt 115): the footage capture window widened by the
+    /// clip's lead-in/tail. The lead is clamped so the window can't start before session t=0 (the
+    /// slicer would clamp anyway, but the *effective* lead must be known for the region/playhead math
+    /// to stay aligned with what actually got sliced). The tail is passed through as requested — the
+    /// slicer's coverage clamp surfaces via the sliced samples' `maxT`, which every fraction in
+    /// `HRClipWindow` is computed against.
+    static func extendedWindow(offset: Double, trimStart: Double, trimEnd: Double?,
+                               sourceDuration: Double?, leadSec: Double, tailSec: Double)
+        -> (start: Double, window: HRClipWindow) {
+        let base = captureWindow(offset: offset, trimStart: trimStart, trimEnd: trimEnd,
+                                 sourceDuration: sourceDuration)
+        let lead = min(max(0, leadSec), base.start)
+        let window = HRClipWindow(leadSec: lead, footageSec: base.span, tailSec: max(0, tailSec))
+        return (base.start - lead, window)
+    }
+
     /// Per-clip sliced + rebased HR samples for the placed **video** clips, keyed by clip id. A clip
     /// whose capture window has no HR (honestly out of coverage) is absent from the result, so the
     /// composer draws no HR for it (rather than a misleading borrowed reading). `offsets[clipID]` is
@@ -44,16 +67,53 @@ enum StudioHRPlacement {
     static func sample(clips: [TimelineClip], offsets: [UUID: Double],
                        sourceDurations: [UUID: Double], series: [HRPoint],
                        clampTolerance: Double = HRWindowSlicer.defaultClampTolerance) -> [UUID: [HRPoint]] {
+        sampleExtended(clips: clips.map { var c = $0; c.hrLeadSec = 0; c.hrTailSec = 0; return c },
+                       offsets: offsets, sourceDurations: sourceDurations, series: series,
+                       clampTolerance: clampTolerance).mapValues(\.samples)
+    }
+
+    /// `sample`, but over each clip's **extended** window (its `hrWindowLeadSec`/`hrWindowTailSec`),
+    /// returning the window geometry alongside the slice so the renderers can draw the region panes
+    /// and confine the playhead to the footage span.
+    static func sampleExtended(clips: [TimelineClip], offsets: [UUID: Double],
+                               sourceDurations: [UUID: Double], series: [HRPoint],
+                               clampTolerance: Double = HRWindowSlicer.defaultClampTolerance)
+        -> [UUID: SampledClipHR] {
         guard !series.isEmpty else { return [:] }
-        var out: [UUID: [HRPoint]] = [:]
+        var out: [UUID: SampledClipHR] = [:]
         for clip in clips where !clip.isPhoto {
             guard let offset = offsets[clip.id] else { continue }
-            let w = captureWindow(offset: offset, trimStart: clip.trimStart,
-                                  trimEnd: clip.trimEnd, sourceDuration: sourceDurations[clip.id])
-            let sliced = HRWindowSlicer.slice(series, start: w.start, span: w.span,
+            let ext = extendedWindow(offset: offset, trimStart: clip.trimStart, trimEnd: clip.trimEnd,
+                                     sourceDuration: sourceDurations[clip.id],
+                                     leadSec: clip.hrWindowLeadSec, tailSec: clip.hrWindowTailSec)
+            let sliced = HRWindowSlicer.slice(series, start: ext.start, span: ext.window.spanSec,
                                               clampTolerance: clampTolerance)
-            if !sliced.isEmpty { out[clip.id] = sliced }
+            if !sliced.isEmpty { out[clip.id] = SampledClipHR(samples: sliced, window: ext.window) }
         }
         return out
+    }
+
+    /// Resolve each clip's capture offset (seconds from session start): primary by its
+    /// `SessionMedia.id` link, **falling back to the denormalized PHAsset `localIdentifier`** — this
+    /// heals clips whose media link was lost (the "export burned the whole session's HR" bug: an
+    /// unlinked clip used to fall through to the session-wide tile). Clips resolvable by neither are
+    /// absent (the honest no-offset state).
+    static func resolveOffsets(clips: [TimelineClip], byMediaID: [UUID: Double],
+                               byLocalID: [String: Double]) -> [UUID: Double] {
+        var out: [UUID: Double] = [:]
+        for clip in clips {
+            if let offset = resolveOffset(of: clip, byMediaID: byMediaID, byLocalID: byLocalID) {
+                out[clip.id] = offset
+            }
+        }
+        return out
+    }
+
+    /// The single-clip form of the rule above — the ONE implementation every production call site
+    /// (`StudioEditorViewModel.captureOffset`) routes through, so the tested policy can't drift from
+    /// the shipping one.
+    static func resolveOffset(of clip: TimelineClip, byMediaID: [UUID: Double],
+                              byLocalID: [String: Double]) -> Double? {
+        clip.sessionMediaID.flatMap { byMediaID[$0] } ?? byLocalID[clip.localIdentifier]
     }
 }

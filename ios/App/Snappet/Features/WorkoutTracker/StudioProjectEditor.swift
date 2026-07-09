@@ -115,6 +115,20 @@ enum StudioProjectEditor {
         return s
     }
 
+    /// Set a clip's extended-HR-window config (prompt 115). `nil` values reset that field to the
+    /// default (the stored optional is cleared, not pinned to the current default — so a later default
+    /// change flows through). Lead/tail clamp to the slider ranges.
+    static func setClipHRWindow(_ s: StudioProjectSnapshot, id: UUID,
+                                leadSec: Double?, tailSec: Double?,
+                                scope: HRMetricsScope?) -> StudioProjectSnapshot {
+        var s = s
+        guard let i = s.clips.firstIndex(where: { $0.id == id }) else { return s }
+        s.clips[i].hrLeadSec = leadSec.map { min(HRClipWindow.maxLeadSec, max(0, $0)) }
+        s.clips[i].hrTailSec = tailSec.map { min(HRClipWindow.maxTailSec, max(0, $0)) }
+        s.clips[i].hrMetricsScopeRaw = scope?.rawValue
+        return s
+    }
+
     /// Set a clip's original-audio volume (0…1). Full volume (≈1) is stored as `nil` so the
     /// compositor skips the audio mix for it.
     static func setClipVolume(_ s: StudioProjectSnapshot, id: UUID, volume: Double) -> StudioProjectSnapshot {

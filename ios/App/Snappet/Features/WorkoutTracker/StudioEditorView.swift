@@ -178,8 +178,9 @@ struct StudioEditorView: View {
             // rendered WYSIWYG with the per-clip export via the shared HRTileLayout. Any legacy
             // free-floating-badge overlay is folded into a tile by HRTileMigration on appear.
             if let tile = vm.hrTile {
-                HRTileEditorView(tile: tile, values: vm.previewOverlayValues,
-                                 fraction: vm.previewElementFraction, ratio: vm.previewRatio,
+                let preview = vm.previewTile
+                HRTileEditorView(tile: tile, values: preview.values,
+                                 fraction: preview.fraction, ratio: vm.previewRatio,
                                  onFrame: { vm.setTileFrame(center: $0, size: $1) })
             }
             if let err = vm.previewError {
@@ -550,6 +551,15 @@ private struct HRTileBuilder: View {
                     .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40)
             }
 
+            // Extended HR window (prompt 115) — per-clip lead-in/tail + metrics scope. Targets the
+            // clip under the playhead (the same clip the preview tile shows). The info is resolved
+            // ONCE here (it rebuilds the placed timeline) and pins the target clip id for the whole
+            // control group, so a moving playhead can't retarget a slider drag.
+            if let info = vm.hrWindowInfo {
+                Divider().overlay(Color.white.opacity(0.1))
+                HRWindowControls(vm: vm, info: info)
+            }
+
             Divider().overlay(Color.white.opacity(0.1))
             Text("Metrics").font(.subheadline.weight(.semibold))
             Text("Toggle what to show — the caption under each explains what it means.")
@@ -566,6 +576,132 @@ private struct HRTileBuilder: View {
             Text("Drag the tile on the preview to move it; drag a corner to resize.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// The extended-HR-window controls (prompt 115): a mini-map of the window (lead | footage | tail),
+/// the Lead-in / Tail sliders, the metrics-scope picker, and a Reset row. Per-clip — `info` is
+/// resolved once by the parent and pins the target clip id, so a moving playhead can't retarget a
+/// drag; sliders show the live value while dragging but COMMIT once on drag-end (one undo entry per
+/// drag, the trim slider's house pattern). The mini-map shows the EFFECTIVE lead/tail (what the
+/// chart's panes actually cover after session-start / recorded-HR clamping), with honest hints when
+/// they differ from the requested values.
+private struct HRWindowControls: View {
+    @Bindable var vm: StudioEditorViewModel
+    let info: StudioEditorViewModel.HRWindowEditorInfo
+    /// In-flight slider values (nil = not dragging) — drives the label live, committed on drag-end.
+    @State private var dragLead: Double?
+    @State private var dragTail: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("HR window").font(.subheadline.weight(.semibold))
+                Text("this clip").font(.caption2).foregroundStyle(.secondary)
+            }
+            // Mini-map: the window's three regions at their real (EFFECTIVE) proportions — the same
+            // spans the chart's panes cover, so this strip mirrors the tile 1:1.
+            GeometryReader { geo in
+                let span = max(0.001, info.effectiveLead + info.footageSec + info.effectiveTail)
+                HStack(spacing: 0) {
+                    regionCell(seconds: info.effectiveLead, span: span, width: geo.size.width,
+                               label: info.effectiveLead > 0 ? "−\(timecode(info.effectiveLead))" : nil,
+                               hex: HRWindowRegionStyle.leadHex, alpha: 0.18)
+                    regionCell(seconds: info.footageSec, span: span, width: geo.size.width,
+                               label: "FOOTAGE \(timecode(info.footageSec))",
+                               hex: HRWindowRegionStyle.footageHex, alpha: 0.22)
+                    regionCell(seconds: info.effectiveTail, span: span, width: geo.size.width,
+                               label: info.effectiveTail > 0 ? "+\(timecode(info.effectiveTail))" : nil,
+                               hex: HRWindowRegionStyle.tailHex, alpha: 0.14)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.12)))
+            }
+            .frame(height: 26)
+            .accessibilityIdentifier("hrWindowMiniMap")
+
+            slider(label: "Lead-in", committed: info.lead, drag: $dragLead,
+                   range: 0...HRClipWindow.maxLeadSec, id: "hrWindowLead") {
+                vm.setHRWindowLead($0, clipID: info.clipID)
+            }
+            if info.effectiveLead < info.lead - 0.5 {
+                // Honest clamp hint: the session starts inside the requested lead-in.
+                Text("Only \(timecode(info.effectiveLead)) of session before this clip — the lead-in clamps there.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("hrWindowLeadClampHint")
+            }
+            slider(label: "Tail", committed: info.tail, drag: $dragTail,
+                   range: 0...HRClipWindow.maxTailSec, id: "hrWindowTail") {
+                vm.setHRWindowTail($0, clipID: info.clipID)
+            }
+            if info.effectiveTail < info.tail - 0.5 {
+                // Honest clamp hint: the session's recorded HR ends inside the requested tail.
+                Text("Recorded HR covers \(timecode(info.effectiveTail)) of the \(timecode(info.tail)) tail — the chart stops at the data.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("hrWindowClampHint")
+            }
+            Text("The chart shows HR beyond the footage; the live dot still tracks the video.")
+                .font(.caption2).foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Text("Metrics over").font(.caption)
+                Picker("Metrics over", selection: Binding(
+                    get: { info.scope }, set: { vm.setHRWindowScope($0, clipID: info.clipID) })) {
+                    ForEach(HRMetricsScope.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("hrWindowScope")
+            }
+            if info.isCustomized {
+                HStack {
+                    Text("Defaults: lead \(timecode(HRClipWindow.defaultLeadSec)) · tail \(timecode(HRClipWindow.defaultTailSec))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Reset") { vm.resetHRWindow(clipID: info.clipID) }
+                        .font(.caption.weight(.semibold)).foregroundStyle(SnappetColor.workout)
+                        .accessibilityIdentifier("hrWindowReset")
+                }
+            }
+        }
+    }
+
+    private func regionCell(seconds: Double, span: Double, width: CGFloat,
+                            label: String?, hex: String, alpha: Double) -> some View {
+        ZStack {
+            Color(studioHex: hex).opacity(alpha)
+            if let label {
+                Text(label).font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(studioHex: hex))
+                    .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, 2)
+            }
+        }
+        .frame(width: max(0, seconds / span) * width)
+    }
+
+    /// A stepped slider whose label tracks the drag LIVE but whose value commits once on drag-end —
+    /// one undo entry + one save per drag, not one per 1-second step.
+    private func slider(label: String, committed: Double, drag: Binding<Double?>,
+                        range: ClosedRange<Double>, id: String,
+                        commit: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.caption).frame(width: 64, alignment: .leading)
+            Slider(value: Binding(get: { drag.wrappedValue ?? committed },
+                                  set: { drag.wrappedValue = $0 }),
+                   in: range, step: 1,
+                   onEditingChanged: { editing in
+                       guard !editing, let v = drag.wrappedValue else { return }
+                       commit(v)
+                       drag.wrappedValue = nil
+                   })
+                .accessibilityIdentifier(id)
+            Text(timecode(drag.wrappedValue ?? committed))
+                .font(.caption2.monospacedDigit()).foregroundStyle(.secondary).frame(width: 40)
+        }
+    }
+
+    private func timecode(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 }
 
