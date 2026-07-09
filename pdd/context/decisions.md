@@ -8000,3 +8000,25 @@ sparse-window styling. Now `relay(hrUpdated:)` folds/sends HR only on real updat
 reading). The phone's `ingest` honors it: energy lands, `latestHR` keeps the last real reading,
 no sample is appended — which also closes the pre-existing hole where kcal-only batches *before
 the watch's first HR reading* appended 0-bpm phantom samples to the buffer.
+
+## 2026-07-08 — Bug-hunt Wave 3: page-recorded clips pin by record-time owner (prompt 113, #273)
+
+The pager's page-level "Record a clip" attached by reading **the current page when the async
+Photos save landed**: all exercise pages shared one `pageClips: [RecordedClip]` binding and the
+`.onChange(of: pageClips.count)` handler pinned to `page` — so swiping during the save window
+(sub-second to seconds; the save must return the asset id before the append) pinned the clip
+`.manual` to the wrong exercise (sticky — the reconciler never re-places `.manual`), and landing
+on the overview/add page hit an `else pageClips.removeAll()` that silently **discarded** it.
+**Fixed structurally, not defensively: ownership is captured by the shape of the state.**
+`pageClips` is now keyed by exercise id and each page's `RecordClipButton` gets a binding scoped
+to its own id, so a clip is queued under the exercise whose page presented the recorder — the
+pure `QuickSessionPager.pageClipAttachPlan(queued:liveExerciseIDs:)` then routes every group to
+its key. The current page is **not an input to the plan**, so the race can't be reintroduced by
+a future edit to page state; there is deliberately no "pending owner" variable to keep in sync.
+Two invariants worth naming: **(1) a recorded clip is never dropped** — an owner deleted during
+the save routes to `exerciseID: nil`, which `attachRecordedClips` (now `UUID?`) files to the
+sticky General bucket (`.general`, the reassign-to-nil convention) insert-only (an existing
+row's timeline placement beats un-pinning to nowhere); **(2) the FOCUS covers are untouched** —
+they already attach at commit with an explicit target, and `RecordedClip`/`RecordClipButton`
+carry no new owner field precisely so that surface can't drift. Multi-owner batches (record on
+A, swipe, record on B mid-save) attach each group to its own owner in recording order.

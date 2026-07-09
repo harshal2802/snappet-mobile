@@ -68,8 +68,12 @@ struct FreeformPlayerView: View {
     @State private var restExerciseID: UUID?
     /// The armed rest total, for the rest ring's progress fraction.
     @State private var restTotalSec: TimeInterval = 0
-    /// Clips recorded from the page-level record button, attached to the CURRENT page's exercise.
-    @State private var pageClips: [RecordedClip] = []
+    /// Clips recorded from the page-level record button, keyed by the exercise whose page the
+    /// recorder was opened on (the record-time owner). Keyed — not a single shared array — because
+    /// the Photos save is async: the user can swipe pages before the append lands, and the clip
+    /// must still attach to the exercise it was filmed for, never the page that happens to be
+    /// current (#273).
+    @State private var pageClips: [UUID: [RecordedClip]] = [:]
     @State private var savingPageClip = false
     /// The climb a minimal timed-attempt sheet is open for (Phase 2 replaces this with a FOCUS cover).
     @State private var timingAttemptFor: TimedAttemptTarget?
@@ -346,13 +350,19 @@ struct FreeformPlayerView: View {
                 withAnimation { page = .overview }
             }
         }
-        // Clips recorded from a page's record button attach to THAT exercise (as a whole — the
-        // deep-tap menu can re-pin them to a specific set). Only the current page's button is
-        // interactable, so the current page's exercise is the right owner.
-        .onChange(of: pageClips.count) { _, count in
-            guard count > 0, case .exercise(let id) = page else { pageClips.removeAll(); return }
-            attachRecordedClips(pageClips, toExerciseID: id, setIndex: nil)
-            pageClips.removeAll()
+        // Clips recorded from a page's record button attach to the exercise whose page they were
+        // RECORDED on — the key they were queued under — never the page that's current when the
+        // async Photos save lands (#273: swiping during the save used to re-pin the clip .manual
+        // to the wrong exercise, or discard it on the overview/add page). The pure plan routes a
+        // deleted owner's clips to the session unassigned; a queued clip is never dropped.
+        .onChange(of: pageClips) { _, queued in
+            let plan = QuickSessionPager.pageClipAttachPlan(
+                queued: queued, liveExerciseIDs: Set(session.exercises.map(\.id)))
+            guard !plan.isEmpty else { return }
+            pageClips = [:]
+            for group in plan {
+                attachRecordedClips(group.clips, toExerciseID: group.exerciseID, setIndex: nil)
+            }
         }
         // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
         // live HR and the paused state push as they change. The overall timer self-ticks off
@@ -730,7 +740,11 @@ struct FreeformPlayerView: View {
                     moveTargetsLabel: moveTargetsLabel(ex),
                     onReassign: { reassignClip($0, to: $1, set: $2) },
                     onRequestDelete: { pendingClipDeletion = $0 })
-                RecordClipButton(recordedClips: $pageClips, savingClip: $savingPageClip,
+                // The binding is scoped to THIS exercise's queue so the clip's owner is captured
+                // when the recorder is presented, not when the async save lands (#273).
+                RecordClipButton(recordedClips: Binding(get: { pageClips[ex.id] ?? [] },
+                                                        set: { pageClips[ex.id] = $0 }),
+                                 savingClip: $savingPageClip,
                                  idPrefix: "freeform.page",
                                  attachNoun: QuickSessionPager.effortNoun(for: ex))
                 ghostLedger(ex)
@@ -1522,7 +1536,11 @@ struct FreeformPlayerView: View {
     /// the timeline guessed — breaking the "filmed for THIS set" promise. So when a row already exists we
     /// re-pin it to `(exID, setIndex)` as `.manual` (authoritative); otherwise we insert. The in-call `seen`
     /// set also guards against the same identifier appearing twice in one batch.
-    private func attachRecordedClips(_ clips: [RecordedClip], toExerciseID exID: UUID, setIndex: Int?) {
+    ///
+    /// `exID == nil` (#273: a page clip whose exercise was deleted during the save) files the clip to the
+    /// session **unassigned** — insert-only: an existing row keeps whatever placement it already has (a
+    /// timeline guess beats un-pinning to nowhere), but the clip is never dropped.
+    private func attachRecordedClips(_ clips: [RecordedClip], toExerciseID exID: UUID?, setIndex: Int?) {
         guard !clips.isEmpty else { return }
         let sid = session.id
         let existing = (try? context.fetch(FetchDescriptor<SessionMedia>(
@@ -1533,17 +1551,22 @@ struct FreeformPlayerView: View {
             let c = SessionMediaService.candidate(for: clip, startedAt: session.startedAt)
             if let row = byID[c.localIdentifier] {
                 // Already on the session (auto-discovery raced ahead, or a duplicate in this batch) — re-pin it
-                // to the set it was filmed for instead of leaving a stale auto placement.
+                // to the set it was filmed for instead of leaving a stale auto placement. With no target
+                // (deleted owner) the existing placement stands.
+                guard let exID else { continue }
                 row.assignedExerciseID = exID
                 row.assignedSetIndex = setIndex
                 row.assignmentSource = .manual
                 row.addedManually = true
                 if row.durationSec == nil { row.durationSec = c.durationSec }
             } else {
+                // No target ⇒ the sticky General bucket (the reassign-to-nil convention), so the
+                // auto-assigner won't later guess a set for a clip whose exercise is gone.
                 let row = SessionMedia(
                     sessionID: sid, localIdentifier: c.localIdentifier, kind: c.kind,
                     offsetSec: c.offsetSec, durationSec: c.durationSec, addedManually: true,
-                    assignedExerciseID: exID, assignedSetIndex: setIndex, source: .manual)
+                    assignedExerciseID: exID, assignedSetIndex: setIndex,
+                    source: exID == nil ? .general : .manual)
                 context.insert(row)
                 byID[c.localIdentifier] = row
             }

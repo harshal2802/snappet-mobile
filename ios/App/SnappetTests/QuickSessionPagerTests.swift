@@ -260,4 +260,60 @@ final class QuickSessionPagerTests: XCTestCase {
         XCTAssertEqual(sets?.first?.actualWeight, 55,
                        "a session where the exercise was added but never logged is not precedent")
     }
+
+    // MARK: - Page-recorded clip routing (prompt 113, #273)
+
+    private func rec(_ id: String, at t: TimeInterval) -> RecordedClip {
+        RecordedClip(localIdentifier: id, capturedAt: Date(timeIntervalSince1970: t),
+                     durationSec: nil)
+    }
+
+    func testClipPinsToItsRecordTimeOwner() {
+        // The whole point of #273: the plan depends only on the key the clip was queued under
+        // (the page the recorder was presented from) — there is no "current page" input for a
+        // late-landing Photos save to corrupt.
+        let owner = UUID(), other = UUID()
+        let plan = QuickSessionPager.pageClipAttachPlan(
+            queued: [owner: [rec("clip-a", at: 100)]], liveExerciseIDs: [owner, other])
+        XCTAssertEqual(plan.count, 1)
+        XCTAssertEqual(plan[0].exerciseID, owner)
+        XCTAssertEqual(plan[0].clips.map(\.localIdentifier), ["clip-a"])
+    }
+
+    func testDeletedOwnerRoutesToSessionUnassignedNeverDropped() {
+        // The exercise was removed while the save was in flight: the clip files to the session
+        // (exerciseID nil) rather than being discarded or pinned to whatever page is current.
+        let deleted = UUID()
+        let plan = QuickSessionPager.pageClipAttachPlan(
+            queued: [deleted: [rec("clip-b", at: 50)]], liveExerciseIDs: [UUID()])
+        XCTAssertEqual(plan.count, 1)
+        XCTAssertNil(plan[0].exerciseID)
+        XCTAssertEqual(plan[0].clips.map(\.localIdentifier), ["clip-b"])
+    }
+
+    func testMultiOwnerBatchesAttachInRecordingOrder() {
+        // Record on A, swipe to B, record again while A's save is still in flight: both groups
+        // attach, each to its own owner, ordered by earliest capture.
+        let a = UUID(), b = UUID()
+        let plan = QuickSessionPager.pageClipAttachPlan(
+            queued: [b: [rec("on-b", at: 200)], a: [rec("on-a", at: 100)]],
+            liveExerciseIDs: [a, b])
+        XCTAssertEqual(plan.map(\.exerciseID), [a, b])
+    }
+
+    func testClipsWithinAGroupSortByCaptureTime() {
+        let owner = UUID()
+        let plan = QuickSessionPager.pageClipAttachPlan(
+            queued: [owner: [rec("late", at: 300), rec("early", at: 10)]],
+            liveExerciseIDs: [owner])
+        XCTAssertEqual(plan[0].clips.map(\.localIdentifier), ["early", "late"])
+    }
+
+    func testEmptyQueuesYieldNoPlan() {
+        // The attach handler clears the queue, which re-fires onChange — an empty or
+        // empty-valued queue must produce an empty plan (no infinite loop, no empty attach).
+        XCTAssertEqual(QuickSessionPager.pageClipAttachPlan(queued: [:], liveExerciseIDs: []), [])
+        XCTAssertEqual(QuickSessionPager.pageClipAttachPlan(queued: [UUID(): []],
+                                                            liveExerciseIDs: []), [])
+    }
 }
