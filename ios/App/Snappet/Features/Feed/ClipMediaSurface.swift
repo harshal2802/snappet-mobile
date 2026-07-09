@@ -68,7 +68,14 @@ struct ClipMediaSurface: View {
             // Start playback when the item becomes ready — read here (not at the end of the async `load`) so
             // the play decision uses the LIVE `isActive`: a page can de-center mid-load, and the captured
             // value would otherwise auto-play an off-center page.
-            .onChange(of: state) { _, ready in if ready == .ready, isActive { player?.play() } }
+            .onChange(of: state) { _, ready in
+                guard ready == .ready else { return }
+                // Same live-read discipline for `muted`: `load()` snapshots it before the background player
+                // build, and the `.onChange(of: muted)` writer below is a no-op while `player` is nil — an
+                // unmute tap during the load window would otherwise be silently lost (prompt 114).
+                player?.isMuted = muted
+                if isActive { player?.play() }
+            }
             .onChange(of: muted) { _, m in player?.isMuted = m }
             // Full teardown only when the surface leaves the view tree (pause + nil player + drop looper).
             .onDisappear { teardown() }

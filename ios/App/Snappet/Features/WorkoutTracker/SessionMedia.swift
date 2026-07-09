@@ -95,6 +95,19 @@ final class SessionMedia {
     /// `true` when the clip is not tied to a specific set (the General bucket): either explicitly
     /// pinned `general`, or simply has no `assignedExerciseID`.
     var isGeneral: Bool { assignmentSource == .general || assignedExerciseID == nil }
+
+    /// Every `localIdentifier` stored in ANY session — the GLOBAL dedup set auto-discovery checks so
+    /// an asset in the ±90s pad overlap of two adjacent sessions is tagged into one, not both (R2/R4).
+    /// Fetches ONLY the identifier column (`propertiesToFetch`): the live-session discovery loop calls
+    /// this every 20 s on the MainActor, and materializing full rows made the tick pay for the whole
+    /// media library's attributes. Still O(rows) per call — if a profile ever shows this tick, the
+    /// next step is maintaining the id-set incrementally at the call site (prompt 114).
+    static func allIdentifiers(in context: ModelContext) -> Set<String> {
+        var descriptor = FetchDescriptor<SessionMedia>()
+        descriptor.propertiesToFetch = [\.localIdentifier]
+        let rows = (try? context.fetch(descriptor)) ?? []
+        return Set(rows.map(\.localIdentifier))
+    }
 }
 
 /// Provenance of a `SessionMedia`'s set assignment. `auto` rows are (re)placed by

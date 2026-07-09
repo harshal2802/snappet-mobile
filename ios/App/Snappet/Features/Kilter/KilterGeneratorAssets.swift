@@ -130,12 +130,13 @@ final class KilterGeneratorAssets: Sendable {
         for try await byte in bytes {
             buffer.append(byte)
             if buffer.count >= (1 << 16) {
-                handle.write(buffer); received += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
+                // Throwing write, not the legacy `write(_:)` — disk-full mid-download must surface as
+                // a thrown error, not an uncatchable NSFileHandleOperationException.
+                try handle.write(contentsOf: buffer); received += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
                 if total > 0 { progress(min(1, Double(received) / Double(total))) }
             }
         }
-        if !buffer.isEmpty { handle.write(buffer); received += Int64(buffer.count) }
-        try? handle.close()
+        if !buffer.isEmpty { try handle.write(contentsOf: buffer); received += Int64(buffer.count) }
         guard received > 0 else { throw KilterGeneratorAssetError.emptyDownload }
         // Atomic-ish swap so a half-written file is never treated as installed.
         try? FileManager.default.removeItem(at: dest)
