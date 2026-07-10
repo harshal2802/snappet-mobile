@@ -48,6 +48,19 @@ final class ClipFeedComposerTests: XCTestCase {
         XCTAssertEqual(starfish.climbUUID, "starfish")
     }
 
+    func testAppleWatchFlagPropagatesToPosts() {
+        let watch = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Run",
+                                        startedAt: start, isFromAppleWatch: true)
+        let gym = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Push Day", startedAt: start)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: watch, clips: [video(10)]),
+                       .init(meta: gym, clips: [video(20)])],
+            climbMeta: [:], exerciseName: { _ in "Session clips" })
+        XCTAssertEqual(posts.filter(\.isFromAppleWatch).count, 1)
+        XCTAssertTrue(posts.first { $0.sessionID == watch.id }!.isFromAppleWatch)
+        XCTAssertFalse(posts.first { $0.sessionID == gym.id }!.isFromAppleWatch)
+    }
+
     // MARK: - Ordering: clips by offset, posts newest-SESSION first
 
     func testClipsOrderedByOffsetWithAttemptLabels() {

@@ -137,6 +137,28 @@ final class SessionMediaService: Sendable {
                                existingIdentifiers: existingIdentifiers)
     }
 
+    /// A raw asset tuple (the plain-value shape `candidates(from:)` buckets) — one PhotoKit fetch over a
+    /// wide interval, so the Apple Watch import can scan the whole library **once** and then bucket into
+    /// per-workout windows in pure code, instead of one Photos query per workout (the unbounded first-run
+    /// path could face hundreds of workouts). Throws `.denied` unless fully `.authorized` (`.limited`
+    /// can't do a time-window library scan).
+    func rawAssets(in interval: DateInterval) async throws
+    -> [(localIdentifier: String, creationDate: Date?, isVideo: Bool, duration: Double)] {
+        guard photos.currentStatus == .authorized else { throw MediaError.denied }
+        let options = PHFetchOptions()
+        options.predicate = NSPredicate(
+            format: "creationDate >= %@ AND creationDate <= %@",
+            interval.start as NSDate, interval.end as NSDate)
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        let result = PHAsset.fetchAssets(with: options)
+        var raw: [(localIdentifier: String, creationDate: Date?, isVideo: Bool, duration: Double)] = []
+        result.enumerateObjects { asset, _, _ in
+            raw.append((asset.localIdentifier, asset.creationDate,
+                        asset.mediaType == .video, asset.duration))
+        }
+        return raw
+    }
+
     /// Map manually-picked asset identifiers (from the PHPicker) to `Candidate`s relative to
     /// `startedAt`. Manual picks bypass the window filter — the user chose them — but are still
     /// deduped and offset-aligned the same way. Offsets clamp ≥ 0.

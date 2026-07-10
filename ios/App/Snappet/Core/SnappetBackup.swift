@@ -511,6 +511,13 @@ extension SnappetBackup {
         var restHR: Double?
         var metricsSourceRaw: String?
         var kcalEstimate: Double?
+        // Apple Watch anchor marker (watch-workouts-clips P1) — defaulted to nil so a pre-change backup
+        // blob (no such key) still decodes (synthesized Decodable skips an absent optional with a
+        // default), mirroring the SwiftData lightweight migration on the @Model side. Preserves whether a
+        // restored session is a watch import (else it would resurface as a tracked gym session).
+        var healthKitWorkoutUUID: UUID? = nil
+        var hkEnergyKcal: Double? = nil
+        var hkDistanceMeters: Double? = nil
 
         init(_ m: WorkoutSession) {
             id = m.id; routineID = m.routineID; routineName = m.routineName
@@ -518,12 +525,16 @@ extension SnappetBackup {
             exercises = m.exercises; hrSeries = m.hrSeries
             maxHR = m.maxHR; restHR = m.restHR
             metricsSourceRaw = m.metricsSourceRaw; kcalEstimate = m.kcalEstimate
+            healthKitWorkoutUUID = m.healthKitWorkoutUUID
+            hkEnergyKcal = m.hkEnergyKcal; hkDistanceMeters = m.hkDistanceMeters
         }
         func make() -> WorkoutSession {
             WorkoutSession(id: id, routineID: routineID, routineName: routineName,
                            startedAt: startedAt, completedAt: completedAt, exercises: exercises,
                            hrSeries: hrSeries, maxHR: maxHR, restHR: restHR,
-                           metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate)
+                           metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate,
+                           healthKitWorkoutUUID: healthKitWorkoutUUID,
+                           hkEnergyKcal: hkEnergyKcal, hkDistanceMeters: hkDistanceMeters)
         }
         var sortKey: String { id.uuidString }
     }

@@ -10,6 +10,13 @@ struct WorkoutSummary: Identifiable, Hashable {
     let end: Date
     let restingBpm: Double?
     let maxBpm: Double?
+    /// Measured totals from the `HKWorkout`, when it recorded them (watch import carries them onto the
+    /// anchor for the session detail); `nil` for the recent-workouts list path which doesn't read them.
+    var energyKcal: Double? = nil
+    var distanceMeters: Double? = nil
+    /// The workout's specific `HKWorkoutActivityType`, mapped to a display label ("Outdoor Run",
+    /// "Functional Strength", …) — finer than the coarse engine `Activity`. `nil` on the list path.
+    var activityLabel: String? = nil
     var duration: Double { end.timeIntervalSince(start) }
     var dateInterval: DateInterval { DateInterval(start: start, end: end) }
 }
@@ -28,6 +35,29 @@ final class HealthKitService: @unchecked Sendable {
     enum HealthError: LocalizedError {
         case unavailable
         var errorDescription: String? { "Health data isn't available on this device." }
+    }
+
+    /// The long-lived observer for workout background delivery (P2) — retained so it isn't deallocated.
+    /// `@unchecked Sendable` on the service covers this; it's written once from the main actor.
+    private var workoutObserver: HKObserverQuery?
+
+    /// Register HealthKit **background delivery** for workouts (watch-workouts-clips P2): an
+    /// `HKObserverQuery` that fires `onChange` whenever a workout is added/changed — including while the
+    /// app is backgrounded — plus `enableBackgroundDelivery` so the system relaunches us for it. The
+    /// observer MUST call its completion handler or HealthKit throttles/stops delivery, so we call it
+    /// unconditionally after handing off. No-ops where Health is unavailable; needs the
+    /// `com.apple.developer.healthkit.background-delivery` entitlement + granted read auth to actually
+    /// wake in the background (foreground observation still works without the entitlement).
+    func enableWorkoutBackgroundDelivery(onChange: @escaping @Sendable () -> Void) {
+        guard HKHealthStore.isHealthDataAvailable(), workoutObserver == nil else { return }
+        let type = HKObjectType.workoutType()
+        let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
+            if error == nil { onChange() }
+            completion()   // ALWAYS — or HealthKit backs off future deliveries.
+        }
+        workoutObserver = query
+        store.execute(query)
+        store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
     }
 
     func requestAuthorization() async throws {
@@ -106,6 +136,51 @@ final class HealthKitService: @unchecked Sendable {
         }
     }
 
+    /// Completed workouts ending on/after `since`, oldest→newest, for the Apple Watch → Clips import
+    /// (`WatchWorkoutImportService`). `since = .distantPast` on first install ⇒ the whole history, so the
+    /// Clips feed has content out of the box (only media-bearing workouts actually mint — see the
+    /// reconciler). Unlike `recentWorkouts`, this reads each workout's **measured energy + distance**
+    /// (carried onto the anchor for the session detail) and a fine-grained activity label.
+    func workoutsForImport(since: Date) async throws -> [WorkoutSummary] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let pred = HKQuery.predicateForSamples(withStart: since, end: nil, options: [])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)
+        let samples = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[HKSample], Error>) in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: pred,
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, result, error in
+                if let error { cont.resume(throwing: error) } else { cont.resume(returning: result ?? []) }
+            }
+            store.execute(q)
+        }
+        let restingBpm = try? await latestRestingHeartRate()
+        return samples.compactMap { $0 as? HKWorkout }.map { wk in
+            WorkoutSummary(
+                id: wk.uuid,
+                activity: Self.map(wk.workoutActivityType),
+                start: wk.startDate,
+                end: wk.endDate,
+                restingBpm: restingBpm,
+                maxBpm: nil,
+                energyKcal: wk.statistics(for: HKQuantityType(.activeEnergyBurned))?
+                    .sumQuantity()?.doubleValue(for: .kilocalorie()),
+                distanceMeters: Self.distanceMeters(of: wk),
+                activityLabel: Self.label(wk.workoutActivityType))
+        }
+    }
+
+    /// Total distance across the distance quantity types a workout might carry (walk/run, cycling,
+    /// swimming, wheelchair, downhill snow), in metres; `nil` when none was recorded.
+    private static func distanceMeters(of wk: HKWorkout) -> Double? {
+        let types: [HKQuantityTypeIdentifier] = [
+            .distanceWalkingRunning, .distanceCycling, .distanceSwimming,
+            .distanceWheelchair, .distanceDownhillSnowSports,
+        ]
+        let total = types.reduce(0.0) { acc, id in
+            acc + (wk.statistics(for: HKQuantityType(id))?.sumQuantity()?.doubleValue(for: .meter()) ?? 0)
+        }
+        return total > 0 ? total : nil
+    }
+
     /// Heart-rate samples for a workout, as engine `HRSample`s (t = seconds from start).
     func heartRateSamples(for summary: WorkoutSummary) async throws -> [HRSample] {
         try await heartRateSamples(start: summary.start, end: summary.end)
@@ -156,6 +231,39 @@ final class HealthKitService: @unchecked Sendable {
         case .cardioDance, .socialDance, .barre: return .dance
         case .traditionalStrengthTraining, .functionalStrengthTraining: return .strength
         default: return .other
+        }
+    }
+
+    /// A human display label for a workout's `HKWorkoutActivityType` — used as the watch anchor's
+    /// `routineName` + Clips title. Deliberately finer than the coarse engine `Activity` (which
+    /// collapses everything non-climb/run/dance/strength to `.other`) so a cycle reads "Cycling", not
+    /// "Workout". `HKWorkoutActivityType` is an open enum, so the fallback covers everything unlisted.
+    static func label(_ t: HKWorkoutActivityType) -> String {
+        switch t {
+        case .running:                     return "Run"
+        case .walking:                     return "Walk"
+        case .hiking:                      return "Hike"
+        case .cycling:                     return "Cycling"
+        case .climbing:                    return "Climbing"
+        case .swimming:                    return "Swim"
+        case .rowing:                      return "Rowing"
+        case .elliptical:                  return "Elliptical"
+        case .traditionalStrengthTraining: return "Strength Training"
+        case .functionalStrengthTraining:  return "Functional Strength"
+        case .coreTraining:                return "Core Training"
+        case .highIntensityIntervalTraining: return "HIIT"
+        case .yoga:                        return "Yoga"
+        case .pilates:                     return "Pilates"
+        case .cardioDance, .socialDance:   return "Dance"
+        case .barre:                       return "Barre"
+        case .cooldown:                    return "Cooldown"
+        case .flexibility:                 return "Flexibility"
+        case .mixedCardio:                 return "Cardio"
+        case .kickboxing:                  return "Kickboxing"
+        case .boxing:                      return "Boxing"
+        case .jumpRope:                    return "Jump Rope"
+        case .stairs, .stepTraining:       return "Stairs"
+        default:                           return "Workout"
         }
     }
 }

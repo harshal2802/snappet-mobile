@@ -535,10 +535,27 @@ final class WorkoutSession {
     /// incomplete profile. All four fields are additive Optionals → lightweight migration.
     var kcalEstimate: Double?
 
+    /// The `HKWorkout.uuid` this session was minted from when it is an **Apple Watch workout the app
+    /// never controlled** (`WatchWorkoutImportService`, watch-workouts-clips initiative): a completed
+    /// anchor read post-hoc from HealthKit so its shot-during media can attach + surface in Clips. Its
+    /// presence IS the "from Apple Watch" marker — such a session has no `exercises` (HealthKit gives no
+    /// set/rep structure) and is segregated out of the tracked-workout history. The reconciler is
+    /// idempotent on this value (never mints a second anchor for the same `HKWorkout`). Additive +
+    /// optional → SwiftData lightweight migration; `nil` for every user-tracked (phone/BLE) session.
+    var healthKitWorkoutUUID: UUID?
+
+    /// Measured **active energy** (kcal) / **distance** (m) read from the `HKWorkout`, for an Apple Watch
+    /// anchor's session-detail stats (a run's distance, an activity's burn). `nil` for tracked sessions
+    /// and for watch workouts that recorded neither. Additive optionals → SwiftData lightweight migration.
+    var hkEnergyKcal: Double?
+    var hkDistanceMeters: Double?
+
     init(id: UUID = UUID(), routineID: UUID? = nil, routineName: String,
          startedAt: Date = .now, completedAt: Date? = nil, exercises: [SessionExercise] = [],
          hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil,
-         metricsSourceRaw: String? = nil, kcalEstimate: Double? = nil) {
+         metricsSourceRaw: String? = nil, kcalEstimate: Double? = nil,
+         healthKitWorkoutUUID: UUID? = nil,
+         hkEnergyKcal: Double? = nil, hkDistanceMeters: Double? = nil) {
         self.id = id
         self.routineID = routineID
         self.routineName = routineName
@@ -550,9 +567,14 @@ final class WorkoutSession {
         self.restHR = restHR
         self.metricsSourceRaw = metricsSourceRaw
         self.kcalEstimate = kcalEstimate
+        self.healthKitWorkoutUUID = healthKitWorkoutUUID
+        self.hkEnergyKcal = hkEnergyKcal
+        self.hkDistanceMeters = hkDistanceMeters
     }
 
     var isActive: Bool { completedAt == nil }
+    /// `true` when this session was imported from an Apple Watch workout (vs. tracked in-app).
+    var isFromAppleWatch: Bool { healthKitWorkoutUUID != nil }
     var duration: TimeInterval { (completedAt ?? .now).timeIntervalSince(startedAt) }
     var completedSetCount: Int { exercises.reduce(0) { $0 + $1.completedSetCount } }
     var completedExerciseCount: Int { exercises.filter { !$0.skipped && $0.completedSetCount > 0 }.count }

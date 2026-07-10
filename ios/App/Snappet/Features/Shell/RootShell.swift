@@ -6,6 +6,7 @@ import CoreSpotlight
 struct RootShell: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppModel.self) private var app
     @State private var core: SnappetCore?
     /// The suite router, hoisted to the shell (#71) so Home — and deep-link entries that arrive
     /// from outside any tab (the `snappet://` QR scheme below, #75; App Intents #81 next) — can
@@ -32,6 +33,8 @@ struct RootShell: View {
                         WidgetSnapshotService.refresh(context: context)
                         drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
                         SpotlightIndexer.reindex(context: context)   // #81 Phase 4
+                        app.startWatchWorkoutObserver()   // HealthKit background delivery (watch-workouts-clips P2)
+                        importWatchWorkouts()   // Apple Watch workouts → Clips (watch-workouts-clips P1)
                     }
             }
         }
@@ -43,7 +46,10 @@ struct RootShell: View {
             if phase == .active || phase == .background {
                 WidgetSnapshotService.refresh(context: context)
             }
-            if phase == .active { drainAppActions() }
+            if phase == .active {
+                drainAppActions()
+                importWatchWorkouts()   // catch workouts finished while backgrounded (PR2 adds true background delivery)
+            }
         }
         // `snappet://` entry (#75): the Camera's QR scan / Safari / another app, cold or warm.
         // Attached to the Group — not `content` — so a cold-start URL delivered while the
@@ -116,6 +122,15 @@ struct RootShell: View {
     private func drainAppActions() {
         guard !Self.isUITestLaunch else { return }
         for action in AppActionInbox.drain() { dispatch(action) }
+    }
+
+    /// Reconcile completed Apple Watch workouts into Clips (watch-workouts-clips PR1): mint media-bearing
+    /// anchors + attach late-syncing clips. Fire-and-forget at low priority so it never blocks launch; the
+    /// service is idempotent, so the launch call + foreground re-runs (scenePhase) can't double-import.
+    /// Skipped under UI-test launches (the fresh in-memory store has no Health/Photos data anyway).
+    private func importWatchWorkouts() {
+        guard !Self.isUITestLaunch else { return }
+        Task(priority: .utility) { await app.reconcileWatchWorkouts() }
     }
 
     private func dispatch(_ action: PendingAppAction) {
