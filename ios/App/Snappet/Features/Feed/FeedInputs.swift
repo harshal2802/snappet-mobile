@@ -39,10 +39,12 @@ extension LitEventInput {
 
 extension MediaInput {
     static func from(_ m: SessionMedia, edit: ClipStudioEdit? = nil) -> MediaInput {
+        // A baked clip carries its edit IN the pixels — never live-reflect on top of it (that would
+        // double-apply trims and double-draw the HR tile), regardless of what the project stores.
         MediaInput(id: m.id, kind: m.kindRaw, offsetSec: m.offsetSec, durationSec: m.durationSec,
                    exerciseId: m.assignedExerciseID, setIndex: m.assignedSetIndex,
                    climbUUID: m.assignedClimbUUID, localIdentifier: m.localIdentifier,
-                   aspect: m.aspectRatio, edit: edit)
+                   aspect: m.aspectRatio, edit: m.isBaked ? nil : edit, isBaked: m.isBaked)
     }
 }
 

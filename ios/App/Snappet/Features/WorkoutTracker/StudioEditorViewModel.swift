@@ -1137,6 +1137,97 @@ final class StudioEditorViewModel {
     }
     func removeMusic(_ id: UUID) { edit { StudioProjectEditor.removeAudioTrack($0, id: id) } }
 
+    // MARK: Bake to original (prompt 117 — device-only render + Photos write)
+
+    /// The bake lane's state machine (separate from `exportState`: a bake has no share sheet).
+    enum BakeState: Equatable {
+        case idle, baking
+        case saved(replaced: Bool)
+        case failed(String)
+    }
+    var bakeState: BakeState = .idle
+
+    /// Bake is offered only when the composition renders into ONE source asset that this session
+    /// actually tracks (a `SessionMedia` row exists to stamp/re-point). `ClipBakePlan` owns the rule.
+    var canBakeToOriginal: Bool {
+        guard let target = ClipBakePlan.bakeTarget(clips: visibleSnapshotClips) else { return false }
+        return mediaOffsetsByLocalID[target] != nil
+    }
+
+    /// Render the composition (same pipeline as `export()`) and write it INTO the Photos asset —
+    /// revertible rendition (`replaceOriginal: false`) or save-as-new + delete-original. On the
+    /// destructive path the session's records and this project's timeline re-point at the replacement
+    /// in the same save (`ClipBakePlan`), so the detail view, the feed, and this project follow it.
+    func bake(replaceOriginal: Bool, service: ClipBakeService = ClipBakeService()) async {
+        guard let target = ClipBakePlan.bakeTarget(clips: visibleSnapshotClips) else { return }
+        bakeState = .baking
+        do {
+            let url = try await composer.export(scopedSnapshot, sourceDurations: sourceDurations,
+                                                hrSamples: hrSeries,
+                                                hrTile: resolvedSessionTile(),
+                                                clipHRByID: clipHRContent(),
+                                                quality: exportQuality)
+            let sid = project.sessionID
+            let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
+                predicate: #Predicate { $0.sessionID == sid && $0.localIdentifier == target }))) ?? []
+            if replaceOriginal {
+                let newID = try await service.replaceOriginal(renderedURL: url, oldLocalIdentifier: target)
+                let trimStart = ClipBakePlan.earliestTrimStart(clips: snapshot.clips, localIdentifier: target)
+                let renderedDur = (try? await AVURLAsset(url: url).load(.duration))?.seconds
+                for m in rows {
+                    let update = ClipBakePlan.mediaUpdate(oldOffsetSec: m.offsetSec,
+                                                          earliestTrimStart: trimStart,
+                                                          renderedDurationSec: renderedDur)
+                    m.localIdentifier = newID
+                    m.offsetSec = update.offsetSec
+                    m.durationSec = update.durationSec
+                    m.aspectRatio = nil        // the render canvas can differ — lazily re-resolved
+                    m.isBaked = true
+                }
+                editOverlaysOnly { var s = $0
+                    s.clips = ClipBakePlan.repointedClips(s.clips, from: target, to: newID)
+                    return s
+                }
+                // The offset caches key by media id AND localIdentifier — both changed; reload lazily.
+                mediaOffsets = [:]
+                mediaOffsetsByLocalID = [:]
+                loadMediaOffsets()
+            } else {
+                try await service.saveToOriginal(renderedURL: url, localIdentifier: target,
+                                                 projectID: project.id)
+                for m in rows { m.isBaked = true }
+            }
+            // The Clips feed rebuilds off the project's updatedAt (FeedKey.newestEdit) — a REVERTIBLE
+            // bake changes only SessionMedia rows, so bump it explicitly or the BAKED stand-down
+            // wouldn't reflect until the next unrelated edit.
+            project.updatedAt = .now
+            try? context.save()
+            bakeState = .saved(replaced: replaceOriginal)
+        } catch {
+            bakeState = .failed((error as? LocalizedError)?.errorDescription
+                                ?? "Couldn't save to the original video.")
+        }
+    }
+
+    /// Revert detection (the flag's one clearing path): a baked asset whose edited rendition is GONE
+    /// (the user tapped "Revert to Original" in Photos) drops `isBaked`, so the feed's live overlay
+    /// stands back up. A `nil` probe (asset unreachable — simulator, iCloud eviction) clears nothing.
+    func reconcileBakedFlags(service: ClipBakeService = ClipBakeService()) {
+        let sid = project.sessionID
+        let rows = (try? context.fetch(FetchDescriptor<SessionMedia>(
+            predicate: #Predicate { $0.sessionID == sid && $0.isBakedRaw == true }))) ?? []
+        guard !rows.isEmpty else { return }
+        var cleared = false
+        for m in rows where service.hasEditedRendition(localIdentifier: m.localIdentifier) == false {
+            m.isBaked = false
+            cleared = true
+        }
+        if cleared {
+            project.updatedAt = .now   // SessionMedia-only change → nudge the feed's rebuild key
+            try? context.save()
+        }
+    }
+
     // MARK: Export (device-only render)
 
     func export() async {

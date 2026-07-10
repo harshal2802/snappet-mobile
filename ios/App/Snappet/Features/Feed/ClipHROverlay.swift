@@ -45,6 +45,9 @@ enum ClipHROverlay {
         // Only a clip that plays through real time (a video) earns the overlay; a photo degrades to the
         // name tag, the same graceful path as the no-HR `nil` below. (Every caller already handles `nil`.)
         guard clip.kind == "video" else { return nil }
+        // A BAKED clip's HR tile is in the pixels ("Save to original", prompt 117) — drawing the live
+        // overlay on top would double-render the chart. The name-tag-only degrade, like photos.
+        guard !clip.isBaked else { return nil }
         let edit = clip.edit ?? ClipStudioEdit()
         let footage = keptFootage(clip)
         // The SAME window builder the Studio preview + export use (prompt 115): footage = the kept

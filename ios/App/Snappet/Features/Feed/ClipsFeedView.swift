@@ -947,11 +947,25 @@ private struct ClipPosterView: View {
             // Gated + labelled by the EFFECTIVE kept range (the same `keptRange` verdict playback and
             // the HR window use) — a degenerate/whole-clip stored trim plays raw and shows NO chip.
             .overlay(alignment: .topTrailing) {
-                if let kept = item.media.edit?.keptRange(rawDurationSec: item.media.durationSec ?? 0) {
+                if item.media.isBaked {
+                    bakedChip.padding(12)
+                } else if let kept = item.media.edit?.keptRange(rawDurationSec: item.media.durationSec ?? 0) {
                     editedChip(kept).padding(12)
                 }
             }
         }
+    }
+
+    /// A bake wrote the edit into the pixels (prompt 117): full parity — trims, filters, text, the HR
+    /// tile at the user's placement — because it's just video; the app's live overlay stands down.
+    private var bakedChip: some View {
+        Text("BAKED ✓")
+            .font(.system(size: 9, weight: .heavy, design: .rounded)).tracking(0.4)
+            .foregroundStyle(Color(studioHex: "#5BC074"))
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(.black.opacity(0.45), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color(studioHex: "#5BC074").opacity(0.6), lineWidth: 1))
+            .accessibilityIdentifier("clips.post.baked")
     }
 
     private func editedChip(_ kept: ClosedRange<Double>) -> some View {

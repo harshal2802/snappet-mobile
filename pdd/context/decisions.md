@@ -8136,3 +8136,26 @@ by the effective `keptRange` (stored trims can be degenerate/whole-clip) via
 `SetMeasure.formatDuration`; the at-rest playhead is seeded from `atEnd(for:)` on play-start and
 in `MediaPage`'s init (the bare 1.0 default is the TAIL end of an extended window); the snapshot's
 project scan is bounded to media-bearing sessions.
+
+## 2026-07-10 — Bake lane: "Save to original" writes the edit into the Photos asset; the feed stands down (prompt 117)
+
+Lane ② of the convergence model: speed/filters/text/HR-tile-at-your-placement reach the feed by
+RENDERING ONCE into the asset, never by per-cell compositions. The non-obvious choices:
+**(1) Two variants with the storage truth in the UI copy.** Revertible (`PHContentEditingOutput`,
+adjustment data `com.snappet.app.bake`) keeps the original bytes — "Revert to Original" works and a
+trim **never frees space** (the user asked exactly this); Replace (save-as-new +
+`deleteAssets`) is the only space-freeing path, behind an app confirm AND the iOS deletion dialog,
+with the Recently-Deleted ~30-day caveat stated. **(2) Deletion is a SECOND change block** — a
+cancelled system dialog must not undo the bake: the new asset survives and the app re-points to it
+regardless (the original just lingers). **(3) `isBaked` stands the feed down**: `MediaInput.from`
+strips the live-reflect `edit` and `ClipHROverlay.make` returns nil (the tile is IN the pixels —
+drawing the live overlay would double-render), BAKED chip instead of EDITED. **(4) Bake bumps
+`project.updatedAt` explicitly** — a revertible bake (and a revert-detection clear) changes only
+`SessionMedia`, which the feed's rebuild key doesn't watch. **(5) Destructive re-pointing is pure
+math** (`ClipBakePlan`): `offsetSec += earliest kept trimStart` (the new asset IS the trimmed
+composition), duration = rendered length, project trims reset, identifier swapped on the target's
+parts only. **(6) Revert detection is a targeted probe** (`PHAssetResource` `.fullSizeVideo`) at
+Studio-open — never per feed rebuild; a nil probe (simulator / iCloud-evicted) clears nothing.
+**(7) Bake is gated to single-source-asset compositions** (`ClipBakePlan.bakeTarget`) — a
+multi-asset timeline has no "the original" and exports as new. Never automatic: each bake is a full
+re-render, tied to the Export menu, not to per-edit saves.

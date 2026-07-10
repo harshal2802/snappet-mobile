@@ -21,6 +21,8 @@ struct StudioEditorView: View {
     @State private var activeTool: StudioTool?
     @State private var importingMusic = false
     @State private var choosingPiP = false
+    /// The destructive-bake confirm (prompt 117) — shown before the iOS deletion dialog.
+    @State private var confirmingReplace = false
     @State private var editingOverlay = false
     @State private var overlayTextDraft = ""
     @State private var overlayTextTarget: UUID?
@@ -60,6 +62,7 @@ struct StudioEditorView: View {
                     app.liveWorkout.watch.samples, app.liveWorkout.ble.samples))
             }
             vm.loadOverlayContext(profile: app.userProfile.profile)   // overlay-builder bounds (prompt 28)
+            vm.reconcileBakedFlags()   // clear isBaked for assets the user Revert-to-Original'ed (117)
             // Jump straight to the tapped clip (gallery → edit-this-clip), if one was requested.
             if let mid = focusClipMediaID, let clip = vm.clips.first(where: { $0.sessionMediaID == mid }) {
                 vm.select(clip.id)
@@ -104,6 +107,40 @@ struct StudioEditorView: View {
                 Button(src.label) { vm.addPiP(localIdentifier: src.localIdentifier) }
             }
         } message: { Text("Pick a clip to overlay on top of the video.") }
+        // Destructive-bake confirm (prompt 117): the honest storage/undo story BEFORE committing.
+        // iOS shows its own deletion dialog after this one.
+        .alert("Replace the original video?", isPresented: $confirmingReplace) {
+            Button("Replace & delete original", role: .destructive) {
+                Task { await vm.bake(replaceOriginal: true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The edited version is saved as the video and the original is deleted — this can't be undone. iOS will ask you to confirm; the original stays in Recently Deleted for 30 days before space is freed. Your session, feed, and this project follow the new video automatically.")
+        }
+        .alert("Saved to original", isPresented: bakeSavedBinding) {
+            Button("OK") { vm.bakeState = .idle }
+        } message: {
+            if case .saved(let replaced) = vm.bakeState {
+                Text(replaced
+                     ? "The edited video replaced the original. The old file sits in Recently Deleted for 30 days."
+                     : "The edit is baked into this video everywhere. Photos keeps the original — “Revert to Original” restores it (no space is freed).")
+            }
+        }
+        .alert("Couldn't save to original", isPresented: bakeFailedBinding) {
+            Button("OK") { vm.bakeState = .idle }
+        } message: {
+            if case .failed(let msg) = vm.bakeState { Text(msg) }
+        }
+    }
+
+    /// Alert bindings over the bake state machine (SwiftUI alerts need Bool bindings).
+    private var bakeSavedBinding: Binding<Bool> {
+        Binding(get: { if case .saved = vm.bakeState { return true } else { return false } },
+                set: { if !$0 { vm.bakeState = .idle } })
+    }
+    private var bakeFailedBinding: Binding<Bool> {
+        Binding(get: { if case .failed = vm.bakeState { return true } else { return false } },
+                set: { if !$0 { vm.bakeState = .idle } })
     }
 
     // MARK: Top bar
@@ -133,7 +170,26 @@ struct StudioEditorView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.3)))
             }
             .accessibilityIdentifier("studioQuality")
-            Button { Task { await vm.export() } } label: {
+            // Three destinations (prompt 117 — the bake lane): today's export-as-new, plus the two
+            // bake variants when the composition renders into ONE tracked source asset. Copy states
+            // the storage truth inline: revertible KEEPS the original (never frees space); only
+            // Replace reclaims it, behind an explicit confirm.
+            Menu {
+                Button { Task { await vm.export() } } label: {
+                    Label("Export as new video", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("studioExportNew")
+                if vm.canBakeToOriginal {
+                    Button { Task { await vm.bake(replaceOriginal: false) } } label: {
+                        Label("Save to original · revertible", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .accessibilityIdentifier("studioBakeRevertible")
+                    Button(role: .destructive) { confirmingReplace = true } label: {
+                        Label("Replace original · frees space", systemImage: "trash.slash")
+                    }
+                    .accessibilityIdentifier("studioBakeReplace")
+                }
+            } label: {
                 Text("Export").font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 14).padding(.vertical, 7)
                     .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 8))
@@ -194,6 +250,10 @@ struct StudioEditorView: View {
             }
             if case .exporting = vm.exportState {
                 ProgressView("Exporting…").padding()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+            if case .baking = vm.bakeState {
+                ProgressView("Saving to original…").padding()
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
