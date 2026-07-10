@@ -386,7 +386,7 @@ struct FeedView: View {
         let media = index.mediaBySession[sid] ?? []  // O(1) instead of allMedia.filter
         guard !media.isEmpty else { return nil }
         let resolver = FeedMediaResolver(index: index)
-        return FeedCardMedia(clips: media.map(MediaInput.from),
+        return FeedCardMedia(clips: media.map { MediaInput.from($0) },
                              hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
                              nameFor: resolver.nameResolver(for: sid),
                              clipContext: resolver.clipContext(for: sid, card: card))

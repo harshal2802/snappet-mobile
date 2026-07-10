@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Clips feed — the ONE clip → HR+video overlay mapping (prompt 84)
+// MARK: - Clips feed — the ONE clip → HR+video overlay mapping (prompt 84 · extended prompt 116)
 //
 // Single source of truth for how a single clip maps to its HR overlay AND its live video-playhead, shared
 // by every Clips surface: the still poster (static), the inline player, and the fullscreen viewer. Before
@@ -8,6 +8,14 @@ import Foundation
 // → tile chain by hand, and each surface that wanted a live playhead would have computed `fraction` its own
 // way — three chances to drift between "what the poster shows", "what plays inline", and "what the viewer
 // plays". Centralizing it here means they cannot disagree.
+//
+// Prompt 116 (feed ⇄ Studio convergence): the mapping honours the clip's `MediaInput.edit` — the chart
+// window is the **kept (trimmed) footage extended by the clip's lead/tail** (the SAME window the Studio
+// preview shows and the export burns, via the shared `StudioHRPlacement.extendedWindow`), aggregates
+// follow the clip's metrics scope, and the playhead maps **kept-range-relative** video time onto the
+// chart via `HROverlayValues.chartFraction`. A clip with no Studio project gets the same defaults the
+// Studio would apply (lead 0:05 · tail 0:30 · full-window scope) — never-edited clips tell the
+// after-story too.
 //
 // Pure (Foundation + the app's HR value types; no SwiftUI / AVFoundation), so it unit-tests in `SnappetTests`.
 
@@ -22,8 +30,9 @@ enum ClipHROverlay {
     }
 
     /// Build the overlay for `clip` from its owning session's HR context. `restHR` drives the scorebug's
-    /// %HRR (dropped when absent, via `HRTile.feedClipScorebug`). The values' window is rebased to clip-local
-    /// time, so it lines up with `fraction(videoTime:clip:)` below.
+    /// %HRR (dropped when absent, via `HRTile.feedClipScorebug`). The values' window is rebased to
+    /// window-local time and carries the clip's `HRClipWindow`, so it lines up with
+    /// `fraction(videoTime:clip:)` below and `HRTileView` draws the same region panes the export burns.
     ///
     /// `tile` overrides the house-style scorebug with the session's **saved Studio tile** (prompt 89,
     /// WYSIWYG) — its template / metrics / colours, rendered at the feed's own placement. `nil` (the
@@ -36,11 +45,31 @@ enum ClipHROverlay {
         // Only a clip that plays through real time (a video) earns the overlay; a photo degrades to the
         // name tag, the same graceful path as the no-HR `nil` below. (Every caller already handles `nil`.)
         guard clip.kind == "video" else { return nil }
-        let window = FeedMedia.clipHRWindow(offsetSec: clip.offsetSec, durationSec: clip.durationSec,
-                                            hrSeries: hrSeries)
+        let edit = clip.edit ?? ClipStudioEdit()
+        let footage = keptFootage(clip)
+        // The SAME window builder the Studio preview + export use (prompt 115): footage = the kept
+        // (trimmed) range — which the feed also PLAYS — widened by the clip's lead-in/tail, lead clamped
+        // at session start.
+        let ext = StudioHRPlacement.extendedWindow(offset: clip.offsetSec,
+                                                   trimStart: footage.start,
+                                                   trimEnd: footage.start + footage.span,
+                                                   sourceDuration: footage.rawDur,
+                                                   leadSec: edit.hrLeadSec, tailSec: edit.hrTailSec)
+        let window = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
         guard !window.isEmpty else { return nil }
-        let values = HROverlayValues(samples: window, durationSec: windowDuration(clip),
-                                     maxHR: maxHR, restHR: restHR)
+        // Metrics scope (prompt 115 semantics): `.clip` re-slices the aggregates to the footage
+        // sub-window; the chart always draws the full window. Durations passed as ACTUAL coverage
+        // (the sliced samples' last t), mirroring `StudioEditorViewModel.scopedOverlayValues` —
+        // nominal spans would skew `isSparseChart`/effort against the Studio's rendering of the SAME
+        // clip (one shared factory is a named follow-up).
+        let clipScoped = edit.hrMetricsScope == .clip && ext.window.isExtended
+        let scoped = clipScoped
+            ? HRWindowSlicer.slice(window, start: ext.window.leadSec, span: ext.window.footageSec) : nil
+        let values = HROverlayValues(samples: window, durationSec: window.last?.t ?? ext.window.spanSec,
+                                     maxHR: maxHR, restHR: restHR,
+                                     window: ext.window,
+                                     statsSamples: scoped,
+                                     statsDurationSec: scoped.map { $0.last?.t ?? ext.window.footageSec })
         // Use the saved Studio tile only if it would actually DRAW something with the feed's data — the
         // export/editor gate the same way via `resolveTile`. Otherwise fall back to the scorebug, so a
         // no-data custom tile (e.g. only kcal/HRV enabled with no chart) can't render an empty glass panel.
@@ -50,45 +79,62 @@ enum ClipHROverlay {
         return Payload(tile: chosen, values: values)
     }
 
-    /// The playhead `fraction` a NON-playing surface shows: the clip's at-end reading (the latest in-window
-    /// HR), the still-poster default. One name so "still = at-end" isn't a bare `1.0` scattered across views.
+    /// The playhead `fraction` a NON-playing surface shows when it has no payload to consult — kept for
+    /// initial `@State` values. With a payload, use `atEnd(for:)`: under an extended window the at-rest
+    /// reading parks at the **footage/tail boundary** (the last on-camera reading — the peak label covers
+    /// the tail), exactly where the export's dot parks.
     static let atEndFraction: Double = 1.0
 
-    /// The clip-window length (seconds) the values' chart AND the playhead `fraction` BOTH measure against —
-    /// one denominator so the live HR dot can't drift from the rendered window. A photo (nil duration) uses
-    /// the same default window the HR slice does (`FeedMedia.photoWindowSec`).
-    static func windowDuration(_ clip: MediaInput) -> Double {
-        max(0.1, clip.durationSec ?? FeedMedia.photoWindowSec)
+    /// The at-rest (still poster / de-activated surface) playhead fraction for a clip's payload.
+    static func atEnd(for payload: Payload?) -> Double {
+        payload?.values.chartFraction(forVideoFraction: 1) ?? atEndFraction
     }
 
-    /// Map a playing clip's current video time (seconds; loop-relative is fine — folded modulo the clip
-    /// duration) to the HR tile's playhead `fraction` (0…1). The inline player and the fullscreen viewer
-    /// feed THIS into `HRTileView(fraction:)` so the live BPM + chart dot track the video; a still poster
-    /// passes `1.0` (the clip's at-end reading). One definition of "video time → HR position".
+    /// The clip's kept FOOTAGE — the one derivation shared by the chart window (`make`), the loop
+    /// fold (`playedRange` == this), the poster, and the players, so they can't disagree about
+    /// whether/where a clip is trimmed. Evaluated against the STORED (approximate) `durationSec` —
+    /// every consumer uses the same input by design; the players additionally clamp the range's END
+    /// against the real loaded duration for AVFoundation safety without changing the trim VERDICT
+    /// (`ClipStudioEdit.keptRange` is the verdict rule). A nil-duration video falls back to the
+    /// photo-window span (the pre-116 degenerate path).
+    static func keptFootage(_ clip: MediaInput) -> (start: Double, span: Double, rawDur: Double) {
+        let rawDur = clip.durationSec ?? FeedMedia.photoWindowSec
+        if let kept = clip.durationSec.flatMap({ (clip.edit ?? ClipStudioEdit()).keptRange(rawDurationSec: $0) }) {
+            return (kept.lowerBound, max(0.1, kept.upperBound - kept.lowerBound), rawDur)
+        }
+        return (0, max(0.1, rawDur), rawDur)
+    }
+
+    /// The clip's PLAYED range (seconds): the kept (trimmed) range when the Studio trimmed it — the
+    /// feed plays exactly that (prompt 116) — else the raw duration. One denominator for the loop fold
+    /// and the video-fraction mapping.
+    static func playedRange(_ clip: MediaInput) -> (start: Double, span: Double) {
+        let f = keptFootage(clip)
+        return (f.start, f.span)
+    }
+
+    /// Map a playing clip's current video time (seconds in ASSET time — what `player.currentTime()`
+    /// reports for both the raw and the trimmed-range player; loop-relative is fine) to the HR tile's
+    /// playhead `fraction` (0…1 of the chart's x-axis). The inline player and the fullscreen viewer feed
+    /// THIS into `HRTileView(fraction:)` so the live BPM + chart dot track the video; a still poster
+    /// shows `atEnd(for:)`.
     ///
-    /// CRITICAL — normalize against the chart's axis, not the clip duration. `HRChartGeometry` (the dot,
-    /// the live `bpm(atFraction:)`/`sampleBPM`, used by `PremiumHRCurve`/`HRTileView`) lays its x-axis on
-    /// `maxT` = the LAST in-window HR sample's clip-local timestamp — NOT `durationSec`. The two only agree
-    /// when HR samples reach the very end of the window; with realistic ~1s sampling (and badly in the
-    /// sparse / ±8s-fallback window where `maxT ≪ duration`) they don't, so dividing by `durationSec` makes
-    /// the live dot/BPM lag the true playhead. So: fold by the clip duration (the video's loop boundary),
-    /// then normalize by `maxT` from the SAME window samples the chart draws.
-    ///
-    /// `loops` (default true) matches the inline carousel's `AVPlayerLooper`, where `videoTime == loop`
-    /// wraps the video to frame 0 — so the dot must fold to 0 too. The fullscreen transport plays a
-    /// NON-looping player (prompt 94) that parks at the last frame, so it passes `loops: false`: the time
-    /// is clamped at `loop` (the dot rests at 1.0 at the end) instead of snapping back to the start.
+    /// The mapping: asset time → kept-range-relative time (fold by the played span for the looping
+    /// carousel; clamp for the fullscreen transport, which parks at the last frame) → video fraction →
+    /// `HROverlayValues.chartFraction` — the SAME remap the Studio preview and the export keyframes use,
+    /// so the dot enters at the lead/footage boundary and parks at the footage/tail boundary
+    /// (normalized against the chart's real `maxT`, never the nominal span — decisions.md prompt-115).
     static func fraction(videoTime: Double, clip: MediaInput, payload: Payload, loops: Bool = true) -> Double {
-        let loop = windowDuration(clip)                              // the video's loop boundary
-        let maxT = payload.values.samples.map(\.t).max() ?? loop     // the chart's x-axis denominator
-        guard loop > 0, maxT > 0, videoTime.isFinite else { return 0 }
+        let played = playedRange(clip)
+        guard videoTime.isFinite else { return atEnd(for: payload) }
+        let rel = videoTime - played.start
         let t: Double
         if loops {
-            let folded = videoTime.truncatingRemainder(dividingBy: loop)
-            t = folded < 0 ? folded + loop : folded
+            let folded = rel.truncatingRemainder(dividingBy: played.span)
+            t = folded < 0 ? folded + played.span : folded
         } else {
-            t = min(loop, max(0, videoTime))   // non-looping: rest at the end, don't wrap to 0
+            t = min(played.span, max(0, rel))   // non-looping: rest at the end, don't wrap to 0
         }
-        return min(1, max(0, t / maxT))
+        return payload.values.chartFraction(forVideoFraction: t / played.span)
     }
 }

@@ -81,9 +81,13 @@ struct HROverlayValues {
     var chartMaxT: Double { chartSamples.last?.t ?? durationSec }
 
     /// Map a **video-progress** fraction (0…1 of the footage) onto the chart's x-axis — the one
-    /// remap the preview and the export both use. Identity without an extended window.
+    /// remap the preview and the export both use. With ANY window (extended or not) the mapping
+    /// normalizes by the chart's `maxT`: an unextended window whose HR coverage ends early maps
+    /// `f·footage / maxT`, so the dot reaches the chart's right edge when the DATA ends and pins —
+    /// the prompt-91 rule the Clips feed pinned ("divide by maxT, not duration, or the dot lags").
+    /// Identity only with no window at all (legacy callers with no footage context).
     func chartFraction(forVideoFraction f: Double) -> Double {
-        guard let window, window.isExtended else { return min(1, max(0, f)) }
+        guard let window else { return min(1, max(0, f)) }
         return window.chartFraction(videoFraction: f, maxT: chartMaxT)
     }
 

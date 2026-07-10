@@ -42,6 +42,12 @@ struct ClipMediaSurface: View {
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
+    /// The load task's identity: the clip plus its kept range (so a re-trim rebuilds the player).
+    private var loadKey: String {
+        let played = ClipHROverlay.playedRange(clip)
+        return "\(clip.id)-\(Int(played.start * 100))-\(Int(played.span * 100))"
+    }
+
     @State private var player: AVPlayer?
     @State private var looper: AVPlayerLooper?   // retained or looping stops
     @State private var image: UIImage?
@@ -55,7 +61,10 @@ struct ClipMediaSurface: View {
 
     var body: some View {
         content
-            .task(id: clip.id) { await load() }
+            // Keyed on the clip AND its kept (trimmed) range: a Studio trim edit changes `clip.edit`
+            // but not `clip.id`, and a mounted (warm/playing) surface would otherwise keep looping
+            // the OLD range until recycled (prompt 116 review).
+            .task(id: loadKey) { await load() }
             // Single-active: play while centered/active; on de-activate, pause and reset the playhead to the
             // at-end reading so a glimpsed off-active overlay isn't frozen mid-sweep.
             .onChange(of: isActive) { _, active in
@@ -63,7 +72,7 @@ struct ClipMediaSurface: View {
                 // paused it — so a deliberate pause survives a page swipe away + back (prompt 94 review).
                 if active {
                     if controller == nil || controller?.isPlaying == true { player?.play() }
-                } else { player?.pause(); fraction = ClipHROverlay.atEndFraction }
+                } else { player?.pause(); fraction = ClipHROverlay.atEnd(for: payload) }
             }
             // Start playback when the item becomes ready — read here (not at the end of the async `load`) so
             // the play decision uses the LIVE `isActive`: a page can de-center mid-load, and the captured
@@ -161,7 +170,7 @@ struct ClipMediaSurface: View {
         teardown()
         state = .loading
         image = nil
-        fraction = ClipHROverlay.atEndFraction   // the at-end reading until the video actually plays
+        fraction = ClipHROverlay.atEnd(for: payload)   // the at-end reading until the video actually plays
         // Fetch the PHAsset off-main (it's a synchronous Photos-library query, a few ms): a warm surface
         // mounts when the carousel's warm window shifts — the snap-commit frame — so even small sync work
         // here stacks onto the same frame the audio-session/teardown fixes just cleared (prompt 106 r3).
@@ -182,16 +191,49 @@ struct ClipMediaSurface: View {
                 }
             }
             guard let playerItem = boxed.value else { state = .failed; return }
+            // Studio trim (prompt 116): the feed PLAYS the kept range. The trim VERDICT comes from the
+            // SAME derivation every other surface uses (`ClipHROverlay.keptFootage` — evaluated against
+            // the STORED duration), so playback, poster, chip, and HR window can't disagree about
+            // whether a clip is trimmed. The real loaded duration is used only to CLAMP the range's
+            // end for AVFoundation safety (a stored-duration overestimate would fail the looper).
+            let isTrimmed = clip.edit?.keptRange(rawDurationSec: clip.durationSec ?? 0) != nil
+            // The item's REAL duration — PHAsset.durationSec is approximate and would break the
+            // end-of-clip replay + the scrubber range (prompt 94 review). Loaded ONLY when needed
+            // (fullscreen transport or a trimmed clip): the inline autoplay/warm path for an
+            // untrimmed clip skips the await entirely (the prompt 96/97/106 hot path, unchanged).
+            var real: Double? = nil
+            if controller != nil || isTrimmed {
+                let loaded = (try? await playerItem.asset.load(.duration))?.seconds
+                real = (loaded?.isFinite == true && loaded! > 0) ? loaded : nil
+            }
+            let dur = real ?? clip.durationSec ?? 0
+            let kept: ClosedRange<Double>? = {
+                // A trimmed range needs the REAL duration to clamp against — a stored-duration
+                // overestimate would hand AVPlayerLooper a range past the item's end (looper status
+                // .failed → the clip never plays). If the metadata load failed (transient/iCloud),
+                // play RAW rather than risk a dead player.
+                guard isTrimmed, let real else { return nil }
+                let footage = ClipHROverlay.playedRange(clip)
+                let end = min(footage.start + footage.span, real)
+                guard end - footage.start >= ClipStudioEdit.minKeptSec else { return nil }
+                return footage.start...end
+            }()
             if let controller {
-                // Fullscreen (prompt 94): a NON-looping player so the scrubber maps cleanly to 0…duration.
+                // Fullscreen (prompt 94): a NON-looping player so the scrubber maps cleanly across the
+                // played range. A trimmed clip parks at its kept end (forwardPlaybackEndTime) and the
+                // transport maps its 0…span scrubber through the kept-range start offset.
                 let single = AVPlayer(playerItem: playerItem)
                 single.isMuted = muted
                 player = single
-                // Use the item's REAL duration — PHAsset.durationSec is approximate and would break the
-                // end-of-clip replay + the scrubber range (prompt 94 review). Fall back to the stored value.
-                let real = (try? await playerItem.asset.load(.duration))?.seconds
-                let dur = (real?.isFinite == true && real! > 0) ? real! : (clip.durationSec ?? 0)
-                controller.attach(single, duration: dur)
+                if let kept {
+                    playerItem.forwardPlaybackEndTime = CMTime(seconds: kept.upperBound, preferredTimescale: 600)
+                    await single.seek(to: CMTime(seconds: kept.lowerBound, preferredTimescale: 600),
+                                      toleranceBefore: .zero, toleranceAfter: .zero)
+                    controller.attach(single, duration: kept.upperBound - kept.lowerBound,
+                                      startOffset: kept.lowerBound)
+                } else {
+                    controller.attach(single, duration: dur)
+                }
             } else {
                 // Build the AVQueuePlayer + AVPlayerLooper OFF the main thread, then hop back to assign @State.
                 // The looper build (track/format setup + KVO/boundary observers + enqueuing the looped copy) is
@@ -201,11 +243,21 @@ struct ClipMediaSurface: View {
                 // layer, play/pause) on main, after this. `muted` snapshot + boxed item cross the @Sendable hop.
                 let isMuted = muted
                 let itemBox = Box(playerItem)
+                // A trimmed clip loops ONLY its kept range (AVPlayerLooper's native timeRange support).
+                let range: CMTimeRange? = kept.map {
+                    CMTimeRange(start: CMTime(seconds: $0.lowerBound, preferredTimescale: 600),
+                                duration: CMTime(seconds: $0.upperBound - $0.lowerBound, preferredTimescale: 600))
+                }
                 let built: Box<(AVQueuePlayer, AVPlayerLooper)> = await withCheckedContinuation { cont in
                     DispatchQueue.global(qos: .userInitiated).async {
                         let queue = AVQueuePlayer()
                         queue.isMuted = isMuted                                           // autoplay starts muted
-                        let lp = AVPlayerLooper(player: queue, templateItem: itemBox.value)   // seamless loop
+                        let lp: AVPlayerLooper
+                        if let range {
+                            lp = AVPlayerLooper(player: queue, templateItem: itemBox.value, timeRange: range)
+                        } else {
+                            lp = AVPlayerLooper(player: queue, templateItem: itemBox.value)   // seamless loop
+                        }
                         cont.resume(returning: Box((queue, lp)))
                     }
                 }

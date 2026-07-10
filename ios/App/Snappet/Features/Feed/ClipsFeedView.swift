@@ -279,8 +279,23 @@ struct ClipsFeedView: View {
     /// Snapshot the @Query models into plain values at the store edge (MediaInput drops sessionID,
     /// so the by-session bucketing happens here too).
     private func makeSnapshot() -> FeedSnapshot {
+        // Per-clip Studio edits the feed live-reflects (prompt 116): trim + HR-window config, resolved
+        // by SessionMedia id (localIdentifier fallback for unlinked timeline clips — the same policy as
+        // StudioHRPlacement.resolveOffset). Bounded to MEDIA-BEARING sessions: `p.clips` is the
+        // largest composite blob on StudioProject and this runs per rebuild on the MainActor — the
+        // same scoping rule FeedSnapshot.hr documents. First-project-wins per media id (a session has
+        // one StudioProject today; the merge rule just makes that assumption explicit).
+        var edits: [UUID: ClipStudioEdit] = [:]
+        if !studioProjects.isEmpty {
+            let mediaIDByLocal = Dictionary(allMedia.map { ($0.localIdentifier, $0.id) },
+                                            uniquingKeysWith: { a, _ in a })
+            let mediaSessionIDs = Set(allMedia.map(\.sessionID))
+            for p in studioProjects where mediaSessionIDs.contains(p.sessionID) {
+                edits.merge(ClipStudioEdit.byMedia(clips: p.clips, mediaIDByLocalID: mediaIDByLocal)) { a, _ in a }
+            }
+        }
         var bySession: [UUID: [MediaInput]] = [:]
-        for m in allMedia { bySession[m.sessionID, default: []].append(MediaInput.from(m)) }
+        for m in allMedia { bySession[m.sessionID, default: []].append(MediaInput.from(m, edit: edits[m.id])) }
 
         // climbUUID → name/grade/angle, snapshotted from the logs (latest log wins).
         var climbMeta: [String: ClipFeedClimbMeta] = [:]
@@ -876,7 +891,8 @@ private struct ClipPosterView: View {
                 // player loads (the surface's loading state is transparent) and reappears instantly when the
                 // clip stops — eliminating the spinner/black flash on every autoplay start/stop.
                 ClipThumbnail(localIdentifier: item.media.localIdentifier, kind: item.media.kind,
-                              size: geo.size, enabled: loadPoster)
+                              size: geo.size, enabled: loadPoster,
+                              posterTime: ClipHROverlay.playedRange(item.media).start)
                     .contentShape(Rectangle())
                     .onTapGesture { onTapToPlay() }
                 // The inline player, overlaid on the still whenever this clip is LIVE (playing OR warm). A
@@ -913,13 +929,39 @@ private struct ClipPosterView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .background(Color.black)
+            // Seed the live playhead at the at-rest boundary the moment this clip becomes the active
+            // one: the @State default (1.0) is the TAIL END under an extended window, and a cold
+            // tap-to-play would flash the dot into the off-camera tail for a tick before the surface's
+            // load()/ticker writes the real position (prompt 116 review).
+            .onChange(of: playing) { _, isPlaying in
+                if isPlaying { liveFraction = ClipHROverlay.atEnd(for: payload) }
+            }
             // Instagram-style mute toggle (prompt 93): only on the PLAYING video, top-leading so it can't
             // collide with the bottom HR scorebug or the top-trailing page counter. Driven by `muted`
             // (== playingClip.muted) so it stays in sync with autoplay + the scroll/transfer logic.
             .overlay(alignment: .topLeading) {
                 if playing, item.media.kind == "video" { muteButton.padding(12) }
             }
+            // Studio-trimmed clip (prompt 116): a subtle chip naming the kept range — the honest signal
+            // that the feed plays the edit (and that speed/filters/text live in the export/bake).
+            // Gated + labelled by the EFFECTIVE kept range (the same `keptRange` verdict playback and
+            // the HR window use) — a degenerate/whole-clip stored trim plays raw and shows NO chip.
+            .overlay(alignment: .topTrailing) {
+                if let kept = item.media.edit?.keptRange(rawDurationSec: item.media.durationSec ?? 0) {
+                    editedChip(kept).padding(12)
+                }
+            }
         }
+    }
+
+    private func editedChip(_ kept: ClosedRange<Double>) -> some View {
+        Text("EDITED · \(SetMeasure.formatDuration(kept.lowerBound))–\(SetMeasure.formatDuration(kept.upperBound))")
+            .font(.system(size: 9, weight: .heavy, design: .rounded)).tracking(0.4)
+            .foregroundStyle(SnappetColor.workout)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(.black.opacity(0.45), in: Capsule())
+            .overlay(Capsule().strokeBorder(SnappetColor.workout.opacity(0.6), lineWidth: 1))
+            .accessibilityIdentifier("clips.post.edited")
     }
 
     private var muteButton: some View {
@@ -960,7 +1002,7 @@ private struct ClipPosterView: View {
     @ViewBuilder private var hrOverlay: some View {
         if let payload {
             HRTileView(tile: payload.tile, values: payload.values,
-                       fraction: playing ? liveFraction : ClipHROverlay.atEndFraction,
+                       fraction: playing ? liveFraction : ClipHROverlay.atEnd(for: payload),
                        liveBlur: false)   // flat scrim, not a live backdrop blur → cheap to slide (prompt 92)
                 .frame(maxWidth: .infinity)
                 .frame(height: 96)

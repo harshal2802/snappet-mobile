@@ -178,7 +178,7 @@ struct CardDetailView: View {
                 .accessibilityIdentifier("feed.mediaButton")
                 .sheet(isPresented: $showingMedia) {
                     let resolver = mediaResolver
-                    MediaBrowserView(media: media.map(MediaInput.from),
+                    MediaBrowserView(media: media.map { MediaInput.from($0) },
                                      hrSeries: resolver.hrSeries(for: sid), maxHR: resolver.maxHR(for: sid),
                                      nameFor: resolver.nameResolver(for: sid),
                                      card: card, clipContext: clipContext)

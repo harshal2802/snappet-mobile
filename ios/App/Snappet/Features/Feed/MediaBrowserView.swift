@@ -144,7 +144,17 @@ struct ClipThumbnail: View {
     /// the view renders its placeholder gradient until enabled. Defaulted so other callers (grid, Recap
     /// carousel, browser strip — all row-lazy already) are unchanged.
     var enabled: Bool = true
+    /// The poster timestamp (seconds into the asset) — a Studio-trimmed clip passes its kept-range
+    /// start (prompt 116) so the still equals the first frame the trimmed player displays.
+    var posterTime: Double = 0
     @State private var image: UIImage?
+    /// The (identifier, time) the current `image` was loaded for — so an enabled-flag flip doesn't
+    /// re-decode a loaded poster, but a re-trim (new `posterTime`) does.
+    @State private var loadedKey: String = ""
+
+    /// The ONE poster identity (identifier + time) — the task id, the reload guard, and the loader's
+    /// cache key all derive from it, so the time precision/encoding can't drift between them.
+    private var posterKey: String { "\(localIdentifier)-\(Int(posterTime * 100))" }
 
     var body: some View {
         ZStack {
@@ -159,19 +169,24 @@ struct ClipThumbnail: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        // Keyed on `enabled` too, so a page entering the load window re-fires the (previously no-op) task.
-        .task(id: "\(enabled)-\(localIdentifier)") { await load() }
+        // Keyed on `enabled` + the poster identity, so a page entering the load window (or a re-trim)
+        // re-fires the (previously no-op) task.
+        .task(id: "\(enabled)-\(posterKey)") { await load() }
     }
 
     private func load() async {
-        guard enabled, image == nil else { return }
-        // Video: use the EXACT frame-0 (not Photos' arbitrary thumbnail) so the still equals the frame the
-        // player layer first displays → the carousel's poster→video reveal is invisible (no takeover flick).
-        // Photos keep the thumbnail; the frame-0 path itself falls back to `poster(...)` if it can't decode.
+        let key = posterKey
+        guard enabled, loadedKey != key else { return }
+        // Video: use the EXACT first played frame (not Photos' arbitrary thumbnail) so the still equals
+        // the frame the player layer first displays → the carousel's poster→video reveal is invisible
+        // (no takeover flick). Photos keep the thumbnail; the frame path falls back to `poster(...)`.
         let loaded = kind == "video"
-            ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size)
+            ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size, at: posterTime)
             : await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
-        if let loaded { image = loaded }
+        // A superseded load (re-trim mid-decode) must not overwrite the newer frame: the cancelled
+        // task's decode can complete AFTER its replacement's (prompt 116 review).
+        guard !Task.isCancelled else { return }
+        if let loaded { image = loaded; loadedKey = key }
     }
 }
 
@@ -292,7 +307,18 @@ private struct MediaPage: View {
     /// Clips fullscreen (prompt 94): play/pause + scrubber transport over a non-looping player (video only).
     var transport: Bool = false
     /// Live HR playhead, written by `ClipMediaSurface` from the player and read by the scorebug below.
-    @State private var playbackFraction: Double = ClipHROverlay.atEndFraction
+    /// Seeded at the payload's at-rest boundary (prompt 116 — the bare 1.0 default is the TAIL end of
+    /// an extended window) so even the first frame parks the dot correctly.
+    @State private var playbackFraction: Double
+
+    init(item: MediaInput, overlay: ClipHROverlay.Payload?, isActive: Bool, transport: Bool = false) {
+        self.item = item
+        self.overlay = overlay
+        self.isActive = isActive
+        self.transport = transport
+        _playbackFraction = State(initialValue: ClipHROverlay.atEnd(for: overlay))
+    }
+
     /// Drives the transport bar; the active video surface attaches its player to it.
     @State private var controller = ClipPlaybackController()
 

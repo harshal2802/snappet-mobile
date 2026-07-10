@@ -19,6 +19,10 @@ struct MediaInput: Sendable, Equatable, Identifiable {
     /// `nil` until `SessionMedia.aspectRatio` is backfilled. Defaulted so existing `MediaInput(...)` sites
     /// (and the Recap viewer, which doesn't size by aspect) compile unchanged.
     var aspect: Double? = nil
+    /// The clip's Studio edit the feed live-reflects — trim + extended-HR-window config (prompt 116).
+    /// `nil` (every non-feed construction site, or a clip with no Studio project) = raw playback with
+    /// the default HR window; the feed stamps it from the session's `StudioProject` at compose time.
+    var edit: ClipStudioEdit? = nil
 }
 
 struct MediaClipHR: Sendable, Equatable {

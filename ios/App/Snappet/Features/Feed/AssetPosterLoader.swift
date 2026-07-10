@@ -60,8 +60,12 @@ enum AssetPosterLoader {
     /// or frame can't be read (iCloud-only with network off, the simulator, an unreadable/edit-list clip), and
     /// memoizes by `localIdentifier` so swiping back never re-decodes. `appliesPreferredTrackTransform` + the
     /// 3× `maximumSize` match the player layer's orientation + the tile's Retina fill, so they register exactly.
-    static func videoFrameZero(localIdentifier: String, pointSize: CGSize) async -> UIImage? {
-        if let cached = frameZeroCache.object(forKey: localIdentifier as NSString) { return cached }
+    /// `at`: the poster timestamp (seconds into the asset) — 0 for an untrimmed clip; a Studio-trimmed
+    /// clip passes its kept-range start (prompt 116) so the still equals the first frame the trimmed
+    /// player displays. Cache-keyed by (identifier, time) so a re-trim regenerates.
+    static func videoFrameZero(localIdentifier: String, pointSize: CGSize, at seconds: Double = 0) async -> UIImage? {
+        let key = (seconds > 0.01 ? "\(localIdentifier)@\(Int(seconds * 100))" : localIdentifier) as NSString
+        if let cached = frameZeroCache.object(forKey: key) { return cached }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = assets.firstObject else {
             return await poster(localIdentifier: localIdentifier, pointSize: pointSize)
@@ -71,10 +75,10 @@ enum AssetPosterLoader {
         // MainActor isolation and TRAP (`dispatch_assert_queue`) when the framework invokes it off-main — the
         // crash this fixes. Only the cache touch stays on the MainActor here; `extractFrameZero` returns a
         // Sendable `UIImage`, so nothing non-Sendable crosses the actor boundary.
-        guard let img = await extractFrameZero(asset: asset, pointSize: pointSize) else {
+        guard let img = await extractFrameZero(asset: asset, pointSize: pointSize, at: seconds) else {
             return await poster(localIdentifier: localIdentifier, pointSize: pointSize)
         }
-        frameZeroCache.setObject(img, forKey: localIdentifier as NSString, cost: bitmapCost(img))
+        frameZeroCache.setObject(img, forKey: key, cost: bitmapCost(img))
         return img
     }
 
@@ -82,7 +86,8 @@ enum AssetPosterLoader {
     /// PHImageManager/AVAssetImageGenerator completion closures non-isolated so they run safely on the
     /// background queues the frameworks call them on. Local-only + fast (mirrors `poster()`): an iCloud-only
     /// clip yields nil → the caller falls back to the Photos thumbnail until it's local (documented edge).
-    nonisolated private static func extractFrameZero(asset: PHAsset, pointSize: CGSize) async -> UIImage? {
+    nonisolated private static func extractFrameZero(asset: PHAsset, pointSize: CGSize,
+                                                     at seconds: Double = 0) async -> UIImage? {
         let avAsset: AVAsset? = await withCheckedContinuation { cont in
             let opts = PHVideoRequestOptions()
             opts.isNetworkAccessAllowed = false
@@ -97,8 +102,9 @@ enum AssetPosterLoader {
         gen.requestedTimeToleranceBefore = .zero       // EXACT frame-0, no key-frame tolerance
         gen.requestedTimeToleranceAfter = .zero
         gen.maximumSize = CGSize(width: pointSize.width * 3, height: pointSize.height * 3)
+        let time = seconds > 0.01 ? CMTime(seconds: seconds, preferredTimescale: 600) : .zero
         let cg: CGImage? = try? await withCheckedThrowingContinuation { cont in
-            gen.generateCGImagesAsynchronously(forTimes: [NSValue(time: .zero)]) { _, image, _, _, error in
+            gen.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, _, error in
                 if let image { cont.resume(returning: image) }
                 else { cont.resume(throwing: error ?? CocoaError(.fileReadCorruptFile)) }
             }
