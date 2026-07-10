@@ -86,7 +86,7 @@ final class StudioComposer: Sendable {
                                   sourceDurations: sourceDurations, transitions: snapshot.transitions,
                                   overlays: snapshot.overlays, audioTracks: snapshot.audioTracks,
                                   videoOverlays: videoOverlays, hrSamples: hrSamples,
-                                  hrTile: hrTile,
+                                  hrTile: hrTile, clipHRByID: clipHRByID,
                                   baseFrame: snapshot.baseFrame, forPlayback: forPlayback)
     }
 
