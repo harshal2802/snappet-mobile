@@ -8136,3 +8136,45 @@ by the effective `keptRange` (stored trims can be degenerate/whole-clip) via
 `SetMeasure.formatDuration`; the at-rest playhead is seeded from `atEnd(for:)` on play-start and
 in `MediaPage`'s init (the bare 1.0 default is the TAIL end of an extended window); the snapshot's
 project scan is bounded to media-bearing sessions.
+
+## 2026-07-10 — Bake lane: "Save to original" writes the edit into the Photos asset; the feed stands down (prompt 117)
+
+Lane ② of the convergence model: speed/filters/text/HR-tile-at-your-placement reach the feed by
+RENDERING ONCE into the asset, never by per-cell compositions. The non-obvious choices:
+**(1) Two variants with the storage truth in the UI copy.** Revertible (`PHContentEditingOutput`,
+adjustment data `com.snappet.app.bake`) keeps the original bytes — "Revert to Original" works and a
+trim **never frees space** (the user asked exactly this); Replace (save-as-new +
+`deleteAssets`) is the only space-freeing path, behind an app confirm AND the iOS deletion dialog,
+with the Recently-Deleted ~30-day caveat stated. **(2) Deletion is a SECOND change block** — a
+cancelled system dialog must not undo the bake: the new asset survives and the app re-points to it
+regardless (the original just lingers). **(3) `isBaked` stands the feed down**: `MediaInput.from`
+strips the live-reflect `edit` and `ClipHROverlay.make` returns nil (the tile is IN the pixels —
+drawing the live overlay would double-render), BAKED chip instead of EDITED. **(4) Bake bumps
+`project.updatedAt` explicitly** — a revertible bake (and a revert-detection clear) changes only
+`SessionMedia`, which the feed's rebuild key doesn't watch. **(5) Destructive re-pointing is pure
+math** (`ClipBakePlan`): `offsetSec += earliest kept trimStart` (the new asset IS the trimmed
+composition), duration = rendered length, project trims reset, identifier swapped on the target's
+parts only. **(6) Revert detection is a targeted probe** (`PHAssetResource` `.fullSizeVideo`) at
+Studio-open — never per feed rebuild; a nil probe (simulator / iCloud-evicted) clears nothing.
+**(7) Bake is gated to single-source-asset compositions** (`ClipBakePlan.bakeTarget`) — a
+multi-asset timeline has no "the original" and exports as new. Never automatic: each bake is a full
+re-render, tied to the Export menu, not to per-edit saves.
+
+**Review-fix addendum (same day):** the review's headline find — **a bake must FLATTEN the project**,
+both variants: the composer resolves the asset's CURRENT (baked) rendition, so a project still
+holding trims/speed/filters/overlays would re-apply everything ON TOP of the baked pixels on the
+next open/export (double speed, double filter, two HR tiles). `ClipBakePlan.neutralizedClips`
+resets every baked per-clip control, the burned overlays + HR tile leave the project, and the
+flatten is an **undo barrier** (`undo = UndoStack(flattened)`) — a post-bake Undo could otherwise
+rewind the timeline to a deleted asset. Other confirmed fixes: **the revertible rendition is
+passthrough-REMUXED to .mov** (Photos vends `renderedContentURL` with the container it validates —
+a byte-copied .mp4 could fail every device bake); a **cancelled deletion aborts the destructive
+bake entirely** (`deletionCancelled`; re-pointing while the original survives would let ±90s
+auto-discovery re-import it as a duplicate — the rendered copy stays in Photos, app records
+untouched); `bakeTarget` tightened to **video-only, scope-covering** compositions (a hidden part of
+the same asset would be swallowed by the re-point; `earliestTrimStart` now uses the same scoped
+clips the render used); `.limited` Photos auth passes (it CAN modify allowed assets);
+`isNetworkAccessAllowed` for iCloud-evicted originals; `isBakedRaw` rides in `SnappetBackup`'s
+SessionMediaRow (not re-derivable — a dropped flag double-renders the burned tile after restore);
+the revert probes run off-main; export/bake share ONE `renderComposition()` and gate each other
+(`isRendering`); bake temp files are removed; the BAKED chip uses `SnappetColor.perfFresh`.

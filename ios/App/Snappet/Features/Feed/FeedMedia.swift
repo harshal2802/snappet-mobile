@@ -23,6 +23,10 @@ struct MediaInput: Sendable, Equatable, Identifiable {
     /// `nil` (every non-feed construction site, or a clip with no Studio project) = raw playback with
     /// the default HR window; the feed stamps it from the session's `StudioProject` at compose time.
     var edit: ClipStudioEdit? = nil
+    /// The Studio baked its edit INTO this asset's pixels ("Save to original", prompt 117): every
+    /// surface plays it raw (the trims/filters/overlays/HR tile are the video), draws NO live HR
+    /// overlay, and shows a BAKED chip. Populated by `MediaInput.from` for all construction sites.
+    var isBaked: Bool = false
 }
 
 struct MediaClipHR: Sendable, Equatable {

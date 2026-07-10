@@ -575,6 +575,10 @@ extension SnappetBackup {
         var assignmentSourceRaw: String
         var assignedClimbUUID: String?
         var createdAt: Date
+        /// The bake flag (prompt 117) — NOT re-derivable (unlike `aspectRatio`): a dropped flag would
+        /// lift the feed's stand-down and double-render the burned-in HR tile. Optional → old backups
+        /// decode `nil` (= false).
+        var isBakedRaw: Bool?
 
         init(_ m: SessionMedia) {
             id = m.id; sessionID = m.sessionID; localIdentifier = m.localIdentifier
@@ -583,6 +587,7 @@ extension SnappetBackup {
             assignedExerciseID = m.assignedExerciseID; assignedSetIndex = m.assignedSetIndex
             assignmentSourceRaw = m.assignmentSourceRaw; assignedClimbUUID = m.assignedClimbUUID
             createdAt = m.createdAt
+            isBakedRaw = m.isBakedRaw
         }
         func make() -> SessionMedia {
             let media = SessionMedia(id: id, sessionID: sessionID, localIdentifier: localIdentifier,
@@ -594,6 +599,7 @@ extension SnappetBackup {
                                      createdAt: createdAt)
             media.kindRaw = kindRaw
             media.assignmentSourceRaw = assignmentSourceRaw
+            media.isBakedRaw = isBakedRaw
             return media
         }
         var sortKey: String { id.uuidString }

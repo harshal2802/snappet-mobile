@@ -46,6 +46,13 @@ final class SessionMedia {
     var addedManually: Bool
     var createdAt: Date
 
+    /// `true` once a Studio bake wrote the edit INTO the Photos asset ("Save to original" /
+    /// "Replace original", prompt 117): the pixels carry the trims/filters/overlays/HR tile, so the
+    /// feed plays the asset raw, draws NO live HR overlay (nothing double-renders), and shows a BAKED
+    /// chip. Additive + optional → SwiftData lightweight migration (`nil` = false for every pre-bake
+    /// row). Cleared when a Photos "Revert to Original" is detected at a Studio-open touchpoint.
+    var isBakedRaw: Bool?
+
     // MARK: - Per-set assignment (additive → SwiftData lightweight migration; existing rows
     // decode as an unassigned `auto` clip and fall into General until the auto-assigner runs).
     /// FK to the `SessionExercise.id` this clip is tied to; `nil` = General (no set).
@@ -85,6 +92,12 @@ final class SessionMedia {
     }
 
     var kind: Kind { Kind(rawValue: kindRaw) ?? .photo }
+
+    /// Typed view over `isBakedRaw` (nil = false — pre-bake rows).
+    var isBaked: Bool {
+        get { isBakedRaw ?? false }
+        set { isBakedRaw = newValue }
+    }
 
     /// Typed view over `assignmentSourceRaw` (defaults to `.auto` for any unknown raw).
     var assignmentSource: MediaAssignmentSource {
