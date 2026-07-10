@@ -12,18 +12,49 @@ final class ClipBakePlanTests: XCTestCase {
                      order: order, trimStart: trimStart, trimEnd: trimEnd)
     }
 
-    /// A bake writes the composition into ONE asset — offered only when every visible video clip
-    /// references the same source (split parts count as one; photos don't).
-    func testBakeTargetRequiresSingleSourceAsset() {
-        XCTAssertEqual(ClipBakePlan.bakeTarget(clips: [tclip(local: "A")]), "A")
-        XCTAssertEqual(ClipBakePlan.bakeTarget(clips: [tclip(local: "A", order: 0, trimEnd: 10),
-                                                       tclip(local: "A", order: 1, trimStart: 20)]), "A")
-        XCTAssertNil(ClipBakePlan.bakeTarget(clips: [tclip(local: "A"), tclip(local: "B", order: 1)]))
-        XCTAssertNil(ClipBakePlan.bakeTarget(clips: []))
-        // Photos never make a project bakeable on their own, and don't break a single-video target.
-        XCTAssertNil(ClipBakePlan.bakeTarget(clips: [tclip(local: "P", photo: true)]))
-        XCTAssertEqual(ClipBakePlan.bakeTarget(clips: [tclip(local: "A"),
-                                                       tclip(local: "P", photo: true, order: 1)]), "A")
+    /// A bake writes the composition into ONE asset — offered only for a VIDEO-ONLY visible timeline
+    /// whose clips all reference the same source (split parts count as one), and only when the scope
+    /// covers every part of that asset in the full project.
+    func testBakeTargetRequiresSingleSourceVideoOnlyCoveredAsset() {
+        let a = tclip(local: "A")
+        XCTAssertEqual(ClipBakePlan.bakeTarget(visible: [a], all: [a]), "A")
+        let split = [tclip(local: "A", order: 0, trimEnd: 10), tclip(local: "A", order: 1, trimStart: 20)]
+        XCTAssertEqual(ClipBakePlan.bakeTarget(visible: split, all: split), "A")
+        // Multi-asset / empty → no bake.
+        XCTAssertNil(ClipBakePlan.bakeTarget(visible: [a, tclip(local: "B", order: 1)],
+                                             all: [a, tclip(local: "B", order: 1)]))
+        XCTAssertNil(ClipBakePlan.bakeTarget(visible: [], all: []))
+        // A photo segment anywhere in the visible timeline → no bake (its pixels have no "original").
+        let photo = tclip(local: "P", photo: true, order: 1)
+        XCTAssertNil(ClipBakePlan.bakeTarget(visible: [photo], all: [photo]))
+        XCTAssertNil(ClipBakePlan.bakeTarget(visible: [a, photo], all: [a, photo]))
+        // A scoped studio hiding another part of the SAME asset → no bake (the render wouldn't
+        // contain the hidden part's footage, but the re-point would swallow it).
+        let hidden = tclip(local: "A", order: 1, trimStart: 20)
+        XCTAssertNil(ClipBakePlan.bakeTarget(visible: [a], all: [a, hidden]))
+        // A hidden clip of a DIFFERENT asset doesn't block.
+        XCTAssertEqual(ClipBakePlan.bakeTarget(visible: [a], all: [a, tclip(local: "B", order: 1)]), "A")
+    }
+
+    /// Flattening (the double-apply fix): after a bake the pixels carry the edit, so every baked
+    /// per-clip control resets on the target's parts — other clips untouched.
+    func testNeutralizedClipsResetBakedEditState() {
+        var edited = tclip(local: "A", trimStart: 8, trimEnd: 31)
+        edited.speed = 2
+        edited.filter = StudioFilter.allCases.first { $0 != .none } ?? .none
+        edited.adjust = ClipAdjust(brightness: 0.4, contrast: 1.2, saturation: 0.8)
+        edited.cropRect = CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.5)
+        edited.volume = 0.2
+        let other = tclip(local: "B", order: 1, trimStart: 3)
+        let out = ClipBakePlan.neutralizedClips([edited, other], localIdentifier: "A")
+        XCTAssertEqual(out[0].trimStart, 0)
+        XCTAssertNil(out[0].trimEnd)
+        XCTAssertEqual(out[0].speed, 1)
+        XCTAssertEqual(out[0].filter, .none)
+        XCTAssertNil(out[0].adjust)
+        XCTAssertEqual(out[0].cropRect, CGRect(x: 0, y: 0, width: 1, height: 1))
+        XCTAssertNil(out[0].volume)
+        XCTAssertEqual(out[1].trimStart, 3)      // untouched
     }
 
     /// The replacement asset IS the rendered (trimmed) composition: its capture offset shifts to

@@ -961,10 +961,10 @@ private struct ClipPosterView: View {
     private var bakedChip: some View {
         Text("BAKED ✓")
             .font(.system(size: 9, weight: .heavy, design: .rounded)).tracking(0.4)
-            .foregroundStyle(Color(studioHex: "#5BC074"))
+            .foregroundStyle(SnappetColor.perfFresh)   // "done/positive" state → the perf ramp token
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(.black.opacity(0.45), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color(studioHex: "#5BC074").opacity(0.6), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(SnappetColor.perfFresh.opacity(0.6), lineWidth: 1))
             .accessibilityIdentifier("clips.post.baked")
     }
 

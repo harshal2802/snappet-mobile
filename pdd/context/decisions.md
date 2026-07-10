@@ -8159,3 +8159,22 @@ Studio-open — never per feed rebuild; a nil probe (simulator / iCloud-evicted)
 **(7) Bake is gated to single-source-asset compositions** (`ClipBakePlan.bakeTarget`) — a
 multi-asset timeline has no "the original" and exports as new. Never automatic: each bake is a full
 re-render, tied to the Export menu, not to per-edit saves.
+
+**Review-fix addendum (same day):** the review's headline find — **a bake must FLATTEN the project**,
+both variants: the composer resolves the asset's CURRENT (baked) rendition, so a project still
+holding trims/speed/filters/overlays would re-apply everything ON TOP of the baked pixels on the
+next open/export (double speed, double filter, two HR tiles). `ClipBakePlan.neutralizedClips`
+resets every baked per-clip control, the burned overlays + HR tile leave the project, and the
+flatten is an **undo barrier** (`undo = UndoStack(flattened)`) — a post-bake Undo could otherwise
+rewind the timeline to a deleted asset. Other confirmed fixes: **the revertible rendition is
+passthrough-REMUXED to .mov** (Photos vends `renderedContentURL` with the container it validates —
+a byte-copied .mp4 could fail every device bake); a **cancelled deletion aborts the destructive
+bake entirely** (`deletionCancelled`; re-pointing while the original survives would let ±90s
+auto-discovery re-import it as a duplicate — the rendered copy stays in Photos, app records
+untouched); `bakeTarget` tightened to **video-only, scope-covering** compositions (a hidden part of
+the same asset would be swallowed by the re-point; `earliestTrimStart` now uses the same scoped
+clips the render used); `.limited` Photos auth passes (it CAN modify allowed assets);
+`isNetworkAccessAllowed` for iCloud-evicted originals; `isBakedRaw` rides in `SnappetBackup`'s
+SessionMediaRow (not re-derivable — a dropped flag double-renders the burned tile after restore);
+the revert probes run off-main; export/bake share ONE `renderComposition()` and gate each other
+(`isRendering`); bake temp files are removed; the BAKED chip uses `SnappetColor.perfFresh`.

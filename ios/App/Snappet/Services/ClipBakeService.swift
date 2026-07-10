@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import Photos
 
 // MARK: - Bake lane (prompt 117) — write a Studio edit INTO the Photos asset
@@ -24,26 +25,30 @@ final class ClipBakeService {
         case assetNotFound
         case editingInputFailed
         case writeFailed(String)
+        case deletionCancelled
 
         var errorDescription: String? {
             switch self {
-            case .notAuthorized: return "Photos access is needed to update the original video. Enable full access in Settings."
+            case .notAuthorized: return "Photos access is needed to update the original video. Enable access in Settings."
             case .assetNotFound: return "Couldn't find the original video in your library."
             case .editingInputFailed: return "Photos wouldn't allow editing this video."
             case .writeFailed(let detail): return "Couldn't save to the original video: \(detail)"
+            case .deletionCancelled:
+                return "Deletion was cancelled — nothing changed in the app. The exported copy was saved to Photos."
             }
         }
     }
 
-    /// Full read-write Photos access — a bake WRITES to the library; limited/add-only access can't
-    /// modify an existing asset. Prompts once when undetermined.
+    /// Read-write Photos access — a bake WRITES to the library. `.limited` passes: modifying an asset
+    /// in the allowed set is permitted, and Photos fails naturally if this one isn't. Prompts once
+    /// when undetermined.
     func ensureAuthorized() async throws {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         switch status {
-        case .authorized: return
+        case .authorized, .limited: return
         case .notDetermined:
             let granted = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-            guard granted == .authorized else { throw BakeError.notAuthorized }
+            guard granted == .authorized || granted == .limited else { throw BakeError.notAuthorized }
         default:
             throw BakeError.notAuthorized
         }
@@ -65,6 +70,9 @@ final class ClipBakeService {
         let inputBox: Box<PHContentEditingInput> = try await withCheckedThrowingContinuation { cont in
             let options = PHContentEditingInputRequestOptions()
             options.canHandleAdjustmentData = { _ in false }
+            // An iCloud-evicted original (Optimize iPhone Storage) needs a download to edit — allowed:
+            // a bake is an explicit user action already behind a progress overlay.
+            options.isNetworkAccessAllowed = true
             asset.requestContentEditingInput(with: options) { input, _ in
                 if let input { cont.resume(returning: Box(input)) }
                 else { cont.resume(throwing: BakeError.editingInputFailed) }
@@ -75,12 +83,10 @@ final class ClipBakeService {
         output.adjustmentData = PHAdjustmentData(formatIdentifier: "com.snappet.app.bake",
                                                  formatVersion: "1",
                                                  data: Data(projectID.uuidString.utf8))
-        do {
-            // renderedContentURL for a video expects the movie file at that URL before the change block.
-            try FileManager.default.copyItem(at: renderedURL, to: output.renderedContentURL)
-        } catch {
-            throw BakeError.writeFailed(error.localizedDescription)
-        }
+        // Photos vends `renderedContentURL` with the container IT expects (.mov for video) and
+        // validates the rendition on commit — a byte copy of the composer's .mp4 can be rejected.
+        // Passthrough-remux into the vended URL: no re-encode, just the right container.
+        try await remux(renderedURL, to: output.renderedContentURL)
         do {
             try await PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetChangeRequest(for: asset)
@@ -109,13 +115,33 @@ final class ClipBakeService {
         guard let newID = placeholderID else { throw BakeError.writeFailed("no asset was created") }
 
         if let old = PHAsset.fetchAssets(withLocalIdentifiers: [oldLocalIdentifier], options: nil).firstObject {
-            // Best-effort: a cancelled system dialog (or any deletion failure) must not undo the bake —
-            // the new asset exists and the caller re-points regardless.
-            try? await PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.deleteAssets([old] as NSArray)
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.deleteAssets([old] as NSArray)
+                }
+            } catch {
+                // Cancelled system dialog (or deletion failure): the app's records must stay on the
+                // ORIGINAL — re-pointing while the original survives would let auto-discovery
+                // re-import it as a duplicate row. The rendered copy stays in Photos as a normal
+                // saved video (harmless); the caller surfaces `deletionCancelled` and changes nothing.
+                throw BakeError.deletionCancelled
             }
         }
         return newID
+    }
+
+    /// Passthrough-remux `source` into `destination`, honouring the destination's container (Photos
+    /// vends `.mov` for video renditions). No re-encode — track-level copy, seconds not minutes.
+    private func remux(_ source: URL, to destination: URL) async throws {
+        let asset = AVURLAsset(url: source)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough)
+        else { throw BakeError.writeFailed("couldn't prepare the rendition") }
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try await session.export(to: destination, as: .mov)
+        } catch {
+            throw BakeError.writeFailed(error.localizedDescription)
+        }
     }
 
     /// Wraps a non-Sendable value so it can cross an async continuation boundary (produced + consumed
@@ -129,7 +155,15 @@ final class ClipBakeService {
     /// asset the user "Revert to Original"-ed in Photos loses its `fullSizeVideo` resource, and the
     /// caller clears `SessionMedia.isBaked`. Returns `nil` when the asset can't be found (don't clear
     /// a flag on a transient miss — e.g. the simulator, or iCloud eviction).
-    func hasEditedRendition(localIdentifier: String) -> Bool? {
+    ///
+    /// Deliberately loose: ANY edited rendition counts as "still baked" — a user who reverts and then
+    /// edits the video IN PHOTOS keeps the flag (the feed then shows their Photos edit with no live
+    /// overlay, which is the right degrade). Verifying the rendition is OURS needs a full
+    /// `requestContentEditingInput` round-trip per probe (network for iCloud originals) — not worth it
+    /// at Studio-open frequency; the adjustment-data check is a follow-up if this ever confuses.
+    /// `nonisolated static`: PHAsset fetches + resource enumeration are thread-safe, and the caller
+    /// probes from a background task.
+    nonisolated static func hasEditedRendition(localIdentifier: String) -> Bool? {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil).firstObject
         else { return nil }
         return PHAssetResource.assetResources(for: asset).contains { $0.type == .fullSizeVideo }

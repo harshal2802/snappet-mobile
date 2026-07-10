@@ -6,12 +6,44 @@ import Foundation
 enum ClipBakePlan {
 
     /// The single source asset a bake writes into, or `nil` when baking isn't offered. A bake renders
-    /// the COMPOSITION into ONE Photos asset, so it's only meaningful when every visible video clip
-    /// references the same source (the "Edit this clip" scoped studio, or split parts of one asset) —
-    /// a multi-asset composition exports as a new video instead.
-    static func bakeTarget(clips: [TimelineClip]) -> String? {
-        let ids = Set(clips.filter { !$0.isPhoto }.map(\.localIdentifier))
-        return ids.count == 1 ? ids.first : nil
+    /// the COMPOSITION into ONE Photos asset, so it's only meaningful when:
+    /// - the visible timeline is **video-only** (a photo segment has no "original" to bake into) and
+    ///   every clip references the same source (the "Edit this clip" scoped studio, or split parts);
+    /// - the scope COVERS the asset: every clip of that asset in the FULL project is visible — a
+    ///   scoped studio hiding another part of the same asset would render, re-point, and offset-shift
+    ///   against footage the render doesn't contain.
+    /// A multi-asset (or partially-scoped) composition exports as a new video instead.
+    static func bakeTarget(visible: [TimelineClip], all: [TimelineClip]) -> String? {
+        guard !visible.isEmpty, visible.allSatisfy({ !$0.isPhoto }) else { return nil }
+        let ids = Set(visible.map(\.localIdentifier))
+        guard ids.count == 1, let target = ids.first else { return nil }
+        let visibleIDs = Set(visible.map(\.id))
+        let allParts = all.filter { !$0.isPhoto && $0.localIdentifier == target }
+        guard allParts.allSatisfy({ visibleIDs.contains($0.id) }) else { return nil }
+        return target
+    }
+
+    /// Neutralize the edit state a bake just burned INTO the pixels, for the target asset's parts:
+    /// trims (the rendition/replacement plays the kept range), speed, filter + manual adjust, crop,
+    /// Ken-Burns keyframes, and volume. Without this, reopening the project would re-apply every edit
+    /// ON TOP of the baked pixels (double speed, double filter, re-trimmed rendition) — the composer
+    /// resolves the asset's CURRENT (baked) version. Both bake variants use it: after a bake, "the
+    /// asset IS the edit" (flattening semantics; a Photos revert restores pixels, not project edits).
+    static func neutralizedClips(_ clips: [TimelineClip], localIdentifier: String) -> [TimelineClip] {
+        clips.map { clip in
+            guard !clip.isPhoto, clip.localIdentifier == localIdentifier else { return clip }
+            var c = clip
+            c.trimStart = 0
+            c.trimEnd = nil
+            c.speed = 1
+            c.filter = .none
+            c.filterIntensity = 1
+            c.adjust = nil
+            c.cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            c.scaleKeyframes = []
+            c.volume = nil
+            return c
+        }
     }
 
     /// The `SessionMedia` field updates a destructive bake applies: the replacement asset IS the
@@ -23,19 +55,13 @@ enum ClipBakePlan {
         (max(0, oldOffsetSec + max(0, earliestTrimStart)), renderedDurationSec)
     }
 
-    /// Re-point a project's timeline at the replacement asset: swap the `localIdentifier` on every
-    /// part of the old asset and RESET their trims/speed-invariant edit state that is now baked into
-    /// the pixels (trims → whole clip; the new asset already plays the kept range). Filters, crop,
-    /// speed, and overlays are also in the pixels, but resetting them is the caller's call via
-    /// `resetBakedEdits` — kept separate so a REVERTIBLE bake (original untouched, project still the
-    /// live source of truth) leaves the timeline alone.
+    /// Re-point a project's timeline at the replacement asset (destructive bake): neutralize the
+    /// baked edit state (`neutralizedClips`) AND swap the `localIdentifier` on the old asset's parts.
     static func repointedClips(_ clips: [TimelineClip], from oldID: String, to newID: String) -> [TimelineClip] {
-        clips.map { clip in
+        neutralizedClips(clips, localIdentifier: oldID).map { clip in
             guard clip.localIdentifier == oldID else { return clip }
             var c = clip
             c.localIdentifier = newID
-            c.trimStart = 0
-            c.trimEnd = nil
             return c
         }
     }

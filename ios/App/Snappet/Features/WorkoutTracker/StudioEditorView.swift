@@ -196,7 +196,9 @@ struct StudioEditorView: View {
                     .foregroundStyle(.white)
             }
             .accessibilityIdentifier("studioExport")
-            .disabled(vm.clips.isEmpty)
+            // Also disabled while EITHER lane renders — two concurrent full AVFoundation exports
+            // (a bake + an export) would contend for the AssetCache and stack progress overlays.
+            .disabled(vm.clips.isEmpty || vm.isRendering)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
