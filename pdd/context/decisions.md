@@ -8178,3 +8178,24 @@ clips the render used); `.limited` Photos auth passes (it CAN modify allowed ass
 SessionMediaRow (not re-derivable — a dropped flag double-renders the burned tile after restore);
 the revert probes run off-main; export/bake share ONE `renderComposition()` and gate each other
 (`isRendering`); bake temp files are removed; the BAKED chip uses `SnappetColor.perfFresh`.
+
+## Studio HR overlay: the two-path WYSIWYG invariant (prompt 118 — export was burning session-wide HR)
+
+The HR stat tile is rendered by **two independent paths** and they must agree pixel-for-value: the
+**editor preview** draws it in SwiftUI (`StudioEditorViewModel.previewTile` → `previewHR`, its own
+per-clip slice), while **export** burns it in via Core Animation (`renderComposition()` builds
+`clipHRContent()` → passes it as `clipHRByID` through `StudioComposer.export` → `makeComposition` →
+`assemble` → `StudioOverlays.makeAnimationTool`). `makeAnimationTool` draws per-clip tiles when its
+`clipHR` list is non-empty, **else falls back to the session-wide `hrTile`** across the whole
+timeline.
+
+A shipped regression: `makeComposition(...)` accepted `clipHRByID` but its `assemble(...)` call
+**omitted the argument** (defaulted to `[:]`), so export silently hit the session-wide fallback —
+the editor showed the clip window (Z1 · Recovery, PEAK 108, KCAL 4) while the file burned the whole
+session (Z3 · Aerobic, PEAK 150, KCAL 584). Fixed by forwarding `clipHRByID`. Because the two paths
+share NO code between the resolved inputs and the render, a static contradiction (both read identical
+VM state yet diverge) localizes the bug to the plumbing, not the value logic. **Invariant to hold:**
+any new per-clip render input (HR windows, scopes, tiles) must be threaded through EVERY hop —
+`export`/`bake` → `makeComposition` → `assemble` → (`assembleWithTransitions`) → `makeAnimationTool`
+— or export quietly falls back to the session-wide tile. Not unit-guardable (`assemble` needs a real
+`AVAsset`); verify by a device export eyeballed against the editor.
