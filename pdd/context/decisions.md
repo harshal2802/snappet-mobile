@@ -8090,3 +8090,30 @@ SwiftUI ForEach-identity collision) consumed by both renderers, and the preview 
 `previewTile` accessor (values + fraction from a single `previewHR` pass, fraction via
 `values.chartFraction` — the same remap the export uses) instead of two accessors that each rebuilt
 the timeline. `captureOffset` now routes through the pure `StudioHRPlacement.resolveOffset`.
+
+## 2026-07-09 — Clips feed ⇄ Studio convergence: live-reflect trims + HR window; effects wait for the bake lane (prompt 116)
+
+"Edit this clip" edits now REFLECT in the feed, via the pipeline that already existed (every Studio
+edit bumps `updatedAt`, which is in the feed's rebuild key) — prompt 116 only widened what flows.
+The non-obvious choices: **(1) Trims reflect by PLAYING the kept range**, not by re-slicing HR under
+raw playback (which would desync the dot): the inline looper uses `AVPlayerLooper`'s native
+`timeRange`, the fullscreen transport gains a `startOffset` (scrubber in kept-range time,
+`forwardPlaybackEndTime` parks at the kept end), and the poster becomes the first KEPT frame
+(`videoFrameZero(at:)`, cache-keyed by time). **(2) One validity rule** —
+`ClipStudioEdit.keptRange(rawDurationSec:)` (clamp to real duration · degenerate <0.5 s → raw ·
+whole-clip trim → identity) — is shared by playback, poster, and the HR window, so they can't
+disagree about whether a clip "is trimmed". **(3) Split clips collapse to the kept ENVELOPE**
+[min trimStart … max trimEnd] (one feed item per physical asset stays the rule); a media id with no
+surviving timeline clip falls back to RAW — a Studio removal must never hide feed media.
+**(4) A never-edited clip gets the Studio's defaults** (lead 0:05 / tail 0:30 / full-window scope):
+the feed's chart now always carries an `HRClipWindow`, built by the SAME
+`StudioHRPlacement.extendedWindow` the editor/export use, with footage = the kept range.
+**(5) `ClipHROverlay.fraction` maps ASSET time** (what `player.currentTime()` reports under a
+time-range looper) → kept-range-relative → `values.chartFraction`; non-finite times now park at
+`atEnd(for:)` (the footage/tail boundary — the last on-camera reading) instead of 0, so a glitched
+read can't snap the dot to the window start. **(6) Speed/filters/text/PiP deliberately do NOT
+live-reflect** — they need a rendered composition per feed cell (the CA overlay tool is
+offline-only; per-cell compositions would undo the prompt 97/106 carousel work). They reach the feed
+via the bake lane (prompt 117: "Save to original", revertible or space-freeing-destructive). The
+EDITED chip on trimmed clips names the kept range and signals that the full edit lives in the
+export/bake.

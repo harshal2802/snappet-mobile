@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Clips ⇄ Studio Convergence · Wireframes</title>
+<style>
+  :root{
+    --coral:#FF7A6B; --ember:#FF9645; --amber:#F59E0B;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    --z2:#30B0C7; --z3:#34C759; --z4:#FF9500; --z5:#FF3B30;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1a1424,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:1500px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc9a8 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:16px;max-width:1050px;margin:0 0 14px}
+  .sub b{color:#fff}
+  .wrap{max-width:1500px;margin:0 auto;padding:0 28px}
+  h2.sect{font-size:22px;font-weight:800;margin:44px 0 6px;letter-spacing:-.01em}
+  .sectsub{color:#b2b3bd;font-size:14px;max-width:1000px;margin:0 0 18px}
+  .sectsub b{color:#fff}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--ember);color:#2a1607;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,150,69,.4)}
+  .caption{margin:14px 4px 0;font-size:13px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--ember);font-weight:650}
+
+  /* flow diagram */
+  .flow{background:var(--surface);border:1px solid var(--hair);border-radius:20px;padding:24px 26px;margin-top:18px;overflow-x:auto}
+  .flowrow{display:flex;align-items:center;gap:14px;min-width:860px}
+  .fnode{background:var(--muted);border:1px solid var(--hair);border-radius:14px;padding:12px 16px;flex:1}
+  .fnode .h{font-size:13.5px;font-weight:800;color:#fff}
+  .fnode .d{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .fnode.hot{border-color:var(--ember);background:rgba(255,150,69,.08)}
+  .farrow{color:var(--ember);font-size:20px;font-weight:800;flex:none}
+  .fnote{font-size:11.5px;color:var(--z3);margin-top:10px}
+  .fnote b{color:var(--z3)}
+
+  /* tier table */
+  .tiers{display:flex;flex-wrap:wrap;gap:22px;margin-top:18px}
+  .tier{flex:1;min-width:320px;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:16px 20px}
+  .tier h3{margin:0 0 8px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .tier.yes h3{color:var(--z3)} .tier.part h3{color:var(--z4)} .tier.no h3{color:var(--t2)}
+  .tier ul{margin:0;padding-left:18px;font-size:13px;color:#c8c9d2}
+  .tier li{margin:5px 0}
+  .tier li b{color:#fff}
+  .tier .why{font-size:11.5px;color:var(--t2);margin-top:10px;border-top:1px solid var(--hair);padding-top:8px}
+
+  /* device */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .navbar{flex:none;padding:6px 18px 8px;display:flex;align-items:center;justify-content:space-between}
+  .navbar .t{font-size:30px;font-weight:800;letter-spacing:-.02em}
+  .phead{flex:none;display:flex;align-items:center;gap:10px;padding:0 16px 8px}
+  .pglyph{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;
+    border:1.5px solid var(--ember);background:rgba(255,150,69,.14);color:var(--ember)}
+  .ptitle{font-size:14px;font-weight:800;line-height:1.2}
+  .psub{font-size:11.5px;color:var(--t2)}
+  .pacts{margin-left:auto;display:flex;gap:12px;font-size:15px}
+  .tile{position:relative;flex:none;height:430px;background:linear-gradient(165deg,#4a4038 0%,#2c2a30 46%,#17181d 100%);overflow:hidden}
+  .tile .figure{position:absolute;inset:0;background:
+    radial-gradient(120px 90px at 62% 40%,rgba(255,190,140,.30),transparent 70%),
+    radial-gradient(80px 120px at 58% 66%,rgba(120,110,130,.45),transparent 72%)}
+  .tile .name{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.42);border-radius:10px;padding:6px 10px}
+  .tile .name .n1{font-size:14px;font-weight:800;color:#fff}
+  .tile .name .n2{font-size:10.5px;font-weight:600;color:rgba(255,255,255,.85)}
+  .editedchip{position:absolute;right:12px;top:12px;background:rgba(255,150,69,.18);border:1px solid var(--ember);
+    color:var(--ember);border-radius:99px;font-size:9.5px;font-weight:800;padding:3px 9px}
+
+  .hrtile{position:absolute;left:10px;right:10px;bottom:10px;border-radius:14px;padding:8px 12px 7px;
+    background:linear-gradient(180deg,rgba(14,14,18,.55),rgba(10,10,14,.72));
+    border:1px solid rgba(255,255,255,.12)}
+  .hrtile .toprow{display:flex;align-items:baseline;justify-content:space-between}
+  .hrtile .bpm{font-size:22px;font-weight:850;color:#fff;letter-spacing:-.02em}
+  .hrtile .bpm small{font-size:9px;font-weight:700;color:rgba(255,255,255,.6);margin-left:2px}
+  .hrtile .zchip{font-size:9px;font-weight:800;padding:2px 8px;border-radius:99px;border:1px solid}
+  .hrtile .chart{position:relative;margin:4px 0 3px}
+  .hrtile .chart svg{display:block;width:100%;height:52px}
+  .hrtile .stats{display:flex;justify-content:space-between;padding-top:2px}
+  .hrtile .stat{text-align:center}
+  .hrtile .stat .v{font-size:12.5px;font-weight:800;color:#fff}
+  .hrtile .stat .v em{font-style:normal;font-size:8px;color:rgba(255,255,255,.55);margin-left:1px}
+  .hrtile .stat .l{font-size:8px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.55)}
+  .hrtile .stat .v.hl{color:var(--z5)}
+  .pmeta{padding:8px 16px 0;font-size:11.5px;color:var(--t2)}
+  .menu{position:absolute;left:40px;right:40px;top:200px;background:rgba(34,34,40,.97);border:1px solid var(--hair);
+    border-radius:14px;overflow:hidden;z-index:30;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu .mi{display:flex;justify-content:space-between;padding:12px 16px;font-size:14px;border-bottom:1px solid var(--hair)}
+  .menu .mi:last-child{border-bottom:none}
+  .menu .mi.hot{color:var(--ember);font-weight:700}
+  .arrowdown{text-align:center;color:var(--ember);font-size:24px;padding:6px 0;flex:none}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Clips ⇄ Studio — one clip, one truth</h1>
+  <p class="sub"><b>The convergence (prompts 116 + 117):</b> "Edit this clip" already saves everything in place (the Studio
+    project persists on every edit and the feed already rebuilds when it changes) — but today only the tile's <i>style</i>
+    flows back. Three lanes close the gap: <b>① live-reflect</b> — the feed plays <b>trims</b> (loops the kept range, poster =
+    the trimmed first frame) and draws the <b>extended HR window</b> (lead/tail panes · scope · parked dot — the export's
+    chart); <b>② bake</b> — an explicit "Save to original" renders the FULL edit (speed · filters · text · overlays) into the
+    Photos asset itself, revertible or space-freeing; <b>③ export as new</b> — today's flow, untouched. What can't play live
+    without a per-cell composition is never faked — it's baked or exported.</p>
+</header>
+
+<div class="wrap">
+  <h2 class="sect">1 · The reflection pipeline (already wired — we're widening what flows)</h2>
+  <div class="flow">
+    <div class="flowrow">
+      <div class="fnode hot"><div class="h">“Edit this clip”</div><div class="d">Clips feed → Studio scoped to that clip (focusClipMediaID)</div></div>
+      <div class="farrow">→</div>
+      <div class="fnode"><div class="h">StudioProject saved in place</div><div class="d">every edit → undo.commit → persist; updatedAt bumps</div></div>
+      <div class="farrow">→</div>
+      <div class="fnode"><div class="h">Feed rebuild (existing)</div><div class="d">FeedKey.newestEdit sees updatedAt → recompose (debounced)</div></div>
+      <div class="farrow">→</div>
+      <div class="fnode hot"><div class="h">Clip reflects the edit</div><div class="d">NEW: trims + HR window/scope, not just tile style</div></div>
+    </div>
+    <div class="fnote">✓ No new persistence and no new invalidation needed — the pipeline exists; prompt 116 threads trim + window data through it.</div>
+  </div>
+
+  <h2 class="sect">2 · What reflects — the honest tier model</h2>
+  <div class="tiers">
+    <div class="tier yes">
+      <h3>✓ Reflects in the feed (this prompt)</h3>
+      <ul>
+        <li><b>Trim</b> — inline player loops the kept range (AVPlayerLooper timeRange); fullscreen transport spans it; <b>poster = first kept frame</b>; HR footage-span = the trimmed window (dot stays in sync because playback is trimmed too)</li>
+        <li><b>Extended HR window</b> — lead/tail panes + boundary ticks, dot parks at the footage/tail boundary, per-clip stored values (defaults 0:05/0:30 when never edited / no project)</li>
+        <li><b>Metrics scope</b> — AVG/PEAK per Clip-only or Full-window, matching the export</li>
+        <li><b>Tile style</b> — template/metrics/colours (already shipping, prompt 89)</li>
+      </ul>
+      <div class="why">Cheap: pure re-slicing + player range args. The chart machinery (panes, keyframes, scope) shipped in prompt 115 and is shared.</div>
+    </div>
+    <div class="tier part">
+      <h3>◉ Reflects after a BAKE (lane ② — prompt 117)</h3>
+      <ul>
+        <li><b>Speed · filters · colour adjust · crop</b></li>
+        <li><b>Text / sticker / climb-name overlays · PiP · transitions · music · burned HR tile</b></li>
+        <li>Rendered ONCE at "Save to original"; the feed (and every other app) then plays the baked pixels — full parity with zero per-cell composition cost</li>
+      </ul>
+      <div class="why">Live playback of these needs an AVComposition + compositor per feed cell (the Core-Animation overlay tool is offline-only — even the Studio preview fakes overlays as a SwiftUI layer). Baking pays the render once at save-time instead of every playback (prompt 97/106 carousel-perf work stays intact).</div>
+    </div>
+    <div class="tier no">
+      <h3>✗ Never reflects (deliberate)</h3>
+      <ul>
+        <li><b>Tile placement/size in the LIVE overlay</b> — the feed keeps its uniform bottom strip (legibility + scroll perf); a baked clip carries your placement in the pixels</li>
+      </ul>
+      <div class="why">The feed is a feed, not a canvas — uniform placement is a product decision, unchanged since prompt 82/89.</div>
+    </div>
+  </div>
+
+  <h2 class="sect">3 · The round trip</h2>
+  <p class="sectsub">Same clip, before and after an edit in its clip editor — <b>no manual refresh</b>, the feed updates when you come back.</p>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="navbar"><span class="t">Clips</span><span style="font-size:17px">⌕</span></div>
+        <div class="phead"><div class="pglyph">🏋️</div><div><div class="ptitle">Push day · Gym</div><div class="psub">Yesterday · 18:24</div></div><div class="pacts"><span>♥</span><span>⋯</span></div></div>
+        <div class="tile">
+          <div class="figure"></div>
+          <div class="name"><div class="n1">Front lever pulls</div><div class="n2">Set 3 · 0:41 clip</div></div>
+          <div class="menu">
+            <div class="mi hot">Edit this clip <span>✎</span></div>
+            <div class="mi">Assign to set <span>›</span></div>
+            <div class="mi">Favorite <span>♥</span></div>
+            <div class="mi">Remove <span>🗑</span></div>
+          </div>
+          <div class="hrtile" style="opacity:.45">
+            <div class="toprow"><span class="bpm">131<small>BPM</small></span>
+              <span class="zchip" style="color:var(--z3);border-color:rgba(52,199,89,.5)">Z3 · AEROBIC</span></div>
+            <div class="chart"><svg viewBox="0 0 280 52">
+              <path d="M2 40 L30 38 L60 33 L90 35 L120 28 L150 24 L180 26 L210 20 L240 24 L278 27" fill="none" stroke="#34C759" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="278" cy="27" r="4" fill="#fff"/>
+            </svg></div>
+            <div class="stats">
+              <div class="stat"><div class="v">124<em>BPM</em></div><div class="l">AVG</div></div>
+              <div class="stat"><div class="v hl">139<em>BPM</em></div><div class="l">PEAK</div></div>
+              <div class="stat"><div class="v">48<em>%</em></div><div class="l">HRR</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="pmeta">Today: raw 0:41 clip · footage-only chart. “Edit this clip” opens the Studio scoped to it.</div>
+      </div></div>
+      <p class="caption"><b>Before — the clip's ⋯ menu.</b> <span class="k">Edit this clip</span> opens the scoped Studio
+        editor (existing). The user trims 0:08–0:31 and sets tail 0:45; everything saves in place on each edit.</p>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="navbar"><span class="t">Clips</span><span style="font-size:17px">⌕</span></div>
+        <div class="phead"><div class="pglyph">🏋️</div><div><div class="ptitle">Push day · Gym</div><div class="psub">Yesterday · 18:24</div></div><div class="pacts"><span>♥</span><span>⋯</span></div></div>
+        <div class="tile">
+          <div class="figure"></div>
+          <div class="name"><div class="n1">Front lever pulls</div><div class="n2">Set 3 · 0:23 of 0:41</div></div>
+          <div class="editedchip">EDITED · 0:08–0:31</div>
+          <div class="hrtile">
+            <div class="toprow"><span class="bpm">138<small>BPM</small></span>
+              <span class="zchip" style="color:var(--z4);border-color:rgba(255,149,0,.5)">Z4 · THRESHOLD</span></div>
+            <div class="chart"><svg viewBox="0 0 280 52">
+              <rect x="0" y="0" width="18" height="52" fill="rgba(48,176,199,.12)"/>
+              <rect x="18" y="0" width="96" height="52" fill="rgba(255,150,69,.12)"/>
+              <rect x="114" y="0" width="166" height="52" fill="rgba(255,59,48,.08)"/>
+              <line x1="18" y1="0" x2="18" y2="52" stroke="#FF9645"/><line x1="114" y1="0" x2="114" y2="52" stroke="#FF9645"/>
+              <path d="M2 42 L18 40 L36 36 L54 37 L72 31 L90 26 L114 22 L128 12 L140 15 L160 20 L185 26 L215 31 L245 35 L278 38"
+                    fill="none" stroke="url(#gz)" stroke-width="2.5" stroke-linecap="round"/>
+              <defs><linearGradient id="gz" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#30B0C7"/><stop offset=".3" stop-color="#34C759"/>
+                <stop offset=".42" stop-color="#FF9500"/><stop offset=".47" stop-color="#FF3B30"/>
+                <stop offset=".7" stop-color="#FF9500"/><stop offset="1" stop-color="#34C759"/></linearGradient></defs>
+              <circle cx="128" cy="12" r="3" fill="#FF3B30"/>
+              <text x="128" y="7" fill="#FF3B30" font-size="7" font-weight="800" text-anchor="middle">172 · +6s</text>
+              <circle cx="114" cy="22" r="4" fill="#fff"/>
+            </svg></div>
+            <div class="stats">
+              <div class="stat"><div class="v">136<em>BPM</em></div><div class="l">AVG</div></div>
+              <div class="stat"><div class="v hl">172<em>BPM</em></div><div class="l">PEAK</div></div>
+              <div class="stat"><div class="v">61<em>%</em></div><div class="l">HRR</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="pmeta">Back in the feed: plays 0:08–0:31 on loop, poster = frame at 0:08, chart = trimmed footage + lead/tail panes, PEAK includes the off-camera 172 (Full-window scope). Identical to what the export burns.</div>
+      </div></div>
+      <p class="caption"><b>After — the same clip reflects the edit.</b> The video <span class="k">loops only the kept range</span>,
+        the dot parks at the footage/tail boundary, and the tail shows the <span class="k">172 peak +6 s after the clip</span>.
+        A subtle <b>EDITED</b> chip signals a trimmed clip (and that speed/filters/text live in the export).</p>
+    </div>
+
+  </div>
+
+  <h2 class="sect">4 · The bake lane — "Save to original" (prompt 117)</h2>
+  <p class="sectsub">The Studio's Export button becomes a three-destination menu. Baking renders the <b>full</b> edit
+    (trims · speed · filters · text · burned HR tile) into the Photos asset — pay the render once, and every surface
+    (this feed, Messages, Photos) shows it. <b>Storage honesty:</b> the revertible variant KEEPS the original bytes
+    (Photos' non-destructive model — a trim <i>adds</i> a rendition, it never frees space); only the destructive variant
+    reclaims space, after the system's Recently-Deleted 30-day purge.</p>
+  <div class="gallery">
+
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="navbar" style="padding-bottom:2px"><span style="color:var(--t2);font-size:14px">✕</span><span class="t" style="font-size:17px">Studio</span><span style="color:var(--ember);font-size:14px;font-weight:700">Export</span></div>
+        <div class="tile" style="height:300px;opacity:.5">
+          <div class="figure"></div>
+          <div class="name"><div class="n1">Front lever pulls</div><div class="n2">0:08–0:31 · 2 text overlays · Vivid filter</div></div>
+        </div>
+        <div class="menu" style="position:relative;left:auto;right:auto;top:auto;margin:14px 16px 0;z-index:1">
+          <div class="mi" style="flex-direction:column;align-items:flex-start;gap:2px">
+            <span style="font-weight:700">Export as new video</span>
+            <span style="font-size:11px;color:var(--t2)">Saves a separate video to Photos — the original is untouched (today's flow)</span>
+          </div>
+          <div class="mi hot" style="flex-direction:column;align-items:flex-start;gap:2px">
+            <span>Save to original · revertible</span>
+            <span style="font-size:11px;color:var(--t2)">Bakes the edit into this video everywhere. Photos keeps the original — "Revert to Original" always works. <b style="color:var(--z4)">Does NOT free space</b> (original + edited version both kept).</span>
+          </div>
+          <div class="mi" style="flex-direction:column;align-items:flex-start;gap:2px">
+            <span style="color:var(--z5);font-weight:700">Replace original · frees space</span>
+            <span style="font-size:11px;color:var(--t2)">Saves the edit as a new video and deletes the original. <b style="color:var(--z5)">Can't be undone</b> — iOS asks to confirm; space frees after Recently Deleted purges (30 days).</span>
+          </div>
+        </div>
+        <div class="menu" style="position:relative;left:auto;right:auto;top:auto;margin:16px 26px 0;z-index:1;border-color:rgba(255,59,48,.5)">
+          <div class="mi" style="flex-direction:column;align-items:flex-start;gap:3px;border-bottom:none">
+            <span style="font-weight:800;color:#fff">Replace “IMG_4183.MOV”?</span>
+            <span style="font-size:11px;color:var(--t2)">The trimmed 0:23 version replaces the 0:41 original. iOS will ask you to confirm the deletion; the original sits in Recently Deleted for 30 days before space is freed. Your session, feed, and this project follow the new video automatically.</span>
+            <span style="font-size:12px;font-weight:700;color:var(--z5);margin-top:4px">Replace &amp; delete original</span>
+            <span style="font-size:12px;font-weight:700;color:var(--t2)">Cancel</span>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>The Export menu grows two bake destinations.</b> Copy states the storage truth inline:
+        <span class="k">revertible ≠ smaller</span> — Photos keeps the original under a revertible bake; only
+        <b>Replace</b> reclaims space, with the system confirm + 30-day caveat spelled out before committing.</p>
+    </div>
+
+    <div class="step">
+      <div class="stepnum">4</div>
+      <div class="device"><div class="screen">
+        <div class="status"><span>9:41</span><span>🔋</span></div>
+        <div class="navbar"><span class="t">Clips</span><span style="font-size:17px">⌕</span></div>
+        <div class="phead"><div class="pglyph">🏋️</div><div><div class="ptitle">Push day · Gym</div><div class="psub">Yesterday · 18:24</div></div><div class="pacts"><span>♥</span><span>⋯</span></div></div>
+        <div class="tile">
+          <div class="figure"></div>
+          <div class="figure" style="background:radial-gradient(200px 60px at 50% 88%,rgba(0,0,0,.55),transparent 75%)"></div>
+          <div class="name"><div class="n1">Front lever pulls</div><div class="n2">Set 3 · 0:23</div></div>
+          <div class="editedchip" style="background:rgba(52,199,89,.14);border-color:var(--z3);color:var(--z3)">BAKED ✓</div>
+          <!-- burned-in tile drawn as part of the VIDEO pixels (slightly different placement = user's own) -->
+          <div class="hrtile" style="left:24px;right:24px;bottom:44px;transform:scale(.92);border-style:dashed;border-color:rgba(255,255,255,.25)">
+            <div class="toprow"><span class="bpm">138<small>BPM</small></span>
+              <span class="zchip" style="color:var(--z4);border-color:rgba(255,149,0,.5)">Z4 · THRESHOLD</span></div>
+            <div class="chart"><svg viewBox="0 0 280 52">
+              <rect x="0" y="0" width="18" height="52" fill="rgba(48,176,199,.12)"/>
+              <rect x="18" y="0" width="96" height="52" fill="rgba(255,150,69,.12)"/>
+              <rect x="114" y="0" width="166" height="52" fill="rgba(255,59,48,.08)"/>
+              <line x1="18" y1="0" x2="18" y2="52" stroke="#FF9645"/><line x1="114" y1="0" x2="114" y2="52" stroke="#FF9645"/>
+              <path d="M2 42 L18 40 L36 36 L54 37 L72 31 L90 26 L114 22 L128 12 L140 15 L160 20 L185 26 L215 31 L245 35 L278 38"
+                    fill="none" stroke="url(#gz)" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="128" cy="12" r="3" fill="#FF3B30"/>
+              <circle cx="114" cy="22" r="4" fill="#fff"/>
+            </svg></div>
+            <div class="stats">
+              <div class="stat"><div class="v">136<em>BPM</em></div><div class="l">AVG</div></div>
+              <div class="stat"><div class="v hl">172<em>BPM</em></div><div class="l">PEAK</div></div>
+              <div class="stat"><div class="v">61<em>%</em></div><div class="l">HRR</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="pmeta">Baked clip: the feed plays the asset's pixels — trims, filter, text, AND the HR tile (at YOUR placement) are in the video itself. The app's live overlay stands down (SessionMedia.isBaked): only the name tag draws, so nothing double-renders. “Edit this clip” still opens the project; re-baking overwrites the rendition.</div>
+      </div></div>
+      <p class="caption"><b>A baked clip in the feed.</b> The dashed outline here only illustrates "these pixels are IN the
+        video" — the app draws <span class="k">no live overlay on top</span> (the double-chart trap), shows a green
+        <b>BAKED ✓</b> chip, and full parity — speed, filter, text — comes free because it's just video.</p>
+    </div>
+
+  </div>
+
+  <h2 class="sect">5 · Rules & edge cases</h2>
+  <div class="tiers">
+    <div class="tier part" style="max-width:1050px">
+      <h3>Behavioural rules</h3>
+      <ul>
+        <li><b>No project / never edited</b> → raw clip + default HR window (0:05/0:30, Full-window scope) — the same defaults the Studio would apply.</li>
+        <li><b>Split clips</b> (one video → two timeline clips with adjacent trims): the feed shows the kept <b>envelope</b> [earliest trimStart … latest trimEnd] — one feed item per physical asset stays the rule.</li>
+        <li><b>Clip removed from the project</b> ≠ removed from the feed: the feed falls back to the raw clip (a Studio edit must never hide feed media).</li>
+        <li><b>Still poster & at-end reading</b>: poster frame at trimStart; the poster's BPM parks at the footage/tail boundary (last on-camera reading), never the tail end — the peak label covers the tail.</li>
+        <li><b>Trim sanity</b>: a degenerate trim (≤0.5 s kept) is ignored in the feed (plays raw) rather than looping a blink.</li>
+        <li><b>Reactivity</b>: existing FeedKey.updatedAt path; returning from the scoped Studio recomposes the feed (200 ms debounce, off-main).</li>
+      </ul>
+    </div>
+    <div class="tier part" style="max-width:1050px">
+      <h3>Bake-lane rules (prompt 117)</h3>
+      <ul>
+        <li><b>Baked flag</b>: a bake stamps <code style="background:var(--muted);border-radius:4px;padding:0 5px">SessionMedia.isBaked</code> — the feed's live HR overlay stands down (name tag only), trims/window live-reflect is skipped (the pixels already carry the edit), and the poster regenerates.</li>
+        <li><b>Revertible bake</b> (PHContentEditingOutput): Photos keeps the original bytes — "Revert to Original" (in Photos, or via an app affordance) restores them; the app then clears <code style="background:var(--muted);border-radius:4px;padding:0 5px">isBaked</code> on next reconcile (rendition change detection). <b>Storage: original + rendition both kept — a trim never frees space on this path.</b></li>
+        <li><b>Replace (destructive)</b>: save-as-new + delete-original. iOS shows its own deletion confirm; the original sits in <b>Recently Deleted for 30 days</b> before space frees. The app re-points the clip's <code style="background:var(--muted);border-radius:4px;padding:0 5px">SessionMedia.localIdentifier</code> (and the Studio project's clip) to the new asset in the same transaction — session detail, feed, and project follow automatically; the offset/duration update to the trimmed length.</li>
+        <li><b>Re-editing a baked clip</b>: the Studio project is untouched by a bake, so "Edit this clip" resumes exactly where you left off; re-baking overwrites the rendition (revertible path) or repeats the replace flow.</li>
+        <li><b>Requires</b> Photos read-write authorization (the app already requests it for discovery; a bake prompts an upgrade if the user granted limited access).</li>
+        <li><b>Never automatic</b>: baking is tied to the explicit Export-menu action, never to per-edit saves (each bake is a full re-render).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

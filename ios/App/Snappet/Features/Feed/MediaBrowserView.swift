@@ -144,7 +144,13 @@ struct ClipThumbnail: View {
     /// the view renders its placeholder gradient until enabled. Defaulted so other callers (grid, Recap
     /// carousel, browser strip — all row-lazy already) are unchanged.
     var enabled: Bool = true
+    /// The poster timestamp (seconds into the asset) — a Studio-trimmed clip passes its kept-range
+    /// start (prompt 116) so the still equals the first frame the trimmed player displays.
+    var posterTime: Double = 0
     @State private var image: UIImage?
+    /// The (identifier, time) the current `image` was loaded for — so an enabled-flag flip doesn't
+    /// re-decode a loaded poster, but a re-trim (new `posterTime`) does.
+    @State private var loadedKey: String = ""
 
     var body: some View {
         ZStack {
@@ -159,19 +165,21 @@ struct ClipThumbnail: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        // Keyed on `enabled` too, so a page entering the load window re-fires the (previously no-op) task.
-        .task(id: "\(enabled)-\(localIdentifier)") { await load() }
+        // Keyed on `enabled` + `posterTime` too, so a page entering the load window (or a re-trim)
+        // re-fires the (previously no-op) task.
+        .task(id: "\(enabled)-\(localIdentifier)-\(Int(posterTime * 100))") { await load() }
     }
 
     private func load() async {
-        guard enabled, image == nil else { return }
-        // Video: use the EXACT frame-0 (not Photos' arbitrary thumbnail) so the still equals the frame the
-        // player layer first displays → the carousel's poster→video reveal is invisible (no takeover flick).
-        // Photos keep the thumbnail; the frame-0 path itself falls back to `poster(...)` if it can't decode.
+        let key = "\(localIdentifier)-\(Int(posterTime * 100))"
+        guard enabled, image == nil || loadedKey != key else { return }
+        // Video: use the EXACT first played frame (not Photos' arbitrary thumbnail) so the still equals
+        // the frame the player layer first displays → the carousel's poster→video reveal is invisible
+        // (no takeover flick). Photos keep the thumbnail; the frame path falls back to `poster(...)`.
         let loaded = kind == "video"
-            ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size)
+            ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size, at: posterTime)
             : await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
-        if let loaded { image = loaded }
+        if let loaded { image = loaded; loadedKey = key }
     }
 }
 
@@ -306,6 +314,9 @@ private struct MediaPage: View {
                              fraction: $playbackFraction, background: .black,
                              controller: transportActive ? controller : nil)
                 .ignoresSafeArea()
+                // Park the initial/at-rest playhead at the payload's footage boundary (prompt 116) —
+                // the @State default can't consult the payload.
+                .onAppear { playbackFraction = ClipHROverlay.atEnd(for: overlay) }
 
             // Scrim so the title + HR overlay stay legible over bright footage.
             LinearGradient(colors: [.black.opacity(0.5), .clear, .black.opacity(0.55)],

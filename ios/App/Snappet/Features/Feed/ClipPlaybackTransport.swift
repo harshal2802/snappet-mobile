@@ -22,14 +22,20 @@ final class ClipPlaybackController {
 
     private weak var player: AVPlayer?
     private var timeObserver: Any?
+    /// The played range's start within the source asset (a Studio-trimmed clip, prompt 116): the
+    /// scrubber/timecode work in 0…`duration` of the KEPT range; seeks and the time observer translate
+    /// through this offset. 0 for an untrimmed clip.
+    private var startOffset: Double = 0
 
     var fraction: Double { duration > 0 ? min(1, max(0, currentTime / duration)) : 0 }
 
-    /// Attach the page's player + the asset's known duration (`MediaInput.durationSec`).
-    func attach(_ player: AVPlayer, duration: Double) {
+    /// Attach the page's player + the played span (the kept range's length for a trimmed clip, else the
+    /// asset duration) + the kept range's start within the asset.
+    func attach(_ player: AVPlayer, duration: Double, startOffset: Double = 0) {
         detach()
         self.player = player
         self.duration = max(0.1, duration)
+        self.startOffset = max(0, startOffset)
         self.isMuted = player.isMuted
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] t in
@@ -38,7 +44,7 @@ final class ClipPlaybackController {
             MainActor.assumeIsolated {
                 guard let self, !self.isScrubbing else { return }
                 let s = t.seconds
-                if s.isFinite { self.currentTime = min(self.duration, max(0, s)) }
+                if s.isFinite { self.currentTime = min(self.duration, max(0, s - self.startOffset)) }
                 self.isPlaying = (self.player?.rate ?? 0) != 0
             }
         }
@@ -67,11 +73,11 @@ final class ClipPlaybackController {
         isMuted = player.isMuted
     }
 
-    /// Seek to a 0…1 fraction of the clip. `precise` uses zero tolerance (drag release / tap); a tolerant
-    /// seek keeps live dragging smooth.
+    /// Seek to a 0…1 fraction of the PLAYED range (kept range for a trimmed clip). `precise` uses zero
+    /// tolerance (drag release / tap); a tolerant seek keeps live dragging smooth.
     func seek(toFraction f: Double, precise: Bool = true) {
         currentTime = min(duration, max(0, f * duration))
-        let t = CMTime(seconds: currentTime, preferredTimescale: 600)
+        let t = CMTime(seconds: startOffset + currentTime, preferredTimescale: 600)
         let tol: CMTime = precise ? .zero : CMTime(seconds: 0.4, preferredTimescale: 600)
         player?.seek(to: t, toleranceBefore: tol, toleranceAfter: tol)
     }
