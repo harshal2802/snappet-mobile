@@ -8199,3 +8199,60 @@ any new per-clip render input (HR windows, scopes, tiles) must be threaded throu
 `export`/`bake` → `makeComposition` → `assemble` → (`assembleWithTransitions`) → `makeAnimationTool`
 — or export quietly falls back to the session-wide tile. Not unit-guardable (`assemble` needs a real
 `AVAsset`); verify by a device export eyeballed against the editor.
+
+## Apple Watch workouts → Clips: reuse WorkoutSession as the anchor (watch-workouts-clips P1, 2026-07-10)
+
+Apple Watch workouts the app never controls are read post-hoc from HealthKit (`HKWorkout`) and given a
+persisted home so the media shot during them reaches the Clips feed. Product decisions taken in
+requirements discovery (they shape the code, so they're recorded here):
+
+- **Anchor = a real `WorkoutSession`** (not a new entity), keyed by an additive
+  `healthKitWorkoutUUID: UUID?`. Its presence is the "from Apple Watch" marker. The cost of reusing
+  `WorkoutSession` is that such a session has EMPTY `exercises` and must be kept out of the tracked
+  workout history — hence the separate "From Apple Watch" list section (P3) and the exercise-less
+  detail rendering (P3). Because the Clips composer already turns any `WorkoutSession` + `SessionMedia`
+  into posts, the feed needed ZERO changes — minting the anchor is the whole integration.
+- **Media-only**: an anchor is minted only if ≥1 clip is discovered in the workout window. A workout
+  with no media persists nothing. (Clips is a media-first feed.)
+- **Unbounded first run**: first install scans ALL-TIME (`workoutsForImport(since: .distantPast)`) so
+  the feed has out-of-box content from the user's existing camera roll; steady state scans since a
+  UserDefaults watermark − 7 d (the look-back catches media that syncs AFTER a recent workout ended).
+- **Kilter owns board climbing**: only user-tracked GYM sessions suppress a watch mint (FR10, by
+  workout-midpoint ±90 s). A watch `.climbing` workout is a DISTINCT activity that coexists with a
+  Kilter board session — never merged, never suppressed against it.
+- **Global media dedup at discovery**: the import excludes any asset already tagged to ANY session
+  (`SessionMedia.allIdentifiers`), so a clip shot during a Kilter/gym session stays there and a watch
+  anchor never double-claims it. This makes the composer's render-time dedup a backstop, not the
+  primary guard, for watch media.
+- **Layering**: every decision (mint / attach / skip) lives in the pure `WatchWorkoutReconciler`
+  (unit-tested, no device); `WatchWorkoutImportService` is the thin HealthKit/Photos/SwiftData shell.
+  One Photos scan over the union window is bucketed per workout in pure code — the unbounded first run
+  must never fire a per-workout query (could be hundreds).
+
+P1 ships the data spine + foreground reconcile; `HKObserverQuery` background delivery is P2; the
+list/detail surfaces + the ⌚ poster pill are P3. Type-check ≠ device run: the end-to-end path needs a
+real Apple Watch workout + camera-roll media on a device.
+
+## Apple Watch → Clips: surfaces + background delivery (watch-workouts-clips P2/P3, 2026-07-10)
+
+- **"From Apple Watch" section lives in the Workout app** (History screen), its own section, gated to
+  when the tracked-history search/filters are inactive (those facets don't apply to watch workouts).
+  Rows route to the SAME `SessionRoute` detail. Watch imports stay OUT of `WorkoutTrackerModule.history`
+  so they never pollute set-based analytics/plan/dashboard/Studio candidates.
+- **Watch workouts DO count toward activity streaks** (user pick). No code change needed: the Recap
+  streak/aggregate cards read the raw `WorkoutSession` @Query, not the filtered `history`; the leak
+  guard only scopes the tracked-gym list.
+- **`WorkoutSession.hkEnergyKcal` / `hkDistanceMeters`** (additive optionals, backed up) carry a watch
+  workout's measured totals for the detail's note chips + the History row. Distinct from `kcalEstimate`
+  (the BLE HR-based estimate).
+- **Background delivery centralized on `AppModel`**, not the `RootShell` view: a background HealthKit
+  callback has no SwiftUI environment context, so `SnappetApp` hands the `ModelContainer` to `AppModel`
+  (`modelContainer`), which owns `reconcileWatchWorkouts()` (runs against `container.mainContext`) and a
+  once-only `startWatchWorkoutObserver()`. The `HKObserverQuery` handler ALWAYS calls its completion
+  handler (else HealthKit throttles delivery). Entitlement `com.apple.developer.healthkit.background-delivery`
+  was already present. Foreground reconcile (launch + scenePhase .active) is the guaranteed path;
+  background wake is best-effort.
+- **Session detail needs no special empty-state work**: `SessionDetailView` already guards the HR
+  section on non-empty `hrSeries` (watch anchors have it) and buckets untagged clips into General, so an
+  exercise-less watch session renders (hero duration+HR · HR chart · clips) — P3 only adds the honest
+  "recorded on Apple Watch" note + distance/energy chips.

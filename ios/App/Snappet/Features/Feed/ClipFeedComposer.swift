@@ -27,6 +27,10 @@ struct ClipFeedSessionMeta: Sendable, Equatable {
     var endedAt: Date? = nil
     /// Kilter board angle for the subtitle (nil for gym).
     var angle: Int?
+    /// `true` when this session is an **Apple Watch workout the app never controlled** (imported via
+    /// `WatchWorkoutImportService`) — drives the ⌚ source pill on the poster. Defaulted so existing
+    /// call sites compile unchanged. (watch-workouts-clips P3)
+    var isFromAppleWatch: Bool = false
 }
 
 /// Climb name / grade / angle for a `climbUUID` — snapshotted from `KilterLogEntry` (no catalog round-trip).
@@ -70,6 +74,9 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// `sessionEndedAt` is `nil` for a still-running session (the sort falls back to `sessionStartedAt`).
     var sessionStartedAt: Date
     var sessionEndedAt: Date?
+    /// `true` when the owning session was imported from an Apple Watch workout — the poster shows a ⌚
+    /// source pill (watch-workouts-clips P3).
+    var isFromAppleWatch: Bool
     var clips: [ClipFeedItem]
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
@@ -166,6 +173,7 @@ enum ClipFeedComposer {
                     captureAt: meta.startedAt.addingTimeInterval(max(0, first.offsetSec)),
                     sessionStartedAt: meta.startedAt,
                     sessionEndedAt: meta.endedAt,
+                    isFromAppleWatch: meta.isFromAppleWatch,
                     clips: items,
                     aspect: postAspect(ordered)))
             }

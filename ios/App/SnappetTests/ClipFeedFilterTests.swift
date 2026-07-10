@@ -23,6 +23,7 @@ final class ClipFeedFilterTests: XCTestCase {
                      title: title, subtitle: subtitle, overlayDetail: "",
                      climbUUID: nil, exerciseID: nil,
                      captureAt: .now, sessionStartedAt: .now, sessionEndedAt: nil,
+                     isFromAppleWatch: false,
                      clips: clipKinds.map(clip), aspect: ClipFeedComposer.defaultAspect)
     }
 

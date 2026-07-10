@@ -325,7 +325,7 @@ struct ClipsFeedView: View {
             } else if let w = workoutByID[sid] {
                 bundles.append(.init(meta: ClipFeedSessionMeta(id: sid, kind: .gym,
                     title: w.routineName, startedAt: w.startedAt, endedAt: w.completedAt,
-                    angle: nil), clips: clips))
+                    angle: nil, isFromAppleWatch: w.isFromAppleWatch), clips: clips))
                 hr[sid] = ClipFeedHR(series: w.hrSeries, maxHR: w.maxHR ?? 190, restHR: w.restHR)
             }
             // else: media whose session was deleted — skip (no orphan posts).
@@ -528,6 +528,9 @@ private struct ClipPostCard: View {
     @State private var fullscreen: ClipFullscreen?
 
     private var accent: Color {
+        // Apple Watch imports get the perf-green source tint (a data/state hue, not a wayfinding accent)
+        // so they read as "from your watch" regardless of the underlying discipline (watch-workouts-clips P3).
+        if post.isFromAppleWatch { return SnappetColor.perfFresh }
         switch post.discipline {
         case .climbing: return SnappetColor.kilter
         case .strength: return SnappetColor.workout
@@ -613,7 +616,10 @@ private struct ClipPostCard: View {
                 .background(accent.opacity(0.16), in: Circle())
                 .overlay(Circle().strokeBorder(accent, lineWidth: 1.5))
             VStack(alignment: .leading, spacing: 1) {
-                Text(post.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(post.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                    if post.isFromAppleWatch { watchSourceBadge }
+                }
                 Text(post.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -621,6 +627,19 @@ private struct ClipPostCard: View {
             optionsMenu
         }
         .padding(.horizontal, SnappetSpacing.lg)
+    }
+
+    /// The ⌚ "Apple Watch" source chip on a watch-imported post's header (watch-workouts-clips P3).
+    private var watchSourceBadge: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "applewatch").font(.system(size: 9, weight: .bold))
+            Text("Apple Watch").font(.system(size: 9, weight: .bold))
+        }
+        .foregroundStyle(SnappetColor.perfFresh)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(SnappetColor.perfFresh.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(SnappetColor.perfFresh.opacity(0.5), lineWidth: 1))
+        .accessibilityLabel("From Apple Watch")
     }
 
     // ❤️ favorite reaction (prompt 88) — a button (not a double-tap) so it can't fight the tap-to-play poster.
@@ -639,6 +658,7 @@ private struct ClipPostCard: View {
     }
 
     private var glyph: String {
+        if post.isFromAppleWatch { return "applewatch" }
         switch post.discipline {
         case .climbing: return "figure.climbing"
         case .strength: return "figure.strengthtraining.traditional"

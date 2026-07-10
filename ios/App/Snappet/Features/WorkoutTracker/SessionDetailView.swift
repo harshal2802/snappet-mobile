@@ -70,6 +70,11 @@ struct SessionDetailView: View {
 
     var body: some View {
         List {
+            // Apple Watch import (watch-workouts-clips P3): an honest note that this workout was recorded
+            // on the watch (no exercises/sets), plus its measured distance/energy — the HR chart + clips
+            // sections below carry the rest.
+            if session.isFromAppleWatch { watchSourceSection }
+
             // Type-adaptive recap (E2): the same hero + per-discipline cards the Finish summary shows, so
             // "View detail" is richer — not poorer — than the completion screen. HR is shown by the
             // dedicated Heart-rate section below (showsHR: false here to avoid duplicating it).
@@ -148,6 +153,43 @@ struct SessionDetailView: View {
                              focusClipMediaID: p.focusClipMediaID,
                              visibleClipMediaIDs: p.visibleClipMediaIDs)
         }
+    }
+
+    // MARK: Apple Watch source note (watch-workouts-clips P3)
+
+    private var watchSourceSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "applewatch").foregroundStyle(SnappetColor.perfFresh)
+                    Text("Recorded on Apple Watch").font(.subheadline.weight(.semibold))
+                }
+                Text("This workout was recorded on your Apple Watch, so it has no exercises or sets — just its heart rate and the clips you filmed.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if !watchStatChips.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(watchStatChips, id: \.self) { chip in
+                            Text(chip)
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(SnappetColor.perfFresh.opacity(0.12), in: Capsule())
+                                .foregroundStyle(SnappetColor.perfFresh)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    /// Measured HealthKit stats as compact chips: distance (run) + energy, when the workout recorded them.
+    private var watchStatChips: [String] {
+        var out: [String] = []
+        if let m = session.hkDistanceMeters, m > 0 {
+            out.append(m >= 1000 ? String(format: "%.1f km", m / 1000) : "\(Int(m.rounded())) m")
+        }
+        if let kcal = session.hkEnergyKcal, kcal > 0 { out.append("\(Int(kcal.rounded())) kcal") }
+        return out
     }
 
     // MARK: Edit sets (issue #73)

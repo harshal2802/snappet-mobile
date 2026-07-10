@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Photos
 import OSLog
+import SwiftData
 import HighlightEngine
 
 private let tuningLog = Logger(subsystem: "com.snappet.app", category: "FeedbackReplay")
@@ -256,6 +257,34 @@ final class AppModel {
         defer { refreshing = false }
         do { workouts = try await health.recentWorkouts(limit: 40) }
         catch { phase = .error(error.localizedDescription) }
+    }
+
+    // MARK: - Apple Watch workouts → Clips (watch-workouts-clips)
+
+    /// The shared store, handed in by `SnappetApp` after the container is built — so the Apple Watch
+    /// import can reconcile from a background HealthKit callback (P2), where no SwiftUI environment
+    /// context is available. `nil` only in the brief window before `SnappetApp` attaches it.
+    var modelContainer: ModelContainer?
+    /// Guards against registering the HealthKit observer more than once across foreground cycles.
+    private var watchObserverStarted = false
+
+    /// Reconcile completed Apple Watch workouts into Clips — mint media-bearing anchors + attach late
+    /// clips. Safe to call repeatedly (idempotent); drives the launch, foreground, and background paths.
+    func reconcileWatchWorkouts() async {
+        guard let context = modelContainer?.mainContext else { return }
+        await WatchWorkoutImportService(health: health, sessionMedia: sessionMedia)
+            .reconcile(context: context, profileMaxHR: userProfile.profile.resolvedMaxHR)
+    }
+
+    /// Register HealthKit background delivery for workouts (P2): the watch finishing a workout wakes the
+    /// app and reconciles it into Clips WITHOUT a foreground launch. Idempotent — registers once. Needs
+    /// the HealthKit background-delivery entitlement + granted read authorization (both no-op otherwise).
+    func startWatchWorkoutObserver() {
+        guard !watchObserverStarted else { return }
+        watchObserverStarted = true
+        health.enableWorkoutBackgroundDelivery { [weak self] in
+            Task { @MainActor in await self?.reconcileWatchWorkouts() }
+        }
     }
 
     /// Build the engine input for a workout: pull its HR series + the media for the

@@ -117,7 +117,14 @@ struct WorkoutHomeView: View {
 
     private var unit: WeightUnit { WeightUnit(rawValue: preferredUnitRaw) ?? .kg }
     private var resolver: ExerciseResolver { ExerciseResolver(custom: customExercises) }
-    private var history: [WorkoutSession] { sessions.filter { !$0.isActive } }
+    // Tracked gym history excludes Apple Watch imports (watch-workouts-clips): those anchors carry no
+    // exercises/sets, so they'd render as broken empty rows here and pollute the set-based analytics,
+    // plan, dashboard, and Studio candidates this list feeds. They surface in Clips + their own
+    // "From Apple Watch" section (P3), never in the tracked-workout pipeline.
+    private var history: [WorkoutSession] { sessions.filter { !$0.isActive && !$0.isFromAppleWatch } }
+    /// Completed Apple Watch imports — surfaced only in the History screen's "From Apple Watch" section,
+    /// never in `history` (the tracked-gym pipeline). Newest first (`sessions` is already sorted).
+    private var watchSessions: [WorkoutSession] { sessions.filter { !$0.isActive && $0.isFromAppleWatch } }
     private var activeSession: WorkoutSession? { sessions.first { $0.isActive } }
 
     var body: some View {
@@ -342,7 +349,8 @@ struct WorkoutHomeView: View {
             HistorySectionView(history: history, resolver: resolver, unit: unit,
                                videoSessionIDs: StudioEntry.videoSessionIDs(media: sessionMedia),
                                deleteSession: deleteSession,
-                               openStudio: { openStudio(for: $0) })
+                               openStudio: { openStudio(for: $0) },
+                               watchSessions: watchSessions)
         }
     }
 

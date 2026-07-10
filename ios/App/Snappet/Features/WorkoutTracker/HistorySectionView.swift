@@ -13,6 +13,10 @@ struct HistorySectionView: View {
     let deleteSession: (WorkoutSession) -> Void
     /// Open the Video Studio over a session (#74) — presented by `WorkoutHomeView`.
     let openStudio: (WorkoutSession) -> Void
+    /// Completed **Apple Watch** workouts imported into Clips (watch-workouts-clips P3), newest first.
+    /// Shown in their own "From Apple Watch" section — kept OUT of `history` (no exercises/sets) so they
+    /// never run through the routine/kind filters or pollute the tracked-workout list. Same detail route.
+    var watchSessions: [WorkoutSession] = []
 
     @State private var query = ""
     /// The routine name the chip row is filtering to; nil = all routines.
@@ -51,6 +55,22 @@ struct HistorySectionView: View {
         // Bare List + .overlay for the empty state (matching ExerciseBrowserView) — the previous
         // `Group { if empty … else List }` branch swap left the row Buttons' tap gestures dead.
         List {
+            // Apple Watch imports — their own section, above tracked history and outside its filters.
+            // Only when the user isn't actively filtering/searching the tracked list (those facets don't
+            // apply to watch workouts, which carry no routine/kinds).
+            if !watchSessions.isEmpty, query.isEmpty, effectiveFilter == nil, kindFilter.isEmpty {
+                Section {
+                    ForEach(watchSessions) { session in
+                        NavigationLink(value: SessionRoute(id: session.id)) {
+                            WatchHistoryRow(session: session, hasVideo: videoSessionIDs.contains(session.id))
+                        }
+                        .accessibilityIdentifier("watchHistoryRow")
+                    }
+                } header: {
+                    Label("From Apple Watch", systemImage: "applewatch")
+                        .foregroundStyle(SnappetColor.perfFresh)
+                }
+            }
             ForEach(grouped) { group in
                 Section(group.id) {
                     ForEach(group.sessions) { session in
@@ -93,7 +113,7 @@ struct HistorySectionView: View {
             }
         }
         .overlay {
-            if history.isEmpty {
+            if history.isEmpty && watchSessions.isEmpty {
                 ContentUnavailableView {
                     Label("No workouts yet", systemImage: "clock.arrow.circlepath")
                 } description: {
@@ -230,5 +250,44 @@ private struct HistoryRow: View {
             .font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// A row for an Apple Watch import (watch-workouts-clips P3): the activity name + its HealthKit stats
+/// (duration · distance · energy) and a clip count, marked with the ⌚ source glyph. No sets/volume —
+/// these workouts carry none.
+private struct WatchHistoryRow: View {
+    let session: WorkoutSession
+    var hasVideo: Bool = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "applewatch")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(SnappetColor.perfFresh)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.routineName).font(.headline).lineLimit(1)
+                Text(session.startedAt, format: .dateTime.weekday().month().day().hour().minute())
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Label("\(max(1, Int(session.duration / 60)))m", systemImage: "clock")
+                    if let m = session.hkDistanceMeters, m > 0 {
+                        Label(Self.distance(m), systemImage: "figure.walk")
+                    }
+                    if let kcal = session.hkEnergyKcal, kcal > 0 {
+                        Label("\(Int(kcal.rounded())) kcal", systemImage: "flame")
+                    }
+                    if hasVideo { Label("Clips", systemImage: "film.stack").foregroundStyle(SnappetColor.perfFresh) }
+                }
+                .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Metres → a compact "5.1 km" / "820 m" label.
+    private static func distance(_ meters: Double) -> String {
+        meters >= 1000 ? String(format: "%.1f km", meters / 1000) : "\(Int(meters.rounded())) m"
     }
 }
