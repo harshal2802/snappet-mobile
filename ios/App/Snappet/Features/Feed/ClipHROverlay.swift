@@ -46,28 +46,30 @@ enum ClipHROverlay {
         // name tag, the same graceful path as the no-HR `nil` below. (Every caller already handles `nil`.)
         guard clip.kind == "video" else { return nil }
         let edit = clip.edit ?? ClipStudioEdit()
-        let rawDur = clip.durationSec ?? FeedMedia.photoWindowSec
-        let kept = clip.durationSec.flatMap { edit.keptRange(rawDurationSec: $0) }
+        let footage = keptFootage(clip)
         // The SAME window builder the Studio preview + export use (prompt 115): footage = the kept
         // (trimmed) range — which the feed also PLAYS — widened by the clip's lead-in/tail, lead clamped
         // at session start.
         let ext = StudioHRPlacement.extendedWindow(offset: clip.offsetSec,
-                                                   trimStart: kept?.lowerBound ?? 0,
-                                                   trimEnd: kept?.upperBound,
-                                                   sourceDuration: rawDur,
+                                                   trimStart: footage.start,
+                                                   trimEnd: footage.start + footage.span,
+                                                   sourceDuration: footage.rawDur,
                                                    leadSec: edit.hrLeadSec, tailSec: edit.hrTailSec)
         let window = HRWindowSlicer.slice(hrSeries, start: ext.start, span: ext.window.spanSec)
         guard !window.isEmpty else { return nil }
         // Metrics scope (prompt 115 semantics): `.clip` re-slices the aggregates to the footage
-        // sub-window; the chart always draws the full window.
+        // sub-window; the chart always draws the full window. Durations passed as ACTUAL coverage
+        // (the sliced samples' last t), mirroring `StudioEditorViewModel.scopedOverlayValues` —
+        // nominal spans would skew `isSparseChart`/effort against the Studio's rendering of the SAME
+        // clip (one shared factory is a named follow-up).
         let clipScoped = edit.hrMetricsScope == .clip && ext.window.isExtended
         let scoped = clipScoped
             ? HRWindowSlicer.slice(window, start: ext.window.leadSec, span: ext.window.footageSec) : nil
-        let values = HROverlayValues(samples: window, durationSec: ext.window.spanSec,
+        let values = HROverlayValues(samples: window, durationSec: window.last?.t ?? ext.window.spanSec,
                                      maxHR: maxHR, restHR: restHR,
                                      window: ext.window,
                                      statsSamples: scoped,
-                                     statsDurationSec: scoped != nil ? ext.window.footageSec : nil)
+                                     statsDurationSec: scoped.map { $0.last?.t ?? ext.window.footageSec })
         // Use the saved Studio tile only if it would actually DRAW something with the feed's data — the
         // export/editor gate the same way via `resolveTile`. Otherwise fall back to the scorebug, so a
         // no-data custom tile (e.g. only kcal/HRV enabled with no chart) can't render an empty glass panel.
@@ -88,15 +90,27 @@ enum ClipHROverlay {
         payload?.values.chartFraction(forVideoFraction: 1) ?? atEndFraction
     }
 
-    /// The clip's PLAYED span (seconds): the kept (trimmed) range when the Studio trimmed it — the feed
-    /// plays exactly that (prompt 116) — else the raw duration. One denominator for the loop fold and
-    /// the video-fraction mapping. A photo (nil duration) uses the same default window the HR slice does.
-    static func playedRange(_ clip: MediaInput) -> (start: Double, span: Double) {
+    /// The clip's kept FOOTAGE — the one derivation shared by the chart window (`make`), the loop
+    /// fold (`playedRange` == this), the poster, and the players, so they can't disagree about
+    /// whether/where a clip is trimmed. Evaluated against the STORED (approximate) `durationSec` —
+    /// every consumer uses the same input by design; the players additionally clamp the range's END
+    /// against the real loaded duration for AVFoundation safety without changing the trim VERDICT
+    /// (`ClipStudioEdit.keptRange` is the verdict rule). A nil-duration video falls back to the
+    /// photo-window span (the pre-116 degenerate path).
+    static func keptFootage(_ clip: MediaInput) -> (start: Double, span: Double, rawDur: Double) {
         let rawDur = clip.durationSec ?? FeedMedia.photoWindowSec
         if let kept = clip.durationSec.flatMap({ (clip.edit ?? ClipStudioEdit()).keptRange(rawDurationSec: $0) }) {
-            return (kept.lowerBound, max(0.1, kept.upperBound - kept.lowerBound))
+            return (kept.lowerBound, max(0.1, kept.upperBound - kept.lowerBound), rawDur)
         }
-        return (0, max(0.1, rawDur))
+        return (0, max(0.1, rawDur), rawDur)
+    }
+
+    /// The clip's PLAYED range (seconds): the kept (trimmed) range when the Studio trimmed it — the
+    /// feed plays exactly that (prompt 116) — else the raw duration. One denominator for the loop fold
+    /// and the video-fraction mapping.
+    static func playedRange(_ clip: MediaInput) -> (start: Double, span: Double) {
+        let f = keptFootage(clip)
+        return (f.start, f.span)
     }
 
     /// Map a playing clip's current video time (seconds in ASSET time — what `player.currentTime()`

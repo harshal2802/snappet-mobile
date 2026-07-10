@@ -8117,3 +8117,22 @@ offline-only; per-cell compositions would undo the prompt 97/106 carousel work).
 via the bake lane (prompt 117: "Save to original", revertible or space-freeing-destructive). The
 EDITED chip on trimmed clips names the kept range and signals that the full edit lives in the
 export/bake.
+
+**Review-fix addendum (2026-07-10):** the player load task is keyed on the clip AND its kept range
+(a trim edit changes `edit`, not `clip.id` — a mounted surface kept looping the OLD range until
+recycled); the trim VERDICT everywhere comes from `ClipHROverlay.keptFootage` over the STORED
+duration (one input → playback/poster/chip/HR can't flip the verdict independently), with the real
+loaded duration used only to CLAMP the player's range end (an overestimated stored duration would
+fail `AVPlayerLooper`; if the metadata load fails, a trimmed clip plays RAW rather than dead) — and
+that load is now gated to fullscreen-or-trimmed, restoring the untrimmed inline hot path
+byte-for-byte. `HRChartGeometry.playheadKeyframes` applies the maxT keyTime rule
+(`(x·maxT − lead)/footage`, pin at the data's edge) for ANY window — my mid-PR `chartFraction`
+change had made the preview maxT-normalized while the export identity path glided
+duration-stretched, a preview≠export divergence on coverage-clamped windows. The feed passes ACTUAL
+coverage (last sliced t) as the values' durations, mirroring `scopedOverlayValues`, so
+`isSparseChart`/effort can't dash a chart in one surface and not the other (one shared factory =
+named follow-up, as is the still-raw `FeedMedia.clipHR` grid chip). The EDITED chip gates + labels
+by the effective `keptRange` (stored trims can be degenerate/whole-clip) via
+`SetMeasure.formatDuration`; the at-rest playhead is seeded from `atEnd(for:)` on play-start and
+in `MediaPage`'s init (the bare 1.0 default is the TAIL end of an extended window); the snapshot's
+project scan is bounded to media-bearing sessions.

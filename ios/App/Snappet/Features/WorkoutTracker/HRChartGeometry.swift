@@ -140,13 +140,18 @@ enum HRChartGeometry {
         var keyTime: Double
     }
 
-    /// The playhead-dot keyframes over a (possibly extended) window. Without a window — or an
-    /// unextended one — every chart point keys at its own `x` (the pre-115 behaviour: the dot sweeps
-    /// the whole chart across the clip's slot). With an extended window the dot **enters at the
-    /// lead/footage boundary (keyTime 0), sweeps only the footage span, and parks at the footage/tail
-    /// boundary (keyTime 1)**; boundary position/bpm are linearly interpolated between the bracketing
-    /// chart points. Degenerate footage span (data ends before the footage starts) parks the dot at
-    /// the boundary for the whole slot. Empty for < 2 drawable points. Pure → unit-tested.
+    /// The playhead-dot keyframes over a clip window. Without a window (the session-wide fallback
+    /// tile) every chart point keys at its own `x` (the dot sweeps the whole chart across the slot).
+    /// With ANY window the keyTime is the **video fraction** at which the dot passes that chart point
+    /// — `keyTime = (x·maxT − lead) / footage` — the exact inverse of `HRClipWindow.chartFraction`,
+    /// so the burned dot, the burned live-text segments, the Studio preview, and the Clips feed all
+    /// share one mapping (prompt 116 review): the dot enters at the lead/footage boundary (keyTime 0),
+    /// sweeps the footage, and **parks at the footage/tail boundary (keyTime 1)**. When HR coverage
+    /// ends inside the footage (`maxT` < lead + footage) the dot reaches the chart's right edge EARLY
+    /// (at the video time the data ends) and pins there — the maxT rule, not a duration-stretched
+    /// glide. Boundary position/bpm are linearly interpolated; a degenerate sweep (data ends before
+    /// the footage starts) parks at the boundary for the whole slot. Empty for < 2 drawable points.
+    /// Pure → unit-tested.
     static func playheadKeyframes(_ chart: [HRPoint], window: HRClipWindow?) -> [PlayheadKey] {
         let sorted = chart.sorted { $0.t < $1.t }
         let pts = normalizedPoints(sorted)
@@ -154,7 +159,7 @@ enum HRChartGeometry {
         let base = zip(pts, sorted).map { (p, s) in
             PlayheadKey(x: p.x, y: p.y, bpm: s.bpm, keyTime: p.x)
         }
-        guard let window, window.isExtended, let maxT = sorted.last?.t, maxT > 0 else { return base }
+        guard let window, let maxT = sorted.last?.t, maxT > 0, window.footageSec > 0 else { return base }
 
         // Linear interpolation of (y, bpm) at a chart fraction, endpoint-held outside the points.
         func key(at x: Double, keyTime: Double) -> PlayheadKey {
@@ -167,17 +172,30 @@ enum HRChartGeometry {
             return PlayheadKey(x: x, y: a.y + (b.y - a.y) * f, bpm: a.bpm + (b.bpm - a.bpm) * f, keyTime: keyTime)
         }
 
-        let fs = window.footageStartFraction(maxT: maxT)
-        let fe = window.footageEndFraction(maxT: maxT)
-        guard fe - fs > 1e-6 else {
-            // No sweepable footage span on this chart — park at the boundary for the whole slot.
+        // The video fraction at which the dot passes chart fraction `x` (chartFraction's inverse).
+        func videoFraction(atChartX x: Double) -> Double {
+            (x * maxT - window.leadSec) / window.footageSec
+        }
+
+        let fs = window.footageStartFraction(maxT: maxT)   // clamped — the dot's entry position
+        let fe = window.footageEndFraction(maxT: maxT)     // clamped — the dot's parked position
+        guard videoFraction(atChartX: 1) > 1e-6 else {
+            // No sweepable footage span on this chart (data ends before the footage starts) — park.
             return [key(at: fs, keyTime: 0), key(at: fs, keyTime: 1)]
         }
         var keys: [PlayheadKey] = [key(at: fs, keyTime: 0)]
-        for k in base where k.x > fs && k.x < fe {
-            keys.append(PlayheadKey(x: k.x, y: k.y, bpm: k.bpm, keyTime: (k.x - fs) / (fe - fs)))
+        for k in base {
+            let kt = videoFraction(atChartX: k.x)
+            if kt > 1e-6 && kt < 1 - 1e-6 {
+                keys.append(PlayheadKey(x: k.x, y: k.y, bpm: k.bpm, keyTime: kt))
+            }
         }
-        keys.append(key(at: fe, keyTime: 1))
+        // The dot reaches the chart's right boundary at the video time the DATA ends there (maxT
+        // rule). Under coverage clamping that's before the video ends — add an explicit terminal key
+        // so the dot PINS at the edge instead of gliding duration-stretched.
+        let ktAtEdge = min(1, max(0, videoFraction(atChartX: fe)))
+        keys.append(key(at: fe, keyTime: ktAtEdge))
+        if ktAtEdge < 1 - 1e-6 { keys.append(key(at: fe, keyTime: 1)) }
         return keys
     }
 

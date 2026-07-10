@@ -152,6 +152,10 @@ struct ClipThumbnail: View {
     /// re-decode a loaded poster, but a re-trim (new `posterTime`) does.
     @State private var loadedKey: String = ""
 
+    /// The ONE poster identity (identifier + time) — the task id, the reload guard, and the loader's
+    /// cache key all derive from it, so the time precision/encoding can't drift between them.
+    private var posterKey: String { "\(localIdentifier)-\(Int(posterTime * 100))" }
+
     var body: some View {
         ZStack {
             if let image {
@@ -165,20 +169,23 @@ struct ClipThumbnail: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        // Keyed on `enabled` + `posterTime` too, so a page entering the load window (or a re-trim)
+        // Keyed on `enabled` + the poster identity, so a page entering the load window (or a re-trim)
         // re-fires the (previously no-op) task.
-        .task(id: "\(enabled)-\(localIdentifier)-\(Int(posterTime * 100))") { await load() }
+        .task(id: "\(enabled)-\(posterKey)") { await load() }
     }
 
     private func load() async {
-        let key = "\(localIdentifier)-\(Int(posterTime * 100))"
-        guard enabled, image == nil || loadedKey != key else { return }
+        let key = posterKey
+        guard enabled, loadedKey != key else { return }
         // Video: use the EXACT first played frame (not Photos' arbitrary thumbnail) so the still equals
         // the frame the player layer first displays → the carousel's poster→video reveal is invisible
         // (no takeover flick). Photos keep the thumbnail; the frame path falls back to `poster(...)`.
         let loaded = kind == "video"
             ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size, at: posterTime)
             : await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
+        // A superseded load (re-trim mid-decode) must not overwrite the newer frame: the cancelled
+        // task's decode can complete AFTER its replacement's (prompt 116 review).
+        guard !Task.isCancelled else { return }
         if let loaded { image = loaded; loadedKey = key }
     }
 }
@@ -300,7 +307,18 @@ private struct MediaPage: View {
     /// Clips fullscreen (prompt 94): play/pause + scrubber transport over a non-looping player (video only).
     var transport: Bool = false
     /// Live HR playhead, written by `ClipMediaSurface` from the player and read by the scorebug below.
-    @State private var playbackFraction: Double = ClipHROverlay.atEndFraction
+    /// Seeded at the payload's at-rest boundary (prompt 116 — the bare 1.0 default is the TAIL end of
+    /// an extended window) so even the first frame parks the dot correctly.
+    @State private var playbackFraction: Double
+
+    init(item: MediaInput, overlay: ClipHROverlay.Payload?, isActive: Bool, transport: Bool = false) {
+        self.item = item
+        self.overlay = overlay
+        self.isActive = isActive
+        self.transport = transport
+        _playbackFraction = State(initialValue: ClipHROverlay.atEnd(for: overlay))
+    }
+
     /// Drives the transport bar; the active video surface attaches its player to it.
     @State private var controller = ClipPlaybackController()
 
@@ -314,9 +332,6 @@ private struct MediaPage: View {
                              fraction: $playbackFraction, background: .black,
                              controller: transportActive ? controller : nil)
                 .ignoresSafeArea()
-                // Park the initial/at-rest playhead at the payload's footage boundary (prompt 116) —
-                // the @State default can't consult the payload.
-                .onAppear { playbackFraction = ClipHROverlay.atEnd(for: overlay) }
 
             // Scrim so the title + HR overlay stay legible over bright footage.
             LinearGradient(colors: [.black.opacity(0.5), .clear, .black.opacity(0.55)],

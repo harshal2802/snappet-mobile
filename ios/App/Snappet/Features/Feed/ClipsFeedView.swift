@@ -281,12 +281,18 @@ struct ClipsFeedView: View {
     private func makeSnapshot() -> FeedSnapshot {
         // Per-clip Studio edits the feed live-reflects (prompt 116): trim + HR-window config, resolved
         // by SessionMedia id (localIdentifier fallback for unlinked timeline clips — the same policy as
-        // StudioHRPlacement.resolveOffset).
-        let mediaIDByLocal = Dictionary(allMedia.map { ($0.localIdentifier, $0.id) },
-                                        uniquingKeysWith: { a, _ in a })
+        // StudioHRPlacement.resolveOffset). Bounded to MEDIA-BEARING sessions: `p.clips` is the
+        // largest composite blob on StudioProject and this runs per rebuild on the MainActor — the
+        // same scoping rule FeedSnapshot.hr documents. First-project-wins per media id (a session has
+        // one StudioProject today; the merge rule just makes that assumption explicit).
         var edits: [UUID: ClipStudioEdit] = [:]
-        for p in studioProjects {
-            edits.merge(ClipStudioEdit.byMedia(clips: p.clips, mediaIDByLocalID: mediaIDByLocal)) { a, _ in a }
+        if !studioProjects.isEmpty {
+            let mediaIDByLocal = Dictionary(allMedia.map { ($0.localIdentifier, $0.id) },
+                                            uniquingKeysWith: { a, _ in a })
+            let mediaSessionIDs = Set(allMedia.map(\.sessionID))
+            for p in studioProjects where mediaSessionIDs.contains(p.sessionID) {
+                edits.merge(ClipStudioEdit.byMedia(clips: p.clips, mediaIDByLocalID: mediaIDByLocal)) { a, _ in a }
+            }
         }
         var bySession: [UUID: [MediaInput]] = [:]
         for m in allMedia { bySession[m.sessionID, default: []].append(MediaInput.from(m, edit: edits[m.id])) }
@@ -923,6 +929,13 @@ private struct ClipPosterView: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
             .background(Color.black)
+            // Seed the live playhead at the at-rest boundary the moment this clip becomes the active
+            // one: the @State default (1.0) is the TAIL END under an extended window, and a cold
+            // tap-to-play would flash the dot into the off-camera tail for a tick before the surface's
+            // load()/ticker writes the real position (prompt 116 review).
+            .onChange(of: playing) { _, isPlaying in
+                if isPlaying { liveFraction = ClipHROverlay.atEnd(for: payload) }
+            }
             // Instagram-style mute toggle (prompt 93): only on the PLAYING video, top-leading so it can't
             // collide with the bottom HR scorebug or the top-trailing page counter. Driven by `muted`
             // (== playingClip.muted) so it stays in sync with autoplay + the scroll/transfer logic.
@@ -931,28 +944,24 @@ private struct ClipPosterView: View {
             }
             // Studio-trimmed clip (prompt 116): a subtle chip naming the kept range — the honest signal
             // that the feed plays the edit (and that speed/filters/text live in the export/bake).
+            // Gated + labelled by the EFFECTIVE kept range (the same `keptRange` verdict playback and
+            // the HR window use) — a degenerate/whole-clip stored trim plays raw and shows NO chip.
             .overlay(alignment: .topTrailing) {
-                if let edit = item.media.edit, edit.isTrimmed { editedChip(edit).padding(12) }
+                if let kept = item.media.edit?.keptRange(rawDurationSec: item.media.durationSec ?? 0) {
+                    editedChip(kept).padding(12)
+                }
             }
         }
     }
 
-    private func editedChip(_ edit: ClipStudioEdit) -> some View {
-        let start = edit.trimStart ?? 0
-        let end = edit.trimEnd
-        let label = "EDITED · \(timecode(start))–\(end.map(timecode) ?? "end")"
-        return Text(label)
+    private func editedChip(_ kept: ClosedRange<Double>) -> some View {
+        Text("EDITED · \(SetMeasure.formatDuration(kept.lowerBound))–\(SetMeasure.formatDuration(kept.upperBound))")
             .font(.system(size: 9, weight: .heavy, design: .rounded)).tracking(0.4)
             .foregroundStyle(SnappetColor.workout)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(.black.opacity(0.45), in: Capsule())
             .overlay(Capsule().strokeBorder(SnappetColor.workout.opacity(0.6), lineWidth: 1))
             .accessibilityIdentifier("clips.post.edited")
-    }
-
-    private func timecode(_ seconds: Double) -> String {
-        let s = Int(seconds.rounded())
-        return String(format: "%d:%02d", s / 60, s % 60)
     }
 
     private var muteButton: some View {

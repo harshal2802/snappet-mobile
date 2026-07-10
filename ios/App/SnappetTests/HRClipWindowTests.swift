@@ -214,6 +214,28 @@ final class HRClipWindowTests: XCTestCase {
         XCTAssertEqual(mid.x, 20.0 / 60, accuracy: 0.02)
     }
 
+    /// Coverage-clamped NON-extended window (prompt 116 review): HR data ends at t=20 of a 30 s
+    /// footage-only window. The dot must reach the chart's right edge at video fraction 20/30 (the
+    /// maxT rule `HROverlayValues.chartFraction` applies) and PIN there — not glide duration-stretched
+    /// to arrive only at the video's end. This is the export-side twin of the preview's rule, so the
+    /// burned dot and the preview/feed dot can't diverge.
+    func testPlayheadKeyframesPinAtDataEndUnderCoverageClamp() {
+        let chart = stride(from: 0.0, through: 20.0, by: 1.0).map { HRPoint(t: $0, bpm: 100 + $0) }
+        let w = HRClipWindow(leadSec: 0, footageSec: 30, tailSec: 0)     // unextended, footage 30
+        let keys = HRChartGeometry.playheadKeyframes(chart, window: w)
+        XCTAssertEqual(keys.first!.keyTime, 0)
+        XCTAssertEqual(keys.last!.keyTime, 1)
+        // The chart's right edge (x = 1) is reached at video fraction 20/30…
+        let edge = keys.first { $0.x >= 1 - 1e-9 }!
+        XCTAssertEqual(edge.keyTime, 20.0 / 30, accuracy: 0.001)
+        // …and the terminal key pins the SAME position through the video's end.
+        XCTAssertEqual(keys.last!.x, edge.x, accuracy: 1e-9)
+        XCTAssertEqual(keys.last!.bpm, edge.bpm, accuracy: 0.001)
+        // Interior keyframes follow keyTime = x·maxT/footage (never the identity keyTime = x).
+        let mid = keys.first { abs($0.x - 0.5) < 0.03 }!
+        XCTAssertEqual(mid.keyTime, mid.x * 20.0 / 30, accuracy: 0.01)
+    }
+
     /// Data ends before the footage starts (everything clamps): the dot parks at the boundary for the
     /// whole slot instead of sweeping a nonexistent span.
     func testPlayheadKeyframesParkOnDegenerateFootageSpan() {

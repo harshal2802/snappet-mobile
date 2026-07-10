@@ -42,6 +42,12 @@ struct ClipMediaSurface: View {
 
     private enum LoadState: Equatable { case loading, ready, failed }
 
+    /// The load task's identity: the clip plus its kept range (so a re-trim rebuilds the player).
+    private var loadKey: String {
+        let played = ClipHROverlay.playedRange(clip)
+        return "\(clip.id)-\(Int(played.start * 100))-\(Int(played.span * 100))"
+    }
+
     @State private var player: AVPlayer?
     @State private var looper: AVPlayerLooper?   // retained or looping stops
     @State private var image: UIImage?
@@ -55,7 +61,10 @@ struct ClipMediaSurface: View {
 
     var body: some View {
         content
-            .task(id: clip.id) { await load() }
+            // Keyed on the clip AND its kept (trimmed) range: a Studio trim edit changes `clip.edit`
+            // but not `clip.id`, and a mounted (warm/playing) surface would otherwise keep looping
+            // the OLD range until recycled (prompt 116 review).
+            .task(id: loadKey) { await load() }
             // Single-active: play while centered/active; on de-activate, pause and reset the playhead to the
             // at-end reading so a glimpsed off-active overlay isn't frozen mid-sweep.
             .onChange(of: isActive) { _, active in
@@ -182,13 +191,33 @@ struct ClipMediaSurface: View {
                 }
             }
             guard let playerItem = boxed.value else { state = .failed; return }
+            // Studio trim (prompt 116): the feed PLAYS the kept range. The trim VERDICT comes from the
+            // SAME derivation every other surface uses (`ClipHROverlay.keptFootage` — evaluated against
+            // the STORED duration), so playback, poster, chip, and HR window can't disagree about
+            // whether a clip is trimmed. The real loaded duration is used only to CLAMP the range's
+            // end for AVFoundation safety (a stored-duration overestimate would fail the looper).
+            let isTrimmed = clip.edit?.keptRange(rawDurationSec: clip.durationSec ?? 0) != nil
             // The item's REAL duration — PHAsset.durationSec is approximate and would break the
-            // end-of-clip replay, the scrubber range (prompt 94 review), AND the trim-range clamp.
-            let real = (try? await playerItem.asset.load(.duration))?.seconds
-            let dur = (real?.isFinite == true && real! > 0) ? real! : (clip.durationSec ?? 0)
-            // Studio trim (prompt 116): the feed PLAYS the kept range — the same validity rule
-            // (`keptRange`) the HR window and the poster use, clamped against the real duration.
-            let kept = (clip.edit != nil && dur > 0) ? clip.edit!.keptRange(rawDurationSec: dur) : nil
+            // end-of-clip replay + the scrubber range (prompt 94 review). Loaded ONLY when needed
+            // (fullscreen transport or a trimmed clip): the inline autoplay/warm path for an
+            // untrimmed clip skips the await entirely (the prompt 96/97/106 hot path, unchanged).
+            var real: Double? = nil
+            if controller != nil || isTrimmed {
+                let loaded = (try? await playerItem.asset.load(.duration))?.seconds
+                real = (loaded?.isFinite == true && loaded! > 0) ? loaded : nil
+            }
+            let dur = real ?? clip.durationSec ?? 0
+            let kept: ClosedRange<Double>? = {
+                // A trimmed range needs the REAL duration to clamp against — a stored-duration
+                // overestimate would hand AVPlayerLooper a range past the item's end (looper status
+                // .failed → the clip never plays). If the metadata load failed (transient/iCloud),
+                // play RAW rather than risk a dead player.
+                guard isTrimmed, let real else { return nil }
+                let footage = ClipHROverlay.playedRange(clip)
+                let end = min(footage.start + footage.span, real)
+                guard end - footage.start >= ClipStudioEdit.minKeptSec else { return nil }
+                return footage.start...end
+            }()
             if let controller {
                 // Fullscreen (prompt 94): a NON-looping player so the scrubber maps cleanly across the
                 // played range. A trimmed clip parks at its kept end (forwardPlaybackEndTime) and the
