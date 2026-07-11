@@ -8377,3 +8377,43 @@ Rules out / non-obvious:
 - **Device-pending (owed, needs a real board):** the "a real wall-light gets captured" leg — the simulator
   never connects a board, so the guard is always false there. Pure `KilterOnTheBoard` logic is unchanged; the
   full unit suite (1648) stays green as the regression guard.
+
+## 2026-07-11 — Wardrobe mini-app: CloudKit-compatible-not-CloudKit-connected, suite backup over a .wpack, AI never picks (wardrobe prompt 01)
+
+**Decision.** The new Wardrobe module ("your private AI stylist") ships local-first with four locked
+choices from the wireframe review:
+
+- **CloudKit-compatible, not CloudKit-connected.** The user's call: "actual CloudKit integration we can
+  do later but make sure data is fully compatible." `WardrobeItem`/`WearEvent`/`WardrobeOutfit` have
+  inline defaults on every stored property, no `@Attribute(.unique)`, no SwiftData relationships (plain
+  UUID FKs like the rest of the suite), and the photo is `@Attribute(.externalStorage) Data`. Flipping
+  the container to CloudKit mirroring later is a config change, not a migration.
+- **No wardrobe-only backup codec.** The planned `.wpack` export died in review of our own repo: the
+  suite already has `SnappetBackup` with a coverage tripwire. Wardrobe rows (INCLUDING image bytes —
+  a restored closet without its photos is not a restored closet) ride the ONE suite backup file;
+  `WardrobeSettingsView` just points at `BackupView`. recordCount 28 → 31 in the round-trip test.
+- **The AI never picks outfit items.** Selection lives in the pure `OutfitComposer` (greedy slot-fill
+  scored on occasion-formality + 16-family color harmony + season + freshness/rotation, SplitMix64
+  seed ⇒ reproducible Shuffle, unit-tested). `WardrobeIntelligence` follows the E7
+  `WorkoutPlanIntelligence` contract exactly: heuristic floor always computed (composer-driven coach
+  answers, Vision-draft tags), FM pass only refines (names/pattern/material, coach prose citing owned
+  pieces by exact name), silent degradation below iOS 26 / when Apple Intelligence is off.
+- **Weather v1 is a season+temp-band override, not WeatherKit.** WeatherKit needs an entitlement +
+  developer-portal capability (device-signing overlay risk for zero composer benefit — it only consumes
+  a season + temp band). `GarmentSeason.forMonth` + `TempBand.forSeason` seed the default; the For You
+  header has a manual "Adjust" menu. WeatherKit adapter = recorded follow-up.
+
+Rules out / non-obvious:
+- **"For You" is deterministic per (closet, day)** — day-of-year seeds the composer so the feed doesn't
+  reshuffle on every tab visit; Shuffle on the board is the explicit reseed.
+- **Near-black RGB gate before the saturation gate** in `GarmentColorFamily.fromRGB`: at very low
+  brightness a slight tint inflates delta/max saturation, so black reads navy without the early return
+  (caught by `testAchromaticLadder`). Same class of fix: neutral check precedes same-family in
+  `harmony` so navy↔navy is 1.0, not the 0.85 monochrome score.
+- **Sample closet is the fixture path** (`WardrobeSampleCloset`, emoji placeholder tiles, no Photos
+  dependency) — the empty-state "Try a sample closet" is a real user affordance AND what
+  `WardrobeUITests` rides, mirroring the Kilter sim-fixture trick.
+- **New `ModuleCategory.lifestyle`** (Fitness · Lifestyle · Productivity · Finance) and the rose accent
+  `SnappetColor.wardrobe` (light 0xC13A6F / dark 0xE86B99) — the last unused hue family on the ramp.
+- **Device legs owed:** camera→subject-lift on a real garment, Apple-Intelligence tag/coach pass
+  (iOS 26 device), Photos-library import. Android NOT ported.

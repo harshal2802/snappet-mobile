@@ -1,0 +1,156 @@
+import Foundation
+import SwiftData
+
+// Wardrobe persistence (wardrobe prompt 01). Three flat tables, plain-UUID FKs like the
+// rest of the suite (no SwiftData relationships).
+//
+// **CloudKit-compatible by construction** (the locked decision): every stored property
+// has an inline default or is Optional, there are NO `@Attribute(.unique)` constraints,
+// and the item photo is `@Attribute(.externalStorage)` Data — so flipping the container
+// to CloudKit mirroring later is a config change, not a migration. Until then the same
+// shape rides the suite-level `SnappetBackup` (rows added there in the same change; the
+// coverage tripwire test enforces it).
+
+/// One piece of clothing. Enum-backed fields store RAW strings (the suite's
+/// raws-stay-raw rule) with typed accessors that fall back safely.
+@Model
+final class WardrobeItem {
+    var id: UUID = UUID()
+    var name: String = ""
+    var categoryRaw: String = "top"
+    var colorRaw: String = "grey"
+    var patternRaw: String = "solid"
+    var styleRaw: String = "casual"
+    var material: String = ""
+    /// Raw season ids; empty = all-season.
+    var seasonsRaw: [String] = []
+    /// Purchase cost — powers cost-per-wear; optional on purpose.
+    var cost: Double? = nil
+    var isFavorite: Bool = false
+    var isArchived: Bool = false
+    var notes: String = ""
+    var createdAt: Date = Date()
+    /// The cut-out (or original) photo. External storage keeps the row light and the
+    /// bytes CloudKit-syncable later; nil = category-emoji placeholder tile.
+    @Attribute(.externalStorage) var imageData: Data? = nil
+
+    init(id: UUID = UUID(), name: String, category: GarmentCategory,
+         color: GarmentColorFamily, pattern: GarmentPattern = .solid,
+         style: GarmentStyle = .casual, material: String = "",
+         seasons: Set<GarmentSeason> = [], cost: Double? = nil,
+         isFavorite: Bool = false, isArchived: Bool = false,
+         notes: String = "", createdAt: Date = .now, imageData: Data? = nil) {
+        self.id = id
+        self.name = name
+        self.categoryRaw = category.rawValue
+        self.colorRaw = color.rawValue
+        self.patternRaw = pattern.rawValue
+        self.styleRaw = style.rawValue
+        self.material = material
+        self.seasonsRaw = seasons.map(\.rawValue).sorted()
+        self.cost = cost
+        self.isFavorite = isFavorite
+        self.isArchived = isArchived
+        self.notes = notes
+        self.createdAt = createdAt
+        self.imageData = imageData
+    }
+
+    var category: GarmentCategory {
+        get { GarmentCategory(rawValue: categoryRaw) ?? .top }
+        set { categoryRaw = newValue.rawValue }
+    }
+    var color: GarmentColorFamily {
+        get { GarmentColorFamily(rawValue: colorRaw) ?? .grey }
+        set { colorRaw = newValue.rawValue }
+    }
+    var pattern: GarmentPattern {
+        get { GarmentPattern(rawValue: patternRaw) ?? .solid }
+        set { patternRaw = newValue.rawValue }
+    }
+    var style: GarmentStyle {
+        get { GarmentStyle(rawValue: styleRaw) ?? .casual }
+        set { styleRaw = newValue.rawValue }
+    }
+    var seasons: Set<GarmentSeason> {
+        get { Set(seasonsRaw.compactMap(GarmentSeason.init(rawValue:))) }
+        set { seasonsRaw = newValue.map(\.rawValue).sorted() }
+    }
+
+    /// Pure mirror for the composer/coach. Wear history is joined in by the caller
+    /// (views own the `WearEvent` query; tests pass literals).
+    func profile(wearCount: Int = 0, lastWornAt: Date? = nil) -> GarmentProfile {
+        GarmentProfile(id: id, name: name, category: category, color: color,
+                       pattern: pattern, style: style, seasons: seasons,
+                       isFavorite: isFavorite, wearCount: wearCount, lastWornAt: lastWornAt)
+    }
+}
+
+/// One wear of one item (a worn outfit writes one event per piece). Append-only.
+@Model
+final class WearEvent {
+    var id: UUID = UUID()
+    var itemID: UUID? = nil
+    /// Set when the wear came from wearing a whole outfit.
+    var outfitID: UUID? = nil
+    var wornOn: Date = Date()
+
+    init(id: UUID = UUID(), itemID: UUID?, outfitID: UUID? = nil, wornOn: Date = .now) {
+        self.id = id
+        self.itemID = itemID
+        self.outfitID = outfitID
+        self.wornOn = wornOn
+    }
+}
+
+/// A saved/worn outfit: parallel `itemIDs`/`slotRolesRaw` arrays preserve board order.
+@Model
+final class WardrobeOutfit {
+    var id: UUID = UUID()
+    var title: String = ""
+    var occasionRaw: String = "casualWeekend"
+    var tempBandRaw: String = "mild"
+    var seasonRaw: String = "spring"
+    /// The composer's "why this works" lines, newline-joined.
+    var rationale: String = ""
+    var itemIDs: [UUID] = []
+    var slotRolesRaw: [String] = []
+    var isFavorite: Bool = false
+    var createdAt: Date = Date()
+    var lastWornAt: Date? = nil
+    /// "forYou" | "custom" — which surface composed it.
+    var sourceRaw: String = "custom"
+
+    init(id: UUID = UUID(), title: String, occasion: OutfitOccasion,
+         tempBand: TempBand, season: GarmentSeason, rationale: [String],
+         slots: [ComposedOutfit.Slot], isFavorite: Bool = false,
+         createdAt: Date = .now, lastWornAt: Date? = nil, sourceRaw: String = "custom") {
+        self.id = id
+        self.title = title
+        self.occasionRaw = occasion.rawValue
+        self.tempBandRaw = tempBand.rawValue
+        self.seasonRaw = season.rawValue
+        self.rationale = rationale.joined(separator: "\n")
+        self.itemIDs = slots.map(\.itemID)
+        self.slotRolesRaw = slots.map(\.role.rawValue)
+        self.isFavorite = isFavorite
+        self.createdAt = createdAt
+        self.lastWornAt = lastWornAt
+        self.sourceRaw = sourceRaw
+    }
+
+    var occasion: OutfitOccasion {
+        get { OutfitOccasion(rawValue: occasionRaw) ?? .casualWeekend }
+        set { occasionRaw = newValue.rawValue }
+    }
+    var rationaleLines: [String] {
+        rationale.isEmpty ? [] : rationale.components(separatedBy: "\n")
+    }
+    /// Rebuild the composed value (for re-rendering the board / wear-again).
+    var composed: ComposedOutfit {
+        let slots = zip(itemIDs, slotRolesRaw).map { id, raw in
+            ComposedOutfit.Slot(role: GarmentCategory(rawValue: raw) ?? .top, itemID: id)
+        }
+        return ComposedOutfit(slots: slots, rationale: rationaleLines, score: 0)
+    }
+}

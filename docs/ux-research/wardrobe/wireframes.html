@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Wardrobe · Wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — LIGHT variants (the closet is a bright catalog surface) */
+    --brand:#FF5A4D;          /* brand coral (light) — single primary CTA          */
+    --rose:#C13A6F;           /* PROPOSED wardrobe module accent (light)           */
+    --rose-d:#E86B99;         /* PROPOSED wardrobe module accent (dark)            */
+    --leaf:#3F9D55;           /* perfFresh (light) — "fits / good" signals         */
+    --amber:#B45309;          /* perfModerate — "rarely worn" nudges               */
+    --azure:#2A7DE1;          /* budget azure — reused for weather chip only       */
+    --paper:#FBFAF8; --surface:#FFFFFF; --muted:#F2F1EE;
+    --hair:#E7E5E1; --ink:#1A1A1E; --t2:#6B6A66;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#241a24,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1400px;margin:0 auto;padding:0 28px}
+  header.page{padding:64px 28px 12px;max-width:1400px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#f2a7c3 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:17px;max-width:960px;margin:0 0 16px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin:14px 0 6px;font-size:13px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:18px 0 0;font-size:14px;color:#c3c7d1;max-width:1100px}
+  .scopebox b{color:#fff}
+  .scopebox .later{color:#8b90a0}
+  .flowhead{margin:64px 0 6px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#a0879a}
+  .flowtitle{font-size:26px;font-weight:750;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:960px;margin:0 0 30px;font-size:15px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 38px;align-items:flex-start}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--rose-d);color:#2b0917;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(232,107,153,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .arrow{font-size:30px;color:#4a4f5e;align-self:center;margin-top:300px}
+
+  /* ---------- device ---------- */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;
+    background:var(--paper);color:var(--ink)}
+  .screen.darkmode{background:#121214;color:#F4F3F1}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 2px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .content{flex:1 1 auto;overflow:hidden;padding:6px 16px 8px;position:relative;display:flex;flex-direction:column}
+
+  /* ---------- shared chrome ---------- */
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 2px;flex:0 0 auto}
+  .navrow .back{font-size:14px;font-weight:650;color:var(--rose)}
+  .navrow .title{font-size:16px;font-weight:800}
+  .navrow .side{width:56px;font-size:13px;font-weight:650;color:var(--rose);text-align:right}
+  .bigtitle{font-size:28px;font-weight:800;letter-spacing:-.02em;margin:10px 2px 2px}
+  .bigtitle small{display:block;font-size:12.5px;font-weight:600;color:var(--t2);letter-spacing:0;margin-top:2px}
+  .searchbar{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:12px;
+    padding:9px 12px;font-size:13.5px;color:var(--t2);margin:10px 2px 0}
+  .chips{display:flex;gap:6px;margin:10px 2px 0;overflow:hidden;flex:0 0 auto}
+  .chip{border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:var(--t2);
+    background:var(--surface);border:1px solid var(--hair);white-space:nowrap}
+  .chip.on{color:#fff;background:var(--rose);border-color:var(--rose)}
+  .chip.icon{padding:6px 9px}
+
+  /* privacy ribbon */
+  .privacy{display:block;margin:10px 2px 0;padding:9px 13px;border-radius:12px;line-height:1.45;
+    background:rgba(193,58,111,.07);border:1px solid rgba(193,58,111,.18);font-size:11.5px;font-weight:650;color:var(--rose)}
+
+  /* ---------- closet grid ---------- */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 2px 0;overflow:hidden}
+  .item{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:10px 10px 8px;position:relative}
+  .cutout{height:96px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:52px;
+    background:
+      radial-gradient(90px 70px at 50% 40%, rgba(193,58,111,.08), transparent 70%),
+      var(--muted)}
+  .item .nm{font-size:12.5px;font-weight:750;margin:8px 2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .meta{font-size:10.5px;color:var(--t2);margin:1px 2px 0;font-weight:600}
+  .item .heart{position:absolute;top:14px;right:14px;font-size:13px}
+  .wearpill{position:absolute;top:14px;left:14px;font-size:9px;font-weight:800;background:rgba(26,26,30,.72);color:#fff;
+    border-radius:999px;padding:2px 7px}
+  .wearpill.warn{background:rgba(180,83,9,.85)}
+  .sechead{display:flex;align-items:baseline;justify-content:space-between;margin:14px 4px 0;flex:0 0 auto}
+  .sechead .t{font-size:15px;font-weight:800}
+  .sechead .a{font-size:12px;font-weight:700;color:var(--rose)}
+
+  .fab{position:absolute;right:18px;bottom:80px;width:54px;height:54px;border-radius:50%;background:var(--brand);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;
+    box-shadow:0 10px 24px rgba(255,90,77,.45);z-index:20}
+  .tabbar{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:10px 8px 22px;
+    border-top:1px solid var(--hair);background:rgba(255,255,255,.85);backdrop-filter:blur(14px);font-size:10px;font-weight:700;color:var(--t2)}
+  .tabbar .tb{display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar .tb i{font-style:normal;font-size:20px}
+  .tabbar .tb.on{color:var(--rose)}
+
+  /* ---------- empty state ---------- */
+  .emptyhero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 18px}
+  .emptyhero .art{font-size:74px;margin-bottom:10px}
+  .emptyhero h3{font-size:22px;font-weight:800;margin:0 0 6px}
+  .emptyhero p{font-size:13.5px;color:var(--t2);margin:0 0 18px;max-width:240px}
+  .cta{background:var(--brand);color:#fff;border-radius:999px;padding:13px 26px;font-size:15px;font-weight:750;
+    box-shadow:0 10px 24px rgba(255,90,77,.4)}
+  .cta.block{display:block;text-align:center;margin:12px 2px}
+  .cta.rose{background:var(--rose);box-shadow:0 10px 24px rgba(193,58,111,.35)}
+  .ghost{border:1.5px solid var(--hair);color:var(--ink);border-radius:999px;padding:12px 26px;font-size:14px;font-weight:700;background:var(--surface)}
+  .privcard{margin:26px 14px 0;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:14px 16px;text-align:left}
+  .privcard .row{display:flex;gap:10px;align-items:flex-start;margin:7px 0;font-size:12px;color:var(--t2)}
+  .privcard .row b{color:var(--ink);font-weight:700}
+  .privcard .row .ic{font-size:15px;line-height:1.2}
+
+  /* ---------- capture ---------- */
+  .viewfinder{flex:1;border-radius:22px;margin:12px 0 0;position:relative;overflow:hidden;
+    background:
+      radial-gradient(240px 200px at 50% 45%, #3a3f47, #23262b 70%),
+      #1b1d21;display:flex;align-items:center;justify-content:center}
+  .garment-outline{width:190px;height:230px;border:2.5px dashed rgba(255,255,255,.55);border-radius:22px;
+    display:flex;align-items:center;justify-content:center;font-size:84px;position:relative}
+  .vf-hint{position:absolute;bottom:16px;left:0;right:0;text-align:center;font-size:12.5px;color:rgba(255,255,255,.85);font-weight:650}
+  .vf-badge{position:absolute;top:14px;left:14px;background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;font-weight:750;
+    border-radius:999px;padding:5px 10px;display:flex;gap:5px;align-items:center}
+  .shutterrow{display:flex;align-items:center;justify-content:space-between;padding:16px 30px 8px;flex:0 0 auto}
+  .shutter{width:66px;height:66px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.35);background-clip:padding-box}
+  .sidebtn{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:#dfe2e8;width:64px}
+  .sidebtn i{font-style:normal;font-size:22px}
+
+  .checker{flex:1;border-radius:22px;margin:12px 0 0;display:flex;align-items:center;justify-content:center;font-size:120px;position:relative;
+    background:
+      linear-gradient(45deg,#ececea 25%,transparent 25%,transparent 75%,#ececea 75%),
+      linear-gradient(45deg,#ececea 25%,#fbfaf8 25%,#fbfaf8 75%,#ececea 75%);
+    background-size:26px 26px;background-position:0 0,13px 13px;border:1px solid var(--hair)}
+  .procbadge{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:rgba(26,26,30,.85);color:#fff;
+    font-size:11px;font-weight:750;border-radius:999px;padding:6px 13px;display:flex;gap:6px;align-items:center}
+  .dualrow{display:flex;gap:10px;margin:14px 2px 6px;flex:0 0 auto}
+  .dualrow>*{flex:1;text-align:center}
+
+  /* ---------- AI tag sheet ---------- */
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:130px;background:var(--surface);border-radius:26px 26px 0 0;
+    box-shadow:0 -14px 40px rgba(0,0,0,.18);padding:14px 16px 10px;display:flex;flex-direction:column;z-index:25}
+  .grab{width:38px;height:5px;border-radius:3px;background:var(--hair);margin:0 auto 10px}
+  .sheettitle{font-size:17px;font-weight:800;text-align:center}
+  .aibadge{display:inline-flex;align-items:center;gap:6px;margin:6px auto 2px;background:var(--muted);
+    border-radius:999px;padding:5px 12px;font-size:10.5px;font-weight:750;color:var(--t2)}
+  .aibadge .spark{color:var(--rose)}
+  .tagrows{margin-top:10px;overflow:hidden}
+  .tagrow{display:flex;align-items:center;justify-content:space-between;padding:10px 2px;border-bottom:1px solid var(--muted)}
+  .tagrow .k{font-size:12px;font-weight:700;color:var(--t2);width:88px}
+  .tagvals{display:flex;gap:6px;flex:1;justify-content:flex-end}
+  .tagv{border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:750;background:var(--muted);color:var(--ink)}
+  .tagv.pick{background:rgba(193,58,111,.12);color:var(--rose);border:1px solid rgba(193,58,111,.35)}
+  .tagv.dim{color:var(--t2);background:transparent;border:1px dashed var(--hair)}
+  .conf{font-size:9.5px;color:var(--leaf);font-weight:800;margin-left:4px}
+
+  /* ---------- item detail ---------- */
+  .hero-cutout{height:250px;border-radius:22px;margin:10px 0 0;display:flex;align-items:center;justify-content:center;font-size:120px;
+    background:
+      radial-gradient(200px 150px at 50% 42%, rgba(193,58,111,.10), transparent 70%),
+      var(--muted);position:relative;flex:0 0 auto}
+  .hero-cutout .heart{position:absolute;top:14px;right:14px;font-size:20px}
+  .tagcloud{display:flex;flex-wrap:wrap;gap:6px;margin:12px 2px 0;flex:0 0 auto}
+  .statrow{display:flex;gap:8px;margin:12px 2px 0;flex:0 0 auto}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:9px 10px;text-align:center}
+  .stat .v{font-size:15px;font-weight:800}
+  .stat .k{font-size:9.5px;font-weight:700;color:var(--t2);letter-spacing:.06em;text-transform:uppercase;margin-top:1px}
+  .btnrow{display:flex;gap:8px;margin:12px 2px 0;flex:0 0 auto}
+  .btnrow .b{flex:1;text-align:center;border-radius:14px;padding:12px 6px;font-size:13px;font-weight:750}
+  .b.primary{background:var(--rose);color:#fff}
+  .b.sec{background:var(--surface);border:1px solid var(--hair)}
+
+  /* ---------- style coach ---------- */
+  .chat{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .bub{max-width:82%;border-radius:18px;padding:10px 14px;font-size:13px;line-height:1.45}
+  .bub.user{align-self:flex-end;background:var(--rose);color:#fff;border-bottom-right-radius:6px}
+  .bub.ai{align-self:flex-start;background:var(--surface);border:1px solid var(--hair);border-bottom-left-radius:6px}
+  .bub.ai b{font-weight:750}
+  .minicards{display:flex;gap:8px;align-self:flex-start;max-width:100%}
+  .mini{width:84px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:6px;text-align:center}
+  .mini .mc{height:56px;border-radius:8px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:30px}
+  .mini .mn{font-size:9.5px;font-weight:700;margin-top:4px;color:var(--t2)}
+  .qchips{display:flex;gap:6px;overflow:hidden;flex:0 0 auto;margin:8px 0 4px}
+  .qchip{border-radius:999px;padding:7px 12px;font-size:11.5px;font-weight:700;color:var(--rose);
+    background:rgba(193,58,111,.08);border:1px solid rgba(193,58,111,.25);white-space:nowrap}
+  .inputbar{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--hair);
+    border-radius:999px;padding:9px 9px 9px 16px;font-size:13px;color:var(--t2);margin:4px 0 8px;flex:0 0 auto}
+  .inputbar .send{margin-left:auto;width:30px;height:30px;border-radius:50%;background:var(--rose);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:14px}
+  .ondevice{font-size:10px;color:var(--t2);text-align:center;margin:0 0 4px;flex:0 0 auto}
+
+  /* ---------- outfit generator ---------- */
+  .field{margin:12px 2px 0;flex:0 0 auto}
+  .field .lbl{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);margin:0 2px 7px}
+  .weather{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--hair);
+    border-radius:14px;padding:11px 14px;font-size:13px;font-weight:650}
+  .weather .wicon{font-size:20px}
+  .weather .src{margin-left:auto;font-size:10px;color:var(--azure);font-weight:750}
+  .freetext{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;font-size:13.5px;color:var(--ink)}
+  .freetext .ph{color:var(--t2)}
+
+  /* flat-lay board */
+  .board{flex:1;border-radius:22px;margin:12px 0 0;background:var(--surface);border:1px solid var(--hair);position:relative;overflow:hidden}
+  .board .bg{position:absolute;inset:0;background:
+      radial-gradient(240px 200px at 30% 20%, rgba(193,58,111,.06), transparent 70%),
+      radial-gradient(200px 180px at 80% 80%, rgba(42,125,225,.05), transparent 70%)}
+  .piece{position:absolute;display:flex;flex-direction:column;align-items:center;gap:3px}
+  .piece .pc{border-radius:16px;background:var(--muted);display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 18px rgba(26,26,30,.10)}
+  .piece .pl{font-size:9.5px;font-weight:750;color:var(--t2);background:rgba(255,255,255,.9);border-radius:999px;padding:2px 8px;border:1px solid var(--hair)}
+  .swapdot{position:absolute;width:22px;height:22px;border-radius:50%;background:#fff;border:1px solid var(--hair);
+    display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 3px 8px rgba(0,0,0,.14);z-index:5}
+  .whycard{margin:10px 2px 0;background:rgba(193,58,111,.06);border:1px solid rgba(193,58,111,.16);border-radius:14px;
+    padding:10px 13px;font-size:12px;color:var(--ink);flex:0 0 auto}
+  .whycard b{color:var(--rose)}
+  .genactions{display:flex;gap:8px;margin:10px 2px 6px;flex:0 0 auto}
+  .genactions .b{flex:1;text-align:center;border-radius:14px;padding:11px 4px;font-size:12.5px;font-weight:750}
+
+  /* ---------- history ---------- */
+  .segctl{display:flex;background:var(--muted);border-radius:11px;padding:3px;margin:12px 2px 0;flex:0 0 auto}
+  .segctl .sg{flex:1;text-align:center;border-radius:9px;padding:7px 4px;font-size:12px;font-weight:750;color:var(--t2)}
+  .segctl .sg.on{background:var(--surface);color:var(--ink);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+  .histcard{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:11px 12px;margin:10px 2px 0;flex:0 0 auto}
+  .histcard .top{display:flex;align-items:baseline;justify-content:space-between}
+  .histcard .oc{font-size:13.5px;font-weight:800}
+  .histcard .dt{font-size:10.5px;color:var(--t2);font-weight:650}
+  .histrowpcs{display:flex;gap:8px;margin-top:9px;align-items:center}
+  .hp{width:52px;height:52px;border-radius:10px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:26px}
+  .histrowpcs .act{margin-left:auto;font-size:11.5px;font-weight:750;color:var(--rose)}
+
+  /* ---------- settings ---------- */
+  .setgroup{background:var(--surface);border:1px solid var(--hair);border-radius:16px;margin:12px 2px 0;overflow:hidden;flex:0 0 auto}
+  .setrow{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--muted);font-size:13.5px;font-weight:650}
+  .setrow:last-child{border-bottom:none}
+  .setrow .ic{width:29px;height:29px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff}
+  .setrow .sub2{font-size:10.5px;color:var(--t2);font-weight:600;margin-top:1px}
+  .setrow .end{margin-left:auto;font-size:12px;color:var(--t2)}
+  .toggle{margin-left:auto;flex:0 0 46px;width:46px;height:27px;border-radius:999px;background:var(--leaf);position:relative}
+  .toggle::after{content:"";position:absolute;top:3.5px;right:4px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .setfoot{font-size:11px;color:var(--t2);margin:8px 6px 0;flex:0 0 auto}
+
+  /* ---------- home library tile ---------- */
+  .homehead{margin:8px 2px 0}
+  .modgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 2px 0}
+  .modtile{background:var(--surface);border:1px solid var(--hair);border-radius:18px;padding:13px 13px 11px}
+  .modtile .mic{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff}
+  .modtile .mt{font-size:13.5px;font-weight:800;margin-top:9px}
+  .modtile .ms{font-size:10px;color:var(--t2);font-weight:650;margin-top:1px}
+  .modtile.new{outline:2px solid var(--rose);outline-offset:-1px;position:relative}
+  .newpill{position:absolute;top:10px;right:10px;font-size:8.5px;font-weight:800;letter-spacing:.08em;color:#fff;
+    background:var(--rose);border-radius:999px;padding:2.5px 7px}
+  .cathead{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);margin:16px 4px 0}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Wardrobe — your private AI stylist</h1>
+  <p class="sub">A new Snappet mini-app (module id <b style="color:#fff">wardrobe</b>, proposed category <b style="color:#fff">Lifestyle</b>).
+    Local-first: SwiftData + on-device Vision / Apple Intelligence — no account, no backend, photos never leave the phone.
+    Optional iCloud sync via CloudKit mirroring. MVP scope = capture → AI tagging → digital closet → outfit generation → style coach → collage → backup.</p>
+  <div class="legend">
+    <span class="swatch"><i class="dot" style="background:#C13A6F"></i><b>wardrobe rose</b> — proposed module accent (light #C13A6F / dark #E86B99)</span>
+    <span class="swatch"><i class="dot" style="background:#FF5A4D"></i><b>brand coral</b> — the single primary CTA per surface</span>
+    <span class="swatch"><i class="dot" style="background:#3F9D55"></i><b>perfFresh</b> — "good match / synced" signals</span>
+    <span class="swatch"><i class="dot" style="background:#B45309"></i><b>perfModerate</b> — "rarely worn" nudges</span>
+    <span class="swatch"><i class="dot" style="background:#2A7DE1"></i><b>azure</b> — weather chip only (WeatherKit)</span>
+  </div>
+  <div class="scopebox">
+    <b>In this MVP:</b> ① capture (camera / Photos import) + background removal (VisionKit lift-subject) · ② on-device AI tagging
+    (category · color · pattern · style · material · season) · ③ closet browse / search / filter / edit / archive ·
+    ④ <b>“For You” suggested-outfits feed</b> (daily, on-device, pick-to-wear) + custom generator (occasion + weather + free text, owned items only) ·
+    ⑤ style coach Q&amp;A (Foundation Models) · ⑥ flat-lay collage board · ⑦ outfit history + wear log · ⑧ .wpack export/import
+    (SwiftData models kept <b>CloudKit-compatible</b> from day one so Snappet-level iCloud backup/restore can be switched on later with no migration).<br>
+    <span class="later"><b style="color:#8b90a0">Deliberately later:</b> live CloudKit sync toggle · internet Inspiration search (wireframed below as FUTURE) · Closet Camera live-scan · packing assistant · analytics dashboard · wishlist · widgets/App Intents · Android port.</span>
+  </div>
+</header>
+
+<!-- ══════════════════ FLOW A ══════════════════ -->
+<div class="wrap">
+  <div class="flowhead">Flow A</div>
+  <h2 class="flowtitle">Entry &amp; the Digital Closet</h2>
+  <p class="flowdesc">Wardrobe joins the App Library as a normal Snappet module (one-line registry add). The closet is a bright,
+    catalog-like grid — search, filter chips, wear-count pills, and an amber nudge on rarely-worn pieces. First-run sells the privacy story.</p>
+
+  <div class="gallery">
+
+    <!-- 1. App library tile -->
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="homehead"><div class="bigtitle">Apps</div></div>
+          <div class="cathead">Fitness</div>
+          <div class="modgrid">
+            <div class="modtile"><div class="mic" style="background:#F2761E">🏋️</div><div class="mt">Workout</div><div class="ms">Strength &amp; routines</div></div>
+            <div class="modtile"><div class="mic" style="background:#B45309">🧗</div><div class="mt">Kilter Board</div><div class="ms">Climbs &amp; sessions</div></div>
+          </div>
+          <div class="cathead">Lifestyle</div>
+          <div class="modgrid">
+            <div class="modtile new"><span class="newpill">NEW</span><div class="mic" style="background:#C13A6F">👗</div><div class="mt">Wardrobe</div><div class="ms">Your private AI stylist</div></div>
+            <div class="modtile"><div class="mic" style="background:#7C5CD6">📓</div><div class="mt">Journal</div><div class="ms">Quick notes &amp; entries</div></div>
+          </div>
+          <div class="cathead">Finance</div>
+          <div class="modgrid">
+            <div class="modtile"><div class="mic" style="background:#1592A6">🧾</div><div class="mt">Expenses</div><div class="ms">Receipts &amp; spend</div></div>
+            <div class="modtile"><div class="mic" style="background:#2A7DE1">💰</div><div class="mt">Budget</div><div class="ms">Envelopes &amp; goals</div></div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>App Library tile.</b> New <b>Lifestyle</b> category row; Wardrobe registers via <b>ModuleRegistry</b> with the rose accent.</p>
+    </div>
+
+    <!-- 2. empty state -->
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Apps</span><span class="title">Wardrobe</span><span class="side">⚙︎</span></div>
+          <div class="emptyhero">
+            <div class="art">👕👖👟</div>
+            <h3>Build your closet</h3>
+            <p>Snap each piece once. Snappet tags it automatically — all on this iPhone.</p>
+            <div class="cta">📷 Add your first item</div>
+            <div class="privcard">
+              <div class="row"><span class="ic">🔒</span><span><b>No account, no cloud.</b> Your wardrobe is stored only on this device.</span></div>
+              <div class="row"><span class="ic">✨</span><span><b>On-device AI.</b> Tagging &amp; styling run with Apple Intelligence, offline.</span></div>
+              <div class="row"><span class="ic">☁️</span><span><b>Optional iCloud backup</b> — your private iCloud, off by default.</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>First-run.</b> The privacy pitch <i>is</i> the marketing. Single coral CTA opens capture.</p>
+    </div>
+
+    <!-- 3. closet grid -->
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Apps</span><span class="title">Wardrobe</span><span class="side">⚙︎</span></div>
+          <div class="searchbar">🔍 Search closet · “navy”, “flannel”, “work”…</div>
+          <div class="chips">
+            <span class="chip on">All · 48</span><span class="chip">Tops</span><span class="chip">Bottoms</span>
+            <span class="chip">Shoes</span><span class="chip">Outerwear</span><span class="chip icon">♥</span>
+          </div>
+          <div class="sechead"><span class="t">Tops · 18</span><span class="a">See all ›</span></div>
+          <div class="grid">
+            <div class="item"><span class="wearpill">12×</span><span class="heart">♥</span><div class="cutout">👕</div><div class="nm">Navy flannel shirt</div><div class="meta">Casual · Cotton · F/W</div></div>
+            <div class="item"><span class="wearpill warn">0× · 4 mo</span><div class="cutout">👔</div><div class="nm">White oxford</div><div class="meta">Business · Cotton</div></div>
+          </div>
+          <div class="sechead"><span class="t">Bottoms · 11</span><span class="a">See all ›</span></div>
+          <div class="grid">
+            <div class="item"><span class="wearpill">9×</span><div class="cutout">👖</div><div class="nm">Brown chinos</div><div class="meta">Smart casual · Twill</div></div>
+            <div class="item"><span class="wearpill">5×</span><div class="cutout">🩳</div><div class="nm">Grey joggers</div><div class="meta">Athleisure · Fleece</div></div>
+          </div>
+          <div class="fab">＋</div>
+          <div class="tabbar">
+            <div class="tb on"><i>🧥</i>Closet</div>
+            <div class="tb"><i>✨</i>For You</div>
+            <div class="tb"><i>🗂️</i>Outfits</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Closet home.</b> Category sections + wear-count pills; amber pill = rarely-worn nudge. Module-local tab bar: <b>Closet · Style · Outfits</b>. Coral FAB = add.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════ FLOW B ══════════════════ -->
+<div class="wrap">
+  <div class="flowhead">Flow B</div>
+  <h2 class="flowtitle">Capture → cut-out → on-device tagging</h2>
+  <p class="flowdesc">One garment per shot. VisionKit lifts the subject off the background; the Foundation Models tagger proposes
+    six attributes as editable chips — accept-all is one tap. Nothing uploads, ever.</p>
+
+  <div class="gallery">
+
+    <!-- 4. camera -->
+    <div class="step">
+      <div class="stepnum">4</div>
+      <div class="device"><div class="screen darkmode">
+        <div class="island"></div>
+        <div class="statusbar"><span style="color:#fff">9:41</span><span class="r" style="color:#fff">📶 🔋</span></div>
+        <div class="content">
+          <div class="viewfinder">
+            <div class="vf-badge">🔒 On-device</div>
+            <div class="garment-outline">👕</div>
+            <div class="vf-hint">Lay the item flat · fill the frame</div>
+          </div>
+          <div class="shutterrow">
+            <div class="sidebtn"><i>🖼️</i>Photos</div>
+            <div class="shutter"></div>
+            <div class="sidebtn"><i>⚡︎</i>Flash</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Capture.</b> Guided outline; “Photos” imports existing shots (multi-select). Dark full-bleed camera chrome.</p>
+    </div>
+
+    <!-- 5. bg removal -->
+    <div class="step">
+      <div class="stepnum">5</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Retake</span><span class="title">Cut-out</span><span class="side"></span></div>
+          <div class="checker">
+            <div class="procbadge">✂️ Background removed · VisionKit</div>
+            👕
+          </div>
+          <div class="dualrow">
+            <div class="ghost">Keep original</div>
+            <div class="cta rose">Looks good ›</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Subject lift.</b> Checkerboard = transparency. “Keep original” escape hatch when segmentation fails.</p>
+    </div>
+
+    <!-- 6. AI tags -->
+    <div class="step">
+      <div class="stepnum">6</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="hero-cutout" style="height:120px;font-size:64px">👕</div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sheettitle">Add to closet</div>
+            <div style="text-align:center"><span class="aibadge"><span class="spark">✨</span> Tagged on-device · Apple Intelligence</span></div>
+            <div class="tagrows">
+              <div class="tagrow"><span class="k">Category</span><div class="tagvals"><span class="tagv pick">Shirt<span class="conf">98%</span></span><span class="tagv dim">Jacket</span></div></div>
+              <div class="tagrow"><span class="k">Color</span><div class="tagvals"><span class="tagv pick">Navy<span class="conf">94%</span></span><span class="tagv dim">Black</span></div></div>
+              <div class="tagrow"><span class="k">Pattern</span><div class="tagvals"><span class="tagv pick">Plaid</span><span class="tagv dim">Solid</span></div></div>
+              <div class="tagrow"><span class="k">Style</span><div class="tagvals"><span class="tagv pick">Casual</span><span class="tagv dim">Business</span></div></div>
+              <div class="tagrow"><span class="k">Material</span><div class="tagvals"><span class="tagv pick">Cotton flannel</span></div></div>
+              <div class="tagrow"><span class="k">Season</span><div class="tagvals"><span class="tagv pick">Fall</span><span class="tagv pick">Winter</span><span class="tagv dim">＋</span></div></div>
+              <div class="tagrow"><span class="k">Name</span><div class="tagvals"><span style="font-size:13px;font-weight:700">Navy flannel shirt ✎</span></div></div>
+              <div class="tagrow"><span class="k">Cost <span style="font-weight:600">(opt.)</span></span><div class="tagvals"><span style="font-size:13px;color:var(--t2)">$49 ✎</span></div></div>
+            </div>
+            <div class="cta block">Save to closet</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>AI tag sheet.</b> Every chip is editable; alternates shown dimmed. Confidence only where it matters. Optional cost powers cost-per-wear.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════ FLOW C ══════════════════ -->
+<div class="wrap">
+  <div class="flowhead">Flow C</div>
+  <h2 class="flowtitle">Item detail &amp; the Style Coach</h2>
+  <p class="flowdesc">The item page is stats + two actions: <b>Style this</b> (jump into the generator seeded with this piece) and
+    <b>Ask coach</b> (a chat scoped to the item). The coach answers with real closet items, not generic advice.</p>
+
+  <div class="gallery">
+
+    <!-- 7. item detail -->
+    <div class="step">
+      <div class="stepnum">7</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Closet</span><span class="title">Item</span><span class="side">···</span></div>
+          <div class="hero-cutout"><span class="heart">♥</span>👕</div>
+          <div class="bigtitle" style="font-size:21px">Navy flannel shirt<small>Added Mar 2026 · $49</small></div>
+          <div class="tagcloud">
+            <span class="tagv pick">Shirt</span><span class="tagv pick">Navy</span><span class="tagv pick">Plaid</span>
+            <span class="tagv pick">Casual</span><span class="tagv pick">Cotton flannel</span><span class="tagv pick">Fall · Winter</span>
+          </div>
+          <div class="statrow">
+            <div class="stat"><div class="v">12×</div><div class="k">Worn</div></div>
+            <div class="stat"><div class="v">Jun 30</div><div class="k">Last worn</div></div>
+            <div class="stat"><div class="v">$4.08</div><div class="k">Cost / wear</div></div>
+          </div>
+          <div class="btnrow">
+            <div class="b primary">✨ Style this</div>
+            <div class="b sec">💬 Ask coach</div>
+            <div class="b sec">✎ Edit</div>
+          </div>
+          <div class="setfoot" style="text-align:center;margin-top:10px">Archive · Delete live under “···”</div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Item detail.</b> Cost-per-wear computed locally from the wear log. Rose = module actions, destructive ops tucked in the menu.</p>
+    </div>
+
+    <!-- 8. style coach -->
+    <div class="step">
+      <div class="stepnum">8</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Item</span><span class="title">Style Coach</span><span class="side"></span></div>
+          <div class="chat">
+            <div class="bub user">What goes with this shirt?</div>
+            <div class="bub ai">Great cold-weather anchor. From your closet, three pairings work: <b>brown chinos</b> keep it smart-casual, <b>grey joggers</b> dress it down, and layer the <b>tan jacket</b> when it dips below 60°.</div>
+            <div class="minicards">
+              <div class="mini"><div class="mc">👖</div><div class="mn">Brown chinos</div></div>
+              <div class="mini"><div class="mc">🩳</div><div class="mn">Grey joggers</div></div>
+              <div class="mini"><div class="mc">🧥</div><div class="mn">Tan jacket</div></div>
+            </div>
+            <div class="bub user">Is this business casual?</div>
+            <div class="bub ai">Borderline — plaid flannel reads casual. It passes with the <b>chinos + white oxford underneath</b>; skip it for client meetings.</div>
+          </div>
+          <div class="qchips"><span class="qchip">How should I wear this?</span><span class="qchip">What colors work?</span><span class="qchip">Dress it up</span></div>
+          <div class="inputbar">Ask about this item…<span class="send">↑</span></div>
+          <div class="ondevice">✨ Answers generated on-device · your closet never leaves this iPhone</div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Style Coach.</b> Foundation Models prompt = item tags + closet inventory; answers cite <b>owned items</b> as tappable mini-cards. Suggested-question chips beat a blank box.</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════ FLOW D ══════════════════ -->
+<div class="wrap">
+  <div class="flowhead">Flow D</div>
+  <h2 class="flowtitle">“For You” feed, custom generation, the flat-lay board &amp; history</h2>
+  <p class="flowdesc">The middle tab is a <b>For You feed</b>: every morning the composer pre-builds a handful of outfits from today’s
+    weather + wear history (rarely-worn pieces get rotated in) and the user just <b>picks one</b>. “Style me” opens the custom
+    generator for a specific occasion. Each board piece has a swap affordance; “Wear today” logs every piece’s wear count.</p>
+
+  <div class="gallery">
+
+    <!-- 9a. for-you feed -->
+    <div class="step">
+      <div class="stepnum">9</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back"></span><span class="title">For You</span><span class="side"></span></div>
+          <div class="weather" style="margin:10px 2px 0"><span class="wicon">⛅️</span> Friday · 72° partly cloudy <span class="src">WeatherKit</span></div>
+          <div class="histcard">
+            <div class="top"><span class="oc">✨ Office-ready</span><span class="dt">rotates in your oxford · 0× in 4 mo</span></div>
+            <div class="histrowpcs"><div class="hp">👔</div><div class="hp">👖</div><div class="hp">👞</div><span class="act">Wear ›</span></div>
+          </div>
+          <div class="histcard">
+            <div class="top"><span class="oc">✨ Easy layers</span><span class="dt">good for 72° → 61° tonight</span></div>
+            <div class="histrowpcs"><div class="hp">👕</div><div class="hp">🧥</div><div class="hp">👖</div><div class="hp">👟</div><span class="act">Wear ›</span></div>
+          </div>
+          <div class="histcard">
+            <div class="top"><span class="oc">✨ Weekend warm-up</span><span class="dt">your ♥ flannel</span></div>
+            <div class="histrowpcs"><div class="hp">👕</div><div class="hp">🩳</div><div class="hp">🧢</div><span class="act">Wear ›</span></div>
+          </div>
+          <div class="setfoot" style="text-align:center">Composed on-device from your closet, today’s weather &amp; wear history.</div>
+          <div style="flex:1"></div>
+          <div class="cta block rose">✨ Style me — custom occasion</div>
+          <div class="tabbar" style="margin:0 -16px">
+            <div class="tb"><i>🧥</i>Closet</div>
+            <div class="tb on"><i>✨</i>For You</div>
+            <div class="tb"><i>🗂️</i>Outfits</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>For You feed.</b> Daily pre-composed suggestions to <b>pick from</b> — each card says <i>why</i> (weather window, rarely-worn rotation, favorite). Tapping a card opens its flat-lay board.</p>
+    </div>
+
+
+    <!-- 10. generator input -->
+    <div class="step">
+      <div class="stepnum">10</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back"></span><span class="title">Style me</span><span class="side"></span></div>
+          <div class="field">
+            <div class="lbl">Occasion</div>
+            <div class="chips" style="margin:0;flex-wrap:wrap">
+              <span class="chip on">Work</span><span class="chip">Date night</span><span class="chip">Wedding</span>
+              <span class="chip">Vacation</span><span class="chip">Casual weekend</span>
+            </div>
+          </div>
+          <div class="field">
+            <div class="lbl">Weather</div>
+            <div class="weather"><span class="wicon">⛅️</span> 72° · Partly cloudy · Pune <span class="src">WeatherKit</span></div>
+          </div>
+          <div class="field">
+            <div class="lbl">Anything else?</div>
+            <div class="freetext"><span class="ph">“client offsite, rooftop dinner after…”</span></div>
+          </div>
+          <div class="field">
+            <div class="lbl">Build around <span style="font-weight:600">(optional)</span></div>
+            <div class="minicards"><div class="mini"><div class="mc">👕</div><div class="mn">Navy flannel</div></div><div class="mini" style="border-style:dashed"><div class="mc" style="background:transparent">＋</div><div class="mn">Pick item</div></div></div>
+          </div>
+          <div style="flex:1"></div>
+          <div class="cta block">✨ Generate outfit</div>
+          <div class="ondevice">Uses only items you own · on-device</div>
+          <div class="tabbar" style="margin:0 -16px">
+            <div class="tb"><i>🧥</i>Closet</div>
+            <div class="tb on"><i>✨</i>For You</div>
+            <div class="tb"><i>🗂️</i>Outfits</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Generator input.</b> Occasion chips + auto weather + free text; “build around” seeds it from an item (the <b>Style this</b> entry point).</p>
+    </div>
+
+    <!-- 11. outfit board -->
+    <div class="step">
+      <div class="stepnum">11</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Inputs</span><span class="title">Work · 72°</span><span class="side">♡</span></div>
+          <div class="board">
+            <div class="bg"></div>
+            <div class="piece" style="top:18px;left:22px"><div class="pc" style="width:118px;height:118px;font-size:64px">👔</div><div class="pl">White oxford</div></div>
+            <div class="piece" style="top:34px;right:20px"><div class="pc" style="width:96px;height:96px;font-size:52px">🧥</div><div class="pl">Tan jacket</div></div>
+            <div class="piece" style="top:170px;left:78px"><div class="pc" style="width:112px;height:128px;font-size:62px">👖</div><div class="pl">Brown chinos</div></div>
+            <div class="piece" style="bottom:16px;left:26px"><div class="pc" style="width:88px;height:70px;font-size:42px">👞</div><div class="pl">Brown loafers</div></div>
+            <div class="piece" style="bottom:18px;right:24px"><div class="pc" style="width:70px;height:70px;font-size:36px">⌚️</div><div class="pl">Watch</div></div>
+            <div class="swapdot" style="top:120px;left:126px">⇄</div>
+            <div class="swapdot" style="top:118px;right:26px">⇄</div>
+            <div class="swapdot" style="top:284px;left:176px">⇄</div>
+          </div>
+          <div class="whycard"><b>Why this works:</b> oxford + chinos hits business-casual; tan jacket for the evening rooftop; loafers tie the browns together.</div>
+          <div class="genactions">
+            <div class="b sec">🔀 Shuffle</div>
+            <div class="b sec">💾 Save</div>
+            <div class="b primary" style="background:var(--brand);color:#fff">👕 Wear today</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Flat-lay board.</b> Pure-logic layout of cut-outs (no image generation). ⇄ swaps a slot for the next-best owned item; “Wear today” logs wear counts.</p>
+    </div>
+
+    <!-- 12. history -->
+    <div class="step">
+      <div class="stepnum">12</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back"></span><span class="title">Outfits</span><span class="side"></span></div>
+          <div class="segctl"><span class="sg on">Saved</span><span class="sg">Favorites ♥</span><span class="sg">Worn</span></div>
+          <div class="histcard">
+            <div class="top"><span class="oc">Work · client offsite</span><span class="dt">Today</span></div>
+            <div class="histrowpcs"><div class="hp">👔</div><div class="hp">👖</div><div class="hp">🧥</div><div class="hp">👞</div><span class="act">Wear again ›</span></div>
+          </div>
+          <div class="histcard">
+            <div class="top"><span class="oc">Date night ♥</span><span class="dt">Jul 4</span></div>
+            <div class="histrowpcs"><div class="hp">👕</div><div class="hp">👖</div><div class="hp">👟</div><span class="act">Wear again ›</span></div>
+          </div>
+          <div class="histcard">
+            <div class="top"><span class="oc">Casual weekend</span><span class="dt">Jun 28</span></div>
+            <div class="histrowpcs"><div class="hp">🩳</div><div class="hp">👕</div><div class="hp">🧢</div><span class="act">Wear again ›</span></div>
+          </div>
+          <div class="setfoot" style="text-align:center">Wearing an outfit updates each item’s wear log &amp; cost-per-wear.</div>
+          <div style="flex:1"></div>
+          <div class="tabbar" style="margin:0 -16px">
+            <div class="tb"><i>🧥</i>Closet</div>
+            <div class="tb"><i>✨</i>For You</div>
+            <div class="tb on"><i>🗂️</i>Outfits</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Outfit history.</b> Saved / Favorites / Worn segments; “Wear again” re-logs in one tap (recreate).</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════ FLOW E ══════════════════ -->
+<div class="wrap">
+  <div class="flowhead">Flow E</div>
+  <h2 class="flowtitle">Backup, sync &amp; privacy settings</h2>
+  <p class="flowdesc">Local-first with an opt-in escape hatch: CloudKit private-database mirroring for automatic sync, plus a portable
+    <code>.wpack</code> export (photos + metadata zip) for manual backup / device moves — mirroring the proven <code>.spack</code> pattern.</p>
+
+  <div class="gallery">
+
+    <!-- 13. settings -->
+    <div class="step">
+      <div class="stepnum">13</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Closet</span><span class="title">Wardrobe Settings</span><span class="side"></span></div>
+          <div class="privacy">🔒 Everything below stays in <b>your</b> Apple ecosystem — no Snappet servers.</div>
+          <div class="setgroup">
+            <div class="setrow"><span class="ic" style="background:#2A7DE1">☁️</span><span>iCloud sync<div class="sub2">Private CloudKit database · syncs closet, outfits, wear log</div></span><span class="toggle"></span></div>
+            <div class="setrow"><span class="ic" style="background:#3F9D55">✓</span><span>Last sync<div class="sub2">Today, 9:32 AM · 48 items · 214 MB</div></span></div>
+          </div>
+          <div class="setgroup">
+            <div class="setrow"><span class="ic" style="background:#C13A6F">📦</span><span>Export backup file<div class="sub2">.wpack — photos + tags + history, share anywhere</div></span><span class="end">›</span></div>
+            <div class="setrow"><span class="ic" style="background:#C13A6F">📥</span><span>Import backup<div class="sub2">Restore or merge from a .wpack file</div></span><span class="end">›</span></div>
+          </div>
+          <div class="setgroup">
+            <div class="setrow"><span class="ic" style="background:#6B6A66">🗄️</span><span>Archived items<div class="sub2">6 items hidden from closet &amp; styling</div></span><span class="end">›</span></div>
+            <div class="setrow"><span class="ic" style="background:#E5483D">🗑️</span><span style="color:#E5483D;font-weight:750">Delete all wardrobe data</span></div>
+          </div>
+          <div class="setfoot">AI tagging &amp; styling run on-device with Apple Intelligence. Turning off iCloud sync keeps all data locally; nothing is deleted.</div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Settings.</b> Sync = CloudKit mirroring (Apple-native, no custom infra). <b>.wpack</b> export/import covers the “no iCloud” crowd and device migration.</p>
+    </div>
+
+  </div>
+
+  <div class="flowhead" style="margin-top:72px">Flow F · FUTURE-SCOPED (not in this build)</div>
+  <h2 class="flowtitle">Inspiration — outfit ideas from the web</h2>
+  <p class="flowdesc">Future direction the architecture must not paint over: an opt-in <b>Inspiration</b> surface that searches the
+    internet for looks (“linen summer outfits”), scores each against <b>what you already own</b>, and saves ideas to an inspo board /
+    wishlist. This is the one deliberately-online feature — everything else stays offline. Designed now, built later.</p>
+
+  <div class="gallery">
+    <div class="step">
+      <div class="stepnum" style="background:#8b90a0;box-shadow:0 6px 18px rgba(139,144,160,.4)">F</div>
+      <div class="device" style="opacity:.92"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ For You</span><span class="title">Inspiration</span><span class="side"></span></div>
+          <div class="searchbar">🔍 “linen summer outfits”</div>
+          <div class="privacy" style="background:rgba(42,125,225,.07);border-color:rgba(42,125,225,.2);color:var(--azure)">🌐 Online &amp; opt-in — search leaves the device; your closet does not.</div>
+          <div class="grid">
+            <div class="item"><div class="cutout">🕴️</div><div class="nm">Relaxed linen set</div><div class="meta" style="color:var(--leaf);font-weight:750">You own 3 of 4 pieces</div></div>
+            <div class="item"><div class="cutout">🧍</div><div class="nm">Coastal casual</div><div class="meta" style="color:var(--leaf);font-weight:750">You own 2 of 3 pieces</div></div>
+            <div class="item"><div class="cutout">🕺</div><div class="nm">Monochrome cream</div><div class="meta">Missing: linen trousers</div></div>
+            <div class="item"><div class="cutout">💃</div><div class="nm">Resort evening</div><div class="meta">Missing: 2 pieces → wishlist</div></div>
+          </div>
+          <div class="whycard" style="margin-top:12px"><b>Own-first matching:</b> every idea is re-scored against your closet; missing pieces become wishlist entries — no retailer integration needed.</div>
+          <div style="flex:1"></div>
+          <div class="tabbar" style="margin:0 -16px">
+            <div class="tb"><i>🧥</i>Closet</div>
+            <div class="tb on"><i>✨</i>For You</div>
+            <div class="tb"><i>🗂️</i>Outfits</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>FUTURE · Inspiration search.</b> Not in this build — but the MVP’s tag schema (category/color/style/material) is exactly what own-first matching needs, and the wishlist grows out of “missing pieces”.</p>
+    </div>
+  </div>
+
+  <div class="scopebox" style="margin-top:56px">
+    <b>Build shape (for the PDD prompt):</b> pure keystone <b>WardrobeEngine</b> layer — <code>OutfitComposer</code> (rules: occasion→formality, weather→layer/season, color harmony from tag data),
+    <code>WearStats</code> (cost-per-wear, rarely-worn), <code>WardrobePackCodec</code> (.wpack) — all unit-testable with no device.
+    Platform edges in <code>Services/</code>: VisionKit subject-lift, Vision classification + Foundation Models tagger (with a deterministic
+    heuristic fallback when Apple Intelligence is unavailable), WeatherKit, CloudKit mirror. SwiftData models: <code>WardrobeItem</code>,
+    <code>WearEvent</code>, <code>Outfit</code>, <code>OutfitSlot</code>. Sim/UITest path ships with a seeded fixture closet (no Photos dependency — same trick as Kilter fixtures).
+  </div>
+</div>
+
+</body>
+</html>

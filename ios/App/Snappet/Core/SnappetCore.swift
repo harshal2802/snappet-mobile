@@ -52,6 +52,8 @@ enum SnappetSchema {
         KilterPlan.self, KilterLitEvent.self,
         // Recap feed (F0b) — append-only activity log + interaction rows + outbox
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
+        // Wardrobe (private AI stylist) — CloudKit-compatible shape, see WardrobeModels.swift
+        WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
     ]
 }
 

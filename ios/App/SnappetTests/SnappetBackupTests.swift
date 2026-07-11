@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 28, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 31, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -464,6 +464,24 @@ final class SnappetBackupTests: XCTestCase {
                                       createdAt: Date(timeIntervalSince1970: 1_700_009_600)))
         context.insert(FeedOutboxEntry(activityContentId: feedContentId, opRaw: "create",
                                        createdAt: Date(timeIntervalSince1970: 1_700_009_700)))
+
+        // Wardrobe: an item WITH image bytes (Data must survive the JSON round trip),
+        // a wear event pointing at it, and a two-slot outfit.
+        let wardrobeItem = WardrobeItem(name: "Navy flannel shirt", category: .top, color: .navy,
+                                        pattern: .plaid, style: .casual, material: "Cotton flannel",
+                                        seasons: [.fall, .winter], cost: 49, isFavorite: true,
+                                        createdAt: Date(timeIntervalSince1970: 1_700_010_000),
+                                        imageData: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]))
+        context.insert(wardrobeItem)
+        let wardrobeOutfit = WardrobeOutfit(
+            title: "Work · Cool", occasion: .work, tempBand: .cool, season: .fall,
+            rationale: ["Oxford + chinos hits business casual."],
+            slots: [.init(role: .top, itemID: wardrobeItem.id)],
+            createdAt: Date(timeIntervalSince1970: 1_700_010_100),
+            lastWornAt: Date(timeIntervalSince1970: 1_700_010_200))
+        context.insert(wardrobeOutfit)
+        context.insert(WearEvent(itemID: wardrobeItem.id, outfitID: wardrobeOutfit.id,
+                                 wornOn: Date(timeIntervalSince1970: 1_700_010_200)))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

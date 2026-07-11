@@ -2,11 +2,12 @@ import SwiftUI
 
 /// Category groupings for the App Library.
 enum ModuleCategory: String, CaseIterable, Identifiable {
-    case fitness, productivity, finance
+    case fitness, lifestyle, productivity, finance
     var id: String { rawValue }
     var title: String {
         switch self {
         case .fitness: return "Fitness"
+        case .lifestyle: return "Lifestyle"
         case .productivity: return "Productivity"
         case .finance: return "Finance"
         }
