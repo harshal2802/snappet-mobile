@@ -49,6 +49,16 @@ struct KilterClimbDetailView: View {
     /// Reveals the "wrong holds?" fixups (board size + protocol) under the connected controls (hidden
     /// until the user hits the escape hatch, so the common path stays uncluttered).
     @State private var showingProtocolFix = false
+    /// The active browse layout (`kilter.layout`) — read/written here only so a confirmed "Set up this
+    /// board" choice repoints browsing at the board the user just verified. `KilterRootView` owns the same
+    /// key; both are backed by the one `UserDefaults` value, so they stay in lockstep.
+    @AppStorage("kilter.layout") private var activeLayoutId = 1
+    /// The "Set up this board" verifier (prompt 120). Presented automatically on the first light against a
+    /// connected board the user hasn't confirmed yet, and from the always-available control below.
+    @State private var showingBoardSetup = false
+    /// Per-board memory (layout/size/verified), keyed by BLE identifier — a `UserDefaults`-backed view like
+    /// `KilterSettingsView`'s, so this instance stays consistent with the root view's.
+    @State private var boardMemory = KilterBoardMemory()
 
     /// The climb currently shown — changes as the user swipes through `siblings`.
     @State private var currentUUID: String
@@ -171,6 +181,18 @@ struct KilterClimbDetailView: View {
             geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
             if board.isConnected { board.illuminate(holds) }
         }
+        .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
+    }
+
+    /// The "Set up this board" verifier, seeded with the open climb's own layout (so a matching board lights
+    /// the real climb straight away) and the current size.
+    @ViewBuilder private var boardSetupSheet: some View {
+        KilterBoardSetupSheet(
+            board: board, catalog: catalog, climb: climb,
+            boardLabel: board.connectedIdentifier.flatMap { boardMemory.recall(identifier: $0) }?.label ?? "this board",
+            initialLayoutId: climb?.layoutId ?? activeLayoutId,
+            initialSizeId: productSizeId,
+            onConfirm: { layoutId, sizeId in confirmBoardSetup(layoutId: layoutId, sizeId: sizeId) })
     }
 
     @ViewBuilder private func content(_ climb: KilterClimb) -> some View {
@@ -272,6 +294,7 @@ struct KilterClimbDetailView: View {
     private func boardPillTapped() {
         switch board.state {
         case .connected:
+            if needsBoardSetup { showingBoardSetup = true; return }
             board.illuminate(holds)
             Haptics.tap()
         case .idle, .failed:
@@ -604,8 +627,11 @@ struct KilterClimbDetailView: View {
                 switch board.state {
                 case .connected:
                     primaryButton("Light up this climb", systemImage: "lightbulb.fill") {
-                        lightAndCapture()
+                        attemptLight()
                     }
+                    Button("Set up this board") { showingBoardSetup = true }
+                        .font(.caption)
+                        .accessibilityIdentifier("kilter.board.setup")
                     wrongHoldsControl
                     Button("Disconnect board") { board.disconnect() }
                         .font(.caption)
@@ -912,6 +938,34 @@ struct KilterClimbDetailView: View {
     private func lightAndCapture() {
         board.illuminate(holds)
         captureLitEvent()
+    }
+
+    /// Whether the "Set up this board" verifier should intercept a light: a board is connected but the user
+    /// hasn't confirmed its layout/size on the wall yet (prompt 120). Recall returns non-nil for a board
+    /// that merely connected (it's auto-remembered from a *guess*), so we gate on the explicit `isVerified`
+    /// flag, not on mere presence. False with no BLE (simulator) so lighting the on-screen board still works.
+    private var needsBoardSetup: Bool {
+        guard let id = board.connectedIdentifier else { return false }
+        return boardMemory.recall(identifier: id)?.isVerified != true
+    }
+
+    /// Light the climb, but divert an unverified board to the setup verifier first (one-time per board).
+    private func attemptLight() {
+        if needsBoardSetup { showingBoardSetup = true; return }
+        lightAndCapture()
+    }
+
+    /// Persist a confirmed "Set up this board" choice: mark this board verified with the chosen layout/size,
+    /// repoint browsing at that layout, and remap the current size. Recording the lit event (when the open
+    /// climb belongs to the confirmed layout) preserves the original "I lit this climb" intent that the
+    /// setup diversion interrupted; a foreign-layout confirmation just leaves the calibration up.
+    private func confirmBoardSetup(layoutId: Int, sizeId: Int) {
+        if let id = board.connectedIdentifier {
+            boardMemory.confirmSetup(identifier: id, layoutId: layoutId, productSizeId: sizeId)
+        }
+        activeLayoutId = layoutId
+        productSizeId = sizeId            // triggers the size onChange → rebuilds holds/geometry + re-lights
+        if climb?.layoutId == layoutId { captureLitEvent() }
     }
 
     /// Upsert a `KilterLitEvent` keyed by (normalized climbUUID, current sessionId): bump `litAt` on the

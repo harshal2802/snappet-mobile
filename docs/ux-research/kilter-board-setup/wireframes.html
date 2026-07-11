@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kilter — Set up this board (layout verifier)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ink:#F4F3F1; --paper:#121214; --surface:#1E1E22;
+    --surfaceMuted:#26262B; --hairline:#34343A; --textSecondary:#A6A5A1;
+    --kilter:#F59E0B; --kilterDim:#B45309; --green:#5BC074; --red:#FF6A5C;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}
+  body{background:#0a0a0c;color:var(--ink);
+    font-family:-apple-system,"SF Pro Text",system-ui,sans-serif;
+    padding:40px 24px 64px;display:flex;flex-direction:column;align-items:center;gap:8px}
+  h1{font-size:22px;font-weight:700;letter-spacing:-.3px}
+  .sub{color:var(--textSecondary);font-size:13px;margin-bottom:28px;text-align:center;max-width:620px;line-height:1.5}
+  .row{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+  .stage{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .caption{font-size:12px;color:var(--textSecondary);max-width:300px;text-align:center;line-height:1.45}
+  .caption b{color:var(--ink);font-weight:600}
+  .phone{width:300px;height:640px;background:var(--paper);border-radius:44px;
+    border:1px solid var(--hairline);box-shadow:0 30px 80px rgba(0,0,0,.6);
+    position:relative;overflow:hidden;display:flex;flex-direction:column}
+  .notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    width:110px;height:26px;background:#000;border-radius:14px;z-index:20}
+  .nav{padding:52px 18px 10px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--hairline)}
+  .nav .back{color:var(--kilter);font-size:15px}
+  .nav .title{font-weight:700;font-size:16px;flex:1}
+  .body{flex:1;overflow:hidden;position:relative}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:10}
+  /* sheet */
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:11;background:var(--surface);
+    border-top-left-radius:26px;border-top-right-radius:26px;padding:14px 18px 22px;
+    border-top:1px solid var(--hairline);box-shadow:0 -18px 50px rgba(0,0,0,.5)}
+  .grab{width:38px;height:5px;border-radius:3px;background:#4a4a52;margin:0 auto 14px}
+  .sheet h2{font-size:18px;font-weight:700;margin-bottom:2px}
+  .sheet .lead{font-size:12.5px;color:var(--textSecondary);line-height:1.45;margin-bottom:14px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+    color:var(--kilter);background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.3);
+    padding:4px 9px;border-radius:20px;margin-bottom:12px}
+  .field{display:flex;align-items:center;justify-content:space-between;background:var(--surfaceMuted);
+    border:1px solid var(--hairline);border-radius:12px;padding:11px 14px;margin-bottom:9px}
+  .field .lbl{font-size:14px;font-weight:500}
+  .field .val{font-size:14px;color:var(--kilter);font-weight:600;display:flex;align-items:center;gap:5px}
+  .chev{opacity:.7;font-size:12px}
+  /* mini board preview */
+  .board{margin:14px auto 10px;width:184px;height:150px;background:#0e0e10;border:1px solid var(--hairline);
+    border-radius:14px;position:relative;overflow:hidden}
+  .board .grid{position:absolute;inset:0;
+    background-image:radial-gradient(circle,#2c2c33 1px,transparent 1.4px);
+    background-size:20px 20px;background-position:8px 8px;opacity:.55}
+  .led{position:absolute;width:15px;height:15px;border-radius:50%}
+  .led.on{background:var(--kilter);box-shadow:0 0 9px 3px rgba(245,158,11,.7);border:2px solid #fff3}
+  .led.on.g{background:var(--green);box-shadow:0 0 9px 3px rgba(91,192,116,.7)}
+  .cap-hint{font-size:11px;color:var(--textSecondary);text-align:center;margin:2px 6px 14px;line-height:1.4}
+  .btns{display:flex;flex-direction:column;gap:9px}
+  .btn{border-radius:13px;padding:12px;text-align:center;font-size:14.5px;font-weight:600}
+  .btn.light{background:var(--kilter);color:#1a1206}
+  .btn.confirm{background:rgba(91,192,116,.16);color:var(--green);border:1px solid rgba(91,192,116,.4)}
+  .btn.ghost{background:transparent;color:var(--textSecondary);font-weight:500;font-size:13px}
+  /* underlying detail screen faded */
+  .detail{padding:16px 18px;opacity:.9}
+  .climbcard{background:var(--surface);border:1px solid var(--hairline);border-radius:16px;padding:14px;margin-bottom:12px}
+  .climbcard .cn{font-size:17px;font-weight:700}
+  .climbcard .cm{font-size:12px;color:var(--textSecondary);margin-top:2px}
+  .boardpreview{height:150px;background:#0e0e10;border-radius:12px;margin-top:12px;position:relative;overflow:hidden}
+  .boardpreview .grid{position:absolute;inset:0;background-image:radial-gradient(circle,#2c2c33 1px,transparent 1.4px);background-size:18px 18px;opacity:.5}
+  .lightbtn{margin-top:14px;background:var(--surfaceMuted);border:1px solid var(--hairline);
+    border-radius:13px;padding:12px;text-align:center;font-size:14.5px;font-weight:600;color:var(--kilter)}
+  .setupbtn{margin-top:9px;text-align:center;font-size:12.5px;color:var(--textSecondary)}
+  .setupbtn u{color:var(--kilter);text-decoration:none;border-bottom:1px solid rgba(245,158,11,.4)}
+  /* toast */
+  .toast{position:absolute;left:14px;right:14px;bottom:18px;z-index:12;background:var(--surface);
+    border:1px solid rgba(91,192,116,.4);border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center;
+    box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .toast .ic{width:26px;height:26px;border-radius:50%;background:rgba(91,192,116,.18);color:var(--green);
+    display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto}
+  .toast .t1{font-size:13px;font-weight:600}
+  .toast .t2{font-size:11px;color:var(--textSecondary);margin-top:1px}
+  .connbar{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--textSecondary);
+    background:var(--surfaceMuted);border-radius:20px;padding:5px 11px;border:1px solid var(--hairline)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
+</style>
+</head>
+<body>
+  <h1>Set up this board — layout verifier</h1>
+  <p class="sub">First time lighting a climb on a board the app doesn't recognize, a sheet lets you pick a
+    <b style="color:var(--ink)">layout + size</b>, light it, and check the wall — cycling until the LEDs land right.
+    Confirming remembers it for <b style="color:var(--ink)">this physical board</b>, so it never asks again.</p>
+
+  <div class="row">
+
+    <!-- STAGE 1: entry -->
+    <div class="stage">
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="nav"><span class="back">‹ Kilter</span><span class="title">Purple Rain</span>
+          <span class="connbar"><span class="dot"></span>New board</span></div>
+        <div class="body">
+          <div class="detail">
+            <div class="climbcard">
+              <div class="cn">Purple Rain</div>
+              <div class="cm">V6 · 40° · ★★★★☆ · 214 ascents</div>
+              <div class="boardpreview"><div class="grid"></div></div>
+            </div>
+            <div class="lightbtn">⚡  Light up this climb</div>
+            <div class="setupbtn">Board looks wrong? <u>Set up this board</u></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>1 · Tap light on an unknown board</b><br>The connected board isn't remembered yet, so tapping light opens the setup sheet automatically. (The link is always there to re-verify.)</div>
+    </div>
+
+    <!-- STAGE 2: verifier / calibration -->
+    <div class="stage">
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="nav"><span class="back">‹ Kilter</span><span class="title">Purple Rain</span></div>
+        <div class="body">
+          <div class="detail" style="filter:blur(1px)">
+            <div class="climbcard"><div class="cn">Purple Rain</div><div class="cm">V6 · 40°</div></div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="pill">⚡ Lighting the board</div>
+            <h2>Which board is this?</h2>
+            <p class="lead">Pick a layout and size, then look at the wall. When the lit holds match your board, tap confirm.</p>
+            <div class="field"><span class="lbl">Layout</span><span class="val">Kilter Original <span class="chev">▾</span></span></div>
+            <div class="field"><span class="lbl">Size</span><span class="val">12 × 12 <span class="chev">▾</span></span></div>
+            <div class="board">
+              <div class="grid"></div>
+              <div class="led on"  style="left:16px;top:16px"></div>
+              <div class="led on"  style="right:16px;top:16px"></div>
+              <div class="led on"  style="left:16px;bottom:16px"></div>
+              <div class="led on"  style="right:16px;bottom:16px"></div>
+              <div class="led on"  style="left:50%;top:50%;transform:translate(-50%,-50%)"></div>
+            </div>
+            <p class="cap-hint">Lighting the <b style="color:var(--ink)">four corners + center</b> — do they land on your board's edges?</p>
+            <div class="btns">
+              <div class="btn light">⚡  Light on board</div>
+              <div class="btn confirm">✓  This looks right</div>
+              <div class="btn ghost">Try another layout</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>2 · Try a layout → verify → repeat</b><br>Because a catalog climb is layout-bound, cycling <i>layouts</i> lights a corner+center <b>calibration pattern</b>; cycling <i>sizes</i> within the climb's own layout lights the real climb. Every picker change re-lights instantly.</div>
+    </div>
+
+    <!-- STAGE 3: confirmed + remembered -->
+    <div class="stage">
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="nav"><span class="back">‹ Kilter</span><span class="title">Purple Rain</span>
+          <span class="connbar"><span class="dot"></span>8×12 Home</span></div>
+        <div class="body">
+          <div class="detail">
+            <div class="climbcard">
+              <div class="cn">Purple Rain</div>
+              <div class="cm">V6 · 40° · lit on board</div>
+              <div class="boardpreview">
+                <div class="grid"></div>
+                <div class="led on g" style="left:26px;top:26px"></div>
+                <div class="led on g" style="left:70px;top:60px"></div>
+                <div class="led on g" style="left:120px;top:40px"></div>
+                <div class="led on g" style="left:150px;top:96px"></div>
+                <div class="led on g" style="left:60px;top:110px"></div>
+              </div>
+            </div>
+            <div class="lightbtn">⚡  Light up this climb</div>
+          </div>
+          <div class="toast">
+            <div class="ic">✓</div>
+            <div><div class="t1">Board saved as “8×12 Home”</div>
+              <div class="t2">Original · 12×12 — remembered for this board. We won't ask again.</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption"><b>3 · Confirm → remembered per board</b><br>Saved to <b>KilterBoardMemory</b> against this board's BLE identity. Next connect auto-restores this layout/size (existing confirm-ribbon path) — no popup. Rename/forget lives in Kilter Settings.</div>
+    </div>
+
+  </div>
+</body>
+</html>

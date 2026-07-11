@@ -303,4 +303,48 @@ final class KilterBoardMemoryTests: XCTestCase {
         let here = CoarsePlace(latitude: 37.3318, longitude: -122.0305)
         XCTAssertNil(KilterPlaceMatcher.suggestion(for: here, in: memory.rememberedSorted))
     }
+
+    // MARK: - KilterArrivalGate (once-per-place arrival suppression)
+
+    private var gymA: CoarsePlace { CoarsePlace(latitude: 37.3318, longitude: -122.0305) }
+    private var gymB: CoarsePlace { CoarsePlace(latitude: 40.7128, longitude: -74.0060) }
+
+    func testArrivalShowsAtAMatchingPlaceWhenNotYetResolved() {
+        let out = KilterArrivalGate.evaluate(place: gymA, resolved: nil, dismissedThisVisit: false, hasMatch: true)
+        XCTAssertTrue(out.showSuggestion)
+        XCTAssertNil(out.resolvedPlace)
+    }
+
+    func testArrivalSuppressedAtTheJustResolvedPlace() {
+        // The reported bug: reopened at the same gym right after "Set it up" → must stay quiet.
+        let out = KilterArrivalGate.evaluate(place: gymA, resolved: gymA, dismissedThisVisit: false, hasMatch: true)
+        XCTAssertFalse(out.showSuggestion)
+        XCTAssertEqual(out.resolvedPlace, gymA)   // marker preserved
+    }
+
+    func testArrivalReArmsWhenMovingToADifferentPlace() {
+        // Resolved at A, a fix lands at B → clear the marker and suggest B.
+        let out = KilterArrivalGate.evaluate(place: gymB, resolved: gymA, dismissedThisVisit: true, hasMatch: true)
+        XCTAssertTrue(out.showSuggestion)
+        XCTAssertNil(out.resolvedPlace)
+        XCTAssertFalse(out.dismissedThisVisit)    // fresh visit re-arms the transient dismiss
+    }
+
+    func testArrivalSuggestsAgainOnReturnToAPriorGym() {
+        // Resolved at B, then a fix lands back at A → A is different from the marker, so suggest again.
+        let out = KilterArrivalGate.evaluate(place: gymA, resolved: gymB, dismissedThisVisit: false, hasMatch: true)
+        XCTAssertTrue(out.showSuggestion)
+        XCTAssertNil(out.resolvedPlace)
+    }
+
+    func testArrivalStaysQuietWhenNoBoardMatchesHere() {
+        let out = KilterArrivalGate.evaluate(place: gymA, resolved: nil, dismissedThisVisit: false, hasMatch: false)
+        XCTAssertFalse(out.showSuggestion)
+    }
+
+    func testArrivalHonorsDismissAtTheSamePlaceWithNoMarker() {
+        // Dismissed ("Not now") this visit but no persisted marker yet, still at the same place → quiet.
+        let out = KilterArrivalGate.evaluate(place: gymA, resolved: nil, dismissedThisVisit: true, hasMatch: true)
+        XCTAssertFalse(out.showSuggestion)
+    }
 }

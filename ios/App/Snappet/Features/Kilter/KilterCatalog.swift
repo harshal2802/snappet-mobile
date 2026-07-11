@@ -342,6 +342,56 @@ final class KilterCatalog {
         return out
     }
 
+    /// The **calibration pattern** for a `(layout, size)`: the four corners + center of the board's wired
+    /// holes, resolved to real LED positions and normalized to the same render extent as `holds(for:)` (so
+    /// the mini board preview draws them in the right places). This is what the "Set up this board" verifier
+    /// (prompt 120) lights while the user cycles *layouts* — a catalog climb can't be lit under a foreign
+    /// layout (it has no placements there), so a layout-agnostic reference pattern stands in. The corner/
+    /// center *selection* is the pure, unit-tested `KilterCalibration.pick`; this method only supplies the
+    /// board's wired holes and turns the picks into `KilterHold`s. Empty when the size has no LED map.
+    func calibrationHolds(forLayout layoutId: Int, sizeId: Int) -> [KilterHold] {
+        let eff = effectiveSizeId(forLayout: layoutId, requested: sizeId)
+        let leds = ledPositions(forSize: eff)                 // holeId -> led position (the wired holes)
+        guard !leds.isEmpty else { return [] }
+        // The board coordinate of every wired hole (dedup by hole; a hole can back several placements).
+        var coords: [Int: (x: Int, y: Int)] = [:]
+        query("""
+            SELECT DISTINCT p.hole_id, h.x, h.y
+            FROM placements p JOIN holes h ON h.id = p.hole_id WHERE p.layout_id = ?
+        """, bind: { s in sqlite3_bind_int64(s, 1, Int64(layoutId)) }) { s in
+            let hole = Self.int(s, 0)
+            guard leds[hole] != nil, coords[hole] == nil else { return }
+            coords[hole] = (Self.int(s, 1), Self.int(s, 2))
+        }
+        let wired = coords.compactMap { holeId, xy -> KilterCalibration.Hole? in
+            guard let led = leds[holeId] else { return nil }
+            return KilterCalibration.Hole(holeId: holeId, x: xy.x, y: xy.y, led: led)
+        }
+        let picked = KilterCalibration.pick(from: wired)
+        guard !picked.isEmpty else { return [] }
+        // Normalize against the *render* extent (same basis `holds(for:)` uses) so the dots land on the grid.
+        let r = renderHoles(forLayout: layoutId, sizeId: eff)
+        let w = Double(r.maxX - r.minX), h = Double(r.maxY - r.minY)
+        guard w > 0, h > 0 else { return [] }
+        return picked.map { hole in
+            let nx = (Double(hole.x) - Double(r.minX)) / w
+            let ny = (Double(hole.y) - Double(r.minY)) / h
+            return KilterHold(
+                placementId: hole.holeId,
+                x: min(max(nx, 0), 1),
+                y: 1 - min(max(ny, 0), 1),   // board y is bottom-up; view y top-down (matches holds(for:))
+                colorHex: Self.calibrationScreenColor,
+                ledColorHex: Self.calibrationLedColor,
+                role: "middle",
+                ledPosition: hole.led)
+        }
+    }
+
+    /// The on-screen / LED color of a calibration dot — a neutral, high-visibility white, distinct from any
+    /// role color so a verifying user reads it as "reference pattern", not a climb.
+    private static let calibrationScreenColor = "FFFFFF"
+    private static let calibrationLedColor = "FFFFFF"
+
     // MARK: - Board geometry (the size-accurate full-grid backdrop)
 
     /// The render basis for one `(layout, size)`: the board-coordinate extent + the normalized hole grid

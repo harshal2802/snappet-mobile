@@ -55,6 +55,10 @@ final class KilterBoardController: NSObject {
     private(set) var state: State = .idle
     #endif
     var isConnected: Bool { state == .connected }
+    /// The stable `CBPeripheral.identifier` of the board currently connected (nil unless connected). Lets a
+    /// view bind a confirmed "Set up this board" choice (prompt 120) to the right physical board directly,
+    /// without having to capture the one-shot `onBoardRecognized` callback.
+    var connectedIdentifier: UUID? { isConnected ? peripheral?.identifier : nil }
     /// Which Aurora payload dialect to send. Default `.v3` (current boards); switched to `.v2` when a
     /// user with an older board reports the wrong holds lighting up. Persisted by the UI layer, which
     /// pushes it down via `setAPILevel(_:)`.

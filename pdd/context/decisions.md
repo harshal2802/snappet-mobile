@@ -8288,3 +8288,63 @@ real Apple Watch workout + camera-roll media on a device.
   section on non-empty `hrSeries` (watch anchors have it) and buckets untagged clips into General, so an
   exercise-less watch session renders (hero duration+HR · HR chart · clips) — P3 only adds the honest
   "recorded on Apple Watch" note + distance/energy chips.
+
+## 2026-07-11 — Kilter "Set up this board": guided layout/size verifier, remembered per board (prompt 120)
+
+The problem: a climber at an unfamiliar Kilter board doesn't know its **layout + size**, and the wrong
+one lights shifted/wrong holds. The only prior fix was a *hidden* "Wrong holds lighting up?" link
+exposing a size picker — discover-it-and-guess. Prompt 120 makes it a proactive, guided verifier.
+
+- **Calibration pattern, not the climb, when cycling layouts.** The load-bearing constraint: a catalog
+  climb's layout is INTRINSIC — `KilterCatalog.holds(for: climb, sizeId:)` resolves LEDs from
+  `climb.layoutId`. You can re-light the same climb across **sizes** (same layout), but a layout-A climb
+  has no placements in layout B, so "light this climb under layout B" is impossible. So cycling
+  **layouts** lights a layout-agnostic **4-corners + center** reference pattern
+  (`KilterCatalog.calibrationHolds`), while cycling **sizes** within the climb's own layout lights the
+  real climb. The pure `KilterBoardSetup.target(climbLayoutId:chosenLayoutId:chosenSizeId:)` encodes the
+  `.climb` vs `.calibration` branch; `KilterCalibration.pick` (pure, unit-tested) picks the wired hole
+  nearest each extent corner + center, deduped by holeId (a tiny board can collapse targets). Corners +
+  center chosen over a full perimeter: fewest LEDs that still pin orientation + size unambiguously.
+- **`verifiedSetup` is a distinct signal from "remembered".** `KilterRootView.recognizeBoard` already
+  calls `KilterBoardMemory.remember(...)` on EVERY connect with the current *global* layout/size — i.e. a
+  board is remembered from a GUESS the instant it connects. So `recall(id) != nil` can't gate the
+  first-light prompt. Added `RememberedBoard.verifiedSetup: Bool?` (the "LEDs actually matched on the
+  wall" flag) + `confirmSetup(...)`. Gate is `recall(id)?.isVerified != true`. **Optional on purpose:** a
+  board stored by a pre-120 build has no key → decodes `nil` → unverified → prompted once, which is
+  correct (it was learned from a guess). A non-optional `Bool` would have thrown on decode and wiped the
+  whole remembered-boards map (the Codable-missing-key gotcha).
+- **Confirm repoints browsing.** "This looks right" → `confirmSetup` (persist layout+size, verified) AND
+  sets the active `kilter.layout` / `kilter.productSizeId`, so the catalog now shows climbs for the board
+  the user just verified. Reconnect uses the EXISTING `applyRestore`/confirm-ribbon path unchanged — a
+  verified board auto-restores and the prompt never fires again.
+- **Sheet owns no persistence.** `KilterBoardSetupSheet` is pure UI over `KilterBoardController.illuminate`
+  + the two catalog resolvers; the detail view supplies the connected `board.connectedIdentifier` (new,
+  exposes the connected `CBPeripheral.identifier` so a view can bind a confirmed choice without the
+  one-shot `onBoardRecognized`) and does the memory write. The older "wrong holds?" protocol/Legacy fix
+  stays for the separate controller-dialect axis.
+- **Device-pending (owed, needs a real Kilter board):** the "correct LEDs light on the wall" leg — like
+  the rest of P1 board recognition. Pure logic + the sheet build ship green (`KilterBoardSetupTests` +
+  the unchanged `KilterBoardMemoryTests` prove the optional field decodes old data).
+- **Also triggered from the landing-page Connect flow (follow-up, same day).** `KilterRootView.recognizeBoard`
+  now branches on `isVerified`: a **verified** board restores layout/size + raises the angle-confirm ribbon
+  (existing); an **unverified** board (new, or auto-remembered from a guess but never confirmed on the wall)
+  raises the setup verifier right on connect — so the climber picks + verifies the layout the moment they
+  tap Connect, before browsing. Confirm (`confirmBoardSetup`) writes `confirmSetup` AND sets the active
+  `kilter.layout` / `kilter.productSizeId`; because `layoutId` is part of `filterKey` (drives
+  `.task(id:) { refresh() }` → `catalog.list(filter)`), **confirming immediately filters the browse list to
+  that board's layout** — the "filter shown climbs by board+layout" requirement, for free. The size is
+  mirrored into `KilterSizeMemory` before the `layoutId` change so `syncBoardSize` keeps the confirmed size.
+  The detail-view light-time trigger stays as the fallback ("only prompt when board+layout isn't available")
+  — both gate on the same `isVerified`, so once confirmed on connect neither re-prompts. No BLE on the
+  simulator ⇒ `recognizeBoard` never fires in tests, so no UITest impact.
+- **Arrival suggestion re-popped every launch → persist a resolved-place marker (same-day fix).** The
+  location-based "set up your usual board?" card reappeared at the same gym on every app open, even right
+  after "Set it up", because the "already handled" flag was `@State` (`arrivalDismissed`) that reset on each
+  `KilterRootView` recreation. Fix: a pure `KilterArrivalGate.evaluate(place:resolved:dismissedThisVisit:hasMatch:)`
+  + a persisted `@AppStorage("kilter.arrivalResolvedPlace")` (the resolved `CoarsePlace` as JSON — only the
+  already-bucketed coarse place, never a precise fix). The card is **suppressed while the climber is at the
+  place they resolved it for**, but the marker CLEARS the instant a fix lands on a *different* coarse square,
+  so switching gyms — and returning to a prior one — re-arms it (the user's explicit "I still want it when I
+  change location and come back, and vice versa"). `markArrivalResolved()` sets the marker on Set-it-up,
+  Not-now, AND a real connect (all genuine resolutions). Pure gate unit-tested in `KilterBoardMemoryTests`
+  (suppress-at-resolved-place, re-arm-on-move, suggest-on-return); `CoarsePlace` privacy stance unchanged.
