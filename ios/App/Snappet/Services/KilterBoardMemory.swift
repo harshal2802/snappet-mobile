@@ -51,9 +51,18 @@ struct RememberedBoard: Codable, Equatable, Sendable {
     var coarsePlace: CoarsePlace?
     /// When this board was last connected — newest-first ordering for the Settings list + arrival pick.
     var lastSeen: Date
+    /// Whether the user has **confirmed this board's layout + size on the wall** via the "Set up this board"
+    /// verifier (prompt 120). `remember(...)` fires on every connect and learns a board with the *current
+    /// global* layout/size, which is only a guess — so a plain remembered board isn't yet trustworthy. This
+    /// flag is the "the LEDs actually matched" signal that gates the first-light setup prompt. Optional so a
+    /// board stored by a pre-120 build (no key) still decodes — it reads back `nil` ⇒ unverified ⇒ prompted
+    /// once, which is exactly right (it was learned from a guess).
+    var verifiedSetup: Bool? = nil
 
     /// The most-frequently-confirmed angle on this board (the pre-select), or `nil` with no history.
     var usualAngle: Int? { KilterBoardMemory.mostFrequentAngle(angleHistory) }
+    /// Whether the user has confirmed this board's layout/size on the wall (see ``verifiedSetup``).
+    var isVerified: Bool { verifiedSetup == true }
 }
 
 /// Persists the physical Kilter boards this phone has connected to so a return visit **restores the
@@ -162,6 +171,28 @@ final class KilterBoardMemory {
         boards = map
     }
 
+    /// Confirm a board's **layout + size from the "Set up this board" verifier** (prompt 120): the user
+    /// cycled layouts/sizes, watched the wall, and tapped "This looks right". Sets the confirmed layout/size
+    /// and flips ``RememberedBoard/verifiedSetup`` true, so future connects trust the restore and the
+    /// first-light prompt never fires again for this board. The board is normally already remembered (a
+    /// connect precedes any light), so the merge preserves serial / place / angle history; a defensive
+    /// insert covers the (unexpected) unremembered case. An explicit `label` renames.
+    func confirmSetup(identifier: UUID, layoutId: Int, productSizeId: Int,
+                      label: String? = nil, at date: Date = .now) {
+        var map = boards
+        var board = map[identifier] ?? RememberedBoard(
+            layoutId: layoutId, productSizeId: productSizeId, angleHistory: [],
+            label: label ?? Self.defaultLabel(layoutId: layoutId, serial: nil),
+            serial: nil, coarsePlace: nil, lastSeen: date, verifiedSetup: true)
+        board.layoutId = layoutId
+        board.productSizeId = productSizeId
+        board.verifiedSetup = true
+        if let label { board.label = label }
+        board.lastSeen = date
+        map[identifier] = board
+        boards = map
+    }
+
     /// Rename a board's friendly label (Settings). No-op for an unknown id.
     func rename(identifier: UUID, to label: String) {
         var map = boards
@@ -225,5 +256,42 @@ enum KilterPlaceMatcher {
         boards
             .filter { $0.board.coarsePlace?.matches(place) == true }
             .max { $0.board.lastSeen < $1.board.lastSeen }
+    }
+}
+
+/// Whether the pre-connect **arrival suggestion** ("set up your usual board?") should be raised for a fresh
+/// coarse fix. Pure so the once-per-place suppression rule unit-tests with no CoreLocation and no device.
+///
+/// The bug it fixes: the "already dealt with this" flag lived only in `@State`, so it reset on every app
+/// open and the card re-popped at the same gym right after the climber tapped "Set it up". The gate persists
+/// a **resolved-place marker** instead: the card is suppressed while the climber is at the place they just
+/// resolved it for, but the marker CLEARS the moment a fix lands on a *different* coarse square — so moving
+/// to another gym, or returning to a prior one, re-arms the suggestion (the climber's explicit "I still want
+/// it when I switch gyms and come back").
+enum KilterArrivalGate {
+    struct Outcome: Equatable {
+        /// Whether to raise the suggestion card now.
+        var showSuggestion: Bool
+        /// The resolved-place marker to persist after this evaluation (nil = re-armed / not yet resolved).
+        var resolvedPlace: CoarsePlace?
+        /// The transient "dismissed this visit" flag after this evaluation.
+        var dismissedThisVisit: Bool
+    }
+
+    /// Decide from a fresh coarse `place`, the last `resolved` place, whether the card was `dismissedThisVisit`,
+    /// and whether a remembered board exists here (`hasMatch`).
+    static func evaluate(place: CoarsePlace, resolved: CoarsePlace?,
+                         dismissedThisVisit: Bool, hasMatch: Bool) -> Outcome {
+        // Same square we already resolved this visit → stay quiet, keep the marker.
+        if let resolved, resolved.matches(place) {
+            return Outcome(showSuggestion: false, resolvedPlace: resolved, dismissedThisVisit: dismissedThisVisit)
+        }
+        // A different square than the marker means the climber moved → this is a fresh visit: drop the marker
+        // and re-arm the transient dismiss so the new place can suggest.
+        let dismissed = resolved == nil ? dismissedThisVisit : false
+        guard !dismissed, hasMatch else {
+            return Outcome(showSuggestion: false, resolvedPlace: nil, dismissedThisVisit: dismissed)
+        }
+        return Outcome(showSuggestion: true, resolvedPlace: nil, dismissedThisVisit: dismissed)
     }
 }

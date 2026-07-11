@@ -74,6 +74,17 @@ struct KilterRootView: View {
     @State private var arrivalSuggestion: (id: UUID, board: RememberedBoard)?
     /// Dismiss the arrival suggestion for the rest of this visit once acted on / declined.
     @State private var arrivalDismissed = false
+    /// The coarse place the arrival suggestion was last **resolved** at (set up / dismissed / connected),
+    /// persisted as JSON so it survives app reopens — the fix for the card re-popping at the same gym every
+    /// launch. Cleared automatically once a fix lands on a *different* square, so switching gyms (and
+    /// returning) re-arms the suggestion. Only the already-bucketed CoarsePlace is stored (never a precise
+    /// fix), consistent with the rest of the location feature.
+    @AppStorage("kilter.arrivalResolvedPlace") private var arrivalResolvedPlaceData = ""
+    /// The "Set up this board" verifier (prompt 120) raised on connecting to a board whose layout hasn't
+    /// been confirmed on the wall yet — pick + verify layout/size, then confirm to remember it and filter
+    /// the catalog. `setupBoardId` is the connected board this confirm binds to.
+    @State private var showingBoardSetup = false
+    @State private var setupBoardId: UUID?
     /// The session manager is owned by `AppModel` (not `@State` here) so it survives navigating out of
     /// and back into the module — this view is a `navigationDestination` SwiftUI destroys on pop, which
     /// is exactly what used to strand the active session. Recovered from the store on appear.
@@ -296,6 +307,7 @@ struct KilterRootView: View {
             // push blindly, dead-ending on a climb the local catalog doesn't have (#75).
             KilterScannerView { link in open(link: link) }
         }
+        .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
         // Graceful landing for a shared climb this device can't resolve (#75): explain instead of
         // a dead detail screen. Reads right over the catalog gate too (install first, then rescan).
         .alert("Climb not in your catalog",
@@ -478,21 +490,28 @@ struct KilterRootView: View {
 
     // MARK: - P1 board recognition (auto-detect)
 
-    /// A board just confirmed its connection. If we've seen it before, restore its layout + size and
-    /// pre-select its usual angle, then raise the one-tap confirm ribbon. Either way, remember it (with
-    /// the confirmed angle + current coarse place) so the next visit recognizes it.
+    /// A board just confirmed its connection. A **verified** board (its layout was confirmed on the wall via
+    /// the setup verifier) restores its layout + size and raises the one-tap angle-confirm ribbon; an
+    /// **unverified** board (never seen, or auto-remembered from a guess but never confirmed) raises the
+    /// "Set up this board" verifier so the climber picks + checks the layout before browsing/lighting — the
+    /// layout they confirm then filters the catalog. Either way, remember its identity so the next visit
+    /// recognizes it.
     private func recognizeBoard(identifier: UUID, serial: String?) {
         let known = boardMemory.recall(identifier: identifier, serial: serial)
         // Name the connection for the board strip / session bar ("Summit Bouldering", not just a dot).
         connectedBoardLabel = known?.label ?? defaultBoardLabel(serial: serial)
-        if let known {
+        // A successful BLE connect makes the on-arrival card redundant — clear it AND mark this place's
+        // arrival resolved (persisted), so a later coarse-fix update — or a reopen at this same gym — can't
+        // re-pop the card for a board we're connected to. Moving to another gym re-arms it.
+        arrivalSuggestion = nil
+        markArrivalResolved()
+        if let known, known.isVerified {
             applyRestore(known)
             withAnimation(.snappy) { pendingConfirm = (id: identifier, board: known) }
-            // A successful BLE connect makes the on-arrival card redundant — clear it AND mark this
-            // visit's arrival resolved, so a later coarse-fix update can't re-pop the card for a board
-            // we're already connected to.
-            arrivalSuggestion = nil
-            arrivalDismissed = true
+        } else {
+            // Not yet confirmed on the wall → guide the layout/size choice here, on connect (prompt 120).
+            setupBoardId = identifier
+            showingBoardSetup = true
         }
         // Remember (or update) the board's IDENTITY on every confirmed connect — first-time boards are
         // learned here, returning boards refresh their place / last-seen. The angle is NOT recorded here;
@@ -502,6 +521,32 @@ struct KilterRootView: View {
                              label: known?.label, defaultLabel: defaultBoardLabel(serial: serial),
                              serial: serial,
                              coarsePlace: suggestOnArrival ? location.currentPlace : nil)
+    }
+
+    /// The "Set up this board" verifier, presented from the landing page on connecting to an unverified
+    /// board. No open climb here, so it always runs in calibration mode (corner+center reference pattern);
+    /// seeded with the current layout/size so the first light shows *something* to check against.
+    @ViewBuilder private var boardSetupSheet: some View {
+        KilterBoardSetupSheet(
+            board: board, catalog: catalog, climb: nil,
+            boardLabel: connectedBoardLabel ?? "this board",
+            initialLayoutId: layoutId, initialSizeId: productSizeId,
+            onConfirm: { newLayout, newSize in confirmBoardSetup(layoutId: newLayout, sizeId: newSize) })
+    }
+
+    /// Persist a confirmed layout/size for the connected board and **apply it as the active board+layout**:
+    /// this repoints the catalog (`layoutId` drives `filterKey` → the browse list re-queries for that
+    /// layout) and remaps the LEDs (`productSizeId`). Mirroring the size into the per-layout memory BEFORE
+    /// the `layoutId` change lets `syncBoardSize` keep the just-confirmed size instead of restoring an older
+    /// one. Marks the board verified so no future connect / light re-prompts.
+    private func confirmBoardSetup(layoutId newLayout: Int, sizeId newSize: Int) {
+        if let id = setupBoardId ?? board.connectedIdentifier {
+            boardMemory.confirmSetup(identifier: id, layoutId: newLayout, productSizeId: newSize)
+            connectedBoardLabel = boardMemory.recall(identifier: id)?.label ?? connectedBoardLabel
+        }
+        sizeMemory.remember(sizeId: newSize, forLayout: newLayout)
+        layoutId = newLayout
+        productSizeId = newSize
     }
 
     /// A clearer default label for a never-renamed board, derived from the catalog's layout + size name
@@ -548,13 +593,20 @@ struct KilterRootView: View {
         withAnimation(.snappy) { pendingConfirm = nil }
     }
 
-    /// Raise the arrival suggestion when a coarse fix lands on a remembered place — pre-connect, opt-in,
-    /// once per visit, and never while a confirm ribbon (a real connect) is already up.
+    /// Raise the arrival suggestion when a coarse fix lands on a remembered place — pre-connect, opt-in, and
+    /// **once per place**: the pure `KilterArrivalGate` suppresses it while the climber is at the place they
+    /// just resolved it for, and re-arms it when a fix lands on a different square (so switching gyms and
+    /// returning suggests again). Never while a confirm ribbon (a real connect) is already up.
     private func updateArrivalSuggestion(_ place: CoarsePlace?) {
-        guard suggestOnArrival, !arrivalDismissed, pendingConfirm == nil,
-              let place, let match = KilterPlaceMatcher.suggestion(for: place, in: boardMemory.rememberedSorted)
-        else { return }
-        withAnimation(.snappy) { arrivalSuggestion = (id: match.id, board: match.board) }
+        guard suggestOnArrival, pendingConfirm == nil, let place else { return }
+        let match = KilterPlaceMatcher.suggestion(for: place, in: boardMemory.rememberedSorted)
+        let out = KilterArrivalGate.evaluate(place: place, resolved: arrivalResolvedPlace,
+                                             dismissedThisVisit: arrivalDismissed, hasMatch: match != nil)
+        setArrivalResolved(out.resolvedPlace)
+        arrivalDismissed = out.dismissedThisVisit
+        if out.showSuggestion, let match {
+            withAnimation(.snappy) { arrivalSuggestion = (id: match.id, board: match.board) }
+        }
     }
 
     /// "Set it up" on the arrival card: restore the suggested board's layout/size + usual angle (the same
@@ -565,8 +617,27 @@ struct KilterRootView: View {
     }
 
     private func dismissArrivalSuggestion() {
-        arrivalDismissed = true
+        markArrivalResolved()
         withAnimation(.snappy) { arrivalSuggestion = nil }
+    }
+
+    /// Mark the arrival resolved for the current place — the suggestion won't re-pop here (even across app
+    /// reopens) until a fix lands on a different square. Called on "Set it up", "Not now", and a real connect.
+    private func markArrivalResolved() {
+        arrivalDismissed = true
+        if let place = location.currentPlace { setArrivalResolved(place) }
+    }
+
+    /// The persisted resolved-place marker (nil when unset / re-armed).
+    private var arrivalResolvedPlace: CoarsePlace? {
+        arrivalResolvedPlaceData.data(using: .utf8).flatMap { try? JSONDecoder().decode(CoarsePlace.self, from: $0) }
+    }
+
+    /// Persist (or clear) the resolved-place marker as JSON in `@AppStorage`.
+    private func setArrivalResolved(_ place: CoarsePlace?) {
+        arrivalResolvedPlaceData = place
+            .flatMap { try? JSONEncoder().encode($0) }
+            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
     }
 
     /// Re-open the reader after the installed catalog changes, then refresh the list. Re-resolving the
