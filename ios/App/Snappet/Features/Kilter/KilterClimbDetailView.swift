@@ -162,24 +162,26 @@ struct KilterClimbDetailView: View {
         // Reload whenever the shown climb changes (initial open + each swipe).
         .task(id: currentUUID) { load() }
         // When the board comes up while viewing a climb, light it immediately (it follows swipes via
-        // `load()`); the manual "Light up this climb" button stays for a re-send. Illumination ONLY — no
-        // capture: merely opening a climb's detail while connected isn't a deliberate "I worked this"
-        // signal, and recording it turned On the Board into a passive browse log (F1). Capture lives only
-        // on the explicit "Light up this climb" tap. (Dropping this site also removes the off-main /
-        // double-insert race the BLE-state onChange used to drive.)
+        // `load()`); the manual "Light up this climb" button stays for a re-send. This is a real
+        // wall-light, so it's captured for On the Board (prompt 121): the policy is "record every climb
+        // whose holds actually reached a connected board", regardless of which control triggered it — the
+        // capture used to be gated to the explicit button alone, so climbs lit by connect/swipe/pill were
+        // silently dropped from the history. The shared upsert is idempotent per climb+session, so this
+        // and the other light sites overlapping for the same climb only bump one row, never duplicate it.
         .onChange(of: board.isConnected) { _, connected in
-            if connected { board.illuminate(holds) }
+            if connected { illuminateAndCapture() }
         }
         // A board-size change (from the browse chip, Settings, or the inline "wrong holds?" fix) remaps
         // every LED *and* reshapes the on-screen board — each size shows a different physical hole set —
         // so rebuild holds + geometry and re-light. Top-level (not inside the BLE-gated illuminate
-        // section) so the on-screen render still updates with no board / on the simulator. Illumination
-        // ONLY — no capture (F1): a size remap isn't a fresh "I worked this climb" action.
+        // section) so the on-screen render still updates with no board / on the simulator. Captures only
+        // when the remapped holds actually reach a connected board (prompt 121); a size change on the
+        // simulator just updates the render and records nothing.
         .onChange(of: productSizeId) {
             guard let c = climb else { return }
             holds = catalog.holds(for: c, sizeId: productSizeId)
             geometry = catalog.boardGeometry(forLayout: c.layoutId, sizeId: productSizeId)
-            if board.isConnected { board.illuminate(holds) }
+            if board.isConnected { illuminateAndCapture() }
         }
         .sheet(isPresented: $showingBoardSetup) { boardSetupSheet }
     }
@@ -295,7 +297,7 @@ struct KilterClimbDetailView: View {
         switch board.state {
         case .connected:
             if needsBoardSetup { showingBoardSetup = true; return }
-            board.illuminate(holds)
+            illuminateAndCapture()
             Haptics.tap()
         case .idle, .failed:
             board.connect()
@@ -809,10 +811,11 @@ struct KilterClimbDetailView: View {
         } else {
             selectedAngle = stats.max { $0.ascents < $1.ascents }?.angle ?? sharedAngle
         }
-        // Keep a connected board in sync with the climb on screen (initial open + each swipe).
-        // Illumination ONLY — no capture (F1): opening/swiping to a climb's detail while connected isn't
-        // a deliberate "I worked this" action; only the explicit "Light up this climb" tap records one.
-        if board.isConnected { board.illuminate(holds) }
+        // Keep a connected board in sync with the climb on screen (initial open + each swipe). Opening or
+        // swiping to a climb with a board on the wall lights it for real, so it counts as worked and is
+        // captured for On the Board (prompt 121). Only fires with a board connected, so browsing on the
+        // simulator (no wall-light) records nothing.
+        if board.isConnected { illuminateAndCapture() }
         // Mark this climb as the one being worked, for per-climb timing + the HUD / Live Activity.
         if sessions.isActive, let c = climb {
             let g = stats.first { $0.angle == selectedAngle }.map { catalog.gradeLabel($0.difficulty) } ?? ""
@@ -927,17 +930,19 @@ struct KilterClimbDetailView: View {
         Haptics.tap()
     }
 
-    /// Light the climb on the board AND record a deduped `KilterLitEvent` (P5 "On the Board"). The
-    /// capture lives HERE — at the illuminate call site where the climb identity / session / size are
-    /// known — never in the platform-pure `KilterBoardController` (which only sees `[KilterHold]`). The
-    /// authoring preview (`CreateClimbView`) is intentionally NOT routed through this, so design
-    /// previews don't pollute the worked-climbs history.
-    ///
-    /// `wasConnected` records whether a board was actually on the wall when lit; an explicit tap with no
-    /// board still records intent (the climber chose this climb) but flagged not-on-the-wall.
-    private func lightAndCapture() {
+    /// Send the current climb's holds to the board AND — when a board is actually on the wall — record the
+    /// wall-light as a deduped `KilterLitEvent` ("On the Board"). This is the single funnel every light
+    /// site in this screen flows through (explicit "Light up this climb" button, the fast-path board pill,
+    /// and the auto-lights on connect / swipe / size remap), so the policy is uniform: a climb counts as
+    /// worked exactly when its holds reach a *connected* board (prompt 121). Capture is skipped when no
+    /// board is connected (a swipe or size remap on the simulator just updates the on-screen render), so a
+    /// light that never reached the wall isn't logged. The capture lives HERE — at the illuminate call
+    /// site where the climb identity / session / size are known — never in the platform-pure
+    /// `KilterBoardController` (which only sees `[KilterHold]`). The authoring preview (`CreateClimbView`)
+    /// is intentionally NOT routed through this, so design previews don't pollute the worked-climbs history.
+    private func illuminateAndCapture() {
         board.illuminate(holds)
-        captureLitEvent()
+        if board.isConnected { captureLitEvent() }
     }
 
     /// Whether the "Set up this board" verifier should intercept a light: a board is connected but the user
@@ -952,7 +957,7 @@ struct KilterClimbDetailView: View {
     /// Light the climb, but divert an unverified board to the setup verifier first (one-time per board).
     private func attemptLight() {
         if needsBoardSetup { showingBoardSetup = true; return }
-        lightAndCapture()
+        illuminateAndCapture()
     }
 
     /// Persist a confirmed "Set up this board" choice: mark this board verified with the chosen layout/size,

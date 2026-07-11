@@ -8348,3 +8348,32 @@ exposing a size picker — discover-it-and-guess. Prompt 120 makes it a proactiv
   change location and come back, and vice versa"). `markArrivalResolved()` sets the marker on Set-it-up,
   Not-now, AND a real connect (all genuine resolutions). Pure gate unit-tested in `KilterBoardMemoryTests`
   (suppress-at-resolved-place, re-arm-on-move, suggest-on-return); `CoarsePlace` privacy stance unchanged.
+
+## 2026-07-11 — Kilter "On the Board" records every wall-light, not just the explicit button (prompt 121)
+
+**Decision** (user bug: "On the Board should have all the climbs I lit, but I only see one after a session
+where I lit several"). A climb counts as **worked exactly when its holds reach a connected board** —
+regardless of which control triggered the light. `KilterClimbDetailView` now funnels **every** in-screen
+light through one `illuminateAndCapture()` (`board.illuminate(holds); if board.isConnected { captureLitEvent() }`):
+the explicit "Light up this climb" button, the fast-path board pill, and the three auto-lights (board
+first-connect, size remap, open/swipe `load()`). The idempotent `(climbUUID, sessionId)` upsert means
+overlapping sites for one climb bump a single row, never duplicate it.
+
+**This supersedes decision "F1"** (prompt for P5 "On the Board"), which gated capture to the explicit button
+alone and tagged the auto-lights "illumination ONLY — no capture" to avoid a "passive browse log". That
+over-corrected: a real session is connect-once-then-swipe, so every auto-lit climb was silently dropped and
+the timeline showed at most the one climb whose button was tapped. The old F1 comments in the file are
+rewritten to the new policy.
+
+Rules out / non-obvious:
+- **The `board.isConnected` guard is the whole policy.** A swipe or size remap on the simulator (no board)
+  updates the on-screen render and records nothing; only a light that actually reaches the wall is captured.
+  So simulator/UITest behavior is unchanged (`state == .unsupported` ⇒ `isConnected` false ⇒ no new writes).
+- **Logging alone does NOT create a lit event** (`log()` untouched). The user chose "any wall-light", not
+  "any logged climb": a climb logged from memory with no board on the wall shouldn't appear in a *lit*-history.
+  (`KilterOnTheBoard.status` still joins the ascent log onto lit events for the Lit/Attempt/Sent chip.)
+- **Calibration + authoring previews stay non-capturing.** `KilterBoardSetupSheet` lights a calibration
+  pattern (not a climb) and `CreateClimbView` lights a design preview — neither should pollute worked-climbs.
+- **Device-pending (owed, needs a real board):** the "a real wall-light gets captured" leg — the simulator
+  never connects a board, so the guard is always false there. Pure `KilterOnTheBoard` logic is unchanged; the
+  full unit suite (1648) stays green as the regression guard.
