@@ -33,7 +33,14 @@ enum RoutineSessionBuilder {
             targetRestSeconds: re.restSeconds,
             targetWeight: re.weight,
             targetWeightUnit: re.weightUnit ?? defaultUnit,
-            sets: emptySets(for: re, defaultUnit: defaultUnit),
+            // A freshly-started session begins with **no** per-set logs — every discipline grows its
+            // sets as they're logged, so `sets` always means "logged efforts" and the single pager
+            // renders a routine exactly like a freeform session (SSOT). The prescription that used to be
+            // baked into blank sets now lives where the pager already reads it: the planned count from
+            // `targetSets` (`QuickSessionPager.plannedCount`), reps/weight from `targetReps`/`targetWeight`
+            // (`quickAddSeed`), rest from `targetRestSeconds`, and a climb's grade from the entity-level
+            // `climbGradeLabel` (each logged attempt is stamped on completion).
+            sets: [],
             displayName: re.displayName)
 
         // Propagate the discipline + the kind it logs efforts as (the keystone). Keep `disciplineRaw` nil
@@ -99,20 +106,4 @@ enum RoutineSessionBuilder {
         }
     }
 
-    /// The empty per-set logs a freshly-started session begins with for a block: `max(1, sets)` blank,
-    /// **uncompleted** (`completedAt == nil`) logs. A climb block stamps the prescribed grade onto each
-    /// attempt so the pyramid/hardest-send reads are right even before the user picks an outcome; everything
-    /// else starts truly blank (seeded only with the unit for strength, so the keypad opens in the right
-    /// unit). Targets (`durationSec`/`distanceMeters`) are NOT pre-stamped — the player arms its stopwatch /
-    /// prefills its fields from the prescription, and a non-completed set with no measured value reads as
-    /// "not done yet" everywhere (completion is gated on `completedAt`, never on a seeded value).
-    private static func emptySets(for re: RoutineExercise, defaultUnit: WeightUnit) -> [SetLog] {
-        let count = max(1, re.sets)
-        switch re.discipline {
-        case .climb:
-            return Array(repeating: SetLog(climbGradeLabel: re.climbGradeLabel), count: count)
-        case .strength, .run, .dance, .other, .timed:
-            return Array(repeating: SetLog(weightUnit: re.weightUnit ?? defaultUnit), count: count)
-        }
-    }
 }

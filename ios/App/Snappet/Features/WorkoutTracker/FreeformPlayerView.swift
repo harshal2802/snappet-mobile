@@ -2,15 +2,14 @@ import SwiftUI
 import SwiftData
 import HighlightEngine
 
-/// A **freeform / dynamic** session player: unlike the guided `WorkoutPlayerView` (which walks a fixed
-/// routine set-by-set), this is a grow-as-you-go logbook — add exercises and sets/attempts on the fly,
-/// of any `SetKind` (reps & weight, timed, or climb attempts). Used for routineless sessions
-/// (`routineID == nil`), e.g. an ad-hoc gym lifting session or a bouldering session where you don't
-/// know the next climb. (dynamic-sessions D3/D5; reworked as a discoverable canvas in issue #158)
-///
-/// Kept separate from `WorkoutPlayerView` on purpose: the guided flow is device-verified and tightly
-/// coupled to reps×weight + a fixed index walk; a list-based logbook is the right shape for "add as you
-/// go" and avoids destabilizing it.
+/// The **single** session player — for every session, routine and freeform alike. A grow-as-you-go
+/// pager: swipe between exercises, add exercises and sets/attempts on the fly, of any `SetKind` (reps &
+/// weight, timed, or climb attempts). A saved routine is rendered from the same model with its
+/// prescription seeded in — the planned count from `targetSets` (`QuickSessionPager.plannedCount`),
+/// reps/weight from `targetReps`/`targetWeight` (`quickAddSeed`), rest from `targetRestSeconds`
+/// (`startRest`), climb grade from the entity-level `climbGradeLabel` — so a routine plays like Quick
+/// Session and stays expandable. (dynamic-sessions D3/D5; canvas rework in issue #158; the guided
+/// set-by-set `WorkoutPlayerView` was retired in the routine-in-pager convergence.)
 ///
 /// **Canvas + command bar (issue #158 §A):** the empty state offers three discoverable type cards
 /// (Lifting / Climbing / Timed); an always-present `Menu` (`freeform.addExercise`) adds more once
@@ -296,7 +295,9 @@ struct FreeformPlayerView: View {
             if let ex = session.exercises.first(where: { $0.id == target.exerciseID }) {
                 PlanEditorSheet(
                     noun: QuickSessionPager.effortNoun(for: ex),
-                    initial: ex.plannedSets,
+                    // Seed from the unified plan count so a routine's prescribed `targetSets` pre-fills
+                    // the editor; saving writes `plannedSets`, which then takes precedence (user override).
+                    initial: QuickSessionPager.plannedCount(for: ex),
                     lastTime: QuickSessionPager.defaultPlan(exerciseId: ex.exerciseId,
                                                             displayName: ex.displayName,
                                                             history: history),
@@ -331,10 +332,15 @@ struct FreeformPlayerView: View {
             // or the ring/dock chip freezes at the last shown second.
             restTimer.resumeTicking()
             // Land somewhere useful once per presentation: an empty session opens on the add page
-            // (the type chooser IS the empty state); a resumed session on its latest exercise.
+            // (the type chooser IS the empty state); otherwise the first **unfinished** exercise — so a
+            // freshly-started routine opens on exercise 1 (not its last), and a resumed session lands on
+            // what's still owed. Falls back to the last exercise when everything's already done. (Mirrors
+            // the retired guided player's `resumePosition`.)
             if !pagedIn {
                 pagedIn = true
-                page = session.exercises.last.map { .exercise($0.id) } ?? .add
+                let landing = session.exercises.first(where: QuickSessionPager.isUnfinished)
+                    ?? session.exercises.last
+                page = landing.map { .exercise($0.id) } ?? .add
             }
         }
         .onChange(of: session.exercises.count) { old, new in
@@ -366,7 +372,7 @@ struct FreeformPlayerView: View {
         }
         // Keep the Live Activity (Lock Screen / Dynamic Island) in sync with the freeform session:
         // live HR and the paused state push as they change. The overall timer self-ticks off
-        // `startedAt`; these refresh HR + the exercise line + the paused flag. Mirrors `WorkoutPlayerView`.
+        // `startedAt`; these refresh HR + the exercise line + the paused flag.
         .onChange(of: app.liveWorkout.latestHR) { _, _ in pushLiveActivity() }
         .onChange(of: app.liveWorkout.isPaused) { _, _ in pushLiveActivity() }
         // Keep the rest count-down correct across backgrounding (it's wall-clock-backed; this just nudges
@@ -1696,7 +1702,11 @@ struct FreeformPlayerView: View {
     /// and never blocks the next log.
     private func startRest(for ex: SessionExercise) {
         let ctx = restContext(for: ex)
-        let seconds = RestTimerDefaults.remembered(for: ctx, in: restDefaults)
+        // Honor a routine's prescribed rest (`targetRestSeconds`) as this exercise's first rest, until
+        // the user remembers their own ±adjustment for the context. `nil` for freeform (no prescription).
+        let seconds = RestTimerDefaults.remembered(
+            for: ctx, in: restDefaults,
+            prescribed: ex.targetRestSeconds > 0 ? ex.targetRestSeconds : nil)
         restContext = ctx
         restExerciseID = ex.id      // the page whose hero morphs into the rest ring (prompt 109)
         restTotalSec = TimeInterval(seconds)

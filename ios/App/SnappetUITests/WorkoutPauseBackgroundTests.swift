@@ -101,9 +101,15 @@ final class WorkoutPauseBackgroundTests: XCTestCase {
         XCTAssertFalse(banner.exists, "the banner should hide once the player is foregrounded again")
         snap("04-back-in-player")
 
-        // --- Clean up: end + discard so no active session leaks into other tests ---
-        app.buttons["End"].tap()
-        let discard = app.buttons["Discard (don't save)"]
-        if discard.waitForExistence(timeout: 3) { discard.tap() }
+        // --- Clean up: finish + discard so no active session leaks into other tests ---
+        // The pager's always-available Finish opens the completion summary; from there "Discard
+        // workout" (then the confirm) throws the (empty) session away. (No guided "End" toolbar item.)
+        app.buttons["freeform.finish"].tap()
+        let discard = app.buttons["freeform.discard"]
+        if discard.waitForExistence(timeout: 4) {
+            discard.tap()
+            let confirm = app.buttons["Discard (don't save)"]
+            if confirm.waitForExistence(timeout: 3) { confirm.tap() }
+        }
     }
 }

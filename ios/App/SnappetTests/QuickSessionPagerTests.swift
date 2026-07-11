@@ -111,6 +111,41 @@ final class QuickSessionPagerTests: XCTestCase {
         XCTAssertFalse(QuickSessionPager.planState(for: ex)!.isComplete)
     }
 
+    // MARK: - Plan count SSOT (a routine's `targetSets` is the plan)
+
+    /// A routine-style exercise: the planned count lives in `targetSets` (the prescription) with no
+    /// per-session `plannedSets` override — the pager must treat it as the plan (routine-in-pager SSOT).
+    private func routineStrength(targetSets: Int, sets: [SetLog] = []) -> SessionExercise {
+        SessionExercise(exerciseId: "bench", targetSets: targetSets, targetReps: "8",
+                        targetRestSeconds: 90, sets: sets, kindRaw: SetKind.repsWeight.rawValue)
+    }
+
+    func testPlannedCountPrefersSessionPlanThenRoutineTarget() {
+        XCTAssertEqual(QuickSessionPager.plannedCount(for: routineStrength(targetSets: 4)), 4,
+                       "a routine's targetSets is the plan when there's no per-session override")
+        var overridden = routineStrength(targetSets: 4); overridden.plannedSets = 2
+        XCTAssertEqual(QuickSessionPager.plannedCount(for: overridden), 2,
+                       "a per-session plannedSets wins over the prescription")
+        XCTAssertNil(QuickSessionPager.plannedCount(for: strength()),
+                     "no plan anywhere (targetSets 0, no plannedSets) → open-ended")
+    }
+
+    func testPlanStateUsesRoutineTargetWhenNoSessionPlan() {
+        let ex = routineStrength(targetSets: 4, sets: [set(8, 60), set(8, 60)])
+        XCTAssertEqual(QuickSessionPager.planState(for: ex),
+                       QuickSessionPager.PlanState(done: 2, planned: 4))
+        XCTAssertEqual(QuickSessionPager.planState(for: ex)!.label(), "set 3 of 4")
+    }
+
+    func testIsUnfinishedHonorsRoutineTarget() {
+        XCTAssertTrue(QuickSessionPager.isUnfinished(
+            routineStrength(targetSets: 4, sets: [set(8, 60), set(8, 60)])),
+            "2 of 4 logged is still unfinished via the prescription")
+        XCTAssertFalse(QuickSessionPager.isUnfinished(
+            routineStrength(targetSets: 4, sets: Array(repeating: set(8, 60), count: 4))),
+            "4 of 4 logged is finished")
+    }
+
     func testEffortNounPerDiscipline() {
         XCTAssertEqual(QuickSessionPager.effortNoun(for: strength()), "set")
         XCTAssertEqual(QuickSessionPager.effortNoun(for: run()), "leg")

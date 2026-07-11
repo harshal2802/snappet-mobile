@@ -84,12 +84,12 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                     || app.staticTexts["liveMetricsOverlay"].waitForExistence(timeout: 1),
                     "the player should show the A4 live-metrics overlay (no-source state)")
 
-                // 6b — M3: the per-set "attach clip to this set" affordance is reachable in the
-                // player (the PHPicker pick itself is device-only; the affordance renders anywhere).
-                let attach = app.buttons["attachClipToSet"]
+                // 6b — M3: the per-exercise media-capture affordance is reachable in the pager player
+                // (the PHPicker/record itself is device-only; the affordance renders anywhere).
+                let attach = app.buttons["freeform.page.record"]
                 if !attach.exists { app.swipeUp() }
                 XCTAssertTrue(attach.waitForExistence(timeout: 3),
-                    "the player should offer the M3 per-set media attach affordance")
+                    "the player should offer the per-exercise media-capture affordance")
                 snap("06b-attach-to-set")
 
                 // 7 — Drive a couple of sets to reach the rest screen (overall timer + overlay
@@ -363,32 +363,23 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
 
     // MARK: - Player driving
 
-    /// Advance through the first sets to surface the rest screen (snapping it), then finish the
-    /// workout and save it. Mirrors `WorkoutWalkthroughTests.drivePlayerToDone` but captures the
-    /// rest screen as its own chronological frame (step 7).
+    /// Log one set in the (single) pager player to surface the on-page rest ring (snapping it), then
+    /// finish and save. A routine now plays through the same grow-as-you-go pager as Quick Session:
+    /// turn auto-rest on so a log surfaces the rest count-down, log one strength set (the first starter
+    /// routine opens on a strength exercise), skip the rest, then Finish → summary → Done.
     private func driveToRestThenFinish() {
-        var snappedRest = false
-        for _ in 0..<40 {
-            if app.buttons["Finish"].exists { app.buttons["Finish"].tap(); return }
-            if app.buttons["Skip rest"].exists {
-                if !snappedRest { snap("07-rest-screen"); snappedRest = true }
-                app.buttons["Skip rest"].tap()
-            } else if app.buttons["Complete & finish"].exists {
-                app.buttons["Complete & finish"].tap()
-            } else if app.buttons["Complete set"].exists {
-                app.buttons["Complete set"].tap()
-            } else if app.buttons["Skip exercise"].exists {
-                app.buttons["Skip exercise"].tap()
-                if app.buttons["Skip exercise"].exists { app.buttons["Skip exercise"].tap() }
-            } else {
-                break
-            }
-            usleep(600_000)
+        let toggle = app.buttons["freeform.restToggle"]
+        if toggle.exists { toggle.tap() }   // auto-start the rest after a log so it's captured
+        let log = app.buttons["freeform.quickLog"]
+        if log.waitForExistence(timeout: 4) { log.tap(); usleep(600_000) }
+        if app.buttons["freeform.restDismiss"].waitForExistence(timeout: 3) {
+            snap("07-rest-screen")
+            app.buttons["freeform.restDismiss"].tap()
         }
-        if app.buttons["End"].exists {
-            app.buttons["End"].tap()
-            if app.buttons["Save & exit"].waitForExistence(timeout: 2) { app.buttons["Save & exit"].tap() }
-        }
+        let finish = app.buttons["freeform.finish"]
+        if finish.waitForExistence(timeout: 4) { finish.tap() }
+        let done = app.buttons["freeform.done"]   // saves (a set was logged) and dismisses the cover
+        if done.waitForExistence(timeout: 4) { done.tap() }
     }
 
     // MARK: - History → demo session

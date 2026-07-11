@@ -63,7 +63,19 @@ enum RestTimerDefaults {
     /// is always in band. Pure: the caller passes the decoded map in (the view reads it from
     /// `@AppStorage`), so this is fully testable without UserDefaults.
     static func remembered(for context: Context, in map: [String: Int]) -> Int {
-        clamp(map[context.key] ?? context.suggestedSeconds)
+        remembered(for: context, in: map, prescribed: nil)
+    }
+
+    /// The remembered rest, honoring a routine's **prescribed** rest (`targetRestSeconds`) when the
+    /// user hasn't remembered one yet: stored value wins → then the prescription → then the seeded
+    /// suggestion, always clamped. A saved routine's rest thus seeds the pager's first rest per
+    /// exercise, after which the user's ±adjustments are remembered and take over (SSOT for the
+    /// routine's prescription). `prescribed == nil` (or ≤ 0) means "no prescription" — identical to
+    /// the 2-arg form. Pure/testable.
+    static func remembered(for context: Context, in map: [String: Int], prescribed: Int?) -> Int {
+        if let stored = map[context.key] { return clamp(stored) }
+        if let prescribed, prescribed > 0 { return clamp(prescribed) }
+        return clamp(context.suggestedSeconds)
     }
 
     /// The updated map after remembering `seconds` for a context (clamped). Returns a NEW map so the

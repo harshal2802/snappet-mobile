@@ -101,22 +101,27 @@ final class WorkoutWalkthroughTests: XCTestCase {
             "the gear should push the Settings screen")
     }
 
+    /// Drive the (single) pager player to a saved finish. A routine now plays through the same
+    /// grow-as-you-go pager as Quick Session, so we log one effort (so the session saves — History
+    /// needs a completed set), dismiss any auto-started rest, then Finish → the type-adaptive summary →
+    /// Done. The first starter routine opens on a strength exercise (the coral "Log set"); a climb
+    /// starter would open on the outcome grid instead, so we try both.
     private func drivePlayerToDone() {
-        var snapped = false
-        for i in 0..<40 {
-            if app.buttons["Finish"].exists { snap("07b-done"); app.buttons["Finish"].tap(); return }
-            if app.buttons["Skip rest"].exists { if !snapped { snap("07c-rest"); snapped = true }; app.buttons["Skip rest"].tap() }
-            else if app.buttons["Complete & finish"].exists { app.buttons["Complete & finish"].tap() }
-            else if app.buttons["Complete set"].exists { app.buttons["Complete set"].tap() }
-            else if app.buttons["Skip exercise"].exists {
-                app.buttons["Skip exercise"].tap()
-                if app.buttons["Skip exercise"].exists { app.buttons["Skip exercise"].tap() }
-            } else { break }
-            usleep(600_000)
+        let log = app.buttons["freeform.quickLog"]
+        if log.waitForExistence(timeout: 4) {
+            log.tap()
+        } else if app.buttons["freeform.outcome.sent"].waitForExistence(timeout: 1) {
+            app.buttons["freeform.outcome.sent"].tap()   // a climb-discipline starter
         }
-        if app.buttons["End"].exists {
-            app.buttons["End"].tap()
-            if app.buttons["Save & exit"].waitForExistence(timeout: 2) { app.buttons["Save & exit"].tap() }
-        }
+        usleep(600_000); snap("07b-logged")
+        // A log can auto-start a rest count-down on the page; clear it so the command bar is free.
+        if app.buttons["freeform.restDismiss"].exists { app.buttons["freeform.restDismiss"].tap() }
+        // The command bar's always-available Finish → the completion summary.
+        let finish = app.buttons["freeform.finish"]
+        if finish.waitForExistence(timeout: 4) { finish.tap() }
+        snap("07c-summary")
+        // Done saves the workout (a set was logged) and dismisses the cover back to the dashboard.
+        let done = app.buttons["freeform.done"]
+        if done.waitForExistence(timeout: 4) { done.tap() }
     }
 }

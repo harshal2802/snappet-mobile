@@ -1,0 +1,274 @@
+<title>Routine → Quick-Session pager · wireframes</title>
+<style>
+  :root{
+    --ground:#16151A; --panel:#1F1E24; --panel-2:#26262B; --hair:rgba(255,255,255,.10);
+    --brand:#FF7A6B; --workout:#FF9645; --fresh:#5BC074; --hard:#FF6A5C;
+    --ink:#F4F3F1; --ink2:#A6A5A1; --ink3:#6B6A66;
+    --glass:rgba(255,255,255,.055); --glass-line:rgba(255,255,255,.12);
+    /* iOS light surfaces for the guided player */
+    --ios-bg:#FFFFFF; --ios-sec:#F2F1EE; --ios-ink:#1A1A1E; --ios-ink2:#6B6A66; --ios-gray4:#D8D7D3;
+    --sys:-apple-system,"SF Pro Text","SF Pro",system-ui,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(120% 80% at 85% -10%, rgba(255,122,107,.10), transparent 60%),
+      radial-gradient(90% 70% at 0% 0%, rgba(255,150,69,.08), transparent 55%),
+      var(--ground);
+    color:var(--ink);font-family:var(--sys);-webkit-font-smoothing:antialiased;
+    line-height:1.5;padding:40px 24px 64px}
+  .wrap{max-width:1120px;margin:0 auto}
+
+  /* ---- header ---- */
+  .eyebrow{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--workout);margin:0 0 10px}
+  h1{font-size:clamp(26px,4vw,38px);line-height:1.1;font-weight:800;letter-spacing:-.02em;margin:0 0 14px;text-wrap:balance}
+  h1 em{font-style:normal;color:var(--brand)}
+  .lede{max-width:64ch;color:var(--ink2);font-size:16px;margin:0}
+  .lede b{color:var(--ink);font-weight:600}
+
+  /* ---- gallery ---- */
+  .rail{display:flex;gap:28px;margin:40px 0 0;overflow-x:auto;padding-bottom:14px;scroll-snap-type:x proximity}
+  .col{flex:0 0 300px;scroll-snap-align:start}
+  .cap{display:flex;align-items:center;gap:8px;margin:0 0 4px}
+  .cap .n{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px;font-weight:800;flex:0 0 auto}
+  .cap h2{font-size:15px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .state{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;margin-left:auto}
+  .state.now{background:rgba(166,165,161,.16);color:var(--ink2)}
+  .state.new{background:rgba(255,122,107,.16);color:var(--brand)}
+
+  /* ---- phone frame ---- */
+  .phone{margin-top:12px;border-radius:42px;padding:11px;background:linear-gradient(#2b2a30,#141318);
+    box-shadow:0 0 0 1px rgba(255,255,255,.06),0 24px 48px -18px rgba(0,0,0,.7);position:relative}
+  .screen{border-radius:32px;overflow:hidden;height:600px;position:relative;display:flex;flex-direction:column}
+  .screen.dark{background:linear-gradient(180deg,#1a1920,#121116)}
+  .screen.light{background:var(--ios-bg)}
+  .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:116px;height:26px;background:#141318;border-radius:0 0 16px 16px;z-index:9}
+  .stat{display:flex;justify-content:space-between;align-items:center;padding:9px 22px 2px;font-size:12px;font-weight:700}
+  .screen.light .stat{color:var(--ios-ink)} .screen.dark .stat{color:var(--ink)}
+  .stat .dots{letter-spacing:1px}
+
+  /* generic screen content */
+  .body{flex:1;overflow:hidden;padding:6px 16px 14px;display:flex;flex-direction:column;gap:12px}
+  .navrow{display:flex;align-items:center;gap:10px;font-size:14px}
+  .navrow .sf{font-size:15px;opacity:.9}
+  .navttl{font-weight:700;font-size:15px;flex:1;text-align:center;letter-spacing:-.01em}
+  .light .muted{color:var(--ios-ink2)} .dark .muted{color:var(--ink2)}
+  .push{margin-left:auto}
+
+  /* pills */
+  .hrpill{display:flex;align-items:center;gap:8px;font-size:13px;border-radius:999px;padding:9px 13px}
+  .light .hrpill{background:var(--ios-sec)} .dark .hrpill{background:var(--glass);border:1px solid var(--glass-line)}
+  .hrpill .bpm{font-weight:800;color:var(--hard)} .hrpill .zone{color:var(--hard);background:rgba(255,106,92,.16);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700}
+  .hrpill .src{margin-left:auto;font-size:11px}
+
+  .totalbar{display:flex;align-items:center;gap:7px;justify-content:center;font-size:13px;
+    background:rgba(0,0,0,.04);border-radius:10px;padding:6px}
+  .light .totalbar{background:#F6F5F2;color:var(--ios-ink)}
+  .totalbar .lab{font-weight:700;color:var(--ios-ink2);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .totalbar .t{font-weight:700;font-variant-numeric:tabular-nums} .totalbar .ic{color:var(--workout)}
+
+  /* guided (light) specifics */
+  .eyebrow-x{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--workout);text-align:center}
+  .h-ex{font-size:24px;font-weight:800;text-align:center;color:var(--ios-ink);letter-spacing:-.02em;margin-top:-4px}
+  .setline{text-align:center;font-size:15px;font-weight:700;color:var(--ios-ink)}
+  .target{text-align:center;font-size:12px;color:var(--ios-ink2)}
+  .lasttime{text-align:center;font-size:12px;color:var(--ios-ink2)}
+  .pips{display:flex;gap:6px;justify-content:center;margin-top:2px}
+  .pips i{width:9px;height:9px;border-radius:50%;background:var(--ios-gray4)}
+  .pips i.on{background:var(--workout)} .pips i.cur{background:rgba(242,118,30,.4)}
+  .fields{display:flex;gap:12px;justify-content:center;margin-top:2px}
+  .fld{background:var(--ios-sec);border-radius:12px;padding:8px 6px;text-align:center;min-width:70px}
+  .fld .k{font-size:11px;color:var(--ios-ink2)} .fld .v{font-size:18px;font-weight:700;color:var(--ios-ink)}
+  .seg{display:flex;background:var(--ios-sec);border-radius:9px;padding:2px;font-size:12px;font-weight:600}
+  .seg span{padding:5px 9px;border-radius:7px;color:var(--ios-ink2)} .seg span.on{background:#fff;color:var(--ios-ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .cta{border-radius:13px;text-align:center;font-weight:700;font-size:15px;padding:13px;color:#fff}
+  .cta.coral{background:var(--brand)} .cta.orange{background:var(--workout)}
+  .ghostbtn{text-align:center;font-size:13px;font-weight:600;color:var(--hard);padding:8px}
+
+  /* pager (dark) specifics */
+  .glassnav{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:16px;background:var(--glass);border:1px solid var(--glass-line);font-size:13px}
+  .railchips{display:flex;gap:6px;overflow:hidden;-webkit-mask:linear-gradient(90deg,#000 82%,transparent)}
+  .chip{display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;background:rgba(255,255,255,.05);color:var(--ink2)}
+  .chip.cur{background:rgba(255,150,69,.18);color:var(--ink);border:1px solid rgba(255,150,69,.5)}
+  .chip.done{color:var(--fresh)} .chip .d{font-size:10px;font-weight:800;color:var(--ink2);font-variant-numeric:tabular-nums}
+  .segbar{display:flex;gap:4px} .segbar i{height:6px;width:22px;border-radius:3px;background:rgba(255,150,69,.15)}
+  .segbar i.on{background:var(--workout)} .segbar i.cur{background:rgba(255,150,69,.45);outline:1px solid var(--workout);outline-offset:-1px}
+  .pagettl{font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .tgtbadge{display:inline-flex;gap:6px;align-items:center;font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--workout);background:rgba(255,150,69,.12);border:1px solid rgba(255,150,69,.3);border-radius:999px;padding:3px 9px}
+  .glasscard{background:var(--glass);border:1px solid var(--glass-line);border-radius:20px;padding:13px}
+  .stepper{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:16px;background:var(--glass);border:1px solid var(--glass-line);margin-bottom:8px}
+  .stepper .k{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink2)}
+  .stepper .val{font-size:26px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .stepper .btns{display:flex;gap:8px}
+  .rnd{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-line);font-size:17px;color:var(--ink)}
+  .setcap{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);text-align:center}
+  .ghostrow{display:flex;gap:6px;align-items:center}
+  .ghostrow .lab{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2)}
+  .ghostrow .hist{margin-left:auto;font-size:12px;font-weight:600;color:var(--ink2)}
+  .setg{display:flex;gap:6px;flex-wrap:wrap}
+  .setg .s{display:flex;gap:4px;align-items:center;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink2);background:rgba(255,255,255,.045);border-radius:11px;padding:5px 9px}
+  .setg .s .ck{color:var(--fresh);font-weight:800}
+  .ghostact{display:flex;gap:8px}
+  .ghostact .g{flex:1;text-align:center;font-size:13px;font-weight:600;padding:10px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-line);color:var(--ink)}
+  .dots-pg{display:flex;gap:6px;justify-content:center;margin-top:auto;padding-top:6px}
+  .dots-pg i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.2)} .dots-pg i.on{background:var(--ink2)}
+  .swipehint{text-align:center;font-size:11px;color:var(--ink3);letter-spacing:.02em}
+
+  /* delta annotation under each phone */
+  .delta{margin-top:16px;font-size:13px;color:var(--ink2)}
+  .delta h3{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);margin:0 0 8px}
+  .delta ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:6px}
+  .delta li b{color:var(--ink);font-weight:600}
+  .delta .plus{color:var(--fresh);font-weight:800}
+
+  /* footer note */
+  .note{margin-top:44px;border-top:1px solid var(--hair);padding-top:22px;color:var(--ink2);font-size:14px;max-width:78ch}
+  .note b{color:var(--ink)} .note code{background:var(--panel-2);padding:1px 6px;border-radius:6px;font-size:12px;color:var(--ink)}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Snappet · Workout tracker · flow convergence</p>
+  <h1>Play a saved routine the way <em>Quick&nbsp;Session</em> plays</h1>
+  <p class="lede">Today a saved routine opens the <b>guided set-by-set player</b> — one exercise at a time, a fixed script. Quick Session opens the <b>glass pager</b> — swipe between exercises, log inline, expand history. These wireframes put both current screens next to the proposed one: the routine, seeded into the pager, still targeted and still expandable.</p>
+
+  <div class="rail">
+
+    <!-- ============ A · CURRENT ROUTINE PLAYER ============ -->
+    <div class="col">
+      <div class="cap">
+        <span class="n" style="background:rgba(255,150,69,.18);color:var(--workout)">A</span>
+        <h2>Routine · today</h2>
+        <span class="state now">Current</span>
+      </div>
+      <div class="phone"><div class="screen light">
+        <div class="notch"></div>
+        <div class="stat"><span>9:41</span><span class="dots">● ● ● &nbsp;5G&nbsp; ▮</span></div>
+        <div class="body">
+          <div class="navrow" style="color:var(--ios-ink)">
+            <span class="sf">⌄</span>
+            <span class="navttl">Push Day A</span>
+            <span class="sf muted">❙❙</span><span class="sf muted" style="font-weight:700">End</span>
+          </div>
+          <div class="totalbar"><span class="ic">⏱</span><span class="lab">Total</span><span class="t">12:04</span></div>
+          <div class="hrpill" style="color:var(--ios-ink)">❤️ <span class="bpm">132</span><span class="muted" style="font-size:11px">bpm</span><span class="zone">Cardio</span><span class="src muted">Apple Watch</span></div>
+          <div class="eyebrow-x">Exercise 2 of 5</div>
+          <div class="h-ex">Bench Press</div>
+          <div class="setline">Set 2 of 4</div>
+          <div class="target">Target: 8 reps · 90s rest</div>
+          <div class="lasttime">Last time: 3×8 @ 60&nbsp;kg</div>
+          <div class="pips"><i class="on"></i><i class="cur"></i><i></i><i></i></div>
+          <div class="fields">
+            <div class="fld"><div class="k">Reps</div><div class="v">8</div></div>
+            <div class="fld"><div class="k">Weight</div><div class="v">60<span style="font-size:11px"> kg</span></div></div>
+            <div class="fld" style="min-width:auto;display:flex;flex-direction:column;gap:4px;align-items:center"><div class="k">Unit</div><div class="seg"><span class="on">kg</span><span>lb</span></div></div>
+          </div>
+          <div class="cta orange" style="margin-top:2px">Complete set</div>
+          <div class="ghostbtn">⤳ Skip exercise</div>
+        </div>
+      </div></div>
+      <div class="delta">
+        <h3>What it is</h3>
+        <ul>
+          <li>Fixed script: <b>one exercise, one set at a time</b>, no swiping to peek ahead or back (only a ‹ Previous button).</li>
+          <li>Number-pad fields; a full-screen <b>Rest</b> phase and a <b>Done</b> summary between/after.</li>
+          <li>No per-exercise history drawer, no add-on-the-fly — it plays exactly what was planned.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============ B · CURRENT QUICK SESSION PAGER ============ -->
+    <div class="col">
+      <div class="cap">
+        <span class="n" style="background:rgba(255,122,107,.18);color:var(--brand)">B</span>
+        <h2>Quick Session · today</h2>
+        <span class="state now">Current</span>
+      </div>
+      <div class="phone"><div class="screen dark">
+        <div class="notch"></div>
+        <div class="stat"><span>9:41</span><span class="dots">● ● ● &nbsp;5G&nbsp; ▮</span></div>
+        <div class="body">
+          <div class="glassnav"><span>⌄</span><span style="font-weight:700">Quick Session</span><span class="push muted">❙❙ · End</span></div>
+          <div class="railchips">
+            <span class="chip">◎ Overview</span>
+            <span class="chip done">✓ Bench</span>
+            <span class="chip cur">● Squat</span>
+            <span class="chip">Pull-up</span>
+            <span class="chip" style="color:var(--brand)">+ Add</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="pagettl">Squat</div>
+            <div class="segbar" style="margin-left:auto"><i class="on"></i><i class="on"></i><i class="cur"></i><i></i></div>
+          </div>
+          <div class="setcap">Set 3</div>
+          <div class="stepper"><div><div class="k">Reps</div><div class="val">8</div></div><div class="btns"><span class="rnd">−</span><span class="rnd">+</span></div></div>
+          <div class="stepper"><div><div class="k">Weight</div><div class="val">60 <span style="font-size:14px">kg</span></div></div><div class="btns"><span class="rnd">−</span><span class="rnd">+</span></div></div>
+          <div class="cta coral">⚡ Log set</div>
+          <div class="ghostact"><span class="g">⏱ Time this set</span><span class="g">＋ Log different</span></div>
+          <div class="ghostrow"><span class="lab">This session</span><span class="hist">History ›</span></div>
+          <div class="setg"><span class="s"><span class="ck">✓</span>8×60</span><span class="s"><span class="ck">✓</span>8×60</span><span class="s">8×62</span></div>
+          <div class="dots-pg"><i></i><i class="on"></i><i></i><i></i></div>
+          <div class="swipehint">‹ swipe between exercises ›</div>
+        </div>
+      </div></div>
+      <div class="delta">
+        <h3>What it is</h3>
+        <ul>
+          <li>Dark-glass <b>pager</b>: one exercise per page, <b>swipe</b> between them; the rail up top is the map.</li>
+          <li><b>± steppers</b> — no keyboard; tweak-and-log loops stay thumb-only.</li>
+          <li><b>Expandable</b>: a ghost ledger of this session inline, <b>History ›</b> pulls up the full per-set drawer; add exercises mid-session.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============ C · PROPOSED: ROUTINE IN THE PAGER ============ -->
+    <div class="col">
+      <div class="cap">
+        <span class="n" style="background:rgba(91,192,116,.2);color:var(--fresh)">C</span>
+        <h2>Routine · proposed</h2>
+        <span class="state new">New</span>
+      </div>
+      <div class="phone"><div class="screen dark">
+        <div class="notch"></div>
+        <div class="stat"><span>9:41</span><span class="dots">● ● ● &nbsp;5G&nbsp; ▮</span></div>
+        <div class="body">
+          <div class="glassnav"><span>⌄</span><span style="font-weight:700">Push Day A</span><span class="push muted">❙❙ · End</span></div>
+          <div class="railchips">
+            <span class="chip">◎ Overview</span>
+            <span class="chip done">✓ Bench <span class="d">4/4</span></span>
+            <span class="chip cur">● Incline <span class="d" style="color:var(--workout)">2/4</span></span>
+            <span class="chip">Dips <span class="d">0/3</span></span>
+            <span class="chip" style="color:var(--brand)">+ Add</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div class="pagettl">Incline Press</div>
+            <span class="tgtbadge">◎ Target 4×8 · 90s</span>
+          </div>
+          <div class="segbar"><i class="on"></i><i class="on"></i><i class="cur"></i><i></i></div>
+          <div class="setcap">Set 3 of 4</div>
+          <div class="stepper"><div><div class="k">Reps</div><div class="val">8</div></div><div class="btns"><span class="rnd">−</span><span class="rnd">+</span></div></div>
+          <div class="stepper"><div><div class="k">Weight</div><div class="val">50 <span style="font-size:14px">kg</span></div></div><div class="btns"><span class="rnd">−</span><span class="rnd">+</span></div></div>
+          <div class="cta coral">⚡ Log set</div>
+          <div class="ghostact"><span class="g" style="color:var(--fresh)">＋ 1 extra set</span><span class="g">⏱ Time this set</span></div>
+          <div class="ghostrow"><span class="lab">This session · vs plan</span><span class="hist">History ›</span></div>
+          <div class="setg"><span class="s"><span class="ck">✓</span>8×50</span><span class="s"><span class="ck">✓</span>8×50</span><span class="s">target 8×50</span></div>
+          <div class="dots-pg"><i></i><i class="on"></i><i></i><i></i></div>
+          <div class="swipehint">‹ swipe · plan drives the rail counts ›</div>
+        </div>
+      </div></div>
+      <div class="delta">
+        <h3>What changes <span class="plus">(+ new)</span></h3>
+        <ul>
+          <li><span class="plus">+</span> Routine plays through the <b>same pager</b> — swipe between its exercises instead of a locked script.</li>
+          <li><span class="plus">+</span> Rail chips carry the <b>plan count</b> (<code>2/4</code>); the segment bar & steppers are <b>seeded from the target</b> + last time.</li>
+          <li><span class="plus">+</span> <b>Expandable:</b> “<b>1 extra set</b>” goes beyond the plan; <b>Add</b> appends an off-plan exercise; History › shows <b>vs-plan deltas</b>.</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <p><b>Where this lives in code.</b> The fork is one line — <code>WorkoutTrackerModule.swift:220</code>: <code>session.routineID == nil → FreeformPlayerView</code> (pager), else <code>WorkoutPlayerView</code> (guided). The convergence routes routine sessions into <code>FreeformPlayerView</code> too, seeding its pages/steppers from each <code>SessionExercise</code>’s target (the pager already logs every discipline — the <b>keystone parity</b> comment in <code>WorkoutPlayerView.disciplineInputs</code> confirms both sides share reps×weight, the grade rail, the stopwatch, run legs).</p>
+    <p style="margin-bottom:0"><b>Open question for you:</b> keep the guided player available anywhere (e.g. a “focus mode” toggle for a strict, no-swipe run), or fully replace it? That decision shapes whether <code>WorkoutPlayerView</code> stays or is retired.</p>
+  </div>
+</div>
