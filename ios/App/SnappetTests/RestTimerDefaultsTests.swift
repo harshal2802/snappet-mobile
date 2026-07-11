@@ -83,6 +83,26 @@ final class RestTimerDefaultsTests: XCTestCase {
         XCTAssertEqual(overwritten.count, next.count)
     }
 
+    // MARK: - Prescribed rest (routine `targetRestSeconds`)
+
+    func testPrescribedRestSeedsWhenNothingRemembered() {
+        let empty: [String: Int] = [:]
+        // A routine's prescribed rest wins over the seeded suggestion when nothing's remembered yet.
+        XCTAssertEqual(RestTimerDefaults.remembered(for: .lifting, in: empty, prescribed: 90), 90)
+        // …and is clamped like any other candidate.
+        XCTAssertEqual(RestTimerDefaults.remembered(for: .lifting, in: empty, prescribed: 5),
+                       RestTimerDefaults.minSeconds)
+        // No prescription (nil or ≤ 0) → identical to the seeded suggestion.
+        XCTAssertEqual(RestTimerDefaults.remembered(for: .lifting, in: empty, prescribed: nil), 120)
+        XCTAssertEqual(RestTimerDefaults.remembered(for: .lifting, in: empty, prescribed: 0), 120)
+    }
+
+    func testStoredValueWinsOverPrescription() {
+        // Once the user has remembered a rest for the context, their value beats the prescription.
+        let map = ["lifting": 150]
+        XCTAssertEqual(RestTimerDefaults.remembered(for: .lifting, in: map, prescribed: 90), 150)
+    }
+
     // MARK: - JSON round-trip
 
     func testEncodeDecodeRoundTrips() {

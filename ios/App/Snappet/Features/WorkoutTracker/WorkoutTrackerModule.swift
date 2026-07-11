@@ -214,30 +214,24 @@ struct WorkoutHomeView: View {
                                onImport: { blocks in importRoutine(shared, blocks: blocks) })
         }
         .fullScreenCover(item: $playing) { session in
-            Group {
-                // Routineless sessions use the grow-as-you-go freeform logbook; routine sessions keep
-                // the guided set-by-set player. (dynamic-sessions D3/D5)
-                if session.routineID == nil {
-                    FreeformPlayerView(session: session, resolver: resolver, history: history,
-                                       defaultUnit: unit,
-                                       onClose: { saved in finishWorkout(session, saved: saved) },
-                                       onMinimize: { minimizeWorkout() },
-                                       onViewDetail: { s in
-                                           finishWorkout(s, saved: true)   // sets playing = nil (dismiss cover)
-                                           // Defer the push one runloop tick: dismissing the fullScreenCover
-                                           // and appending to the NavigationStack path in the same
-                                           // transaction can drop the push (the SwiftUI hazard the
-                                           // pendingWorkoutResume/Kilter deferrals already work around).
-                                           let id = s.id
-                                           Task { @MainActor in router.push(SessionRoute(id: id)) }
-                                       })
-                } else {
-                    WorkoutPlayerView(session: session, resolver: resolver, history: history,
-                                      defaultUnit: unit,
-                                      onClose: { saved in finishWorkout(session, saved: saved) },
-                                      onMinimize: { minimizeWorkout() })
-                }
-            }
+            // One player for every session — routine and freeform alike. The saved routine's
+            // prescription (planned sets from `targetSets`, reps/weight, prescribed rest, climb grade)
+            // is seeded into the same grow-as-you-go pager, so both flows render from one source of
+            // truth and a routine stays expandable (extra sets, add exercise, history). The old guided
+            // set-by-set `WorkoutPlayerView` was retired here. (routine-in-pager convergence)
+            FreeformPlayerView(session: session, resolver: resolver, history: history,
+                               defaultUnit: unit,
+                               onClose: { saved in finishWorkout(session, saved: saved) },
+                               onMinimize: { minimizeWorkout() },
+                               onViewDetail: { s in
+                                   finishWorkout(s, saved: true)   // sets playing = nil (dismiss cover)
+                                   // Defer the push one runloop tick: dismissing the fullScreenCover
+                                   // and appending to the NavigationStack path in the same
+                                   // transaction can drop the push (the SwiftUI hazard the
+                                   // pendingWorkoutResume/Kilter deferrals already work around).
+                                   let id = s.id
+                                   Task { @MainActor in router.push(SessionRoute(id: id)) }
+                               })
             .navigationTransition(.zoom(sourceID: "workoutPlayer", in: playerZoom))
         }
         // The module-level Video Studio (#74): presented from the dashboard's "Open in Studio"
@@ -499,10 +493,14 @@ struct WorkoutHomeView: View {
         let first = session.exercises.first { !$0.skipped }
         let name = first.map { resolver.name(for: $0.exerciseId, override: $0.displayName) } ?? "Workout"
         // Seed a real first-set label so the Lock Screen isn't blank if the app is backgrounded
-        // before the player view appears (e.g. started via a shortcut). Guard on a non-empty set
-        // list so a freeform exercise (which starts with no sets) never seeds a nonsensical
-        // "Set 1 of 0" — leave it blank until a set is actually logged.
-        let progress = first.flatMap { $0.sets.isEmpty ? nil : "Set 1 of \($0.sets.count)" } ?? ""
+        // before the player view appears (e.g. started via a shortcut). Read the unified plan count
+        // (`plannedSets` ?? routine `targetSets`) rather than `sets.count` — sessions now start with no
+        // pre-seeded sets, so a routine shows "Set 1 of 4" from its prescription while a plan-less
+        // freeform exercise stays blank until a set is actually logged (never "Set 1 of 0").
+        let progress = first.flatMap { ex -> String? in
+            guard let planned = QuickSessionPager.plannedCount(for: ex), planned > 0 else { return nil }
+            return "Set 1 of \(planned)"
+        } ?? ""
         app.liveActivity.start(routineName: session.routineName, startedAt: session.startedAt,
                                exerciseName: name, setProgress: progress,
                                maxHR: app.userProfile.profile.resolvedMaxHR)

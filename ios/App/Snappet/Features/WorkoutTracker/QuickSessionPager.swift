@@ -53,7 +53,16 @@ enum QuickSessionPager {
     /// aren't planned; the climb page shows the attempt count instead).
     static func planState(for ex: SessionExercise) -> PlanState? {
         guard ex.discipline != .climb else { return nil }
-        return PlanState(done: ex.completedSetCount, planned: ex.plannedSets)
+        return PlanState(done: ex.completedSetCount, planned: plannedCount(for: ex))
+    }
+
+    /// The unified planned-set count for an exercise — the single source the pager reads for plan
+    /// progress, the rail-chip detail, and the done-nudge. The pager's own per-session intent
+    /// (`plannedSets`, set in the plan editor) wins; a routine's prescription (`targetSets`) is the
+    /// fallback so a saved routine drives the same plan UI a freeform session does (SSOT). `nil` ⇒
+    /// open-ended (no plan). Collapses the `plannedSets`-vs-`targetSets` duality.
+    static func plannedCount(for ex: SessionExercise) -> Int? {
+        ex.plannedSets ?? (ex.targetSets > 0 ? ex.targetSets : nil)
     }
 
     /// The per-discipline noun for plan labels and ledgers ("set" / "leg" / "round").
@@ -86,9 +95,10 @@ enum QuickSessionPager {
         return ordered.first(where: isUnfinished)?.id
     }
 
-    /// Unfinished = an explicit plan not yet met, or no logged effort at all.
+    /// Unfinished = an explicit plan not yet met, or no logged effort at all. Reads the unified
+    /// planned count (`plannedSets` ?? routine `targetSets`) so a routine's prescription counts as a plan.
     static func isUnfinished(_ ex: SessionExercise) -> Bool {
-        if let planned = ex.plannedSets, planned > 0 { return ex.completedSetCount < planned }
+        if let planned = plannedCount(for: ex), planned > 0 { return ex.completedSetCount < planned }
         return ex.completedSetCount == 0
     }
 

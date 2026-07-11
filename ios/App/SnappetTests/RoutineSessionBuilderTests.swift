@@ -16,8 +16,8 @@ final class RoutineSessionBuilderTests: XCTestCase {
         XCTAssertNil(se.disciplineRaw, "a strength block keeps disciplineRaw nil (the additive-nil invariant)")
         XCTAssertNil(se.kindRaw, "strength keeps kindRaw nil → derives .repsWeight")
         XCTAssertEqual(se.kind, .repsWeight)
-        XCTAssertEqual(se.sets.count, 3)
-        XCTAssertTrue(se.sets.allSatisfy { $0.completedAt == nil }, "fresh sets are uncompleted")
+        XCTAssertTrue(se.sets.isEmpty, "a fresh session grows sets as they're logged; no pre-seeded blanks")
+        XCTAssertEqual(se.targetSets, 3, "the planned count lives in the prescription (QuickSessionPager.plannedCount)")
         XCTAssertEqual(se.targetReps, "8-12")
         XCTAssertEqual(se.targetWeight, 60)
     }
@@ -45,12 +45,10 @@ final class RoutineSessionBuilderTests: XCTestCase {
         XCTAssertEqual(se.discipline, .climb)
         XCTAssertEqual(se.kind, .climbAttempt)
         XCTAssertEqual(se.climbType, .boulder)
-        XCTAssertEqual(se.climbGradeLabel, "V5")
+        XCTAssertEqual(se.climbGradeLabel, "V5", "the grade lives at the entity level; each logged attempt is stamped from it")
         XCTAssertEqual(se.climbGradeScale, .vScale)
-        XCTAssertEqual(se.sets.count, 4, "4 attempts")
-        XCTAssertTrue(se.sets.allSatisfy { $0.climbGradeLabel == "V5" },
-                      "each fresh attempt is stamped with the prescribed grade so the pyramid reads")
-        XCTAssertTrue(se.sets.allSatisfy { $0.completedAt == nil })
+        XCTAssertTrue(se.sets.isEmpty, "attempts grow as they're logged; no pre-seeded blanks")
+        XCTAssertEqual(se.targetSets, 4, "4 planned attempts (QuickSessionPager.plannedCount)")
     }
 
     func testRunBlockLogsDurationKindNeverStrength() {

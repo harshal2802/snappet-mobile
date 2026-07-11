@@ -5,7 +5,7 @@ import UIKit
 
 /// The suite's one thin haptics wrapper (issue #80) — every commit point fires through
 /// here so the tactile language stays consistent and there's a single seam to tune.
-/// Originally private to `WorkoutPlayerView`; promoted when the rest of the suite gained
+/// Originally private to the workout player; promoted when the rest of the suite gained
 /// commit feedback. UIKit is fine in the app target; only `HighlightEngine` is
 /// platform-free. Each call is a no-op where UIKit is unavailable.
 enum Haptics {

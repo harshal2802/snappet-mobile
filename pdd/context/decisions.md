@@ -4,6 +4,38 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-10] One player for every session — routines play through the pager (prompt 119)
+
+**Decision** (user request: "when I play a previously-saved routine it should play like Quick Session,
+and stay expandable"). `WorkoutTrackerModule` now **always** presents `FreeformPlayerView` (the glass
+pager); the `session.routineID == nil` fork and the guided set-by-set `WorkoutPlayerView` are **deleted**.
+A saved routine is rendered from the same model with its prescription seeded in, so there is one
+render/log path (single source of truth) and a routine stays expandable.
+
+Non-obvious choices:
+- **Collapse the two "planned-sets" fields at the read, not the write.** `targetSets` (routine
+  prescription) and `plannedSets` (the pager's per-session override) both exist; the new pure
+  `QuickSessionPager.plannedCount = plannedSets ?? (targetSets>0 ? targetSets : nil)` is the single read
+  behind `planState`/`isUnfinished`/rail counts/the done-nudge. The plan editor still **writes**
+  `plannedSets` (a user override wins). **Rules out** a hidden `targetSets`-vs-`plannedSets` fork masquerading
+  as one screen.
+- **Sessions start with NO pre-seeded sets.** `RoutineSessionBuilder` now yields `sets: []` for every
+  discipline (was `max(1, sets)` blanks the guided player walked by index). `sets` therefore always means
+  "logged efforts", identical to a freeform session; the count lives in `targetSets`, the climb grade at
+  the entity level (`climbGradeLabel`, stamped onto each attempt on completion). This also removed the
+  blank-chip artifact the ghost ledger showed for pre-seeded uncompleted sets (also on the planner path).
+- **The routine's prescribed rest seeds the first rest, then remembered-rest takes over.**
+  `RestTimerDefaults.remembered(for:in:prescribed:)` prefers a stored value → the routine's
+  `targetRestSeconds` → the seeded suggestion (clamped). `nil` for freeform (no prescription).
+- **Land on the first *unfinished* exercise** (mirrors the retired `resumePosition`), not
+  `session.exercises.last` — so a freshly-started routine opens on exercise 1 and a resumed session on
+  what's still owed.
+- **Guided player fully removed, not kept as a "focus mode"** (user-approved; matches "cleanup the dead
+  code"). Its device-verified behaviors (pause relay, Live Activity, minimize, HR overlay) were already
+  present in the pager; the `overallWorkoutTimer` / `pauseWorkout` / `minimizeWorkout` accessibility ids
+  live on the pager too, so the routine walkthrough UITests kept their existence checks and only had their
+  set-by-set drive repointed to the pager's `freeform.quickLog` → `freeform.finish` → `freeform.done` flow.
+
 ## [2026-06-23] Root Makefile wraps (doesn't replace) the build/release tooling (prompt 105)
 
 **Decision** (user request: "a Makefile for building both iOS and Android for device and simulator, and a
