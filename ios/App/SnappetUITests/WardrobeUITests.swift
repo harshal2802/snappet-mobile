@@ -1,9 +1,9 @@
 import XCTest
 
-/// Wardrobe mini-app walkthrough (wardrobe prompt 01): open from the App Library, seed
-/// the sample closet (the no-Photos fixture path), browse into an item, ride For You
-/// into a flat-lay board, save it, and find it under Outfits. Identifiers come from
-/// `wardrobe.*` on the views; the sample closet keeps the whole flow device-free.
+/// Wardrobe mini-app walkthrough (wardrobe prompts 01+02): open from the App Library,
+/// seed the sample closet, then ride the STYLIST-FIRST HOME — For You carousel → board
+/// → save, closet preview → item detail, "See all" → the segmented sections screen.
+/// Identifiers come from `wardrobe.*`; the sample closet keeps the flow device-free.
 final class WardrobeUITests: XCTestCase {
     var app: XCUIApplication!
 
@@ -32,7 +32,7 @@ final class WardrobeUITests: XCTestCase {
         card.tap()
     }
 
-    func testSampleClosetForYouBoardAndOutfits() {
+    func testHomeForYouBoardSectionsAndOutfits() {
         openWardrobe()
 
         // 1 — empty state → seed the sample closet.
@@ -41,36 +41,40 @@ final class WardrobeUITests: XCTestCase {
         snap("wardrobe-empty")
         sample.tap()
 
-        // 2 — the closet grid appears with the seeded items.
-        let flannel = app.staticTexts["Navy flannel shirt"]
-        XCTAssertTrue(flannel.waitForExistence(timeout: 6), "sample closet should render in the grid")
-        snap("wardrobe-closet")
+        // 2 — the stylist-first home: For You carousel + closet preview, ONE bottom bar.
+        // The preview shows the 4 NEWEST pieces — in the fixture that's the joggers,
+        // tee, beanie and chinos (the flannel is older and lives behind "See all").
+        let forYouCard = app.buttons["wardrobe.forYou.card"].firstMatch
+        XCTAssertTrue(forYouCard.waitForExistence(timeout: 6), "home should lead with For You cards")
+        XCTAssertTrue(app.staticTexts["Grey joggers"].waitForExistence(timeout: 4),
+                      "home should preview the newest closet items")
+        snap("wardrobe-home")
 
-        // 3 — item detail: stats + actions.
-        flannel.firstMatch.tap()
+        // 3 — item detail from the home preview.
+        app.staticTexts["Grey joggers"].firstMatch.tap()
         XCTAssertTrue(app.buttons["wardrobe.item.style"].waitForExistence(timeout: 6),
                       "item detail should offer Style this")
         snap("wardrobe-item")
-        app.navigationBars.buttons.firstMatch.tap()   // back to the closet
+        app.navigationBars.buttons.firstMatch.tap()   // back home
 
-        // 4 — For You: suggestion cards composed from the sample closet.
-        app.buttons["wardrobe.tab.forYou"].tap()
-        let forYouCard = app.buttons["wardrobe.forYou.card"].firstMatch
-        XCTAssertTrue(forYouCard.waitForExistence(timeout: 6), "For You should suggest outfits")
-        snap("wardrobe-foryou")
-
-        // 5 — open the board and save the outfit.
-        forYouCard.tap()
+        // 4 — For You card → flat-lay board → save.
+        app.buttons["wardrobe.forYou.card"].firstMatch.tap()
         let save = app.buttons["wardrobe.board.save"]
         XCTAssertTrue(save.waitForExistence(timeout: 6), "the flat-lay board should open")
         snap("wardrobe-board")
         save.tap()
-        app.navigationBars.buttons.firstMatch.tap()   // back to For You
+        app.navigationBars.buttons.firstMatch.tap()   // back home
 
-        // 6 — the saved outfit shows up under Outfits.
-        app.buttons["wardrobe.tab.outfits"].tap()
+        // 5 — "See all" → the segmented sections screen (Closet first).
+        app.buttons["wardrobe.home.seeAllCloset"].tap()
+        let picker = app.segmentedControls["wardrobe.sections.picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 6), "sections screen should show the segmented control")
+        snap("wardrobe-sections-closet")
+
+        // 6 — quick-jump to Outfits without popping; the saved outfit is there.
+        picker.buttons["Outfits"].tap()
         XCTAssertTrue(app.buttons["wardrobe.outfits.wearAgain"].firstMatch.waitForExistence(timeout: 6),
-                      "the saved outfit should appear in history")
-        snap("wardrobe-outfits")
+                      "the saved outfit should appear under Outfits")
+        snap("wardrobe-sections-outfits")
     }
 }

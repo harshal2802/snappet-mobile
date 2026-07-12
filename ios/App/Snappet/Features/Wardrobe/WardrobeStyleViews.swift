@@ -78,7 +78,6 @@ struct ForYouView: View {
                 .accessibilityIdentifier("wardrobe.forYou.styleMe")
             }
             .padding(16)
-            .padding(.bottom, 70)
         }
         .background(SnappetColor.paper)
         .sheet(isPresented: $showGenerator) {

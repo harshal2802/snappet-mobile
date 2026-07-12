@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Wardrobe · Navigation redesign</title>
+<style>
+  :root{
+    --brand:#FF5A4D; --rose:#C13A6F; --rose-d:#E86B99;
+    --paper:#FBFAF8; --surface:#FFFFFF; --muted:#F2F1EE;
+    --hair:#E7E5E1; --ink:#1A1A1E; --t2:#6B6A66; --amber:#B45309;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#241a24,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1400px;margin:0 auto;padding:0 28px}
+  header.page{padding:56px 28px 8px;max-width:1400px;margin:0 auto}
+  h1.title{font-size:34px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#f2a7c3 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:16px;max-width:980px;margin:0 0 10px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:330px;position:relative}
+  .steptag{position:absolute;left:-8px;top:-14px;z-index:40;border-radius:999px;padding:6px 14px;
+    font-weight:800;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+  .tag-bad{background:#8b90a0;color:#15161a}
+  .tag-a{background:#589BF2;color:#0a1526}
+  .tag-b{background:var(--rose-d);color:#2b0917}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .device{width:330px;height:690px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;
+    background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 2px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;padding:6px 16px 0;position:relative;display:flex;flex-direction:column}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 2px;flex:0 0 auto}
+  .navrow .back{font-size:14px;font-weight:650;color:var(--rose)}
+  .navrow .title{font-size:16px;font-weight:800}
+  .navrow .side{width:44px;font-size:13px;font-weight:650;color:var(--rose);text-align:right}
+
+  /* suite tab bar (always present — the point of the redesign) */
+  .suitebar{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:9px 8px 20px;
+    border-top:1px solid var(--hair);background:rgba(255,255,255,.92);font-size:9.5px;font-weight:700;color:var(--t2)}
+  .suitebar .tb{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .suitebar .tb i{font-style:normal;font-size:18px}
+  .suitebar .tb.on{color:var(--brand)}
+
+  /* the offending module bar (BEFORE frame) */
+  .modbar{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;margin:0 14px 8px;
+    padding:9px 10px;border-radius:22px;background:rgba(246,244,242,.92);border:1.5px solid var(--hair);
+    font-size:9.5px;font-weight:700;color:var(--t2);box-shadow:0 6px 18px rgba(0,0,0,.08)}
+  .modbar .tb{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .modbar .tb i{font-style:normal;font-size:17px}
+  .modbar .tb.on{color:var(--rose)}
+  .problem{position:absolute;right:8px;bottom:64px;z-index:50;background:#E5483D;color:#fff;font-size:10px;
+    font-weight:800;border-radius:10px;padding:6px 10px;box-shadow:0 8px 20px rgba(229,72,61,.5);transform:rotate(-3deg)}
+
+  /* segmented control (Option A) */
+  .segctl{display:flex;background:var(--muted);border-radius:11px;padding:3px;margin:10px 2px 0;flex:0 0 auto}
+  .segctl .sg{flex:1;text-align:center;border-radius:9px;padding:7px 4px;font-size:12px;font-weight:750;color:var(--t2)}
+  .segctl .sg.on{background:var(--surface);color:var(--ink);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+
+  /* shared bits */
+  .searchbar{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:12px;
+    padding:9px 12px;font-size:13px;color:var(--t2);margin:10px 2px 0}
+  .chips{display:flex;gap:6px;margin:10px 2px 0;overflow:hidden;flex:0 0 auto}
+  .chip{border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:700;color:var(--t2);
+    background:var(--surface);border:1px solid var(--hair);white-space:nowrap}
+  .chip.on{color:#fff;background:var(--rose);border-color:var(--rose)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 2px 0;overflow:hidden}
+  .item{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:9px 9px 7px;position:relative}
+  .cutout{height:74px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:40px;background:var(--muted)}
+  .item .nm{font-size:11.5px;font-weight:750;margin:6px 2px 0;white-space:nowrap;overflow:hidden}
+  .item .meta{font-size:9.5px;color:var(--t2);margin:0 2px;font-weight:600}
+  .wearpill{position:absolute;top:12px;left:12px;font-size:8.5px;font-weight:800;background:rgba(26,26,30,.72);color:#fff;border-radius:999px;padding:2px 6px}
+  .sechead{display:flex;align-items:baseline;justify-content:space-between;margin:14px 4px 0;flex:0 0 auto}
+  .sechead .t{font-size:14.5px;font-weight:800}
+  .sechead .a{font-size:11.5px;font-weight:700;color:var(--rose)}
+  .fab{position:absolute;right:16px;bottom:74px;width:50px;height:50px;border-radius:50%;background:var(--brand);
+    color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;
+    box-shadow:0 10px 24px rgba(255,90,77,.45);z-index:20}
+  .weather{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--hair);
+    border-radius:12px;padding:9px 12px;font-size:12px;font-weight:650;margin:10px 2px 0}
+  .weather .adj{margin-left:auto;font-size:10.5px;color:var(--rose);font-weight:750}
+  .fycard{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:10px 11px;min-width:216px}
+  .fycard .t{font-size:12.5px;font-weight:800}
+  .fycard .r{font-size:9.5px;color:var(--t2);font-weight:600;margin:1px 0 7px}
+  .fyrow{display:flex;gap:6px;align-items:center}
+  .hp{width:40px;height:40px;border-radius:9px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:21px}
+  .fyrow .go{margin-left:auto;font-size:10.5px;font-weight:800;color:var(--rose)}
+  .carousel{display:flex;gap:10px;margin:10px 2px 0;overflow:hidden;flex:0 0 auto}
+  .outrow{display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--hair);
+    border-radius:13px;padding:9px 11px;margin:8px 2px 0}
+  .outrow .t{font-size:12px;font-weight:750}
+  .outrow .go{margin-left:auto;font-size:10.5px;font-weight:800;color:var(--rose)}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Wardrobe — killing the double bottom bar</h1>
+  <p class="sub">The module-local glass bar stacked on the suite tab bar (left). Two suite-native fixes:
+    <b style="color:#9cc3f7">A — top segmented control</b> (the Gym Tracker pattern: Dashboard/Browse/Routines/History) ·
+    <b style="color:#f2a7c3">B — one stylist-first home</b> (the Kilter landing-page pattern: For You leads, Closet & Outfits are sections that push full screens — no switcher chrome at all).</p>
+</header>
+
+<div class="wrap">
+  <div class="gallery">
+
+    <!-- BEFORE -->
+    <div class="step">
+      <span class="steptag tag-bad">NOW — the problem</span>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Apps</span><span class="title">Wardrobe</span><span class="side">⚙︎</span></div>
+          <div class="searchbar">🔍 Search closet</div>
+          <div class="chips"><span class="chip on">All · 13</span><span class="chip">Tops</span><span class="chip">Bottoms</span><span class="chip">Shoes</span></div>
+          <div class="sechead"><span class="t">Tops · 4</span></div>
+          <div class="grid">
+            <div class="item"><span class="wearpill">12×</span><div class="cutout">👕</div><div class="nm">Navy flannel shirt</div><div class="meta">Casual · Cotton</div></div>
+            <div class="item"><span class="wearpill">0×</span><div class="cutout">👔</div><div class="nm">White oxford</div><div class="meta">Smart casual</div></div>
+          </div>
+          <div style="flex:1"></div>
+          <div class="problem">two bars ⚠️</div>
+          <div class="modbar">
+            <div class="tb on"><i>🧥</i>Closet</div>
+            <div class="tb"><i>✨</i>For You</div>
+            <div class="tb"><i>🗂️</i>Outfits</div>
+          </div>
+          <div class="suitebar">
+            <div class="tb"><i>🏠</i>Home</div>
+            <div class="tb on"><i>▦</i>Apps</div>
+            <div class="tb"><i>📰</i>Feed</div>
+            <div class="tb"><i>🎬</i>Clips</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>The complaint.</b> Module glass bar + suite tab bar stack at the bottom — duplicated chrome, cramped thumb zone, and the module bar covers content.</p>
+    </div>
+
+    <!-- OPTION A -->
+    <div class="step">
+      <span class="steptag tag-a">OPTION A — segmented top</span>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Apps</span><span class="title">Wardrobe</span><span class="side">⚙︎</span></div>
+          <div class="segctl"><span class="sg on">Closet</span><span class="sg">✨ For You</span><span class="sg">Outfits</span></div>
+          <div class="searchbar">🔍 Search closet</div>
+          <div class="chips"><span class="chip on">All · 13</span><span class="chip">Tops</span><span class="chip">Bottoms</span><span class="chip">Shoes</span></div>
+          <div class="sechead"><span class="t">Tops · 4</span><span class="a">See all ›</span></div>
+          <div class="grid">
+            <div class="item"><span class="wearpill">12×</span><div class="cutout">👕</div><div class="nm">Navy flannel shirt</div><div class="meta">Casual · Cotton</div></div>
+            <div class="item"><span class="wearpill">0×</span><div class="cutout">👔</div><div class="nm">White oxford</div><div class="meta">Smart casual</div></div>
+          </div>
+          <div class="sechead"><span class="t">Bottoms · 3</span><span class="a">See all ›</span></div>
+          <div class="grid">
+            <div class="item"><span class="wearpill">3×</span><div class="cutout">👖</div><div class="nm">Brown chinos</div><div class="meta">Smart casual</div></div>
+            <div class="item"><span class="wearpill">5×</span><div class="cutout">🩳</div><div class="nm">Grey joggers</div><div class="meta">Athletic</div></div>
+          </div>
+          <div class="fab">＋</div>
+          <div class="suitebar">
+            <div class="tb"><i>🏠</i>Home</div>
+            <div class="tb on"><i>▦</i>Apps</div>
+            <div class="tb"><i>📰</i>Feed</div>
+            <div class="tb"><i>🎬</i>Clips</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>A · Gym-Tracker pattern.</b> The 3 surfaces become a segmented control under the title — one bottom bar, zero new idioms. Cheapest change; surfaces stay peers.</p>
+    </div>
+
+    <!-- OPTION B -->
+    <div class="step">
+      <span class="steptag tag-b">OPTION B — stylist-first home (recommended)</span>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Apps</span><span class="title">Wardrobe</span><span class="side">⚙︎</span></div>
+          <div class="weather">⛅️ Saturday · Summer · Hot <span class="adj">Adjust</span></div>
+          <div class="sechead"><span class="t">✨ For You</span><span class="a">Style me ›</span></div>
+          <div class="carousel">
+            <div class="fycard">
+              <div class="t">Office-ready</div>
+              <div class="r">rotates your white oxford · never worn</div>
+              <div class="fyrow"><div class="hp">👔</div><div class="hp">👖</div><div class="hp">👞</div><span class="go">Wear ›</span></div>
+            </div>
+            <div class="fycard" style="min-width:130px">
+              <div class="t">Easy fit</div>
+              <div class="r">good for hot</div>
+              <div class="fyrow"><div class="hp">👕</div><div class="hp">🩳</div></div>
+            </div>
+          </div>
+          <div class="sechead"><span class="t">Closet · 13</span><span class="a">See all ›</span></div>
+          <div class="searchbar">🔍 Search closet</div>
+          <div class="grid">
+            <div class="item"><span class="wearpill">12×</span><div class="cutout">👕</div><div class="nm">Navy flannel shirt</div><div class="meta">Casual · Cotton</div></div>
+            <div class="item"><span class="wearpill">0×</span><div class="cutout">👔</div><div class="nm">White oxford</div><div class="meta">Smart casual</div></div>
+            <div class="item"><span class="wearpill">3×</span><div class="cutout">👖</div><div class="nm">Brown chinos</div><div class="meta">Smart casual</div></div>
+            <div class="item"><span class="wearpill">9×</span><div class="cutout">👟</div><div class="nm">White sneakers</div><div class="meta">Casual</div></div>
+          </div>
+          <div class="sechead"><span class="t">Outfits</span><span class="a">See all ›</span></div>
+          <div class="outrow"><div class="hp">👔</div><div class="hp">👖</div><div class="hp">👞</div><span class="t" style="margin-left:4px">Work · today</span><span class="go">Wear again ›</span></div>
+          <div class="fab">＋</div>
+          <div class="suitebar">
+            <div class="tb"><i>🏠</i>Home</div>
+            <div class="tb on"><i>▦</i>Apps</div>
+            <div class="tb"><i>📰</i>Feed</div>
+            <div class="tb"><i>🎬</i>Clips</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>B · Kilter landing-page pattern.</b> ONE scrolling home: For You leads (the differentiator), Closet preview + search below, recent outfit at the bottom — "See all ›" pushes the full Closet / Outfits screens. No switcher chrome anywhere; everything is reach or push.</p>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

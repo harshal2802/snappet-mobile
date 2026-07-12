@@ -65,7 +65,6 @@ struct OutfitHistoryView: View {
                 }
             }
             .padding(16)
-            .padding(.bottom, 70)
         }
         .background(SnappetColor.paper)
     }

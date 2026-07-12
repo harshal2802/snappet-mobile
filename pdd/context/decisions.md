@@ -8417,3 +8417,23 @@ Rules out / non-obvious:
   `SnappetColor.wardrobe` (light 0xC13A6F / dark 0xE86B99) — the last unused hue family on the ramp.
 - **Device legs owed:** camera→subject-lift on a real garment, Apple-Intelligence tag/coach pass
   (iOS 26 device), Photos-library import. Android NOT ported.
+
+## 2026-07-12 — Wardrobe navigation: no module bottom bar; stylist-first home + segmented sections (wardrobe prompt 02)
+
+**Decision** (user on-device: "I do not like this double navigation bar on the bottom"). Wardrobe 01's
+module-local glass bottom bar stacked on the suite tab bar — the suite's modules must never add a second
+bottom bar. Replaced with the approved **A+B hybrid** (3 options wireframed in
+`docs/ux-research/wardrobe/redesign-nav.html`): the root is now a **stylist-first HOME** (Kilter
+landing-page pattern — weather header, **For You carousel leads**, closet preview, recent outfits,
+coral FAB; everything reach-or-push) and "See all ›" pushes ONE `WardrobeSectionsView` whose **top
+segmented control** (the Gym-Tracker `WorkoutSection` pattern) quick-jumps Closet / For You / Outfits
+without popping home. `ClosetView`/`ForYouView`/`OutfitHistoryView` were reused untouched inside the
+container (only dead bar-clearance padding removed).
+
+Rules out / non-obvious:
+- **Suite-wide rule made explicit:** a mini-app expresses internal surfaces as a top segmented control
+  or a landing page with pushes — never its own bottom bar (double chrome, cramped thumb zone).
+- Rejected option C (hide the suite tab bar inside the module): immersive but breaks the always-there
+  tab escape every other module honors.
+- The home For You carousel reuses the same day-seeded `OutfitComposer.forYou` — no second composition
+  path; cards push straight to `OutfitBoardView`.
