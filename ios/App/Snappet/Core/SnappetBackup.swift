@@ -63,6 +63,7 @@ enum SnappetBackup {
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
         KilterPlan.self, KilterLitEvent.self,
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
+        WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
     ]
 
     // MARK: - The envelope
@@ -103,6 +104,10 @@ enum SnappetBackup {
         var feedSaveItems: [FeedSaveItemRow] = []
         var feedShareEvents: [FeedShareEventRow] = []
         var feedOutbox: [FeedOutboxEntryRow] = []
+        // Wardrobe — defaulted so pre-wardrobe backup blobs (no such keys) still decode.
+        var wardrobeItems: [WardrobeItemRow] = []
+        var wearEvents: [WearEventRow] = []
+        var wardrobeOutfits: [WardrobeOutfitRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -141,6 +146,9 @@ enum SnappetBackup {
             n += feedSaveItems.count
             n += feedShareEvents.count
             n += feedOutbox.count
+            n += wardrobeItems.count
+            n += wearEvents.count
+            n += wardrobeOutfits.count
             return n
         }
     }
@@ -216,6 +224,9 @@ enum SnappetBackup {
         file.feedSaveItems = try all(FeedSaveItem.self).map(FeedSaveItemRow.init).sorted(by: rowKey)
         file.feedShareEvents = try all(FeedShareEvent.self).map(FeedShareEventRow.init).sorted(by: rowKey)
         file.feedOutbox = try all(FeedOutboxEntry.self).map(FeedOutboxEntryRow.init).sorted(by: rowKey)
+        file.wardrobeItems = try all(WardrobeItem.self).map(WardrobeItemRow.init).sorted(by: rowKey)
+        file.wearEvents = try all(WearEvent.self).map(WearEventRow.init).sorted(by: rowKey)
+        file.wardrobeOutfits = try all(WardrobeOutfit.self).map(WardrobeOutfitRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -308,6 +319,12 @@ enum SnappetBackup {
             uniqued(file.feedShareEvents, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(FeedOutboxEntry.self)
             uniqued(file.feedOutbox, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(WardrobeItem.self)
+            uniqued(file.wardrobeItems, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(WearEvent.self)
+            uniqued(file.wearEvents, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(WardrobeOutfit.self)
+            uniqued(file.wardrobeOutfits, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -956,6 +973,97 @@ extension SnappetBackup {
             FeedShareEvent(id: id, activityContentId: activityContentId, channel: channel, createdAt: createdAt)
         }
         var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(channel)|\(id.uuidString)" }
+    }
+
+    // MARK: Wardrobe rows
+
+    struct WardrobeItemRow: BackupRow {
+        var id: UUID
+        var name: String
+        var categoryRaw: String
+        var colorRaw: String
+        var patternRaw: String
+        var styleRaw: String
+        var material: String
+        var seasonsRaw: [String]
+        var cost: Double?
+        var isFavorite: Bool
+        var isArchived: Bool
+        var notes: String
+        var createdAt: Date
+        /// The cut-out photo bytes ride the backup (base64 in JSON) — a restored closet
+        /// without its photos is not a restored closet.
+        var imageData: Data?
+
+        init(_ m: WardrobeItem) {
+            id = m.id; name = m.name; categoryRaw = m.categoryRaw; colorRaw = m.colorRaw
+            patternRaw = m.patternRaw; styleRaw = m.styleRaw; material = m.material
+            seasonsRaw = m.seasonsRaw; cost = m.cost
+            isFavorite = m.isFavorite; isArchived = m.isArchived
+            notes = m.notes; createdAt = m.createdAt; imageData = m.imageData
+        }
+        func make() -> WardrobeItem {
+            let item = WardrobeItem(id: id, name: name, category: .top, color: .grey,
+                                    material: material, cost: cost,
+                                    isFavorite: isFavorite, isArchived: isArchived,
+                                    notes: notes, createdAt: createdAt, imageData: imageData)
+            // Raw, not via the enums — unrecognized stored values survive verbatim.
+            item.categoryRaw = categoryRaw
+            item.colorRaw = colorRaw
+            item.patternRaw = patternRaw
+            item.styleRaw = styleRaw
+            item.seasonsRaw = seasonsRaw
+            return item
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    struct WearEventRow: BackupRow {
+        var id: UUID
+        var itemID: UUID?
+        var outfitID: UUID?
+        var wornOn: Date
+
+        init(_ m: WearEvent) { id = m.id; itemID = m.itemID; outfitID = m.outfitID; wornOn = m.wornOn }
+        func make() -> WearEvent { WearEvent(id: id, itemID: itemID, outfitID: outfitID, wornOn: wornOn) }
+        var sortKey: String { "\(wornOn.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
+    }
+
+    struct WardrobeOutfitRow: BackupRow {
+        var id: UUID
+        var title: String
+        var occasionRaw: String
+        var tempBandRaw: String
+        var seasonRaw: String
+        var rationale: String
+        var itemIDs: [UUID]
+        var slotRolesRaw: [String]
+        var isFavorite: Bool
+        var createdAt: Date
+        var lastWornAt: Date?
+        var sourceRaw: String
+
+        init(_ m: WardrobeOutfit) {
+            id = m.id; title = m.title; occasionRaw = m.occasionRaw
+            tempBandRaw = m.tempBandRaw; seasonRaw = m.seasonRaw; rationale = m.rationale
+            itemIDs = m.itemIDs; slotRolesRaw = m.slotRolesRaw
+            isFavorite = m.isFavorite; createdAt = m.createdAt
+            lastWornAt = m.lastWornAt; sourceRaw = m.sourceRaw
+        }
+        func make() -> WardrobeOutfit {
+            let o = WardrobeOutfit(id: id, title: title, occasion: .casualWeekend,
+                                   tempBand: .mild, season: .spring, rationale: [],
+                                   slots: [], isFavorite: isFavorite,
+                                   createdAt: createdAt, lastWornAt: lastWornAt, sourceRaw: sourceRaw)
+            o.occasionRaw = occasionRaw
+            o.tempBandRaw = tempBandRaw
+            o.seasonRaw = seasonRaw
+            o.rationale = rationale
+            o.itemIDs = itemIDs
+            o.slotRolesRaw = slotRolesRaw
+            return o
+        }
+        var sortKey: String { id.uuidString }
     }
 
     struct FeedOutboxEntryRow: BackupRow {

@@ -57,6 +57,9 @@ enum SnappetColor {
     static let budget = dynamic(light: 0x2A7DE1, dark: 0x589BF2)
     /// Kilter Board — amber/sandstone (warm, earthy; distinct from reels-coral and workout-ember).
     static let kilter = dynamic(light: 0xB45309, dark: 0xF59E0B)
+    /// Wardrobe — rose (the private AI stylist; the one hue family the ramp didn't use yet,
+    /// clearly apart from journal-violet and pomodoro-tomato).
+    static let wardrobe = dynamic(light: 0xC13A6F, dark: 0xE86B99)
 
     // MARK: - Performance ramp (the SECOND color axis — Pulse Pro, workout-redesign E0)
     //
@@ -113,6 +116,7 @@ enum SnappetColor {
         case "expense":     return expenses
         case "budget":      return budget
         case "kilter":      return kilter
+        case "wardrobe":    return wardrobe
         default:            return brand
         }
     }

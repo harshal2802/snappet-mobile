@@ -164,6 +164,15 @@ and share/save — bridging WorkoutTracker to `HighlightEngine`. Tracking: GitHu
 board, log Flash/Sent/Project/Attempt, review history, QR-share climbs, and (gated, device-unverified)
 light the physical board over BLE.
 
+🟢 **Wardrobe mini-app (wardrobe prompt 01, 2026-07-11)** — "your private AI stylist": local-first
+digital closet (capture → VisionKit-style subject lift → on-device tagging, optionally sharpened by
+Apple Intelligence), a **For You** suggested-outfits feed + custom occasion generator (pure
+`OutfitComposer` — deterministic, explainable, owned-items-only), item-scoped style-coach chat,
+flat-lay board, wear log/cost-per-wear, suite-backup coverage. First **Lifestyle**-category module
+(rose accent). SwiftData models kept CloudKit-compatible so live sync later is config, not migration.
+Device legs owed: real-garment capture + Apple-Intelligence pass. Wireframes:
+`docs/ux-research/wardrobe/`.
+
 🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
 by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,
 ONNX, lazy-downloaded). Every save is validated against the downloaded dataset + prior creations and given a
