@@ -4,6 +4,38 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-15] Reel editor redesign — the reel becomes the screen; per-clip trims stay app-side
+
+**Decision** (user: "this reel preview seems very less useful and less intuitive… take
+inspiration from Edits by Meta", + "give user option to adjust individual clips timelines").
+`ReelView`'s ready state drops the settings-page `List` for the Edits/CapCut grammar: an
+auto-built looping preview fills the screen, Export is the one prominent action, one tool row,
+a filmstrip timeline, and a clip sheet with a NEW per-clip trimmer. Same ViewModel/pipeline;
+recovery states + export payoff untouched. Prompt:
+`pdd/prompts/features/reel-editor-redesign/`; wireframes:
+`docs/ux-research/reel-editor-redesign/wireframes.html`.
+
+Non-obvious choices:
+- **Trims are app-side `Highlight` rebuilds, not an engine feature.** `ReelTrim.apply` re-makes
+  the value with the dragged window (id/score kept, `atOffset` clamped in) and BOTH
+  `buildPreview` and `export` plan from `plannedHighlights` — the engine's own
+  `clipStartWithin` ("what a trimmer needs") carries it through `ReelPlanner` unchanged.
+  **Rules out** engine API growth for a presentation feature, and preview/export divergence.
+  Trims are per-cut state like pins/order (cleared by regenerate, not persisted).
+- **The preview scorebug is a SwiftUI overlay, not the CA burn** — the
+  `AVVideoCompositionCoreAnimationTool` is offline-render-only, so the old screen just
+  footnoted "burned on export". Rendering the SAME `.feedClipScorebug` tile/values over the
+  player (fraction = playhead/total, exactly how the burn maps the whole-session series) makes
+  the toggle visible and honest. **Rules out** a player-attached animation tool (crashes/black
+  frames) and the do-nothing footer.
+- **One commit per trim drag.** The trimmer's labels track the drag via LOCAL state; `setTrim`
+  fires once on release — because every `setTrim` invalidates the preview and bumps
+  `previewEpoch`, per-tick commits would rebuild the composition dozens of times per gesture.
+- **The timeline map is best-effort by design.** `ReelTimelineMap` mirrors the exporter's
+  cursor (photoStill / segment duration / ≤0.1s drop) but can drift when the exporter skips an
+  unreadable asset; its consumers (the filmstrip ring, Play-from-here) are cosmetic, so a
+  drift degrades to a slightly-off ring — never a wrong cut.
+
 ## [2026-07-15] Highlights follow-up trio — the Health offer, honest reel rows, the hero card (P5)
 
 **Decision** (the three items P1–P4's entry left open, closed in one PR;

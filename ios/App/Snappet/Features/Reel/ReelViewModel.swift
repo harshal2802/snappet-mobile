@@ -80,6 +80,10 @@ final class ReelViewModel {
     private(set) var pinnedIds: Set<String> = []
     /// Manual reel order (highlight ids). `nil` = chronological default.
     private var orderedIds: [String]?
+    /// Per-clip trims (reel editor redesign): highlight id → user-adjusted window on the
+    /// workout timeline, clamped inside the source video (`ReelTrim`). Per-cut state like
+    /// pins/order — deliberately NOT persisted; `generate()` clears it.
+    private(set) var trims: [String: ClosedRange<Double>] = [:]
     /// Total planned duration of the last successful export — persisted onto the posted
     /// `SessionMedia` row so the feed can label the reel without loading the asset.
     private var exportedDuration: Double?
@@ -88,6 +92,13 @@ final class ReelViewModel {
     /// Invalidated whenever the edit set changes so the next preview reflects edits.
     var previewPlayer: AVPlayer?
     var previewError: String?
+    /// Bumped by every preview invalidation — the view's `.task(id:)` hook for AUTO-rebuilding
+    /// the preview after any edit (the reel IS the screen; there is no "Preview reel" button).
+    private(set) var previewEpoch = 0
+    /// The last successfully planned cut — duration + the filmstrip's reel-timeline map.
+    private(set) var lastPlan: ReelPlan?
+    /// Reel-timeline map for the last plan (current-frame ring, "Play from here").
+    private(set) var timelineMap: ReelTimelineMap?
 
     /// Set when a manual pick resolved to NOTHING (the picks aren't in the Photos selection
     /// Snappet may read): `emptySpec` then explains the cause instead of showing the generic
@@ -113,6 +124,45 @@ final class ReelViewModel {
 
     /// Highlights the user removed — surfaced so they can be restored.
     var removedHighlights: [Highlight] { highlights.filter { removed.contains($0.id) } }
+
+    /// The kept cut WITH per-clip trims applied — the one list `buildPreview` and `export`
+    /// both plan from, so a dragged trim is exactly what ships (WYSIWYG).
+    var plannedHighlights: [Highlight] { ReelTrim.apply(trims, to: keptHighlights) }
+
+    // MARK: per-clip trim (reel editor redesign)
+
+    /// The window this highlight's trim may move within (its source video's span), or `nil`
+    /// when it isn't trimmable (photo / missing media).
+    func trimBounds(for h: Highlight) -> ClosedRange<Double>? {
+        ReelTrim.bounds(for: h, media: workout?.media ?? [])
+    }
+
+    /// The highlight's EFFECTIVE window — the user trim when set, else the auto-cut.
+    func effectiveWindow(for h: Highlight) -> ClosedRange<Double> {
+        trims[h.id] ?? (h.clipStart...max(h.clipStart, h.clipEnd))
+    }
+
+    func isTrimmed(_ h: Highlight) -> Bool { trims[h.id] != nil }
+
+    /// Apply a dragged trim (clamped into the source video, ≥ `ReelTrim.minLength`). Setting
+    /// a trim identical to the auto-cut clears it, so "trimmed" always means "differs".
+    func setTrim(_ proposed: ClosedRange<Double>, for h: Highlight) {
+        guard let bounds = trimBounds(for: h) else { return }
+        let clamped = ReelTrim.clamp(proposed, bounds: bounds)
+        if abs(clamped.lowerBound - h.clipStart) < 0.01, abs(clamped.upperBound - h.clipEnd) < 0.01 {
+            trims[h.id] = nil
+        } else {
+            trims[h.id] = clamped
+        }
+        invalidatePreview()
+    }
+
+    /// Return the clip to its auto-cut window.
+    func resetTrim(for h: Highlight) {
+        guard trims[h.id] != nil else { return }
+        trims[h.id] = nil
+        invalidatePreview()
+    }
 
     func isPinned(_ h: Highlight) -> Bool { pinnedIds.contains(h.id) }
 
@@ -158,6 +208,7 @@ final class ReelViewModel {
         removed.removeAll()
         pinnedIds.removeAll()
         orderedIds = nil
+        trims.removeAll()
         do {
             let wk = try await source.makeWorkout(model, manualMedia)
             workout = wk
@@ -250,11 +301,13 @@ final class ReelViewModel {
 
     // MARK: preview (#60 §B — see the cut before you commit)
 
-    /// Build a player for the CURRENT cut from the composition — no export needed.
+    /// Build a player for the CURRENT cut from the composition — no export needed. Plans from
+    /// `plannedHighlights` (trims included), and keeps the plan + its timeline map for the
+    /// editor chrome (duration line, filmstrip ring, play-from-here).
     func buildPreview(using exporter: ReelExporter = ReelExporter()) async {
         guard let wk = workout else { return }
         previewError = nil
-        let plan = model.reelPlan(for: keptHighlights, media: wk.media,
+        let plan = model.reelPlan(for: plannedHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
             let (composition, videoComposition) = try await exporter.makeComposition(
@@ -263,6 +316,8 @@ final class ReelViewModel {
             // Same orientation/fit normalization the export uses, so preview matches the saved reel
             // (and mixed-orientation clips render upright instead of sideways).
             item.videoComposition = videoComposition
+            lastPlan = plan
+            timelineMap = ReelTimelineMap(plan: plan)
             previewPlayer = AVPlayer(playerItem: item)
         } catch {
             previewPlayer = nil
@@ -271,10 +326,30 @@ final class ReelViewModel {
         }
     }
 
+    /// The live preview scorebug (reel editor redesign): the SAME `.feedClipScorebug` tile the
+    /// export burns, over the same whole-session series mapped linearly across the reel — so
+    /// the SwiftUI overlay on the preview IS the burn, previewed. `nil` when the HR chip is
+    /// off or the session has no HR. (The CA burn itself can't render in an in-app player.)
+    var previewHRTile: (tile: HRTile, values: HROverlayValues)? {
+        guard overlayEnabled, let wk = workout, !wk.hr.isEmpty, let map = timelineMap,
+              map.totalDuration > 0 else { return nil }
+        let values = HROverlayValues(samples: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
+                                     durationSec: map.totalDuration,
+                                     maxHR: wk.maxBpm, restHR: wk.restBpm)
+        // `resolveTile` is the renderability gate (the same one the burn runs) — the view
+        // draws the HRTile itself, exactly like the feed poster does.
+        let tile = HRTile.feedClipScorebug(restHR: wk.restBpm)
+        guard values.resolveTile(tile) != nil else { return nil }
+        return (tile, values)
+    }
+
     private func invalidatePreview() {
         previewPlayer?.pause()
         previewPlayer = nil
         previewError = nil
+        lastPlan = nil
+        timelineMap = nil
+        previewEpoch += 1   // the view's auto-rebuild hook (.task(id:))
     }
 
     func export(using exporter: ReelExporter = ReelExporter()) async {
@@ -285,7 +360,8 @@ final class ReelViewModel {
         state = .exporting
         saveState = .idle
         postState = .idle
-        let plan = model.reelPlan(for: keptHighlights, media: wk.media,
+        // Trims included — the export ships exactly the cut the preview showed (WYSIWYG).
+        let plan = model.reelPlan(for: plannedHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
             // Burn the glass HR scorebug (highlights P1) — the SAME overlay path the feed's Animate
@@ -333,10 +409,13 @@ final class ReelViewModel {
 
     // MARK: - Intensity badges (highlights P1)
 
-    /// Peak BPM inside a highlight's clip window — the edit list's visible intensity badge.
-    /// `nil` (no HR sample in the window) falls the row back to the engine score caption.
+    /// Peak BPM inside a highlight's EFFECTIVE clip window (the user trim when set — the badge
+    /// must describe the footage that ships). `nil` (no HR sample in the window) falls the row
+    /// back to a neutral caption.
     func peakBpm(for h: Highlight) -> Double? {
-        ReelIntensity.peakBpm(hr: workout?.hr ?? [], start: h.clipStart, end: h.clipEnd)
+        let window = effectiveWindow(for: h)
+        return ReelIntensity.peakBpm(hr: workout?.hr ?? [],
+                                     start: window.lowerBound, end: window.upperBound)
     }
 
     /// The badge's performance-ramp fraction (%HRR) for a highlight's peak.
