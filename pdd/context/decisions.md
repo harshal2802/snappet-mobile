@@ -8536,3 +8536,35 @@ Rules out / non-obvious:
   tab escape every other module honors.
 - The home For You carousel reuses the same day-seeded `OutfitComposer.forYou` — no second composition
   path; cards push straight to `OutfitBoardView`.
+
+## 2026-07-16 — Festival mini-app: Kilter shape, time-window tagging, lineups as hosted packs (festival ideation, pre-prompt-01)
+
+**Decision** (ideation session, wireframes approved: `docs/ux-research/festival/wireframes.html`,
+14 frames; chain in `pdd/prompts/features/festival/README.md`). Dance + video tagging for
+music-festival lineups ships as a **Festival mini-app shaped like Kilter, not Wardrobe**: the module
+owns the lineup domain (festivals → days → stages → sets); being at a set is a plain
+dance-discipline `WorkoutSession`, so HR/watch/media/Clips/reels all come from the existing spine.
+The repo already settled this trade once — climbing is a discipline AND Kilter is a module, because
+an external catalog + time-anchored capture doesn't fit the exercise/routine model but must not
+fork the session spine.
+
+Non-obvious calls:
+- **Tagging is timestamp × set-window overlap** (pure `FestivalSetMatcher`), not manual tagging with
+  smarts sprinkled on. A set is an interval; every clip has a capture date; #283 already anchors
+  media to sessions by window. Ambiguity (two stages live, clip between sets) lowers confidence and
+  is *surfaced* in a review sheet — never silently guessed.
+- **Lineups are hosted catalog packs**, mirroring the Kilter pipeline: `.fpack` = gzipped versioned
+  JSON at `https://harshal2802.github.io/Snappet/music-festivals/` (sibling of `board-data/`;
+  separate PR on the web-app repo). Rationale: same legal/network posture (public schedule data,
+  user-initiated single GET, offline after install — festivals have no signal), and the
+  provider→validator→store install path is already generalized.
+- **★ plan is local-notification math, not a service**: reminders scheduled on-device from pack set
+  times (`UNUserNotificationCenter`), clash detection = starred-interval overlap. Apple Intelligence
+  is scoped to the E7 contract — pure `SetRecommender` ranks (HR-per-artist history × plan gaps ×
+  walk time); on-device FM writes only the one-line reasons + later poster-scan structuring;
+  template reasons when FM is unavailable.
+- **QR sharing reuses `SnappetShareable`** end-to-end: day-plan/hand-built lineups deflate into the
+  code itself (`snappet://festival/v1/<blob>`, offline-scannable); full festivals exceed the QR cap
+  and fall back to an install-link QR — the exact `SharedRoutine` payload-vs-link logic.
+- **Module accent proposal**: "UV orchid" (light `0xB03AC2` / dark `0xD96BE8`) — distinct from
+  journal-violet and wardrobe-rose; confirm against the ramp when prompt 02 lands it.

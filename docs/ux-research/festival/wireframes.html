@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Festival · End-state wireframes</title>
+<style>
+  :root{
+    /* Snappet Pulse tokens — DARK variants (festival is a night surface) */
+    --brand:#FF7A6B;          /* brand coral (dark) — single primary CTA per surface */
+    --fest:#D96BE8;           /* PROPOSED festival module accent (dark) — "UV orchid" */
+    --fest-l:#B03AC2;         /* PROPOSED festival module accent (light)              */
+    --ember:#FF9645;          /* workout module accent — the dance-session spine      */
+    --kilter:#F59E0B;         /* kilter amber — referenced for the catalog pattern    */
+    --fresh:#5BC074;          /* perfFresh  — easy / recovered                        */
+    --mod:#F59E0B;            /* perfModerate — working                               */
+    --hard:#FF6A5C;           /* perfHard — redline (the drop)                        */
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#22182a,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1460px;margin:0 auto;padding:0 28px}
+  header.page{padding:64px 28px 12px;max-width:1460px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#e0a7f2 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:17px;max-width:1000px;margin:0 0 16px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin:14px 0 6px;font-size:13px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:18px 0 0;font-size:14px;color:#c3c7d1;max-width:1160px}
+  .scopebox b{color:#fff}
+  .scopebox .later{color:#8b90a0}
+  .flowhead{margin:64px 0 6px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#b487c0}
+  .flowtitle{font-size:26px;font-weight:750;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:1000px;margin:0 0 30px;font-size:15px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 38px;align-items:flex-start}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--fest);color:#2a0b2e;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(217,107,232,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fest);font-weight:750}
+  .caption .reuse{color:var(--fresh);font-weight:700}
+  .arrow{font-size:30px;color:#4a4f5e;align-self:center;margin-top:300px}
+
+  /* ---------- device ---------- */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;
+    background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 2px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .content{flex:1 1 auto;overflow:hidden;padding:6px 16px 8px;position:relative;display:flex;flex-direction:column}
+
+  /* ---------- shared chrome ---------- */
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 2px;flex:0 0 auto}
+  .navrow .back{font-size:14px;font-weight:650;color:var(--fest)}
+  .navrow .title{font-size:16px;font-weight:800}
+  .navrow .side{width:56px;font-size:13px;font-weight:650;color:var(--fest);text-align:right}
+  .bigtitle{font-size:27px;font-weight:800;letter-spacing:-.02em;margin:10px 2px 2px}
+  .bigtitle small{display:block;font-size:12.5px;font-weight:600;color:var(--t2);letter-spacing:0;margin-top:2px}
+  .searchbar{display:flex;align-items:center;gap:8px;background:var(--muted);border-radius:12px;
+    padding:9px 12px;font-size:13.5px;color:var(--t2);margin:10px 2px 0}
+  .chips{display:flex;gap:6px;margin:10px 2px 0;overflow:hidden;flex:0 0 auto}
+  .chip{border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:var(--t2);
+    background:var(--surface);border:1px solid var(--hair);white-space:nowrap}
+  .chip.on{color:#fff;background:var(--fest);border-color:var(--fest)}
+  .sechead{display:flex;align-items:baseline;justify-content:space-between;margin:14px 4px 0;flex:0 0 auto}
+  .sechead .t{font-size:15px;font-weight:800}
+  .sechead .a{font-size:12px;font-weight:700;color:var(--fest)}
+  .cta{background:var(--brand);color:#fff;border-radius:999px;padding:13px 26px;font-size:15px;font-weight:750;
+    box-shadow:0 10px 24px rgba(255,122,107,.35)}
+  .cta.block{display:block;text-align:center;margin:12px 2px}
+  .cta.fest{background:var(--fest);color:#26082b;box-shadow:0 10px 24px rgba(217,107,232,.35)}
+  .ghost{border:1.5px solid var(--hair);color:var(--ink);border-radius:999px;padding:12px 26px;font-size:14px;font-weight:700;background:var(--surface);text-align:center}
+  .ghost.block{display:block;margin:10px 2px}
+  .tabbar{flex:0 0 auto;display:flex;justify-content:space-around;align-items:center;padding:10px 8px 22px;
+    border-top:1px solid var(--hair);background:rgba(18,18,20,.85);backdrop-filter:blur(14px);font-size:10px;font-weight:700;color:var(--t2)}
+  .tabbar .tb{display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar .tb i{font-style:normal;font-size:20px}
+  .tabbar .tb.on{color:var(--brand)}
+
+  /* ---------- app library tiles ---------- */
+  .libgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 2px 0}
+  .libtile{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:13px 13px 11px;position:relative}
+  .libtile .ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:8px}
+  .libtile .nm{font-size:13.5px;font-weight:750}
+  .libtile .ds{font-size:10.5px;color:var(--t2);font-weight:600;margin-top:1px}
+  .newpill{position:absolute;top:10px;right:10px;font-size:9px;font-weight:800;letter-spacing:.06em;
+    background:var(--fest);color:#26082b;border-radius:999px;padding:2px 7px}
+
+  /* ---------- empty state / catalog ---------- */
+  .emptyhero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 16px}
+  .emptyhero .art{font-size:64px;margin-bottom:8px}
+  .emptyhero h3{font-size:22px;font-weight:800;margin:0 0 6px}
+  .emptyhero p{font-size:13px;color:var(--t2);margin:0 0 14px;max-width:250px}
+  .privcard{margin:14px 6px 0;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px 14px;text-align:left}
+  .privcard .row{display:flex;gap:10px;align-items:flex-start;margin:6px 0;font-size:11.5px;color:var(--t2)}
+  .privcard .row b{color:var(--ink);font-weight:700}
+  .privcard .row .ic{font-size:14px;line-height:1.2}
+
+  .festrow{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px 13px;margin:10px 2px 0;display:flex;gap:11px;align-items:center}
+  .festrow .art{width:44px;height:44px;border-radius:12px;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto}
+  .festrow .tx{flex:1;min-width:0}
+  .festrow .nm{font-size:14px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .festrow .meta{font-size:11px;color:var(--t2);font-weight:600;margin-top:1px}
+  .festrow .get{font-size:12px;font-weight:800;color:var(--fest);border:1.5px solid var(--fest);border-radius:999px;padding:5px 13px;flex:0 0 auto}
+  .festrow .got{font-size:12px;font-weight:800;color:var(--fresh);flex:0 0 auto}
+  .progressbar{height:4px;border-radius:2px;background:var(--muted);margin-top:7px;overflow:hidden}
+  .progressbar i{display:block;height:100%;width:62%;background:var(--fest);border-radius:2px}
+
+  /* ---------- schedule ---------- */
+  .daytabs{display:flex;gap:6px;margin:12px 2px 0}
+  .daytab{flex:1;text-align:center;border-radius:12px;padding:8px 0 6px;background:var(--surface);border:1px solid var(--hair)}
+  .daytab .d{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--t2)}
+  .daytab .n{font-size:16px;font-weight:800}
+  .daytab.on{background:var(--fest);border-color:var(--fest)}
+  .daytab.on .d,.daytab.on .n{color:#26082b}
+  .sched{margin:12px 2px 0;overflow:hidden;flex:1}
+  .stage{margin:0 0 12px}
+  .stage .sn{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t2);margin:0 2px 6px}
+  .setrow{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--hair);
+    border-radius:14px;padding:10px 12px;margin:0 0 7px;position:relative}
+  .setrow .time{font-size:10.5px;font-weight:800;color:var(--t2);width:52px;flex:0 0 auto;line-height:1.3}
+  .setrow .nm{font-size:13.5px;font-weight:750;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .setrow .badges{display:flex;gap:5px;align-items:center;flex:0 0 auto;font-size:10.5px;font-weight:700;color:var(--t2)}
+  .setrow.now{border-color:var(--fest);background:linear-gradient(90deg,rgba(217,107,232,.14),var(--surface) 65%)}
+  .setrow.went{border-color:rgba(91,192,116,.4)}
+  .livepill{font-size:9px;font-weight:800;letter-spacing:.06em;background:var(--fest);color:#26082b;border-radius:999px;padding:2px 7px}
+  .clipct{font-size:10.5px;font-weight:800;color:var(--fresh)}
+  .hrmini{font-size:10.5px;font-weight:800;color:var(--hard)}
+
+  /* ---------- stars / plan ---------- */
+  .star{font-size:14px;color:var(--fest);line-height:1}
+  .star.off{color:var(--t2);opacity:.45}
+  .clash{font-size:9px;font-weight:800;color:var(--mod)}
+
+  /* ---------- lock screen ---------- */
+  .lockclock{text-align:center;margin-top:44px}
+  .lockclock .d{font-size:14px;font-weight:650;color:#cfd2da}
+  .lockclock .t{font-size:64px;font-weight:750;letter-spacing:-.02em;color:#f2f3f6;line-height:1.05}
+  .notif{background:rgba(44,44,52,.88);border-radius:18px;padding:11px 13px;margin:9px 10px 0;
+    backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.07)}
+  .notif .app{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:750;letter-spacing:.05em;color:#b9bdc7}
+  .notif .app .when{margin-left:auto;font-weight:650;letter-spacing:0}
+  .notif .nt{font-size:13px;font-weight:800;color:#f4f4f6;margin-top:4px}
+  .notif .nb{font-size:11.5px;font-weight:600;color:#c9ccd4;margin-top:1px;line-height:1.45}
+  .notif .acts{display:flex;gap:7px;margin-top:8px}
+  .notif .acts span{flex:1;text-align:center;font-size:10.5px;font-weight:800;border-radius:9px;padding:6px 0;
+    background:rgba(255,255,255,.1);color:#e8e9ee}
+
+  /* ---------- for-you suggestions ---------- */
+  .aihero{border-radius:18px;padding:14px 15px;margin:12px 2px 0;position:relative;overflow:hidden;
+    background:
+      radial-gradient(200px 120px at 90% -30%, rgba(217,107,232,.35), transparent 70%),
+      radial-gradient(180px 110px at -10% 120%, rgba(88,155,242,.25), transparent 70%),
+      linear-gradient(150deg,#241531,#17171b 75%)}
+  .aihero .k{font-size:9.5px;font-weight:800;letter-spacing:.14em;color:var(--fest)}
+  .aihero .h{font-size:17px;font-weight:800;margin-top:3px}
+  .aihero .s{font-size:11.5px;font-weight:600;color:#c9ccd4;margin-top:2px;line-height:1.45}
+  .sugg{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:11px 12px;margin:9px 2px 0}
+  .sugg .top{display:flex;align-items:center;gap:8px}
+  .sugg .nm{font-size:14px;font-weight:800;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sugg .tm{font-size:10.5px;font-weight:750;color:var(--t2)}
+  .sugg .add{font-size:11px;font-weight:800;color:var(--fest);border:1.5px solid var(--fest);border-radius:999px;padding:4px 11px;white-space:nowrap}
+  .sugg .why{display:flex;gap:7px;margin-top:7px;font-size:11px;font-weight:600;color:var(--t2);line-height:1.45}
+  .sugg .why .sp{flex:0 0 auto;font-size:12px}
+  .sugg .why b{color:var(--ink)}
+
+  /* ---------- live sheet ---------- */
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:26px 26px 0 0;
+    padding:10px 16px 26px;box-shadow:0 -20px 50px rgba(0,0,0,.6);border-top:1px solid var(--hair)}
+  .grabber{width:38px;height:5px;border-radius:3px;background:var(--hair);margin:2px auto 12px}
+  .nowhero{border-radius:18px;padding:16px;background:
+    radial-gradient(220px 140px at 85% -20%, rgba(217,107,232,.35), transparent 70%),
+    linear-gradient(140deg,#2a1030,#1E1E22 70%);border:1px solid rgba(217,107,232,.35)}
+  .nowhero .lbl{font-size:9.5px;font-weight:800;letter-spacing:.14em;color:var(--fest)}
+  .nowhero .artist{font-size:23px;font-weight:800;letter-spacing:-.01em;margin:3px 0 1px}
+  .nowhero .meta{font-size:12px;color:var(--t2);font-weight:650}
+  .hrlive{display:flex;align-items:center;gap:12px;background:var(--muted);border-radius:14px;padding:11px 13px;margin:12px 0 0}
+  .hrlive .bpm{font-size:24px;font-weight:800;color:var(--hard)}
+  .hrlive .bpm small{font-size:10px;font-weight:800;color:var(--t2);margin-left:2px}
+  .hrlive .zone{font-size:10.5px;font-weight:800;letter-spacing:.05em;color:#26082b;background:var(--mod);border-radius:999px;padding:3px 9px}
+  .hrlive .dur{margin-left:auto;font-size:13px;font-weight:750;color:var(--t2)}
+  .recbtn{display:flex;align-items:center;justify-content:center;gap:9px;background:var(--brand);color:#fff;
+    border-radius:16px;padding:15px 0;font-size:15.5px;font-weight:800;margin:12px 0 0;box-shadow:0 10px 24px rgba(255,122,107,.3)}
+  .recbtn .reddot{width:11px;height:11px;border-radius:50%;background:#fff;outline:3px solid rgba(255,255,255,.4)}
+  .autotag{display:flex;gap:8px;align-items:flex-start;font-size:11px;color:var(--t2);font-weight:600;margin:11px 2px 0;line-height:1.45}
+  .nextrow{display:flex;align-items:center;gap:9px;margin:12px 2px 0;font-size:12px;color:var(--t2);font-weight:650}
+  .nextrow b{color:var(--ink)}
+  .nextrow .sw{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--fest)}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+
+  /* ---------- set detail ---------- */
+  .herostat{display:flex;gap:8px;margin:12px 2px 0}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:10px 11px}
+  .stat .v{font-size:17px;font-weight:800}
+  .stat .v.hard{color:var(--hard)}
+  .stat .v.fresh{color:var(--fresh)}
+  .stat .k{font-size:9.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--t2);margin-top:1px}
+  .hrcurve{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px 13px 8px;margin:10px 2px 0}
+  .hrcurve .t{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--t2)}
+  .hrcurve svg{display:block;width:100%;height:64px;margin-top:4px}
+  .droptag{font-size:9.5px;font-weight:800;color:var(--hard)}
+  .clipgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin:10px 2px 0}
+  .clip{aspect-ratio:9/13;border-radius:12px;position:relative;overflow:hidden;
+    background:linear-gradient(160deg,#3a2040,#191a20 75%)}
+  .clip.b2{background:linear-gradient(160deg,#20303f,#191a20 75%)}
+  .clip.b3{background:linear-gradient(160deg,#3f2a20,#191a20 75%)}
+  .clip .dur{position:absolute;right:6px;bottom:6px;font-size:9px;font-weight:800;background:rgba(0,0,0,.65);border-radius:6px;padding:2px 5px;color:#fff}
+  .clip .auto{position:absolute;left:6px;top:6px;font-size:8.5px;font-weight:800;background:rgba(217,107,232,.9);color:#26082b;border-radius:6px;padding:2px 5px}
+  .clip .play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:rgba(255,255,255,.85)}
+
+  /* ---------- tag review ---------- */
+  .tagrow{display:flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:9px 11px;margin:8px 2px 0}
+  .tagrow .thumb{width:40px;height:54px;border-radius:9px;flex:0 0 auto;background:linear-gradient(160deg,#3a2040,#191a20 75%);position:relative}
+  .tagrow .thumb i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:14px;color:rgba(255,255,255,.8)}
+  .tagrow .tx{flex:1;min-width:0}
+  .tagrow .tm{font-size:10.5px;font-weight:750;color:var(--t2)}
+  .tagrow .as{font-size:13px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tagrow .as .conf{font-size:10px;font-weight:800;color:var(--fresh);margin-left:5px}
+  .tagrow .as .conf.low{color:var(--mod)}
+  .tagrow .sw{font-size:11.5px;font-weight:800;color:var(--fest);flex:0 0 auto}
+  .timelinebar{position:relative;height:46px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;margin:10px 2px 0;overflow:hidden}
+  .tl-set{position:absolute;top:6px;bottom:6px;border-radius:8px;background:rgba(217,107,232,.18);border:1px solid rgba(217,107,232,.4);
+    font-size:8.5px;font-weight:800;color:var(--fest);display:flex;align-items:flex-end;padding:3px 5px;white-space:nowrap;overflow:hidden}
+  .tl-clip{position:absolute;top:2px;width:5px;height:10px;border-radius:2px;background:var(--brand)}
+
+  /* ---------- clips feed ---------- */
+  .post{background:var(--surface);border:1px solid var(--hair);border-radius:18px;overflow:hidden;margin:10px 2px 0}
+  .post .media{height:236px;position:relative;background:
+    radial-gradient(200px 130px at 30% 20%, rgba(217,107,232,.4), transparent 70%),
+    linear-gradient(160deg,#31163a,#141419 80%)}
+  .post .media .play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:34px;color:rgba(255,255,255,.85)}
+  .hud{position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.45);
+    backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:6px 10px}
+  .hud .bpm{font-size:15px;font-weight:800;color:var(--hard)}
+  .hud .bpm small{font-size:8.5px;color:#cfd2da;font-weight:800}
+  .hud svg{width:56px;height:18px}
+  .reelbadge{position:absolute;right:10px;top:10px;font-size:9px;font-weight:800;letter-spacing:.08em;
+    background:rgba(255,122,107,.92);color:#fff;border-radius:999px;padding:3px 8px}
+  .post .body{padding:11px 13px 12px}
+  .post .ti{font-size:14.5px;font-weight:800}
+  .post .su{font-size:11.5px;color:var(--t2);font-weight:650;margin-top:1px}
+  .post .rowx{display:flex;gap:14px;margin-top:9px;font-size:12px;color:var(--t2);font-weight:700}
+
+  /* ---------- recap ---------- */
+  .recaphero{border-radius:20px;padding:16px;margin:12px 2px 0;position:relative;overflow:hidden;
+    background:
+      radial-gradient(240px 150px at 80% -20%, rgba(217,107,232,.45), transparent 70%),
+      radial-gradient(200px 130px at 0% 110%, rgba(255,122,107,.25), transparent 70%),
+      linear-gradient(150deg,#2a1030,#17171b 75%)}
+  .recaphero .k{font-size:9.5px;font-weight:800;letter-spacing:.14em;color:var(--fest)}
+  .recaphero .n{font-size:22px;font-weight:800;margin:3px 0 8px}
+  .recaphero .stats{display:flex;gap:14px;font-size:11.5px;color:#d8dae0;font-weight:650}
+  .recaphero .stats b{display:block;font-size:17px;color:#fff}
+  .artistrow{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--hair);border-radius:15px;padding:10px 12px;margin:8px 2px 0}
+  .artistrow .th{width:42px;height:42px;border-radius:11px;background:linear-gradient(160deg,#3a2040,#191a20);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:18px}
+  .artistrow .tx{flex:1;min-width:0}
+  .artistrow .nm{font-size:13.5px;font-weight:750}
+  .artistrow .meta{font-size:10.5px;color:var(--t2);font-weight:650}
+  .artistrow .pk{font-size:11px;font-weight:800;color:var(--hard);flex:0 0 auto}
+
+  /* ---------- desktop frame ---------- */
+  .browser{width:980px;max-width:100%;border-radius:16px;overflow:hidden;background:#17181c;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 1px #2a2c33}
+  .browser .bar{display:flex;align-items:center;gap:8px;background:#101115;padding:10px 14px;border-bottom:1px solid #26272c}
+  .browser .dots{display:flex;gap:6px}
+  .browser .dots i{width:11px;height:11px;border-radius:50%;display:block}
+  .browser .url{flex:1;background:#1d1e24;border-radius:8px;font-size:12px;color:#9a9eaa;padding:6px 12px;font-weight:600}
+  .site{padding:28px 34px 34px;color:#e7e8ec}
+  .site h2{margin:0;font-size:26px;font-weight:800;letter-spacing:-.01em}
+  .site .tag{color:#a9adb8;font-size:14px;margin:4px 0 20px}
+  .packgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .pack{background:#1E1E22;border:1px solid #34343A;border-radius:14px;padding:14px 15px}
+  .pack .fn{font-size:15px;font-weight:750}
+  .pack .fm{font-size:11.5px;color:#A6A5A1;margin:2px 0 10px;font-weight:600}
+  .pack .dl{display:inline-block;font-size:12px;font-weight:800;color:var(--fest);border:1.5px solid var(--fest);border-radius:999px;padding:5px 13px}
+  .pack .sz{float:right;font-size:11px;color:#8b90a0;font-weight:700;margin-top:8px}
+  .site .foot{margin-top:20px;font-size:12.5px;color:#8b90a0}
+  .site .foot b{color:#c9ccd4}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Festival — dance + video tagging for lineups</h1>
+  <p class="sub">End-state wireframes for the <b>Festival mini-app</b>: a Kilter-shaped module that owns the
+    lineup <i>domain</i> (festivals · stages · sets) while capture rides the existing workout spine
+    (dance-discipline sessions, watch HR, Clips, reels). Lineups arrive as downloadable catalog packs from the
+    Snappet web app — the same pattern as the Kilter climb catalog.</p>
+  <div class="legend">
+    <span class="swatch"><i class="dot" style="background:#D96BE8"></i><b>festival accent (proposed)</b> — “UV orchid”, dark #D96BE8 / light #B03AC2</span>
+    <span class="swatch"><i class="dot" style="background:#FF7A6B"></i><b>brand coral</b> — one primary CTA per surface</span>
+    <span class="swatch"><i class="dot" style="background:#FF9645"></i><b>workout ember</b> — the dance-session spine</span>
+    <span class="swatch"><i class="dot" style="background:#5BC074"></i><i class="dot" style="background:#F59E0B;margin-left:-4px"></i><i class="dot" style="background:#FF6A5C;margin-left:-4px"></i><b>performance ramp</b> — HR/effort only, never wayfinding</span>
+  </div>
+  <div class="scopebox">
+    <b>What’s new vs reused.</b> NEW: Festival module (catalog install, schedule, set detail, tag review), pure
+    <code>FestivalSetMatcher</code> (clip-timestamp × set-window overlap), <code>.fpack</code> lineup packs on the web app,
+    ★ plan with pre-set local notifications + clash detection, pure <code>SetRecommender</code> with on-device
+    Foundation-Model reason lines.
+    REUSED: dance <code>WorkoutDiscipline</code> + watch HR capture, session-anchored media assignment (#283),
+    <code>ClipFeedComposer/Filter</code> search &amp; chips, shared <code>ReelView</code> with glass-HR burn, Kilter’s
+    provider→validator→store install pipeline, and the <code>SnappetShareable</code> QR stack (one renderer, one
+    scanner, <code>SharedRoutine</code>’s deflate-blob codec). <span class="later">Later: Clashfinder import,
+    Live Activity for “now playing”.</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ═════════════════ FLOW A — GET LINEUPS ═════════════════ -->
+  <div class="flowhead">Flow A · Kilter-style catalog</div>
+  <div class="flowtitle">Get lineups onto the device</div>
+  <p class="flowdesc">Snappet ships no lineup data. Like the Kilter climb catalog, the user brings it on once —
+    <b>Download from Snappet Lineups</b> (hosted packs on the web app) leads, with poster-scan and manual entry as
+    fallbacks — then everything works offline all weekend (festivals famously have no signal).</p>
+
+  <div class="gallery">
+
+    <!-- A1: App Library -->
+    <div class="step">
+      <div class="stepnum">1</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="bigtitle">Apps <small>Your Snappet suite</small></div>
+          <div class="sechead"><span class="t">Lifestyle</span></div>
+          <div class="libgrid">
+            <div class="libtile"><span class="newpill">NEW</span>
+              <div class="ic" style="background:rgba(217,107,232,.16);color:var(--fest)">🎪</div>
+              <div class="nm">Festival</div><div class="ds">Lineups, sets &amp; your night</div>
+            </div>
+            <div class="libtile">
+              <div class="ic" style="background:rgba(232,107,153,.16);color:#E86B99">👗</div>
+              <div class="nm">Wardrobe</div><div class="ds">Your private AI stylist</div>
+            </div>
+            <div class="libtile">
+              <div class="ic" style="background:rgba(157,130,240,.16);color:#9D82F0">📔</div>
+              <div class="nm">Journal</div><div class="ds">Daily reflections</div>
+            </div>
+            <div class="libtile">
+              <div class="ic" style="background:rgba(91,192,116,.16);color:#5BC074">☑️</div>
+              <div class="nm">Habits</div><div class="ds">Streaks &amp; routines</div>
+            </div>
+          </div>
+          <div class="sechead"><span class="t">Fitness</span></div>
+          <div class="libgrid">
+            <div class="libtile">
+              <div class="ic" style="background:rgba(255,150,69,.16);color:#FF9645">🏋️</div>
+              <div class="nm">Workout</div><div class="ds">Strength · climb · dance</div>
+            </div>
+            <div class="libtile">
+              <div class="ic" style="background:rgba(245,158,11,.16);color:#F59E0B">🧗</div>
+              <div class="nm">Kilter</div><div class="ds">Board sessions</div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <span class="tb"><i>🏠</i>Home</span><span class="tb"><i>🎞</i>Clips</span>
+          <span class="tb"><i>📊</i>Recap</span><span class="tb on"><i>◻︎</i>Apps</span>
+        </div>
+      </div></div>
+      <p class="caption"><b>Festival joins the App Library</b> under Lifestyle — <span class="new">NEW module, UV-orchid accent</span>.
+        Per the standing rule, the mini-app never adds its own bottom bar; the suite tab bar stays.</p>
+    </div>
+
+    <!-- A2: empty state -->
+    <div class="step">
+      <div class="stepnum">2</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Apps</span><span class="title">Festival</span><span class="side"></span></div>
+          <div class="emptyhero">
+            <div class="art" style="font-size:52px;margin-bottom:4px">🎪</div>
+            <h3>Get festival lineups</h3>
+            <p style="margin-bottom:10px">Snappet doesn’t ship lineup data. Bring a festival onto this device once —
+              then the whole weekend works offline.</p>
+            <div class="cta fest" style="width:100%;text-align:center;padding:12px 20px">⤓&nbsp; Download from Snappet Lineups</div>
+            <div class="ghost block" style="width:100%;padding:10px 20px">🔳&nbsp; Scan a friend’s QR</div>
+            <div class="ghost block" style="width:100%;padding:10px 20px">📷&nbsp; Scan a lineup poster</div>
+            <div class="ghost block" style="width:100%;padding:10px 20px">✏️&nbsp; Build one by hand</div>
+            <div class="privcard" style="width:100%;margin-top:10px">
+              <div class="row"><span class="ic">🔒</span><span><b>Community packs, kept on-device.</b> One user-initiated GET; nothing uploaded.</span></div>
+              <div class="row"><span class="ic">📴</span><span><b>Offline after install</b> — built for fields with no signal.</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Empty state mirrors <code>KilterCatalogSyncView</code></b> — download leads, power-user
+        paths beneath, honest data-posture card. <span class="new">NEW: poster scan</span> (on-device Foundation
+        Models) and <span class="new">scan a friend’s QR</span> — receiving is just the shared
+        <code>SnappetScannerView</code>.</p>
+    </div>
+
+    <!-- A3: catalog browse -->
+    <div class="step">
+      <div class="stepnum">3</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">Cancel</span><span class="title">Snappet Lineups</span><span class="side"></span></div>
+          <div class="searchbar">🔎&nbsp; Search festivals</div>
+          <div class="chips">
+            <span class="chip on">2026</span><span class="chip">2025</span><span class="chip">Near me</span><span class="chip">Electronic</span>
+          </div>
+          <div class="festrow">
+            <div class="art">🌋</div>
+            <div class="tx"><div class="nm">Glastonbury 2026</div><div class="meta">Jun 24–28 · 9 stages · 412 sets</div>
+              <div class="progressbar"><i></i></div></div>
+            <span class="got" style="color:var(--fest);font-size:11px;font-weight:800">62%</span>
+          </div>
+          <div class="festrow">
+            <div class="art">🎡</div>
+            <div class="tx"><div class="nm">Tomorrowland 2026 · W2</div><div class="meta">Jul 24–26 · 14 stages · 380 sets</div></div>
+            <span class="get">GET</span>
+          </div>
+          <div class="festrow">
+            <div class="art">🏜</div>
+            <div class="tx"><div class="nm">Coachella 2026 · W1</div><div class="meta">Apr 10–12 · 8 stages · 291 sets</div></div>
+            <span class="got">✓ Installed</span>
+          </div>
+          <div class="festrow">
+            <div class="art">🌲</div>
+            <div class="tx"><div class="nm">Lost Village 2026</div><div class="meta">Aug 27–30 · 6 stages · 174 sets</div></div>
+            <span class="get">GET</span>
+          </div>
+          <div style="margin:12px 4px 0;font-size:11px;color:var(--t2);font-weight:600;line-height:1.5">
+            Packs are tiny (a lineup is text). Install trims nothing — you get every stage and can hide
+            the ones you’ll never visit.</div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Hosted catalog browse</b> — <span class="reuse">REUSES Kilter’s provider→validator→store
+        install pipeline</span> with a JSON <code>.fpack</code> instead of SQLite. Downloading Glastonbury; Coachella
+        already installed.</p>
+    </div>
+  </div>
+
+  <!-- ═════════════════ FLOW B — THE WEEKEND ═════════════════ -->
+  <div class="flowhead">Flow B · At the festival</div>
+  <div class="flowtitle">Schedule as home · one tap when a set grabs you</div>
+  <p class="flowdesc">The installed festival renders as a day schedule. Tapping <b>I’m here</b> on the current set
+    starts (or annotates) a <b>dance-discipline WorkoutSession</b> — watch HR, Live Activity, everything the workout
+    spine already does. Every clip filmed while a set plays will auto-tag to it; the button is optional, not homework.</p>
+
+  <div class="gallery">
+
+    <!-- B1: schedule -->
+    <div class="step">
+      <div class="stepnum">4</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>22:37</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back" style="width:56px">‹</span><span class="title">Glastonbury 2026</span><span class="side">⋯</span></div>
+          <div class="daytabs">
+            <div class="daytab"><div class="d">FRI</div><div class="n">26</div></div>
+            <div class="daytab on"><div class="d">SAT</div><div class="n">27</div></div>
+            <div class="daytab"><div class="d">SUN</div><div class="n">28</div></div>
+          </div>
+          <div class="sched">
+            <div class="stage"><div class="sn">Pyramid Stage</div>
+              <div class="setrow went">
+                <span class="time">20:00<br>21:15</span><span class="nm">Little Simz</span>
+                <span class="badges"><span class="clipct">▶ 3 clips</span><span class="hrmini">♥ 142</span></span>
+              </div>
+              <div class="setrow now">
+                <span class="time">22:15<br>23:45</span><span class="nm">Fred again..</span>
+                <span class="badges"><span class="livepill">NOW · 0:22</span><span class="star">★</span></span>
+              </div>
+            </div>
+            <div class="stage"><div class="sn">West Holts</div>
+              <div class="setrow">
+                <span class="time">23:30<br>01:00</span><span class="nm">Overmono</span>
+                <span class="badges">in 53 min · ⏰<span class="star">★</span></span>
+              </div>
+              <div class="setrow">
+                <span class="time">01:00<br>02:30</span><span class="nm">Jayda G</span>
+                <span class="badges"><span class="star off">☆</span></span>
+              </div>
+            </div>
+            <div class="stage"><div class="sn">Arcadia</div>
+              <div class="setrow">
+                <span class="time">23:00<br>00:30</span><span class="nm">Eric Prydz</span>
+                <span class="badges"><span class="clash">⚠︎ clash</span><span class="star">★</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="cta fest block" style="text-align:center">◉&nbsp; I’m here — Fred again..</div>
+        </div>
+        <div class="tabbar">
+          <span class="tb"><i>🏠</i>Home</span><span class="tb"><i>🎞</i>Clips</span>
+          <span class="tb"><i>📊</i>Recap</span><span class="tb on"><i>◻︎</i>Apps</span>
+        </div>
+      </div></div>
+      <p class="caption"><b>Day schedule, grouped by stage.</b> <span class="new">NEW surface</span>: the “now” set
+        glows festival-orchid; attended sets show <span class="reuse">clip count + avg HR from the session spine</span>.
+        <span class="new">Tap ★ to star a set into <b>your plan</b></span> — stars drive the ⏰ reminders, clash
+        warnings (Prydz vs Overmono), the shareable plan QR, and the For-You suggestions. One coral-free CTA —
+        <b>I’m here</b> — starts the dance session.</p>
+    </div>
+
+    <!-- B2: live sheet -->
+    <div class="step">
+      <div class="stepnum">5</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>22:59</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content" style="padding:6px 0 0">
+          <div style="padding:0 16px;opacity:.35">
+            <div class="navrow"><span class="back">‹ Festivals</span><span class="title">Glastonbury 2026</span><span class="side">⋯</span></div>
+            <div class="daytabs">
+              <div class="daytab"><div class="d">FRI</div><div class="n">26</div></div>
+              <div class="daytab on"><div class="d">SAT</div><div class="n">27</div></div>
+              <div class="daytab"><div class="d">SUN</div><div class="n">28</div></div>
+            </div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grabber"></div>
+            <div class="nowhero">
+              <div class="lbl">ON THE FLOOR · PYRAMID STAGE</div>
+              <div class="artist">Fred again..</div>
+              <div class="meta">22:15 – 23:45 · 46 min left</div>
+            </div>
+            <div class="hrlive">
+              <span class="bpm">156<small>BPM</small></span>
+              <span class="zone">THRESHOLD</span>
+              <span class="dur">Dancing 44:12</span>
+            </div>
+            <div class="recbtn"><span class="reddot"></span> Record a clip</div>
+            <div class="autotag">✦&nbsp; Anything you film — here or straight from the Camera app — auto-tags to
+              <b style="color:var(--ink)">&nbsp;Fred again..&nbsp;</b> while this set plays.</div>
+            <div class="nextrow">Up next: <b>Overmono</b> · West Holts · 23:30 <span class="sw">Switch set ›</span></div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>“On the floor” live sheet</b> — the Kilter “On the Board” analog.
+        <span class="reuse">REUSES the dance <code>WorkoutSession</code>, watch HR pill, record-clip button</span>;
+        <span class="new">NEW: set countdown, auto-tag promise, one-tap set switch</span>.</p>
+    </div>
+
+    <!-- B3: set detail -->
+    <div class="step">
+      <div class="stepnum">6</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Saturday</span><span class="title">Set</span><span class="side">Share</span></div>
+          <div class="bigtitle">Fred again.. <small>Pyramid Stage · Sat 22:15–23:45 · Glastonbury 2026</small></div>
+          <div class="herostat">
+            <div class="stat"><div class="v">1:28</div><div class="k">Danced</div></div>
+            <div class="stat"><div class="v hard">171</div><div class="k">Peak HR</div></div>
+            <div class="stat"><div class="v fresh">612</div><div class="k">kcal</div></div>
+            <div class="stat"><div class="v">5</div><div class="k">Clips</div></div>
+          </div>
+          <div class="hrcurve">
+            <div class="t">Your heart rate · <span class="droptag">peak at “Delilah” drop 23:12</span></div>
+            <svg viewBox="0 0 280 64" preserveAspectRatio="none">
+              <polyline fill="none" stroke="#FF6A5C" stroke-width="2.5"
+                points="0,50 20,46 40,44 60,40 80,42 100,34 120,36 140,28 160,30 175,14 185,8 195,18 215,24 235,20 255,30 280,36"/>
+              <circle cx="185" cy="8" r="3.5" fill="#FF6A5C"/>
+            </svg>
+          </div>
+          <div class="sechead"><span class="t">Clips from this set</span><span class="a">Review tags ›</span></div>
+          <div class="clipgrid">
+            <div class="clip"><span class="auto">✦ AUTO</span><span class="play">▶</span><span class="dur">0:31</span></div>
+            <div class="clip b2"><span class="auto">✦ AUTO</span><span class="play">▶</span><span class="dur">0:12</span></div>
+            <div class="clip b3"><span class="play">▶</span><span class="dur">0:48</span></div>
+          </div>
+          <div class="cta block" style="text-align:center">✦&nbsp; Make a reel of this set</div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Set detail = climb detail for music.</b> <span class="reuse">HR, kcal, clips all come from
+        the linked dance session</span>; <span class="new">NEW: peak-HR-at-the-drop callout, ✦ AUTO badges from the
+        matcher</span>. Reel CTA feeds the shared <code>ReelView</code>.</p>
+    </div>
+  </div>
+
+  <!-- ═════════════════ FLOW C — PLAN & SMART NUDGES ═════════════════ -->
+  <div class="flowhead">Flow C · Plan &amp; smart nudges</div>
+  <div class="flowtitle">Star your sets — the phone does the remembering</div>
+  <p class="flowdesc">Starred sets become <b>your plan</b>: local notifications fire a configurable lead before each
+    one (scheduled on-device from the pack’s set times — no network, no push service), clashes are flagged the moment
+    you star two overlapping sets, and a <b>For You</b> sheet suggests what to star next. The ranking is a pure
+    <code>SetRecommender</code> (your HR-per-artist history, gaps in your plan, stage walk time); <b>Apple
+    Intelligence</b> is used narrowly and honestly — on-device Foundation Models write only the one-line <i>why</i>
+    for each suggestion and the poster-scan structuring. Nothing about your taste leaves the phone.</p>
+
+  <div class="gallery">
+
+    <!-- C1: lock screen -->
+    <div class="step">
+      <div class="stepnum">7</div>
+      <div class="device"><div class="screen" style="background:linear-gradient(180deg,#231536,#0c0c12 72%)">
+        <div class="island"></div>
+        <div class="lockclock"><div class="d">Saturday, June 27</div><div class="t">21:58</div></div>
+        <div class="notif">
+          <div class="app">🎪 SNAPPET · FESTIVAL <span class="when">now</span></div>
+          <div class="nt">★ Fred again.. in 15 min</div>
+          <div class="nb">Pyramid Stage, 22:15. ~9-min walk from West Holts — leave after this track.</div>
+          <div class="acts"><span>On my way</span><span>Skip tonight</span></div>
+        </div>
+        <div class="notif">
+          <div class="app">🎪 SNAPPET · FESTIVAL <span class="when">32m ago</span></div>
+          <div class="nt">Two stars clash at 23:30</div>
+          <div class="nb">Overmono ★ (West Holts) overlaps Eric Prydz ★ (Arcadia) by 60 min. Tap to pick a side —
+            reminders follow your choice.</div>
+        </div>
+        <div class="notif">
+          <div class="app">✨ SNAPPET · FOR YOU <span class="when">18:20</span></div>
+          <div class="nt">Your 01:00 is empty</div>
+          <div class="nb">Jayda G closes West Holts at 01:00 — you averaged 152 ♥ to her disco edits at
+            Coachella. Star her?</div>
+        </div>
+      </div></div>
+      <p class="caption"><b>The nudges, where they matter — the lock screen.</b> <span class="new">NEW: pre-set
+        reminder with walk-time hint, clash alert, one gap-filler suggestion</span>. All
+        <span class="reuse">plain <code>UNUserNotificationCenter</code> scheduling from pack data</span> — works in an
+        airplane-mode field.</p>
+    </div>
+
+    <!-- C2: for you -->
+    <div class="step">
+      <div class="stepnum">8</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>18:20</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back" style="width:56px">‹</span><span class="title">For you</span><span class="side"></span></div>
+          <div class="aihero">
+            <div class="k">✨ SATURDAY NIGHT · BUILT FROM HOW YOU DANCE</div>
+            <div class="h">3 sets worth starring</div>
+            <div class="s">Ranked from your own heart-rate history and the gaps in your plan — reasons written
+              on-device.</div>
+          </div>
+          <div class="sugg">
+            <div class="top"><span class="nm">Overmono</span><span class="tm">West Holts · 23:30</span><span class="add">＋ ★</span></div>
+            <div class="why"><span class="sp">♥</span><span>You peaked at <b>171</b> during Fred again.. — Overmono
+              lives in the same 140-BPM pocket you danced hardest to.</span></div>
+          </div>
+          <div class="sugg">
+            <div class="top"><span class="nm">Jayda G</span><span class="tm">West Holts · 01:00</span><span class="add">＋ ★</span></div>
+            <div class="why"><span class="sp">📈</span><span>Averaged <b>152 ♥</b> to her disco edits at Coachella ’26,
+              and your plan is empty after Overmono — zero walk, same stage.</span></div>
+          </div>
+          <div class="sugg">
+            <div class="top"><span class="nm">Little Simz</span><span class="tm">Park Stage · Sun 20:00</span><span class="add">＋ ★</span></div>
+            <div class="why"><span class="sp">🎪</span><span>Tonight’s set was your <b>3-clip</b> highlight — she plays
+              the Park stage again Sunday, no clash with your stars.</span></div>
+          </div>
+          <div class="privcard">
+            <div class="row"><span class="ic">✨</span><span><b>On-device Apple Intelligence.</b> Foundation Models
+              write the “why” lines; the ranking itself is pure Snappet logic. Nothing leaves the phone.</span></div>
+            <div class="row"><span class="ic">⏰</span><span><b>Remind me 15 min before starred sets</b> — change lead
+              time ›</span></div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>“For you” sheet</b> — reached from the schedule’s ✨ button.
+        <span class="new">NEW: pure <code>SetRecommender</code> (HR-per-artist × plan gaps × walk time), FM-written
+        reason lines</span>; <span class="reuse">HR history comes from the dance sessions you already log</span>.
+        Suggestions degrade gracefully: no FM entitlement ⇒ same cards, template reasons.</p>
+    </div>
+  </div>
+
+  <!-- ═════════════════ FLOW D — TAGGING ═════════════════ -->
+  <div class="flowhead">Flow D · The matcher</div>
+  <div class="flowtitle">Auto-tagging you can audit</div>
+  <p class="flowdesc">The pure <code>FestivalSetMatcher</code> assigns every clip by timestamp-overlap with set windows —
+    including Camera-app videos it discovers via the session media window (the #283 pattern). Ambiguity (two stages,
+    adjacent sets, a clip between sets) drops confidence and asks. Nothing is homework: skip this screen and the
+    high-confidence tags stand.</p>
+
+  <div class="gallery">
+
+    <!-- C1: tag review -->
+    <div class="step">
+      <div class="stepnum">9</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">Later</span><span class="title">Review tags</span><span class="side">Done</span></div>
+          <div style="font-size:12px;color:var(--t2);font-weight:650;margin:8px 2px 0">Saturday · 11 clips ·
+            <span style="color:var(--fresh)">8 auto-tagged</span> · <span style="color:var(--mod)">3 need you</span></div>
+          <div class="timelinebar">
+            <div class="tl-set" style="left:4%;width:20%">Little Simz</div>
+            <div class="tl-set" style="left:32%;width:26%">Fred again..</div>
+            <div class="tl-set" style="left:64%;width:30%">Overmono</div>
+            <i class="tl-clip" style="left:9%"></i><i class="tl-clip" style="left:14%"></i><i class="tl-clip" style="left:38%"></i>
+            <i class="tl-clip" style="left:44%"></i><i class="tl-clip" style="left:47%"></i><i class="tl-clip" style="left:52%"></i>
+            <i class="tl-clip" style="left:61%;background:#F59E0B"></i><i class="tl-clip" style="left:70%"></i><i class="tl-clip" style="left:83%"></i>
+          </div>
+          <div class="sechead"><span class="t">Needs you</span></div>
+          <div class="tagrow">
+            <div class="thumb"><i>▶</i></div>
+            <div class="tx"><div class="tm">23:21 · between stages</div>
+              <div class="as">Fred again.. <span class="conf low">62% · walked toward West Holts</span></div></div>
+            <span class="sw">Change ›</span>
+          </div>
+          <div class="tagrow">
+            <div class="thumb"><i>▶</i></div>
+            <div class="tx"><div class="tm">23:58 · two sets live</div>
+              <div class="as">Overmono <span class="conf low">58% · or Eric Prydz?</span></div></div>
+            <span class="sw">Change ›</span>
+          </div>
+          <div class="sechead"><span class="t">Auto-tagged</span><span class="a">Looks right · keep all</span></div>
+          <div class="tagrow">
+            <div class="thumb"><i>▶</i></div>
+            <div class="tx"><div class="tm">23:12 · mid-set</div>
+              <div class="as">Fred again.. <span class="conf">✦ 98%</span></div></div>
+            <span class="sw">Change ›</span>
+          </div>
+          <div class="tagrow">
+            <div class="thumb"><i>▶</i></div>
+            <div class="tx"><div class="tm">20:41 · mid-set</div>
+              <div class="as">Little Simz <span class="conf">✦ 97%</span></div></div>
+            <span class="sw">Change ›</span>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Tag review</b> — <span class="new">NEW: the day as a timeline, clips as ticks over set
+        blocks</span>; low-confidence rows float to the top with the <i>reason</i> stated. The matcher is pure
+        Foundation logic → fully unit-tested in <code>SnappetTests</code>.</p>
+    </div>
+
+    <!-- C2: clips feed -->
+    <div class="step">
+      <div class="stepnum">10</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="bigtitle">Clips <small>Your training &amp; your nights, one feed</small></div>
+          <div class="searchbar">🔎&nbsp; fred</div>
+          <div class="chips">
+            <span class="chip">Climbs</span><span class="chip">Gym</span><span class="chip on">🎪 Festival</span>
+            <span class="chip">Videos</span><span class="chip">♥︎</span>
+          </div>
+          <div class="post">
+            <div class="media">
+              <span class="reelbadge">✦ REEL</span>
+              <span class="play">▶</span>
+              <div class="hud"><span class="bpm">164<small>BPM</small></span>
+                <svg viewBox="0 0 56 18"><polyline fill="none" stroke="#FF6A5C" stroke-width="2" points="0,14 8,12 16,13 24,9 32,10 38,3 44,7 50,6 56,9"/></svg>
+              </div>
+            </div>
+            <div class="body">
+              <div class="ti">Fred again.. · Pyramid Stage</div>
+              <div class="su">Glastonbury 2026 · Saturday · 5 clips · peak 171 ♥</div>
+              <div class="rowx"><span>♥︎ Favorite</span><span>↗ Share</span><span>🎪 Set ›</span></div>
+            </div>
+          </div>
+          <div class="post" style="opacity:.75">
+            <div class="media" style="height:110px;background:linear-gradient(160deg,#20303f,#141419 80%)">
+              <span class="play">▶</span>
+            </div>
+            <div class="body">
+              <div class="ti">Little Simz · Pyramid Stage</div>
+              <div class="su">Glastonbury 2026 · Saturday · 3 clips · avg 142 ♥</div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <span class="tb"><i>🏠</i>Home</span><span class="tb on"><i>🎞</i>Clips</span>
+          <span class="tb"><i>📊</i>Recap</span><span class="tb"><i>◻︎</i>Apps</span>
+        </div>
+      </div></div>
+      <p class="caption"><b>Clips is where the payoff lands.</b> Posts titled <b>artist · stage</b> — so
+        <span class="reuse">existing title search matches “fred” with zero new code</span>. <span class="new">NEW: one
+        🎪 Festival chip</span> beside Climbs/Gym; HR glass HUD and ✦ REEL are the shipped components.</p>
+    </div>
+
+    <!-- C3: recap -->
+    <div class="step">
+      <div class="stepnum">11</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>9:41</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content">
+          <div class="navrow"><span class="back">‹ Festival</span><span class="title">Recap</span><span class="side">Share</span></div>
+          <div class="recaphero">
+            <div class="k">GLASTONBURY 2026 · YOUR WEEKEND</div>
+            <div class="n">3 nights on the floor</div>
+            <div class="stats">
+              <span><b>14</b>sets seen</span>
+              <span><b>9:42</b>hrs danced</span>
+              <span><b>26</b>clips</span>
+              <span><b>171</b>peak ♥</span>
+            </div>
+          </div>
+          <div class="cta block" style="text-align:center">✦&nbsp; Make my festival reel</div>
+          <div class="sechead"><span class="t">By artist</span><span class="a">All 14 ›</span></div>
+          <div class="artistrow">
+            <div class="th">🎹</div>
+            <div class="tx"><div class="nm">Fred again..</div><div class="meta">Pyramid · Sat · 5 clips · 1:28 danced</div></div>
+            <span class="pk">♥ 171</span>
+          </div>
+          <div class="artistrow">
+            <div class="th">🥁</div>
+            <div class="tx"><div class="nm">Overmono</div><div class="meta">West Holts · Sat · 4 clips · 1:12 danced</div></div>
+            <span class="pk">♥ 168</span>
+          </div>
+          <div class="artistrow">
+            <div class="th">🎤</div>
+            <div class="tx"><div class="nm">Little Simz</div><div class="meta">Pyramid · Sat · 3 clips · 1:05 danced</div></div>
+            <span class="pk">♥ 152</span>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Festival recap</b> — <span class="new">NEW: weekend hero + artists ranked by your heart
+        rate</span> (“who actually made you move”). The reel CTA hands the tagged clips to the
+        <span class="reuse">shared Edits-style reel editor with glass-HR burn</span>.</p>
+    </div>
+  </div>
+
+  <!-- ═════════════════ FLOW D — QR SHARING ═════════════════ -->
+  <div class="flowhead">Flow E · Share by QR</div>
+  <div class="flowtitle">Hand a lineup to a friend — no signal needed</div>
+  <p class="flowdesc">The <b>⋯ menu on the festival schedule</b> (and “Share my plan” on the recap) opens the share
+    sheet. Small payloads — a day plan, a hand-built lineup — are <b>deflate-compressed into the QR itself</b>
+    (<code>snappet://festival/v1/&lt;blob&gt;</code>), so scanning works in a field with zero signal. A whole
+    412-set festival exceeds the scannable cap, so the sheet automatically falls back to an <b>install-link QR</b>
+    that fetches from <code>music-festivals/</code>. Same decide-by-size logic <code>SharedRoutine</code> ships today.</p>
+
+  <div class="gallery">
+
+    <!-- D1: share sheet -->
+    <div class="step">
+      <div class="stepnum">12</div>
+      <div class="device"><div class="screen">
+        <div class="island"></div>
+        <div class="statusbar"><span>18:04</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content" style="padding:6px 0 0">
+          <div style="padding:0 16px;opacity:.35">
+            <div class="navrow"><span class="back" style="width:56px">‹</span><span class="title">Glastonbury 2026</span><span class="side">⋯</span></div>
+            <div class="daytabs">
+              <div class="daytab"><div class="d">FRI</div><div class="n">26</div></div>
+              <div class="daytab on"><div class="d">SAT</div><div class="n">27</div></div>
+              <div class="daytab"><div class="d">SUN</div><div class="n">28</div></div>
+            </div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grabber"></div>
+            <div style="display:flex;gap:6px;margin:0 0 12px">
+              <span class="chip on" style="flex:1;text-align:center">My Saturday plan</span>
+              <span class="chip" style="flex:1;text-align:center">Whole lineup</span>
+            </div>
+            <div style="background:#fff;border-radius:18px;padding:16px;display:flex;flex-direction:column;align-items:center">
+              <svg viewBox="0 0 29 29" style="width:168px;height:168px" fill="#000">
+                <rect x="0" y="0" width="7" height="7"/><rect x="1" y="1" width="5" height="5" fill="#fff"/><rect x="2" y="2" width="3" height="3"/>
+                <rect x="22" y="0" width="7" height="7"/><rect x="23" y="1" width="5" height="5" fill="#fff"/><rect x="24" y="2" width="3" height="3"/>
+                <rect x="0" y="22" width="7" height="7"/><rect x="1" y="23" width="5" height="5" fill="#fff"/><rect x="2" y="24" width="3" height="3"/>
+                <rect x="9" y="0" width="1" height="1"/><rect x="11" y="0" width="2" height="1"/><rect x="15" y="0" width="1" height="2"/><rect x="18" y="0" width="2" height="1"/>
+                <rect x="9" y="2" width="3" height="1"/><rect x="13" y="2" width="1" height="3"/><rect x="17" y="2" width="2" height="1"/><rect x="19" y="3" width="1" height="2"/>
+                <rect x="9" y="4" width="1" height="2"/><rect x="11" y="5" width="2" height="1"/><rect x="15" y="4" width="1" height="1"/><rect x="17" y="5" width="3" height="1"/>
+                <rect x="8" y="6" width="1" height="1"/><rect x="10" y="6" width="1" height="1"/><rect x="12" y="6" width="1" height="1"/><rect x="14" y="6" width="1" height="1"/><rect x="16" y="6" width="1" height="1"/><rect x="18" y="6" width="1" height="1"/><rect x="20" y="6" width="1" height="1"/>
+                <rect x="0" y="9" width="2" height="1"/><rect x="3" y="8" width="1" height="2"/><rect x="5" y="9" width="2" height="1"/><rect x="8" y="8" width="2" height="2"/>
+                <rect x="11" y="9" width="1" height="1"/><rect x="13" y="8" width="1" height="1"/><rect x="14" y="9" width="3" height="1"/><rect x="18" y="8" width="1" height="2"/>
+                <rect x="20" y="9" width="2" height="1"/><rect x="24" y="8" width="1" height="1"/><rect x="26" y="9" width="2" height="1"/><rect x="28" y="8" width="1" height="1"/>
+                <rect x="1" y="11" width="1" height="2"/><rect x="4" y="12" width="2" height="1"/><rect x="6" y="11" width="1" height="1"/><rect x="8" y="12" width="1" height="1"/>
+                <rect x="10" y="11" width="2" height="2"/><rect x="14" y="11" width="1" height="1"/><rect x="16" y="12" width="2" height="1"/><rect x="19" y="11" width="1" height="2"/>
+                <rect x="22" y="12" width="2" height="1"/><rect x="25" y="11" width="1" height="1"/><rect x="27" y="12" width="1" height="1"/>
+                <rect x="0" y="14" width="1" height="1"/><rect x="2" y="14" width="2" height="1"/><rect x="5" y="14" width="1" height="2"/><rect x="9" y="14" width="1" height="1"/>
+                <rect x="12" y="14" width="2" height="1"/><rect x="15" y="14" width="1" height="1"/><rect x="17" y="15" width="1" height="1"/><rect x="20" y="14" width="2" height="1"/>
+                <rect x="23" y="14" width="1" height="1"/><rect x="25" y="15" width="2" height="1"/><rect x="28" y="14" width="1" height="1"/>
+                <rect x="1" y="17" width="2" height="1"/><rect x="4" y="16" width="1" height="1"/><rect x="6" y="17" width="1" height="1"/><rect x="8" y="16" width="1" height="2"/>
+                <rect x="11" y="17" width="1" height="1"/><rect x="13" y="16" width="1" height="1"/><rect x="15" y="17" width="2" height="1"/><rect x="18" y="16" width="1" height="1"/>
+                <rect x="21" y="17" width="1" height="1"/><rect x="23" y="16" width="2" height="1"/><rect x="26" y="17" width="1" height="1"/>
+                <rect x="0" y="19" width="1" height="1"/><rect x="2" y="19" width="1" height="2"/><rect x="4" y="19" width="2" height="1"/><rect x="9" y="19" width="2" height="1"/>
+                <rect x="12" y="19" width="1" height="2"/><rect x="14" y="19" width="1" height="1"/><rect x="16" y="19" width="2" height="1"/><rect x="19" y="20" width="1" height="1"/>
+                <rect x="22" y="19" width="1" height="1"/><rect x="24" y="19" width="2" height="1"/><rect x="27" y="19" width="1" height="1"/>
+                <rect x="9" y="22" width="1" height="1"/><rect x="11" y="22" width="2" height="1"/><rect x="14" y="23" width="1" height="1"/><rect x="16" y="22" width="1" height="2"/>
+                <rect x="18" y="22" width="2" height="1"/><rect x="21" y="23" width="1" height="1"/><rect x="23" y="22" width="1" height="1"/><rect x="25" y="22" width="2" height="1"/>
+                <rect x="9" y="25" width="2" height="1"/><rect x="12" y="24" width="1" height="1"/><rect x="14" y="25" width="1" height="1"/><rect x="17" y="24" width="1" height="1"/>
+                <rect x="19" y="25" width="2" height="1"/><rect x="22" y="24" width="1" height="1"/><rect x="24" y="25" width="1" height="1"/><rect x="26" y="24" width="2" height="1"/>
+                <rect x="9" y="27" width="1" height="1"/><rect x="11" y="27" width="2" height="1"/><rect x="14" y="27" width="2" height="1"/><rect x="17" y="27" width="1" height="1"/>
+                <rect x="19" y="27" width="1" height="1"/><rect x="21" y="27" width="2" height="1"/><rect x="25" y="27" width="1" height="1"/><rect x="27" y="27" width="1" height="1"/>
+              </svg>
+              <div style="font-size:12px;font-weight:750;color:#1A1A1E;margin-top:8px">My Saturday plan · 9 sets</div>
+              <div style="font-size:10.5px;font-weight:650;color:#6B6A66">1.1 KB — the plan is <b>in the code</b>. Works with no signal.</div>
+            </div>
+            <div class="nextrow" style="margin-top:12px"><span style="flex:1;line-height:1.4">Whole lineup (412 sets)
+              won’t fit in a code — it shares an <b>install link</b> instead.</span> <span class="sw">AirDrop ›</span></div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>The share sheet — where the QR lives.</b> Opened from the schedule’s <b>⋯ menu</b> or the
+        recap’s <b>Share my plan</b>. <span class="reuse">REUSES <code>QRCodeImage</code> + the
+        <code>SharedRoutine</code> payload-vs-link size logic</span>; <span class="new">NEW: plan/lineup segmented
+        toggle</span>. QR stays black-on-white for scannability.</p>
+    </div>
+
+    <!-- D2: scanner -->
+    <div class="step">
+      <div class="stepnum">13</div>
+      <div class="device"><div class="screen" style="background:#000">
+        <div class="island"></div>
+        <div class="statusbar" style="color:#fff"><span>18:05</span><span class="r">📶 ᯤ 🔋</span></div>
+        <div class="content" style="color:#fff">
+          <div class="navrow"><span class="back" style="color:#fff">✕</span><span class="title" style="color:#fff">Scan a lineup</span><span class="side"></span></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">
+            <div style="position:absolute;inset:-6px -16px;background:
+              radial-gradient(300px 220px at 50% 45%, rgba(70,60,80,.55), rgba(10,10,12,.9) 75%)"></div>
+            <div style="position:relative;width:190px;height:190px;border-radius:22px;
+              box-shadow:0 0 0 3px var(--fest);display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06)">
+              <div style="background:#fff;border-radius:10px;padding:9px;transform:rotate(-3deg)">
+                <svg viewBox="0 0 29 29" style="width:120px;height:120px;display:block" fill="#000">
+                  <rect x="0" y="0" width="7" height="7"/><rect x="1" y="1" width="5" height="5" fill="#fff"/><rect x="2" y="2" width="3" height="3"/>
+                  <rect x="22" y="0" width="7" height="7"/><rect x="23" y="1" width="5" height="5" fill="#fff"/><rect x="24" y="2" width="3" height="3"/>
+                  <rect x="0" y="22" width="7" height="7"/><rect x="1" y="23" width="5" height="5" fill="#fff"/><rect x="2" y="24" width="3" height="3"/>
+                  <rect x="9" y="1" width="2" height="1"/><rect x="13" y="0" width="1" height="2"/><rect x="16" y="1" width="2" height="1"/><rect x="19" y="0" width="1" height="1"/>
+                  <rect x="10" y="3" width="1" height="2"/><rect x="12" y="4" width="2" height="1"/><rect x="15" y="3" width="1" height="1"/><rect x="18" y="4" width="2" height="1"/>
+                  <rect x="1" y="9" width="2" height="1"/><rect x="4" y="8" width="1" height="2"/><rect x="8" y="9" width="2" height="1"/><rect x="12" y="8" width="1" height="2"/>
+                  <rect x="15" y="9" width="2" height="1"/><rect x="19" y="8" width="1" height="1"/><rect x="22" y="9" width="2" height="1"/><rect x="26" y="8" width="1" height="2"/>
+                  <rect x="2" y="12" width="1" height="2"/><rect x="5" y="12" width="1" height="1"/><rect x="8" y="13" width="2" height="1"/><rect x="11" y="12" width="2" height="1"/>
+                  <rect x="15" y="12" width="1" height="2"/><rect x="18" y="13" width="2" height="1"/><rect x="21" y="12" width="1" height="1"/><rect x="24" y="13" width="2" height="1"/><rect x="27" y="12" width="1" height="1"/>
+                  <rect x="1" y="16" width="1" height="1"/><rect x="3" y="15" width="2" height="1"/><rect x="6" y="16" width="1" height="1"/><rect x="9" y="15" width="1" height="2"/>
+                  <rect x="12" y="16" width="2" height="1"/><rect x="16" y="15" width="1" height="1"/><rect x="18" y="16" width="1" height="1"/><rect x="20" y="15" width="2" height="1"/><rect x="23" y="16" width="1" height="1"/><rect x="26" y="15" width="1" height="1"/>
+                  <rect x="1" y="19" width="2" height="1"/><rect x="4" y="18" width="1" height="1"/><rect x="8" y="19" width="1" height="1"/><rect x="10" y="18" width="1" height="2"/>
+                  <rect x="13" y="19" width="1" height="1"/><rect x="15" y="18" width="2" height="1"/><rect x="18" y="19" width="2" height="1"/><rect x="22" y="18" width="1" height="1"/><rect x="25" y="19" width="1" height="1"/><rect x="27" y="18" width="1" height="1"/>
+                  <rect x="9" y="22" width="1" height="2"/><rect x="11" y="23" width="2" height="1"/><rect x="14" y="22" width="1" height="1"/><rect x="16" y="23" width="2" height="1"/><rect x="19" y="22" width="1" height="1"/><rect x="21" y="23" width="1" height="1"/><rect x="24" y="22" width="2" height="1"/>
+                  <rect x="10" y="25" width="1" height="1"/><rect x="12" y="26" width="2" height="1"/><rect x="15" y="25" width="1" height="1"/><rect x="17" y="26" width="1" height="1"/><rect x="19" y="25" width="2" height="1"/><rect x="23" y="26" width="1" height="1"/><rect x="26" y="25" width="1" height="1"/>
+                </svg>
+              </div>
+              <div style="position:absolute;left:10px;right:10px;top:52%;height:2px;background:var(--fest);opacity:.85;box-shadow:0 0 12px var(--fest)"></div>
+            </div>
+            <div style="position:relative;margin-top:14px;font-size:11.5px;font-weight:650;color:#c9ccd4">Point at a friend’s share sheet, a campsite print-out,<br>or a pack card on the web app</div>
+          </div>
+          <div class="sheet" style="position:relative;margin:0 -0px">
+            <div class="grabber"></div>
+            <div style="display:flex;align-items:center;gap:11px">
+              <div style="width:42px;height:42px;border-radius:12px;background:rgba(217,107,232,.16);display:flex;align-items:center;justify-content:center;font-size:20px">🎪</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14px;font-weight:800;color:var(--ink)">Ana’s Saturday plan</div>
+                <div style="font-size:11px;font-weight:650;color:var(--t2)">Glastonbury 2026 · 9 sets · from the code, no download</div>
+              </div>
+            </div>
+            <div class="cta fest block" style="text-align:center;margin:12px 0 0">＋&nbsp; Add to my Glastonbury</div>
+          </div>
+        </div>
+      </div></div>
+      <p class="caption"><b>Receiving = the shared scanner.</b> <span class="reuse">REUSES <code>SnappetScannerView</code>
+        + <code>snappet://</code> deep-link routing</span> — the same camera that scans climbs and routines recognizes
+        <code>festival/v1/</code> blobs (instant, offline) and install links (fetches the pack). Reached from the
+        empty state’s “Scan a friend’s QR” or the schedule ⋯ menu.</p>
+    </div>
+  </div>
+
+  <!-- ═════════════════ FLOW E — WEB APP ═════════════════ -->
+  <div class="flowhead">Flow F · Snappet web app</div>
+  <div class="flowtitle">Lineup packs, hosted like the Kilter catalog</div>
+  <p class="flowdesc">Lineups become a new mini-app on the existing Snappet Pages site —
+    <code>harshal2802.github.io/Snappet/music-festivals/</code>, sibling to <code>board-data/</code>,
+    <code>climb-generator/</code> and <code>exercise-photos/</code> (a PR on the Snappet web-app repo adds it).
+    Community-curated <code>.fpack</code> files (plain JSON — festival → days → stages → sets), browsable and
+    downloadable. The phone’s <b>Download from Snappet Lineups</b> hits this host with one user-initiated GET;
+    power users can also AirDrop a pack and use the file-import path, exactly like the Kilter <code>.sqlite3</code> flow.</p>
+
+  <div class="gallery">
+    <div class="step" style="width:980px;max-width:100%">
+      <div class="stepnum">14</div>
+      <div class="browser">
+        <div class="bar">
+          <span class="dots"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+          <span class="url">https://harshal2802.github.io/Snappet/music-festivals/</span>
+        </div>
+        <div class="site">
+          <h2>🎪 Snappet Lineups</h2>
+          <p class="tag">Festival lineup packs for the Snappet Festival app. Public schedule data, community-maintained,
+            no accounts, no tracking.</p>
+          <div class="packgrid">
+            <div class="pack">
+              <div class="fn">Glastonbury 2026</div>
+              <div class="fm">Jun 24–28 · 9 stages · 412 sets · updated Jun 22</div>
+              <span class="dl">⤓ glastonbury-2026.fpack</span><span class="sz">38 KB</span>
+            </div>
+            <div class="pack">
+              <div class="fn">Tomorrowland 2026 · W2</div>
+              <div class="fm">Jul 24–26 · 14 stages · 380 sets · updated Jul 10</div>
+              <span class="dl">⤓ tomorrowland-2026-w2.fpack</span><span class="sz">35 KB</span>
+            </div>
+            <div class="pack">
+              <div class="fn">Coachella 2026 · W1</div>
+              <div class="fm">Apr 10–12 · 8 stages · 291 sets · updated Apr 8</div>
+              <span class="dl">⤓ coachella-2026-w1.fpack</span><span class="sz">27 KB</span>
+            </div>
+            <div class="pack">
+              <div class="fn">Lost Village 2026</div>
+              <div class="fm">Aug 27–30 · 6 stages · 174 sets · updated Jul 1</div>
+              <span class="dl">⤓ lost-village-2026.fpack</span><span class="sz">16 KB</span>
+            </div>
+            <div class="pack">
+              <div class="fn">Sónar 2026</div>
+              <div class="fm">Jun 18–20 · 5 stages · 142 sets · updated Jun 15</div>
+              <span class="dl">⤓ sonar-2026.fpack</span><span class="sz">14 KB</span>
+            </div>
+            <div class="pack" style="border-style:dashed;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+              <div class="fn" style="color:#a9adb8">＋ Submit a lineup</div>
+              <div class="fm" style="margin:4px 0 0">PR a JSON file or run the<br><code>tools/festival/build_fpack.py</code> builder</div>
+            </div>
+          </div>
+          <p class="foot"><b>Format:</b> <code>.fpack</code> = gzipped JSON — <code>{ festival, days[] → stages[] → sets[]
+            (artist, start, end) }</code>, validated by the same schema the app’s installer checks. Set times are the
+            published schedule; your clips tag against them on-device.</p>
+        </div>
+      </div>
+      <p class="caption"><b>Snappet Lineups, a mini-app on the Snappet Pages site</b> (own PR on the web-app repo) —
+        <span class="reuse">the same hosting pattern as <code>board-data/</code></span>: static files,
+        user-controlled host, one GET.
+        <span class="new">NEW: tiny JSON packs + a <code>build_fpack.py</code> community builder</span> (a lineup is
+        ~30 KB of text, vs the multi-MB climb SQLite).</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
