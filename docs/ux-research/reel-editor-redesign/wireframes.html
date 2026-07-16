@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Reel editor redesign · Wireframes</title>
+<style>
+  :root{
+    /* Literal hex from SnappetColor.swift (dark values; media surfaces are dark) */
+    --coral:#FF7A6B; --ember:#FF9645; --amber:#F59E0B; --watch:#5BC074; --hard:#FF6A5C;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1c1618,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:1620px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc0b8 82%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:15.5px;max-width:1150px;margin:0 0 6px}
+  .sub b{color:#fff}
+  .wrap{max-width:1620px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--coral);color:#3a0e08;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,122,107,.4)}
+  .caption{margin:14px 4px 0;font-size:12.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--coral);font-weight:650}
+  .caption .del{color:#ff8484;font-weight:700}
+
+  .panel{max-width:1620px;margin:26px auto 0;padding:0 28px}
+  .panel .box{background:rgba(30,30,34,.7);border:1px solid var(--hair);border-radius:18px;padding:22px 26px;display:flex;gap:34px;flex-wrap:wrap}
+  .panel .col{flex:1;min-width:280px}
+  .panel h3{margin:0 0 10px;font-size:14px;letter-spacing:.05em;text-transform:uppercase}
+  .panel h3.keep{color:var(--watch)} .panel h3.new{color:var(--coral)} .panel h3.del{color:#ff8484}
+  .panel ul{margin:0;padding-left:18px;font-size:13px;color:#c9cad2}
+  .panel li{margin:5px 0} .panel li b{color:#fff}
+  .panel code{background:#26262B;border-radius:6px;padding:1px 6px;font-size:11.5px;color:#ffd7d1}
+
+  /* device */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:#000;color:var(--ink)}
+  .status{height:40px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650;z-index:5}
+
+  /* ── editor chrome ── */
+  .edbar{flex:none;display:flex;align-items:center;justify-content:space-between;padding:8px 14px;z-index:5}
+  .edbar .x{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:15px}
+  .edbar .mid{text-align:center;line-height:1.15}
+  .edbar .mid .a{font-size:13.5px;font-weight:750}
+  .edbar .mid .b{font-size:10.5px;color:var(--t2)}
+  .edbar .export{background:var(--coral);color:#3a0e08;font-weight:800;font-size:13px;border-radius:99px;padding:8px 16px;box-shadow:0 6px 18px rgba(255,122,107,.35)}
+
+  /* the preview canvas — the reel IS the screen */
+  .canvas{flex:1;margin:2px 14px 10px;border-radius:18px;position:relative;overflow:hidden;
+    background:linear-gradient(165deg,#3b3f47,#22242a 45%,#14161a);border:1px solid #26262c}
+  .canvas .grain{position:absolute;inset:0;background:
+    radial-gradient(200px 150px at 30% 25%,rgba(255,150,120,.10),transparent 70%),
+    radial-gradient(240px 190px at 75% 70%,rgba(90,130,255,.07),transparent 72%)}
+  .canvas .playpause{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:54px;height:54px;border-radius:50%;
+    background:rgba(0,0,0,.35);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;opacity:.85}
+  .canvas .durchip{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.5);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:750}
+  .canvas .fmtghost{position:absolute;right:12px;top:12px;background:rgba(0,0,0,.5);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--t2)}
+  /* glass HR scorebug — the SAME tile the export burns, shown live on the preview */
+  .hrbug{position:absolute;left:12px;right:12px;bottom:34px;height:64px;border-radius:14px;
+    background:rgba(10,10,14,.45);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);padding:8px 12px}
+  .hrbug .row{display:flex;justify-content:space-between;font-size:9.5px;color:#d8d9de;font-weight:700}
+  .hrbug .row b{color:#fff;font-size:11px}
+  .hrbug svg{display:block;margin-top:3px}
+  /* scrubber */
+  .scrub{position:absolute;left:12px;right:12px;bottom:12px;height:14px;display:flex;align-items:center}
+  .scrub .track{flex:1;height:3.5px;border-radius:2px;background:rgba(255,255,255,.22);position:relative}
+  .scrub .fill{position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:2px;background:var(--coral)}
+  .scrub .dot{position:absolute;left:38%;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+
+  /* tool row */
+  .tools{flex:none;display:flex;gap:8px;padding:0 14px 10px;align-items:center}
+  .tool{display:flex;align-items:center;gap:5px;border-radius:99px;padding:7px 12px;font-size:11.5px;font-weight:750;
+    background:var(--muted);border:1px solid var(--hair);color:var(--t2)}
+  .tool.on{background:rgba(255,122,107,.14);border-color:rgba(255,122,107,.5);color:var(--coral)}
+  .tool .ic{font-size:12px}
+  .tool.icononly{padding:7px 10px}
+  .spacer{flex:1}
+
+  /* filmstrip timeline */
+  .strip{flex:none;padding:2px 14px 6px}
+  .strip .lane{display:flex;gap:6px;overflow:hidden}
+  .frame{width:56px;height:74px;border-radius:10px;flex:none;position:relative;overflow:hidden;
+    background:linear-gradient(160deg,#454a53,#26282e);border:1.5px solid transparent}
+  .frame.k{background:linear-gradient(160deg,#544027,#2b2115)}
+  .frame.g{background:linear-gradient(160deg,#2c4a37,#1a2b20)}
+  .frame.sel{border-color:var(--coral);box-shadow:0 0 0 2px rgba(255,122,107,.25)}
+  .frame .len{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.6);font-size:8px;font-weight:800;border-radius:5px;padding:1px 4px;color:#fff}
+  .frame .pin{position:absolute;left:4px;top:4px;font-size:8.5px}
+  .frame .peak{position:absolute;left:0;right:0;bottom:0;height:3px}
+  .frame .peak.hot{background:var(--hard)} .frame .peak.warm{background:var(--ember)} .frame .peak.cool{background:var(--watch)}
+  .frame.ghost{border:1.5px dashed #4a4b52;background:rgba(255,255,255,.03);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--t2);font-size:9px;font-weight:700;gap:2px}
+  .strip .meta{display:flex;justify-content:space-between;margin-top:7px;font-size:10.5px;color:var(--t2)}
+  .strip .meta b{color:#fff}
+  .homebar{flex:none;height:22px;display:flex;align-items:center;justify-content:center}
+  .homebar i{width:120px;height:4.5px;border-radius:3px;background:#3c3d44}
+
+  /* ── clip action sheet (screen 2) ── */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:10}
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:11;background:#1a1a1f;border-radius:22px 22px 0 0;padding:10px 16px 26px;border-top:1px solid var(--hair)}
+  .sheet .grab{width:38px;height:4.5px;border-radius:3px;background:#44454c;margin:2px auto 12px}
+  .sheet .head{display:flex;gap:12px;align-items:center}
+  .sheet .thumb{width:64px;height:84px;border-radius:12px;background:linear-gradient(160deg,#544027,#2b2115);position:relative;flex:none}
+  .sheet .thumb .len{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.6);font-size:8.5px;font-weight:800;border-radius:5px;padding:1px 4px}
+  .sheet .t1{font-size:15px;font-weight:800}
+  .sheet .t2{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .peakpill{display:inline-flex;align-items:center;gap:4px;margin-top:7px;border-radius:99px;padding:3px 9px;font-size:10px;font-weight:800;
+    color:var(--hard);background:rgba(255,106,92,.12);border:1px solid rgba(255,106,92,.45)}
+  /* per-clip trimmer */
+  .trim{margin-top:14px}
+  .trim .lbl{display:flex;justify-content:space-between;font-size:10px;color:var(--t2);font-weight:700;margin-bottom:5px}
+  .trim .lbl b{color:#fff}
+  .trim .bar{position:relative;height:40px;border-radius:10px;background:linear-gradient(90deg,#2c2f36,#3a3e46 30%,#2c2f36 60%,#383c44);overflow:hidden}
+  .trim .kept{position:absolute;left:22%;right:34%;top:0;bottom:0;border:2.5px solid var(--coral);border-radius:8px;background:rgba(255,122,107,.10)}
+  .trim .hL,.trim .hR{position:absolute;top:0;bottom:0;width:14px;background:var(--coral);display:flex;align-items:center;justify-content:center;color:#3a0e08;font-weight:900;font-size:10px}
+  .trim .hL{left:22%;border-radius:8px 0 0 8px} .trim .hR{right:34%;border-radius:0 8px 8px 0}
+  .trim .note{font-size:9.5px;color:var(--t2);margin-top:5px}
+  .sheet .acts{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+  .sheet .act{display:flex;align-items:center;gap:12px;background:var(--muted);border:1px solid var(--hair);border-radius:14px;padding:12px 14px;font-size:13.5px;font-weight:650}
+  .sheet .act .ic{width:22px;text-align:center}
+  .sheet .act.destructive{color:#ff8484}
+
+  /* ── edit list (screen 3) ── */
+  .elist{flex:1;overflow:hidden;padding:4px 14px}
+  .esec{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase}
+  .erow{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid #232329;border-radius:14px;padding:8px 10px;margin-bottom:7px}
+  .erow .th{width:44px;height:56px;border-radius:9px;flex:none;background:linear-gradient(160deg,#454a53,#26282e);position:relative}
+  .erow .th.k{background:linear-gradient(160deg,#544027,#2b2115)}
+  .erow .th.g{background:linear-gradient(160deg,#2c4a37,#1a2b20)}
+  .erow .tt{flex:1;line-height:1.25}
+  .erow .tt .a{font-size:13px;font-weight:750}
+  .erow .tt .b{font-size:10.5px;color:var(--t2)}
+  .erow .pk{font-size:9px;font-weight:800;border-radius:99px;padding:2px 7px}
+  .erow .pk.hot{color:var(--hard);background:rgba(255,106,92,.12);border:1px solid rgba(255,106,92,.4)}
+  .erow .pk.warm{color:var(--ember);background:rgba(255,150,69,.12);border:1px solid rgba(255,150,69,.4)}
+  .erow .pk.cool{color:var(--watch);background:rgba(91,192,116,.12);border:1px solid rgba(91,192,116,.4)}
+  .erow .drag{color:#5a5b62;font-size:15px;padding:0 2px}
+  .erow.removed{opacity:.5}
+  .erow .restore{font-size:11px;font-weight:750;color:var(--watch)}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Reel editor, grown up</h1>
+  <p class="sub"><b>The reel becomes the screen.</b> Today's <code style="background:#26262B;border-radius:6px;padding:1px 6px">ReelView</code> is a settings-page-shaped List: a "Preview reel" button where the video should be,
+  three stacked control sections, and clip rows labelled with raw stitched-timeline offsets ("52:33") and a meaningless "intensity 13%".
+  The redesign borrows the grammar of <b>Edits / CapCut / Instagram</b>: an auto-playing preview canvas fills the screen, Export is THE action (top right),
+  tools compress to one chip row, and the highlight list becomes a filmstrip timeline under the player. Same ViewModel, same pipeline — presentation only.</p>
+</header>
+
+<div class="wrap"><div class="gallery">
+
+  <!-- ═══════════ 1 · The editor ═══════════ -->
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>10:38</span><span>􀙇 􀛨</span></div>
+      <div class="edbar">
+        <div class="x">‹</div>
+        <div class="mid"><div class="a">Weekly Highlights</div><div class="b">8 clips · 0:28</div></div>
+        <div class="export">Export</div>
+      </div>
+      <div class="canvas">
+        <div class="grain"></div>
+        <div class="durchip">0:11 / 0:28</div>
+        <div class="fmtghost">9:16</div>
+        <div class="playpause">❚❚</div>
+        <div class="hrbug">
+          <div class="row"><span>SNAPPET · WEEK</span><span><b>142</b> BPM · PEAK <b>172</b></span></div>
+          <svg width="100%" height="30" viewBox="0 0 280 30" preserveAspectRatio="none">
+            <polyline points="0,24 20,22 40,25 60,16 80,18 100,8 120,12 140,6 160,14 180,10 200,18 220,13 240,20 260,16 280,18"
+              fill="none" stroke="#FF7A6B" stroke-width="2"/>
+            <circle cx="106" cy="9" r="3.4" fill="#fff"/>
+          </svg>
+        </div>
+        <div class="scrub"><div class="track"><div class="fill"></div><div class="dot"></div></div></div>
+      </div>
+      <div class="tools">
+        <div class="tool on">9:16</div>
+        <div class="tool">Native</div>
+        <div class="tool on"><span class="ic">〰</span> HR</div>
+        <div class="spacer"></div>
+        <div class="tool icononly">↻</div>
+        <div class="tool icononly">☰</div>
+      </div>
+      <div class="strip">
+        <div class="lane">
+          <div class="frame g"><span class="len">2s</span><i class="peak cool"></i></div>
+          <div class="frame k sel"><span class="len">10s</span><i class="peak hot"></i></div>
+          <div class="frame k"><span class="pin">📌</span><span class="len">10s</span><i class="peak warm"></i></div>
+          <div class="frame"><span class="len">4s</span><i class="peak warm"></i></div>
+          <div class="frame g"><span class="len">3s</span><i class="peak cool"></i></div>
+          <div class="frame k"><span class="len">6s</span><i class="peak hot"></i></div>
+          <div class="frame ghost">+2<br>removed</div>
+        </div>
+        <div class="meta"><span><b>Clip 2 of 8</b> · PEAK 172</span><span>auto-cut from your heart rate</span></div>
+      </div>
+      <div class="homebar"><i></i></div>
+    </div></div>
+    <p class="caption"><b>The reel IS the screen.</b> The preview <span class="k">auto-builds and loops (muted)</span> on open — the
+    <span class="del">"Preview reel" button dies</span>. <b>Export</b> is the one prominent action (top-right, Edits-style); the title carries
+    the honest "8 clips · 0:28". Aspect + HR-overlay live in ONE tool row — the HR chip shows the <span class="k">actual glass scorebug on the
+    preview</span> (the same tile the export burns), replacing the footer sentence about it. ↻ regenerates (confirm-gated, unchanged);
+    ☰ opens the edit list (screen 3). The filmstrip is the highlight list: duration badges, a peak-effort tint bar per frame, 📌 pins,
+    tap → clip sheet (screen 2). Scrubbing the player highlights the clip under the playhead.</p>
+  </div>
+
+  <!-- ═══════════ 2 · Clip sheet ═══════════ -->
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>10:38</span><span>􀙇 􀛨</span></div>
+      <div class="edbar">
+        <div class="x">‹</div>
+        <div class="mid"><div class="a">Weekly Highlights</div><div class="b">8 clips · 0:28</div></div>
+        <div class="export">Export</div>
+      </div>
+      <div class="canvas"><div class="grain"></div><div class="playpause">▶</div></div>
+      <div class="tools"><div class="tool on">9:16</div><div class="tool">Native</div><div class="tool on">〰 HR</div><div class="spacer"></div><div class="tool icononly">↻</div><div class="tool icononly">☰</div></div>
+      <div class="strip"><div class="lane">
+        <div class="frame g"><span class="len">2s</span><i class="peak cool"></i></div>
+        <div class="frame k sel"><span class="len">10s</span><i class="peak hot"></i></div>
+        <div class="frame k"><span class="len">10s</span><i class="peak warm"></i></div>
+        <div class="frame"><span class="len">4s</span><i class="peak warm"></i></div>
+        <div class="frame g"><span class="len">3s</span><i class="peak cool"></i></div>
+        <div class="frame k"><span class="len">6s</span><i class="peak hot"></i></div>
+        <div class="frame ghost">+2<br>removed</div>
+      </div></div>
+      <div class="homebar"><i></i></div>
+
+      <div class="dim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="head">
+          <div class="thumb"><span class="len">10s</span></div>
+          <div>
+            <div class="t1">Clip 2 of 8</div>
+            <div class="t2">10s · video</div>
+            <div class="peakpill">♥ PEAK 172 BPM</div>
+          </div>
+        </div>
+        <div class="trim">
+          <div class="lbl"><span>TRIM</span><span><b>0:12 – 0:22</b> · 10s kept of 34s</span></div>
+          <div class="bar"><div class="kept"></div><div class="hL">‹</div><div class="hR">›</div></div>
+          <div class="note">Drag the handles — the clip can use any part of its source video. Reset trim returns the auto-cut.</div>
+        </div>
+        <div class="acts">
+          <div class="act"><span class="ic">▶</span> Play from here</div>
+          <div class="act"><span class="ic">📌</span> Pin — always keep this moment</div>
+          <div class="act destructive"><span class="ic">🗑</span> Remove from reel</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Tap a frame → the clip sheet, with a real trimmer.</b> Named for what it is — <span class="k">"Clip 2 of 8 · 10s"</span>
+    with the <span class="k">PEAK-BPM pill</span> — <span class="del">never the raw stitched-timeline offset ("52:33") or "intensity 13%"</span>.
+    NEW: <span class="k">per-clip trim handles</span> — the auto-cut window can be dragged anywhere inside the clip's source video
+    (min 1s; the engine's <b>clipStartWithin</b> hook was built for exactly this). The trim feeds the same plan the preview and export
+    consume, so what you drag is what ships. Pin / Remove move here from hidden swipe gestures (still available in the edit list);
+    removed clips collapse into the "+N removed" ghost frame, restored from the edit list.</p>
+  </div>
+
+  <!-- ═══════════ 3 · Edit list ═══════════ -->
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>10:38</span><span>􀙇 􀛨</span></div>
+      <div class="edbar">
+        <div class="x">‹</div>
+        <div class="mid"><div class="a">Edit clips</div><div class="b">drag to reorder</div></div>
+        <div class="export" style="background:var(--muted);color:var(--ink);box-shadow:none;border:1px solid var(--hair)">Done</div>
+      </div>
+      <div class="elist">
+        <div class="esec">In the reel · 8</div>
+        <div class="erow"><div class="th g"></div><div class="tt"><div class="a">Clip 1</div><div class="b">2s · photo</div></div><span class="pk cool">PEAK 121</span><span class="drag">≡</span></div>
+        <div class="erow"><div class="th k"></div><div class="tt"><div class="a">Clip 2</div><div class="b">10s · video</div></div><span class="pk hot">PEAK 172</span><span class="drag">≡</span></div>
+        <div class="erow"><div class="th k"></div><div class="tt"><div class="a">Clip 3 · 📌</div><div class="b">10s · video</div></div><span class="pk warm">PEAK 158</span><span class="drag">≡</span></div>
+        <div class="erow"><div class="th"></div><div class="tt"><div class="a">Clip 4</div><div class="b">4s · video</div></div><span class="pk warm">PEAK 149</span><span class="drag">≡</span></div>
+        <div class="erow"><div class="th g"></div><div class="tt"><div class="a">Clip 5</div><div class="b">3s · video</div></div><span class="pk cool">PEAK 118</span><span class="drag">≡</span></div>
+        <div class="esec">Removed · 2</div>
+        <div class="erow removed"><div class="th k"></div><div class="tt"><div class="a">Clip</div><div class="b">6s · video</div></div><span class="restore">Restore</span></div>
+        <div class="erow removed"><div class="th"></div><div class="tt"><div class="a">Clip</div><div class="b">0s · photo</div></div><span class="restore">Restore</span></div>
+      </div>
+      <div class="homebar"><i></i></div>
+    </div></div>
+    <p class="caption"><b>☰ → the edit list, re-skinned.</b> The power-user surface keeps everything the old List did — drag-reorder,
+    pin, remove, restore, the honest pick-shortfall note — but rows lead with <span class="k">Clip n · duration · kind</span> and the
+    PEAK badge. Presented as a sheet over the editor so the mental model stays "one screen with tools", not a settings page.</p>
+  </div>
+
+</div></div>
+
+<div class="panel"><div class="box">
+  <div class="col"><h3 class="keep">Kept (same ViewModel, same pipeline)</h3><ul>
+    <li>All of <b>ReelViewModel</b>: generate/regenerate (confirm gate), pin/remove/restore/reorder, format WYSIWYG (<code>makeComposition(renderAspect:)</code>), overlay toggle, export → payoff screen, Post to Clips.</li>
+    <li>Recovery states (empty/denied/limited/error/exportFailed) — untouched.</li>
+    <li>Exported payoff screen (`ExportedView`) — already video-first; untouched.</li>
+  </ul></div>
+  <div class="col"><h3 class="new">New presentation</h3><ul>
+    <li><b>Auto-built looping preview</b> fills the screen; scrubber + "0:11 / 0:28" chip; play/pause on tap.</li>
+    <li><b>Export</b> = the prominent top-right pill (was "Share reel" mid-list).</li>
+    <li>One <b>tool row</b>: aspect chips · HR chip (live glass scorebug on the preview — the burn, previewed) · ↻ · ☰.</li>
+    <li><b>Filmstrip timeline</b> = the highlight list: duration badge + peak-tint bar + 📌; tap → clip sheet; "+N removed" ghost restores.</li>
+    <li>Clips named <b>"Clip n · 10s"</b> + PEAK pill.</li>
+  </ul></div>
+  <div class="col"><h3 class="del">Deleted</h3><ul>
+    <li>The "Preview reel" button + preview-on-demand.</li>
+    <li>Raw stitched-timeline offsets ("52:33") and "intensity 13%" as row copy.</li>
+    <li>The two instructional footers ("Format frames the exported reel…", "Swipe ▸ to remove…").</li>
+    <li>The mid-list Share/Regenerate button pair.</li>
+  </ul></div>
+</div></div>
+
+</body>
+</html>
