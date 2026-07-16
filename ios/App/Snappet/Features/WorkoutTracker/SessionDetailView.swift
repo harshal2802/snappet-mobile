@@ -403,7 +403,9 @@ private struct SessionMediaSection: View {
                        sort: \SessionMedia.offsetSec, order: .forward)
     }
 
-    private var hasVideo: Bool { media.contains { $0.kind == .video } }
+    /// Non-reel videos only (highlights P5): a posted reel is rendered OUTPUT — it can neither
+    /// seed the Studio timeline nor feed a reel-of-reels, so it must not light up either button.
+    private var hasVideo: Bool { media.contains { $0.kind == .video && !$0.isReel } }
 
     var body: some View {
         // Per-set effort/recovery over the session HR series (empty map when there's no HR), computed
@@ -555,12 +557,24 @@ private struct SessionMediaSection: View {
         HStack(spacing: 12) {
             SessionMediaThumb(item: item, side: 54)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.kind == .video ? "Video" : "Photo").font(.subheadline)
-                Text("at +\(Int(item.offsetSec.rounded()))s" + (item.kind == .video ? " · tap to edit" : ""))
-                    .font(.caption).foregroundStyle(.secondary)
+                if item.isReel {
+                    // A posted highlight reel (highlights P5): named + badged so it doesn't read
+                    // as a plain clip. Not tap-editable — the Studio's timeline excludes reels.
+                    HStack(spacing: 6) {
+                        Text(item.reelTitle ?? "Highlights").font(.subheadline).lineLimit(1)
+                        reelChip
+                    }
+                    Text("posted to Clips").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(item.kind == .video ? "Video" : "Photo").font(.subheadline)
+                    Text("at +\(Int(item.offsetSec.rounded()))s" + (item.kind == .video ? " · tap to edit" : ""))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            if item.kind == .video { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary) }
+            if item.kind == .video, !item.isReel {
+                Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture { editClip(item) }
@@ -580,8 +594,21 @@ private struct SessionMediaSection: View {
         }
     }
 
+    /// The small ✦ REEL marker on a posted reel's media row — the feed badge's look (reels-coral).
+    private var reelChip: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "sparkles").font(.system(size: 8, weight: .bold))
+            Text("REEL").font(.system(size: 8, weight: .bold))
+        }
+        .foregroundStyle(SnappetColor.reels)
+        .padding(.horizontal, 5).padding(.vertical, 2)
+        .background(SnappetColor.reels.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.5), lineWidth: 1))
+        .accessibilityLabel("Highlight reel")
+    }
+
     @ViewBuilder private func thumbMenu(for item: SessionMedia) -> some View {
-        if item.kind == .video {
+        if item.kind == .video, !item.isReel {
             Button { editClip(item) } label: { Label("Edit in studio", systemImage: "slider.horizontal.3") }
         }
         Menu {
@@ -771,7 +798,9 @@ private struct SessionMediaSection: View {
     /// it), the CapCut-style editor the Kilter side already uses — replacing the old single-clip
     /// "Edit Clip" sheet. Videos only; photos aren't clip-editable.
     private func editClip(_ item: SessionMedia) {
-        guard item.kind == .video else { return }
+        // Reels are excluded from the Studio timeline (highlights P5) — opening scoped to one
+        // would land on an empty editor.
+        guard item.kind == .video, !item.isReel else { return }
         onOpenStudio(StudioPresentation(
             project: StudioEntry.resolveProject(for: session, media: media, context: context),
             visibleClipMediaIDs: [item.id], focusClipMediaID: item.id))

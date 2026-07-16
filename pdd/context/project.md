@@ -86,8 +86,13 @@ detail's bespoke highlight sheet was deleted for SSOT / `.week`), exports burn t
 scorebug in a chosen format (Native/9:16/4:5/1:1, WYSIWYG preview), edit rows show PEAK-bpm badges,
 and **Post to Clips** lands the reel as a ✦ REEL feed post (`SessionMedia.reelTitle`). New flagship
 surface: the **Weekly Highlight Reel** — the week's sessions stitched onto one synthetic timeline →
-a trimmed cross-session montage, offered as a Clips hero card + the App Library hero. HealthKit
-priming moved to the watch-import reconcile; Home's fresh-install CTA now opens the Gym Tracker.
+a trimmed cross-session montage, offered as a Clips hero card + the App Library hero (the hero is
+the wireframe's coral-gradient drop card as of P5). Home's fresh-install CTA now opens the Gym
+Tracker. Fresh-install HealthKit read priming is the contextual **"Connect Apple Health" offer in
+Clips** (P5 — the launch-reconcile request was tried and REVERTED; the offer's sheet fires only
+from an explicit tap, gated on `ClipsHealthOffer` + a persisted asked/dismissed flag). Posted
+reels are OUTPUT, not footage: excluded from Studio timeline seeds and badged ✦ REEL in the
+session detail's media list (P5).
 
 🟢 **Now the Snappet daily-app SUITE (P9) — builds + runs on the iOS simulator.** A `TabView` shell
 (Home dashboard + App Library) over an on-device SwiftData store (Snappet Core), with modules:

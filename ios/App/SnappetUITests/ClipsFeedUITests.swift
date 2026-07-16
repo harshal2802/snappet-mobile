@@ -35,4 +35,26 @@ import XCTest
         XCTAssertTrue(empty.waitForExistence(timeout: 8),
                       "Clips should render its empty state on a fresh store")
     }
+
+    /// Highlights P5: the contextual "Connect Apple Health" offer shows on a fresh store (no
+    /// watch-imported sessions; the flag is cleared by the fresh-store launch path, so this is
+    /// deterministic) and ✕ dismisses it. Connect is deliberately NOT tapped — it pops the real
+    /// Health system sheet; the request firing only from that tap is the whole design.
+    func testHealthOfferShowsOnFreshStoreAndDismisses() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestFreshStore"]
+        app.launch()
+
+        let card = app.descendants(matching: .any)["clips.healthOffer"]
+        XCTAssertTrue(card.waitForExistence(timeout: 15),
+                      "fresh store → no watch imports + flag cleared → the offer card shows")
+        app.descendants(matching: .any)["clips.healthOffer.dismiss"].firstMatch.tap()
+
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: card)
+        wait(for: [gone], timeout: 5)
+
+        // Dismissing the card must not have taken the empty state with it.
+        XCTAssertTrue(app.descendants(matching: .any)["clips.empty"].waitForExistence(timeout: 5),
+                      "the feed's empty state stays after dismissing the offer")
+    }
 }

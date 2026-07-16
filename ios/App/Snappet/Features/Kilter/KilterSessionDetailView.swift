@@ -630,7 +630,9 @@ struct KilterSessionDetailView: View {
         if let existing = try? modelContext.fetch(
             FetchDescriptor<StudioProject>(predicate: #Predicate { $0.sessionID == sid })).first {
             let present = Set(existing.clips.compactMap(\.sessionMediaID))
-            let missing = media.filter { $0.kind == .video && !present.contains($0.id) }
+            // Posted reels are OUTPUT, not footage (highlights P5) — never reconciled into the
+            // timeline (mirrors `StudioEntry.resolveProject`).
+            let missing = media.filter { $0.kind == .video && !$0.isReel && !present.contains($0.id) }
                 .sorted { $0.offsetSec < $1.offsetSec }
             if !missing.isEmpty {
                 var order = (existing.clips.map(\.order).max() ?? -1) + 1
@@ -644,7 +646,7 @@ struct KilterSessionDetailView: View {
             }
             return existing
         }
-        let clips = media.filter { $0.kind == .video }
+        let clips = media.filter { $0.kind == .video && !$0.isReel }
             .sorted { $0.offsetSec < $1.offsetSec }
             .enumerated()
             .map { i, m in

@@ -4,6 +4,33 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-15] Highlights follow-up trio — the Health offer, honest reel rows, the hero card (P5)
+
+**Decision** (the three items P1–P4's entry left open, closed in one PR;
+`pdd/prompts/features/highlights-convergence/P5-highlights-followups.md`). The fresh-install
+HealthKit read-priming gap closes with a **contextual, dismissible "Connect Apple Health" card in
+Clips** whose system sheet fires ONLY from its Connect tap; posted reels leave every **editing**
+surface (Studio seeds/reconciles, edit affordances) and read as ✦ REEL in the session detail's
+media list; the Clips weekly hero becomes the wireframe's coral-gradient drop card.
+
+Non-obvious choices:
+- **The offer's gate is `no watch import exists` + one persisted asked/dismissed flag**
+  (`clips.healthOffer.resolved`, UserDefaults — no schema change). HealthKit read-auth status is
+  NOT queryable, so "answered the sheet" can't be observed — asking is treated as final, same as
+  dismissing (the card never returns either way; a watch-imported session appearing is the only
+  positive signal, and it also hides the card). **Rules out** re-showing on denial (unknowable)
+  and any launch-path request (the reverted trap — see the P1–P4 entry below). The flag joins
+  `SnappetApp`'s fresh-store UserDefaults resets so UI tests stay deterministic.
+- **Reels are excluded at the COUNT, not just the seed.** `StudioEntry.videoCounts` /
+  `SessionDetailView.hasVideo` skip `isReel` rows along with `seedClips` + both late-clip
+  reconciles (gym + Kilter) and the feed's ⋯ edit scoping — excluding only the seed would leave
+  "Edit in Video Studio" / dashboard candidates lighting up for a reel-only session and opening
+  an EMPTY editor. Share stays (sharing a render is fine); Remove stays.
+- **The hero card is decorative-only by construction**: gradient fills (no `.blur`, nothing
+  re-rasterizes on scroll), a static 6-frame filmstrip, no players/thumbnails — the prompt 92/97
+  scroll-perf discipline. Same `clips.weeklyReel` id; the dark canvas is deliberately identical
+  in light/dark (a media hero, like the posters under it).
+
 ## [2026-07-15] Highlights convergence — the Workout Reels TILE retires, the reel maker converges (P1–P4)
 
 **Decision** (product review: "Workout Reels isn't doing anything special anymore"). The standalone
