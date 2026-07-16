@@ -4,6 +4,47 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-16] Festival domain + matcher — wire format, day boundaries, confidence semantics (festival prompt 01)
+
+**Decision** (implementing `pdd/prompts/features/festival/01-festival-domain-and-matcher.md`; the
+shape itself was decided at ideation — see the 2026-07-16 ideation entry). Four pure-Foundation files
+in `Features/Festival/` (`FestivalPack`, `FestivalPackValidator`, `FestivalSetMatcher`,
+`FestivalPlan`), no UI/SwiftData/module registration (prompt 02), fully unit-tested in `SnappetTests`.
+
+Non-obvious calls:
+- **`.fpack` wire = `"FPAK"` magic + 1 version byte + raw-DEFLATE JSON** via the shared `ZlibCodec`
+  (`compression_stream`, `COMPRESSION_ZLIB`) — *raw deflate, not literal gzip*, despite the ideation
+  entry's "gzipped" shorthand. Rationale: the prompt pins the codec to the `SharedRoutine` one
+  (reuse, don't duplicate), the app has no gzip *writer* (Kilter only gunzips via the `zlib` C lib),
+  and one compression story keeps the prompt-05 QR blob trivial. ⚠️ The Pages pack builder (web-app
+  repo PR, with prompt 02) must emit this exact form. The header byte + in-JSON `formatVersion` give
+  typed rejection (`notAPack` / `unsupportedVersion` / `tooLarge` / `corrupted`) before JSON decode.
+- **Festival days roll over at 06:00, on a fixed per-pack UTC offset.** `FestivalDay.date` is the
+  poster label; its real window is 06:00 local → 06:00 next morning
+  (`FestivalDay.rolloverHour = 6`), so a 01:00 set belongs to the previous poster day — enforced by
+  the validator (`setOutsideDay`), used by the matcher's day scoping and the plan's per-day gap
+  math. The pack carries `utcOffsetSeconds` (not a tzdb id): set times are absolute `Date`s in ISO
+  strings with the festival's offset, so matching is timezone-agnostic; the offset only anchors day
+  boundaries and display, where a DST hour of slop is irrelevant.
+- **Set ids are UUIDv5 content identity, stamped post-decode** — NOT carried on the wire (wire sets
+  are `artist/start/end` only). Name = `fpack:v1|festivalID|stage|artist|startEpoch|endEpoch`,
+  labels lowercased + whitespace-collapsed, under a fixed Festival namespace, reusing
+  `KilterClimbIdentity.uuidV5` (cross-feature call over extraction — zero refactor risk to shipped
+  Kilter code). Same pack re-downloaded or friend-shared → same set ids, so plans and tags survive.
+  The `stage` label is also denormalized onto each set so matcher output is self-contained.
+- **Confidence semantics** (`FestivalSetMatcher`, one source of truth the review UI reads):
+  `autoTagThreshold = 0.8`; a lone containing set = 0.97; ≥2 overlapping candidates capped at 0.65 —
+  *structurally* below auto, hint or no hint (the acceptance criterion); gap clips decay linearly
+  0.70 → 0.30 over 30 min from the nearer edge (reproduces the wireframe's "between stages → 62%" at
+  6 min), so gaps always ask. Set windows are **half-open** `[start, end)` — a photo at the exact
+  handover between back-to-back sets belongs to the one starting.
+- **A long clip straddling adjacent sets folds into `.multipleStagesLive`** (the case means "≥2 sets
+  overlap the clip's span", weighted by overlap seconds), and clips before the day's first set /
+  after its last are `.outsideSchedule`, not nearest-set — campsite footage isn't anyone's set.
+- **Hints boost, never override**: an "I'm here" hint whose interval covers the clip breaks ties
+  among live candidates and adds +0.1 (clamped to 0.99, or to the 0.65 multi-live cap), but a hint
+  contradicting the clock is ignored outright.
+
 ## [2026-07-15] Reel editor redesign — the reel becomes the screen; per-clip trims stay app-side
 
 **Decision** (user: "this reel preview seems very less useful and less intuitive… take
