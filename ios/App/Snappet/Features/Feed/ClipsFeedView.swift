@@ -56,6 +56,10 @@ final class ClipFeedPlayback {
 
 struct ClipsFeedView: View {
     @Environment(\.modelContext) private var context
+    /// For the Health offer card's Connect action only (highlights P5): the explicit tap calls
+    /// `health.requestAuthorization()` then `reconcileWatchWorkouts()` — the ONE place Clips may
+    /// request Health access (the launch-path request was tried and reverted; decisions.md).
+    @Environment(AppModel.self) private var app
 
     @Query private var allMedia: [SessionMedia]
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var kilterSessions: [KilterSession]
@@ -94,6 +98,9 @@ struct ClipsFeedView: View {
     /// Autoplay-on-scroll (prompt 90) — opt-in (default OFF; the R12-risk inline render is device-owed),
     /// suppressed under Reduce Motion / Low Power.
     @AppStorage("clips.autoplay") private var autoplayEnabled = false
+    /// The "Connect Apple Health" offer's asked-or-dismissed flag (highlights P5). One flag for
+    /// both outcomes — read-auth status isn't queryable, so asked is as final as dismissed.
+    @AppStorage(ClipsHealthOffer.resolvedKey) private var healthOfferResolved = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var autoplayActive: Bool {
@@ -110,7 +117,16 @@ struct ClipsFeedView: View {
         return NavigationStack {
             Group {
                 if posts.isEmpty {
-                    emptyState
+                    // The fresh-install case is exactly who the Health offer exists for (no clips,
+                    // no watch imports yet) — so it renders above the empty state too.
+                    VStack(spacing: 0) {
+                        if showsHealthOffer {
+                            ClipsHealthOfferCard(onConnect: connectHealth,
+                                                 onDismiss: { healthOfferResolved = true })
+                                .padding(.top, 8)
+                        }
+                        emptyState
+                    }
                 } else {
                   // Measure the feed width ONCE here (stable) so each card's tile height is correct from the
                   // first render — no per-card width measurement that pops the height during scroll (prompt 92).
@@ -118,6 +134,15 @@ struct ClipsFeedView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 18) {
+                                // Contextual "Connect Apple Health" offer (highlights P5): shown while
+                                // no watch-imported session exists and the user hasn't connected or
+                                // dismissed — the fresh-install read-priming gap the retired Workout
+                                // Reels onboarding left behind. The Health sheet fires ONLY from the
+                                // card's Connect tap, never from a launch path (the reverted trap).
+                                if showsHealthOffer {
+                                    ClipsHealthOfferCard(onConnect: connectHealth,
+                                                         onDismiss: { healthOfferResolved = true })
+                                }
                                 // Weekly Highlight Reel hero (highlights P4): offered over the composed
                                 // posts (pure, cheap) once this week has ≥2 video clips; opens the
                                 // shared reel builder on the stitched week.
@@ -215,6 +240,28 @@ struct ClipsFeedView: View {
                 // The grid inherits the active search/filter (prompt 107) so it always agrees with the feed.
                 ClipsGridView(posts: visible, onPick: { scrollTarget = $0 })
             }
+        }
+    }
+
+    // MARK: "Connect Apple Health" offer (highlights P5)
+
+    /// Pure gate + the view's two inputs: the existing sessions @Query (a watch import existing
+    /// means read access already works) and the persisted asked/dismissed flag (read-auth status
+    /// is NOT queryable, so a flag is the only honest gate).
+    private var showsHealthOffer: Bool {
+        ClipsHealthOffer.shouldShow(
+            hasWatchImportedSession: workoutSessions.contains(where: \.isFromAppleWatch),
+            resolved: healthOfferResolved)
+    }
+
+    /// The Connect tap: resolve the flag first (asked is final — the sheet answers off-process and
+    /// its outcome can't be read back), then request + reconcile so granted workouts appear
+    /// immediately. The ONLY Health request this tab ever makes.
+    private func connectHealth() {
+        healthOfferResolved = true
+        Task { @MainActor in
+            try? await app.health.requestAuthorization()
+            await app.reconcileWatchWorkouts()
         }
     }
 
@@ -412,43 +459,162 @@ struct ClipsFeedView: View {
 
 }
 
-// MARK: - Weekly Highlight Reel hero (highlights P4)
+// MARK: - "Connect Apple Health" offer card (highlights P5)
 
-/// The Sunday-drop card at the top of Clips: this week has enough footage for a cross-session
-/// cut. A `NavigationLink` into the shared reel builder (`WeeklyReelHostView`) — the card itself
-/// renders nothing heavy (no players, no thumbnails), so the feed's scroll perf is untouched.
+/// The contextual watch-import primer: a dismissible card, NOT an onboarding step — the Health
+/// sheet fires only from its Connect tap. Renders on the empty state and atop the feed while
+/// `ClipsHealthOffer.shouldShow` holds; either button resolves it forever.
+private struct ClipsHealthOfferCard: View {
+    let onConnect: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "applewatch")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(SnappetColor.perfFresh)
+                    .frame(width: 44, height: 44)
+                    .background(SnappetColor.perfFresh.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("See your Apple Watch workouts here")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(SnappetColor.ink)
+                    Text("Connect Apple Health and workouts you record on your watch appear in Clips automatically — heart rate included.")
+                        .font(.caption)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(SnappetColor.textSecondary)
+                        .frame(width: 26, height: 26)
+                        .background(SnappetColor.surfaceMuted, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("clips.healthOffer.dismiss")
+                .accessibilityLabel("Dismiss")
+            }
+            Button(action: onConnect) {
+                Text("Connect Apple Health")
+                    .font(.footnote.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(SnappetColor.perfFresh)
+            .accessibilityIdentifier("clips.healthOffer.connect")
+        }
+        .padding(12)
+        .background(SnappetColor.perfFresh.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16)
+            .strokeBorder(SnappetColor.perfFresh.opacity(0.35), lineWidth: 1))
+        .padding(.horizontal, SnappetSpacing.lg)
+        // `.contain` keeps the Connect/dismiss buttons' OWN identifiers reachable under the
+        // card's (identifier-on-container otherwise flattens them out of the UITest tree —
+        // the habit.row precedent).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("clips.healthOffer")
+    }
+}
+
+// MARK: - Weekly Highlight Reel hero (highlights P4 · P5 polish)
+
+/// The Sunday-drop card at the top of Clips, per the wireframe (workout-reels-v2 screen 1): a
+/// dark coral-gradient canvas, the ✦ WEEKLY HIGHLIGHTS tag, a play badge, and a mini filmstrip.
+/// A `NavigationLink` into the shared reel builder (`WeeklyReelHostView`) — everything on it is
+/// a decorative gradient/shape (no players, no thumbnails, no live blur), so the feed's scroll
+/// perf is untouched (the prompt 92/97 discipline).
 private struct WeeklyReelHeroCard: View {
     let offer: WeeklyHighlights.Offer
 
+    /// The wireframe's warm dark canvas — deliberately the same in light and dark mode (a media
+    /// hero commits to the dark look, like the posters below it).
+    private let canvasTop = Color(red: 0.23, green: 0.14, blue: 0.13)
+    private let canvasMid = Color(red: 0.13, green: 0.07, blue: 0.09)
+    private let canvasBottom = Color(red: 0.09, green: 0.05, blue: 0.07)
+    /// The filmstrip's six static frame fills — decoration standing in for "your week's footage".
+    private static let frameTints: [(Color, Color)] = [
+        (Color(red: 0.29, green: 0.31, blue: 0.35), Color(red: 0.17, green: 0.18, blue: 0.21)),
+        (Color(red: 0.34, green: 0.25, blue: 0.17), Color(red: 0.20, green: 0.15, blue: 0.10)),
+        (Color(red: 0.29, green: 0.31, blue: 0.35), Color(red: 0.17, green: 0.18, blue: 0.21)),
+        (Color(red: 0.17, green: 0.29, blue: 0.22), Color(red: 0.10, green: 0.17, blue: 0.13)),
+        (Color(red: 0.29, green: 0.31, blue: 0.35), Color(red: 0.17, green: 0.18, blue: 0.21)),
+        (Color(red: 0.34, green: 0.25, blue: 0.17), Color(red: 0.20, green: 0.15, blue: 0.10)),
+    ]
+
     var body: some View {
         NavigationLink(value: WeeklyReelRoute()) {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles.tv")
-                    .font(.system(size: 20, weight: .semibold))
+            ZStack {
+                LinearGradient(colors: [canvasTop, canvasMid, canvasBottom],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                // The two decorative glows (coral + amber radials) — gradient fills, not .blur,
+                // so nothing re-rasterizes while the card slides.
+                RadialGradient(colors: [SnappetColor.reels.opacity(0.32), .clear],
+                               center: .init(x: 0.2, y: 0.28), startRadius: 0, endRadius: 150)
+                RadialGradient(colors: [Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.20), .clear],
+                               center: .init(x: 0.85, y: 0.75), startRadius: 0, endRadius: 170)
+
+                Image(systemName: "play.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Color(red: 0.16, green: 0.04, blue: 0.02))
+                    .frame(width: 46, height: 46)
+                    .background(SnappetColor.reels.opacity(0.92), in: Circle())
+                    .shadow(color: SnappetColor.reels.opacity(0.45), radius: 12, y: 6)
+                    .offset(y: -22)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles").font(.system(size: 9, weight: .bold))
+                        Text("WEEKLY HIGHLIGHTS").font(.system(size: 10, weight: .heavy)).tracking(0.5)
+                    }
                     .foregroundStyle(SnappetColor.reels)
-                    .frame(width: 44, height: 44)
-                    .background(SnappetColor.reels.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 2) {
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(.black.opacity(0.45), in: Capsule())
+                    .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.5), lineWidth: 1))
+
+                    Spacer(minLength: 0)
+
+                    filmstrip
+                        .padding(.bottom, 10)
                     Text("Your week in highlights")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(SnappetColor.ink)
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(.white)
                     Text(offer.subtitle)
                         .font(.caption)
-                        .foregroundStyle(SnappetColor.textSecondary)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.top, 1)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "play.circle.fill")
-                    .font(.system(size: 26))
-                    .foregroundStyle(SnappetColor.reels)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(12)
-            .background(SnappetColor.reels.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(SnappetColor.reels.opacity(0.45), lineWidth: 1.5))
+            .frame(height: 190)
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(SnappetColor.reels.opacity(0.55), lineWidth: 1.5))
             .padding(.horizontal, SnappetSpacing.lg)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("clips.weeklyReel")
+        .accessibilityLabel("Weekly Highlight Reel — \(offer.subtitle)")
+    }
+
+    /// Six static gradient "frames" — the wireframe's filmstrip strip, as pure decoration.
+    private var filmstrip: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<Self.frameTints.count, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(LinearGradient(colors: [Self.frameTints[i].0, Self.frameTints[i].1],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(height: 28)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .opacity(0.85)
+        .allowsHitTesting(false)
     }
 }
 
@@ -744,8 +910,12 @@ private struct ClipPostCard: View {
             // The Studio is a VIDEO editor — photos aren't clip-editable (mirrors
             // `SessionDetailView.editClip`'s `kind == .video` guard), so a photo / photo-only post
             // opening the editor would land on an empty timeline. Scope the edit actions to videos.
+            // A posted reel shares but never edits (highlights P5) — the Studio timeline excludes
+            // reels, so "Edit this clip" would land on an empty editor too.
             if currentClip.media.kind == "video" {
-                Button { editCurrentClip() } label: { Label("Edit this clip", systemImage: "slider.horizontal.3") }
+                if !currentClip.media.isReel {
+                    Button { editCurrentClip() } label: { Label("Edit this clip", systemImage: "slider.horizontal.3") }
+                }
                 Button { shareCurrentClip() } label: { Label("Share clip", systemImage: "square.and.arrow.up") }
             }
             if editableClipIDs.count > 1 {
@@ -877,9 +1047,11 @@ private struct ClipPostCard: View {
     /// The clip currently centered in the carousel (clamped — `page` can outlive a clip-count change).
     private var currentClip: ClipFeedItem { post.clips[min(max(0, page), post.clips.count - 1)] }
 
-    /// The post's editable clips: VIDEOS only (the Studio's main track seeds from videos — photos
-    /// aren't clip-editable). The ⋯ edit actions scope to these so the editor never opens empty.
-    private var editableClipIDs: [UUID] { post.clips.filter { $0.media.kind == "video" }.map(\.media.id) }
+    /// The post's editable clips: non-reel VIDEOS only (the Studio's main track seeds from videos
+    /// and excludes posted reels). The ⋯ edit actions scope to these so the editor never opens empty.
+    private var editableClipIDs: [UUID] {
+        post.clips.filter { $0.media.kind == "video" && !$0.media.isReel }.map(\.media.id)
+    }
 
     private func project() -> StudioProject {
         StudioEntry.resolveProject(forSessionID: post.sessionID, title: post.title, media: allMedia, context: context)
@@ -887,7 +1059,7 @@ private struct ClipPostCard: View {
 
     private func editCurrentClip() {
         let clip = currentClip
-        guard clip.media.kind == "video" else { return }
+        guard clip.media.kind == "video", !clip.media.isReel else { return }
         studio = StudioPresentation(project: project(), focus: clip.media.id, visible: [clip.media.id])
     }
 

@@ -25,6 +25,14 @@ final class StudioEntryTests: XCTestCase {
                      kind: .photo, offsetSec: offset)
     }
 
+    /// A posted highlight reel row (highlights P2/P5): a video whose `reelTitle` marks it.
+    private func reel(_ sessionID: UUID, title: String = "Highlights") -> SessionMedia {
+        let m = SessionMedia(sessionID: sessionID, localIdentifier: "reel-\(sessionID)-\(title)",
+                             kind: .video, offsetSec: 0, durationSec: 28)
+        m.reelTitle = title
+        return m
+    }
+
     // MARK: - candidates
 
     func testCandidatesKeepOnlyVideoBearingSessionsNewestFirst() {
@@ -83,6 +91,33 @@ final class StudioEntryTests: XCTestCase {
         XCTAssertEqual(clips.map(\.trimEnd), [8, 5], "earlier capture first; trimEnd = duration")
         XCTAssertEqual(clips[0].sessionMediaID, media[2].id)
         XCTAssertFalse(clips.contains { $0.isPhoto })
+    }
+
+    // MARK: - Posted reels are OUTPUT, not footage (highlights P5)
+
+    func testSeedClipsExcludePostedReels() {
+        let sid = UUID()
+        let footage = video(sid, offset: 10, duration: 8)
+        let media = [reel(sid), footage]
+
+        let clips = StudioEntry.seedClips(for: sid, media: media)
+        XCTAssertEqual(clips.map(\.sessionMediaID), [footage.id],
+                       "a posted reel must never seed the Studio timeline — editing a render is odd, "
+                       + "and its burned scorebug would double-draw under the live overlay")
+    }
+
+    func testVideoCountsAndCandidatesIgnoreReels() {
+        let s = session("Push Day", daysAgo: 1)
+        let reelOnly = session("Watch Import", daysAgo: 0.5)
+        let media = [video(s.id, offset: 5), reel(s.id), reel(reelOnly.id)]
+
+        XCTAssertEqual(StudioEntry.videoCounts(media: media), [s.id: 1],
+                       "counting a reel would light up a Studio entry whose seed is empty")
+        XCTAssertEqual(StudioEntry.videoSessionIDs(media: media), [s.id])
+        let out = StudioEntry.candidates(history: [s, reelOnly], media: media)
+        XCTAssertEqual(out.map(\.sessionID), [s.id],
+                       "a reel-only session offers no Studio candidate")
+        XCTAssertEqual(out.first?.videoCount, 1)
     }
 
     // MARK: - Fitness-card disambiguation (#74)

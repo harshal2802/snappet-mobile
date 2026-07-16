@@ -46,7 +46,11 @@ struct SnappetApp: App {
                 defaults.removeObject(forKey: "freeform.recentGrades.\(scale.rawValue)")
             }
             for key in ["freeform.recentGyms", "addClimb.boulderScale", "addClimb.routeScale",
-                        "freeform.restAutoStart", RestTimerDefaults.storageKey] {
+                        "freeform.restAutoStart", RestTimerDefaults.storageKey,
+                        // The Clips "Connect Apple Health" offer's asked/dismissed flag
+                        // (highlights P5) — cleared so the card's presence is deterministic
+                        // across UI-test runs (a prior run's dismiss would otherwise stick).
+                        ClipsHealthOffer.resolvedKey] {
                 defaults.removeObject(forKey: key)
             }
         }

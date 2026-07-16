@@ -37,9 +37,11 @@ enum StudioEntry {
                              startedAt: $0.startedAt, videoCount: counts[$0.id] ?? 0) }
     }
 
-    /// Video count per session id over the module's media rows.
+    /// Video count per session id over the module's media rows. Posted highlight reels don't
+    /// count (highlights P5): a reel is a rendered OUTPUT, not editable footage — counting one
+    /// here would light up a Studio entry whose seeded timeline (below) is empty.
     static func videoCounts(media: [SessionMedia]) -> [UUID: Int] {
-        media.filter { $0.kind == .video }
+        media.filter { $0.kind == .video && !$0.isReel }
             .reduce(into: [:]) { $0[$1.sessionID, default: 0] += 1 }
     }
 
@@ -51,9 +53,11 @@ enum StudioEntry {
 
     /// The studio's main track seeded from a session's videos in capture order — the single
     /// definition every studio entry shares (extracted from `SessionDetailView.openStudio`).
-    /// `media` may be the whole store or already session-scoped; non-video rows are ignored.
+    /// `media` may be the whole store or already session-scoped; non-video rows are ignored,
+    /// and so are posted reels (highlights P5) — editing a rendered reel is odd, and its burned
+    /// scorebug would double-render under the Studio's live overlay.
     static func seedClips(for sessionID: UUID, media: [SessionMedia]) -> [TimelineClip] {
-        media.filter { $0.sessionID == sessionID && $0.kind == .video }
+        media.filter { $0.sessionID == sessionID && $0.kind == .video && !$0.isReel }
             .sorted { $0.offsetSec < $1.offsetSec }
             .enumerated()
             .map { i, m in
@@ -103,7 +107,10 @@ enum StudioEntry {
                                context: ModelContext) -> StudioProject {
         let project = findOrCreateProject(forSessionID: sid, title: title, media: media, context: context)
         let present = Set(project.clips.compactMap(\.sessionMediaID))
-        let missing = media.filter { $0.sessionID == sid && $0.kind == .video && !present.contains($0.id) }
+        // Same reel exclusion as `seedClips` — a reel posted after the project was created must
+        // not be "reconciled" into the timeline as if it were late-discovered footage.
+        let missing = media.filter { $0.sessionID == sid && $0.kind == .video && !$0.isReel
+                                     && !present.contains($0.id) }
             .sorted { $0.offsetSec < $1.offsetSec }
         guard !missing.isEmpty else { return project }
         var order = (project.clips.map(\.order).max() ?? -1) + 1
