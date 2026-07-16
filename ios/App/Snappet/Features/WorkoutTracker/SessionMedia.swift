@@ -53,6 +53,13 @@ final class SessionMedia {
     /// row). Cleared when a Photos "Revert to Original" is detected at a Studio-open touchpoint.
     var isBakedRaw: Bool?
 
+    /// Non-nil marks this row as a POSTED HIGHLIGHT REEL (highlights P2): the value is the feed
+    /// post's title (e.g. "Push Day — Highlights"). The composer gives a reel its own ✦ REEL post
+    /// (never grouped into a set/climb carousel) and — like a baked clip — plays it raw: the glass
+    /// HR scorebug is already burned into the pixels. Additive + optional → SwiftData lightweight
+    /// migration (`nil` = an ordinary clip for every pre-existing row).
+    var reelTitle: String?
+
     // MARK: - Per-set assignment (additive → SwiftData lightweight migration; existing rows
     // decode as an unassigned `auto` clip and fall into General until the auto-assigner runs).
     /// FK to the `SessionExercise.id` this clip is tied to; `nil` = General (no set).
@@ -108,6 +115,9 @@ final class SessionMedia {
     /// `true` when the clip is not tied to a specific set (the General bucket): either explicitly
     /// pinned `general`, or simply has no `assignedExerciseID`.
     var isGeneral: Bool { assignmentSource == .general || assignedExerciseID == nil }
+
+    /// A posted highlight reel (highlights P2) — `reelTitle` is the marker AND the display title.
+    var isReel: Bool { reelTitle != nil }
 
     /// Every `localIdentifier` stored in ANY session — the GLOBAL dedup set auto-discovery checks so
     /// an asset in the ±90s pad overlap of two adjacent sessions is tagged into one, not both (R2/R4).

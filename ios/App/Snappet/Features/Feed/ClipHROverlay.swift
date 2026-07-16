@@ -47,7 +47,9 @@ enum ClipHROverlay {
         guard clip.kind == "video" else { return nil }
         // A BAKED clip's HR tile is in the pixels ("Save to original", prompt 117) — drawing the live
         // overlay on top would double-render the chart. The name-tag-only degrade, like photos.
-        guard !clip.isBaked else { return nil }
+        // A posted HIGHLIGHT REEL (highlights P2) is the same case: its glass scorebug was burned in
+        // by ReelExporter, so the feed, browser, and fullscreen viewer all play it raw.
+        guard !clip.isBaked, !clip.isReel else { return nil }
         let edit = clip.edit ?? ClipStudioEdit()
         let footage = keptFootage(clip)
         // The SAME window builder the Studio preview + export use (prompt 115): footage = the kept

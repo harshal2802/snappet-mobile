@@ -102,25 +102,6 @@ final class ReelFlowPolicyTests: XCTestCase {
         XCTAssertEqual(spec.message, "boom")
     }
 
-    // MARK: - Workout list: truthful Health copy
-
-    func testWorkoutsEmptyAcknowledgesInvisibleDenial() {
-        let spec = ReelFlowPolicy.workoutsEmptySpec()
-        XCTAssertEqual(spec.actions, [.refresh, .openSettings])
-        XCTAssertTrue(spec.message.contains("permission"),
-                      "must acknowledge that HealthKit read denial is possible")
-        XCTAssertTrue(spec.message.contains("Privacy & Security > Health"),
-                      "names the REAL path — the per-app Settings page has no Health row")
-        XCTAssertFalse(spec.message.contains("pull to refresh"),
-                       "the old copy promised a remedy that can't work under denial")
-    }
-
-    func testWorkoutsErrorOffersRetryAndSettings() {
-        let spec = ReelFlowPolicy.workoutsErrorSpec(message: "Health data isn't available.")
-        XCTAssertEqual(spec.actions, [.tryAgain, .openSettings])
-        XCTAssertEqual(spec.message, "Health data isn't available.")
-    }
-
     // MARK: - Regenerate confirmation
 
     func testNoConfirmationWhenNothingToLose() {
@@ -208,26 +189,12 @@ final class ReelFlowPolicyTests: XCTestCase {
                                  "full-length renders are large; the net stays bounded")
     }
 
-    // MARK: - Activity icons (workout rows)
-
-    func testEveryActivityHasAnIcon() {
-        for activity in Activity.allCases {
-            XCTAssertFalse(ReelFlowPolicy.activityIcon(for: activity).isEmpty)
-        }
-    }
-
-    func testIconsDistinguishTheHeadlineActivities() {
-        XCTAssertEqual(ReelFlowPolicy.activityIcon(for: .climbing), "figure.climbing")
-        XCTAssertNotEqual(ReelFlowPolicy.activityIcon(for: .running),
-                          ReelFlowPolicy.activityIcon(for: .strength))
-    }
-
     // MARK: - Action presentation (titles + identifiers)
 
     func testActionTitlesAndIdentifierSuffixesAreUnique() {
         let all: [ReelFlowPolicy.RecoveryAction] = [
             .selectClips, .extendLimitedSelection, .allowPhotoAccess, .openSettings, .tryAgain,
-            .retryExport, .backToEdit, .refresh,
+            .retryExport, .backToEdit,
         ]
         XCTAssertEqual(Set(all.map(\.buttonTitle)).count, all.count)
         XCTAssertEqual(Set(all.map(\.identifierSuffix)).count, all.count)

@@ -48,7 +48,12 @@ final class ReelExporter: Sendable {
     /// OSStatus -12902`): the exporter can't resolve a single output format across the segments.
     /// `sending` lets the freshly-built, otherwise-unreferenced values cross to the `@MainActor`
     /// view model under Swift 6 isolation.
-    func makeComposition(for plan: ReelPlan) async throws
+    ///
+    /// `renderAspect` (width / height, from `ReelFormat.aspect`) forces the render canvas to a fixed
+    /// share format — segments letterbox into it via the same aspect-fit transform. `nil` keeps the
+    /// native canvas (first segment's oriented size). Threaded through `makeComposition` (not just
+    /// `export`) so the in-app preview shows the SAME framing the export will ship (WYSIWYG).
+    func makeComposition(for plan: ReelPlan, renderAspect: Double? = nil) async throws
         -> sending (AVMutableComposition, AVVideoComposition?) {
         let renderable = plan.segments.filter {
             ($0.kind == .video && $0.duration > 0.1) || $0.kind == .photo
@@ -109,7 +114,8 @@ final class ReelExporter: Sendable {
 
         let videoComposition = try await makeVideoComposition(composition: composition, track: vTrack,
                                                               layouts: layouts,
-                                                              totalDuration: composition.duration)
+                                                              totalDuration: composition.duration,
+                                                              renderAspect: renderAspect)
         return (composition, videoComposition)
     }
 
@@ -136,11 +142,20 @@ final class ReelExporter: Sendable {
     /// instructions are then overridden with our orient-and-letterbox layout.
     private func makeVideoComposition(composition: AVMutableComposition, track: AVCompositionTrack,
                                       layouts: [SegmentLayout],
-                                      totalDuration: CMTime) async throws -> AVMutableVideoComposition? {
+                                      totalDuration: CMTime,
+                                      renderAspect: Double? = nil) async throws -> AVMutableVideoComposition? {
         guard let first = layouts.first else { return nil }
-        // Even dimensions keep the encoder happy.
-        let renderSize = CGSize(width: (first.orientedSize.width / 2).rounded() * 2,
-                                height: (first.orientedSize.height / 2).rounded() * 2)
+        // Even dimensions keep the encoder happy. A fixed format (`renderAspect`, P1) keeps the first
+        // segment's width and derives the height from the aspect — segments then aspect-fit
+        // (letterbox) into the share-shaped canvas exactly as they do into the native one.
+        let baseWidth = (first.orientedSize.width / 2).rounded() * 2
+        let baseHeight: CGFloat
+        if let renderAspect, renderAspect > 0 {
+            baseHeight = ((baseWidth / renderAspect) / 2).rounded() * 2
+        } else {
+            baseHeight = (first.orientedSize.height / 2).rounded() * 2
+        }
+        let renderSize = CGSize(width: baseWidth, height: baseHeight)
         guard renderSize.width >= 2, renderSize.height >= 2 else { return nil }
 
         let vc = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: composition)
@@ -198,8 +213,9 @@ final class ReelExporter: Sendable {
     /// the editor's Core-Animation overlay tool is attached to the (mutable) video composition. Any miss
     /// (no mutable composition / no resolvable tile / no tool) silently exports WITHOUT the overlay — the
     /// share offer never crashes or blocks on the overlay being renderable.
-    func export(_ plan: ReelPlan, hrOverlay: HROverlay?) async throws -> URL {
-        let (composition, videoComposition) = try await makeComposition(for: plan)
+    /// `renderAspect` forces the share-format canvas (see `makeComposition`); `nil` = native.
+    func export(_ plan: ReelPlan, hrOverlay: HROverlay?, renderAspect: Double? = nil) async throws -> URL {
+        let (composition, videoComposition) = try await makeComposition(for: plan, renderAspect: renderAspect)
         var exportVideoComposition = videoComposition
 
         // The iOS **Simulator** has no usable H.264 video encoder: any re-encoding export

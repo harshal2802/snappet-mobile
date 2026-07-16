@@ -467,19 +467,15 @@ private struct SessionMediaSection: View {
             case .picker:
                 MediaPicker { ids in addManual(ids) }
             case .highlight:
-                SessionHighlightView(
-                    viewModel: SessionHighlightViewModel(
-                        app: app, hrSeries: session.hrSeries,
-                        clips: media.map {
-                            SessionHighlightInput.Clip(
-                                localIdentifier: $0.localIdentifier, isVideo: $0.kind == .video,
-                                offsetSec: $0.offsetSec, durationSec: $0.durationSec)
-                        },
-                        duration: session.duration, sport: sport, category: category,
-                        // Boost peak-effort set windows so the auto-reel features the hard sets (Phase 4).
-                        boostWindows: WorkoutHRStats.peakEffortWindows(
-                            for: session.exercises, sessionStart: session.startedAt,
-                            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })))
+                // Highlights convergence (P3): the gym path now feeds the SAME shared reel maker
+                // the Kilter session and the weekly cut use — one builder, one export pipeline
+                // (format presets, burned HR overlay, Post to Clips). The bespoke
+                // `SessionHighlightView`/-`ViewModel` pair is deleted. Peak-effort boosts and the
+                // manual-pick override live inside `ReelSource.workoutSession`.
+                NavigationStack {
+                    ReelView(source: .workoutSession(session, media: media,
+                                                     sport: sport, category: category))
+                }
             }
         }
         .task {
@@ -536,7 +532,7 @@ private struct SessionMediaSection: View {
             }
 
             Button { activeSheet = .highlight } label: {
-                Label("Generate highlight", systemImage: "sparkles.tv")
+                Label("Make a Highlight Reel", systemImage: "sparkles.tv")
             }
             .disabled(!hasVideo)
             .accessibilityIdentifier("generateHighlight")

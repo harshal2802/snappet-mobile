@@ -78,11 +78,24 @@ already implements lives in [`snappet-core-schema.md`](./snappet-core-schema.md)
 
 ## Current state (2026-05-31)
 
+🟢 **Highlights convergence (2026-07-15, `pdd/prompts/features/highlights-convergence/`).** The
+standalone **Workout Reels tile is RETIRED** — its list was made redundant by the watch→Clips import
+and its export was the app's weakest video (never passed `hrOverlay:`). The reel maker converged
+instead: ONE shared `ReelView` fed by `ReelSource` (`.kilterSession` / `.workoutSession` — the gym
+detail's bespoke highlight sheet was deleted for SSOT / `.week`), exports burn the Studio glass HR
+scorebug in a chosen format (Native/9:16/4:5/1:1, WYSIWYG preview), edit rows show PEAK-bpm badges,
+and **Post to Clips** lands the reel as a ✦ REEL feed post (`SessionMedia.reelTitle`). New flagship
+surface: the **Weekly Highlight Reel** — the week's sessions stitched onto one synthetic timeline →
+a trimmed cross-session montage, offered as a Clips hero card + the App Library hero. HealthKit
+priming moved to the watch-import reconcile; Home's fresh-install CTA now opens the Gym Tracker.
+
 🟢 **Now the Snappet daily-app SUITE (P9) — builds + runs on the iOS simulator.** A `TabView` shell
-(Home dashboard + App Library) over an on-device SwiftData store (Snappet Core), with 7 modules:
-**Workout Reels** (flagship), **Pomodoro / Habits / Journal** (productivity), **Tip / Split Expenses /
-Budget** (finance). Every app logs usage to Snappet Core; the Home dashboard aggregates historical
-usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches, dashboard renders.
+(Home dashboard + App Library) over an on-device SwiftData store (Snappet Core), with modules:
+**Gym Tracker / Kilter / Wardrobe** (fitness+style), **Pomodoro / Habits / Journal** (productivity),
+**Tip / Split Expenses / Budget** (finance) — highlight reels are session actions + the weekly cut,
+not a tile (2026-07-15). Every app logs usage to Snappet Core; the Home dashboard aggregates
+historical usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches, dashboard
+renders.
 
 🟢 **Feature-completeness pass on the 6 non-flagship apps (2026-05-31, issues #9–#14).** Each got one
 coherent increment, implemented on its own branch by parallel agents and merged one-by-one:

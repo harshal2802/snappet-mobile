@@ -90,12 +90,12 @@ final class StudioEntryTests: XCTestCase {
     @MainActor
     func testFitnessModuleTitlesAreDistinctAndIdsStable() {
         // Display titles may be renamed; persisted ids must NOT — they key UsageRecords + routes.
+        // ("workout", the retired Workout Reels tile, is gone from the registry entirely —
+        // highlights P3; old UsageRecords with that id render via the capitalized-raw fallback.)
         XCTAssertEqual(WorkoutTrackerModule.id, "workout-log")
         XCTAssertEqual(WorkoutTrackerModule.module.id, "workout-log")
-        XCTAssertEqual(WorkoutModule.module.id, "workout")
-        XCTAssertNotEqual(WorkoutTrackerModule.module.title, WorkoutModule.module.title)
-        XCTAssertFalse(WorkoutTrackerModule.module.title.localizedCaseInsensitiveContains("workout"),
-                       "the tracker's title must no longer collide with 'Workout Reels' (#74)")
+        XCTAssertNil(ModuleRegistry.all.first { $0.id == "workout" },
+                     "the Workout Reels tile is retired — reels are session actions + the weekly cut")
         XCTAssertTrue(WorkoutTrackerModule.module.subtitle.localizedCaseInsensitiveContains("studio"),
                       "the tracker's card must advertise the video studio (#74)")
     }

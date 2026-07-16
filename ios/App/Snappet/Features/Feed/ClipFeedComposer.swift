@@ -77,6 +77,9 @@ struct ClipFeedPost: Identifiable, Sendable, Equatable {
     /// `true` when the owning session was imported from an Apple Watch workout — the poster shows a ⌚
     /// source pill (watch-workouts-clips P3).
     var isFromAppleWatch: Bool
+    /// `true` when this post IS a posted highlight reel (highlights P2) — one reel clip, its own
+    /// post, a ✦ REEL header badge, and no live HR overlay (the scorebug is in the pixels).
+    var isReel: Bool = false
     var clips: [ClipFeedItem]
     /// Clamped per-post tile aspect (width / height) for adaptive sizing (prompt 92) — the first resolved
     /// clip aspect, clamped IG-style to [0.8 (4:5) … 1.91]; `ClipFeedComposer.defaultAspect` until known.
@@ -131,6 +134,31 @@ enum ClipFeedComposer {
         var out: [ClipFeedPost] = []
         for bundle in sessions where !bundle.clips.isEmpty {
             let meta = bundle.meta
+            // Posted highlight reels (highlights P2) get their OWN post each — never grouped into a
+            // set/climb carousel: a reel is a finished cut of the session, not another attempt clip.
+            let reels = bundle.clips.filter(\.isReel)
+            for reel in reels {
+                out.append(ClipFeedPost(
+                    id: "reel-\(reel.id.uuidString)@\(meta.id.uuidString)",
+                    sessionID: meta.id,
+                    kind: meta.kind,
+                    moduleID: meta.kind == .kilter ? "kilter" : "workout-log",
+                    discipline: meta.kind == .kilter ? .climbing : .strength,
+                    title: reel.reelTitle ?? "Highlights",
+                    subtitle: subtitle(meta: meta, climb: nil),
+                    overlayDetail: "",
+                    climbUUID: nil,
+                    exerciseID: nil,
+                    captureAt: meta.startedAt.addingTimeInterval(max(0, reel.offsetSec)),
+                    sessionStartedAt: meta.startedAt,
+                    sessionEndedAt: meta.endedAt,
+                    isFromAppleWatch: meta.isFromAppleWatch,
+                    isReel: true,
+                    clips: [ClipFeedItem(media: reel, attemptLabel: nil)],
+                    aspect: postAspect([reel])))
+            }
+            let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter { !$0.isReel })
+            guard !bundle.clips.isEmpty else { continue }
             // Resolve a group key → label for FeedMedia.groups (the post's header title).
             let nameFor: (String) -> String = { key in
                 if key == "general" { return meta.kind == .kilter ? "Session clips" : (meta.title.isEmpty ? "Session clips" : meta.title) }

@@ -25,13 +25,15 @@ struct ClipFeedFilter: Equatable, Sendable {
     var discipline: Discipline = .all
     var kind: MediaKind = .all
     var favoritesOnly: Bool = false
+    /// Show only posted highlight reels (highlights P2). Stacks with the other chips, like Favorites.
+    var reelsOnly: Bool = false
 
     /// The query with edge whitespace dropped — what matching + the "no results for X" copy both use.
     var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Whether anything narrows the feed — drives the "N of M posts · Clear" line, the no-match state,
     /// and the fast path (inactive ⇒ `apply` returns the input untouched).
-    var isActive: Bool { !trimmedQuery.isEmpty || discipline != .all || kind != .all || favoritesOnly }
+    var isActive: Bool { !trimmedQuery.isEmpty || discipline != .all || kind != .all || favoritesOnly || reelsOnly }
 
     /// One-tap recovery: the default (all-off) filter.
     static let cleared = ClipFeedFilter()
@@ -43,6 +45,7 @@ struct ClipFeedFilter: Equatable, Sendable {
         let q = trimmedQuery
         return posts.filter { post in
             if favoritesOnly, !isFavorite(post.id) { return false }
+            if reelsOnly, !post.isReel { return false }
             switch discipline {
             case .all: break
             case .climbs: if post.kind != .kilter { return false }

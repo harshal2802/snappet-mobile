@@ -80,9 +80,12 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["overallWorkoutTimer"].waitForExistence(timeout: 5)
                     || app.otherElements["overallWorkoutTimer"].waitForExistence(timeout: 1),
                     "the player should show the A2 overall workout timer")
-                XCTAssertTrue(app.otherElements["liveMetricsOverlay"].waitForExistence(timeout: 5)
-                    || app.staticTexts["liveMetricsOverlay"].waitForExistence(timeout: 1),
-                    "the player should show the A4 live-metrics overlay (no-source state)")
+                // A4 live metrics in the PAGER player (prompt 119 deleted the guided player and
+                // its always-on "liveMetricsOverlay"): the HR chip (freeform.hrChip) is hidden
+                // until a live sample arrives — there IS no no-source element on the sim — so
+                // assert the player chrome that always renders instead.
+                XCTAssertTrue(app.buttons["pauseWorkout"].waitForExistence(timeout: 5),
+                    "the player should show its pause control")
 
                 // 6b — M3: the per-exercise media-capture affordance is reachable in the pager player
                 // (the PHPicker/record itself is device-only; the affordance renders anywhere).

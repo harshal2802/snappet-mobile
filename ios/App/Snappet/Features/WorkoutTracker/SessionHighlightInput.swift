@@ -115,11 +115,14 @@ enum SessionHighlightInput {
     /// dropped (see `mediaItem`).
     static func makeWorkout(hrSeries: [HRPoint], clips: [Clip], duration: Double,
                             sport: SportTag?, category: ExerciseCategory?,
+                            restHR: Double? = nil, maxHR: Double? = nil,
                             defaultDuration: Double? = defaultVideoDuration) -> Workout {
         Workout(
             activity: activity(sport: sport, category: category),
             duration: max(0, duration),
             hr: hrSamples(from: hrSeries),
+            restBpm: restHR,
+            maxBpm: maxHR,
             media: mediaItems(from: clips, defaultDuration: defaultDuration)
         )
     }
@@ -131,5 +134,50 @@ enum SessionHighlightInput {
     /// silently absent from the media, so a stray pin id is harmless to the planner.
     static func pinnedIds(forSelected selected: [Clip]) -> Set<String> {
         Set(selected.map(\.localIdentifier))
+    }
+}
+
+extension ReelSource {
+    /// A reel source for a GYM (or Apple-Watch-imported) `WorkoutSession` — the highlights-
+    /// convergence P3 replacement for the bespoke `SessionHighlightView` sheet: session detail's
+    /// "Make a Highlight Reel" now feeds the SAME shared `ReelView` the Kilter path uses (preview /
+    /// pin / remove / reorder / format / overlay / Post to Clips), so there is exactly one reel
+    /// maker. Mirrors `ReelSource.kilterSession`: Sendable values are snapshotted up front (no
+    /// `@Model` crosses into the escaping `makeWorkout`); peak-effort set windows boost the ranking
+    /// (Phase 4); manual picks from the limited-Photos picker override the tagged clips.
+    static func workoutSession(_ session: WorkoutSession, media: [SessionMedia],
+                               sport: SportTag?, category: ExerciseCategory?) -> ReelSource {
+        let hr = session.hrSeries, duration = session.duration
+        let maxHR = session.maxHR, restHR = session.restHR
+        // Posted reels are session media too — never reel-of-reel them.
+        let baseClips = media.filter { !$0.isReel }.map {
+            SessionHighlightInput.Clip(localIdentifier: $0.localIdentifier,
+                                       isVideo: $0.kind == .video,
+                                       offsetSec: $0.offsetSec, durationSec: $0.durationSec)
+        }
+        let boostWindows = WorkoutHRStats.peakEffortWindows(
+            for: session.exercises, sessionStart: session.startedAt,
+            hr: session.hrSeries.map { HRSample(t: $0.t, bpm: $0.bpm) })
+        var source = ReelSource(
+            id: session.id.uuidString,
+            activity: SessionHighlightInput.activity(sport: sport, category: category),
+            title: "Highlight reel", start: session.startedAt,
+            makeWorkout: { _, manual in
+                let clips = manual.map { items in
+                    items.map { item in
+                        SessionHighlightInput.Clip(localIdentifier: item.id,
+                                                   isVideo: item.kind == .video,
+                                                   offsetSec: item.startOffset,
+                                                   durationSec: item.kind == .video ? item.duration : nil)
+                    }
+                } ?? baseClips
+                return SessionHighlightInput.makeWorkout(
+                    hrSeries: hr, clips: clips, duration: duration,
+                    sport: sport, category: category, restHR: restHR, maxHR: maxHR)
+            })
+        source.boostWindows = boostWindows
+        source.postSessionID = session.id
+        source.postTitle = "\(session.routineName.isEmpty ? "Workout" : session.routineName) — Highlights"
+        return source
     }
 }

@@ -43,7 +43,6 @@ final class AppActionInboxTests: XCTestCase {
 
     func testModuleChoiceMapsToRegistryIDs() {
         XCTAssertEqual(ModuleChoice.gymTracker.moduleID, "workout-log")   // #74 persisted id
-        XCTAssertEqual(ModuleChoice.workoutReels.moduleID, "workout")
         XCTAssertEqual(ModuleChoice.habits.moduleID, "habit")
         XCTAssertEqual(ModuleChoice.splitExpenses.moduleID, "expense")
         // Every choice maps to a non-empty id, and a case display representation exists.

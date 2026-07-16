@@ -325,7 +325,6 @@ struct WorkoutHomeView: View {
                                             openStudio(for: s)
                                         }
                                     },
-                                    openReels: { router.open(module: "workout") },
                                     openSession: { id in router.push(SessionRoute(id: id)) },
                                     startQuick: { startFreeform() },
                                     openPlan: { router.push(WorkoutPlanRoute()) })

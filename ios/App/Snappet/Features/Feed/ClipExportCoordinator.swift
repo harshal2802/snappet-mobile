@@ -4,8 +4,8 @@ import HighlightEngine
 
 // MARK: - Recap Feed — clip export coordinator (F4 Animate · R4)
 //
-// The real render→Save pipeline behind the "Animate" offer. Mirrors `SessionHighlightViewModel`'s
-// generate→export flow: bridge the session snapshot → engine (UNCHANGED) → `ReelPlanner` →
+// The real render→Save pipeline behind the "Animate" offer. Mirrors the shared reel maker's
+// (`ReelViewModel`) generate→export flow: bridge the session snapshot → engine (UNCHANGED) → `ReelPlanner` →
 // `ReelExporter.export(hrOverlay:)`, burning the EDITOR's scorebug HR overlay (single source of
 // truth), then save to Photos. Records the share intent (append-only `FeedShareEvent`). Never a dead
 // button or a crash: Photos-denied still returns `.rendered`, an empty/unrenderable reel is honest.

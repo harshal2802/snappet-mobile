@@ -4,6 +4,46 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-15] Highlights convergence — the Workout Reels TILE retires, the reel maker converges (P1–P4)
+
+**Decision** (product review: "Workout Reels isn't doing anything special anymore"). The standalone
+mini-app (tile, `WorkoutListView`, module-scoped onboarding, `AppModel` phase/bootstrap/workouts) is
+**deleted**; `ReelView`/`ReelViewModel` become the ONE shared reel maker fed by `ReelSource`
+(`.kilterSession` · new `.workoutSession` · new `.week`), reels burn the Studio glass HR scorebug and
+post into the Clips feed, and the new flagship is the **Weekly Highlight Reel** (cross-session montage).
+Wireframes: `docs/ux-research/workout-reels-v2/wireframes.html`. Prompt:
+`pdd/prompts/features/highlights-convergence/`.
+
+Non-obvious choices:
+- **`SessionMedia.reelTitle: String?` is BOTH the reel marker and the feed title** (non-nil = reel).
+  One additive optional column → lightweight migration; rules out a separate `isReel` flag that could
+  disagree with a missing title. A reel post plays RAW (no live HR overlay — the scorebug is in the
+  pixels, the `isBaked` precedent) and is composed as its OWN post, never into a set/climb carousel.
+- **The weekly reel is ONE synthetic engine `Workout`** — sessions concatenate onto a stitched
+  timeline (offsets shift by each session's span, stretched past late clips so sessions can't overlap)
+  rather than merging per-session plans. That reuses the entire existing pipeline (engine ranking
+  across the whole week, ReelViewModel editing, exporter overlay = the week's stitched HR curve)
+  unchanged. Weekly cuts are TRIMMED (`ReelSource.trimToHighlights`); session reels stay
+  full-length/uncapped (the 2026-06-05 decision holds per-session only).
+- **The gym highlight sheet died for SSOT** (`SessionHighlightView`/-`ViewModel` deleted, the
+  prompt-119 "one player" precedent): session detail's "Make a Highlight Reel" presents the shared
+  `ReelView`. Its per-set peak-effort boosts + limited-Photos manual-pick override moved INTO
+  `ReelSource.workoutSession`, so nothing was lost in the fold.
+- **HealthKit read priming is a KNOWN GAP, deliberately not patched at launch.** The retired
+  onboarding was the one fresh-install surface that requested Health read access, and the
+  watch→Clips import silently returns nothing without it. Requesting inside
+  `reconcileWatchWorkouts()` was tried and REVERTED: it fires on every launch until answered — an
+  unsolicited system sheet at first open (violates the value-first permissions rule) that also
+  races UI tests. Fresh installs get Health asks from the Gym Tracker's HR surfaces
+  (`UserHRProfileView`); the intentional fix is a follow-up contextual "Connect Apple Health"
+  offer in Clips. **Rules out** any permission request from a launch path.
+- **`ModuleChoice.workoutReels` is removed, not remapped** — a saved shortcut fails decode and
+  Shortcuts asks to reconfigure (honest), instead of silently opening a different module. Persisted
+  `UsageRecord`s with module id `workout` render via Home's existing capitalized-raw fallback.
+- **Format presets thread `renderAspect` through `makeComposition`, not just `export`** — the
+  preview and the shipped file share one canvas (WYSIWYG); rules out a preview that frames
+  differently from the export it promises.
+
 ## [2026-07-10] One player for every session — routines play through the pager (prompt 119)
 
 **Decision** (user request: "when I play a previously-saved routine it should play like Quick Session,

@@ -127,9 +127,32 @@ final class ClipFeedFilterTests: XCTestCase {
     func testClearedResetsEverything() {
         var f = ClipFeedFilter()
         f.query = "x"; f.discipline = .gym; f.kind = .photos; f.favoritesOnly = true
+        f.reelsOnly = true
         XCTAssertTrue(f.isActive)
         f = .cleared
         XCTAssertFalse(f.isActive)
         XCTAssertEqual(ids(f.apply(sample) { _ in false }), ids(sample))
+    }
+
+    // MARK: reels chip (highlights P2)
+
+    func testReelsOnlyShowsOnlyReelPosts() {
+        var reelPost = post(id: "r", kind: .gym, title: "Push Day — Highlights", subtitle: "Push Day")
+        reelPost.isReel = true
+        var f = ClipFeedFilter()
+        f.reelsOnly = true
+        XCTAssertTrue(f.isActive, "the Reels chip alone activates the filter")
+        XCTAssertEqual(ids(f.apply(sample + [reelPost]) { _ in true }), ["r"])
+    }
+
+    func testReelsChipStacksWithDiscipline() {
+        var kilterReel = post(id: "kr", kind: .kilter, title: "Board — Highlights", subtitle: "Board night")
+        kilterReel.isReel = true
+        var gymReel = post(id: "gr", kind: .gym, title: "Push — Highlights", subtitle: "Push Day")
+        gymReel.isReel = true
+        var f = ClipFeedFilter()
+        f.reelsOnly = true
+        f.discipline = .climbs
+        XCTAssertEqual(ids(f.apply(sample + [kilterReel, gymReel]) { _ in true }), ["kr"])
     }
 }

@@ -291,4 +291,46 @@ final class ClipFeedComposerTests: XCTestCase {
             climbMeta: ["c": .init(name: "C", gradeLabel: "6a", angle: 40)], exerciseName: { _ in "?" })
         XCTAssertEqual(posts.first?.aspect ?? 0, 9.0 / 16.0, accuracy: 0.0001)
     }
+
+    // MARK: - Posted highlight reels (highlights P2)
+
+    private func reel(_ offset: Double, title: String) -> MediaInput {
+        MediaInput(id: UUID(), kind: "video", offsetSec: offset, durationSec: 30,
+                   exerciseId: nil, setIndex: nil, climbUUID: nil,
+                   localIdentifier: "reel-\(offset)", reelTitle: title)
+    }
+
+    func testReelClipBecomesItsOwnPost() throws {
+        let ex = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Push Day", startedAt: start)
+        let bundle = ClipFeedComposer.SessionBundle(meta: s, clips: [
+            video(10, exercise: ex, set: 0),
+            reel(0, title: "Push Day — Highlights"),
+        ])
+        let posts = ClipFeedComposer.posts(sessions: [bundle], climbMeta: [:],
+                                           exerciseName: { _ in "Bench" })
+
+        XCTAssertEqual(posts.count, 2, "the reel never joins the exercise carousel")
+        let reelPost = try XCTUnwrap(posts.first(where: \.isReel))
+        XCTAssertEqual(reelPost.title, "Push Day — Highlights")
+        XCTAssertEqual(reelPost.subtitle, "Push Day")
+        XCTAssertEqual(reelPost.clipCount, 1)
+        XCTAssertNil(reelPost.clips.first?.attemptLabel, "a reel isn't 'Set N' / 'Attempt N'")
+        XCTAssertEqual(reelPost.moduleID, "workout-log")
+        let regular = try XCTUnwrap(posts.first(where: { !$0.isReel }))
+        XCTAssertEqual(regular.clipCount, 1)
+        XCTAssertFalse(regular.clips.contains(where: \.media.isReel))
+    }
+
+    func testReelOnlySessionStillPosts() {
+        // The regular grouping path skips a session whose remaining clips are empty — the reel
+        // post must still come out.
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .kilter, title: "Board night", startedAt: start, angle: 40)
+        let bundle = ClipFeedComposer.SessionBundle(meta: s, clips: [reel(0, title: "Board night — Highlights")])
+        let posts = ClipFeedComposer.posts(sessions: [bundle], climbMeta: [:], exerciseName: { _ in "?" })
+        XCTAssertEqual(posts.count, 1)
+        XCTAssertTrue(posts[0].isReel)
+        XCTAssertEqual(posts[0].discipline, .climbing)
+        XCTAssertEqual(posts[0].moduleID, "kilter")
+    }
 }

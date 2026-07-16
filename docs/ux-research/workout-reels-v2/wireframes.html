@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Workout Reels v2 "Highlights" · Wireframes</title>
+<style>
+  :root{
+    /* Literal hex from SnappetColor.swift (dark values; media surfaces are dark) */
+    --coral:#FF7A6B;          /* reels / brand */
+    --ember:#FF9645;          /* Gym Tracker accent */
+    --amber:#F59E0B;          /* Kilter accent */
+    --watch:#5BC074;          /* perfFresh green — Apple Watch source pill */
+    --hard:#FF6A5C;           /* perfHard — peak effort */
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --muted2:#2d2d33;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 72% -8%,#1c1618,#0b0c10 58%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;line-height:1.5;padding:0 0 90px}
+  header.page{padding:58px 28px 8px;max-width:1620px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 8px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffc0b8 82%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#b2b3bd;font-size:15.5px;max-width:1150px;margin:0 0 6px}
+  .sub b{color:#fff}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 2px;font-size:12.5px;color:#c7c8d0}
+  .legend .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .wrap{max-width:1620px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 38px;align-items:flex-start;margin-top:26px}
+  .step{width:336px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--coral);color:#3a0e08;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(255,122,107,.4)}
+  .caption{margin:14px 4px 0;font-size:12.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650} .caption .k{color:var(--coral);font-weight:650}
+  .caption .fr{color:var(--amber);font-weight:700} .caption .del{color:#ff8484;font-weight:700}
+
+  /* verdict panel */
+  .panel{max-width:1620px;margin:26px auto 0;padding:0 28px}
+  .panel .box{background:rgba(30,30,34,.7);border:1px solid var(--hair);border-radius:18px;padding:22px 26px;display:flex;gap:34px;flex-wrap:wrap}
+  .panel .col{flex:1;min-width:280px}
+  .panel h3{margin:0 0 10px;font-size:14px;letter-spacing:.05em;text-transform:uppercase}
+  .panel h3.keep{color:var(--watch)} .panel h3.new{color:var(--coral)} .panel h3.del{color:#ff8484}
+  .panel ul{margin:0;padding-left:18px;font-size:13px;color:#c9cad2}
+  .panel li{margin:5px 0} .panel li b{color:#fff}
+  .panel code{background:#26262B;border-radius:6px;padding:1px 6px;font-size:11.5px;color:#ffd7d1}
+
+  /* device */
+  .device{width:336px;height:726px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .status{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:12px 26px 0;font-size:13.5px;font-weight:650}
+  .navbar{flex:none;padding:4px 18px 8px;display:flex;align-items:center;justify-content:space-between}
+  .navbar .t{font-size:26px;font-weight:800;letter-spacing:-.02em}
+  .navbar .back{font-size:15px;color:var(--coral);font-weight:600}
+  .navicons{display:flex;gap:14px;color:var(--ink);font-size:16px}
+  .body{flex:1;overflow:hidden;position:relative}
+  .tabbar{flex:none;margin-top:auto;background:rgba(18,18,20,.94);border-top:1px solid var(--hair);display:flex;justify-content:space-around;padding:9px 8px 22px}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;color:#8a8a90}
+  .tab.on{color:var(--coral)} .tab .ic{font-size:18px}
+
+  /* ============ 1: weekly drop hero in Clips feed ============ */
+  .weekhero{margin:2px 14px 14px;border-radius:20px;position:relative;overflow:hidden;height:224px;
+    background:linear-gradient(150deg,#3a2320,#221317 55%,#160e12);border:1.5px solid rgba(255,122,107,.55);
+    box-shadow:0 10px 30px rgba(255,90,77,.18)}
+  .weekhero .shapes{position:absolute;inset:0;background:
+    radial-gradient(140px 100px at 20% 30%,rgba(255,122,107,.30),transparent 70%),
+    radial-gradient(180px 130px at 82% 68%,rgba(245,158,11,.18),transparent 72%)}
+  .weekhero .tag{position:absolute;left:14px;top:12px;display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;
+    color:var(--coral);background:rgba(30,10,8,.6);border:1px solid rgba(255,122,107,.5);border-radius:99px;padding:3px 9px}
+  .weekhero .play{position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;
+    background:rgba(255,122,107,.92);display:flex;align-items:center;justify-content:center;font-size:18px;color:#2a0b06;box-shadow:0 8px 24px rgba(255,90,77,.5)}
+  .weekhero .meta{position:absolute;left:14px;bottom:12px;right:14px}
+  .weekhero .meta .h{font-size:18px;font-weight:800;color:#fff;letter-spacing:-.01em}
+  .weekhero .meta .d{font-size:11.5px;color:rgba(255,255,255,.75);margin-top:1px}
+  .weekhero .srcs{position:absolute;right:12px;top:12px;display:flex;gap:5px}
+  .weekhero .srcs span{width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.25);
+    display:flex;align-items:center;justify-content:center;font-size:11px}
+  .filmstrip{position:absolute;left:0;right:0;bottom:44px;display:flex;gap:3px;padding:0 14px;opacity:.85}
+  .filmstrip i{flex:1;height:30px;border-radius:6px;background:linear-gradient(140deg,#4a4f58,#2c2f36)}
+  .filmstrip i:nth-child(2){background:linear-gradient(140deg,#57402c,#332619)}
+  .filmstrip i:nth-child(4){background:linear-gradient(140deg,#2c4a37,#1a2b20)}
+
+  /* clip post card (existing feed style) */
+  .card{margin:0 0 16px}
+  .phead{display:flex;align-items:center;gap:10px;padding:0 16px 8px}
+  .pglyph{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;
+    border:1.5px solid var(--ember);background:rgba(255,150,69,.14);color:var(--ember)}
+  .ptitle{font-size:14px;font-weight:800;line-height:1.2;display:flex;align-items:center;gap:6px}
+  .psub{font-size:11.5px;color:var(--t2)}
+  .pacts{margin-left:auto;display:flex;gap:12px;color:var(--ink);font-size:15px}
+  .tile{position:relative;height:250px;background:linear-gradient(160deg,#3b3f47,#22242a 55%,#191b20);overflow:hidden}
+  .tile .play{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;
+    background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+
+  /* ============ 2: entry points ============ */
+  .dhead{padding:8px 18px 4px}
+  .dhead .title{font-size:22px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+  .dhead .meta{font-size:12.5px;color:var(--t2);margin-top:3px}
+  .statgrid{display:flex;gap:9px;padding:12px 16px 4px}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:10px 6px;text-align:center}
+  .stat .v{font-size:16px;font-weight:800} .stat .l{font-size:9.5px;color:var(--t2);text-transform:uppercase;letter-spacing:.04em}
+  .mediastrip{display:flex;gap:8px;padding:12px 16px 4px}
+  .mthumb{width:74px;height:98px;border-radius:12px;background:linear-gradient(160deg,#454a53,#26282e);position:relative;flex:none}
+  .mthumb.k{background:linear-gradient(160deg,#544027,#2b2115)}
+  .mthumb .len{position:absolute;right:5px;bottom:5px;background:rgba(0,0,0,.55);font-size:8.5px;font-weight:700;border-radius:6px;padding:1px 5px;color:#fff}
+  .hlbtn{margin:14px 16px 0;border-radius:16px;padding:13px 16px;display:flex;align-items:center;gap:12px;
+    background:linear-gradient(120deg,rgba(255,122,107,.2),rgba(255,122,107,.06));border:1.5px solid rgba(255,122,107,.55)}
+  .hlbtn .ic{width:36px;height:36px;border-radius:12px;background:rgba(255,122,107,.2);display:flex;align-items:center;justify-content:center;font-size:17px}
+  .hlbtn .tx .a{font-size:14.5px;font-weight:800;color:#fff}
+  .hlbtn .tx .b{font-size:11px;color:var(--t2)}
+  .hlbtn .chev{margin-left:auto;color:var(--coral);font-weight:700}
+  .rowline{margin:8px 16px;background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:12px}
+  .rowline .n{font-size:14px;font-weight:700} .rowline .d{font-size:11px;color:var(--t2)}
+  .rowline .chev{margin-left:auto;color:#5a5a60}
+
+  /* ============ 3: reel builder ============ */
+  .preview{margin:0 14px;border-radius:18px;height:300px;position:relative;overflow:hidden;
+    background:linear-gradient(165deg,#38414d,#20242c 60%,#171a20)}
+  .preview .play{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;border-radius:50%;
+    background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff}
+  .glass{position:absolute;left:12px;bottom:12px;width:172px;border-radius:14px;padding:9px 11px;
+    background:rgba(16,16,20,.55);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(6px)}
+  .glass .r1{display:flex;align-items:baseline;gap:6px}
+  .glass .bpm{font-size:22px;font-weight:800;color:#fff} .glass .bl{font-size:9px;font-weight:700;color:var(--t2)}
+  .glass .z{margin-left:auto;font-size:9px;font-weight:800;color:var(--hard);border:1px solid rgba(255,106,92,.55);padding:1px 6px;border-radius:99px}
+  .glass .spark{margin-top:7px;height:24px;border-bottom:1px dashed rgba(255,255,255,.25);background:
+    linear-gradient(100deg,transparent 8%,rgba(91,192,116,.5) 30%,rgba(245,158,11,.6) 55%,rgba(255,106,92,.8) 78%,transparent 96%) no-repeat 0 62%/100% 3px}
+  .preview .clipbadge{position:absolute;right:12px;top:12px;background:rgba(0,0,0,.5);border-radius:99px;color:#fff;font-size:10px;font-weight:800;padding:3px 9px}
+  .chips{display:flex;gap:8px;padding:12px 16px 2px;flex-wrap:wrap}
+  .chip{font-size:11.5px;font-weight:750;border-radius:99px;padding:6px 12px;border:1px solid var(--hair);color:var(--t2);background:var(--surface)}
+  .chip.on{border-color:var(--coral);color:var(--coral);background:rgba(255,122,107,.12)}
+  .lhead{display:flex;align-items:center;padding:12px 18px 4px}
+  .lhead .h{font-size:12px;font-weight:800;color:var(--t2);letter-spacing:.05em;text-transform:uppercase}
+  .lhead .edit{margin-left:auto;font-size:12px;color:var(--coral);font-weight:700}
+  .cliprow{margin:7px 14px;background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:8px 10px;display:flex;align-items:center;gap:10px}
+  .cliprow.dim{opacity:.45}
+  .cliprow .th{width:52px;height:38px;border-radius:9px;background:linear-gradient(140deg,#4a505a,#2a2d34);flex:none;position:relative}
+  .cliprow .th.k{background:linear-gradient(140deg,#5a462b,#2e2417)}
+  .cliprow .th.g{background:linear-gradient(140deg,#2f4a39,#1a2a20)}
+  .cliprow .meta{flex:1;min-width:0}
+  .cliprow .n{font-size:12.5px;font-weight:750} .cliprow .d{font-size:10.5px;color:var(--t2)}
+  .peak{font-size:9.5px;font-weight:800;border-radius:99px;padding:2px 7px;flex:none}
+  .peak.hot{color:var(--hard);border:1px solid rgba(255,106,92,.5);background:rgba(255,106,92,.1)}
+  .peak.mid{color:var(--amber);border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.1)}
+  .peak.low{color:var(--watch);border:1px solid rgba(91,192,116,.5);background:rgba(91,192,116,.1)}
+  .cliprow .pin{color:var(--coral);font-size:13px;flex:none}
+  .cliprow .grip{color:#4c4c52;font-size:13px;flex:none}
+
+  /* ============ 4: payoff ============ */
+  .payhero{margin:0 14px;border-radius:20px;height:360px;position:relative;overflow:hidden;
+    background:linear-gradient(165deg,#3d3037,#221a20 55%,#161116)}
+  .payhero .glass{left:14px;bottom:14px}
+  .payhero .loop{position:absolute;right:12px;top:12px;background:rgba(0,0,0,.5);border-radius:99px;color:#fff;font-size:10px;font-weight:800;padding:3px 9px}
+  .burst{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);font-size:34px;opacity:.9}
+  .ctas{padding:16px 16px 0;display:flex;flex-direction:column;gap:10px}
+  .cta{border-radius:16px;padding:14px;text-align:center;font-size:15px;font-weight:800}
+  .cta.primary{background:var(--coral);color:#3a0e08;box-shadow:0 8px 24px rgba(255,90,77,.35)}
+  .cta.ghost{border:1.5px solid var(--hair);color:var(--ink);background:var(--surface)}
+  .ctarow{display:flex;gap:10px} .ctarow .cta{flex:1;font-size:13.5px;padding:12px}
+  .paycap{padding:10px 22px 0;font-size:11px;color:var(--t2);text-align:center}
+
+  /* ============ 5: reel post in feed ============ */
+  .pglyph.reel{border-color:var(--coral);background:rgba(255,122,107,.14);color:var(--coral)}
+  .reelbadge{font-size:9px;font-weight:800;color:var(--coral);border:1px solid rgba(255,122,107,.55);
+    background:rgba(255,122,107,.12);border-radius:99px;padding:1px 6px;letter-spacing:.02em}
+  .tile.reel{background:linear-gradient(165deg,#40333a,#241b22 60%,#171218)}
+  .tile .hrbar{position:absolute;left:12px;right:12px;bottom:10px;height:48px;background:rgba(10,10,12,.62);
+    border:1px solid rgba(255,255,255,.1);border-radius:12px;display:flex;align-items:center;gap:10px;padding:0 12px}
+  .tile .hrbar .bpm{font-size:16px;font-weight:800;color:#fff} .tile .hrbar .bpm small{font-size:9px;font-weight:700;color:var(--t2)}
+  .tile .hrbar .z{font-size:9px;font-weight:800;color:var(--hard);border:1px solid rgba(255,106,92,.5);padding:1px 6px;border-radius:99px}
+  .tile .hrbar .spark{flex:1;height:22px;border-bottom:1px dashed rgba(255,255,255,.2);background:
+    linear-gradient(100deg,transparent 5%,rgba(91,192,116,.5) 28%,rgba(245,158,11,.6) 55%,rgba(255,106,92,.8) 80%,transparent 97%) no-repeat 0 60%/100% 3px}
+  .tile .stripmini{position:absolute;left:12px;top:12px;display:flex;gap:3px}
+  .tile .stripmini i{width:22px;height:15px;border-radius:4px;background:rgba(255,255,255,.28)}
+  .tile .stripmini i.on{background:var(--coral)}
+
+  /* ============ 6: app library after ============ */
+  .libhero{margin:2px 14px 12px;border-radius:18px;padding:14px;position:relative;overflow:hidden;
+    background:linear-gradient(140deg,rgba(255,122,107,.2),rgba(255,122,107,.04));border:1.5px solid rgba(255,122,107,.5)}
+  .libhero .h{font-size:16px;font-weight:800;color:#fff} .libhero .d{font-size:11.5px;color:var(--t2);margin-top:2px;max-width:230px}
+  .libhero .go{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;
+    background:var(--coral);color:#3a0e06;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .cat{padding:12px 18px 2px;font-size:12px;font-weight:800;color:var(--t2);letter-spacing:.05em;text-transform:uppercase}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:8px 14px 0}
+  .app{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px;position:relative}
+  .app .ic{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:8px}
+  .app .n{font-size:13px;font-weight:750} .app .s{font-size:10px;color:var(--t2);line-height:1.35;margin-top:1px}
+  .app.gone{border:1.5px dashed rgba(255,132,132,.6);background:rgba(255,132,132,.05)}
+  .app.gone .n,{color:#ff9d9d}
+  .app.gone .stamp{position:absolute;right:8px;top:8px;font-size:8.5px;font-weight:800;color:#ff8484;border:1px solid rgba(255,132,132,.55);border-radius:99px;padding:1px 6px;letter-spacing:.03em}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Workout Reels v2 — "Highlights": don't remove it, converge it</h1>
+  <p class="sub">
+    <b>Verdict: the capability is worth keeping, the mini-app is not.</b> Today "Workout Reels" is a separate tile whose
+    list screen (HealthKit workouts → media in window) was just made redundant by the watch-workouts→Clips import, and whose
+    export is the app's <b>weakest</b> video output: <code>ReelViewModel.export()</code> calls the <b>nil-overlay</b> path of
+    <code>ReelExporter</code>, so reels ship as plain stitched footage while Studio/Feed exports burn the glass HR overlay.
+    The proposal: <b>retire the tile, keep ReelView/HighlightEngine as the shared "Highlight Reel" maker</b> — reachable from any
+    session — rendered through the Studio overlay pipeline, posting into the Clips feed, plus an auto-generated <b>Weekly
+    Highlight Reel</b> (the one thing nothing else in the app can do: a cross-session, HR-ranked montage).
+  </p>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--coral)"></i>Reels coral <code style="background:none;color:#8b8b92">SnappetColor.reels #FF7A6B</code></span>
+    <span><i class="dot" style="background:var(--ember)"></i>Gym ember</span>
+    <span><i class="dot" style="background:var(--amber)"></i>Kilter amber</span>
+    <span><i class="dot" style="background:var(--watch)"></i>Watch / perfFresh</span>
+    <span><i class="dot" style="background:var(--hard)"></i>perfHard (peak effort)</span>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="gallery">
+
+  <!-- ═══════════ 1 · Weekly Highlight Reel drop in Clips ═══════════ -->
+  <div class="step">
+    <div class="stepnum">1</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+      <div class="navbar"><span class="t">Clips</span><div class="navicons"><span>􀊫</span><span>􀌆</span></div></div>
+      <div class="body">
+        <div class="weekhero">
+          <div class="shapes"></div>
+          <div class="tag">✦ WEEKLY HIGHLIGHTS · NEW</div>
+          <div class="srcs"><span>⌚️</span><span>🏋️</span><span>🧗</span></div>
+          <div class="play">▶</div>
+          <div class="filmstrip"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="meta">
+            <div class="h">Your week in 28 seconds</div>
+            <div class="d">Jul 6 – 12 · 9 clips from 3 sessions · peak 172 bpm</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="phead">
+            <div class="pglyph">🏋️</div>
+            <div><div class="ptitle">Push Day</div><div class="psub">Sat · 4 exercises · 52 min</div></div>
+            <div class="pacts"><span>♡</span><span>􀈂</span></div>
+          </div>
+          <div class="tile"><div class="play">▶</div></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="ic">􀎟</span>Home</div>
+        <div class="tab"><span class="ic">􀇷</span>Apps</div>
+        <div class="tab"><span class="ic">􀸤</span>Feed</div>
+        <div class="tab on"><span class="ic">􀍉</span>Clips</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The Sunday drop.</b> A <span class="k">Weekly Highlight Reel</span> is auto-assembled by
+    <b>HighlightEngine</b> across <b>all</b> the week's sessions — gym, Kilter, watch imports — ranked by HR intensity,
+    and lands as a hero card at the top of Clips. This is the genuinely-special feature: no other surface can cut a
+    cross-session montage. Tap ▶ plays; tap the card opens the builder (screen 3) to re-cut it.</p>
+  </div>
+
+  <!-- ═══════════ 2 · Entry from any session ═══════════ -->
+  <div class="step">
+    <div class="stepnum">2</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+      <div class="navbar"><span class="back">‹ History</span><div class="navicons"><span>􀈂</span></div></div>
+      <div class="body">
+        <div class="dhead">
+          <div class="title">🏋️ Push Day</div>
+          <div class="meta">Saturday · 9:02 – 9:54 AM · Gym Tracker</div>
+        </div>
+        <div class="statgrid">
+          <div class="stat"><div class="v">52<small>m</small></div><div class="l">Duration</div></div>
+          <div class="stat"><div class="v">14</div><div class="l">Sets</div></div>
+          <div class="stat"><div class="v" style="color:var(--hard)">168</div><div class="l">Peak HR</div></div>
+          <div class="stat"><div class="v">412</div><div class="l">kcal</div></div>
+        </div>
+        <div class="mediastrip">
+          <div class="mthumb"><span class="len">0:14</span></div>
+          <div class="mthumb k"><span class="len">0:22</span></div>
+          <div class="mthumb"><span class="len">0:09</span></div>
+          <div class="mthumb" style="opacity:.55"><span class="len">+3</span></div>
+        </div>
+        <div class="hlbtn">
+          <div class="ic">✦</div>
+          <div class="tx">
+            <div class="a">Make a Highlight Reel</div>
+            <div class="b">6 clips · auto-cut by heart-rate intensity</div>
+          </div>
+          <div class="chev">›</div>
+        </div>
+        <div class="rowline"><div><div class="n">Open in Studio</div><div class="d">Edit clips, trims &amp; HR overlay</div></div><div class="chev">›</div></div>
+        <div class="rowline"><div><div class="n">Exercises</div><div class="d">Bench · OHP · Dips · Flyes</div></div><div class="chev">›</div></div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="ic">􀎟</span>Home</div>
+        <div class="tab on"><span class="ic">􀇷</span>Apps</div>
+        <div class="tab"><span class="ic">􀸤</span>Feed</div>
+        <div class="tab"><span class="ic">􀍉</span>Clips</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Reels become an action, not a destination.</b> "<span class="k">Make a Highlight Reel</span>"
+    appears on any session detail with ≥2 clips — Gym Tracker, Kilter (which already pushes <b>ReelView</b> today), and
+    watch-import sessions. The old <span class="del">WorkoutListView</span> (HealthKit workout list) is deleted: the
+    watch-import pipeline already lands those same workouts in History/Clips, so the list was a second, poorer copy.</p>
+  </div>
+
+  <!-- ═══════════ 3 · Reel builder ═══════════ -->
+  <div class="step">
+    <div class="stepnum">3</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+      <div class="navbar"><span class="back">‹ Push Day</span><span style="font-size:15px;font-weight:800">Highlight Reel</span><div class="navicons"><span style="color:var(--coral);font-size:14px;font-weight:700">Export</span></div></div>
+      <div class="body">
+        <div class="preview">
+          <div class="clipbadge">clip 2 / 5 · 0:19</div>
+          <div class="play">▶</div>
+          <div class="glass">
+            <div class="r1"><span class="bpm">164</span><span class="bl">BPM</span><span class="z">Z4 THRESHOLD</span></div>
+            <div class="spark"></div>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip on">9:16</span><span class="chip">4:5</span><span class="chip">1:1</span>
+          <span class="chip on">✦ Glass HR</span><span class="chip">No overlay</span>
+        </div>
+        <div class="lhead"><span class="h">Cut · ranked by intensity</span><span class="edit">Edit</span></div>
+        <div class="cliprow">
+          <div class="th"></div>
+          <div class="meta"><div class="n">Bench — top set</div><div class="d">9:31 AM · 0:14</div></div>
+          <span class="peak hot">PEAK 168</span><span class="pin">􀎧</span><span class="grip">≡</span>
+        </div>
+        <div class="cliprow">
+          <div class="th k"></div>
+          <div class="meta"><div class="n">Dips — AMRAP</div><div class="d">9:44 AM · 0:22</div></div>
+          <span class="peak hot">PEAK 161</span><span class="grip">≡</span>
+        </div>
+        <div class="cliprow">
+          <div class="th g"></div>
+          <div class="meta"><div class="n">OHP — set 3</div><div class="d">9:18 AM · 0:09</div></div>
+          <span class="peak mid">PEAK 148</span><span class="grip">≡</span>
+        </div>
+        <div class="cliprow dim">
+          <div class="th"></div>
+          <div class="meta"><div class="n">Warm-up</div><div class="d">9:04 AM · 0:11 · removed</div></div>
+          <span class="peak low">PEAK 112</span><span class="grip">↺</span>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>ReelView upgraded, not rewritten.</b> Same auto-generate-then-edit skeleton (pin / remove /
+    reorder / regenerate all survive), plus what it always lacked: <span class="k">format presets</span> (9:16 / 4:5 / 1:1
+    via the existing <b>ClipAspectResolver</b>), an <span class="k">overlay picker</span> that reuses the Studio glass HR
+    kit, and <span class="fr">intensity badges</span> on rows (perf-ramp colors) so the HR ranking is visible instead of
+    invisible. All recovery states (denied / limited / empty / export-failed) carry over unchanged from ReelFlowPolicy.</p>
+  </div>
+
+  <!-- ═══════════ 4 · Export payoff ═══════════ -->
+  <div class="step">
+    <div class="stepnum">4</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+      <div class="navbar"><span class="back">‹</span><span style="font-size:15px;font-weight:800">Your Reel</span><div class="navicons"></div></div>
+      <div class="body">
+        <div class="payhero">
+          <div class="loop">LOOP · 0:48</div>
+          <div class="burst">🎉</div>
+          <div class="glass">
+            <div class="r1"><span class="bpm">172</span><span class="bl">PEAK</span><span class="z">Z5 MAX</span></div>
+            <div class="spark"></div>
+          </div>
+        </div>
+        <div class="ctas">
+          <div class="cta primary">Post to Clips</div>
+          <div class="ctarow">
+            <div class="cta ghost">Save to Photos</div>
+            <div class="cta ghost">Share…</div>
+          </div>
+        </div>
+        <div class="paycap">Posted reels appear in your Clips feed with a ✦ REEL badge.<br>Make another cut any time — the session keeps its clips.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The payoff finally feeds the feed.</b> Today an exported reel is saved to Photos and the app
+    never sees it again. v2's primary CTA is <span class="k">Post to Clips</span> — the reel becomes a first-class feed
+    post (screen 5); Save/Share demote to secondary. The burned <span class="k">glass HR overlay</span> is the 1-line
+    unlock: <b>ReelExporter already accepts <code style="background:#26262B;border-radius:6px;padding:1px 5px;font-size:10.5px">hrOverlay:</code></b>
+    (the Feed "Animate" path uses it) — Reels just passes nil.</p>
+  </div>
+
+  <!-- ═══════════ 5 · Reel post in the feed ═══════════ -->
+  <div class="step">
+    <div class="stepnum">5</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+      <div class="navbar"><span class="t">Clips</span><div class="navicons"><span>􀊫</span><span>􀌆</span></div></div>
+      <div class="body">
+        <div class="card">
+          <div class="phead">
+            <div class="pglyph reel">✦</div>
+            <div><div class="ptitle">Push Day — Highlights <span class="reelbadge">REEL</span></div><div class="psub">Sat · 0:48 · 5 clips</div></div>
+            <div class="pacts"><span style="color:#ff4d5e">♥</span><span>􀈂</span></div>
+          </div>
+          <div class="tile reel">
+            <div class="stripmini"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+            <div class="play">▶</div>
+            <div class="hrbar">
+              <span class="bpm">172 <small>PEAK</small></span>
+              <span class="z">Z5</span>
+              <div class="spark"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="phead">
+            <div class="pglyph" style="border-color:var(--amber);background:rgba(245,158,11,.14);color:var(--amber)">🧗</div>
+            <div><div class="ptitle">Kilter · Thursday</div><div class="psub">Thu · 12 climbs · V4 flash</div></div>
+            <div class="pacts"><span>♡</span><span>􀈂</span></div>
+          </div>
+          <div class="tile" style="height:180px"><div class="play">▶</div></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="ic">􀎟</span>Home</div>
+        <div class="tab"><span class="ic">􀇷</span>Apps</div>
+        <div class="tab"><span class="ic">􀸤</span>Feed</div>
+        <div class="tab on"><span class="ic">􀍉</span>Clips</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Reels are Clips posts.</b> A posted reel gets a <span class="k">✦ REEL badge</span> and a
+    mini filmstrip indicator, plays in the same carousel/fullscreen player as every other clip, and is filterable via the
+    existing chip strip (a "Reels" chip joins ♥ / Climbs / Gym / Videos / Photos). One feed, one player — no new
+    playback surface.</p>
+  </div>
+
+  <!-- ═══════════ 6 · App Library after ═══════════ -->
+  <div class="step">
+    <div class="stepnum">6</div>
+    <div class="device"><div class="screen">
+      <div class="status"><span>9:41</span><span>􀙇 􀛨</span></div>
+      <div class="navbar"><span class="t">Apps</span><div class="navicons"><span>􀊫</span></div></div>
+      <div class="body">
+        <div class="libhero">
+          <div class="h">✦ Weekly Highlights</div>
+          <div class="d">Your best moments, auto-cut every Sunday. This week: 9 clips · peak 172 bpm.</div>
+          <div class="go">▶</div>
+        </div>
+        <div class="cat">Fitness</div>
+        <div class="grid">
+          <div class="app"><div class="ic" style="background:rgba(255,150,69,.15);color:var(--ember)">🏋️</div><div class="n">Gym Tracker</div><div class="s">Sets, routines &amp; live workouts</div></div>
+          <div class="app"><div class="ic" style="background:rgba(245,158,11,.15);color:var(--amber)">🧗</div><div class="n">Kilter Board</div><div class="s">Climbs, boards &amp; sessions</div></div>
+          <div class="app gone"><div class="stamp">RETIRED</div><div class="ic" style="background:rgba(255,122,107,.12);color:var(--coral)">🎬</div><div class="n" style="color:#ff9d9d;text-decoration:line-through">Workout Reels</div><div class="s">Now: "Highlight Reel" on every session + the Weekly drop</div></div>
+          <div class="app"><div class="ic" style="background:rgba(232,107,153,.15);color:#E86B99">👗</div><div class="n">Wardrobe</div><div class="s">Your private AI stylist</div></div>
+        </div>
+        <div class="cat">Life</div>
+        <div class="grid">
+          <div class="app"><div class="ic" style="background:rgba(157,130,240,.15);color:#9D82F0">📓</div><div class="n">Journal</div><div class="s">Daily notes &amp; mood</div></div>
+          <div class="app"><div class="ic" style="background:rgba(91,192,116,.15);color:var(--watch)">✅</div><div class="n">Habits</div><div class="s">Streaks &amp; check-ins</div></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab"><span class="ic">􀎟</span>Home</div>
+        <div class="tab on"><span class="ic">􀇷</span>Apps</div>
+        <div class="tab"><span class="ic">􀸤</span>Feed</div>
+        <div class="tab"><span class="ic">􀍉</span>Clips</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The tile retires; the hero re-points.</b> The App Library's flagship hero becomes the
+    <span class="k">Weekly Highlights</span> drop (tap ▶ plays this week's reel), and the fresh-install Home CTA follows it.
+    The <span class="del">RETIRED</span> tile is shown here only for the wireframe — it ships as simply gone. Health/Photos
+    permission priming moves from module-entry onboarding to first "Make a Highlight Reel" tap (still value-first, still just-in-time).</p>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════ verdict panel ═══════════ -->
+<div class="panel">
+  <div class="box">
+    <div class="col">
+      <h3 class="del">✕ Delete (the redundant shell)</h3>
+      <ul>
+        <li><b>Workout Reels mini-app tile</b> + <code>WorkoutModule</code> — a destination with nothing exclusive left.</li>
+        <li><code>WorkoutListView</code> — its HealthKit workout list is now a poorer copy of History + the watch-import Clips pipeline.</li>
+        <li>Module-scoped <code>OnboardingView</code> entry — permission priming moves to first reel tap.</li>
+        <li>Home fresh-install CTA → Workout Reels onboarding; App Library flagship hero re-points to Weekly Highlights.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3 class="keep">✓ Keep (the machinery, all reused)</h3>
+      <ul>
+        <li><code>HighlightEngine</code> — untouched; also powers HRV/recovery/effort elsewhere.</li>
+        <li><code>ReelView / ReelViewModel / ReelFlowPolicy</code> — become the shared reel maker (Kilter already pushes ReelView today).</li>
+        <li><code>ReelExporter</code> — gains nothing; Reels finally passes the <code>hrOverlay:</code> it already supports.</li>
+        <li>All recovery states (denied / limited / empty / export-failed) + FeedbackStore edit telemetry.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3 class="new">✦ Add (what makes it special)</h3>
+      <ul>
+        <li><b>Glass HR overlay burned into reels</b> (Studio kit; ~1-line plumbing + picker UI).</li>
+        <li><b>Post to Clips</b> — reels become feed posts with a ✦ REEL badge; "Reels" filter chip.</li>
+        <li><b>Weekly Highlight Reel</b> — auto cross-session montage (gym + Kilter + watch), the capability nothing else has.</li>
+        <li>Format presets 9:16 / 4:5 / 1:1 via <code>ClipAspectResolver</code>; intensity badges on clip rows.</li>
+        <li>Later: beat-synced music, auto stat title/end cards, monthly "Wrapped" reel.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

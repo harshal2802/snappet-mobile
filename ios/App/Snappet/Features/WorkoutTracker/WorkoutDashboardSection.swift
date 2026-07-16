@@ -21,7 +21,6 @@ struct WorkoutDashboardSection: View {
     let openRoutine: (Routine) -> Void
     let openProgress: (String) -> Void
     let openStudio: (UUID) -> Void
-    let openReels: () -> Void
     /// Deep-link into a completed session's detail (the recent-feed rows). (#181)
     let openSession: (UUID) -> Void
     /// Start a freeform Quick Session — the type-aware Start CTA. (#181)
@@ -56,7 +55,9 @@ struct WorkoutDashboardSection: View {
 
                 if !quickStart.isEmpty && !isEmptyState { quickStartSection }
                 if !isEmptyState { studioSection }
-                reelsCrossLink
+                // The old "Workout Reels" cross-link is gone with the tile (highlights P3): Apple
+                // Watch workouts now land in History + the Clips feed automatically, and highlight
+                // reels are an action on every session detail.
             }
             .padding()
             .padding(.bottom, 24)
@@ -303,25 +304,6 @@ struct WorkoutDashboardSection: View {
             }
         }
         .padding().background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-    }
-
-    private var reelsCrossLink: some View {
-        Button(action: openReels) {
-            HStack(spacing: 10) {
-                Image(systemName: "figure.run").foregroundStyle(SnappetColor.reels)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Looking for your Apple Watch workouts?").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Text("Highlight reels from watch workouts live in Workout Reels.").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading).padding()
-            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("workout.openReels")
     }
 
     // MARK: - Derived data (volume chart + PRs carry over)

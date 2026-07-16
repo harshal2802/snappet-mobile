@@ -12,14 +12,6 @@ private let tuningLog = Logger(subsystem: "com.snappet.app", category: "Feedback
 @MainActor
 @Observable
 final class AppModel {
-    enum Phase: Equatable { case onboarding, loading, ready, error(String) }
-
-    var phase: Phase = .loading
-    var workouts: [WorkoutSummary] = []
-    /// True while `refreshWorkouts()` is in flight — the workout list's empty overlay swaps its
-    /// "may not have permission" copy for a spinner during a fetch, so an in-flight load never
-    /// reads as a permission problem (issue #72 pre-merge review fix).
-    private(set) var refreshing = false
     /// Current Photo Library access. `.limited` means we can't auto-scan the library
     /// and must fall back to a manual picker (#60 §C).
     var photoAccess: PHAuthorizationStatus = .notDetermined
@@ -98,6 +90,11 @@ final class AppModel {
     var kilterScreenVisible = false
 
     init() {
+        // Mirror the current Photos grant on launch (synchronous, cheap) so `.limited`-aware UI
+        // (the reel toolbar's add-clips button, session-detail hints) is right from first render.
+        // Requests still update it (`photos.requestAccess()` call sites).
+        photoAccess = photos.currentStatus
+
         // Wire the Kilter session manager to its sibling live services HERE, where all four are
         // constructed — not in a view's `onAppear` — so binding can't depend on appear order:
         // every path that can start a session (root entry, the Home plan deep link, future QR
@@ -143,15 +140,7 @@ final class AppModel {
         }
     }
 
-    /// Value-first onboarding is shown until the user has been through it once.
-    /// (HealthKit read-auth status isn't queryable, so we gate on a persisted flag.)
-    private let onboardedKey = "snappet.hasOnboarded"
-    private var hasOnboarded: Bool {
-        get { UserDefaults.standard.bool(forKey: onboardedKey) }
-        set { UserDefaults.standard.set(newValue, forKey: onboardedKey) }
-    }
-
-    /// Replay-derived fusion weighting, recomputed on bootstrap from the user's OWN
+    /// Replay-derived fusion weighting, recomputed on launch (`RootShell`) from the user's OWN
     /// `highlight-feedback.jsonl` (`FeedbackStore.exportAll()` — its first caller). `nil` until enough
     /// endorsed feedback exists, so the blend changes ONLY from replayed data, never from intuition
     /// (project.md invariant). Consumed by the scene fusion once a real vision signal exists (#83 Step 1).
@@ -216,49 +205,6 @@ final class AppModel {
         return SceneHighlightSelector(visualScore: SceneScorer.visualScore(from: scores))
     }
 
-    /// Launch entry point. First-time users see value-first onboarding; returning
-    /// users go straight to loading their workouts.
-    func start() async {
-        photoAccess = photos.currentStatus
-        if hasOnboarded {
-            await bootstrap()
-        } else {
-            phase = .onboarding
-        }
-    }
-
-    /// Called from the onboarding screen's explicit "Connect" tap — value-first,
-    /// just-in-time permissions (#60 §C). Requests Health, then Photos, then loads.
-    func completeOnboarding() async {
-        hasOnboarded = true
-        photoAccess = await photos.requestAccess()
-        await bootstrap()
-    }
-
-    func bootstrap() async {
-        phase = .loading
-        do {
-            try await health.requestAuthorization()
-            photoAccess = photos.currentStatus
-            // `.ready` only AFTER the first fetch lands — flipping early briefly rendered the
-            // empty list (and its "may not have permission" overlay) under every cold load
-            // (review fix). A failed refresh wins: it sets `.error`, which is preserved here.
-            await refreshWorkouts()
-            // Re-weight the fusion blend from the user's own highlight feedback (on-device, local JSONL).
-            recomputeFeedbackTuning()
-            if case .loading = phase { phase = .ready }
-        } catch {
-            phase = .error(error.localizedDescription)
-        }
-    }
-
-    func refreshWorkouts() async {
-        refreshing = true
-        defer { refreshing = false }
-        do { workouts = try await health.recentWorkouts(limit: 40) }
-        catch { phase = .error(error.localizedDescription) }
-    }
-
     // MARK: - Apple Watch workouts → Clips (watch-workouts-clips)
 
     /// The shared store, handed in by `SnappetApp` after the container is built — so the Apple Watch
@@ -272,6 +218,13 @@ final class AppModel {
     /// clips. Safe to call repeatedly (idempotent); drives the launch, foreground, and background paths.
     func reconcileWatchWorkouts() async {
         guard let context = modelContainer?.mainContext else { return }
+        // NOTE (highlights P3): the retired Workout Reels onboarding was the fresh-install surface
+        // that primed HealthKit read access; without a grant this import silently returns nothing.
+        // Requesting HERE was tried and reverted — it fires on every launch until answered, which
+        // pops an unsolicited system sheet at first open (against the value-first permissions rule)
+        // and races UI tests. The remaining ask surfaces are the Gym Tracker's HR features
+        // (`UserHRProfileView`); a contextual "Connect Apple Health" offer in Clips is the
+        // follow-up that closes the gap intentionally.
         await WatchWorkoutImportService(health: health, sessionMedia: sessionMedia)
             .reconcile(context: context, profileMaxHR: userProfile.profile.resolvedMaxHR)
     }
@@ -285,27 +238,6 @@ final class AppModel {
         health.enableWorkoutBackgroundDelivery { [weak self] in
             Task { @MainActor in await self?.reconcileWatchWorkouts() }
         }
-    }
-
-    /// Build the engine input for a workout: pull its HR series + the media for the
-    /// session. By default media is auto-discovered by time window; pass
-    /// `manualMedia` (from the `.limited`-access picker) to use a hand-picked set.
-    func buildWorkout(_ summary: WorkoutSummary, manualMedia: [MediaItem]? = nil) async throws -> Workout {
-        let hr = try await health.heartRateSamples(for: summary)
-        let media: [MediaItem]
-        if let manualMedia {
-            media = manualMedia
-        } else {
-            media = try await photos.media(in: summary.dateInterval, workoutStart: summary.start)
-        }
-        return Workout(
-            activity: summary.activity,
-            duration: summary.duration,
-            hr: hr,
-            restBpm: summary.restingBpm,
-            maxBpm: summary.maxBpm,
-            media: media
-        )
     }
 
     /// Map manually-picked asset identifiers (limited-access fallback) to engine media.
