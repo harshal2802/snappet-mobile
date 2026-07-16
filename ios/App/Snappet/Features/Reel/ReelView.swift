@@ -199,6 +199,12 @@ private struct ReelEditorView: View {
             guard vm.state == .ready, vm.previewPlayer == nil else { return }
             await vm.buildPreview()
             attachTransport()
+            // A trim-triggered rebuild resumes AT the edited clip (device feedback: replaying
+            // the whole reel from 0:00 buried the very cut you just made).
+            if let id = vm.consumePendingSeek(), let map = vm.timelineMap,
+               let start = map.start(of: id), map.totalDuration > 0 {
+                transport.seek(toFraction: start / map.totalDuration)
+            }
         }
         .onDisappear {
             vm.previewPlayer?.pause()
@@ -663,24 +669,33 @@ private struct ReelTrimBar: View {
                     .frame(width: max(handleWidth * 2, x1 - x0))
                     .offset(x: x0)
                     .gesture(windowDrag(span: span, width: width))
-                handle(at: x0, symbol: "chevron.compact.left")
+                // Handles LAST (they win the overlap with the window body) and with a 44pt
+                // hit zone each — the visual is 16pt, but a 16pt target meant most drags
+                // landed on the window body and SLID the cut instead of resizing it (device
+                // feedback: "it does not let me adjust how long I want the video").
+                handle(visualLeftEdgeAt: x0, symbol: "chevron.compact.left")
                     .gesture(edgeDrag(isStart: true, span: span, width: width))
-                handle(at: x1 - handleWidth, symbol: "chevron.compact.right")
+                handle(visualLeftEdgeAt: x1 - handleWidth, symbol: "chevron.compact.right")
                     .gesture(edgeDrag(isStart: false, span: span, width: width))
             }
         }
         .frame(height: 44)
     }
 
-    private func handle(at x: CGFloat, symbol: String) -> some View {
+    /// Apple's 44pt minimum touch target — the resize handles must be grabbable.
+    private let handleHitWidth: CGFloat = 44
+
+    private func handle(visualLeftEdgeAt x: CGFloat, symbol: String) -> some View {
         RoundedRectangle(cornerRadius: 5)
             .fill(SnappetColor.reels)
             .frame(width: handleWidth, height: 44)
             .overlay(Image(systemName: symbol)
                 .font(.system(size: 11, weight: .black))
                 .foregroundStyle(.black.opacity(0.7)))
-            .offset(x: max(0, x))
+            // The invisible hit zone extends the 16pt visual to 44pt, centred on it.
+            .frame(width: handleHitWidth, height: 44)
             .contentShape(Rectangle())
+            .offset(x: x - (handleHitWidth - handleWidth) / 2)
     }
 
     private func edgeDrag(isStart: Bool, span: Double, width: CGFloat) -> some Gesture {

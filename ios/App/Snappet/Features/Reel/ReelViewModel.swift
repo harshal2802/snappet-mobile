@@ -154,6 +154,7 @@ final class ReelViewModel {
         } else {
             trims[h.id] = clamped
         }
+        pendingSeekID = h.id   // the rebuilt preview resumes AT this clip, not from 0:00
         invalidatePreview()
     }
 
@@ -161,7 +162,17 @@ final class ReelViewModel {
     func resetTrim(for h: Highlight) {
         guard trims[h.id] != nil else { return }
         trims[h.id] = nil
+        pendingSeekID = h.id
         invalidatePreview()
+    }
+
+    /// After a trim commit, the preview rebuild should resume at the EDITED clip — replaying
+    /// the whole reel from 0:00 made verifying a trim miserable (device feedback). Set by
+    /// `setTrim`/`resetTrim`, consumed once by the editor's rebuild task.
+    private(set) var pendingSeekID: String?
+    func consumePendingSeek() -> String? {
+        defer { pendingSeekID = nil }
+        return pendingSeekID
     }
 
     func isPinned(_ h: Highlight) -> Bool { pinnedIds.contains(h.id) }
