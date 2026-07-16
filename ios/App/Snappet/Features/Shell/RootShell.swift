@@ -35,6 +35,9 @@ struct RootShell: View {
                         SpotlightIndexer.reindex(context: context)   // #81 Phase 4
                         app.startWatchWorkoutObserver()   // HealthKit background delivery (watch-workouts-clips P2)
                         importWatchWorkouts()   // Apple Watch workouts → Clips (watch-workouts-clips P1)
+                        // Re-weight the highlight fusion from the user's own feedback log — used to
+                        // ride the retired Workout Reels module's bootstrap (highlights P3).
+                        app.recomputeFeedbackTuning()
                     }
             }
         }

@@ -17,8 +17,6 @@ struct ReelView: View {
     @State private var limitedPickWarning = ""
 
     init(source: ReelSource) { self.source = source }
-    /// Back-compat for the workout path (`WorkoutListView`).
-    init(summary: WorkoutSummary) { self.source = .workout(summary) }
 
     var body: some View {
         Group {
@@ -110,6 +108,24 @@ struct ReelView: View {
         }
     }
 
+    /// One format/overlay chip (highlights P1) — visually matches the Clips filter strip.
+    private func optionChip(_ label: String, icon: String? = nil, on: Bool,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let icon { Image(systemName: icon).font(.caption2.weight(.semibold)) }
+                Text(label).font(.caption.weight(.semibold))
+            }
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .background(on ? SnappetColor.reels.opacity(0.14) : SnappetColor.surfaceMuted,
+                        in: Capsule())
+            .overlay(Capsule().strokeBorder(on ? SnappetColor.reels.opacity(0.5)
+                                               : SnappetColor.hairline, lineWidth: 1))
+            .foregroundStyle(on ? SnappetColor.reels : SnappetColor.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
     /// The system limited-library management sheet — the ONLY surface that can EXTEND a
     /// `.limited` grant (PHPicker browses the full library but never widens what
     /// `PHAsset.fetchAssets` may resolve, so its picks outside the grant silently vanish —
@@ -141,6 +157,28 @@ struct ReelView: View {
                     PreviewBlock(vm: vm)
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
+                }
+
+                Section {
+                    // Format + overlay presets (highlights P1). Chips, not a Picker: they read as
+                    // the lightweight, non-modal choice they are, and match the Clips filter strip.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(ReelFormat.allCases) { fmt in
+                                optionChip(fmt.label, on: vm.format == fmt) { vm.format = fmt }
+                                    .accessibilityIdentifier("reelFormat.\(fmt.rawValue)")
+                            }
+                            Divider().frame(height: 18)
+                            optionChip("HR overlay", icon: "waveform.path.ecg",
+                                       on: vm.overlayEnabled) { vm.overlayEnabled.toggle() }
+                                .accessibilityIdentifier("reelOverlayToggle")
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6))
+                    .listRowBackground(Color.clear)
+                } footer: {
+                    Text("Format frames the exported reel; the heart-rate overlay is burned in on export.")
                 }
 
                 Section {
@@ -176,7 +214,9 @@ struct ReelView: View {
 
                 Section {
                     ForEach(vm.keptHighlights) { h in
-                        HighlightRow(highlight: h, pinned: vm.isPinned(h))
+                        HighlightRow(highlight: h, pinned: vm.isPinned(h),
+                                     peakBpm: vm.peakBpm(for: h),
+                                     intensityFraction: { vm.intensityFraction(forPeak: $0) })
                             .swipeActions(edge: .leading) {
                                 Button { vm.togglePin(h) } label: {
                                     Label(vm.isPinned(h) ? "Unpin" : "Pin",
@@ -206,7 +246,9 @@ struct ReelView: View {
                 if !vm.removedHighlights.isEmpty {
                     Section {
                         ForEach(vm.removedHighlights) { h in
-                            HighlightRow(highlight: h, pinned: false)
+                            HighlightRow(highlight: h, pinned: false,
+                                         peakBpm: vm.peakBpm(for: h),
+                                         intensityFraction: { vm.intensityFraction(forPeak: $0) })
                                 .foregroundStyle(.secondary)
                                 .swipeActions {
                                     Button { vm.restore(h) } label: {
@@ -269,15 +311,26 @@ private struct PreviewBlock: View {
 private struct HighlightRow: View {
     let highlight: Highlight
     let pinned: Bool
+    /// Peak BPM inside the clip window (highlights P1) — the visible face of the HR ranking.
+    /// `nil` (no HR in the window) falls back to the engine-score caption.
+    var peakBpm: Double?
+    /// Maps a peak onto the performance ramp (%HRR) for the badge tint.
+    var intensityFraction: (Double) -> Double = { _ in 0 }
+
     var body: some View {
         HStack(spacing: 12) {
             HighlightThumbnail(assetId: highlight.mediaItemId, kind: highlight.kind)
             VStack(alignment: .leading) {
                 Text(timecode(highlight.atOffset)).font(.body.monospacedDigit())
-                Text(String(format: "intensity %.0f%%", highlight.score * 100))
-                    .font(.caption).foregroundStyle(.secondary)
+                if peakBpm == nil {
+                    Text(String(format: "intensity %.0f%%", highlight.score * 100))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
+            if let peak = peakBpm {
+                peakBadge(peak)
+            }
             if pinned {
                 Image(systemName: "pin.fill").font(.caption).foregroundStyle(.yellow)
             }
@@ -285,6 +338,18 @@ private struct HighlightRow: View {
                 .font(.caption).foregroundStyle(.tertiary)
         }
     }
+
+    /// "PEAK 168" on the performance ramp — data colour (effort axis), never a module accent.
+    private func peakBadge(_ peak: Double) -> some View {
+        let tint = SnappetColor.performance(for: intensityFraction(peak))
+        return Text("PEAK \(Int(peak))")
+            .font(.caption2.weight(.bold).monospacedDigit())
+            .foregroundStyle(tint)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(tint.opacity(0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1))
+    }
+
     private func timecode(_ s: Double) -> String {
         String(format: "%d:%02d", Int(s) / 60, Int(s) % 60)
     }
@@ -382,6 +447,15 @@ private struct ExportedView: View {
                 .clipShape(RoundedRectangle(cornerRadius: SnappetRadius.md))
                 .accessibilityIdentifier("reelExportedPlayer")
 
+            // Post to Clips is the primary payoff when the reel has a home session (highlights P2):
+            // the reel lands in the feed as a ✦ REEL post. Save/Share demote to the secondary row.
+            if vm.canPostToClips {
+                postButton
+                if case .failed(let msg) = vm.postState {
+                    Text(msg).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             HStack(spacing: 12) {
                 saveButton
                 Button { showShare = true } label: {
@@ -416,7 +490,9 @@ private struct ExportedView: View {
             }
             .accessibilityIdentifier("reelMakeAnotherCut")
 
-            Text("Save to Photos to keep this reel — making a new cut replaces it.")
+            Text(vm.canPostToClips
+                 ? "Post to Clips saves the reel to Photos and shows it in your feed with a ✦ REEL badge — making a new cut replaces this one."
+                 : "Save to Photos to keep this reel — making a new cut replaces it.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -452,6 +528,26 @@ private struct ExportedView: View {
         .sheet(isPresented: $showShare) { ShareSheet(items: [url]) }
     }
 
+    /// Post-to-Clips CTA (highlights P2). Prominent while available; collapses to its done state
+    /// once posted (like the save button) so the payoff can't double-post by tap.
+    @ViewBuilder private var postButton: some View {
+        switch vm.postState {
+        case .posted:
+            Label("Posted to Clips", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(SnappetColor.habits)
+        case .posting:
+            ProgressView()
+                .frame(minWidth: 160)
+        case .idle, .failed:
+            Button { Task { await vm.postToClips() } } label: {
+                Label("Post to Clips", systemImage: "sparkles.tv")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("reelPostToClips")
+        }
+    }
+
     @ViewBuilder private var saveButton: some View {
         switch vm.saveState {
         case .saved:
@@ -461,11 +557,21 @@ private struct ExportedView: View {
             ProgressView()
                 .frame(minWidth: 140)
         case .idle, .failed:
-            Button { Task { await vm.saveToPhotos() } } label: {
-                Label("Save to Photos", systemImage: "square.and.arrow.down")
+            // Secondary when Post-to-Clips leads (posting already saves to Photos); primary
+            // when there's no session to post under (the pre-P2 payoff, e.g. a manual one-off).
+            if vm.canPostToClips {
+                Button { Task { await vm.saveToPhotos() } } label: {
+                    Label("Save to Photos", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("reelSaveToPhotos")
+            } else {
+                Button { Task { await vm.saveToPhotos() } } label: {
+                    Label("Save to Photos", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("reelSaveToPhotos")
             }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("reelSaveToPhotos")
         }
     }
 }

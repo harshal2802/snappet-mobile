@@ -35,6 +35,15 @@ final class ClipHROverlayTests: XCTestCase {
                                            maxHR: 190, restHR: 60))
     }
 
+    /// A posted HIGHLIGHT REEL plays raw everywhere (highlights P2): its glass scorebug is burned
+    /// into the pixels by ReelExporter, so a live overlay would double-render — the baked-clip rule.
+    func testMakeReturnsNilForPostedReels() {
+        let series = (8...18).map { HRPoint(t: Double($0), bpm: 120 + Double($0)) }
+        var reel = clip(offset: 10, dur: 6)
+        reel.reelTitle = "Push Day — Highlights"
+        XCTAssertNil(ClipHROverlay.make(clip: reel, hrSeries: series, maxHR: 190, restHR: 60))
+    }
+
     func testMakeBuildsClipLocalWindowValuesAndScorebugTile() throws {
         let series = (8...18).map { HRPoint(t: Double($0), bpm: 120 + Double($0)) }   // around [10,16]
         let p = try XCTUnwrap(ClipHROverlay.make(clip: clip(offset: 10, dur: 6, edit: zeroWindow),

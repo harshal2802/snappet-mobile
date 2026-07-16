@@ -2,11 +2,14 @@ import Foundation
 import Observation
 import AVFoundation
 import Photos
+import SwiftData
 import HighlightEngine
 
-/// What the reel flow needs from its source, generalized beyond a HealthKit `WorkoutSummary` so a
-/// **Kilter climbing session** can reuse the same auto-generate-then-edit UI (preview / pin / remove
-/// / reorder / export). `makeWorkout` receives the `AppModel` as a parameter so a source can be
+/// What the reel flow needs from its source. Every reel goes through this one seam (highlights
+/// convergence): a **Kilter session** (`.kilterSession`), a **gym / Apple-Watch session**
+/// (`.workoutSession`), and the **stitched week** (`.week`) all feed the same
+/// auto-generate-then-edit UI (preview / pin / remove / reorder / format / overlay / export /
+/// Post to Clips). `makeWorkout` receives the `AppModel` as a parameter so a source can be
 /// constructed without one in hand (a SwiftUI `View.init` has no environment yet).
 struct ReelSource {
     /// Feedback / `logShown` id (e.g. the workout or Kilter-session UUID string).
@@ -22,15 +25,15 @@ struct ReelSource {
     /// Achievement windows to boost when ranking highlights (fitness-band Phase 4): sent-climb
     /// windows (Kilter) in seconds from session start. Empty ⇒ pure HR ranking (today's behavior).
     var boostWindows: [ClosedRange<Double>] = []
+    /// The session a finished reel can be posted back into the Clips feed under (highlights P2).
+    /// `nil` = no Post-to-Clips offer (Save/Share only).
+    var postSessionID: UUID? = nil
+    /// The posted reel's feed title, e.g. "Push Day — Highlights". Ignored when `postSessionID` is nil.
+    var postTitle: String? = nil
+    /// `true` = plan TRIMMED highlight windows instead of full-length clips — the Weekly Highlight
+    /// Reel's montage style (P4). Session reels keep today's uncapped full-length behavior.
+    var trimToHighlights = false
 
-    /// The flagship workout source: builds via `AppModel.buildWorkout` (HealthKit HR + Photos). The
-    /// HealthKit path has no per-set effort data, so it boosts nothing (HR-only) — the WorkoutTracker
-    /// peak-effort boost lives in the session-based `SessionHighlightViewModel` path instead.
-    static func workout(_ summary: WorkoutSummary) -> ReelSource {
-        ReelSource(id: summary.id.uuidString, activity: summary.activity,
-                   title: "\(summary.activity.rawValue.capitalized) reel", start: summary.start,
-                   makeWorkout: { model, manual in try await model.buildWorkout(summary, manualMedia: manual) })
-    }
 }
 
 /// Drives the auto-generate-then-edit flow (#60 §B): generate a good reel
@@ -47,12 +50,26 @@ final class ReelViewModel {
     /// `State` so a failed save doesn't knock the screen out of `.exported`.
     enum SaveState: Equatable { case idle, saving, saved, failed(String) }
 
+    /// Posting the exported reel into the Clips feed (highlights P2) — like `SaveState`, separate
+    /// from `State` so a failed post keeps the screen on `.exported` with Retry available.
+    enum PostState: Equatable { case idle, posting, posted, failed(String) }
+
     let source: ReelSource
     private let model: AppModel
     private let library = MediaLibraryService()
 
     var state: State = .loading
     var saveState: SaveState = .idle
+    var postState: PostState = .idle
+    /// Export canvas preset (highlights P1). Changing it invalidates the preview so the next
+    /// build shows the new framing — preview and export share `makeComposition(renderAspect:)`.
+    var format: ReelFormat = .native {
+        didSet { if format != oldValue { invalidatePreview() } }
+    }
+    /// Burn the glass HR scorebug into the export (highlights P1) — the same overlay the Studio
+    /// and the feed's Animate path ship. Export-only: the Core-Animation tool can't render in an
+    /// in-app AVPlayer, so the preview never shows it either way.
+    var overlayEnabled = true
     var highlights: [Highlight] = []
     private(set) var workout: Workout?
     private(set) var result: HighlightEngine.Result?
@@ -63,6 +80,9 @@ final class ReelViewModel {
     private(set) var pinnedIds: Set<String> = []
     /// Manual reel order (highlight ids). `nil` = chronological default.
     private var orderedIds: [String]?
+    /// Total planned duration of the last successful export — persisted onto the posted
+    /// `SessionMedia` row so the feed can label the reel without loading the asset.
+    private var exportedDuration: Double?
 
     /// In-app preview of the CURRENT cut (built from the composition, no export needed).
     /// Invalidated whenever the edit set changes so the next preview reflects edits.
@@ -81,11 +101,6 @@ final class ReelViewModel {
     init(source: ReelSource, model: AppModel) {
         self.source = source
         self.model = model
-    }
-
-    /// Back-compat convenience for the workout path (keeps `ReelView(summary:)` call sites).
-    convenience init(summary: WorkoutSummary, model: AppModel) {
-        self.init(source: .workout(summary), model: model)
     }
 
     /// Highlights in the reel, minus removed, in manual order when the user set one.
@@ -134,6 +149,7 @@ final class ReelViewModel {
     func generate(manualMedia: [MediaItem]? = nil) async {
         state = .loading
         saveState = .idle
+        postState = .idle
         // A rebuilt cut must not keep showing the discarded cut's player (review fix) or a
         // stale pick footnote/explanation — these reset with the rest of the per-cut state.
         invalidatePreview()
@@ -151,8 +167,11 @@ final class ReelViewModel {
             // Score the footage with Vision (#83 Step 1) — a no-op unless replayed feedback has tuned in
             // a scene weight, so this neither costs nor changes anything until the data earns it.
             let scene = await model.sceneSelector(for: wk)
+            // Weekly montage sources (P4) keep the engine's TRIMMED highlight windows so a whole
+            // week cuts down to moments; session reels stay full-length + uncapped as before.
+            let baseConfig = HighlightConfig.preset(for: wk.activity)
             let res = model.engine(boosting: source.boostWindows, scene: scene)
-                .generate(for: wk, config: .preset(for: wk.activity).fullLength())
+                .generate(for: wk, config: source.trimToHighlights ? baseConfig : baseConfig.fullLength())
             result = res
             highlights = res.highlights
             model.engine.logShown(res, workoutId: source.id,
@@ -238,7 +257,8 @@ final class ReelViewModel {
         let plan = model.reelPlan(for: keptHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
-            let (composition, videoComposition) = try await exporter.makeComposition(for: plan)
+            let (composition, videoComposition) = try await exporter.makeComposition(
+                for: plan, renderAspect: format.aspect)
             let item = AVPlayerItem(asset: composition)
             // Same orientation/fit normalization the export uses, so preview matches the saved reel
             // (and mixed-orientation clips render upright instead of sideways).
@@ -264,10 +284,19 @@ final class ReelViewModel {
         guard state != .exporting else { return }
         state = .exporting
         saveState = .idle
+        postState = .idle
         let plan = model.reelPlan(for: keptHighlights, media: wk.media,
                                   pinnedIds: pinnedIds, order: orderedIds)
         do {
-            let url = try await exporter.export(plan)
+            // Burn the glass HR scorebug (highlights P1) — the SAME overlay path the feed's Animate
+            // uses (`HROverlayValues` → `feedClipScorebug` → `StudioOverlays.makeAnimationTool`),
+            // with the whole session's series across the reel, so every video surface matches.
+            let overlay: ReelExporter.HROverlay? = (overlayEnabled && !wk.hr.isEmpty)
+                ? ReelExporter.HROverlay(hrSeries: wk.hr.map { HRPoint(t: $0.t, bpm: $0.bpm) },
+                                         maxHR: wk.maxBpm, restHR: wk.restBpm)
+                : nil
+            let url = try await exporter.export(plan, hrOverlay: overlay, renderAspect: format.aspect)
+            exportedDuration = plan.totalDuration
             // Survivors are positive signal — kept + exported are logged HERE, after success,
             // so a failed attempt doesn't re-log `.kept` on every retry (review fix): both
             // land exactly once per successful export.
@@ -299,6 +328,61 @@ final class ReelViewModel {
         } catch {
             saveState = .failed((error as? LocalizedError)?.errorDescription
                                 ?? "Couldn’t save to Photos.")
+        }
+    }
+
+    // MARK: - Intensity badges (highlights P1)
+
+    /// Peak BPM inside a highlight's clip window — the edit list's visible intensity badge.
+    /// `nil` (no HR sample in the window) falls the row back to the engine score caption.
+    func peakBpm(for h: Highlight) -> Double? {
+        ReelIntensity.peakBpm(hr: workout?.hr ?? [], start: h.clipStart, end: h.clipEnd)
+    }
+
+    /// The badge's performance-ramp fraction (%HRR) for a highlight's peak.
+    func intensityFraction(forPeak peak: Double) -> Double {
+        ReelIntensity.fraction(peakBpm: peak, restBpm: workout?.restBpm, maxBpm: workout?.maxBpm)
+    }
+
+    // MARK: - Post to Clips (highlights P2)
+
+    /// Whether the payoff screen offers "Post to Clips": the source names a session to post
+    /// under (Kilter / gym / weekly sources do; a manual-media one-off may not).
+    var canPostToClips: Bool { source.postSessionID != nil }
+
+    /// Post the exported reel into the Clips feed: save the file to Photos (the bytes' one durable
+    /// home — same policy as every clip), then insert a reel-marked `SessionMedia` row on the source
+    /// session. The feed composes it into its own ✦ REEL post. Posting implies the Photos save, so
+    /// `saveState` lands `.saved` too (the Save button collapses to its done state).
+    func postToClips() async {
+        guard case .exported(let url) = state, postState != .posting else { return }
+        guard let sessionID = source.postSessionID,
+              let context = model.modelContainer?.mainContext else {
+            postState = .failed("This reel has no session to post under.")
+            return
+        }
+        postState = .posting
+        do {
+            guard let localIdentifier = try await library.saveVideoToPhotos(url) else {
+                postState = .failed("Couldn’t save the reel to Photos.")
+                return
+            }
+            saveState = .saved
+            // A reel isn't captured during the session — offset 0 is a placement, not a claim; the
+            // composer gives reel rows their own post, so it never sorts inside a set's carousel.
+            // The burned overlay means the feed plays it raw (no live HR overlay on top).
+            let row = SessionMedia(sessionID: sessionID, localIdentifier: localIdentifier,
+                                   kind: .video, offsetSec: 0,
+                                   durationSec: exportedDuration,
+                                   aspectRatio: format.aspect,
+                                   addedManually: true, source: .general)
+            row.reelTitle = source.postTitle ?? "Highlights"
+            context.insert(row)
+            try context.save()
+            postState = .posted
+        } catch {
+            postState = .failed((error as? LocalizedError)?.errorDescription
+                                ?? "Couldn’t post this reel to Clips.")
         }
     }
 

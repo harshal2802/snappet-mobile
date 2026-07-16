@@ -9,7 +9,9 @@ final class SuiteSmokeTests: XCTestCase {
         app.launch()
         app.tabBars.buttons["Apps"].tap()
 
-        let ids = ["workout", "workout-log", "kilter", "pomodoro", "habit", "journal", "tip", "expense", "budget"]
+        // "workout" (Workout Reels) retired by the highlights convergence (P3) — reels are now an
+        // action on sessions + the weekly cut, not a destination tile.
+        let ids = ["workout-log", "kilter", "pomodoro", "habit", "journal", "tip", "expense", "budget"]
         for id in ids {
             let card = app.buttons["moduleCard.\(id)"]
             // The LazyVGrid only realizes cards near the viewport, so scroll until the card exists

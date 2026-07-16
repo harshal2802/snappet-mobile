@@ -46,7 +46,6 @@ enum ReelFlowPolicy {
         /// Return to the editable `.ready` list without re-generating.
         case backToEdit
         /// Re-query HealthKit for workouts.
-        case refresh
     }
 
     /// A fully-decided recovery surface: `ContentUnavailableView` copy + ordered actions.
@@ -151,31 +150,6 @@ enum ReelFlowPolicy {
             actions: [.tryAgain])
     }
 
-    // MARK: - Workout list: empty / error states
-
-    /// HealthKit **read** denial is invisible by design (the status isn't queryable), so an empty
-    /// list must acknowledge that possibility instead of promising "track a workout, then pull to
-    /// refresh" — advice that can never work for a denied user. Copy stays truthful: it names both
-    /// explanations and the real fix path — Settings > Privacy & Security > Health > Snappet; the
-    /// per-app Settings page that Open Settings deep-links to has NO Health row, so the button is
-    /// a best-effort shortcut, not the destination (pre-merge review fix).
-    static func workoutsEmptySpec() -> RecoverySpec {
-        RecoverySpec(
-            title: "No workouts to show",
-            systemImage: "figure.run",
-            message: "If you’ve tracked workouts with your Apple Watch, Snappet may not have permission to read them — Health access can’t be checked from inside the app. Allow it under Settings > Privacy & Security > Health > Snappet, or track a workout and refresh.",
-            actions: [.refresh, .openSettings])
-    }
-
-    /// The module-level failure (Health authorization / query threw).
-    static func workoutsErrorSpec(message: String) -> RecoverySpec {
-        RecoverySpec(
-            title: "Something went wrong",
-            systemImage: "exclamationmark.triangle",
-            message: message,
-            actions: [.tryAgain, .openSettings])
-    }
-
     // MARK: - Regenerate confirmation
 
     /// Regenerating rebuilds from scratch — it wipes pins / removals / custom order and replaces
@@ -229,18 +203,6 @@ enum ReelFlowPolicy {
         return newestFirst.dropFirst(keepLatest).map(\.url)
     }
 
-    // MARK: - Workout-row activity icons (issue #72 §5)
-
-    /// SF Symbol for an engine `Activity`, so workout rows are scannable at a glance.
-    static func activityIcon(for activity: Activity) -> String {
-        switch activity {
-        case .climbing: return "figure.climbing"
-        case .running: return "figure.run"
-        case .dance: return "figure.dance"
-        case .strength: return "dumbbell.fill"
-        case .other: return "figure.mixed.cardio"
-        }
-    }
 }
 
 extension ReelFlowPolicy.RecoveryAction {
@@ -254,7 +216,6 @@ extension ReelFlowPolicy.RecoveryAction {
         case .tryAgain: return "Try again"
         case .retryExport: return "Retry export"
         case .backToEdit: return "Back to my edit"
-        case .refresh: return "Refresh"
         }
     }
 
@@ -268,7 +229,6 @@ extension ReelFlowPolicy.RecoveryAction {
         case .tryAgain: return "TryAgain"
         case .retryExport: return "RetryExport"
         case .backToEdit: return "BackToEdit"
-        case .refresh: return "Refresh"
         }
     }
 }

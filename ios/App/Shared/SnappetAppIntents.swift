@@ -10,7 +10,10 @@ import WidgetKit
 
 /// The mini-apps a "open app" shortcut can target. AppEnum so it's a Shortcuts picker.
 enum ModuleChoice: String, AppEnum {
-    case pomodoro, habits, journal, gymTracker, workoutReels, kilter, budget, splitExpenses, tip
+    // `workoutReels` retired with the standalone Workout Reels tile (highlights P3) — a shortcut
+    // saved with it fails to decode and Shortcuts shows it as needing reconfiguration (honest,
+    // not a silently-dead route into a module the registry no longer has).
+    case pomodoro, habits, journal, gymTracker, kilter, budget, splitExpenses, tip
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Snappet App"
     static let caseDisplayRepresentations: [ModuleChoice: DisplayRepresentation] = [
@@ -18,7 +21,6 @@ enum ModuleChoice: String, AppEnum {
         .habits: "Habits",
         .journal: "Journal",
         .gymTracker: "Gym Tracker",
-        .workoutReels: "Workout Reels",
         .kilter: "Kilter Board",
         .budget: "Budget",
         .splitExpenses: "Split Expenses",
@@ -32,7 +34,6 @@ enum ModuleChoice: String, AppEnum {
         case .habits: return "habit"
         case .journal: return "journal"
         case .gymTracker: return "workout-log"   // WorkoutTrackerModule.id (display "Gym Tracker", #74)
-        case .workoutReels: return "workout"
         case .kilter: return "kilter"
         case .budget: return "budget"
         case .splitExpenses: return "expense"

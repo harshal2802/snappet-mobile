@@ -27,6 +27,13 @@ struct MediaInput: Sendable, Equatable, Identifiable {
     /// surface plays it raw (the trims/filters/overlays/HR tile are the video), draws NO live HR
     /// overlay, and shows a BAKED chip. Populated by `MediaInput.from` for all construction sites.
     var isBaked: Bool = false
+    /// Non-nil = this clip is a POSTED HIGHLIGHT REEL (highlights P2) and the value is its feed
+    /// title. The composer gives it its own ✦ REEL post; like `isBaked`, it plays raw (the HR
+    /// scorebug is burned into the pixels) so no live overlay is drawn on top.
+    var reelTitle: String? = nil
+
+    /// A posted highlight reel — `reelTitle` is the marker AND the title (mirrors `SessionMedia`).
+    var isReel: Bool { reelTitle != nil }
 }
 
 struct MediaClipHR: Sendable, Equatable {

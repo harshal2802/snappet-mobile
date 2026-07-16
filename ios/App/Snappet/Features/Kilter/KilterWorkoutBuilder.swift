@@ -68,7 +68,8 @@ extension ReelSource {
         // captured into `makeWorkout` (a `@MainActor` escaping closure → Swift-6 data-race error).
         let hr = session.hrSeries, duration = session.duration
         let maxHR = session.maxHR, restHR = session.restHR
-        let baseClips = media.map(KilterWorkoutBuilder.Clip.from)
+        // Posted reels are session media too (highlights P2) — never reel-of-reel them.
+        let baseClips = media.filter { !$0.isReel }.map(KilterWorkoutBuilder.Clip.from)
         // Boost sent-climb windows so the auto-reel features the SENDS, not just raw HR peaks (Phase 4).
         let sentWindows = KilterSessionStats.sentClimbWindows(from: logs, start: session.startedAt)
         var source = ReelSource(id: session.id.uuidString, activity: .climbing,
@@ -88,6 +89,9 @@ extension ReelSource {
                                   hr: hr, duration: duration, maxHR: maxHR, restHR: restHR, clips: clips)
                           })
         source.boostWindows = sentWindows
+        // A finished cut can post back into the Clips feed under this session (highlights P2).
+        source.postSessionID = session.id
+        source.postTitle = "\(session.title ?? "Kilter session") — Highlights"
         return source
     }
 }

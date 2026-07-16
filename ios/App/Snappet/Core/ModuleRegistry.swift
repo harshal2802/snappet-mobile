@@ -7,7 +7,6 @@ enum ModuleRegistry {
     @MainActor
     static var all: [AppModule] {
         [
-            WorkoutModule.module,
             WorkoutTrackerModule.module,
             KilterModule.module,
             WardrobeModule.module,

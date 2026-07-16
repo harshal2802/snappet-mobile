@@ -14,9 +14,6 @@ struct AppLibraryView: View {
     @Environment(StoreHealth.self) private var storeHealth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var zoom
-    /// The flagship hero's own `matchedTransitionSource` id (#71 review fix) — distinct from the
-    /// grid card's `module.id`, so a hero tap zooms from the hero, not the grid card below it.
-    private static let flagshipZoomID = "flagship-hero"
     @State private var showingBackup = false
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
@@ -78,6 +75,8 @@ struct AppLibraryView: View {
             .sheet(isPresented: $showingBackup) {
                 BackupView(storeIsFallback: storeHealth.mode != .ok)
             }
+            // The Weekly Highlight Reel builder (highlights P4) — pushed by the flagship hero.
+            .navigationDestination(for: WeeklyReelRoute.self) { _ in WeeklyReelHostView() }
             .navigationDestination(for: ModuleRoute.self) { route in
                 // Zoom from the source the route names — the grid card or the hero (#71 review
                 // fix). Routes without one (programmatic `open(module:)` deep links, the Pomodoro
@@ -131,45 +130,39 @@ struct AppLibraryView: View {
         .task { app.kilterSessions.recover(in: core.context) }
     }
 
-    /// The flagship gets a featured hero above the category grid (#71): a first-time user lands
-    /// on Apps facing 9 equal cards with no signal which one is the pitch — this makes Workout
-    /// Reels unmissable. It pushes the same `ModuleRoute` the grid card does (so opening it logs
-    /// identically); the grid card stays, as the smoke test — and muscle memory — expect.
-    @ViewBuilder private var flagshipCard: some View {
-        if let flagship = ModuleRegistry.all.first(where: { $0.id == "workout" }) {
-            Button {
-                router.push(ModuleRoute(id: flagship.id, zoomSourceID: Self.flagshipZoomID))
-            } label: {
-                HStack(spacing: SnappetSpacing.md) {
-                    Image(systemName: flagship.systemImage)
-                        .font(.largeTitle)
-                        .foregroundStyle(flagship.tint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Featured")
-                            .font(.caption.weight(.semibold))
-                            .textCase(.uppercase)
-                            .foregroundStyle(flagship.tint)
-                        Text(flagship.title).font(.title3.bold())
-                        Text(flagship.subtitle)
-                            .font(.caption)
-                            .foregroundStyle(SnappetColor.textSecondary)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+    /// The featured hero above the category grid (#71, re-pointed by highlights P3): with the
+    /// Workout Reels tile retired, the flagship pitch is the **Weekly Highlight Reel** — it pushes
+    /// the shared weekly builder (`WeeklyReelRoute`, same destination the Clips hero card opens).
+    /// Keeps the `appLibrary.flagship` identifier the UI tests anchor grid scrolling on.
+    private var flagshipCard: some View {
+        Button {
+            router.push(WeeklyReelRoute())
+        } label: {
+            HStack(spacing: SnappetSpacing.md) {
+                Image(systemName: "sparkles.tv")
+                    .font(.largeTitle)
+                    .foregroundStyle(SnappetColor.reels)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Featured")
+                        .font(.caption.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(SnappetColor.reels)
+                    Text("Weekly Highlights").font(.title3.bold())
+                    Text("Your best moments, auto-cut from this week's sessions")
+                        .font(.caption)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                        .multilineTextAlignment(.leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .snappetCard()
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
-            // The hero registers its OWN source id (#71 review fix): it used to ride the grid
-            // card's, which zoom-animated the push from the wrong tile (the workout grid card
-            // right below). The route carries which source initiated the push.
-            .buttonStyle(PressableCardStyle())
-            .matchedTransitionSource(id: Self.flagshipZoomID, in: zoom)
-            .accessibilityIdentifier("appLibrary.flagship")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .snappetCard()
         }
+        .buttonStyle(PressableCardStyle())
+        .accessibilityIdentifier("appLibrary.flagship")
     }
 
     /// The mini-app for a pushed `ModuleRoute`, logging an "open" event (as the old NavigationLink did).

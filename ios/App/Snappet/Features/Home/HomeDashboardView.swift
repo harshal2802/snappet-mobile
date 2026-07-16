@@ -65,28 +65,29 @@ struct HomeDashboardView: View {
 
     // MARK: first run
 
-    /// First-run replacement for the dead-end empty state (#71): lead with the flagship pitch
-    /// and a CTA that deep-links straight into Workout Reels — which, on a fresh install, opens
-    /// its value-first onboarding (`AppModel.phase == .onboarding`). Browsing the rest of the
-    /// suite stays one secondary tap away.
+    /// First-run replacement for the dead-end empty state (#71, re-pointed by highlights P3):
+    /// with the Workout Reels tile retired, the pitch leads with the suite's real starting point —
+    /// track a session in the Gym Tracker; highlight reels now grow out of every session's clips
+    /// (and the weekly cut) instead of a separate app. Browsing the rest of the suite stays one
+    /// secondary tap away.
     private var flagshipHero: some View {
         ScrollView {
             VStack(spacing: SnappetSpacing.xl) {
                 VStack(spacing: SnappetSpacing.md) {
-                    Image(systemName: "figure.run")
+                    Image(systemName: "sparkles.tv")
                         .font(.system(size: 44, weight: .semibold))
                         .foregroundStyle(SnappetColor.reels)
-                    Text("Turn workouts into highlight reels")
+                    Text("Train. Film. Get highlight reels.")
                         .font(.title2.bold())
                         .multilineTextAlignment(.center)
-                    Text("Snappet reads your workout heart rate and cuts the clips you filmed into a shareable reel — automatically.")
+                    Text("Track your workouts and film your sets — Snappet cuts your clips into heart-rate-ranked highlight reels, per session and for your whole week.")
                         .font(.subheadline)
                         .foregroundStyle(SnappetColor.textSecondary)
                         .multilineTextAlignment(.center)
                     Button {
-                        router.open(module: "workout")
+                        router.open(module: "workout-log")
                     } label: {
-                        Text("Make your first reel")
+                        Text("Start your first workout")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)

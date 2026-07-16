@@ -118,6 +118,13 @@ struct ClipsFeedView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             LazyVStack(spacing: 18) {
+                                // Weekly Highlight Reel hero (highlights P4): offered over the composed
+                                // posts (pure, cheap) once this week has ≥2 video clips; opens the
+                                // shared reel builder on the stitched week.
+                                if let offer = WeeklyHighlights.offer(
+                                        posts: posts, week: WeeklyHighlights.week(containing: .now)) {
+                                    WeeklyReelHeroCard(offer: offer)
+                                }
                                 // Filter chips — visible, not buried in a toolbar glyph (the #264 lesson);
                                 // scrolls away with content so browsing costs no vertical space. Hidden
                                 // while the search field is up (one control in charge at a time).
@@ -186,6 +193,8 @@ struct ClipsFeedView: View {
             .onDisappear { ClipAudioSession.deactivate() }
             .navigationTitle("Clips")
             .navigationBarTitleDisplayMode(.large)
+            // The Weekly Highlight Reel builder (highlights P4), pushed by the hero card above.
+            .navigationDestination(for: WeeklyReelRoute.self) { _ in WeeklyReelHostView() }
             .toolbar {
                 if !posts.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -345,7 +354,9 @@ struct ClipsFeedView: View {
         for post in posts {
             let hr = snap.hr[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
             let tile = snap.tiles[post.sessionID]
-            for item in post.clips {
+            for item in post.clips where !item.media.isReel {
+                // A posted reel already carries the burned scorebug in its pixels (highlights P2) —
+                // composing a live overlay for it would double-draw, same rule as a baked clip.
                 if let p = ClipHROverlay.make(clip: item.media, hrSeries: hr.series,
                                               maxHR: hr.maxHR, restHR: hr.restHR, tile: tile) {
                     payloads[item.media.id] = p
@@ -401,6 +412,46 @@ struct ClipsFeedView: View {
 
 }
 
+// MARK: - Weekly Highlight Reel hero (highlights P4)
+
+/// The Sunday-drop card at the top of Clips: this week has enough footage for a cross-session
+/// cut. A `NavigationLink` into the shared reel builder (`WeeklyReelHostView`) — the card itself
+/// renders nothing heavy (no players, no thumbnails), so the feed's scroll perf is untouched.
+private struct WeeklyReelHeroCard: View {
+    let offer: WeeklyHighlights.Offer
+
+    var body: some View {
+        NavigationLink(value: WeeklyReelRoute()) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles.tv")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(SnappetColor.reels)
+                    .frame(width: 44, height: 44)
+                    .background(SnappetColor.reels.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your week in highlights")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(SnappetColor.ink)
+                    Text(offer.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(SnappetColor.reels)
+            }
+            .padding(12)
+            .background(SnappetColor.reels.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(SnappetColor.reels.opacity(0.45), lineWidth: 1.5))
+            .padding(.horizontal, SnappetSpacing.lg)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("clips.weeklyReel")
+    }
+}
+
 // MARK: - Filter chip strip (prompt 107)
 
 /// The Clips filter chips: ♥ Favorites · Climbs · Gym · Videos · Photos. Visible above the feed (the
@@ -419,6 +470,10 @@ private struct ClipFilterChipStrip: View {
                     chip("Favorites", icon: "heart.fill", accent: SnappetColor.brand,
                          on: filter.favoritesOnly, id: "clips.filter.favorites") {
                         filter.favoritesOnly.toggle()
+                    }
+                    chip("Reels", icon: "sparkles.tv", accent: SnappetColor.reels,
+                         on: filter.reelsOnly, id: "clips.filter.reels") {
+                        filter.reelsOnly.toggle()
                     }
                     chip("Climbs", icon: "figure.climbing", accent: SnappetColor.kilter,
                          on: filter.discipline == .climbs, id: "clips.filter.climbs") {
@@ -528,6 +583,8 @@ private struct ClipPostCard: View {
     @State private var fullscreen: ClipFullscreen?
 
     private var accent: Color {
+        // A posted reel reads as a REEL first (reels-coral), whatever session it came from.
+        if post.isReel { return SnappetColor.reels }
         // Apple Watch imports get the perf-green source tint (a data/state hue, not a wayfinding accent)
         // so they read as "from your watch" regardless of the underlying discipline (watch-workouts-clips P3).
         if post.isFromAppleWatch { return SnappetColor.perfFresh }
@@ -618,6 +675,7 @@ private struct ClipPostCard: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(post.title).font(.subheadline.weight(.bold)).foregroundStyle(SnappetColor.ink).lineLimit(1)
+                    if post.isReel { reelBadge }
                     if post.isFromAppleWatch { watchSourceBadge }
                 }
                 Text(post.subtitle).font(.caption).foregroundStyle(SnappetColor.textSecondary).lineLimit(1)
@@ -627,6 +685,20 @@ private struct ClipPostCard: View {
             optionsMenu
         }
         .padding(.horizontal, SnappetSpacing.lg)
+    }
+
+    /// The ✦ REEL chip on a posted highlight reel's header (highlights P2) — reels-coral, the
+    /// same accent as the builder that made it.
+    private var reelBadge: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "sparkles").font(.system(size: 9, weight: .bold))
+            Text("REEL").font(.system(size: 9, weight: .bold))
+        }
+        .foregroundStyle(SnappetColor.reels)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(SnappetColor.reels.opacity(0.14), in: Capsule())
+        .overlay(Capsule().strokeBorder(SnappetColor.reels.opacity(0.5), lineWidth: 1))
+        .accessibilityLabel("Highlight reel")
     }
 
     /// The ⌚ "Apple Watch" source chip on a watch-imported post's header (watch-workouts-clips P3).
@@ -658,6 +730,7 @@ private struct ClipPostCard: View {
     }
 
     private var glyph: String {
+        if post.isReel { return "sparkles.tv" }
         if post.isFromAppleWatch { return "applewatch" }
         switch post.discipline {
         case .climbing: return "figure.climbing"
