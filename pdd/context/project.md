@@ -96,7 +96,7 @@ session detail's media list (P5).
 
 🟢 **Now the Snappet daily-app SUITE (P9) — builds + runs on the iOS simulator.** A `TabView` shell
 (Home dashboard + App Library) over an on-device SwiftData store (Snappet Core), with modules:
-**Gym Tracker / Kilter / Wardrobe** (fitness+style), **Pomodoro / Habits / Journal** (productivity),
+**Gym Tracker / Kilter / Wardrobe / Festival** (fitness+style+lifestyle), **Pomodoro / Habits / Journal** (productivity),
 **Tip / Split Expenses / Budget** (finance) — highlight reels are session actions + the weekly cut,
 not a tile (2026-07-15). Every app logs usage to Snappet Core; the Home dashboard aggregates
 historical usage (Swift Charts). Full `xcodebuild` → BUILD SUCCEEDED; installs, launches, dashboard
@@ -190,6 +190,17 @@ flat-lay board, wear log/cost-per-wear, suite-backup coverage. First **Lifestyle
 (rose accent). SwiftData models kept CloudKit-compatible so live sync later is config, not migration.
 Device legs owed: real-garment capture + Apple-Intelligence pass. Wireframes:
 `docs/ux-research/wardrobe/`.
+
+🟢 **Festival mini-app (festival prompts 01–02, 2026-07-16)** — "lineups, sets & your night": the
+module owns the lineup domain (festivals → days → stages → sets) as hosted `.fpack` packs from
+`music-festivals/` on the Snappet Pages site (the Kilter catalog shape — provider→validator→store,
+one user-initiated GET, offline all weekend), while being at a set rides a **dance-discipline
+`WorkoutSession`** (watch HR, Live Activity, recorded clips attach as session media). Shipped: pure
+domain + `FestivalSetMatcher` (01, #292), then the shell — App Library tile (UV-orchid accent,
+second Lifestyle resident), catalog empty state/browse/installer, day schedule with ★ plan +
+clash marks + the NOW set, and the "I'm here" live sheet (02). Queued: tagging + Clips payoff
+(03), plan notifications + recommender (04), QR share (05). Device/deploy legs owed: hosted fetch
+once the web PR deploys, watch-HR at a real set. Wireframes: `docs/ux-research/festival/`.
 
 🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
 by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,

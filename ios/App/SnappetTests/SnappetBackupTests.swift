@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 31, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 34, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -482,6 +482,25 @@ final class SnappetBackupTests: XCTestCase {
         context.insert(wardrobeOutfit)
         context.insert(WearEvent(itemID: wardrobeItem.id, outfitID: wardrobeOutfit.id,
                                  wornOn: Date(timeIntervalSince1970: 1_700_010_200)))
+
+        // Festival: an installed lineup WITH its .fpack bytes (Data must survive the JSON round
+        // trip), a starred set, and a closed "I'm here" stretch pointing at a session.
+        let festivalPack = FestivalFixtures.glastonbury()
+        let festivalSet = FestivalFixtures.set(named: "Fred again..", in: festivalPack)
+        context.insert(FestivalLineup(
+            packID: festivalPack.id, name: festivalPack.name, location: festivalPack.location,
+            startDate: festivalPack.startDate, endDate: festivalPack.endDate,
+            utcOffsetSeconds: festivalPack.utcOffsetSeconds, stageCount: 6, setCount: 8,
+            sourceLabel: "Snappet Lineups",
+            installedAt: Date(timeIntervalSince1970: 1_700_011_000),
+            fpackData: (try? festivalPack.fpackData()) ?? Data([0x46, 0x50, 0x41, 0x4B])))
+        context.insert(FestivalStar(packID: festivalPack.id, setID: festivalSet.id,
+                                    createdAt: Date(timeIntervalSince1970: 1_700_011_100)))
+        context.insert(FestivalAttendance(
+            packID: festivalPack.id, setID: festivalSet.id,
+            artist: festivalSet.artist, stage: festivalSet.stage, sessionID: UUID(),
+            startedAt: Date(timeIntervalSince1970: 1_700_011_200),
+            endedAt: Date(timeIntervalSince1970: 1_700_011_300)))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

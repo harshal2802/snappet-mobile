@@ -4,6 +4,51 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-16] Festival shell + hosted install — accent, session ownership, the seed-offset trick (festival prompt 02)
+
+**Decision** (implementing `pdd/prompts/features/festival/02-festival-shell-and-install.md`; frames
+1–5 of the approved wireframes). The Festival mini-app ships its shell: App Library tile
+(Lifestyle), Kilter-posture catalog install (empty state → hosted browse → the
+`FestivalLineupInstaller` funnel), three SwiftData models + backup Rows, the day schedule
+(★/clash/NOW), and the "I'm here" live sheet on the dance-`WorkoutSession` spine. Companion PR on
+the web-app repo publishes `music-festivals/` (manifest + two starter packs + `build-fpack.py`).
+
+Non-obvious calls:
+- **UV orchid confirmed as proposed** (light `0xB03AC2` / dark `0xD96BE8`, `SnappetColor.festival`).
+  Checked against the ramp: it's a magenta-violet sitting between journal-violet
+  (`0x7C5CD6/0x9D82F0` — clearly bluer) and wardrobe-rose (`0xC13A6F/0xE86B99` — clearly pinker/
+  warmer), and nowhere near kilter-amber or the perf ramp. No adjustment needed.
+- **The lineup row stores the VERBATIM `.fpack` bytes** (`FestivalLineup.fpackData`) + denormalized
+  display fields, keyed by the pack-author `packID` with replace-on-reinstall. The wire form is the
+  source of truth (prompt 05's QR share re-emits it; a re-decode is the only "migration"), and
+  stars/attendance survive reinstalls because set ids are UUIDv5 content identity — **rules out**
+  exploding the pack into per-set rows (nothing queries sets outside a decoded pack) and any
+  duplicate-festival accumulation.
+- **Session ownership is content-derived, not flagged**: "I'm here" rides an already-active
+  `WorkoutSession` if one exists (never stacks a second — the single-active invariant), else starts
+  a routineless session whose every entity is the `festival-set` dance shape; End-the-night
+  finishes a session ONLY when `routineID == nil && all(exerciseId == "festival-set")`. Survives
+  relaunch with no stored marker, and structurally can't finish a gym session festival merely
+  annotated. Each claim appends a dance entity ("Artist · Stage") and closing a stretch logs its
+  duration as a `SetLog` — the session detail reads like the night.
+- **`FestivalAttendance` IS the matcher hint** (`setID` + interval + session FK): prompt 03 maps
+  rows straight into `FestivalSessionHint` — recorded now so hints exist retroactively for
+  everything danced before tagging ships.
+- **The UI-test seed anchors by CHOOSING the pack's UTC offset** (`FestivalLineupSeed`): instead of
+  shifting set times to the device clock (which collides with the 06:00-rollover validator near
+  dawn), the offset is picked so festival-local `now` ≈ 18:00 — a legal pack by construction
+  (prompt 01 made offsets per-pack data), valid at ANY wall-clock time, property-tested across a
+  swept week (`FestivalLineupSeedTests`).
+- **Wire compatibility is pinned by bytes, not by convention**: the web repo's
+  `scripts/build-fpack.py` must emit `"FPAK"` + version + **raw** DEFLATE (`wbits=-15` — Python's
+  plain `zlib.compress` is zlib-WRAPPED and the app rejects it as `corrupted`); the actually
+  published `glastonbury-2026.fpack` is embedded base64 in `FestivalPackWireCompatTests` and
+  decoded through the production entry point. A drift on either side fails a test, not a user.
+- **Schedule/browse labels are fixed-English** (`en_US` calendar locale): the process locale is
+  unset under XCTest (`shortMonthSymbols` → "M06") and every other label in the app is English.
+- Owed legs: hosted fetch against the LIVE `music-festivals/` host (web PR must deploy first),
+  watch-HR + Live Activity during a real set, camera round-trip on device.
+
 ## [2026-07-16] Festival domain + matcher — wire format, day boundaries, confidence semantics (festival prompt 01)
 
 **Decision** (implementing `pdd/prompts/features/festival/01-festival-domain-and-matcher.md`; the

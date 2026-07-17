@@ -57,6 +57,7 @@ const GROUP_COLORS = {
   budget:       "#0a84ff", // blue
   kilter:       "#d97706", // amber  — Kilter Board (climbing)
   wardrobe:     "#e86b99", // rose   — Wardrobe (private AI stylist)
+  festival:     "#d96be8", // UV orchid — Festival (lineups, sets & your night)
   core:         "#5e5ce6",
   engine:       "#ff453a",
   watch:        "#66d4cf",
@@ -392,6 +393,28 @@ const nodes = [
     file: "ios/App/Snappet/Features/Wardrobe/WardrobeModels.swift", desc: "Append-only wear log row (itemID, optional outfitID, wornOn) — one per piece per wear. Feeds WearStats (cost-per-wear, rarely-worn nudge, pills) and the composer's freshness axis.", tags: ["@model","append-only","stats"] },
   { id: "model-wardrobeoutfit", label: "WardrobeOutfit", type: "model", group: "wardrobe", category: "lifestyle", platform: "ios",
     file: "ios/App/Snappet/Features/Wardrobe/WardrobeModels.swift", desc: "A saved/worn outfit: parallel itemIDs/slotRolesRaw arrays preserve board order; occasion/tempBand/season raws + newline-joined rationale; lastWornAt drives the Worn segment.", tags: ["@model","outfit","history"] },
+
+  // ═════════════════ MODULE: Festival ═════════════════
+  { id: "m-festival", label: "Festival", type: "module", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalModule.swift", desc: "Lineups, sets & your night (festival prompts 01–02): the mini-app owns the lineup DOMAIN (festivals → days → stages → sets, installed as hosted .fpack packs — the Kilter catalog shape), while being at a set is a dance-discipline WorkoutSession riding the existing spine (watch HR, Live Activity, media). UV-orchid accent; second Lifestyle resident. Tagging/Clips payoff (03), ★-plan notifications + recommender (04), QR share (05) land next.", tags: ["festival","lineups","catalog","dance","kilter-shape"] },
+  { id: "festival-root", label: "FestivalRootView", type: "screen", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalRootView.swift", desc: "Installed lineups (name + 'Jun 24–28 · 9 stages · 412 sets' meta rows) or the catalog EMPTY STATE when there are none — the KilterCatalogSyncView posture: Download from Snappet Lineups leads, Import pack file… (.fpack via Files/AirDrop) beneath, honest data-posture card (one user-initiated GET, offline after, nothing uploaded). Swipe-delete removes a lineup + its stars/attendance (dance sessions stay — they're workout history). Pushed into the App Library's stack (no module NavigationStack, per the suite rule).", tags: ["root","empty-state","lineup-list","offline"] },
+  { id: "festival-browse", label: "FestivalCatalogBrowseView", type: "sheet", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalCatalogViews.swift", desc: "The hosted-catalog browse sheet (own stack): music-festivals/manifest.json rendered as searchable rows with year chips and GET / inline-progress / ✓ Installed states (pure FestivalBrowse mapping). Install runs the one FestivalLineupInstaller funnel; the sheet stays up so the user grabs the whole summer in one sitting. Advanced discloses the host URL override (festival.catalog.host).", tags: ["catalog","browse","search","install","hosted"] },
+  { id: "festival-schedule", label: "FestivalScheduleView", type: "screen", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalScheduleView.swift", desc: "The installed festival's DAY SCHEDULE (wireframe frame 4): festival-local day tabs (SAT/27), stage-grouped set rows with past / NOW-glow / 'in 53 min' states, ★ star toggles (FestivalStar rows) with ⚠︎ clash marks on overlapping starred pairs (FestivalPlan.clashes), and ONE CTA — 'I'm here — <artist>' — which starts (or annotates) a dance WorkoutSession + records a FestivalAttendance stretch, then opens the live sheet. All derivation is the pure FestivalSchedule (30 s TimelineView cadence); the view owns only the thin SwiftData/live-services edge (the WorkoutHomeView lifecycle precedent).", tags: ["schedule","day-tabs","stars","clash","now","dance-session"] },
+  { id: "festival-live", label: "FestivalLiveSheet", type: "sheet", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalLiveSheet.swift", desc: "'On the floor' (frame 5) — the Kilter On-the-Board analog for a set: artist/stage hero with the set countdown, live-HR pill (reuses KilterHRPill off LiveMetricsCoordinator) + 'Dancing 44:12' clock, the shared RecordClipButton (clips save to Photos AND attach to the dance session/set entity via SessionMediaService.candidate), the auto-tag promise line, up-next row with one-tap Switch set (confirmationDialog over the live sets + up next — the two-stages-live correction), and End the night (closes the claim; finishes the WorkoutSession only when festival-owned — flush HR, stop sources, end Live Activity, Recap log — a merely-annotated gym session stays live).", tags: ["live","hr","record-clip","switch-set","end-night"] },
+  { id: "festival-pack-domain", label: "FestivalPack / Validator / SetMatcher / Plan", type: "engine", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalPack.swift", desc: "THE FESTIVAL KEYSTONE (prompt 01, pure Foundation): the .fpack wire codec ('FPAK' + version byte + raw-DEFLATE JSON via the shared ZlibCodec; UUIDv5 content ids stamped on decode; 06:00 day rollover on a fixed per-pack UTC offset), the install-time structural validator (typed errors the install UI shows verbatim), the timestamp×set-window FestivalSetMatcher (confidence semantics: lone set 0.97, ≥2 live capped 0.65 < the 0.8 auto threshold, gap decay 0.70→0.30; hints boost never override), and FestivalPlan's ★ interval math (clashes/reminders/gaps). Prompt 02 adds FestivalSchedule (day tabs/rows/NOW/labels) + FestivalBrowse (row states/filter/meta) on the same pure shelf.", tags: ["pure","keystone","codec","matcher","confidence","tested"] },
+  { id: "festival-installer", label: "FestivalLineupInstaller", type: "service", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalCatalogProvider.swift", desc: "The install funnel (the KilterCatalogInstaller shape): any FestivalPackProvider's BYTES (HostedFestivalPackProvider — one GET of a hosted .fpack from festivalDefaultCatalogHost, the music-festivals/ Pages dir; FestivalFilePackProvider — Files/AirDrop import) → FestivalPack.decode → FestivalPackValidator → one FestivalLineup row (replace-on-reinstall keyed by packID; stars survive because set ids are content-derived). Exposes a small observable phase the empty state + browse sheet both render; a malformed pack never half-installs.", tags: ["installer","provider","network-edge","one-get"] },
+  { id: "model-festivallineup", label: "FestivalLineup", type: "model", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalModels.swift", desc: "One installed lineup: the VERBATIM .fpack bytes (the wire form is the source of truth; prompt 05's share re-emits it) + denormalized display fields (name, poster dates, stage/set counts, source). Keyed by the pack-author packID slug; decode-on-demand via pack(). CloudKit-compatible shape; rides SnappetBackup (FestivalLineupRow — the blob goes with it).", tags: ["@model","fpack","blob","backup"] },
+  { id: "model-festivalstar", label: "FestivalStar", type: "model", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalModels.swift", desc: "One ★ (packID + UUIDv5 set content-id + createdAt) — a row per star, not an array on the lineup, so prompt 04's reminder scheduling and the plan QR read plain rows and toggling never rewrites the big blob row. Stars survive pack re-installs (content identity).", tags: ["@model","plan","star","content-id"] },
+  { id: "model-festivalattendance", label: "FestivalAttendance", type: "model", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalModels.swift", desc: "One 'I'm here' stretch: setID + interval (endedAt nil while on the floor) + the WorkoutSession FK it rode + denormalized artist/stage. EXACTLY the matcher's FestivalSessionHint evidence — prompt 03 maps rows straight into hints (boost, never override).", tags: ["@model","hint","attendance","session-fk"] },
 
   // ═════════════════ MODULE: Journal ═════════════════
   { id: "m-journal", label: "Journal", type: "module", group: "journal", category: "productivity", platform: "ios+android",
@@ -1628,6 +1651,32 @@ const links = [
   { source: "model-wearevent", target: "wardrobe-closet", type: "feeds", label: "wear pills / cost-per-wear" },
   { source: "model-wardrobeitem", target: "wardrobe-composer", type: "feeds", label: "GarmentProfile join" },
   { source: "wardrobe-settings", target: "ios-backup", type: "navigate", label: "suite backup covers wardrobe" },
+
+  // ---- Festival mini-app (festival prompts 01–02) ----
+  { source: "applibrary", target: "m-festival", type: "navigate" },
+  { source: "moduleregistry", target: "m-festival", type: "contains" },
+  { source: "m-festival", target: "festival-root", type: "contains" },
+  { source: "festival-root", target: "festival-browse", type: "present", label: "Download from Snappet Lineups / Get more" },
+  { source: "festival-root", target: "festival-installer", type: "uses", label: "Import pack file… (Files/AirDrop)" },
+  { source: "festival-root", target: "festival-schedule", type: "navigate", label: "lineup row" },
+  { source: "festival-browse", target: "festival-installer", type: "uses", label: "GET → install" },
+  { source: "festival-installer", target: "festival-pack-domain", type: "uses", label: "decode + validate" },
+  { source: "festival-installer", target: "model-festivallineup", type: "persists", label: "replace-on-reinstall by packID" },
+  // The hosted-pack data flow: one user-initiated GET of a .fpack from the Snappet Pages site
+  // (music-festivals/, sibling of the Kilter board-data/ — same user-controlled-host posture).
+  { source: "festival-installer", target: "kilter-catalog-download", type: "feeds", label: "same Pages host posture (music-festivals/ ↔ board-data/)" },
+  { source: "model-festivallineup", target: "festival-schedule", type: "feeds", label: "pack() decode-on-demand" },
+  { source: "festival-schedule", target: "festival-pack-domain", type: "uses", label: "FestivalSchedule rows · FestivalPlan.clashes" },
+  { source: "festival-schedule", target: "model-festivalstar", type: "persists", label: "★ toggle" },
+  { source: "festival-schedule", target: "model-festivalattendance", type: "persists", label: "I'm here / switch / end" },
+  { source: "festival-schedule", target: "festival-live", type: "present", label: "I'm here — <artist>" },
+  // The dance-session spine: the claim starts (or annotates) a WorkoutSession + live services.
+  { source: "festival-schedule", target: "model-workout", type: "persists", label: "dance WorkoutSession + per-set entities" },
+  { source: "festival-schedule", target: "livemetricscoordinator", type: "uses", label: "start/stop dance HR (never steals a running source)" },
+  { source: "festival-schedule", target: "liveactivitycontroller", type: "uses", label: "Lock Screen dance session" },
+  { source: "festival-live", target: "livemetricscoordinator", type: "streams", label: "live HR pill" },
+  { source: "festival-live", target: "sessionmediaservice", type: "uses", label: "recorded clips → session media" },
+  { source: "festival-live", target: "model-festivalattendance", type: "feeds", label: "hint intervals for prompt 03's matcher" },
 
   // ── Workout redesign E6: share a routine via QR (#186) ──
   // The reuse generalization: Kilter's share/scan now ride the shared protocol + renderer + scanner.

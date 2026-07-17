@@ -60,6 +60,10 @@ enum SnappetColor {
     /// Wardrobe — rose (the private AI stylist; the one hue family the ramp didn't use yet,
     /// clearly apart from journal-violet and pomodoro-tomato).
     static let wardrobe = dynamic(light: 0xC13A6F, dark: 0xE86B99)
+    /// Festival — "UV orchid" (the night surface; magenta-violet, sitting between journal-violet
+    /// and wardrobe-rose without touching either: more magenta than journal, more purple than
+    /// wardrobe — confirmed against the ramp at festival prompt 02, per the ideation proposal).
+    static let festival = dynamic(light: 0xB03AC2, dark: 0xD96BE8)
 
     // MARK: - Performance ramp (the SECOND color axis — Pulse Pro, workout-redesign E0)
     //
@@ -117,6 +121,7 @@ enum SnappetColor {
         case "budget":      return budget
         case "kilter":      return kilter
         case "wardrobe":    return wardrobe
+        case "festival":    return festival
         default:            return brand
         }
     }

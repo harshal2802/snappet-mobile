@@ -10,6 +10,7 @@ enum ModuleRegistry {
             WorkoutTrackerModule.module,
             KilterModule.module,
             WardrobeModule.module,
+            FestivalModule.module,
             PomodoroModule.module,
             HabitModule.module,
             JournalModule.module,
