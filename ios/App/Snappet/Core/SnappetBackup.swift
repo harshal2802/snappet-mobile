@@ -64,6 +64,7 @@ enum SnappetBackup {
         KilterPlan.self, KilterLitEvent.self,
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
         WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
+        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self,
     ]
 
     // MARK: - The envelope
@@ -108,6 +109,10 @@ enum SnappetBackup {
         var wardrobeItems: [WardrobeItemRow] = []
         var wearEvents: [WearEventRow] = []
         var wardrobeOutfits: [WardrobeOutfitRow] = []
+        // Festival — defaulted so pre-festival backup blobs still decode.
+        var festivalLineups: [FestivalLineupRow] = []
+        var festivalStars: [FestivalStarRow] = []
+        var festivalAttendance: [FestivalAttendanceRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -149,6 +154,9 @@ enum SnappetBackup {
             n += wardrobeItems.count
             n += wearEvents.count
             n += wardrobeOutfits.count
+            n += festivalLineups.count
+            n += festivalStars.count
+            n += festivalAttendance.count
             return n
         }
     }
@@ -227,6 +235,9 @@ enum SnappetBackup {
         file.wardrobeItems = try all(WardrobeItem.self).map(WardrobeItemRow.init).sorted(by: rowKey)
         file.wearEvents = try all(WearEvent.self).map(WearEventRow.init).sorted(by: rowKey)
         file.wardrobeOutfits = try all(WardrobeOutfit.self).map(WardrobeOutfitRow.init).sorted(by: rowKey)
+        file.festivalLineups = try all(FestivalLineup.self).map(FestivalLineupRow.init).sorted(by: rowKey)
+        file.festivalStars = try all(FestivalStar.self).map(FestivalStarRow.init).sorted(by: rowKey)
+        file.festivalAttendance = try all(FestivalAttendance.self).map(FestivalAttendanceRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -325,6 +336,12 @@ enum SnappetBackup {
             uniqued(file.wearEvents, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WardrobeOutfit.self)
             uniqued(file.wardrobeOutfits, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FestivalLineup.self)
+            uniqued(file.festivalLineups, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FestivalStar.self)
+            uniqued(file.festivalStars, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FestivalAttendance.self)
+            uniqued(file.festivalAttendance, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -1080,5 +1097,74 @@ extension SnappetBackup {
             FeedOutboxEntry(id: id, activityContentId: activityContentId, opRaw: opRaw, createdAt: createdAt, attempts: attempts)
         }
         var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(opRaw)|\(id.uuidString)" }
+    }
+
+    // MARK: Festival rows
+
+    struct FestivalLineupRow: BackupRow {
+        var id: UUID
+        var packID: String
+        var name: String
+        var location: String
+        var startDate: String
+        var endDate: String
+        var utcOffsetSeconds: Int
+        var stageCount: Int
+        var setCount: Int
+        var sourceLabel: String
+        var installedAt: Date
+        /// The verbatim `.fpack` bytes ride the backup (base64 in JSON — a lineup is tens of KB);
+        /// a restored festival without its schedule is not a restored festival.
+        var fpackData: Data
+
+        init(_ m: FestivalLineup) {
+            id = m.id; packID = m.packID; name = m.name; location = m.location
+            startDate = m.startDate; endDate = m.endDate; utcOffsetSeconds = m.utcOffsetSeconds
+            stageCount = m.stageCount; setCount = m.setCount; sourceLabel = m.sourceLabel
+            installedAt = m.installedAt; fpackData = m.fpackData
+        }
+        func make() -> FestivalLineup {
+            FestivalLineup(id: id, packID: packID, name: name, location: location,
+                           startDate: startDate, endDate: endDate,
+                           utcOffsetSeconds: utcOffsetSeconds,
+                           stageCount: stageCount, setCount: setCount,
+                           sourceLabel: sourceLabel, installedAt: installedAt,
+                           fpackData: fpackData)
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    struct FestivalStarRow: BackupRow {
+        var id: UUID
+        var packID: String
+        var setID: UUID
+        var createdAt: Date
+
+        init(_ m: FestivalStar) { id = m.id; packID = m.packID; setID = m.setID; createdAt = m.createdAt }
+        func make() -> FestivalStar {
+            FestivalStar(id: id, packID: packID, setID: setID, createdAt: createdAt)
+        }
+        var sortKey: String { "\(packID)|\(setID.uuidString)|\(id.uuidString)" }
+    }
+
+    struct FestivalAttendanceRow: BackupRow {
+        var id: UUID
+        var packID: String
+        var setID: UUID
+        var artist: String
+        var stage: String
+        var sessionID: UUID
+        var startedAt: Date
+        var endedAt: Date?
+
+        init(_ m: FestivalAttendance) {
+            id = m.id; packID = m.packID; setID = m.setID; artist = m.artist; stage = m.stage
+            sessionID = m.sessionID; startedAt = m.startedAt; endedAt = m.endedAt
+        }
+        func make() -> FestivalAttendance {
+            FestivalAttendance(id: id, packID: packID, setID: setID, artist: artist, stage: stage,
+                               sessionID: sessionID, startedAt: startedAt, endedAt: endedAt)
+        }
+        var sortKey: String { "\(startedAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
     }
 }

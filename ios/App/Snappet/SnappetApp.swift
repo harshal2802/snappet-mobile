@@ -31,7 +31,12 @@ struct SnappetApp: App {
         let args = ProcessInfo.processInfo.arguments
         let seedStudioDemo = args.contains(StudioDemoSeed.argument)
         let seedRecapClip = args.contains(RecapClipSeed.argument)
+        // `-uiTestSeedFestivalLineup` (festival prompt 02) likewise IMPLIES a fresh in-memory store,
+        // then installs a now-anchored synthetic lineup so the schedule/live-sheet UI tests run
+        // hermetically (no network, any wall-clock time).
+        let seedFestival = args.contains(FestivalLineupSeed.argument)
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip
+            || seedFestival
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
             // touch — clear the remembered "me" so expense tests are deterministic
@@ -106,6 +111,11 @@ struct SnappetApp: App {
         // Seeds the recap-clip E2E session into the fresh in-memory store before any UI appears.
         if seedRecapClip {
             RecapClipSeed.seedIfRequested(into: container.mainContext)
+        }
+        // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production impact.
+        // Installs the now-anchored synthetic festival lineup for the Festival UI tests.
+        if seedFestival {
+            FestivalLineupSeed.seedIfRequested(into: container.mainContext)
         }
     }
 
