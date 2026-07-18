@@ -40,6 +40,21 @@ struct ClipFeedClimbMeta: Sendable, Equatable {
     var angle: Int
 }
 
+/// Festival flavor for a media id (festival prompt 03) — snapshotted from `FestivalClipTag` +
+/// `FestivalLineup` rows (denormalized fields only; no pack inflation on the compose path).
+/// A TAGGED clip carries `setKey`/`artist`/`stage` and becomes part of an artist·stage post; a
+/// posted REEL from a festival session carries only `festivalName`/`dayLabel` (it keeps its own
+/// reel title) so it re-flavors as festival without joining a set carousel.
+struct ClipFeedFestivalMeta: Sendable, Equatable {
+    /// The set's content id (`FestivalSet.id.uuidString`) — the post's group key. `nil` for reels.
+    var setKey: String?
+    var artist: String?
+    var stage: String?
+    var festivalName: String
+    /// Rollover-aware poster weekday, e.g. "Saturday".
+    var dayLabel: String
+}
+
 /// One clip in a post: the media + a derived attempt/set label shown as the overlay chip.
 struct ClipFeedItem: Identifiable, Sendable, Equatable {
     var media: MediaInput
@@ -50,7 +65,7 @@ struct ClipFeedItem: Identifiable, Sendable, Equatable {
 
 /// One Clips-feed post = all of one exercise's / one climb's clips in a session.
 struct ClipFeedPost: Identifiable, Sendable, Equatable {
-    enum Discipline: String, Sendable, Equatable { case climbing, strength, general }
+    enum Discipline: String, Sendable, Equatable { case climbing, strength, festival, general }
 
     /// Stable across reloads: `groupKey@sessionID` (same climb in two sessions ⇒ two posts).
     var id: String
@@ -124,9 +139,13 @@ enum ClipFeedComposer {
     /// - `climbMeta`: `climbUUID` → name/grade/angle (from the session's `KilterLogEntry`s).
     /// - `exerciseName`: `SessionExercise.id` → display name (resolved from the bundled catalog by the
     ///   caller, off the pure path).
+    /// - `festivalMeta`: media id → festival flavor (from `FestivalClipTag` rows, festival prompt 03).
+    ///   Tagged clips leave the gym grouping and become per-set artist·stage posts; a festival
+    ///   session's posted reel keeps its reel post but reads as festival.
     static func posts(sessions: [SessionBundle],
                       climbMeta: [String: ClipFeedClimbMeta],
-                      exerciseName: (UUID) -> String) -> [ClipFeedPost] {
+                      exerciseName: (UUID) -> String,
+                      festivalMeta: [UUID: ClipFeedFestivalMeta] = [:]) -> [ClipFeedPost] {
         // R2/R4: collapse duplicate physical assets so one video shows ONCE across the whole feed, before
         // any grouping — covers a within-session dup (one asset on two sets) AND a cross-session dup (the
         // ±90s discovery-window overlap tagging one asset into two sessions).
@@ -138,14 +157,20 @@ enum ClipFeedComposer {
             // set/climb carousel: a reel is a finished cut of the session, not another attempt clip.
             let reels = bundle.clips.filter(\.isReel)
             for reel in reels {
+                // A reel posted from a festival session reads as FESTIVAL (accent, chip, subtitle)
+                // while staying a reel post — its title (e.g. "Fred again.. · Pyramid Stage") is
+                // what search matches (festival prompt 03).
+                let fest = festivalMeta[reel.id]
                 out.append(ClipFeedPost(
                     id: "reel-\(reel.id.uuidString)@\(meta.id.uuidString)",
                     sessionID: meta.id,
                     kind: meta.kind,
                     moduleID: meta.kind == .kilter ? "kilter" : "workout-log",
-                    discipline: meta.kind == .kilter ? .climbing : .strength,
+                    discipline: fest != nil ? .festival
+                        : meta.kind == .kilter ? .climbing : .strength,
                     title: reel.reelTitle ?? "Highlights",
-                    subtitle: subtitle(meta: meta, climb: nil),
+                    subtitle: fest.map { "\($0.festivalName) · \($0.dayLabel)" }
+                        ?? subtitle(meta: meta, climb: nil),
                     overlayDetail: "",
                     climbUUID: nil,
                     exerciseID: nil,
@@ -157,7 +182,41 @@ enum ClipFeedComposer {
                     clips: [ClipFeedItem(media: reel, attemptLabel: nil)],
                     aspect: postAspect([reel])))
             }
-            let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter { !$0.isReel })
+            // Festival-tagged clips (festival prompt 03) leave the exercise grouping and become
+            // per-SET artist·stage posts — the payoff surface of the whole tagging arc. Grouped by
+            // the set's content id so one set = one post per session, whatever entity each clip
+            // was recorded against.
+            let taggedBySet = Dictionary(
+                grouping: bundle.clips.filter { !$0.isReel && festivalMeta[$0.id]?.setKey != nil },
+                by: { festivalMeta[$0.id]!.setKey! })
+            for (setKey, members) in taggedBySet.sorted(by: { $0.key < $1.key }) {
+                let ordered = FeedMedia.ordered(members)
+                guard let first = ordered.first, let fest = festivalMeta[first.id],
+                      let artist = fest.artist, let stage = fest.stage else { continue }
+                let items = ordered.enumerated().map { i, m in
+                    ClipFeedItem(media: m, attemptLabel: ordered.count > 1 ? "Clip \(i + 1)" : nil)
+                }
+                out.append(ClipFeedPost(
+                    id: "fest-\(setKey)@\(meta.id.uuidString)",
+                    sessionID: meta.id,
+                    kind: meta.kind,
+                    moduleID: "workout-log",   // "Go to session" opens the dance session
+                    discipline: .festival,
+                    title: "\(artist) · \(stage)",
+                    subtitle: "\(fest.festivalName) · \(fest.dayLabel)",
+                    overlayDetail: "",
+                    climbUUID: nil,
+                    exerciseID: nil,
+                    captureAt: meta.startedAt.addingTimeInterval(max(0, first.offsetSec)),
+                    sessionStartedAt: meta.startedAt,
+                    sessionEndedAt: meta.endedAt,
+                    isFromAppleWatch: meta.isFromAppleWatch,
+                    clips: items,
+                    aspect: postAspect(ordered)))
+            }
+            let bundle = SessionBundle(meta: meta, clips: bundle.clips.filter {
+                !$0.isReel && festivalMeta[$0.id]?.setKey == nil
+            })
             guard !bundle.clips.isEmpty else { continue }
             // Resolve a group key → label for FeedMedia.groups (the post's header title).
             let nameFor: (String) -> String = { key in

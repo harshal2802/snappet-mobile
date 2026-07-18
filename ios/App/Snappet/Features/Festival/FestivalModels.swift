@@ -115,3 +115,55 @@ final class FestivalAttendance {
                                                    end: max(startedAt, endedAt ?? now)))
     }
 }
+
+/// One clip → set tag (festival prompt 03): `mediaID` points at the `SessionMedia` row (the clip),
+/// `setID` is the UUIDv5 content id (so tags survive lineup re-installs, like stars). Lives as its
+/// OWN row — not fields on the shared `SessionMedia` — so the festival feature never migrates a
+/// model every module touches. `artist`/`stage` are denormalized so the Clips feed titles posts
+/// without inflating a pack; `sourceRaw` mirrors `MediaAssignmentSource`'s sticky rule: the auto
+/// pass re-places `auto` rows and never touches `user` (an override / keep-all) or `none` ("not
+/// from a set" — resolved, excluded from every payoff surface).
+@Model
+final class FestivalClipTag {
+    var id: UUID = UUID()
+    var packID: String = ""
+    var setID: UUID = UUID()
+    var artist: String = ""
+    var stage: String = ""
+    /// FK to `SessionMedia.id` — the tagged clip.
+    var mediaID: UUID = UUID()
+    /// FK to the dance `WorkoutSession.id` the clip belongs to (the feed joins on it).
+    var sessionID: UUID = UUID()
+    /// The matcher's confidence at tag time (1.0 for a user decision).
+    var confidence: Double = 0
+    /// The caption key (`FestivalTagging.caption(for:)`) — "mid-set" / "between stages" / ….
+    var reason: String = ""
+    /// `FestivalTagging.TagSource.rawValue` — auto | user | none.
+    var sourceRaw: String = FestivalTagging.TagSource.auto.rawValue
+    var createdAt: Date = Date()
+
+    init(id: UUID = UUID(), packID: String, setID: UUID, artist: String, stage: String,
+         mediaID: UUID, sessionID: UUID, confidence: Double, reason: String,
+         source: FestivalTagging.TagSource, createdAt: Date = .now) {
+        self.id = id
+        self.packID = packID
+        self.setID = setID
+        self.artist = artist
+        self.stage = stage
+        self.mediaID = mediaID
+        self.sessionID = sessionID
+        self.confidence = confidence
+        self.reason = reason
+        self.sourceRaw = source.rawValue
+        self.createdAt = createdAt
+    }
+
+    /// Typed view over `sourceRaw` (defaults to `.auto` for any unknown raw).
+    var source: FestivalTagging.TagSource {
+        get { FestivalTagging.TagSource(rawValue: sourceRaw) ?? .auto }
+        set { sourceRaw = newValue.rawValue }
+    }
+
+    /// A tag that counts (auto or user-confirmed) — `none` rows are resolutions, not tags.
+    var isResolved: Bool { source != .none }
+}

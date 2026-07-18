@@ -12,9 +12,11 @@ import Foundation
 // searching/filtering costs nothing and registers no extra SwiftUI dependencies.
 struct ClipFeedFilter: Equatable, Sendable {
 
-    /// Climbs / Gym — maps to `ClipFeedPost.kind` (kilter | gym). One value ⇒ the chips are mutually
-    /// exclusive by construction (selecting one deselects the other), matching the Kilter browse chips.
-    enum Discipline: String, Sendable { case all, climbs, gym }
+    /// Climbs / Gym / 🎪 Festival — one value ⇒ the chips are mutually exclusive by construction
+    /// (selecting one deselects the other), matching the Kilter browse chips. Climbs/Gym map to
+    /// `ClipFeedPost.kind`; Festival maps to `post.discipline == .festival` (festival posts ride a
+    /// gym-kind dance session, so kind alone can't tell them apart — festival prompt 03).
+    enum Discipline: String, Sendable { case all, climbs, gym, festival }
 
     /// Videos / Photos — a post matches when ANY of its clips is that kind. Posts stay whole: the filter
     /// decides which POSTS show, never which clips within one, so the carousel, attempt labels, and
@@ -49,7 +51,10 @@ struct ClipFeedFilter: Equatable, Sendable {
             switch discipline {
             case .all: break
             case .climbs: if post.kind != .kilter { return false }
-            case .gym: if post.kind != .gym { return false }
+            // A festival post's session IS a gym-kind WorkoutSession — exclude it from Gym so the
+            // two chips partition cleanly (a dance set is not a workout post).
+            case .gym: if post.kind != .gym || post.discipline == .festival { return false }
+            case .festival: if post.discipline != .festival { return false }
             }
             switch kind {
             case .all: break

@@ -55,8 +55,9 @@ enum SnappetSchema {
         // Wardrobe (private AI stylist) — CloudKit-compatible shape, see WardrobeModels.swift
         WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
         // Festival (lineups, sets & your night) — installed `.fpack` lineups + stars + "I'm here"
-        // claims; capture rides WorkoutSession (festival prompt 02), see FestivalModels.swift
-        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self,
+        // claims + clip→set tags; capture rides WorkoutSession (festival prompts 02–03),
+        // see FestivalModels.swift
+        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
     ]
 }
 
