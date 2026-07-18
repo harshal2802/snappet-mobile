@@ -273,12 +273,13 @@ import XCTest
                       "the sheet says whether the code is in-the-code or an install link")
         snap("festival-share-plan")
 
-        // Switch to the whole lineup — still a code (the seed lineup is small).
-        app.buttons["festival.share.subjectPicker"].buttons["Whole lineup"].tap()
+        // Switch to the whole lineup — still a code (the seed lineup is small). Segmented-picker
+        // segments surface as top-level buttons by their label, not as children of the picker id.
+        app.buttons["Whole lineup"].tap()
         XCTAssertTrue(qr.waitForExistence(timeout: 4), "the whole seeded lineup also fits a code")
 
         // The Scan tab opens the receive scanner (camera permission handled inline — no real camera).
-        app.buttons["festival.share.modePicker"].buttons["Scan"].tap()
+        app.buttons["Scan"].tap()
         let scanner = app.otherElements["festival.scanner"]
         XCTAssertTrue(scanner.waitForExistence(timeout: 4)
                       || app.descendants(matching: .any)["festival.scanner"].waitForExistence(timeout: 4)
