@@ -414,7 +414,17 @@ const nodes = [
   { id: "model-festivalstar", label: "FestivalStar", type: "model", group: "festival", category: "lifestyle", platform: "ios",
     file: "ios/App/Snappet/Features/Festival/FestivalModels.swift", desc: "One ★ (packID + UUIDv5 set content-id + createdAt) — a row per star, not an array on the lineup, so prompt 04's reminder scheduling and the plan QR read plain rows and toggling never rewrites the big blob row. Stars survive pack re-installs (content identity).", tags: ["@model","plan","star","content-id"] },
   { id: "model-festivalattendance", label: "FestivalAttendance", type: "model", group: "festival", category: "lifestyle", platform: "ios",
-    file: "ios/App/Snappet/Features/Festival/FestivalModels.swift", desc: "One 'I'm here' stretch: setID + interval (endedAt nil while on the floor) + the WorkoutSession FK it rode + denormalized artist/stage. EXACTLY the matcher's FestivalSessionHint evidence — prompt 03 maps rows straight into hints (boost, never override).", tags: ["@model","hint","attendance","session-fk"] },
+    file: "ios/App/Snappet/Features/Festival/FestivalModels.swift", desc: "One 'I'm here' stretch: setID + interval (endedAt nil while on the floor) + the WorkoutSession FK it rode + denormalized artist/stage. EXACTLY the matcher's FestivalSessionHint evidence — prompt 03 maps rows straight into hints (boost, never override). Prompt 04 also re-reads it (artist + interval + session HR) as the recommender's HR-per-artist history.", tags: ["@model","hint","attendance","session-fk"] },
+  { id: "festival-foryou", label: "FestivalForYouView", type: "sheet", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalForYouView.swift", desc: "The 'For you' sheet (wireframe frame 8, festival prompt 04) — reached from the schedule's ✨ toolbar button. Ranked, clash-free suggestions to fill the gaps in your plan: a hero, ＋★ cards each with a reason line + glyph, a lead-time menu bound to @AppStorage(festival.reminderLeadMinutes), and a privacy card. The pure SetRecommender is the floor (orders the cards, writes each template reason); FestivalPlanIntelligence rewrites ONLY the reason line on-device when available. Adding a ★ reschedules reminders and drops the card. Its own NavigationStack; asks notification permission here (the deliberate surface).", tags: ["for-you","recommender","fm","stars","e7"] },
+  { id: "festival-recommender", label: "SetRecommender", type: "engine", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/SetRecommender.swift", desc: "The pure keystone of prompt 04: ranks the sets you HAVEN'T starred to fill your plan's gaps. Deterministic weighted sum — artist affinity (FestivalHRHistory) ≫ gap-fill (FestivalPlan.gaps) > same-stage/zero-walk > a base floor; hard-drops any candidate that overlaps a star, is already starred, or already started. Each Suggestion carries a machine-readable Reason (.heardBefore / .fillsGap / .sameStage / .freshPick) + a templateReason (the always-shown floor). No simulator; fully unit-tested.", tags: ["pure","ranking","deterministic","gaps","affinity"] },
+  { id: "festival-hr-history", label: "FestivalHRHistory / FestivalHistoryService", type: "engine", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalHRHistory.swift", desc: "Per-artist HR affinity (prompt 04) — max peak, danced-seconds-weighted avg, session count, most-recent festival, keyed by normalized artist name across every installed lineup. Pure aggregation + window slicing; the thin @MainActor FestivalHistoryService feeds it by slicing each FestivalAttendance stretch's HR out of the dance session's hrSeries. Re-derived from prompt 02's attendance (NOT prompt 03's FestivalSetStats) so it doesn't depend on the open branch.", tags: ["pure","hr","affinity","cross-festival","thin-edge"] },
+  { id: "festival-fm", label: "FestivalPlanIntelligence", type: "service", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalPlanIntelligence.swift", desc: "The optional on-device Apple-Intelligence sharpener for the For-You reasons (the E7 contract, mirroring WorkoutPlanIntelligence). reasonLines(for:) rewrites ONLY each suggestion's one-line why into warmer prose from the SAME facts; never reorders, never invents a number. #if canImport(FoundationModels) + @available(iOS 26.0) + SystemLanguageModel.isAvailable + a 6-s withTimeout; degrades silently to the recommender's template line (source .template). The ONLY festival file importing FoundationModels; on-device only, no network.", tags: ["foundation-models","e7","on-device","degrade","reason-lines"] },
+  { id: "festival-notifications", label: "FestivalNotifications", type: "service", group: "festival", category: "lifestyle", platform: "ios",
+    file: "ios/App/Snappet/Features/Festival/FestivalNotifications.swift", desc: "Local pre-set reminders + clash alerts (prompt 04, wireframe frame 7) — the ONLY festival file touching UserNotifications (the WorkoutNotifications posture). Schedules one reminder per future starred set from FestivalPlan.reminderDates (configurable lead, a cross-stage walk hint), reschedules idempotently on star toggle / reinstall (ids keyed packID+setID), and fires a lock-screen clash alert from FestivalPlan.clashes. On-device, no push, works in airplane mode; pure nonisolated copy/plan builders are unit-tested. Permission is asked only from the deliberate For-You surface.", tags: ["notifications","reminders","clash","on-device","lead-time"] },
 
   // ═════════════════ MODULE: Journal ═════════════════
   { id: "m-journal", label: "Journal", type: "module", group: "journal", category: "productivity", platform: "ios+android",
@@ -1677,6 +1687,20 @@ const links = [
   { source: "festival-live", target: "livemetricscoordinator", type: "streams", label: "live HR pill" },
   { source: "festival-live", target: "sessionmediaservice", type: "uses", label: "recorded clips → session media" },
   { source: "festival-live", target: "model-festivalattendance", type: "feeds", label: "hint intervals for prompt 03's matcher" },
+
+  // ---- Festival plan & smart nudges (festival prompt 04) ----
+  { source: "festival-schedule", target: "festival-foryou", type: "present", label: "✨ For you" },
+  { source: "festival-schedule", target: "festival-notifications", type: "uses", label: "reschedule reminders on ★ toggle / clash alert" },
+  { source: "festival-notifications", target: "festival-pack-domain", type: "uses", label: "FestivalPlan.reminderDates / .clashes" },
+  { source: "festival-foryou", target: "festival-recommender", type: "uses", label: "ranked suggestions" },
+  { source: "festival-foryou", target: "festival-fm", type: "uses", label: "rewrite reason lines (degrades to template)" },
+  { source: "festival-foryou", target: "festival-notifications", type: "uses", label: "lead time + reschedule on ＋★" },
+  { source: "festival-foryou", target: "model-festivalstar", type: "persists", label: "＋★ from a suggestion" },
+  { source: "festival-recommender", target: "festival-hr-history", type: "uses", label: "HR-per-artist affinity" },
+  { source: "festival-recommender", target: "festival-pack-domain", type: "uses", label: "FestivalPlan.gaps + clash avoidance" },
+  { source: "festival-hr-history", target: "model-festivalattendance", type: "feeds", label: "artist + interval → HR slice" },
+  { source: "festival-hr-history", target: "model-workout", type: "uses", label: "session hrSeries slice" },
+  { source: "festival-fm", target: "wt-plan-intelligence", type: "feeds", label: "same E7 on-device FM seam" },
 
   // ── Workout redesign E6: share a routine via QR (#186) ──
   // The reuse generalization: Kilter's share/scan now ride the shared protocol + renderer + scanner.

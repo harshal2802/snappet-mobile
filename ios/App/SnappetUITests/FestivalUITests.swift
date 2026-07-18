@@ -118,9 +118,61 @@ import XCTest
         XCTAssertTrue(imHere.label.contains("I'm here"),
                       "after ending, the claim CTA should reset from On the floor")
     }
+
+    // MARK: - Flow C · plan & smart nudges (frames 7–8)
+
+    func testForYouSuggestsFromHistoryAndStarringAddsToThePlan() {
+        // The plan seed installs the lineup + a pre-star + a past dance session for "Overtone",
+        // who plays this festival — so For-You surfaces Overtone with an HR-history reason.
+        let app = launch([FestivalSeed.planArgument])
+
+        // The For-You sheet asks for notification permission on open — dismiss the system dialog.
+        addUIInterruptionMonitor(withDescription: "Notifications permission") { alert -> Bool in
+            for label in ["Allow", "Don't Allow", "OK", "Continue"] {
+                let button = alert.buttons[label]
+                if button.exists { button.tap(); return true }
+            }
+            return false
+        }
+
+        openFestival(app)
+        let lineup = app.buttons["festival.lineup.snappet-test-festival"]
+        XCTAssertTrue(lineup.waitForExistence(timeout: 6), "the seeded lineup should list")
+        lineup.tap()
+
+        // Open For You from the schedule's ✨ toolbar button.
+        let forYou = app.buttons["festival.forYou"]
+        XCTAssertTrue(forYou.waitForExistence(timeout: 6), "the schedule should offer a For-You button")
+        forYou.tap()
+        // The sheet asks for notification permission on open; the interruption monitor above
+        // dismisses the springboard dialog on the next real tap (add / done) — no stray app.tap().
+
+        // The returning artist (Overtone) is suggested, with the HR-history reason line. The ＋★
+        // button carries its own id (the container is left id-less so it isn't flattened).
+        let add = app.buttons["festival.forYou.add.Overtone"]
+        XCTAssertTrue(add.waitForExistence(timeout: 8),
+                      "the For-You sheet should open and suggest an artist from your HR history")
+        let reason = app.staticTexts["festival.forYou.reason.Overtone"]
+        XCTAssertTrue(reason.waitForExistence(timeout: 4)
+                      && reason.label.contains("peaked"),
+                      "the reason line should cite your heart-rate history")
+        snap("festival-foryou")
+
+        // Add it — the card leaves (Overtone is now starred, so it's no longer a suggestion).
+        add.tap()
+        XCTAssertFalse(add.waitForExistence(timeout: 3),
+                       "adding a suggestion should drop it from the list")
+
+        // The lead-time control is present and changeable.
+        let lead = app.buttons["festival.forYou.lead"]
+        XCTAssertTrue(lead.waitForExistence(timeout: 4), "a lead-time control should be offered")
+
+        app.buttons["festival.forYou.done"].tap()
+    }
 }
 
-/// Mirror of the app-side seed argument (the UI-test target can't import the app module's enum).
+/// Mirror of the app-side seed arguments (the UI-test target can't import the app module's enums).
 private enum FestivalSeed {
     static let argument = "-uiTestSeedFestivalLineup"
+    static let planArgument = "-uiTestSeedFestivalPlan"
 }

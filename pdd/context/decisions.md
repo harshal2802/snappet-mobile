@@ -4,6 +4,58 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-17] Festival plan & smart nudges — recommender signals, HR re-derivation, the FM reason seam (festival prompt 04)
+
+**Decision** (implementing `pdd/prompts/features/festival/04-festival-plan-and-nudges.md`; frames 7–8
+of the approved wireframes). The ★ plan grows local reminders + clash alerts, a pure `SetRecommender`,
+and a For-You sheet with FM-written reason lines. Branched off `main` (P1+P2); P3 (tagging) is the
+open PR #294 and NOT depended on. Non-obvious calls:
+
+- **HR-per-artist history is RE-DERIVED from prompt 02, not from prompt 03.** P3's `FestivalSetStats`
+  computes per-set HR but isn't on `main`; `FestivalAttendance` (artist + interval + dance-session FK)
+  is all the recommender needs. The thin `FestivalHistoryService` slices each stretch's HR out of the
+  session `hrSeries` and feeds the pure `FestivalHRHistory`, which aggregates by **normalized artist
+  name across every installed lineup** — so a set you danced hard to at one festival informs a
+  suggestion at another. Deliberately independent of P3 to avoid coupling to an open branch.
+- **`SetRecommender` is a deterministic weighted sum, reason = the strongest signal.** Weights:
+  artist affinity (≥1.0, scaled by peak toward a 200-BPM ceiling) ≫ gap-fill (+0.6) > same-stage /
+  zero-walk (+0.25) > a `basePick` floor (0.15) so there's always something to offer. A candidate is
+  **hard-dropped** if it overlaps a star (never suggest a clash), if it's already starred, or if it
+  already started. Ties break by start → artist → id. The `Reason` is data (`.heardBefore` /
+  `.fillsGap` / `.sameStage` / `.freshPick`) so the template line and the FM rewrite read the SAME
+  facts.
+- **Walk time is modelled as same-stage / cross-stage, not metres** — there's no geo in the `.fpack`.
+  A cross-stage prior star adds an "~8-min walk from <stage>" hint to the reminder and costs a nominal
+  bonus in the ranking. Real walk distances are a data leg (a future pack field or on-device map),
+  stated owed.
+- **The FM seam mirrors `WorkoutPlanIntelligence` exactly** (the locked E7 pattern):
+  `FestivalPlanIntelligence.reasonLines(for:)` rewrites ONLY each reason string via a `@Generable`
+  one-field output, `#if canImport(FoundationModels)` + `@available(iOS 26.0, *)` +
+  `SystemLanguageModel.default.isAvailable`, a 6-s `withTimeout`, and silent degradation to the
+  recommender's template (with a `.template` source flag). It never touches order or facts — a
+  runaway/empty rewrite falls back to the template. On the simulator (no Apple Intelligence) the
+  degrade path is the tested one.
+- **No new persistent model.** The lead time is a plain `@AppStorage("festival.reminderLeadMinutes")`
+  preference, not a SwiftData row — so NO `SnappetSchema`/`SnappetBackup` change and the backup
+  tripwire stays quiet. Reminders are rescheduled idempotently on the schedule `.task`, on every star
+  toggle, and from For-You; identifiers are keyed `packID`+`setID` so a toggle/reinstall replaces
+  rather than stacks.
+- **Notification permission is asked from a DELIBERATE surface only** (the For-You sheet's `.task`),
+  never on schedule appearance or a star toggle — so the existing prompt-02 schedule UI tests (which
+  rapidly star/unstar) never hit a system dialog. `reschedule` uses `UNUserNotificationCenter.add`,
+  which doesn't prompt, so stars schedule silently for an unauthorized user who authorizes later.
+- **Clash is surfaced to the LOCK SCREEN, not as a blocking in-app modal.** A modal `.alert` on star
+  would interrupt the existing clash test's rapid taps; the wireframe (frame 7) shows the clash as a
+  lock-screen notification anyway, and the ⚠︎ row marks (prompt 02) remain the in-app indicator. So
+  `postClashAlert` fires the notification and the schedule keeps its marks.
+- **The `@MainActor` notification class exposes its pure helpers `nonisolated`** (`reminderID`,
+  `reminderPlan`, `reminderContent`, `clashContent`, `leadLabel`, `stageWalkMinutes`) so they're
+  callable from the pure planning function and the tests without actor hops.
+- Owed device legs: real reminder delivery timing in the field, on-device FM reason-line output, and
+  watch-HR-fed recommendations during a live set. (The `set`-parses-as-a-setter and container-id
+  gotchas from prompt 01/03 both bit again and were handled — `self.set.id`, ids on the tappable
+  children.)
+
 ## [2026-07-16] Festival shell + hosted install — accent, session ownership, the seed-offset trick (festival prompt 02)
 
 **Decision** (implementing `pdd/prompts/features/festival/02-festival-shell-and-install.md`; frames

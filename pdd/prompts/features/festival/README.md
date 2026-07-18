@@ -1,6 +1,6 @@
 # Festival — dance + video tagging for music-festival lineups
 
-**Created**: 2026-07-16 · **Status**: 01 merged (#292) · 02 implemented (shell + hosted install)
+**Created**: 2026-07-16 · **Status**: 01 merged (#292) · 02 merged (#293) · 03 open (#294, tagging + Clips) · 04 implemented (plan & smart nudges)
 **Wireframes** (user-approved end state, 14 frames): `docs/ux-research/festival/wireframes.html`
 **Decision record**: `pdd/context/decisions.md` § 2026-07-16
 
@@ -32,7 +32,7 @@ capture rides the existing workout spine — the **Kilter shape, not the Wardrob
 | 01 | `01-festival-domain-and-matcher.md` | Pure domain: `.fpack` wire codec + validator, set/clash math, `FestivalSetMatcher` with confidence. No UI, no SwiftData. | **merged #292** |
 | 02 | `02-festival-shell-and-install.md` | `AppModule` + UV-orchid accent, catalog install (empty state / browse / hosted provider), SwiftData models + backup Rows, day schedule, "I'm here" live sheet on the dance-session spine. Companion PR on the web-app repo: `music-festivals/` packs page. | **implemented** |
 | 03 | tagging + Clips payoff | Matcher wired to session media, tag-review timeline sheet, artist·stage Clips posts + 🎪 chip, set detail (HR curve, peak-at-drop), set/festival reels via shared `ReelView`, recap. | queued |
-| 04 | plan & smart nudges | ★ plan, `UNUserNotificationCenter` reminders + clash alerts, pure `SetRecommender`, For-You sheet with FM reason lines. | queued |
+| 04 | `04-festival-plan-and-nudges.md` | ★ plan, `UNUserNotificationCenter` reminders + clash alerts, pure `SetRecommender`, For-You sheet with FM reason lines. | **implemented** |
 | 05 | QR lineup sharing | `SharedLineup: SnappetShareable` (deflate blob ⇄ install-link fallback, `SharedRoutine` pattern), share sheet, scanner + `snappet://festival/…` routes. | queued |
 | 06 | poster scan (optional) | Lineup-poster photo → on-device FM structuring → draft pack. | later |
 
