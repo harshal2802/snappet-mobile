@@ -155,4 +155,46 @@ final class ClipFeedFilterTests: XCTestCase {
         f.discipline = .climbs
         XCTAssertEqual(ids(f.apply(sample + [kilterReel, gymReel]) { _ in true }), ["kr"])
     }
+
+    // MARK: - 🎪 Festival chip (festival prompt 03)
+
+    /// A festival post rides a GYM-kind dance session with `discipline == .festival`.
+    private func festivalPost(id: String, title: String, isReel: Bool = false) -> ClipFeedPost {
+        var p = post(id: id, kind: .gym, title: title, subtitle: "Glastonbury 2026 · Saturday")
+        p.discipline = .festival
+        p.isReel = isReel
+        return p
+    }
+
+    func testFestivalChipShowsOnlyFestivalPosts() {
+        let fred = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
+        var f = ClipFeedFilter()
+        f.discipline = .festival
+        XCTAssertEqual(ids(f.apply(sample + [fred]) { _ in true }), ["f1"])
+    }
+
+    func testGymChipExcludesFestivalPosts() {
+        // The dance session IS a gym-kind WorkoutSession — but a dance set is not a workout post.
+        let fred = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
+        var f = ClipFeedFilter()
+        f.discipline = .gym
+        XCTAssertEqual(ids(f.apply(sample + [fred]) { _ in true }), ["c", "d"])
+    }
+
+    func testArtistSearchMatchesFestivalPostsWithZeroNewCode() {
+        // The whole point of artist·stage titles: the EXISTING title search finds "fred".
+        let fred = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
+        var f = ClipFeedFilter()
+        f.query = "fred"
+        XCTAssertEqual(ids(f.apply(sample + [fred]) { _ in true }), ["f1"])
+    }
+
+    func testFestivalChipStacksWithReels() {
+        let clipPost = festivalPost(id: "f1", title: "Fred again.. · Pyramid Stage")
+        let reelPost = festivalPost(id: "fr", title: "Fred again.. · Pyramid Stage", isReel: true)
+        var f = ClipFeedFilter()
+        f.discipline = .festival
+        f.reelsOnly = true
+        XCTAssertEqual(ids(f.apply(sample + [clipPost, reelPost]) { _ in true }), ["fr"])
+    }
 }

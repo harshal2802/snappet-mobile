@@ -219,7 +219,9 @@ struct FestivalStage: Sendable, Equatable, Codable {
 /// One set: an artist on a stage for an interval — the unit everything tags against. `id` and `stage`
 /// are NOT on the wire (`sets (artist, start, end)`); both are stamped after decode, `id` as a UUIDv5
 /// over normalized content so identity survives re-download and sharing.
-struct FestivalSet: Sendable, Equatable, Codable, Identifiable {
+// `Hashable` (additive, prompt 03) so a set can be a `NavigationLink` value — the schedule/recap
+// push `FestivalSetDetailView` by value; the wire form is untouched (id/stage stay off the wire).
+struct FestivalSet: Sendable, Equatable, Hashable, Codable, Identifiable {
     var id = UUID()
     var artist: String
     var start: Date

@@ -4,6 +4,64 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-17] Festival tagging + Clips payoff — tag rows, sticky provenance, festival posts (festival prompt 03)
+
+**Decision** (implementing `pdd/prompts/features/festival/03-festival-tagging-and-clips.md`; frames
+6 · 9 · 10 · 11). The matcher gets clips: `FestivalTagSync` adapts dance-session media into
+`ClipStamp`s (+ silent Camera-app discovery), attendance rows ride in as hints, and
+`FestivalTagging.plan` writes `FestivalClipTag` rows — auto at/above `autoTagThreshold`, a review
+queue below it (frame 9's timeline sheet). Payoff: per-set artist·stage Clips posts + ONE 🎪 chip,
+set detail with the `HRWindowSlicer` set-window curve, set/festival reels through the shared
+`ReelView`, and the ♥-ranked recap.
+
+Non-obvious calls:
+- **Tags are their own `@Model` rows, not fields on `SessionMedia`.** `FestivalClipTag` (packID +
+  content `setID` + `mediaID`/`sessionID` FKs + confidence + caption-key reason + provenance)
+  keeps the festival from migrating a model every module touches, survives lineup re-installs
+  (content ids), and deletes with its pack. **Rules out** growing the shared media row for one
+  module's concern.
+- **Provenance is the `MediaAssignmentSource` sticky rule, with a third state**: `auto` rows are
+  re-placed by every pass; `user` (Change › / keep-all) is forever; `none` = "not from a set" — a
+  RESOLUTION, not a snooze (the clip never re-queues, and is excluded from every payoff surface).
+  An auto row whose evidence weakens (or whose media was deleted) is removed by the pass — tags
+  never outlive their evidence. Apply is **write-only-on-change**: an idempotent pass must not
+  dirty the store (every `@Query` on tags re-renders on a save).
+- **Below-threshold ≠ homework, and `outsideSchedule` isn't even a question**: gap/two-live clips
+  queue with the machine reason as the caption; campsite footage (no set, `.outsideSchedule`) is
+  neither tagged nor queued. Skipping the sheet keeps every auto tag.
+- **Festival posts are a composer PARTITION, not a new feed**: `ClipFeedComposer.posts` takes an
+  optional `festivalMeta` (denormalized from tag+lineup rows — no pack inflation on the compose
+  path); tagged clips leave the exercise grouping into per-set posts (`discipline: .festival`,
+  titled "Artist · Stage" so the EXISTING title search matches artists free; `moduleID` stays
+  `workout-log` so Go-to-session opens the dance session), and a festival session's posted reel
+  re-flavors as festival while staying a reel. Empty meta composes byte-identically — zero change
+  to the shipped feed. The 🎪 chip matches `discipline == .festival`; the Gym chip now EXCLUDES
+  festival posts (a dance set is not a workout post, even though its session is gym-kind).
+- **Day labels derive from capture instants, rollover-aware** (`posterWeekday`: shift −6 h, then
+  weekday in the pack's offset) — a 01:00 clip labels as the night before without decoding a pack.
+- **Programmatic pushes are value-typed routes** (`FestivalRecapRoute`/`FestivalSetReelRoute`/
+  `FestivalReelRoute`, the `WeeklyReelRoute` pattern): a `navigationDestination(isPresented:)` on
+  the schedule — re-invalidated by its 30 s `TimelineView` + @Query writes — silently failed to
+  push under XCUITest ("timed out evaluating UI query"). **Rules out** isPresented destinations on
+  often-invalidated views. Related XCUITest lesson: an accessibility id on a row INSIDE a
+  `NavigationLink` label surfaces twice (link + label) and breaks single-match queries — put the
+  id on the link.
+- **Set-window HR clamps to the session's own coverage** before `HRWindowSlicer.slice`, so a set
+  the user left early charts what was recorded — not 40 minutes of edge-clamped flat line. The
+  chart session = longest attendance overlap, falling back to longest coverage overlap (a
+  tagged-but-never-claimed set still charts).
+- **The festival reel reuses `WeeklyHighlights.stitchedWorkout` verbatim** (sessions stitched onto
+  one timeline, `trimToHighlights`, attended-set windows boosted) — **rules out** a second
+  stitching implementation. A set reel is `ReelSource.festivalSet` with the set window as the one
+  boost window; its posted title IS "Artist · Stage".
+- **`-uiTestSeedFestivalNight`** layers a finished dance session + three sentinel clips (mid-set /
+  gap / two-stages-live — the lineup seed grew an earlier overlapping pair, Static Bloom × Coral
+  Circuit, to make two-live reachable in the past) over the prompt-02 seed, writing tags through
+  the REAL pure pipeline at seed time so Clips shows festival posts on first launch. Swept in
+  `FestivalNightSeedTests`.
+- Owed device legs: Camera-app round-trip discovery during a real set (Photos-authorized phone),
+  set/festival reel export + Post-to-Clips on device, and the review sheet over real thumbnails.
+
 ## [2026-07-16] Festival shell + hosted install — accent, session ownership, the seed-offset trick (festival prompt 02)
 
 **Decision** (implementing `pdd/prompts/features/festival/02-festival-shell-and-install.md`; frames

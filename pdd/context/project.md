@@ -191,16 +191,21 @@ flat-lay board, wear log/cost-per-wear, suite-backup coverage. First **Lifestyle
 Device legs owed: real-garment capture + Apple-Intelligence pass. Wireframes:
 `docs/ux-research/wardrobe/`.
 
-🟢 **Festival mini-app (festival prompts 01–02, 2026-07-16)** — "lineups, sets & your night": the
+🟢 **Festival mini-app (festival prompts 01–03, 2026-07-16/17)** — "lineups, sets & your night": the
 module owns the lineup domain (festivals → days → stages → sets) as hosted `.fpack` packs from
 `music-festivals/` on the Snappet Pages site (the Kilter catalog shape — provider→validator→store,
 one user-initiated GET, offline all weekend), while being at a set rides a **dance-discipline
 `WorkoutSession`** (watch HR, Live Activity, recorded clips attach as session media). Shipped: pure
-domain + `FestivalSetMatcher` (01, #292), then the shell — App Library tile (UV-orchid accent,
+domain + `FestivalSetMatcher` (01, #292); the shell — App Library tile (UV-orchid accent,
 second Lifestyle resident), catalog empty state/browse/installer, day schedule with ★ plan +
-clash marks + the NOW set, and the "I'm here" live sheet (02). Queued: tagging + Clips payoff
-(03), plan notifications + recommender (04), QR share (05). Device/deploy legs owed: hosted fetch
-once the web PR deploys, watch-HR at a real set. Wireframes: `docs/ux-research/festival/`.
+clash marks + the NOW set, and the "I'm here" live sheet (02, #293); then the payoff (03) —
+`FestivalTagSync` auto-tags every clip to its set (attendance stretches as hints, silent
+Camera-app discovery), the tag-review timeline sheet ("Needs you" with machine reasons, keep-all),
+artist·stage Clips posts behind the one 🎪 chip, set detail (set-window HR curve + peak-at-the-drop
+callout), set/festival reels through the SHARED `ReelView`, and the recap ranking artists by your
+peak HR. Queued: plan notifications + recommender (04), QR share (05). Device/deploy legs owed:
+hosted fetch once the web PR deploys, watch-HR at a real set, Camera-app round-trip + reel export
+on device. Wireframes: `docs/ux-research/festival/`.
 
 🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
 by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,

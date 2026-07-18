@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 34, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 35, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -501,6 +501,12 @@ final class SnappetBackupTests: XCTestCase {
             artist: festivalSet.artist, stage: festivalSet.stage, sessionID: UUID(),
             startedAt: Date(timeIntervalSince1970: 1_700_011_200),
             endedAt: Date(timeIntervalSince1970: 1_700_011_300)))
+        context.insert(FestivalClipTag(
+            packID: festivalPack.id, setID: festivalSet.id,
+            artist: festivalSet.artist, stage: festivalSet.stage,
+            mediaID: UUID(), sessionID: UUID(),
+            confidence: 0.97, reason: "mid-set", source: .auto,
+            createdAt: Date(timeIntervalSince1970: 1_700_011_400)))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a

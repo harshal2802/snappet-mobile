@@ -34,7 +34,10 @@ struct SnappetApp: App {
         // `-uiTestSeedFestivalLineup` (festival prompt 02) likewise IMPLIES a fresh in-memory store,
         // then installs a now-anchored synthetic lineup so the schedule/live-sheet UI tests run
         // hermetically (no network, any wall-clock time).
-        let seedFestival = args.contains(FestivalLineupSeed.argument)
+        // `-uiTestSeedFestivalNight` (festival prompt 03) IMPLIES the lineup seed: it layers a
+        // finished dance session + clips + tags over the same now-anchored pack.
+        let seedFestivalNight = args.contains(FestivalNightSeed.argument)
+        let seedFestival = args.contains(FestivalLineupSeed.argument) || seedFestivalNight
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip
             || seedFestival
         if freshStore {
@@ -116,6 +119,11 @@ struct SnappetApp: App {
         // Installs the now-anchored synthetic festival lineup for the Festival UI tests.
         if seedFestival {
             FestivalLineupSeed.seedIfRequested(into: container.mainContext)
+        }
+        // Layers the finished night (session + clips + tags via the real pure pipeline) over the
+        // seeded lineup — strictly arg-guarded, zero production impact (festival prompt 03).
+        if seedFestivalNight {
+            FestivalNightSeed.seedIfRequested(into: container.mainContext)
         }
     }
 

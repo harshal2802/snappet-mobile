@@ -94,6 +94,9 @@ struct FestivalRootView: View {
             let attendance = (try? context.fetch(FetchDescriptor<FestivalAttendance>(
                 predicate: #Predicate { $0.packID == packID }))) ?? []
             attendance.forEach { context.delete($0) }
+            let tags = (try? context.fetch(FetchDescriptor<FestivalClipTag>(
+                predicate: #Predicate { $0.packID == packID }))) ?? []
+            tags.forEach { context.delete($0) }
             context.delete(lineup)
             core.log(module: FestivalModule.id, action: "remove",
                      summary: "Removed lineup: \(lineup.name)")
