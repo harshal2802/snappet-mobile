@@ -18,12 +18,15 @@ struct FestivalRecapView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(SuiteRouter.self) private var router
 
     @Query private var attendance: [FestivalAttendance]
     @Query private var tags: [FestivalClipTag]
+    @Query private var stars: [FestivalStar]
 
     @State private var sessions: [FestivalSessionSnapshot] = []
     @State private var clipsBySession: [UUID: [SessionHighlightInput.Clip]] = [:]
+    @State private var showingShare = false
 
     init(lineup: FestivalLineup, pack: FestivalPack) {
         self.lineup = lineup
@@ -31,6 +34,7 @@ struct FestivalRecapView: View {
         let packID = lineup.packID
         _attendance = Query(filter: #Predicate<FestivalAttendance> { $0.packID == packID })
         _tags = Query(filter: #Predicate<FestivalClipTag> { $0.packID == packID })
+        _stars = Query(filter: #Predicate<FestivalStar> { $0.packID == packID })
     }
 
     private var built: (hero: FestivalRecap.Hero, artists: [FestivalRecap.ArtistRow]) {
@@ -70,6 +74,23 @@ struct FestivalRecapView: View {
         }
         .navigationTitle("Recap")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Prompt 05: "Share my plan" from the recap (wireframe frame 11's Share).
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingShare = true } label: {
+                    Label("Share my plan", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("festival.recap.share")
+            }
+        }
+        .sheet(isPresented: $showingShare) {
+            FestivalShareView(pack: pack, lineupName: lineup.name,
+                              starredSetIDs: Set(stars.map(\.setID)), start: .plan,
+                              onScan: { shared in
+                                  router.pendingFestivalImport = shared
+                                  router.open(module: FestivalModule.id)
+                              })
+        }
         .task { await load() }
         .navigationDestination(for: FestivalReelRoute.self) { _ in
             if let source = ReelSource.festival(named: lineup.name, packID: lineup.packID,

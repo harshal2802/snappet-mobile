@@ -4,6 +4,54 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-18] Festival QR lineup sharing — a plan IS a pack, one type/two wire forms, never-silent import (festival prompt 05)
+
+**Decision** (implementing `pdd/prompts/features/festival/05-festival-qr-sharing.md`; wireframe
+frames 12–13). QR sharing rides the `SharedRoutine`/`SnappetShareable` stack end-to-end — new pure
+`SharedLineup` + a share sheet + an import-confirm + a `snappet://festival/…` route — with zero change
+to the `.fpack` wire format, the matcher, or the existing models.
+
+Non-obvious calls:
+- **A shared plan IS a `FestivalPack` with its set list filtered to the stars** (`SharedLineup.subsetPack`),
+  re-stamped under the SAME pack id. Because set ids are UUIDv5 content identity (prompt 01), the
+  subset's kept set ids equal their ids in the full pack — so *applying* a scanned plan just inserts
+  `FestivalStar` rows for those ids and they line up on the receiver's installed lineup byte-for-byte.
+  This is why there's no new identity/plan wire scheme: the pack machinery already carries everything.
+- **One type, two wire forms.** `SharedLineup.Content` is either `.payload(FestivalPack)`
+  (`snappet://festival/v1/<blob>`, `base64url(deflate(terse JSON))` via the SHARED `ZlibCodec`/`Base64URL`
+  — reused, not a second compression story) or `.installLink(packID:host:)`
+  (`snappet://festival/install/<packID>?h=&t=&k=`). Both conform to `SnappetShareable`; the route table
+  gets ONE `.festivalLineup` case that decodes either. The payload carries the pack via a plain
+  `JSONEncoder` (default `Date`→`Double`, more compact than the `.fpack`'s ISO strings) then re-stamps
+  content ids on decode — the exact `FestivalPack.decode` pattern, since the synthesized `init(from:)`
+  can't call the content-stamping init.
+- **The payload-vs-link cliff is `SharedRoutine`'s, cap raised to 1400** (vs routine's 900): the
+  wireframe wants a ~dozen-set day plan (~1.1 KB) IN the code. `scannableForm()` is the pure decision —
+  keep the offline payload QR when it fits, else hand back the tiny install-link QR pointing at
+  `festivalDefaultCatalogHost`. The install link fetches `<host>/<packID>.fpack` (the Pages builder's
+  `<id>.fpack` naming convention) through the existing `FestivalLineupInstaller`; a file-imported
+  lineup with no hosted origin can still share as a payload if small, else via the `ShareLink`
+  (AirDrop). ⚠️ The convention assumption: a hosted lineup's file is named for its pack id.
+- **Never silent, one pure receive brain.** `SharedLineup.receiveAction(installedPackIDs:)` → an enum
+  (`installLineup` / `applyPlan` / `installPlan` / `fetchInstall`) the import-confirm renders and the
+  CTA executes. A whole lineup reuses the installer's replace-by-`packID` (revisions arrive that way;
+  stars survive); a plan onto a lineup you HAVE just stars its sets (idempotent — a re-scan can't
+  double-star); a plan for a lineup you LACK installs the subset then stars it. `installer.install(pack:sourceLabel:into:)`
+  is a new synchronous sibling for the decoded-payload path (no fetch/re-decode).
+- **In-app scans route through the SAME shell one-shot as an external `onOpenURL`.** The share sheet's
+  Scan tab (and the root's "Scan a friend's QR") hand the decode to a closure that sets
+  `SuiteRouter.pendingFestivalImport` + `open(module: "festival")`, so `FestivalRootView` is the ONE
+  place that consumes the intent into the import-confirm (`initial: true`, the `pendingKilterClimb`
+  pattern) — no second import path to drift.
+- **A discarded `@discardableResult` async call in a `Task {}` tripped Swift 6 `Sendable`.** `install(using:)`
+  returns a non-`Sendable` `FestivalLineup?`; discarding it as a bare statement in the Task made the
+  compiler treat it as crossing the isolation boundary. Binding the result (`if let lineup = await …`,
+  the browse-view precedent) keeps it on the inherited MainActor and compiles clean — recorded so the
+  next Task-in-a-View author doesn't fight the same phantom.
+- Owed legs: a real phone-to-phone camera scan (the sim UI test drives the share/route chrome, not the
+  camera) and an install-link fetch against the LIVE `music-festivals/` host once the web PR deploys.
+  Android NOT ported.
+
 ## [2026-07-17] Festival plan & smart nudges — recommender signals, HR re-derivation, the FM reason seam (festival prompt 04)
 
 **Decision** (implementing `pdd/prompts/features/festival/04-festival-plan-and-nudges.md`; frames 7–8

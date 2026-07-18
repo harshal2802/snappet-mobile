@@ -10,6 +10,8 @@ struct FestivalEmptyStateView: View {
     let installer: FestivalLineupInstaller
     /// Presents the hosted-catalog browse sheet (owned by the root, which also hosts it non-empty).
     var onBrowse: () -> Void
+    /// Presents the receive-only scanner (festival prompt 05) — a friend's shared plan / lineup QR.
+    var onScan: () -> Void = {}
 
     @Environment(\.modelContext) private var context
     @State private var showingImporter = false
@@ -49,6 +51,14 @@ struct FestivalEmptyStateView: View {
                     .buttonStyle(.bordered)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.catalog.import")
+
+                    Button { onScan() } label: {
+                        Label("Scan a friend's QR", systemImage: "qrcode.viewfinder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(installer.isWorking)
+                    .accessibilityIdentifier("festival.scan")
                 }
 
                 privacyCard

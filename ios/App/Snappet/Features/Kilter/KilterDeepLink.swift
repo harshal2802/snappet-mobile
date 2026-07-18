@@ -59,11 +59,17 @@ enum SnappetDeepLink: Equatable, Sendable {
     /// The shell routes to the gym tracker + a one-shot `pendingRoutineImport` (the `pendingKilterClimb`
     /// pattern), which the tracker root consumes into an import-confirm preview (NEW local UUID).
     case routine(SharedRoutine)
+    /// `snappet://festival/v1/<blob>` (a payload lineup/plan) or `snappet://festival/install/<packID>`
+    /// (the install-link fallback) — a shared festival lineup (festival prompt 05, the `.routine`
+    /// pattern). The shell routes to the Festival mini-app + a one-shot `pendingFestivalImport`, which
+    /// the root consumes into an import-confirm preview (new lineup / applied plan, never silent).
+    case festivalLineup(SharedLineup)
 
     /// Parse an incoming URL into a route, or nil when it isn't one of ours (the shell ignores it).
     static func route(for url: URL) -> SnappetDeepLink? {
         if let link = KilterClimbLink(decoding: url.absoluteString) { return .kilterClimb(link) }
         if let routine = SharedRoutine(decoding: url.absoluteString) { return .routine(routine) }
+        if let lineup = SharedLineup(decoding: url.absoluteString) { return .festivalLineup(lineup) }
         if isStartFocus(url) { return .startFocus }
         if let id = exerciseID(url) { return .exercise(id: id) }
         return nil

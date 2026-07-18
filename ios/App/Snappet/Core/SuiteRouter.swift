@@ -45,6 +45,14 @@ final class SuiteRouter {
     /// is built (`initial: true` on the consumer, the Kilter precedent).
     var pendingRoutineImport: SharedRoutine?
 
+    /// One-shot festival-import intent (festival prompt 05, the `pendingRoutineImport` pattern): the
+    /// shell's `onOpenURL` — or an in-app scan from the festival share sheet — sets this from a
+    /// `snappet://festival/…` code before `open(module: "festival")`, and `FestivalRootView` consumes it
+    /// into an import-confirm preview (install a new lineup / apply a shared plan; a hosted install-link
+    /// is fetched first). Never silent, never overwriting. Self-clearing on consume; survives the
+    /// cold-start window before the root is built (`initial: true` on the consumer, the Kilter precedent).
+    var pendingFestivalImport: SharedLineup?
+
     /// One-shot "start a focus timer" intent (#81 Phase 2): the Today widget's Start-focus button
     /// (`snappet://pomodoro/start`) and the shell's `onOpenURL` set this before `open(module:
     /// "pomodoro")`, and `PomodoroRootView` consumes it on appear/change to call `timer.start()` —
