@@ -38,8 +38,12 @@ struct SnappetApp: App {
         // finished dance session + clips + tags over the same now-anchored pack.
         let seedFestivalNight = args.contains(FestivalNightSeed.argument)
         let seedFestival = args.contains(FestivalLineupSeed.argument) || seedFestivalNight
+        // `-uiTestSeedFestivalPlan` (festival prompt 04) implies a fresh store too: it installs the
+        // same lineup plus a pre-starred plan and a past dance session, so the For-You sheet ranks
+        // real HR history and the reminder/clash surfaces are exercisable hermetically.
+        let seedFestivalPlan = args.contains(FestivalPlanSeed.argument)
         let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip
-            || seedFestival
+            || seedFestival || seedFestivalPlan
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
             // touch — clear the remembered "me" so expense tests are deterministic
@@ -124,6 +128,11 @@ struct SnappetApp: App {
         // seeded lineup — strictly arg-guarded, zero production impact (festival prompt 03).
         if seedFestivalNight {
             FestivalNightSeed.seedIfRequested(into: container.mainContext)
+        }
+        // Strictly guarded inside `seedIfRequested` (no-ops without the arg) — ZERO production impact.
+        // Installs the lineup + a pre-starred plan + past HR history for the For-You UI test.
+        if seedFestivalPlan {
+            FestivalPlanSeed.seedIfRequested(into: container.mainContext)
         }
     }
 

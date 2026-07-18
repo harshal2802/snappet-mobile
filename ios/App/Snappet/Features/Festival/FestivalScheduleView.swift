@@ -19,12 +19,17 @@ struct FestivalScheduleView: View {
     @State private var pack: FestivalPack?
     @State private var selectedDay: String?
     @State private var showingLive = false
+    @State private var showingForYou = false
     /// The dance session the open attendance rides — resolved when the sheet opens/claims.
     @State private var liveSession: WorkoutSession?
     /// Tag review sheet (festival prompt 03). The recap is a value-typed push (`FestivalRecapRoute`)
     /// — the `WeeklyReelRoute` pattern; an `isPresented` destination on this often-invalidated
     /// view (30 s TimelineView + @Query writes) failed to push under XCUITest.
     @State private var showingReview = false
+
+    @AppStorage(FestivalNotifications.leadStorageKey)
+    private var leadMinutes = FestivalNotifications.defaultLeadMinutes
+    private let notifications = FestivalNotifications()
 
     init(lineup: FestivalLineup) {
         self.lineup = lineup
@@ -52,6 +57,17 @@ struct FestivalScheduleView: View {
         .navigationTitle(lineup.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Prompt 04's For-You entry.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingForYou = true
+                } label: {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(SnappetColor.festival)
+                }
+                .accessibilityLabel("For you")
+                .accessibilityIdentifier("festival.forYou")
+            }
             // Prompt 03's two payoff entries: the tag-review sheet and the recap push.
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -74,6 +90,9 @@ struct FestivalScheduleView: View {
             if let pack, selectedDay == nil {
                 selectedDay = FestivalSchedule.defaultDayDate(in: pack, now: .now)
             }
+            // Bring pending reminders in line with the stored plan (a star toggled last session, or
+            // this lineup was reinstalled). Silent — no permission prompt here (festival prompt 04).
+            if let pack { rescheduleReminders(pack: pack) }
             // One silent tagging pass on arrival (festival prompt 03): retroactive — everything
             // already danced/filmed tags itself the first time this screen opens after a night.
             if let pack {
@@ -106,6 +125,11 @@ struct FestivalScheduleView: View {
                                   onSwitch: { set in claim(set, in: pack) },
                                   onEnd: { endNight(in: pack) })
                     .presentationDetents([.medium, .large])
+            }
+        }
+        .sheet(isPresented: $showingForYou) {
+            if let pack {
+                FestivalForYouView(lineup: lineup, pack: pack)
             }
         }
     }
@@ -281,6 +305,7 @@ struct FestivalScheduleView: View {
     // MARK: - Stars
 
     private func toggleStar(_ set: FestivalSet) {
+        let adding = !stars.contains { $0.setID == set.id }
         if let existing = stars.first(where: { $0.setID == set.id }) {
             context.delete(existing)
         } else {
@@ -289,6 +314,24 @@ struct FestivalScheduleView: View {
                      summary: "Starred \(set.artist) at \(lineup.name)")
         }
         try? context.save()
+
+        guard let pack else { return }
+        let newStarred = adding ? starredIDs.union([set.id]) : starredIDs.subtracting([set.id])
+        // Surface a clash to the lock screen the moment the new star overlaps an existing one
+        // (frame 7's "Two stars clash at 23:30"). Only when adding — unstarring can only clear a
+        // clash. The in-app ⚠︎ marks (prompt 02) already flag both rows.
+        if adding, let clash = FestivalPlan(starredSetIDs: newStarred)
+            .clashes(in: pack).first(where: { $0.first.id == set.id || $0.second.id == set.id }) {
+            notifications.postClashAlert(clash, pack: pack)
+        }
+        rescheduleReminders(pack: pack, starred: newStarred)
+    }
+
+    /// Bring pending local reminders in line with the current (or just-changed) plan. Silent — the
+    /// permission prompt is owned by the For-You sheet, a deliberate surface.
+    private func rescheduleReminders(pack: FestivalPack, starred: Set<UUID>? = nil) {
+        notifications.reschedule(plan: FestivalPlan(starredSetIDs: starred ?? starredIDs),
+                                 pack: pack, leadMinutes: leadMinutes)
     }
 
     // MARK: - The dance-session spine ("I'm here")

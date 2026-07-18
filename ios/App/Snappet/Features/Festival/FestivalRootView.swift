@@ -85,9 +85,11 @@ struct FestivalRootView: View {
     /// Remove a lineup and everything hanging off its `packID` (stars, attendance claims). The
     /// dance `WorkoutSession`s stay — they're the user's workout history, owned by the spine.
     private func deleteLineups(at offsets: IndexSet) {
+        let notifications = FestivalNotifications()
         for index in offsets {
             let lineup = lineups[index]
             let packID = lineup.packID
+            if let pack = lineup.pack() { notifications.clear(pack: pack) }
             let stars = (try? context.fetch(FetchDescriptor<FestivalStar>(
                 predicate: #Predicate { $0.packID == packID }))) ?? []
             stars.forEach { context.delete($0) }
