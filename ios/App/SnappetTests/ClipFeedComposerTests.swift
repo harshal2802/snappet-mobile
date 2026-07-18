@@ -333,4 +333,78 @@ final class ClipFeedComposerTests: XCTestCase {
         XCTAssertEqual(posts[0].discipline, .climbing)
         XCTAssertEqual(posts[0].moduleID, "kilter")
     }
+
+    // MARK: - Festival posts (festival prompt 03)
+
+    private func festMeta(setKey: UUID?, artist: String?, stage: String?) -> ClipFeedFestivalMeta {
+        ClipFeedFestivalMeta(setKey: setKey?.uuidString, artist: artist, stage: stage,
+                             festivalName: "Glastonbury 2026", dayLabel: "Saturday")
+    }
+
+    func testTaggedClipsBecomeAnArtistStagePostAndLeaveTheGymGrouping() throws {
+        let ex = UUID(), setID = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Glastonbury 2026", startedAt: start)
+        let tagged1 = video(10, exercise: ex)      // recorded from the live sheet (entity-assigned)
+        let tagged2 = video(200)                   // Camera-app discovery (general bucket)
+        let untagged = video(400)
+        let bundle = ClipFeedComposer.SessionBundle(meta: s, clips: [tagged1, tagged2, untagged])
+        let posts = ClipFeedComposer.posts(
+            sessions: [bundle], climbMeta: [:], exerciseName: { _ in "Fred again.. · Pyramid Stage" },
+            festivalMeta: [tagged1.id: festMeta(setKey: setID, artist: "Fred again..", stage: "Pyramid Stage"),
+                           tagged2.id: festMeta(setKey: setID, artist: "Fred again..", stage: "Pyramid Stage")])
+
+        XCTAssertEqual(posts.count, 2, "one festival post + one leftover session post")
+        let fest = try XCTUnwrap(posts.first { $0.discipline == .festival })
+        XCTAssertEqual(fest.title, "Fred again.. · Pyramid Stage",
+                       "titled artist · stage — existing search matches the artist free")
+        XCTAssertEqual(fest.subtitle, "Glastonbury 2026 · Saturday")
+        XCTAssertEqual(fest.clipCount, 2, "one set = one post, whatever bucket each clip sat in")
+        XCTAssertEqual(fest.clips.map(\.attemptLabel), ["Clip 1", "Clip 2"])
+        XCTAssertEqual(fest.moduleID, "workout-log", "Go to session opens the dance session")
+        XCTAssertFalse(fest.isReel)
+        let leftover = try XCTUnwrap(posts.first { $0.discipline != .festival })
+        XCTAssertEqual(leftover.clipCount, 1, "tagged clips left the exercise grouping")
+        XCTAssertEqual(leftover.clips.first?.media.id, untagged.id)
+    }
+
+    func testTwoSetsMakeTwoFestivalPosts() {
+        let setA = UUID(), setB = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Glastonbury 2026", startedAt: start)
+        let a = video(10), b = video(20)
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: s, clips: [a, b])], climbMeta: [:], exerciseName: { _ in "?" },
+            festivalMeta: [a.id: festMeta(setKey: setA, artist: "Little Simz", stage: "Pyramid Stage"),
+                           b.id: festMeta(setKey: setB, artist: "Overmono", stage: "West Holts")])
+        XCTAssertEqual(posts.count, 2)
+        XCTAssertEqual(Set(posts.map(\.title)), ["Little Simz · Pyramid Stage", "Overmono · West Holts"])
+        XCTAssertTrue(posts.allSatisfy { $0.discipline == .festival })
+        for post in posts {
+            XCTAssertNil(post.clips.first?.attemptLabel, "single-clip posts carry no Clip N label")
+        }
+    }
+
+    func testFestivalSessionReelReadsFestival() throws {
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Glastonbury 2026", startedAt: start)
+        let r = reel(0, title: "Fred again.. · Pyramid Stage")
+        let posts = ClipFeedComposer.posts(
+            sessions: [.init(meta: s, clips: [r])], climbMeta: [:], exerciseName: { _ in "?" },
+            festivalMeta: [r.id: festMeta(setKey: nil, artist: nil, stage: nil)])
+        let post = try XCTUnwrap(posts.first)
+        XCTAssertTrue(post.isReel, "still a reel post — ✦ REEL badge, raw playback")
+        XCTAssertEqual(post.discipline, .festival, "…but festival-flavored")
+        XCTAssertEqual(post.subtitle, "Glastonbury 2026 · Saturday")
+        XCTAssertEqual(post.title, "Fred again.. · Pyramid Stage")
+    }
+
+    func testFestivalMetaAbsentLeavesTheFeedUntouched() {
+        // The zero-festival case must compose byte-identically to the pre-prompt-03 feed.
+        let ex = UUID()
+        let s = ClipFeedSessionMeta(id: UUID(), kind: .gym, title: "Push Day", startedAt: start)
+        let bundle = ClipFeedComposer.SessionBundle(meta: s, clips: [video(10, exercise: ex, set: 0)])
+        let with = ClipFeedComposer.posts(sessions: [bundle], climbMeta: [:],
+                                          exerciseName: { _ in "Bench" }, festivalMeta: [:])
+        let without = ClipFeedComposer.posts(sessions: [bundle], climbMeta: [:],
+                                             exerciseName: { _ in "Bench" })
+        XCTAssertEqual(with, without)
+    }
 }

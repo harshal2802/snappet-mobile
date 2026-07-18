@@ -70,10 +70,12 @@ enum FestivalLineupSeed {
                         set("Fred Midnight", day1, (17, 30), (19, 10)),   // LIVE at ~18:00
                     ]),
                     FestivalStage(name: "West Holts", sets: [
+                        set("Static Bloom", day1, (16, 0), (17, 0)),      // finished; overlaps Coral
                         set("Overtone", day1, (19, 0), (20, 30)),         // upcoming, in ~1 h
                         set("Jade Groove", day1, (20, 30), (22, 0)),
                     ]),
                     FestivalStage(name: "Arcadia", sets: [
+                        set("Coral Circuit", day1, (16, 30), (17, 30)),   // finished; the two-live case
                         set("Electric Fern", day1, (19, 15), (20, 45)),   // overlaps Overtone → clash
                     ]),
                 ]),
@@ -85,11 +87,12 @@ enum FestivalLineupSeed {
             ])
     }
 
-    /// Strictly guarded — no-ops without the launch argument. Installs the seeded pack through the
-    /// same decode/validate/row path the real installer uses, so the seed can never install a shape
-    /// production wouldn't.
+    /// Strictly guarded — no-ops without a festival seed launch argument (the prompt-03 night seed
+    /// IMPLIES this lineup). Installs the seeded pack through the same decode/validate/row path the
+    /// real installer uses, so the seed can never install a shape production wouldn't.
     static func seedIfRequested(into context: ModelContext) {
-        guard ProcessInfo.processInfo.arguments.contains(argument) else { return }
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains(argument) || args.contains(FestivalNightSeed.argument) else { return }
         let pack = pack()
         guard let data = try? pack.fpackData(),
               let validated = try? FestivalPackValidator.validate(pack) else { return }

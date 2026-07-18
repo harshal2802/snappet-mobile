@@ -22,6 +22,10 @@ struct FestivalScheduleView: View {
     @State private var showingForYou = false
     /// The dance session the open attendance rides — resolved when the sheet opens/claims.
     @State private var liveSession: WorkoutSession?
+    /// Tag review sheet (festival prompt 03). The recap is a value-typed push (`FestivalRecapRoute`)
+    /// — the `WeeklyReelRoute` pattern; an `isPresented` destination on this often-invalidated
+    /// view (30 s TimelineView + @Query writes) failed to push under XCUITest.
+    @State private var showingReview = false
 
     @AppStorage(FestivalNotifications.leadStorageKey)
     private var leadMinutes = FestivalNotifications.defaultLeadMinutes
@@ -53,6 +57,7 @@ struct FestivalScheduleView: View {
         .navigationTitle(lineup.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Prompt 04's For-You entry.
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingForYou = true
@@ -63,6 +68,21 @@ struct FestivalScheduleView: View {
                 .accessibilityLabel("For you")
                 .accessibilityIdentifier("festival.forYou")
             }
+            // Prompt 03's two payoff entries: the tag-review sheet and the recap push.
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingReview = true
+                } label: {
+                    Label("Review tags", systemImage: "sparkles.rectangle.stack")
+                }
+                .accessibilityIdentifier("festival.reviewTags")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: FestivalRecapRoute()) {
+                    Label("Recap", systemImage: "chart.bar")
+                }
+                .accessibilityIdentifier("festival.recap")
+            }
         }
         .task {
             guard pack == nil else { return }
@@ -71,8 +91,31 @@ struct FestivalScheduleView: View {
                 selectedDay = FestivalSchedule.defaultDayDate(in: pack, now: .now)
             }
             // Bring pending reminders in line with the stored plan (a star toggled last session, or
-            // this lineup was reinstalled). Silent — no permission prompt here.
+            // this lineup was reinstalled). Silent — no permission prompt here (festival prompt 04).
             if let pack { rescheduleReminders(pack: pack) }
+            // One silent tagging pass on arrival (festival prompt 03): retroactive — everything
+            // already danced/filmed tags itself the first time this screen opens after a night.
+            if let pack {
+                await FestivalTagSync.refresh(pack: pack, packID: lineup.packID, context: context,
+                                              mediaService: app.sessionMedia)
+            }
+        }
+        // A set row pushes its detail (frame 6); recap's artist rows reuse the same registration.
+        .navigationDestination(for: FestivalSet.self) { set in
+            if let pack {
+                FestivalSetDetailView(lineup: lineup, pack: pack, set: set)
+            }
+        }
+        .navigationDestination(for: FestivalRecapRoute.self) { _ in
+            if let pack {
+                FestivalRecapView(lineup: lineup, pack: pack)
+            }
+        }
+        .sheet(isPresented: $showingReview) {
+            if let pack {
+                FestivalTagReviewView(lineup: lineup, pack: pack, initialDay: selectedDay)
+                    .presentationDetents([.large])
+            }
         }
         .sheet(isPresented: $showingLive) {
             if let pack, let open = openAttendance {
@@ -155,20 +198,30 @@ struct FestivalScheduleView: View {
     /// highlights-P5 gotcha); the star carries its own id instead.
     private func setRow(_ row: FestivalSchedule.Row, pack: FestivalPack) -> some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(FestivalSchedule.timeLabel(row.set.start, offsetSeconds: pack.utcOffsetSeconds))
-                Text(FestivalSchedule.timeLabel(row.set.end, offsetSeconds: pack.utcOffsetSeconds))
+            // The time/artist area pushes SET DETAIL (frame 6, prompt 03) — a NavigationLink
+            // around just this area, NOT the whole row, so the ★ button beside it keeps its own
+            // hit target (and its own XCUITest id — the container-id gotcha).
+            NavigationLink(value: row.set) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(FestivalSchedule.timeLabel(row.set.start, offsetSeconds: pack.utcOffsetSeconds))
+                        Text(FestivalSchedule.timeLabel(row.set.end, offsetSeconds: pack.utcOffsetSeconds))
+                    }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(SnappetColor.textSecondary)
+                    .frame(width: 44, alignment: .leading)
+
+                    Text(row.set.artist)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(row.state == .past ? SnappetColor.textSecondary : SnappetColor.ink)
+
+                    Spacer(minLength: 6)
+                }
+                .contentShape(Rectangle())
             }
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(SnappetColor.textSecondary)
-            .frame(width: 44, alignment: .leading)
-
-            Text(row.set.artist)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .foregroundStyle(row.state == .past ? SnappetColor.textSecondary : SnappetColor.ink)
-
-            Spacer(minLength: 6)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("festival.set.\(row.set.artist)")
 
             badges(for: row)
         }
@@ -353,6 +406,13 @@ struct FestivalScheduleView: View {
         core.log(module: FestivalModule.id, action: "session",
                  summary: "Danced at \(lineup.name)", metric: Double(mins))
         liveSession = nil
+        // The night is over — run one tagging pass now (festival prompt 03) so the review sheet
+        // and Clips payoff are ready before the user even looks. Silent; discovery only when
+        // Photos is already authorized.
+        Task {
+            await FestivalTagSync.refresh(pack: pack, packID: lineup.packID, context: context,
+                                          mediaService: app.sessionMedia)
+        }
     }
 
     // MARK: Session helpers (thin SwiftData edges)

@@ -57,4 +57,36 @@ import XCTest
         XCTAssertTrue(app.descendants(matching: .any)["clips.empty"].waitForExistence(timeout: 5),
                       "the feed's empty state stays after dismissing the offer")
     }
+
+    /// Festival prompt 03: the seeded night's auto-tagged clip surfaces in Clips as an
+    /// artist·stage post behind the ONE new 🎪 Festival chip. (Poster pixels need real Photos
+    /// assets — device-owed; the post card + chip behavior are what the simulator can prove.)
+    func testFestivalPostAndChipFromASeededNight() {
+        let app = XCUIApplication()
+        app.launchArguments += ["clips", "-uiTestSeedFestivalNight"]
+        app.launch()
+        app.tabBars.buttons["Clips"].tap()
+
+        // The tagged clip composes into an artist · stage post (search would match "Neon" free).
+        let title = app.staticTexts["Neon Harbor · Pyramid Stage"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "the tagged clip posts as artist · stage")
+
+        // The 🎪 chip narrows the feed to festival posts: the dance session's untagged
+        // session-clips post disappears, the set post stays.
+        let chip = app.buttons["clips.filter.festival"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 6), "the one new festival chip exists")
+        let sessionPost = app.staticTexts["Snappet Test Festival"]
+        XCTAssertTrue(sessionPost.waitForExistence(timeout: 6),
+                      "the untagged clips still post under the session title")
+        chip.tap()
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: sessionPost)
+        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: 6), .completed,
+                       "the festival chip hides non-festival posts")
+        XCTAssertTrue(title.exists, "…and keeps the artist · stage post")
+
+        // Tapping the active chip clears it — everything returns.
+        chip.tap()
+        XCTAssertTrue(sessionPost.waitForExistence(timeout: 6))
+    }
 }

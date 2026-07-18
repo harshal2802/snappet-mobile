@@ -64,7 +64,7 @@ enum SnappetBackup {
         KilterPlan.self, KilterLitEvent.self,
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
         WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
-        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self,
+        FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
     ]
 
     // MARK: - The envelope
@@ -113,6 +113,8 @@ enum SnappetBackup {
         var festivalLineups: [FestivalLineupRow] = []
         var festivalStars: [FestivalStarRow] = []
         var festivalAttendance: [FestivalAttendanceRow] = []
+        // Festival clip tags — defaulted so prompt-02-era backup blobs still decode.
+        var festivalClipTags: [FestivalClipTagRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -157,6 +159,7 @@ enum SnappetBackup {
             n += festivalLineups.count
             n += festivalStars.count
             n += festivalAttendance.count
+            n += festivalClipTags.count
             return n
         }
     }
@@ -238,6 +241,7 @@ enum SnappetBackup {
         file.festivalLineups = try all(FestivalLineup.self).map(FestivalLineupRow.init).sorted(by: rowKey)
         file.festivalStars = try all(FestivalStar.self).map(FestivalStarRow.init).sorted(by: rowKey)
         file.festivalAttendance = try all(FestivalAttendance.self).map(FestivalAttendanceRow.init).sorted(by: rowKey)
+        file.festivalClipTags = try all(FestivalClipTag.self).map(FestivalClipTagRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -342,6 +346,8 @@ enum SnappetBackup {
             uniqued(file.festivalStars, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(FestivalAttendance.self)
             uniqued(file.festivalAttendance, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(FestivalClipTag.self)
+            uniqued(file.festivalClipTags, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -1166,5 +1172,34 @@ extension SnappetBackup {
                                sessionID: sessionID, startedAt: startedAt, endedAt: endedAt)
         }
         var sortKey: String { "\(startedAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
+    }
+
+    struct FestivalClipTagRow: BackupRow {
+        var id: UUID
+        var packID: String
+        var setID: UUID
+        var artist: String
+        var stage: String
+        var mediaID: UUID
+        var sessionID: UUID
+        var confidence: Double
+        var reason: String
+        var sourceRaw: String
+        var createdAt: Date
+
+        init(_ m: FestivalClipTag) {
+            id = m.id; packID = m.packID; setID = m.setID; artist = m.artist; stage = m.stage
+            mediaID = m.mediaID; sessionID = m.sessionID; confidence = m.confidence
+            reason = m.reason; sourceRaw = m.sourceRaw; createdAt = m.createdAt
+        }
+        func make() -> FestivalClipTag {
+            let tag = FestivalClipTag(id: id, packID: packID, setID: setID, artist: artist,
+                                      stage: stage, mediaID: mediaID, sessionID: sessionID,
+                                      confidence: confidence, reason: reason,
+                                      source: .auto, createdAt: createdAt)
+            tag.sourceRaw = sourceRaw   // restore the RAW verbatim (unknown raws stay unknown)
+            return tag
+        }
+        var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
     }
 }

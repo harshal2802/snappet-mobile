@@ -169,10 +169,92 @@ import XCTest
 
         app.buttons["festival.forYou.done"].tap()
     }
+
+    // MARK: - Flow C · the morning after (frames 6 · 9 · 11 — festival prompt 03)
+
+    /// The seeded night (`-uiTestSeedFestivalNight`): review sheet with the day timeline + the two
+    /// "Needs you" reasons, keep-all + a Change › override, then set detail (HR slice, ✦ AUTO
+    /// clips, reel CTA) and the recap (hero + ♥-ranked artists).
+    func testTagReviewSetDetailAndRecapAfterASeededNight() {
+        let app = launch([FestivalNightSeed.argument])
+        openFestival(app)
+        app.buttons["festival.lineup.snappet-test-festival"].tap()
+
+        // 1 — the review sheet, from the schedule's toolbar.
+        let reviewButton = app.buttons["festival.reviewTags"]
+        XCTAssertTrue(reviewButton.waitForExistence(timeout: 6))
+        reviewButton.tap()
+        let summary = app.staticTexts["festival.review.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 8), "the sheet should match and summarize")
+        XCTAssertTrue(summary.label.contains("3 clips") && summary.label.contains("1 auto-tagged")
+                      && summary.label.contains("2 need you"),
+                      "seed contract: 1 auto + 2 needs-you (got '\(summary.label)')")
+        XCTAssertTrue(app.otherElements["festival.review.timeline"].exists
+                      || app.descendants(matching: .any)["festival.review.timeline"].exists,
+                      "the day renders as a timeline bar")
+        // The machine reasons ARE the captions.
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'between stages'")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'two sets live'")).firstMatch.exists)
+        snap("festival-review")
+
+        // 2 — keep the auto block: the button resolves and disappears (tags become sticky).
+        app.buttons["festival.review.keepAll"].tap()
+        let keepGone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.buttons["festival.review.keepAll"])
+        XCTAssertEqual(XCTWaiter().wait(for: [keepGone], timeout: 6), .completed,
+                       "keep-all should consume itself")
+
+        // 3 — Change › on the two-sets-live clip (proposed Static Bloom): pick Coral Circuit.
+        app.buttons["festival.review.change.Static Bloom"].tap()
+        let coral = app.buttons["Coral Circuit · Arcadia"]
+        XCTAssertTrue(coral.waitForExistence(timeout: 4), "the dialog offers every live candidate")
+        coral.tap()
+        let resolved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS '1 needs you'"), object: summary)
+        XCTAssertEqual(XCTWaiter().wait(for: [resolved], timeout: 8), .completed,
+                       "an override resolves its row (summary: \(summary.label))")
+        snap("festival-review-resolved")
+        app.buttons["festival.review.done"].tap()
+
+        // 4 — set detail from the schedule row: hero stats, the set's HR slice + peak callout,
+        // the ✦ AUTO clip, and the reel CTA into the shared ReelView.
+        let setLink = app.buttons["festival.set.Neon Harbor"]
+        XCTAssertTrue(setLink.waitForExistence(timeout: 6))
+        setLink.tap()
+        XCTAssertTrue(app.staticTexts["festival.set.artist"].waitForExistence(timeout: 6))
+        XCTAssertEqual(app.staticTexts["festival.set.artist"].label, "Neon Harbor")
+        XCTAssertTrue(app.descendants(matching: .any)["festival.set.stats"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["festival.set.hrChart"]
+            .waitForExistence(timeout: 6), "the set window slices a drawable HR curve")
+        XCTAssertTrue(app.staticTexts["festival.set.peak"].exists, "the peak-at-the-drop callout")
+        XCTAssertTrue(app.buttons["festival.set.reel"].exists, "the shared-reel CTA is offered")
+        snap("festival-set-detail")
+        app.navigationBars.buttons.firstMatch.tap()   // back to the schedule
+
+        // 5 — recap: hero numbers + artists ranked by YOUR heart rate (Neon Harbor's 171 first).
+        app.buttons["festival.recap"].tap()
+        XCTAssertTrue(app.staticTexts["festival.recap.nights"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["festival.recap.nights"].label, "1 night on the floor")
+        let neonRow = app.buttons["festival.recap.artist.Neon Harbor"]
+        let bloomRow = app.buttons["festival.recap.artist.Static Bloom"]
+        XCTAssertTrue(neonRow.waitForExistence(timeout: 6))
+        XCTAssertTrue(bloomRow.exists)
+        XCTAssertLessThan(neonRow.frame.minY, bloomRow.frame.minY,
+                          "♥ 171 at Neon Harbor outranks Static Bloom")
+        XCTAssertTrue(app.buttons["festival.recap.reel"].exists, "the festival-reel CTA is offered")
+        snap("festival-recap")
+    }
 }
 
-/// Mirror of the app-side seed arguments (the UI-test target can't import the app module's enums).
+/// Mirrors of the app-side seed arguments (the UI-test target can't import the app module's enums).
 private enum FestivalSeed {
     static let argument = "-uiTestSeedFestivalLineup"
     static let planArgument = "-uiTestSeedFestivalPlan"
+}
+
+private enum FestivalNightSeed {
+    static let argument = "-uiTestSeedFestivalNight"
 }

@@ -70,6 +70,11 @@ struct ClipsFeedView: View {
     /// per-session first-wins pick is deterministic (and is the latest edit) if a session ever has two
     /// projects (e.g. a backup that carried duplicates).
     @Query(sort: \StudioProject.updatedAt, order: .reverse) private var studioProjects: [StudioProject]
+    /// Festival clip tags + lineups (festival prompt 03) — the flavor that turns a tagged clip into
+    /// an artist·stage post behind the 🎪 chip. @Query so a review-sheet decision re-renders the feed.
+    @Query private var festivalTags: [FestivalClipTag]
+    @Query private var festivalLineups: [FestivalLineup]
+    @Query private var festivalAttendance: [FestivalAttendance]
     /// The feed's single active inline clip + scroll flag — "last tapped wins", so only ONE clip plays across
     /// the whole feed (prompt 85). Tap-driven, NOT scroll-driven (the R12 hero's scroll-center coordinator is
     /// what rendered a black box in the scrolling card). Lifted into `@Observable` (prompt 97) so a swipe
@@ -318,6 +323,8 @@ struct ClipsFeedView: View {
         var bundles: [ClipFeedComposer.SessionBundle]
         var climbMeta: [String: ClipFeedClimbMeta]
         var exerciseNames: [UUID: String]
+        /// media id → festival flavor (festival prompt 03) — tagged clips + festival-session reels.
+        var festivalMeta: [UUID: ClipFeedFestivalMeta]
         /// Per-session HR context — **media-bearing sessions only**. Building it for every historical
         /// session decoded every `hrSeries` blob per rebuild (and retained them) for posts that don't exist.
         var hr: [UUID: ClipFeedHR]
@@ -387,7 +394,49 @@ struct ClipsFeedView: View {
             // else: media whose session was deleted — skip (no orphan posts).
         }
         return FeedSnapshot(bundles: bundles, climbMeta: climbMeta, exerciseNames: exerciseName,
+                            festivalMeta: makeFestivalMeta(workoutByID: workoutByID),
                             hr: hr, tiles: sessionHRTile)
+    }
+
+    /// media id → festival flavor (festival prompt 03), from denormalized rows only — no pack
+    /// inflation on the compose path. Resolved tags flavor their clip into an artist·stage set
+    /// post; a festival session's posted reels get name/day-only flavor (they keep their reel
+    /// title but read as festival).
+    private func makeFestivalMeta(workoutByID: [UUID: WorkoutSession]) -> [UUID: ClipFeedFestivalMeta] {
+        guard !festivalLineups.isEmpty else { return [:] }
+        let lineupByPack = Dictionary(festivalLineups.map { ($0.packID, $0) },
+                                      uniquingKeysWith: { a, _ in a })
+        let mediaByID = Dictionary(allMedia.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        var out: [UUID: ClipFeedFestivalMeta] = [:]
+        for tag in festivalTags where tag.isResolved {
+            guard let lineup = lineupByPack[tag.packID],
+                  let media = mediaByID[tag.mediaID],
+                  let session = workoutByID[tag.sessionID] else { continue }
+            let capturedAt = session.startedAt.addingTimeInterval(max(0, media.offsetSec))
+            out[tag.mediaID] = ClipFeedFestivalMeta(
+                setKey: tag.setID.uuidString,
+                artist: tag.artist,
+                stage: tag.stage,
+                festivalName: lineup.name,
+                dayLabel: FestivalTagging.posterWeekday(for: capturedAt,
+                                                        utcOffsetSeconds: lineup.utcOffsetSeconds))
+        }
+        // Festival-session reels: sessionID → packID via the attendance rows.
+        let packBySession = Dictionary(festivalAttendance.map { ($0.sessionID, $0.packID) },
+                                       uniquingKeysWith: { a, _ in a })
+        for media in allMedia where media.isReel {
+            guard out[media.id] == nil,
+                  let packID = packBySession[media.sessionID],
+                  let lineup = lineupByPack[packID],
+                  let session = workoutByID[media.sessionID] else { continue }
+            out[media.id] = ClipFeedFestivalMeta(
+                setKey: nil, artist: nil, stage: nil,
+                festivalName: lineup.name,
+                dayLabel: FestivalTagging.posterWeekday(for: session.startedAt,
+                                                        utcOffsetSeconds: lineup.utcOffsetSeconds))
+        }
+        return out
     }
 
     /// The heavy part — compose the posts + slice every clip's HR payload. Pure over the snapshot, so it
@@ -396,7 +445,8 @@ struct ClipsFeedView: View {
     nonisolated private static func compose(_ snap: FeedSnapshot) -> ComposedFeed {
         let names = snap.exerciseNames
         let posts = ClipFeedComposer.posts(sessions: snap.bundles, climbMeta: snap.climbMeta,
-                                           exerciseName: { names[$0] ?? "Exercise" })
+                                           exerciseName: { names[$0] ?? "Exercise" },
+                                           festivalMeta: snap.festivalMeta)
         var payloads: [UUID: ClipHROverlay.Payload] = [:]
         for post in posts {
             let hr = snap.hr[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil)
@@ -418,13 +468,21 @@ struct ClipsFeedView: View {
     private struct FeedKey: Equatable {
         var media: Int, aspects: Int, kSessions: Int, kLogs: Int, wSessions: Int, projects: Int
         var newestEdit: Date?
+        /// Order-insensitive signature of the festival tag rows (festival prompt 03): counts alone
+        /// miss a Change › re-pick (same row count, new setID), so hash the identity-bearing fields.
+        var festivalTagKey: Int = 0
     }
     private var feedKey: FeedKey {
         FeedKey(media: allMedia.count,
                 aspects: allMedia.reduce(0) { $0 + ($1.aspectRatio != nil ? 1 : 0) },
                 kSessions: kilterSessions.count, kLogs: kilterLogs.count,
                 wSessions: workoutSessions.count, projects: studioProjects.count,
-                newestEdit: studioProjects.first?.updatedAt)
+                newestEdit: studioProjects.first?.updatedAt,
+                festivalTagKey: festivalTags.reduce(0) { acc, t in
+                    var h = Hasher()
+                    h.combine(t.mediaID); h.combine(t.setID); h.combine(t.sourceRaw)
+                    return acc ^ h.finalize()
+                })
     }
 
     /// Rebuild the cached posts + per-session HR context/tile + per-clip HR payloads — snapshot on the
@@ -649,6 +707,12 @@ private struct ClipFilterChipStrip: View {
                          on: filter.discipline == .gym, id: "clips.filter.gym") {
                         filter.discipline = filter.discipline == .gym ? .all : .gym
                     }
+                    // The ONE festival chip (festival prompt 03) — the wireframe's 🎪, in the
+                    // strip's SF-symbol grammar with the module's UV-orchid accent.
+                    chip("Festival", icon: "music.mic", accent: SnappetColor.festival,
+                         on: filter.discipline == .festival, id: "clips.filter.festival") {
+                        filter.discipline = filter.discipline == .festival ? .all : .festival
+                    }
                     chip("Videos", icon: "play.rectangle", accent: SnappetColor.brand,
                          on: filter.kind == .videos, id: "clips.filter.videos") {
                         filter.kind = filter.kind == .videos ? .all : .videos
@@ -757,6 +821,7 @@ private struct ClipPostCard: View {
         switch post.discipline {
         case .climbing: return SnappetColor.kilter
         case .strength: return SnappetColor.workout
+        case .festival: return SnappetColor.festival
         case .general: return SnappetColor.brand
         }
     }
@@ -901,6 +966,7 @@ private struct ClipPostCard: View {
         switch post.discipline {
         case .climbing: return "figure.climbing"
         case .strength: return "figure.strengthtraining.traditional"
+        case .festival: return "music.mic"
         case .general: return "sparkles"
         }
     }
