@@ -1,6 +1,6 @@
 # Festival — dance + video tagging for music-festival lineups
 
-**Created**: 2026-07-16 · **Status**: 01 merged (#292) · 02 merged (#293) · 03 merged (#294, tagging + Clips) · 04 implemented (plan & smart nudges) · 05 implemented (QR lineup sharing)
+**Created**: 2026-07-16 · **Status**: 01 merged (#292) · 02 merged (#293) · 03 merged (#294, tagging + Clips) · 04 merged (#295, plan & smart nudges) · 05 merged (#296, QR lineup sharing) · 06 implemented (poster scan)
 **Wireframes** (user-approved end state, 14 frames): `docs/ux-research/festival/wireframes.html`
 **Decision record**: `pdd/context/decisions.md` § 2026-07-16
 
@@ -34,7 +34,7 @@ capture rides the existing workout spine — the **Kilter shape, not the Wardrob
 | 03 | `03-festival-tagging-and-clips.md` | Matcher wired to session media, tag-review timeline sheet, artist·stage Clips posts + 🎪 chip, set detail (HR curve, peak-at-drop), set/festival reels via shared `ReelView`, recap. | **merged #294** |
 | 04 | `04-festival-plan-and-nudges.md` | ★ plan, `UNUserNotificationCenter` reminders + clash alerts, pure `SetRecommender`, For-You sheet with FM reason lines. | **implemented** |
 | 05 | `05-festival-qr-sharing.md` | `SharedLineup: SnappetShareable` (deflate blob ⇄ install-link fallback, `SharedRoutine` pattern), share sheet, scanner + `snappet://festival/…` routes. | **implemented** |
-| 06 | poster scan (optional) | Lineup-poster photo → on-device FM structuring → draft pack. | later |
+| 06 | `06-festival-poster-scan.md` | Lineup-poster photo → Apple Vision OCR → on-device FM structuring (heuristic floor when unavailable) → editable draft → validate → install as a `poster-<hash>` lineup. | **implemented** |
 
 Device legs owed at the end (record in memory + decisions): notifications timing in the field,
 watch-HR during a real set, camera-app clip discovery, QR scan phone-to-phone.

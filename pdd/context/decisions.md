@@ -4,6 +4,55 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-19] Festival poster scan — draft ≠ pack, a heuristic floor under the FM, validate-before-install (festival prompt 06)
+
+**Decision** (implementing `pdd/prompts/features/festival/06-festival-poster-scan.md`; wireframe frame
+2's "Scan a lineup poster"). The FINAL festival prompt: a poster photo → Apple Vision OCR → structured
+draft → editable review → the same `FestivalPackValidator` gate → install as a local lineup. Zero change
+to the `.fpack` wire format, the matcher, or the existing models.
+
+- **The parser emits a `FestivalDraft`, NOT a `FestivalPack`.** A poster is noisy; forcing the floor to
+  produce a *valid* pack would mean silently dropping rows it can't place — the opposite of the goal. So
+  `FestivalDraft` is deliberately looser: times are `"HH:mm"` strings, dates may be blank, days/stages/sets
+  are freely editable, and it need not validate. `draft.toPack()` builds the wire pack (stamping UUIDv5
+  content ids) and ONLY THEN does `FestivalPackValidator` run — so a malformed draft surfaces the exact
+  typed error (`.noDays`, `.overlapWithinStage`, …) in the review form and installs nothing. This is the
+  never-a-hallucination gate: the FM (or the floor) fills the form; the validator, not the model, decides
+  what installs.
+- **The E7 contract, second use.** `FestivalPosterIntelligence` mirrors `FestivalPlanIntelligence` exactly
+  (`#if canImport(FoundationModels)` + `@available(iOS 26.0)` + `SystemLanguageModel.isAvailable` + a
+  nested `@Generable` lineup + a 12-s `withTimeout` + silent degradation). The difference from prompt 04:
+  the floor here is a real parser (`FestivalPosterParser`), not a template string, and the FM output is a
+  whole structured lineup — so the wrapper takes the FM draft only when it's at least as complete as the
+  floor (`allSetCount >= floor`, non-empty), else keeps the floor. The heuristic is always-on; the AI pass
+  can never break it and can never install anything.
+- **The heuristic floor's rules** (pure, fully tested against OCR fixtures): first non-empty line = the
+  festival-title guess; a `yyyy-MM-dd` line opens a day (and sets the festival start/end); an `HH:MM Artist`
+  or `HH:MM - HH:MM Artist` row is a set (a single-time row fabricates a +60-min end the user reviews — a
+  friendlier default than a blank); a no-time line that carries a stage keyword (STAGE/TENT/ARENA/…) or is
+  short all-caps opens a stage; the first plain pre-set line is the location guess. Garbage in → a name
+  guess + no days (an empty-but-valid draft the user fills). `toPack()` treats an end ≤ start as crossing
+  midnight (a 23:00–00:30 late-night set), matching the poster and the 06:00 day rollover.
+- **Local packs get a generated `poster-<hash>` id.** Hosted packs carry an author slug; a poster scan has
+  none, so `FestivalDraft.localPackID = "poster-" + first 12 hex of UUIDv5(localPackNamespace, normalized
+  content)`. Deterministic → re-scanning the same poster converges on the same pack id, and since set ids
+  derive from the pack id (prompt 01) the same set ids too. A dedicated `localPackNamespace` (its own
+  random v4 UUID) keeps poster ids out of the curated-slug space, so a poster scan can never collide with a
+  hosted `glastonbury-2026`.
+- **Reuse, no new edges.** OCR is the receipt feature's `ReceiptScanner`/`ReceiptDocumentScanner` Vision
+  edge (not a second recognizer); install is prompt 05's `FestivalLineupInstaller.install(pack:sourceLabel:)`
+  (`sourceLabel: "Poster scan"`). No installer change, no schema/backup change — a poster lineup is just
+  another `FestivalLineup` row.
+- **The sim path is pasted text, not a camera.** The capture sheet offers the document camera only when
+  `ReceiptDocumentScanner.isSupported` (false on the sim) AND always a paste-text editor with a "Use a
+  sample" affordance — a genuinely useful secondary (paste a lineup off a webpage) that also drives the
+  XCUITest deterministically with no photo/Vision pass. **Owed device legs:** real-poster OCR accuracy and
+  on-device FM structuring quality on an Apple-Intelligence device (state owed, not verified).
+- **Wireframe divergence:** the wireframe shows only a camera capture and no dedicated draft-review frame;
+  the pasted-text path and the editable review `Form` were designed to the app's conventions (the receipt
+  document-scanner + the import-confirm sheet postures). Recorded so a future reader knows the review UI
+  wasn't in the 14-frame set.
+
 ## [2026-07-18] Festival QR lineup sharing — a plan IS a pack, one type/two wire forms, never-silent import (festival prompt 05)
 
 **Decision** (implementing `pdd/prompts/features/festival/05-festival-qr-sharing.md`; wireframe

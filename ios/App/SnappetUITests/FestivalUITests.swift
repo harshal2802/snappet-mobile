@@ -287,6 +287,40 @@ import XCTest
                       "the Scan tab shows the shared scanner (or its permission prompt)")
         snap("festival-share-scan")
     }
+    // MARK: - Flow F · poster scan (frame 2's "Scan a lineup poster", festival prompt 06)
+
+    /// From the empty state: build a lineup from pasted poster text (no camera in the sim), review the
+    /// draft the pure floor produced, then install it — the validate-before-install gate lands a real
+    /// lineup in "Your festivals".
+    func testPosterScanBuildsADraftAndInstallsIt() {
+        // Force the deterministic pure floor — the on-device FM path is a real, slow device leg.
+        let app = launch(["-uiTestFreshStore", "-uiTestPosterFloorOnly"])
+        openFestival(app)
+
+        let poster = app.buttons["festival.poster.scan"]
+        XCTAssertTrue(poster.waitForExistence(timeout: 6),
+                      "the empty state should offer poster scan")
+        poster.tap()
+
+        // The capture sheet: use the canned sample (drives the flow with no camera) then build.
+        let sample = app.buttons["festival.poster.sample"]
+        XCTAssertTrue(sample.waitForExistence(timeout: 6), "the capture sheet should offer a sample")
+        sample.tap()
+        app.buttons["festival.poster.build"].tap()
+        snap("festival-poster-capture")
+
+        // The draft-review editor, pre-filled from the parsed poster.
+        let name = app.textFields["festival.poster.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 6), "building lands in the draft-review editor")
+        XCTAssertEqual(name.value as? String, "Sunset Sounds 2026",
+                       "the festival title guess pre-fills the name field")
+        snap("festival-poster-draft")
+
+        // Install: the draft validates and becomes a lineup in "Your festivals".
+        app.buttons["festival.poster.install"].tap()
+        XCTAssertTrue(app.staticTexts["Sunset Sounds 2026"].waitForExistence(timeout: 6),
+                      "a valid poster draft installs as a lineup")
+    }
 }
 
 /// Mirrors of the app-side seed arguments (the UI-test target can't import the app module's enums).

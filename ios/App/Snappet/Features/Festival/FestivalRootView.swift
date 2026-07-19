@@ -14,6 +14,9 @@ struct FestivalRootView: View {
     @State private var installer = FestivalLineupInstaller()
     @State private var showingBrowse = false
     @State private var showingScan = false
+    @State private var showingPosterScan = false
+    /// A poster-scanned draft awaiting the review editor (festival prompt 06).
+    @State private var posterDraft: FestivalDraft?
     /// A scanned/opened `snappet://festival/…` value awaiting the import-confirm (festival prompt 05).
     /// Fed from the shell's one-shot (`SuiteRouter.pendingFestivalImport`) and from an in-app scan.
     @State private var incoming: SharedLineup?
@@ -22,7 +25,8 @@ struct FestivalRootView: View {
         Group {
             if lineups.isEmpty {
                 FestivalEmptyStateView(installer: installer, onBrowse: { showingBrowse = true },
-                                       onScan: { showingScan = true })
+                                       onScan: { showingScan = true },
+                                       onScanPoster: { showingPosterScan = true })
             } else {
                 lineupList
             }
@@ -34,6 +38,20 @@ struct FestivalRootView: View {
         }
         .sheet(isPresented: $showingScan) {
             FestivalScanView(onScan: { present($0) })
+        }
+        .sheet(isPresented: $showingPosterScan) {
+            FestivalPosterScanView(onDraft: { draft in
+                showingPosterScan = false
+                posterDraft = draft
+            })
+        }
+        .sheet(item: $posterDraft) { draft in
+            FestivalPosterDraftView(draft: draft, installer: installer,
+                                    onInstalled: { pack in
+                                        core.log(module: FestivalModule.id, action: "installPoster",
+                                                 summary: "Built lineup from a poster: \(pack.name)",
+                                                 metric: Double(pack.allSets.count))
+                                    })
         }
         .sheet(item: $incoming) { shared in
             FestivalImportSheet(shared: shared,
@@ -75,6 +93,12 @@ struct FestivalRootView: View {
                     Label("Get more lineups", systemImage: "square.and.arrow.down")
                 }
                 .accessibilityIdentifier("festival.catalog.browse")
+                Button {
+                    showingPosterScan = true
+                } label: {
+                    Label("Scan a lineup poster", systemImage: "camera.viewfinder")
+                }
+                .accessibilityIdentifier("festival.poster.scan")
                 Button {
                     showingScan = true
                 } label: {
