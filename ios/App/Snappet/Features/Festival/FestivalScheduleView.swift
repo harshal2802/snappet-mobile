@@ -12,6 +12,7 @@ struct FestivalScheduleView: View {
     @Environment(\.modelContext) private var context
     @Environment(SnappetCore.self) private var core
     @Environment(AppModel.self) private var app
+    @Environment(SuiteRouter.self) private var router
 
     @Query private var stars: [FestivalStar]
     @Query private var attendance: [FestivalAttendance]
@@ -26,6 +27,9 @@ struct FestivalScheduleView: View {
     /// — the `WeeklyReelRoute` pattern; an `isPresented` destination on this often-invalidated
     /// view (30 s TimelineView + @Query writes) failed to push under XCUITest.
     @State private var showingReview = false
+    /// The share sheet (festival prompt 05, wireframe frame 12) + which tab it opens on.
+    @State private var showingShare = false
+    @State private var shareStart: FestivalShareView.Start = .plan
 
     @AppStorage(FestivalNotifications.leadStorageKey)
     private var leadMinutes = FestivalNotifications.defaultLeadMinutes
@@ -83,6 +87,23 @@ struct FestivalScheduleView: View {
                 }
                 .accessibilityIdentifier("festival.recap")
             }
+            // Prompt 05's share/scan entry (wireframe frame 12's ⋯ menu).
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        shareStart = .plan; showingShare = true
+                    } label: { Label("Share my plan", systemImage: "star") }
+                    Button {
+                        shareStart = .lineup; showingShare = true
+                    } label: { Label("Share this lineup", systemImage: "music.mic") }
+                    Button {
+                        shareStart = .scan; showingShare = true
+                    } label: { Label("Scan a code", systemImage: "qrcode.viewfinder") }
+                } label: {
+                    Label("Share", systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("festival.share.menu")
+            }
         }
         .task {
             guard pack == nil else { return }
@@ -130,6 +151,18 @@ struct FestivalScheduleView: View {
         .sheet(isPresented: $showingForYou) {
             if let pack {
                 FestivalForYouView(lineup: lineup, pack: pack)
+            }
+        }
+        .sheet(isPresented: $showingShare) {
+            if let pack {
+                FestivalShareView(pack: pack, lineupName: lineup.name, starredSetIDs: starredIDs,
+                                  start: shareStart,
+                                  // An in-app scan routes through the shell one-shot: pop to the
+                                  // Festival root, which owns the import-confirm + installer.
+                                  onScan: { shared in
+                                      router.pendingFestivalImport = shared
+                                      router.open(module: FestivalModule.id)
+                                  })
             }
         }
     }

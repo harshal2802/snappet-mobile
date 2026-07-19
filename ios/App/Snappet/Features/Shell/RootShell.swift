@@ -90,6 +90,12 @@ struct RootShell: View {
             // library" landing), so it shows the import-confirm preview and inserts a NEW Routine.
             router.pendingRoutineImport = shared
             router.open(module: "workout-log")
+        case .festivalLineup(let shared):
+            // A shared festival lineup / plan (festival prompt 05): open the Festival mini-app + a
+            // one-shot import intent. The root owns the model context + installer, so it shows the
+            // import-confirm preview and installs a new lineup / applies the plan (never silent).
+            router.pendingFestivalImport = shared
+            router.open(module: FestivalModule.id)
         case .exercise(let id):
             // Two-level deep link: open the gym tracker, then push the exercise's detail (the
             // navigationDestination(for: Exercise.self) the tracker root registers).

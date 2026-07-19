@@ -57,6 +57,44 @@ enum FestivalFixtures {
         FestivalSet(artist: artist, start: date(start), end: date(end))
     }
 
+    /// A deliberately large but VALID pack (festival prompt 05): enough sets that its payload blob
+    /// blows past `SharedLineup.scannableURLByteCap`, so the share falls back to an install-link QR.
+    /// Sets are packed back-to-back within each day's window (06:00→06:00), non-overlapping per stage.
+    static func bigFestival(days: Int, stagesPerDay: Int, setsPerStage: Int) -> FestivalPack {
+        let offset = 0
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(secondsFromGMT: offset)!
+        let base = cal.date(from: DateComponents(year: 2026, month: 6, day: 27))!
+
+        func dayString(_ d: Date) -> String {
+            let c = cal.dateComponents([.year, .month, .day], from: d)
+            return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+        }
+
+        var dayModels: [FestivalDay] = []
+        for dayIndex in 0..<days {
+            let dayDate = cal.date(byAdding: .day, value: dayIndex, to: base)!
+            let dayStart = cal.date(byAdding: .hour, value: 7, to: dayDate)!   // 07:00, inside the window
+            var stages: [FestivalStage] = []
+            for stageIndex in 0..<stagesPerDay {
+                var sets: [FestivalSet] = []
+                for setIndex in 0..<setsPerStage {
+                    let start = dayStart.addingTimeInterval(Double(setIndex) * 12 * 60)
+                    let end = start.addingTimeInterval(12 * 60)
+                    sets.append(FestivalSet(artist: "Artist \(dayIndex)-\(stageIndex)-\(setIndex)",
+                                            start: start, end: end))
+                }
+                stages.append(FestivalStage(name: "Stage \(stageIndex)", sets: sets))
+            }
+            dayModels.append(FestivalDay(date: dayString(dayDate), stages: stages))
+        }
+
+        return FestivalPack(id: "mega-fest-2026", name: "Mega Fest 2026", location: "Big Field",
+                            startDate: dayString(base),
+                            endDate: dayString(cal.date(byAdding: .day, value: days - 1, to: base)!),
+                            utcOffsetSeconds: offset, days: dayModels)
+    }
+
     /// `"2026-06-27T22:15"` in festival-local time (+01:00) → absolute `Date`.
     static func date(_ local: String, offsetSeconds: Int = utcOffsetSeconds) -> Date {
         let sign = offsetSeconds < 0 ? "-" : "+"

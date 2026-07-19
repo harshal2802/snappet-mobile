@@ -247,6 +247,46 @@ import XCTest
         XCTAssertTrue(app.buttons["festival.recap.reel"].exists, "the festival-reel CTA is offered")
         snap("festival-recap")
     }
+
+    // MARK: - Flow E · share by QR (frames 12–13 — festival prompt 05)
+
+    /// The share sheet from the schedule's ⋯ menu (the plan seed pre-stars "Jade Groove", so "Share
+    /// my plan" has something to encode): "My plan" renders a scannable QR that carries the plan in
+    /// the code, and the Scan tab opens the receive scanner — no camera needed to assert the chrome.
+    func testShareSheetRendersAPlanCodeAndOffersScan() {
+        let app = launch([FestivalSeed.planArgument])
+        openFestival(app)
+        let lineup = app.buttons["festival.lineup.snappet-test-festival"]
+        XCTAssertTrue(lineup.waitForExistence(timeout: 6), "the seeded lineup should list")
+        lineup.tap()
+
+        // Open the ⋯ share menu → "Share my plan".
+        let menu = app.buttons["festival.share.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 6), "the schedule should offer a share menu")
+        menu.tap()
+        app.buttons["Share my plan"].tap()
+
+        // The plan encodes into a black-on-white QR (the plan seed starred Jade Groove).
+        let qr = app.images["festival.share.qr"]
+        XCTAssertTrue(qr.waitForExistence(timeout: 6), "a small plan renders as a scannable QR")
+        XCTAssertTrue(app.staticTexts["festival.share.formNote"].exists,
+                      "the sheet says whether the code is in-the-code or an install link")
+        snap("festival-share-plan")
+
+        // Switch to the whole lineup — still a code (the seed lineup is small). Segmented-picker
+        // segments surface as top-level buttons by their label, not as children of the picker id.
+        app.buttons["Whole lineup"].tap()
+        XCTAssertTrue(qr.waitForExistence(timeout: 4), "the whole seeded lineup also fits a code")
+
+        // The Scan tab opens the receive scanner (camera permission handled inline — no real camera).
+        app.buttons["Scan"].tap()
+        let scanner = app.otherElements["festival.scanner"]
+        XCTAssertTrue(scanner.waitForExistence(timeout: 4)
+                      || app.descendants(matching: .any)["festival.scanner"].waitForExistence(timeout: 4)
+                      || app.staticTexts["Camera access"].waitForExistence(timeout: 4),
+                      "the Scan tab shows the shared scanner (or its permission prompt)")
+        snap("festival-share-scan")
+    }
 }
 
 /// Mirrors of the app-side seed arguments (the UI-test target can't import the app module's enums).

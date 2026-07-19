@@ -258,6 +258,35 @@ final class FestivalLineupInstaller {
         }
     }
 
+    /// Install an ALREADY-decoded pack — the festival-prompt-05 QR-payload path, where the pack rode in
+    /// the code (no fetch, no re-decode). Validates, re-emits the verbatim `.fpack` bytes, and inserts
+    /// (replace-on-reinstall by `packID`, exactly like `install(using:)`). Returns the row, or nil on a
+    /// validation failure (with `phase == .failed`). Synchronous — there's no I/O.
+    @discardableResult
+    func install(pack: FestivalPack, sourceLabel: String, into context: ModelContext) -> FestivalLineup? {
+        do {
+            let validated = try FestivalPackValidator.validate(pack)
+            let data = try pack.fpackData()
+            let lineup = FestivalLineup(packID: pack.id, name: pack.name, location: pack.location,
+                                        startDate: pack.startDate, endDate: pack.endDate,
+                                        utcOffsetSeconds: pack.utcOffsetSeconds,
+                                        stageCount: validated.stageCount,
+                                        setCount: validated.setCount,
+                                        sourceLabel: sourceLabel, fpackData: data)
+            let packID = pack.id
+            let existing = (try? context.fetch(FetchDescriptor<FestivalLineup>(
+                predicate: #Predicate { $0.packID == packID }))) ?? []
+            existing.forEach { context.delete($0) }
+            context.insert(lineup)
+            try context.save()
+            phase = .installed(packID: pack.id)
+            return lineup
+        } catch {
+            phase = .failed(error.localizedDescription)
+            return nil
+        }
+    }
+
     /// Handle a Files-importer result by routing the picked URL through the file provider.
     func importPicked(_ result: Result<[URL], Error>, into context: ModelContext) async {
         switch result {
