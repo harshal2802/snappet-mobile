@@ -12,6 +12,8 @@ struct FestivalEmptyStateView: View {
     var onBrowse: () -> Void
     /// Presents the receive-only scanner (festival prompt 05) — a friend's shared plan / lineup QR.
     var onScan: () -> Void = {}
+    /// Presents the poster-scan capture (festival prompt 06) — build a lineup from a photo / pasted text.
+    var onScanPoster: () -> Void = {}
 
     @Environment(\.modelContext) private var context
     @State private var showingImporter = false
@@ -51,6 +53,14 @@ struct FestivalEmptyStateView: View {
                     .buttonStyle(.bordered)
                     .disabled(installer.isWorking)
                     .accessibilityIdentifier("festival.catalog.import")
+
+                    Button { onScanPoster() } label: {
+                        Label("Scan a lineup poster", systemImage: "camera.viewfinder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(installer.isWorking)
+                    .accessibilityIdentifier("festival.poster.scan")
 
                     Button { onScan() } label: {
                         Label("Scan a friend's QR", systemImage: "qrcode.viewfinder")
