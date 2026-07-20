@@ -4,6 +4,32 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-19] Festival QR scan → import-confirm — defer the second sheet to the scanner's onDismiss (bugfix)
+
+**Decision** (bugfix, no prompt — the trace is this entry + commit). The in-app QR-scan → import-confirm
+path (`FestivalRootView`) hit the SAME dismiss-then-present-in-one-mutation race already fixed for the
+poster-scan capture→draft flow (commit `4fb36e4`). `present(_ shared:)` did `showingScan = false` and
+`incoming = shared` in one state mutation; SwiftUI can't reliably dismiss one sheet and present another
+attached to the same view in a single tick, so the `.sheet(item: $incoming)` import-confirm could fail to
+appear after a live scan (device-timing).
+
+- **The fix generalizes the poster-scan pattern to the QR-import path.** Added a `@State pendingIncoming:
+  SharedLineup?` holding var; `present(_:)` now stashes into it and only sets `showingScan = false`, and the
+  scanner sheet's `.sheet(isPresented: $showingScan, onDismiss:)` promotes `pendingIncoming → incoming` once
+  the scanner is actually gone — mirroring `pendingPosterDraft`. One-line-shaped change, no flow/UI change.
+- **The other `incoming` writer is left alone.** The shell one-shot / deep-link route
+  (`onChange(of: router.pendingFestivalImport)`) sets `incoming` directly — it is NOT inside a sheet
+  dismissal, already works, and stays as-is. Only the in-app-scanner `present(_:)` path needed the deferral.
+- **Testability — a canned-scan seam, not a red-on-bug guard.** Added `FestivalScanView`'s
+  `-uiTestFestivalScanSample` launch-arg seam (a toolbar "Sample" button that feeds a canned install-link
+  `SharedLineup` through the real `onScan` path, mirroring the poster `festival.poster.sample` seam) and
+  `testScanningAFriendsCodePresentsTheImportConfirm`. HONEST caveat: the race is a **device-timing** bug — it
+  does NOT reproduce red in the sim (the assertion passes on the buggy `present(_:)` too, because the real
+  scanner's extra environment `dismiss()` lets the sim tear down cleanly). So the XCUITest is genuine
+  end-to-end coverage of scan → import presentation (the only sim-drivable one — prior tests asserted scanner
+  chrome only), NOT a strict reproduction. Confidence rests on mirroring the already-proven poster fix +
+  deterministic reasoning. **Owed device leg:** confirm the confirm now presents after a live camera scan.
+
 ## [2026-07-19] Festival poster scan — draft ≠ pack, a heuristic floor under the FM, validate-before-install (festival prompt 06)
 
 **Decision** (implementing `pdd/prompts/features/festival/06-festival-poster-scan.md`; wireframe frame

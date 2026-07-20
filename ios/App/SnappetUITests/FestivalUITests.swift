@@ -287,6 +287,34 @@ import XCTest
                       "the Scan tab shows the shared scanner (or its permission prompt)")
         snap("festival-share-scan")
     }
+    /// End-to-end guard that the in-app scanner routes a decoded value into the import-confirm sheet
+    /// (festival prompt 05) — the only sim-drivable coverage of scan → import, via the canned-scan seam
+    /// (`-uiTestFestivalScanSample`, no camera). NOTE: the underlying dismiss-then-present timing race
+    /// this flow's fix addresses is a DEVICE-timing bug — it does NOT reproduce red in this simulator
+    /// (this assertion passes on the buggy `present(_:)` too), so this is a presentation smoke test of
+    /// the seam + `onDismiss` promotion path, not a strict red-on-bug reproduction. The race guard is the
+    /// `onDismiss`-deferral pattern mirrored from the proven poster-scan fix (see decisions 2026-07-19).
+    func testScanningAFriendsCodePresentsTheImportConfirm() {
+        let app = launch(["-uiTestFreshStore", "-uiTestFestivalScanSample"])
+        openFestival(app)
+
+        // From the empty state, open the friend's-QR scanner.
+        let scan = app.buttons["festival.scan"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 6), "the empty state should offer QR scan")
+        scan.tap()
+
+        // Feed a canned scanned value through the real onScan path (no camera).
+        let sample = app.buttons["festival.scan.sample"]
+        XCTAssertTrue(sample.waitForExistence(timeout: 6),
+                      "the scanner should offer the canned-scan seam under the UI-test arg")
+        sample.tap()
+
+        // The import-confirm sheet must present once the scanner has dismissed (the sheet-timing guard).
+        XCTAssertTrue(app.buttons["festival.import.confirm"].waitForExistence(timeout: 6),
+                      "scanning a code should present the import-confirm sheet after the scanner dismisses")
+        snap("festival-scan-import")
+    }
+
     // MARK: - Flow F · poster scan (frame 2's "Scan a lineup poster", festival prompt 06)
 
     /// From the empty state: build a lineup from pasted poster text (no camera in the sim), review the
