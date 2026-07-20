@@ -1,7 +1,8 @@
 # Festival — dance + video tagging for music-festival lineups
 
-**Created**: 2026-07-16 · **Status**: 01 merged (#292) · 02 merged (#293) · 03 merged (#294, tagging + Clips) · 04 merged (#295, plan & smart nudges) · 05 merged (#296, QR lineup sharing) · 06 implemented (poster scan)
+**Created**: 2026-07-16 · **Status**: 01 merged (#292) · 02 merged (#293) · 03 merged (#294, tagging + Clips) · 04 merged (#295, plan & smart nudges) · 05 merged (#296, QR lineup sharing) · 06 implemented (poster scan) · 07 implemented (guided getting started)
 **Wireframes** (user-approved end state, 14 frames): `docs/ux-research/festival/wireframes.html`
+**Getting-started wireframes** (user-approved, 6 frames): `docs/ux-research/festival/getting-started/wireframes.html`
 **Decision record**: `pdd/context/decisions.md` § 2026-07-16
 
 ## The shape (decided at ideation — do not relitigate)
@@ -35,6 +36,7 @@ capture rides the existing workout spine — the **Kilter shape, not the Wardrob
 | 04 | `04-festival-plan-and-nudges.md` | ★ plan, `UNUserNotificationCenter` reminders + clash alerts, pure `SetRecommender`, For-You sheet with FM reason lines. | **implemented** |
 | 05 | `05-festival-qr-sharing.md` | `SharedLineup: SnappetShareable` (deflate blob ⇄ install-link fallback, `SharedRoutine` pattern), share sheet, scanner + `snappet://festival/…` routes. | **implemented** |
 | 06 | `06-festival-poster-scan.md` | Lineup-poster photo → Apple Vision OCR → on-device FM structuring (heuristic floor when unavailable) → editable draft → validate → install as a `poster-<hash>` lineup. | **implemented** |
+| 07 | `07-festival-getting-started.md` | First-run onboarding: a once-only 3-card value tour + a setup checklist that replaces the empty state (add lineup → star → reminders), collapsing to a dismissible schedule banner. Pure `FestivalGettingStarted` state; two `@AppStorage` flags (no model). No new capability — a guided on-ramp over prompts 02 · 04. | **implemented** |
 
 Device legs owed at the end (record in memory + decisions): notifications timing in the field,
 watch-HR during a real set, camera-app clip discovery, QR scan phone-to-phone.

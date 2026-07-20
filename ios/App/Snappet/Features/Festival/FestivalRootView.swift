@@ -10,6 +10,15 @@ struct FestivalRootView: View {
     @Environment(SnappetCore.self) private var core
     @Environment(SuiteRouter.self) private var router
     @Query(sort: \FestivalLineup.installedAt, order: .reverse) private var lineups: [FestivalLineup]
+    /// Unfiltered — the getting-started state counts every star across every lineup (prompt 07).
+    @Query private var allStars: [FestivalStar]
+
+    // Guided getting-started (festival prompt 07). Two plain `@AppStorage` flags (NO SwiftData /
+    // backup change — the prompt-04 lead-time precedent); the other three inputs are DERIVED.
+    @AppStorage("festival.tourSeen") private var tourSeen = false
+    @AppStorage("festival.gettingStartedDismissed") private var checklistDismissed = false
+    /// Prompt 04's "reminders on" = notification authorization granted; read at the thin edge.
+    @State private var remindersEnabled = false
 
     @State private var installer = FestivalLineupInstaller()
     @State private var showingBrowse = false
@@ -30,18 +39,40 @@ struct FestivalRootView: View {
     /// presented only AFTER the scanner sheet is gone.
     @State private var pendingIncoming: SharedLineup?
 
+    /// The pure onboarding decision — derived from the two flags + the live counts (prompt 07).
+    private var onboarding: FestivalGettingStarted {
+        FestivalGettingStarted(tourSeen: tourSeen, checklistDismissed: checklistDismissed,
+                               lineupCount: lineups.count, starCount: allStars.count,
+                               remindersEnabled: remindersEnabled)
+    }
+
     var body: some View {
         Group {
-            if lineups.isEmpty {
-                FestivalEmptyStateView(installer: installer, onBrowse: { showingBrowse = true },
-                                       onScan: { showingScan = true },
-                                       onScanPoster: { showingPosterScan = true })
+            if onboarding.showTour {
+                // The value tour rides once on first open, before the empty screen (frames 1–4).
+                FestivalTourView(onFinish: { tourSeen = true })
+            } else if lineups.isEmpty {
+                if onboarding.checklist == .full {
+                    // The guided checklist stands in for the blank empty state (frame 5).
+                    FestivalSetupChecklistView(state: onboarding,
+                                               onBrowse: { showingBrowse = true },
+                                               onScanPoster: { showingPosterScan = true },
+                                               onScan: { showingScan = true },
+                                               onDismiss: { checklistDismissed = true })
+                } else {
+                    FestivalEmptyStateView(installer: installer, onBrowse: { showingBrowse = true },
+                                           onScan: { showingScan = true },
+                                           onScanPoster: { showingPosterScan = true })
+                }
             } else {
                 lineupList
             }
         }
+        // Full-bleed the tour — its own "How it works" chrome is the only chrome while it shows.
+        .toolbar(onboarding.showTour ? .hidden : .visible, for: .navigationBar)
         .navigationTitle("Festival")
         .navigationBarTitleDisplayMode(.inline)
+        .task { remindersEnabled = await FestivalNotifications().authorizationGranted() }
         .sheet(isPresented: $showingBrowse) {
             FestivalCatalogBrowseView(installer: installer)
         }

@@ -4,6 +4,57 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-19] Festival guided getting-started — pure surface state, two @AppStorage flags, no new capability (festival prompt 07)
+
+**Decision** (implementing `pdd/prompts/features/festival/07-festival-getting-started.md`;
+`docs/ux-research/festival/getting-started/wireframes.html`, user-approved). A first-run on-ramp for
+the Festival mini-app: a once-only 3-card value tour then a setup checklist that replaces the blank
+empty state and collapses to a dismissible schedule banner. Adds NO capability — it reuses the shipped
+catalog install, the ★ plan, and set reminders. Non-obvious calls:
+
+- **The whole surface decision is a PURE value type** (`FestivalGettingStarted`) — the festival
+  "pure logic at a thin edge" rule (prompts 01 / 03 / 04). Inputs: `tourSeen`, `checklistDismissed`,
+  `lineupCount`, `starCount`, `remindersEnabled`. Outputs: `showTour`, `checklist`
+  (`.full` / `.banner` / `.hidden`), each `Step`'s state (`.done` / `.activeNext` / `.locked`),
+  `completedCount` / `progressFraction` / `nextStep` / `isComplete` / `isFinished`. The SwiftUI views
+  (`FestivalTourView` / `FestivalSetupChecklistView` / `FestivalGettingStartedBanner`) are thin
+  renderers; every combination unit-tests with no simulator (`FestivalGettingStartedTests`).
+- **Derived-vs-stored split — only TWO flags persist.** `festival.tourSeen` and
+  `festival.gettingStartedDismissed` are plain `@AppStorage` (the prompt-04 lead-time precedent), so
+  NO `SnappetSchema` / `SnappetBackup` change and the backup tripwire stays quiet. The other three
+  inputs are DERIVED live: `lineupCount` / `starCount` from unfiltered `@Query`s, and
+  `remindersEnabled` from `FestivalNotifications.authorizationGranted()` — REUSING prompt 04's notion
+  of "reminders on" (notification authorization, requested from the deliberate For-You surface), NOT
+  a parallel flag. This means step-2/3 completion follows the real data, and a backup restore that
+  brings back a full plan reports `isComplete` with the flags reset.
+- **Tour-once + suppress-when-complete.** `showTour = !tourSeen && !isComplete`: the tour shows once
+  on first module open, and is suppressed entirely when every step is already done — so a
+  reinstall/backup-restore over finished data (flags reset to false, but the restored lineup/stars
+  make it complete) never re-shows a "getting started" tour to an established user.
+- **`starGoal = 1`** — a single ★ already builds a plan (reminders, clash alerts, For-You all key off
+  one star), so step 2 ticks on the first star. The wireframe's "star a few sets" is encouragement,
+  not a gate; onboarding is never blocking.
+- **The checklist deep-links to shipped surfaces, never duplicates them.** The full checklist's
+  primary CTA is still "Add a lineup" — a `confirmationDialog` onto the SAME browse / poster-scan /
+  friend's-QR closures `FestivalRootView` already owns (step 1); the banner's reminders nudge opens
+  the For-You sheet (step 3, where auth + the lead-time live); the star step (2) is the schedule the
+  banner already rides, so its tap is inert.
+- **The tour renders INLINE as the root, not as a sheet** (nav bar hidden while it shows) — the suite
+  has repeated dismiss-then-present sheet races (the poster / QR `onDismiss`-deferral fixes); an
+  inline root avoids them and makes the flow deterministic under XCUITest.
+- **Container ids were kept OFF the tour / checklist / banner wrappers** — a container
+  `accessibilityIdentifier` flattens the child buttons (take / skip / next / Add-a-lineup / ✕) out of
+  the XCUITest tree (the highlights-P5 / prompt-04 gotcha, which bit again here and was caught by the
+  new UI tests). Ids ride the interactive children; presence is asserted via headline/title static
+  texts (`festival.gs.checklist.title`, `festival.gs.banner.title`).
+- **UI-test control: default PAST onboarding, opt IN with `-uiTestFestivalOnboarding`.** Onboarding
+  rides `@AppStorage`, which survives the in-memory store swap, so `SnappetApp`'s freshStore branch
+  sets both flags true by default (the existing festival tests assert the empty state / schedule
+  directly) and clears them only under the new arg — combinable with `-uiTestSeedFestivalLineup` to
+  reach the collapsed banner.
+- Owed device leg: completing step 3 drives the real notification-permission dialog; verify
+  banner-retires-on-complete on a device. Android not ported.
+
 ## [2026-07-19] Festival QR scan → import-confirm — defer the second sheet to the scanner's onDismiss (bugfix)
 
 **Decision** (bugfix, no prompt — the trace is this entry + commit). The in-app QR-scan → import-confirm
