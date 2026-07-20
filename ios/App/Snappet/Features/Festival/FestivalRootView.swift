@@ -24,6 +24,11 @@ struct FestivalRootView: View {
     /// A scanned/opened `snappet://festival/…` value awaiting the import-confirm (festival prompt 05).
     /// Fed from the shell's one-shot (`SuiteRouter.pendingFestivalImport`) and from an in-app scan.
     @State private var incoming: SharedLineup?
+    /// Holds an in-app-scanned value while the scanner sheet dismisses; promoted to `incoming` in the
+    /// scanner sheet's `onDismiss`. Same one-mutation two-sheet race as `pendingPosterDraft` — SwiftUI
+    /// can't dismiss the scanner and present the import-confirm in one state mutation, so the confirm is
+    /// presented only AFTER the scanner sheet is gone.
+    @State private var pendingIncoming: SharedLineup?
 
     var body: some View {
         Group {
@@ -40,7 +45,14 @@ struct FestivalRootView: View {
         .sheet(isPresented: $showingBrowse) {
             FestivalCatalogBrowseView(installer: installer)
         }
-        .sheet(isPresented: $showingScan) {
+        .sheet(isPresented: $showingScan, onDismiss: {
+            // Present the import-confirm only once the scanner sheet has actually dismissed —
+            // dismissing + presenting two sheets in one mutation drops the second presentation.
+            if let shared = pendingIncoming {
+                pendingIncoming = nil
+                incoming = shared
+            }
+        }) {
             FestivalScanView(onScan: { present($0) })
         }
         .sheet(isPresented: $showingPosterScan, onDismiss: {
@@ -145,10 +157,13 @@ struct FestivalRootView: View {
 
     // MARK: - Receiving a shared lineup / plan (festival prompt 05)
 
-    /// Stage a decoded value for the import-confirm (from an in-app scan). Dismiss the scanner first.
+    /// Stage a decoded value for the import-confirm (from an in-app scan). Stash it and dismiss the
+    /// scanner; the scanner sheet's `onDismiss` promotes it to `incoming` so the import-confirm presents
+    /// only after the scanner is gone (SwiftUI can't dismiss one sheet and present another in one
+    /// mutation — the poster-scan `pendingPosterDraft` race, generalized to the QR-import path).
     private func present(_ shared: SharedLineup) {
+        pendingIncoming = shared
         showingScan = false
-        incoming = shared
     }
 
     /// Run the confirmed import — the pure `SharedLineup.receiveAction` decides WHAT, this executes it
@@ -247,8 +262,29 @@ struct FestivalScanView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    // UI-test seam: the sim has no camera, so feed a canned decoded value through the
+                    // real `onScan` path (identical to a live scan) to make the scan → import-confirm
+                    // presentation a deterministic regression guard. Gated on the launch arg, so it never
+                    // appears in the shipped app (the `-uiTestPosterFloorOnly` / seed-arg convention).
+                    if ProcessInfo.processInfo.arguments.contains(Self.uiTestScanSampleArgument) {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Sample") {
+                                if let shared = SharedLineup(decoding: Self.uiTestSampleCode) {
+                                    onScan(shared); dismiss()
+                                }
+                            }
+                            .accessibilityIdentifier("festival.scan.sample")
+                        }
+                    }
                 }
         }
         .presentationDetents([.large])
     }
+
+    /// Launch arg that reveals the canned-scan seam above (UI test only).
+    static let uiTestScanSampleArgument = "-uiTestFestivalScanSample"
+    /// A canned `snappet://festival/…` value the seam feeds through `onScan` (an install-link form —
+    /// no full pack needed to exercise the presentation).
+    static let uiTestSampleCode =
+        "snappet://festival/install/uitest-shared?h=example.com&t=Shared%20lineup&k=0"
 }
