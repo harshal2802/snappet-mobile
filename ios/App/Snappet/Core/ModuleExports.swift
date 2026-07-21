@@ -86,6 +86,61 @@ enum ModuleExports {
         return out
     }
 
+    // MARK: - Festival → CSV
+
+    /// One row per set across every installed lineup, annotated with YOUR weekend: whether you
+    /// starred it, minutes you spent "on the floor" (summed `FestivalAttendance` stretches), and how
+    /// many clips are tagged to it. The schedule is decoded from each lineup's stored `.fpack` bytes,
+    /// so the file is self-contained — the same UUIDv5 set content-ids the stars / attendance / tags
+    /// key on. A lineup whose bytes won't decode is skipped rather than crashing the export (the same
+    /// tampered-data tolerance as `budgetCSV`). Sets are emitted in schedule order; set times are the
+    /// festival's own local time (ISO-8601 with the pack's offset), the day is its poster date.
+    static func festivalCSV(lineups: [FestivalLineup], stars: [FestivalStar],
+                            attendance: [FestivalAttendance], tags: [FestivalClipTag]) -> String {
+        func key(_ packID: String, _ setID: UUID) -> String { "\(packID)\u{1}\(setID.uuidString)" }
+        let starred = Set(stars.map { key($0.packID, $0.setID) })
+        var dancedSec: [String: TimeInterval] = [:]
+        for a in attendance {
+            let seconds = max(0, (a.endedAt ?? a.startedAt).timeIntervalSince(a.startedAt))
+            dancedSec[key(a.packID, a.setID), default: 0] += seconds
+        }
+        var clipCount: [String: Int] = [:]
+        for t in tags { clipCount[key(t.packID, t.setID), default: 0] += 1 }
+
+        var out = "festival,day,stage,artist,start,end,starred,danced_minutes,clips\n"
+        for lineup in lineups.sorted(by: { $0.packID < $1.packID }) {
+            guard let pack = try? FestivalPack.decode(fpack: lineup.fpackData) else { continue }
+            for day in pack.days {
+                var rows: [(stage: String, set: FestivalSet)] = []
+                for stage in day.stages {
+                    for set in stage.sets { rows.append((stage.name, set)) }
+                }
+                rows.sort { a, b in
+                    a.set.start != b.set.start ? a.set.start < b.set.start : a.set.artist < b.set.artist
+                }
+                for row in rows {
+                    let stageName = row.stage
+                    let set = row.set
+                    let k = key(lineup.packID, set.id)
+                    let mins = Int((dancedSec[k] ?? 0) / 60.0 + 0.5)
+                    let fields = [
+                        pack.name,
+                        day.date,
+                        stageName,
+                        set.artist,
+                        FestivalPack.isoString(set.start, utcOffsetSeconds: pack.utcOffsetSeconds),
+                        FestivalPack.isoString(set.end, utcOffsetSeconds: pack.utcOffsetSeconds),
+                        starred.contains(k) ? "yes" : "no",
+                        String(mins),
+                        String(clipCount[k] ?? 0),
+                    ]
+                    out += fields.map(csvField).joined(separator: ",") + "\n"
+                }
+            }
+        }
+        return out
+    }
+
     // MARK: - Workout history → JSON
 
     /// Readable JSON (pretty, sorted keys, ISO-8601 dates) of the full history — every
