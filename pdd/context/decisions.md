@@ -4,6 +4,24 @@ Reverse-chronological. Each entry: the decision, why, and what it rules out. The
 non-obvious choices already baked into the v0.1 code — written down so future prompts don't re-litigate
 or accidentally reverse them.
 
+## [2026-07-21] Festival backup completeness — name it in the copy + add a per-module CSV export
+
+**Decision.** Festival data (the four `@Model`s) was already fully in `SnappetBackup` (schema +
+rows + round-trip/coverage tests), but two user-facing surfaces made it look excluded, so:
+- `BackupView`'s "what's in the backup" footer named only the pre-wardrobe apps — added **festivals
+  (installed lineups, your plan & tagged clips)** and **wardrobe** so the copy matches the envelope.
+- The **"Export one module"** section had no Festival row (it's a curated set — Kilter/Wardrobe/etc.
+  also lack one). Added `ModuleExports.festivalCSV` + a Festival → CSV row. The export is **pure and
+  self-contained**: it decodes each `FestivalLineup`'s stored `.fpack` bytes to the schedule, then
+  annotates every set with your plan/captures — `starred`, `danced_minutes` (summed
+  `FestivalAttendance` stretches), and `clips` (tagged count) — keyed by the UUIDv5 set content-id the
+  stars/attendance/tags share. Times are festival-local ISO-8601 (`FestivalPack.isoString`), the day
+  is its poster date. An undecodable lineup is skipped, not fatal (the `budgetCSV` tampered-data
+  tolerance). **Rules out** an HR column here — peak-HR needs the dance `WorkoutSession` series, which
+  is already whole in the workout JSON export; the festival CSV stays a pure plan/capture summary.
+- Onboarding flags (`festival.tourSeen` / `…gettingStartedDismissed`) stay `@AppStorage`, NOT in the
+  backup — consistent with the footer's existing "settings aren't included" note.
+
 ## [2026-07-19] Festival QR scan → import-confirm — defer the second sheet to the scanner's onDismiss (bugfix)
 
 **Decision** (bugfix, no prompt — the trace is this entry + commit). The in-app QR-scan → import-confirm

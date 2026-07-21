@@ -165,6 +165,13 @@ struct BackupView: View {
                     contentType: .commaSeparatedText, filename: "snappet-expenses-\(dateStamp)",
                     successMessage: "Expenses exported.")
             }
+            exportRow("Festival", detail: "CSV", id: "festival", systemImage: "music.mic") {
+                BackupExportDocument(
+                    data: Data(ModuleExports.festivalCSV(lineups: try fetchAll(), stars: try fetchAll(),
+                                                         attendance: try fetchAll(), tags: try fetchAll()).utf8),
+                    contentType: .commaSeparatedText, filename: "snappet-festival-\(dateStamp)",
+                    successMessage: "Festival exported.")
+            }
             exportRow("Workout history", detail: "JSON", id: "workouts", systemImage: "dumbbell") {
                 BackupExportDocument(
                     data: try ModuleExports.workoutHistoryJSON(try fetchAll()),
