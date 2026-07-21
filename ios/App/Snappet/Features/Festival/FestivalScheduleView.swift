@@ -16,6 +16,15 @@ struct FestivalScheduleView: View {
 
     @Query private var stars: [FestivalStar]
     @Query private var attendance: [FestivalAttendance]
+    /// Unfiltered — the getting-started banner counts lineups/stars across the whole module (prompt 07).
+    @Query private var allLineups: [FestivalLineup]
+    @Query private var allStars: [FestivalStar]
+
+    // Guided getting-started banner (festival prompt 07) — the two plain `@AppStorage` flags the root
+    // owns; the banner reads them so it collapses/dismisses consistently with the checklist.
+    @AppStorage("festival.tourSeen") private var tourSeen = false
+    @AppStorage("festival.gettingStartedDismissed") private var checklistDismissed = false
+    @State private var remindersEnabled = false
 
     @State private var pack: FestivalPack?
     @State private var selectedDay: String?
@@ -44,6 +53,14 @@ struct FestivalScheduleView: View {
 
     private var starredIDs: Set<UUID> { Set(stars.map(\.setID)) }
     private var openAttendance: FestivalAttendance? { attendance.first { $0.isOpen } }
+
+    /// The pure onboarding decision (prompt 07) — the schedule shows the collapsed banner while it
+    /// resolves to `.banner`.
+    private var onboarding: FestivalGettingStarted {
+        FestivalGettingStarted(tourSeen: tourSeen, checklistDismissed: checklistDismissed,
+                               lineupCount: allLineups.count, starCount: allStars.count,
+                               remindersEnabled: remindersEnabled)
+    }
 
     var body: some View {
         Group {
@@ -106,6 +123,8 @@ struct FestivalScheduleView: View {
             }
         }
         .task {
+            // Keep the getting-started banner's reminders step honest (prompt 07 / 04).
+            remindersEnabled = await notifications.authorizationGranted()
             guard pack == nil else { return }
             pack = lineup.pack()
             if let pack, selectedDay == nil {
@@ -120,6 +139,11 @@ struct FestivalScheduleView: View {
                 await FestivalTagSync.refresh(pack: pack, packID: lineup.packID, context: context,
                                               mediaService: app.sessionMedia)
             }
+        }
+        // Re-read authorization after the For-You sheet (where reminders are turned on) closes, so
+        // the getting-started banner's step-3 ticks and it retires the moment all three are done.
+        .onChange(of: showingForYou) { _, showing in
+            if !showing { Task { remindersEnabled = await notifications.authorizationGranted() } }
         }
         // A set row pushes its detail (frame 6); recap's artist rows reuse the same registration.
         .navigationDestination(for: FestivalSet.self) { set in
@@ -171,6 +195,17 @@ struct FestivalScheduleView: View {
 
     private func schedule(pack: FestivalPack, now: Date) -> some View {
         VStack(spacing: 0) {
+            if onboarding.checklist == .banner {
+                FestivalGettingStartedBanner(
+                    state: onboarding,
+                    onTapNudge: { step in
+                        // Reminders is the only step not reachable right here on the schedule; the
+                        // For-You sheet owns the lead-time control + the auth request (prompt 04).
+                        if step == .enableReminders { showingForYou = true }
+                    },
+                    onDismiss: { checklistDismissed = true })
+                    .padding(.horizontal).padding(.top, 8)
+            }
             dayTabs(pack: pack)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {

@@ -42,6 +42,22 @@ final class FestivalNotifications {
         #endif
     }
 
+    /// Whether local set reminders can actually fire — notification authorization is granted (or
+    /// provisional). This IS prompt 04's notion of "reminders on": the For-You sheet is where it's
+    /// requested, and the getting-started checklist reads it to tick step 3. Not a new stored flag.
+    /// `false` where `UserNotifications` is unavailable.
+    func authorizationGranted() async -> Bool {
+        #if canImport(UserNotifications)
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return true
+        default: return false
+        }
+        #else
+        return false
+        #endif
+    }
+
     /// Reschedule every future starred set's reminder for `pack`: clear this lineup's prior reminders
     /// (so a star toggle or a reinstall never stacks or strands one), then add one per set the
     /// `reminderPlan` keeps. Idempotent. `add` doesn't prompt, so this is safe to call on any star

@@ -65,6 +65,18 @@ struct SnappetApp: App {
                         ClipsHealthOffer.resolvedKey] {
                 defaults.removeObject(forKey: key)
             }
+            // Festival getting-started (prompt 07) rides two @AppStorage flags that survive the
+            // in-memory store swap. By default every UI-test launch starts PAST onboarding, so the
+            // existing festival tests still assert the empty state / schedule directly; the
+            // onboarding tests opt IN with `-uiTestFestivalOnboarding` to get a fresh tour + checklist
+            // (combinable with the lineup seed to reach the collapsed banner).
+            if args.contains("-uiTestFestivalOnboarding") {
+                defaults.removeObject(forKey: "festival.tourSeen")
+                defaults.removeObject(forKey: "festival.gettingStartedDismissed")
+            } else {
+                defaults.set(true, forKey: "festival.tourSeen")
+                defaults.set(true, forKey: "festival.gettingStartedDismissed")
+            }
         }
         // Kilter catalog (issue #42): the app ships no catalog. Under the catalog test args this clears
         // any leftover on-device catalog and — only with `-uiTestInstallKilterCatalog` — installs a

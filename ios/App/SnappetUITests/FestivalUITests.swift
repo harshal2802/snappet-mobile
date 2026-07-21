@@ -56,6 +56,84 @@ import XCTest
                       "cancel should return to the empty state")
     }
 
+    // MARK: - Flow G · guided getting started (festival prompt 07)
+
+    /// First open: the value tour rides once, ends into the setup checklist that replaces the empty
+    /// state, and "I'll explore on my own" falls through to the plain empty state — and the tour does
+    /// NOT return on a re-open (tour-once). Opt into onboarding with `-uiTestFestivalOnboarding`
+    /// (the other festival tests launch past it).
+    func testTourEndsIntoTheChecklistThenDismissesAndNeverReturns() {
+        let app = launch(["-uiTestFreshStore", "-uiTestFestivalOnboarding"])
+        openFestival(app)
+
+        // 1 — the welcome cover is the module's first frame (assert via the headline static text —
+        // the tour container carries no id so its buttons stay in the tree).
+        XCTAssertTrue(app.staticTexts["Plan it. Dance it."].waitForExistence(timeout: 6),
+                      "first open shows the value tour cover")
+        snap("festival-gs-tour-cover")
+
+        // 2 — take the tour: cover → three teaching cards → Get started.
+        app.buttons["festival.tour.take"].tap()
+        let next = app.buttons["festival.tour.next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 4), "the first teaching card advances with Next")
+        next.tap()
+        XCTAssertTrue(app.buttons["festival.tour.next"].waitForExistence(timeout: 4))
+        app.buttons["festival.tour.next"].tap()
+        let getStarted = app.buttons["festival.tour.getStarted"]
+        XCTAssertTrue(getStarted.waitForExistence(timeout: 4), "the last card ends on Get started")
+        getStarted.tap()
+
+        // 3 — the guided checklist replaces the empty state: step 1 active, progress 0 of 3.
+        XCTAssertTrue(app.staticTexts["festival.gs.checklist.title"].waitForExistence(timeout: 6),
+                      "the tour hands off to the setup checklist")
+        XCTAssertTrue(app.buttons["festival.gs.addLineup"].exists, "the primary CTA is still Add a lineup")
+        snap("festival-gs-checklist")
+
+        // 4 — "I'll explore on my own" dismisses to the plain empty state (download leads).
+        app.buttons["festival.gs.explore"].tap()
+        XCTAssertTrue(app.buttons["festival.catalog.browse"].waitForExistence(timeout: 6),
+                      "dismissing lands on the plain empty state")
+        XCTAssertFalse(app.buttons["festival.gs.addLineup"].exists,
+                       "the checklist is gone once dismissed")
+
+        // 5 — tour-once: pop to the App Library and re-open — no tour, no checklist, plain empty state.
+        app.navigationBars.buttons.firstMatch.tap()
+        openFestival(app)
+        XCTAssertTrue(app.buttons["festival.catalog.browse"].waitForExistence(timeout: 6),
+                      "re-opening goes straight to the empty state")
+        XCTAssertFalse(app.staticTexts["Plan it. Dance it."].exists,
+                       "the tour is never shown twice")
+    }
+
+    /// After the first lineup, the checklist collapses to a dismissible banner above the schedule;
+    /// the ✕ retires it for good. Seeds a lineup AND opts into onboarding, so the run starts on the
+    /// tour, skips it, and reaches the banner.
+    func testChecklistCollapsesToADismissibleScheduleBanner() {
+        let app = launch([FestivalSeed.argument, "-uiTestFestivalOnboarding"])
+        openFestival(app)
+
+        // Skip the tour from the cover.
+        let skip = app.buttons["festival.tour.skipCover"]
+        XCTAssertTrue(skip.waitForExistence(timeout: 6), "onboarding opens on the tour cover")
+        skip.tap()
+
+        // The seeded lineup lists (checklist already collapsed — a lineup is installed).
+        let lineup = app.buttons["festival.lineup.snappet-test-festival"]
+        XCTAssertTrue(lineup.waitForExistence(timeout: 6), "the seeded lineup should list")
+        lineup.tap()
+
+        // The banner rides above the day schedule, nudging the next step (star a set).
+        let bannerTitle = app.staticTexts["festival.gs.banner.title"]
+        XCTAssertTrue(bannerTitle.waitForExistence(timeout: 6),
+                      "the checklist collapses to a nudge banner on the schedule")
+        snap("festival-gs-banner")
+
+        // The ✕ dismisses it for good.
+        app.buttons["festival.gs.banner.dismiss"].tap()
+        XCTAssertFalse(bannerTitle.waitForExistence(timeout: 3),
+                       "tapping ✕ retires the banner")
+    }
+
     // MARK: - Flow B · the weekend (frames 4–5)
 
     func testScheduleStarsClashAndTheLiveSheet() {
