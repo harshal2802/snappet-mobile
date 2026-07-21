@@ -114,7 +114,8 @@ struct BackupView: View {
                 // Scoped to *records*: UserDefaults-resident settings (HR profile, expense
                 // "me", band pairing) and the highlight-feedback log are NOT in the envelope.
                 Text("Everything in Snappet's database in one file — workouts (full "
-                     + "heart-rate series), climbing, journal, habits, finance, studio "
+                     + "heart-rate series), climbing, festivals (installed lineups, your "
+                     + "plan & tagged clips), wardrobe, journal, habits, finance, studio "
                      + "projects. Settings and the highlight-feedback log aren't included; "
                      + "export feedback separately below. It only goes where you save it in "
                      + "Files; nothing is uploaded by Snappet.")
