@@ -141,6 +141,55 @@ final class ModuleExportsTests: XCTestCase {
         XCTAssertTrue(text.contains("\"kept\""))
     }
 
+    // MARK: - Festival → CSV
+
+    func testFestivalCSVAnnotatesSetsWithPlanAndCaptures() throws {
+        let pack = FestivalFixtures.glastonbury()
+        let lineup = FestivalLineup(
+            packID: pack.id, name: pack.name, location: pack.location,
+            startDate: pack.startDate, endDate: pack.endDate, utcOffsetSeconds: pack.utcOffsetSeconds,
+            stageCount: 6, setCount: 8, sourceLabel: "Test", fpackData: try pack.fpackData())
+        let fred = FestivalFixtures.set(named: "Fred again..", in: pack)
+        let simz = FestivalFixtures.set(named: "Little Simz", in: pack)
+
+        // You starred Fred, danced ~30 min at his set, and filmed two clips there. Simz: untouched.
+        let stars = [FestivalStar(packID: pack.id, setID: fred.id)]
+        let attendance = [FestivalAttendance(
+            packID: pack.id, setID: fred.id, artist: fred.artist, stage: fred.stage,
+            sessionID: UUID(), startedAt: fred.start, endedAt: fred.start.addingTimeInterval(30 * 60))]
+        let tags = [
+            FestivalClipTag(packID: pack.id, setID: fred.id, artist: fred.artist, stage: fred.stage,
+                            mediaID: UUID(), sessionID: UUID(), confidence: 0.97, reason: "withinSet",
+                            source: .auto),
+            FestivalClipTag(packID: pack.id, setID: fred.id, artist: fred.artist, stage: fred.stage,
+                            mediaID: UUID(), sessionID: UUID(), confidence: 0.9, reason: "user",
+                            source: .user),
+        ]
+
+        let csv = ModuleExports.festivalCSV(lineups: [lineup], stars: stars,
+                                            attendance: attendance, tags: tags)
+        let lines = csv.split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.first, "festival,day,stage,artist,start,end,starred,danced_minutes,clips")
+        XCTAssertEqual(lines.count, 1 + pack.allSets.count, "one row per set in the installed lineup")
+
+        let fredRow = try XCTUnwrap(lines.first { $0.contains("Fred again..") })
+        XCTAssertTrue(fredRow.contains("Glastonbury 2026"))
+        XCTAssertTrue(fredRow.hasSuffix(",yes,30,2"), "starred=yes, 30 danced minutes, 2 clips (\(fredRow))")
+
+        let simzRow = try XCTUnwrap(lines.first { $0.contains("Little Simz") })
+        XCTAssertTrue(simzRow.hasSuffix(",no,0,0"), "an untouched set reads no/0/0 (\(simzRow))")
+    }
+
+    func testFestivalCSVSkipsUndecodableLineupWithoutCrashing() {
+        let junk = FestivalLineup(
+            packID: "corrupt", name: "Corrupt", location: "", startDate: "2026-01-01",
+            endDate: "2026-01-01", utcOffsetSeconds: 0, stageCount: 0, setCount: 0,
+            sourceLabel: "Test", fpackData: Data([0x00, 0x01, 0x02]))
+        let csv = ModuleExports.festivalCSV(lineups: [junk], stars: [], attendance: [], tags: [])
+        // Header only — the bad lineup is skipped, not a crash, matching the CSV tolerance elsewhere.
+        XCTAssertEqual(csv, "festival,day,stage,artist,start,end,starred,danced_minutes,clips\n")
+    }
+
     // MARK: - CSV escaping
 
     func testCSVFieldEscaping() {
