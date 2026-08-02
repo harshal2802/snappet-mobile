@@ -8992,3 +8992,79 @@ Non-obvious calls:
   in the same CI run but passes locally on both main and the PR branch, and passed on CI re-run —
   flake, consistent with the known UITest flakiness on this repo's runners. Two failures in one run
   did **not** mean two regressions.
+## 2026-08-02 — Closet photos: right-size on write, thumbnail per row, destructive one-time reclaim (wardrobe prompt 03)
+
+**Decision** (user on-device: "scroll in the closet hangs after adding so much"). The closet grid was
+never the problem — what it was asked to decode was. Diagnosed against the real closet pulled off
+MrRobot (App Group container, 100 items added in one ~11-hour cataloguing session): capture stored the
+background-removed cut-out via `cutout.pngData()`, i.e. **full-resolution lossless RGBA PNG**. Measured:
+**97 cut-outs averaging 10.4 MB + 3 JPEG originals = 1.01 GB for 100 garments**. `WardrobeItemTile`
+then decoded that master — a 3024×2820 RGBA bitmap is ~34 MB — synchronously in the view body, uncached,
+to fill a **96pt** tile. ~110× the pixels the tile can show, at nine call sites between 38pt and 240pt.
+
+Non-obvious calls:
+
+- **Two stored sizes, and the grid normally never sees the master.** `imageData` is capped at 1024px
+  longest edge (the 240pt detail hero is 720px at 3x); a new `thumbnailData` is capped at 320px (largest
+  tile use is 100pt). `WardrobeItemTile` prefers `thumbnailData`; a single new `WardrobeItemHeroImage`
+  reads the master. Splitting the slots — rather than just shrinking one image — is what lets the 38pt
+  settings row cost the same as the 96pt grid tile.
+- **`thumbnailData` is deliberately NOT `@Attribute(.externalStorage)`**, unlike every other blob in the
+  suite. External storage would move the bytes to a file *and make `item.thumbnailData?.count` a
+  main-thread file read* — and that count is in the tile's `.task(id:)` identity, so it runs for every
+  tile on every body pass. Inline keeps the grid's bytes riding the row fetch it already pays for
+  (measured: 13.2 MB of thumbnails for 100 items).
+- **Migration state is derived from the data, never a flag.** An item needs work iff it has no thumbnail
+  or its master is over the cap. That single predicate buys idempotence, resume-after-kill, and
+  self-healing after a restore — and is why `thumbnailData` is **excluded from `SnappetBackup`**
+  (derived data; the backup already carries the masters and must not double them). The backup tripwire
+  `testCodecCoversEverySchemaModel` is model-level, so omitting a property is legal by construction —
+  `WardrobeImagePolicyTests.testDownscalingReachesAFixedPoint` is what actually guarantees the migration
+  terminates (whatever `fittedSize` emits must not itself report as needing downscale).
+- **The re-encode is destructive, by explicit user approval** (2026-08-02): reclaim the space rather than
+  keep full-resolution pixels no surface can display. Verified on the real 100 blobs before it was ever
+  pointed at the device — `WardrobeImageStoreRealDataTests` (opt-in, reads `<repo>/.wardrobe-real-blobs`)
+  reports **1021.6 MB → 138.9 MB, 882.7 MB reclaimed, 97/97 cut-outs keeping alpha**, every output inside
+  the caps. That test is gated on a local fixture rather than an env var because `xcodebuild` does *not*
+  forward the shell environment (nor `TEST_RUNNER_`-prefixed vars) into a **hosted unit test** — an
+  env-gated safety check silently skips, which is worse than not having one.
+- **Alpha is the failure mode to guard.** Cut-outs must re-encode as PNG and the resize must set
+  `UIGraphicsImageRendererFormat.opaque = false`; a JPEG round-trip or an opaque renderer turns the
+  transparent surround black. Non-cut-out originals stay JPEG (far smaller for photographic content).
+- **Decode moved to ImageIO's thumbnail path** (`CGImageSourceCreateThumbnailAtIndex` +
+  `kCGImageSourceShouldCacheImmediately`) rather than `UIImage(data:)`, so the full-size bitmap is never
+  materialized even transiently, and the bytes are baked off-main instead of on the scroll frame that
+  draws them. One bounded `NSCache` (`WardrobeImageCache`), cost = decoded bitmap bytes, mirroring
+  `AssetPosterLoader` from the clips-feed perf work — two caches for one job would drift.
+- **Structural fixes in `ClosetView`, secondary but real**: `sections` was calling `filtered.filter` once
+  per category (8 fresh O(n) scans per body pass, since `filtered` is computed) → one `Dictionary(grouping:)`
+  pass; outer `LazyVStack` → plain `VStack` because a `LazyVGrid` nested in a `LazyVStack` largely defeats
+  laziness (≤8 sections, and the grids stay lazy where the 100 tiles actually are).
+
+**Two bugs the first device build shipped with**, both found by the user on MrRobot and worth keeping as
+standing lessons:
+
+- **Never own a data migration with a view's `.task` modifier.** SwiftUI cancels it on disappear, so
+  tapping "See all ›" from the Wardrobe home into the closet — the most likely next tap — cancelled the
+  run at **exactly 31 of 100 items** (747 MB left on disk instead of 126 MB). The work now lives in an
+  unstructured `Task` held by the `@Observable` migration object, which is `@State` on the root and
+  therefore survives the push. `.onAppear` kicks it; nothing awaits it.
+- **A perf fix must not degrade correctness while it is still catching up.** The first revision had the
+  tile read *only* `thumbnailData` and render the category emoji otherwise — 69 garments showed as
+  placeholders, which reads as data loss. The stated justification ("falling back to the master would
+  reintroduce the stall") was wrong: the stall came from `UIImage(data:)` materializing the full ~34 MB
+  bitmap, not from the file's size. `CGImageSourceCreateThumbnailAtIndex` downsamples *during* decode,
+  so the fallback costs one larger file read and an identical small decode. The `imageData` touch stays
+  inside the `.task` and out of the `.task(id:)` identity (which is evaluated every body pass and would
+  otherwise become a 10 MB externalStorage read per tile per pass); `-1` vs `0` in that identity
+  separates "no thumbnail yet" from the migration's empty-data marker for an undecodable blob.
+- **Test gap that let both through**: the original tests covered only the pure sizing math, never the
+  migration against a real store. `WardrobeImageMigrationTests` now pins the predicate (compliant master
+  with no thumbnail still needs work), idempotence on a second pass, the undecodable-blob marker, and
+  alpha survival end-to-end. Device-verified after the fix: **100/100 thumbnails, 1021.6 MB → 126 MB.**
+
+Follow-ups owed (staged as agreed with the user): **P2** multiple photos per item (front / back / worn),
+**P3** the richer add form — brand, size, product link, price paid + current price. The real data already
+argues for P3: `material` is being used as a brand field (Uniqlo 32, Lululemon 30, Temu 10 — with 41 of 95
+values carrying stray whitespace, so `'Lululemon '` and `'Lululemon'` are two values today), and size is
+being typed into the item name ("Black tank top size M") 10 times.

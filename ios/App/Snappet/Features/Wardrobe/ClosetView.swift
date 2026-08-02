@@ -34,18 +34,29 @@ struct ClosetView: View {
         }
     }
 
+    /// ONE grouping pass over the filtered set. This used to call `filtered.filter` once per
+    /// category (8×) on top of the `.isEmpty` check — and `filtered` is a computed property, so
+    /// every one of those was a fresh O(n) scan, on every body pass.
     private var sections: [(category: GarmentCategory, items: [WardrobeItem])] {
-        GarmentCategory.allCases.compactMap { cat in
-            let inCat = filtered.filter { $0.category == cat }
-            return inCat.isEmpty ? nil : (cat, inCat)
+        let grouped = Dictionary(grouping: filtered, by: \.category)
+        return GarmentCategory.allCases.compactMap { cat in
+            guard let inCat = grouped[cat], !inCat.isEmpty else { return nil }
+            return (cat, inCat)
         }
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8, pinnedViews: []) {
+        // Evaluate the derived collections ONCE per body pass rather than once per read.
+        let sections = sections
+        let stats = stats
+        return ScrollView {
+            // Plain VStack, not Lazy: there are at most 8 sections, and a LazyVGrid nested inside
+            // a LazyVStack largely defeats laziness (the outer stack needs each grid's height, so
+            // tiles materialize well ahead of the viewport). The grids below stay lazy — that is
+            // where the 100 tiles actually live.
+            VStack(alignment: .leading, spacing: 8) {
                 filterChips
-                if filtered.isEmpty {
+                if sections.isEmpty {
                     ContentUnavailableView.search(text: searchText)
                         .padding(.top, 60)
                 } else {
@@ -167,14 +178,28 @@ struct ClosetItemCard: View {
 }
 
 /// The item image tile: cut-out photo when present, category emoji placeholder otherwise.
+///
+/// Prefers **`thumbnailData`** (wardrobe prompt 03). This view renders at nine sites between 38pt
+/// and 100pt; decoding the full master at each of them via `UIImage(data:)` is what made the closet
+/// hang — that materializes the whole 3024×2820 bitmap (~34 MB) to fill a tile ~110× smaller.
+/// The decode runs off-main through `WardrobeImageCache` and is reused across scroll passes.
+///
+/// **Falls back to the master while the migration is still catching up.** An earlier revision showed
+/// the category emoji instead, which reads as data loss — and the reasoning behind it was wrong:
+/// the stall came from `UIImage(data:)`, not from the master's size. `WardrobeImageStore.decode`
+/// downsamples *during* decode (`CGImageSourceCreateThumbnailAtIndex`) and never materializes the
+/// full bitmap, so the fallback costs a bigger file read and the same small decode. Transient
+/// either way — `WardrobeImageMigration` backfills the thumbnail and the fallback stops firing.
 struct WardrobeItemTile: View {
     let item: WardrobeItem
     var height: CGFloat = 96
 
+    @State private var image: UIImage?
+
     var body: some View {
         Group {
-            if let data = item.imageData, let ui = UIImage(data: data) {
-                Image(uiImage: ui)
+            if let image {
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .padding(6)
@@ -186,5 +211,67 @@ struct WardrobeItemTile: View {
         .frame(maxWidth: .infinity)
         .frame(height: height)
         .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .task(id: tileIdentity) {
+            // Reset first: SwiftUI recycles tile identities while scrolling, and without this the
+            // previous garment's photo lingers under the new one's name until the decode lands.
+            image = nil
+            // Empty thumbnail = the migration's "known-undecodable" marker; it must NOT fall
+            // through to the master, or an unreadable blob is retried on every appearance.
+            if let thumb = item.thumbnailData {
+                guard !thumb.isEmpty else { return }
+                image = await WardrobeImageCache.image(itemID: item.id, slot: .thumbnail,
+                                                       data: thumb, pointHeight: height)
+                return
+            }
+            // Pre-migration fallback. `imageData` is `.externalStorage`, so touching it is a file
+            // read — deliberately confined to here (once per tile, off the render pass) and kept
+            // out of `tileIdentity`, which is evaluated on every body pass.
+            guard let master = item.imageData, !master.isEmpty else { return }
+            image = await WardrobeImageCache.image(itemID: item.id, slot: .hero,
+                                                   data: master, pointHeight: height)
+        }
+    }
+
+    /// Byte count in the identity so the migration backfilling a thumbnail re-decodes the tile,
+    /// while an unrelated body pass does not. Reads ONLY the inline `thumbnailData` — pulling in
+    /// the externalStorage master here would turn every body pass into a 10 MB file read.
+    /// `-1` distinguishes "no thumbnail yet" from a zero-length one.
+    private var tileIdentity: String {
+        "\(item.id.uuidString)#\(item.thumbnailData?.count ?? -1)#\(Int(height))"
+    }
+}
+
+/// The 240pt hero on the item detail screen — the one place that reads the full display master.
+struct WardrobeItemHeroImage: View {
+    let item: WardrobeItem
+    var height: CGFloat = 240
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(6)
+            } else if item.imageData != nil {
+                // Photo exists but hasn't decoded yet — a spinner, not the emoji, so the hero
+                // doesn't flash a placeholder on every push.
+                ProgressView().controlSize(.small)
+            } else {
+                Text(item.category.emoji)
+                    .font(.system(size: height * 0.52))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .task(id: "\(item.id.uuidString)#\(item.imageData?.count ?? 0)") {
+            image = nil
+            guard let data = item.imageData, !data.isEmpty else { return }
+            image = await WardrobeImageCache.image(itemID: item.id, slot: .hero,
+                                                   data: data, pointHeight: height)
+        }
     }
 }

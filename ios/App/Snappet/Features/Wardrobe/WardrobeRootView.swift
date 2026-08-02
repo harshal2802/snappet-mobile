@@ -28,6 +28,10 @@ struct WardrobeRootView: View {
 
     @State private var showCapture = false
     @State private var showGenerator = false
+    /// One-time photo reclaim for closets captured before wardrobe prompt 03. Driven from here
+    /// rather than app launch so a user who never opens Wardrobe never pays for it.
+    @State private var imageMigration = WardrobeImageMigration()
+    @State private var migrationDismissed = false
     @State private var season: GarmentSeason = .forMonth(Calendar.current.component(.month, from: .now))
     @State private var tempBand: TempBand = .forSeason(.forMonth(Calendar.current.component(.month, from: .now)))
 
@@ -87,6 +91,15 @@ struct WardrobeRootView: View {
         .onAppear {
             core.log(module: "wardrobe", action: "open", summary: "Opened Wardrobe")
         }
+        .onAppear {
+            // `start`, not `.task { await … }`: SwiftUI cancels a `.task` when the view
+            // disappears, so pushing "See all ›" into the closet killed the run partway (31 of
+            // 100 on-device). `start` owns an unstructured task that outlives the navigation.
+            // Self-gating: with nothing over the policy cap it costs one fetch and returns,
+            // which is what makes it self-healing after a backup restore (masters come back,
+            // thumbnails don't — by design).
+            imageMigration.start(in: modelContext)
+        }
     }
 
     // MARK: - The stylist-first home
@@ -94,6 +107,11 @@ struct WardrobeRootView: View {
     private var home: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
+                if !migrationDismissed {
+                    WardrobeMigrationBanner(phase: imageMigration.phase) { migrationDismissed = true }
+                        .padding(.top, 4)
+                }
+
                 weatherHeader
 
                 // ✨ For You — the differentiator leads.

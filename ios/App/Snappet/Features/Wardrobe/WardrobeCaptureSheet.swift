@@ -24,6 +24,7 @@ struct WardrobeCaptureSheet: View {
     @State private var useCutout = true
     @State private var draft = WardrobeVision.DraftTags()
     @State private var costText = ""
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -168,14 +169,17 @@ struct WardrobeCaptureSheet: View {
             }
             Section {
                 Button {
-                    save()
+                    guard !isSaving else { return }
+                    isSaving = true
+                    Task { await save() }
                 } label: {
-                    Text("Save to closet")
+                    Text(isSaving ? "Saving…" : "Save to closet")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(SnappetColor.brand)
+                .disabled(isSaving)     // the encode is async now — a double tap would add twice
                 .listRowBackground(Color.clear)
                 .accessibilityIdentifier("wardrobe.capture.save")
             }
@@ -216,19 +220,31 @@ struct WardrobeCaptureSheet: View {
         stage = .review
     }
 
-    private func save() {
-        let imageData: Data?
-        if useCutout, let cutout {
-            imageData = cutout.pngData()
-        } else {
-            imageData = original?.jpegData(compressionQuality: 0.85)
+    /// Encode through `WardrobeImageStore` so the stored master is capped at
+    /// `WardrobeImagePolicy.displayMaxEdge` and a grid thumbnail is written alongside it
+    /// (wardrobe prompt 03). Storing the raw cut-out here is what put 1.01 GB in a 100-item
+    /// closet and made the grid decode a ~34 MB bitmap per 96pt tile.
+    ///
+    /// The resize/encode runs detached: a full-resolution capture takes long enough that doing
+    /// it inline would freeze the sheet on the Save tap.
+    private func save() async {
+        let usingCutout = useCutout && cutout != nil
+        // `process()` always sets `original`, so this is normally non-nil; a nil source still
+        // saves the item (photo-less, category-emoji tile) rather than silently doing nothing.
+        var prepared: WardrobeImageStore.Prepared?
+        if let source = usingCutout ? cutout : original {
+            prepared = await Task.detached(priority: .userInitiated) {
+                WardrobeImageStore.prepare(image: source, isCutout: usingCutout)
+            }.value
         }
+
         let item = WardrobeItem(
             name: draft.suggestedName.isEmpty ? "\(draft.color.title) \(draft.category.title.lowercased())" : draft.suggestedName,
             category: draft.category, color: draft.color, pattern: draft.pattern,
             style: draft.style, material: draft.material, seasons: draft.seasons,
             cost: Double(costText.replacingOccurrences(of: ",", with: ".")),
-            imageData: imageData)
+            imageData: prepared?.display,
+            thumbnailData: prepared?.thumbnail)
         modelContext.insert(item)
         try? modelContext.save()
         core.log(module: "wardrobe", action: "add", summary: "Added \(item.name) to closet")
