@@ -99,6 +99,50 @@ final class WardrobeItem {
     }
 }
 
+/// One EXTRA photo of a garment (wardrobe prompt 04) — front / back / worn / tag / detail.
+///
+/// The **cover** photo is deliberately NOT a row here: it stays on `WardrobeItem.imageData` /
+/// `thumbnailData`. Two reasons, both load-bearing. The closet grid renders 100 tiles and must never
+/// join a second table to do it (prompt 03 exists because that grid was the hang), and keeping the
+/// cover in place meant prompt 04 shipped with **zero migration** — every pre-existing garment is
+/// already a valid one-photo item with no rows here at all.
+///
+/// Same conventions as the rest of the module: plain UUID FK (no SwiftData relationship), raws stay
+/// raw, inline defaults everywhere so the container can be flipped to CloudKit later.
+@Model
+final class WardrobePhoto {
+    var id: UUID = UUID()
+    /// FK to `WardrobeItem.id`. Optional for CloudKit-compatibility, not because it's meaningful —
+    /// an orphan row is a bug. There is no cascade on a plain UUID FK, so item deletion must sweep
+    /// these explicitly (`WardrobePhotoStore.deleteAll(forItem:)`).
+    var itemID: UUID? = nil
+    var roleRaw: String = "detail"
+    /// Display order among the extras; the cover always sorts first and isn't in this table.
+    var sortIndex: Int = 0
+    /// Capped at `WardrobeImagePolicy.displayMaxEdge` by `WardrobeImageStore`, like the cover.
+    @Attribute(.externalStorage) var imageData: Data? = nil
+    /// Inline, NOT `.externalStorage` — same reasoning as `WardrobeItem.thumbnailData` (prompt 03):
+    /// a `.count` read must not become a main-thread file read.
+    var thumbnailData: Data? = nil
+    var createdAt: Date = Date()
+
+    init(id: UUID = UUID(), itemID: UUID?, role: GarmentPhotoRole, sortIndex: Int = 0,
+         imageData: Data? = nil, thumbnailData: Data? = nil, createdAt: Date = .now) {
+        self.id = id
+        self.itemID = itemID
+        self.roleRaw = role.rawValue
+        self.sortIndex = sortIndex
+        self.imageData = imageData
+        self.thumbnailData = thumbnailData
+        self.createdAt = createdAt
+    }
+
+    var role: GarmentPhotoRole {
+        get { GarmentPhotoRole(rawValue: roleRaw) ?? .detail }
+        set { roleRaw = newValue.rawValue }
+    }
+}
+
 /// One wear of one item (a worn outfit writes one event per piece). Append-only.
 @Model
 final class WearEvent {

@@ -53,7 +53,7 @@ enum SnappetSchema {
         // Recap feed (F0b) — append-only activity log + interaction rows + outbox
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
         // Wardrobe (private AI stylist) — CloudKit-compatible shape, see WardrobeModels.swift
-        WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
+        WardrobeItem.self, WardrobePhoto.self, WearEvent.self, WardrobeOutfit.self,
         // Festival (lineups, sets & your night) — installed `.fpack` lineups + stars + "I'm here"
         // claims + clip→set tags; capture rides WorkoutSession (festival prompts 02–03),
         // see FestivalModels.swift

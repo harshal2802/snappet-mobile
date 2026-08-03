@@ -63,7 +63,7 @@ enum SnappetBackup {
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
         KilterPlan.self, KilterLitEvent.self,
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
-        WardrobeItem.self, WearEvent.self, WardrobeOutfit.self,
+        WardrobeItem.self, WardrobePhoto.self, WearEvent.self, WardrobeOutfit.self,
         FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
     ]
 
@@ -107,6 +107,8 @@ enum SnappetBackup {
         var feedOutbox: [FeedOutboxEntryRow] = []
         // Wardrobe — defaulted so pre-wardrobe backup blobs (no such keys) still decode.
         var wardrobeItems: [WardrobeItemRow] = []
+        /// Extra garment photos (wardrobe prompt 04). Defaulted so pre-04 blobs still decode.
+        var wardrobePhotos: [WardrobePhotoRow] = []
         var wearEvents: [WearEventRow] = []
         var wardrobeOutfits: [WardrobeOutfitRow] = []
         // Festival — defaulted so pre-festival backup blobs still decode.
@@ -154,6 +156,7 @@ enum SnappetBackup {
             n += feedShareEvents.count
             n += feedOutbox.count
             n += wardrobeItems.count
+            n += wardrobePhotos.count
             n += wearEvents.count
             n += wardrobeOutfits.count
             n += festivalLineups.count
@@ -236,6 +239,7 @@ enum SnappetBackup {
         file.feedShareEvents = try all(FeedShareEvent.self).map(FeedShareEventRow.init).sorted(by: rowKey)
         file.feedOutbox = try all(FeedOutboxEntry.self).map(FeedOutboxEntryRow.init).sorted(by: rowKey)
         file.wardrobeItems = try all(WardrobeItem.self).map(WardrobeItemRow.init).sorted(by: rowKey)
+        file.wardrobePhotos = try all(WardrobePhoto.self).map(WardrobePhotoRow.init).sorted(by: rowKey)
         file.wearEvents = try all(WearEvent.self).map(WearEventRow.init).sorted(by: rowKey)
         file.wardrobeOutfits = try all(WardrobeOutfit.self).map(WardrobeOutfitRow.init).sorted(by: rowKey)
         file.festivalLineups = try all(FestivalLineup.self).map(FestivalLineupRow.init).sorted(by: rowKey)
@@ -335,7 +339,9 @@ enum SnappetBackup {
             try deleteAll(FeedOutboxEntry.self)
             uniqued(file.feedOutbox, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WardrobeItem.self)
+            try deleteAll(WardrobePhoto.self)
             uniqued(file.wardrobeItems, by: \.id).forEach { context.insert($0.make()) }
+            uniqued(file.wardrobePhotos, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WearEvent.self)
             uniqued(file.wearEvents, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WardrobeOutfit.self)
@@ -1037,6 +1043,31 @@ extension SnappetBackup {
             item.styleRaw = styleRaw
             item.seasonsRaw = seasonsRaw
             return item
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    /// One extra garment photo (wardrobe prompt 04). The COVER is not here — it rides
+    /// `WardrobeItemRow.imageData`, because the cover lives on `WardrobeItem`.
+    struct WardrobePhotoRow: BackupRow {
+        var id: UUID
+        var itemID: UUID?
+        var roleRaw: String
+        var sortIndex: Int
+        /// The master rides the backup; `thumbnailData` deliberately does NOT — derived data,
+        /// regenerated on restore, exactly as prompt 03 established for the cover.
+        var imageData: Data?
+        var createdAt: Date
+
+        init(_ m: WardrobePhoto) {
+            id = m.id; itemID = m.itemID; roleRaw = m.roleRaw; sortIndex = m.sortIndex
+            imageData = m.imageData; createdAt = m.createdAt
+        }
+        func make() -> WardrobePhoto {
+            let p = WardrobePhoto(id: id, itemID: itemID, role: .detail, sortIndex: sortIndex,
+                                  imageData: imageData, createdAt: createdAt)
+            p.roleRaw = roleRaw   // raw, not via the enum — unrecognized values survive verbatim
+            return p
         }
         var sortKey: String { id.uuidString }
     }

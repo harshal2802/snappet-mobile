@@ -73,6 +73,51 @@ enum GarmentCategory: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 }
 
+/// What a garment photo shows (wardrobe prompt 04). A garment is not one photograph — the back of a
+/// graphic tee, the care label, and what the thing looks like on a person are all different facts.
+///
+/// A **closed** enum on purpose, even though prompt 05 makes the descriptive dropdowns extensible:
+/// role drives real behavior (`shouldLiftSubject`), so a user-invented role would have no defined
+/// semantics. Raws stay raw at the storage edge, as everywhere else in the module.
+enum GarmentPhotoRole: String, CaseIterable, Codable, Sendable, Identifiable {
+    case front, back, worn, tag, detail
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .front: return "Front"
+        case .back: return "Back"
+        case .worn: return "Worn"
+        case .tag: return "Tag"
+        case .detail: return "Detail"
+        }
+    }
+
+    /// Whether background removal should run for this photo.
+    ///
+    /// **False for `worn` and `tag`** — you want the person wearing the piece and the readable care
+    /// label, not a silhouette. Lifting the subject out of a worn shot would cut the *person* out,
+    /// and out of a care label would usually yield nothing at all.
+    var shouldLiftSubject: Bool {
+        switch self {
+        case .front, .back, .detail: return true
+        case .worn, .tag: return false
+        }
+    }
+
+    /// Longer hint shown under the role in the add-photo sheet.
+    var hint: String {
+        switch self {
+        case .front: return "The main shot — this is your cover by default."
+        case .back: return "Print, logo, or the cut at the back."
+        case .worn: return "On a person, so you can see the fit."
+        case .tag: return "Care label / size tag — handy when you re-buy."
+        case .detail: return "A close-up: fabric, hardware, a flaw."
+        }
+    }
+}
+
 /// A curated color family — coarse on purpose: harmony rules over ~16 families are
 /// explainable; raw RGB triples are not.
 enum GarmentColorFamily: String, CaseIterable, Codable, Sendable, Identifiable {

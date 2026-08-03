@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 35, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 36, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -473,6 +473,11 @@ final class SnappetBackupTests: XCTestCase {
                                         createdAt: Date(timeIntervalSince1970: 1_700_010_000),
                                         imageData: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]))
         context.insert(wardrobeItem)
+        // An EXTRA photo of that item (wardrobe prompt 04) — the cover itself rides the item above,
+        // so this row is the "back of the shirt" case, with a non-default role and sortIndex.
+        context.insert(WardrobePhoto(itemID: wardrobeItem.id, role: .back, sortIndex: 1,
+                                     imageData: Data([0x89, 0x50, 0x4E, 0x47, 0x1A, 0x0B]),
+                                     createdAt: Date(timeIntervalSince1970: 1_700_010_050)))
         let wardrobeOutfit = WardrobeOutfit(
             title: "Work · Cool", occasion: .work, tempBand: .cool, season: .fall,
             rationale: ["Oxford + chinos hits business casual."],
