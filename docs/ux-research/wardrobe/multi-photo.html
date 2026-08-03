@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Wardrobe · Multiple photos per item (P2)</title>
+<style>
+  :root{
+    --brand:#FF5A4D;          /* brand coral — single primary CTA        */
+    --rose:#E86B99;           /* SnappetColor.wardrobe (dark)            */
+    --rose-l:#C13A6F;         /* SnappetColor.wardrobe (light)           */
+    --leaf:#4ECB71;           /* perfFresh (dark)                        */
+    --amber:#E8A33D;          /* perfModerate — rarely-worn nudge        */
+    --paper:#0E0E10; --surface:#1A1A1E; --muted:#232329;
+    --hair:#2E2E35; --ink:#F4F3F1; --t2:#9A9AA2;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#241a24,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1500px;margin:0 auto;padding:0 28px}
+  header.page{padding:64px 28px 12px;max-width:1500px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#f2a7c3 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:17px;max-width:1000px;margin:0 0 16px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin:14px 0 6px;font-size:13px;color:#c7cad3}
+  .legend b{color:#fff}
+  .swatch{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:13px;height:13px;border-radius:4px;display:inline-block}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:18px 0 0;font-size:14px;color:#c3c7d1;max-width:1150px}
+  .scopebox b{color:#fff}
+  .scopebox .later{color:#8b90a0}
+  .flowhead{margin:64px 0 6px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#a0879a}
+  .flowtitle{font-size:26px;font-weight:750;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:1000px;margin:0 0 30px;font-size:15px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 38px;align-items:flex-start}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--rose);color:#2b0917;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(232,107,153,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .arrow{font-size:30px;color:#4a4f5e;align-self:center;margin-top:300px}
+
+  /* ---------- device ---------- */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;
+    background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 2px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .statusbar .r{display:flex;gap:6px;align-items:center;font-size:12px}
+  .content{flex:1 1 auto;overflow:hidden;padding:6px 16px 8px;position:relative;display:flex;flex-direction:column}
+
+  /* ---------- shared chrome ---------- */
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 2px;flex:0 0 auto}
+  .navrow .back{font-size:14px;font-weight:650;color:var(--rose)}
+  .navrow .title{font-size:16px;font-weight:800}
+  .navrow .side{width:56px;font-size:13px;font-weight:650;color:var(--rose);text-align:right}
+  .sectionlabel{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--t2);margin:16px 2px 7px}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:16px;padding:12px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;
+    background:var(--surface);border:1px solid var(--hair);border-radius:14px;font-size:14px}
+  .row + .row{margin-top:7px}
+  .row .lbl{color:var(--t2);font-size:13px}
+  .row .val{font-weight:650;font-size:13.5px}
+  .cta{background:var(--brand);color:#fff;border-radius:14px;padding:13px;text-align:center;
+    font-weight:800;font-size:15px;box-shadow:0 8px 22px -8px rgba(255,90,77,.7)}
+  .cta.ghost{background:transparent;color:var(--rose);border:1.5px solid var(--rose);box-shadow:none}
+  .hint{font-size:11.5px;color:var(--t2);margin:8px 2px 0;line-height:1.45}
+
+  /* ---------- garment art (stand-ins for real cut-outs) ---------- */
+  .garment{position:relative;border-radius:12px;background:var(--muted);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .tee{width:62%;height:62%;background:
+      radial-gradient(circle at 50% 22%, #7fb2e8 0 18%, transparent 18.5%),
+      linear-gradient(160deg,#6ea6df,#4d7fb8);
+    clip-path:polygon(22% 12%,36% 4%,64% 4%,78% 12%,98% 30%,86% 44%,78% 36%,78% 96%,22% 96%,22% 36%,14% 44%,2% 30%);}
+  .tee.back{background:linear-gradient(160deg,#5b93cc,#3d6da3)}
+  .tee.olive{background:linear-gradient(160deg,#8a9663,#5f6a3d)}
+  .worn{width:58%;height:78%;border-radius:14px;background:linear-gradient(170deg,#3a3f4a,#22252c);position:relative}
+  .worn:before{content:"";position:absolute;left:50%;top:9%;transform:translateX(-50%);width:26%;aspect-ratio:1;border-radius:50%;background:#c9a68a}
+  .worn:after{content:"";position:absolute;left:50%;top:31%;transform:translateX(-50%);width:66%;height:44%;border-radius:10px 10px 6px 6px;background:linear-gradient(160deg,#6ea6df,#4d7fb8)}
+  .tag{width:52%;height:44%;border-radius:6px;background:#efeae0;position:relative;box-shadow:0 3px 12px rgba(0,0,0,.4)}
+  .tag i{position:absolute;left:12%;height:5px;border-radius:3px;background:#b9b2a4;display:block}
+  .tag i:nth-child(1){top:20%;width:52%} .tag i:nth-child(2){top:38%;width:70%}
+  .tag i:nth-child(3){top:56%;width:40%} .tag i:nth-child(4){top:74%;width:60%}
+  .tag b{position:absolute;right:12%;top:16%;font-size:15px;font-weight:800;color:#33312c}
+
+  /* ---------- photo strip (capture review) ---------- */
+  .strip{display:flex;gap:8px;margin:2px 0 0}
+  .slot{width:66px;height:80px;flex:0 0 auto;border-radius:12px;position:relative;overflow:hidden}
+  .slot .garment{width:100%;height:100%}
+  .slot .rolechip{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.72);
+    font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;text-align:center;padding:3px 0;color:#fff}
+  .slot.coverbadge:after{content:"COVER";position:absolute;top:4px;left:4px;background:var(--rose);color:#2b0917;
+    font-size:7.5px;font-weight:900;letter-spacing:.06em;padding:2px 5px;border-radius:5px}
+  .slot.add{border:1.5px dashed var(--hair);background:transparent;display:flex;align-items:center;justify-content:center;
+    color:var(--rose);font-size:26px;font-weight:300}
+
+  /* ---------- carousel (item detail) ---------- */
+  .carousel{height:250px;border-radius:16px;position:relative;overflow:hidden;background:var(--muted)}
+  .carousel .garment{width:100%;height:100%;border-radius:0}
+  .carousel .peek{position:absolute;top:0;bottom:0;width:14px;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.35))}
+  .carousel .peek.r{right:0} .carousel .peek.l{left:0;transform:scaleX(-1)}
+  .rolecap{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.7);border-radius:8px;
+    padding:4px 9px;font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+  .heart{position:absolute;right:10px;top:10px;font-size:17px;color:var(--rose)}
+  .dots{display:flex;gap:5px;justify-content:center;margin-top:9px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:var(--hair);display:block}
+  .dots i.on{background:var(--rose);width:16px;border-radius:3px}
+
+  /* ---------- manage grid ---------- */
+  .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:4px}
+  .mcell{aspect-ratio:3/4;border-radius:13px;position:relative;overflow:hidden;background:var(--muted)}
+  .mcell .garment{width:100%;height:100%;border-radius:0}
+  .mcell .rolechip{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.72);
+    font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;text-align:center;padding:3px 0}
+  .mcell .grip{position:absolute;top:5px;right:6px;font-size:12px;color:rgba(255,255,255,.8)}
+  .mcell.cover{outline:2px solid var(--rose);outline-offset:-2px}
+  .mcell.cover:after{content:"COVER";position:absolute;top:5px;left:5px;background:var(--rose);color:#2b0917;
+    font-size:7.5px;font-weight:900;letter-spacing:.06em;padding:2px 5px;border-radius:5px}
+  .mcell.add{border:1.5px dashed var(--hair);background:transparent;display:flex;align-items:center;justify-content:center;
+    color:var(--rose);font-size:28px;font-weight:300}
+
+  /* ---------- sheets / menus ---------- */
+  .sheetdim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:20;border-radius:40px}
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:21;background:var(--surface);
+    border-radius:22px 22px 0 0;border-top:1px solid var(--hair);padding:10px 16px 22px}
+  .grabber{width:36px;height:5px;border-radius:3px;background:var(--hair);margin:0 auto 12px}
+  .sheet h4{margin:0 0 3px;font-size:16px;font-weight:800}
+  .sheet p{margin:0 0 12px;font-size:12.5px;color:var(--t2)}
+  .menuitem{display:flex;align-items:center;gap:11px;padding:12px 4px;font-size:14.5px;font-weight:600;border-bottom:1px solid var(--hair)}
+  .menuitem:last-child{border-bottom:0}
+  .menuitem .ic{width:20px;text-align:center;color:var(--rose)}
+  .menuitem.danger{color:#FF6B5E} .menuitem.danger .ic{color:#FF6B5E}
+  .roleopts{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 4px}
+  .roleopt{border:1px solid var(--hair);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:700;color:var(--t2)}
+  .roleopt.on{background:var(--rose);border-color:var(--rose);color:#2b0917}
+  .srcrow{display:flex;gap:9px;margin-top:4px}
+  .srcbtn{flex:1;border:1px solid var(--hair);border-radius:14px;padding:14px 8px;text-align:center;font-size:12.5px;font-weight:700}
+  .srcbtn .ic{display:block;font-size:20px;margin-bottom:5px}
+
+  .note{background:rgba(232,107,153,.10);border:1px solid rgba(232,107,153,.32);border-radius:12px;
+    padding:9px 11px;font-size:11.5px;color:#f0c3d5;margin-top:10px;line-height:1.45}
+  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:8px}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Wardrobe · Multiple photos per item</h1>
+  <p class="sub">Device feedback, 2026-08-02: <i>“While adding an entry to closet people should be allowed to
+  upload multiple photos of item: example: front, back, photo of the person wearing it.”</i> This is <b>P2</b> of the
+  closet feedback trio — P1 (photo pipeline + 1&nbsp;GB reclaim) is shipped, P3 is the richer add form.</p>
+
+  <div class="legend">
+    <span class="swatch"><i class="dot" style="background:#FF5A4D"></i><b>Coral</b> — the one primary CTA</span>
+    <span class="swatch"><i class="dot" style="background:#E86B99"></i><b>Rose</b> — SnappetColor.wardrobe</span>
+    <span class="swatch"><i class="dot" style="background:#232329"></i><b>Muted</b> — photo wells</span>
+  </div>
+
+  <div class="scopebox">
+    <b>In scope.</b> Up to <b>6 photos per garment</b>, each with an optional role (Front · Back · Worn · Tag · Detail);
+    add them during capture or later from the item; swipeable carousel on the detail screen; reorder, re-role, set
+    cover, delete. <b>The cover photo stays on <code>WardrobeItem</code></b> so the closet grid never joins to render a
+    tile — extra photos are separate rows.<br>
+    <span class="later"><b>Not in scope (P3):</b> brand · size · product link · price paid / current price · custom
+    dropdown values. <b>Not in scope at all:</b> per-photo editing/cropping, video, and using the extra angles as
+    additional AI tagging inputs (the cover alone drafts the tags — see note in step 3).</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============================= FLOW A ============================= -->
+<div class="flowhead">Flow A</div>
+<div class="flowtitle">Adding a garment — the photo strip</div>
+<p class="flowdesc">The existing single-photo flow is untouched up to the review form: pick → cut out → auto-tag.
+The change is that the review form’s image block becomes a <b>strip</b>. One photo is still a complete, valid
+garment — everything past the first slot is optional and costs one tap to skip.</p>
+
+<div class="gallery">
+
+  <!-- A1 -->
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Cancel</span><span class="title">Add to closet</span><span class="side"></span></div>
+
+        <div class="card" style="margin-top:10px;padding:10px">
+          <div class="garment" style="height:150px"><div class="tee"></div></div>
+          <div class="strip" style="margin-top:9px">
+            <div class="slot coverbadge"><div class="garment"><div class="tee"></div></div><div class="rolechip">Front</div></div>
+            <div class="slot add">+</div>
+          </div>
+          <div class="hint">Tagged on-device · Apple Intelligence</div>
+        </div>
+
+        <div class="sectionlabel">Details</div>
+        <div class="row"><span class="lbl">Name</span><span class="val">Blue tank top</span></div>
+        <div class="row"><span class="lbl">Category</span><span class="val">Top ›</span></div>
+        <div class="row"><span class="lbl">Color</span><span class="val">Blue ›</span></div>
+
+        <div style="margin-top:auto;padding-top:10px"><div class="cta">Save to closet</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Review, one photo.</b> The strip replaces the old single preview. The first photo is the
+    <b>cover</b> and defaults to role <b>Front</b>. Saving here behaves exactly as it does today — P2 adds nothing
+    mandatory to the fastest path.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- A2 -->
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Cancel</span><span class="title">Add to closet</span><span class="side"></span></div>
+        <div class="card" style="margin-top:10px;padding:10px">
+          <div class="garment" style="height:150px"><div class="tee"></div></div>
+          <div class="strip" style="margin-top:9px">
+            <div class="slot coverbadge"><div class="garment"><div class="tee"></div></div><div class="rolechip">Front</div></div>
+            <div class="slot add">+</div>
+          </div>
+        </div>
+        <div class="sectionlabel">Details</div>
+        <div class="row"><span class="lbl">Name</span><span class="val">Blue tank top</span></div>
+
+        <div class="sheetdim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <h4>Add another photo</h4>
+          <p>Back, worn, or a close-up of the care tag.</p>
+          <div class="roleopts">
+            <span class="roleopt">Front</span><span class="roleopt on">Back</span><span class="roleopt">Worn</span>
+            <span class="roleopt">Tag</span><span class="roleopt">Detail</span>
+          </div>
+          <div class="srcrow">
+            <div class="srcbtn"><span class="ic">📷</span>Take photo</div>
+            <div class="srcbtn"><span class="ic">🖼️</span>From Photos</div>
+          </div>
+          <div class="note">Cut-out is <b>off</b> for Worn and Tag — you want the person and the label, not a
+          silhouette. On for Front, Back and Detail.</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Tap “+”.</b> Role first, source second — picking the role up front is what lets the
+    sheet decide whether to run background removal, instead of asking after the fact. The next unused role is
+    pre-selected, so the common path is two taps.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- A3 -->
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Cancel</span><span class="title">Add to closet</span><span class="side"></span></div>
+
+        <div class="card" style="margin-top:10px;padding:10px">
+          <div class="garment" style="height:150px"><div class="tee"></div></div>
+          <div class="strip" style="margin-top:9px">
+            <div class="slot coverbadge"><div class="garment"><div class="tee"></div></div><div class="rolechip">Front</div></div>
+            <div class="slot"><div class="garment"><div class="tee back"></div></div><div class="rolechip">Back</div></div>
+            <div class="slot"><div class="garment"><div class="worn"></div></div><div class="rolechip">Worn</div></div>
+            <div class="slot add">+</div>
+          </div>
+          <div class="hint">3 of 6 photos · drag to reorder</div>
+        </div>
+
+        <div class="sectionlabel">Details</div>
+        <div class="row"><span class="lbl">Name</span><span class="val">Blue tank top</span></div>
+        <div class="row"><span class="lbl">Category</span><span class="val">Top ›</span></div>
+
+        <div style="margin-top:auto;padding-top:10px"><div class="cta">Save to closet</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Three photos, one garment.</b> Extra photos <b>do not re-run tagging</b> — the tags were
+    already drafted from the cover, and a “worn” shot would drag the color average toward skin and background.
+    They’re stored, downscaled and thumbnailed by the P1 pipeline, and nothing else.</p>
+  </div>
+
+</div>
+
+<!-- ============================= FLOW B ============================= -->
+<div class="flowhead">Flow B</div>
+<div class="flowtitle">Living with it — carousel &amp; manage</div>
+<p class="flowdesc">The item detail hero becomes a pager. Everything destructive or fiddly (reorder, re-role,
+set cover, delete) lives in one <b>Manage photos</b> sheet rather than being scattered across long-presses.</p>
+
+<div class="gallery">
+
+  <!-- B1 -->
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">‹ Closet</span><span class="title">Item</span><span class="side">•••</span></div>
+
+        <div class="carousel" style="margin-top:8px">
+          <div class="garment"><div class="worn"></div></div>
+          <div class="peek l"></div><div class="peek r"></div>
+          <div class="rolecap">Worn</div>
+          <div class="heart">♥</div>
+        </div>
+        <div class="dots"><i></i><i></i><i class="on"></i></div>
+
+        <div style="margin-top:10px">
+          <div style="font-size:17px;font-weight:800">Blue tank top size S</div>
+          <div style="font-size:12px;color:var(--t2)">Added Aug 2026 · $32</div>
+        </div>
+
+        <div class="strip" style="margin-top:12px;gap:6px">
+          <span class="roleopt" style="font-size:11px;padding:5px 10px">Top</span>
+          <span class="roleopt" style="font-size:11px;padding:5px 10px">Blue</span>
+          <span class="roleopt" style="font-size:11px;padding:5px 10px">Casual</span>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <div class="cta ghost" style="flex:1;padding:10px;font-size:13px">✦ Style this</div>
+          <div class="cta ghost" style="flex:1;padding:10px;font-size:13px;color:var(--t2);border-color:var(--hair)">Ask coach</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Swipeable hero.</b> Page dots + a role caption; swiping is the whole interaction. A
+    one-photo garment renders exactly as it does today — <b>no dots, no caption, no new chrome</b>.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- B2 -->
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">‹ Closet</span><span class="title">Item</span><span class="side">•••</span></div>
+        <div class="carousel" style="margin-top:8px;height:180px"><div class="garment"><div class="tee"></div></div></div>
+
+        <div class="sheetdim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="menuitem"><span class="ic">✓</span>Log wear today</div>
+          <div class="menuitem"><span class="ic">🖼️</span>Manage photos<span style="margin-left:auto;color:var(--t2);font-size:12.5px">3</span></div>
+          <div class="menuitem"><span class="ic">✎</span>Edit details</div>
+          <div class="menuitem"><span class="ic">🗄</span>Archive</div>
+          <div class="menuitem danger"><span class="ic">🗑</span>Delete item</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The ••• menu</b> gains one row, carrying the photo count. Photo management is not
+    hidden behind a long-press on the carousel — a swipe surface should only swipe.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- B3 -->
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="r">▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Done</span><span class="title">Photos</span><span class="side"></span></div>
+
+        <div class="sectionlabel">3 of 6 · drag to reorder</div>
+        <div class="mgrid">
+          <div class="mcell cover"><div class="garment"><div class="tee"></div></div><span class="grip">≡</span><div class="rolechip">Front</div></div>
+          <div class="mcell"><div class="garment"><div class="tee back"></div></div><span class="grip">≡</span><div class="rolechip">Back</div></div>
+          <div class="mcell"><div class="garment"><div class="worn"></div></div><span class="grip">≡</span><div class="rolechip">Worn</div></div>
+          <div class="mcell add">+</div>
+        </div>
+
+        <div class="note">The <b>cover</b> is what the closet grid, outfit boards and the For You carousel show.
+        Tap any photo to make it the cover.</div>
+
+        <div class="sheetdim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <h4>Back</h4>
+          <p>Second of three photos.</p>
+          <div class="roleopts">
+            <span class="roleopt">Front</span><span class="roleopt on">Back</span><span class="roleopt">Worn</span>
+            <span class="roleopt">Tag</span><span class="roleopt">Detail</span>
+          </div>
+          <div class="menuitem"><span class="ic">★</span>Make cover photo</div>
+          <div class="menuitem danger"><span class="ic">🗑</span>Delete photo</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Manage photos.</b> One grid: drag to reorder, tap to open the per-photo sheet
+    (re-role, make cover, delete). Deleting the cover promotes the next photo rather than leaving the garment
+    photo-less.</p>
+  </div>
+
+</div>
+
+<!-- ============================= NOTES ============================= -->
+<div class="flowhead">Behind the glass</div>
+<div class="flowtitle">What this costs, and the calls worth arguing with</div>
+
+<div class="scopebox" style="max-width:1150px">
+  <p style="margin:0 0 10px"><b>Storage shape.</b> A new <code>WardrobePhoto</code> row per extra photo
+  (<code>itemID</code> UUID FK, <code>roleRaw</code>, <code>sortIndex</code>, <code>imageData</code> +
+  <code>thumbnailData</code>) — flat table, plain UUID FK, no SwiftData relationships, inline defaults, so it stays
+  CloudKit-compatible like everything else in the module. <b>The cover deliberately stays on
+  <code>WardrobeItem</code></b>: the closet grid renders 100 tiles and must never join to do it, and it means
+  <b>zero migration</b> — every existing garment is already a valid one-photo item.</p>
+
+  <p style="margin:0 0 10px"><b>Cost at 6 photos.</b> P1 caps each photo at ~1.2&nbsp;MB master + ~130&nbsp;KB
+  thumbnail. A fully-photographed garment is therefore ~8&nbsp;MB rather than the 10&nbsp;MB a <i>single</i> photo
+  cost before P1. A 100-item closet where every item has 3 photos lands near 390&nbsp;MB — still a third of what
+  today’s 100 single photos occupied. <b>The 6-photo cap exists for this reason</b>, not for UI tidiness.</p>
+
+  <p style="margin:0 0 10px"><b>Backup.</b> <code>WardrobePhoto</code> needs a mirror Row in
+  <code>SnappetBackup</code> (the <code>testCodecCoversEverySchemaModel</code> tripwire enforces it). Masters ride
+  the backup; thumbnails stay excluded as derived data and regenerate, exactly as P1 established.</p>
+
+  <p style="margin:0"><b>Two calls to push back on if you disagree:</b> (1) extra photos <b>don’t</b> feed the AI
+  tagger — a worn shot would pull the dominant-color average toward skin and room, and the cover already produced
+  good tags; (2) roles are a <b>closed set of five</b> here, even though P3 makes other dropdowns extensible,
+  because role drives real behavior (whether to cut out the background) rather than being a label.</p>
+</div>
+
+</div>
+</body>
+</html>

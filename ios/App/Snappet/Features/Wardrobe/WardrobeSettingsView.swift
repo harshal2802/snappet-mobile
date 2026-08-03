@@ -55,7 +55,11 @@ struct WardrobeSettingsView: View {
                         }
                     }
                     .onDelete { offsets in
-                        for i in offsets { modelContext.delete(archived[i]) }
+                        for i in offsets {
+                            // Sweep photo rows first — plain UUID FK, no cascade (prompt 04).
+                            WardrobePhotoStore.deleteAll(forItem: archived[i].id, in: modelContext)
+                            modelContext.delete(archived[i])
+                        }
                         try? modelContext.save()
                     }
                 }
@@ -110,6 +114,9 @@ struct WardrobeSettingsView: View {
     }
 
     private func deleteAll() {
+        // Photo rows have a plain UUID FK with no cascade, so "delete everything" has to name
+        // them explicitly or the closet's bytes survive the closet (wardrobe prompt 04).
+        for item in items { WardrobePhotoStore.deleteAll(forItem: item.id, in: modelContext) }
         for item in items { modelContext.delete(item) }
         for event in wearEvents { modelContext.delete(event) }
         for outfit in outfits { modelContext.delete(outfit) }
