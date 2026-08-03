@@ -61,6 +61,10 @@ struct WardrobeItemDetailView: View {
 
                 tagChips
 
+                if item.cost != nil || !item.productURL.isEmpty || item.currentPrice != nil {
+                    WardrobePurchaseSection(item: item)
+                }
+
                 HStack(spacing: 8) {
                     statTile(value: "\(stats.wearCount)×", label: "Worn")
                     statTile(value: stats.lastWornAt.map { $0.formatted(.dateTime.month(.abbreviated).day()) } ?? "—",
