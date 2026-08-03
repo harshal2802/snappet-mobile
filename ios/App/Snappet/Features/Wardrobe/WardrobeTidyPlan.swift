@@ -82,6 +82,7 @@ enum WardrobeTidyPlan {
         "uniqlo", "lululemon", "temu", "amazon", "zara", "nike", "adidas", "h&m", "gap",
         "levi's", "levis", "patagonia", "north face", "the north face", "columbia", "decathlon",
         "kalenji", "quechua", "wei-tex", "google", "apple", "shein", "primark", "muji",
+        "hot topic", "urban outfitters", "asos", "lands' end", "landsend",
         "old navy", "target", "walmart", "costco", "reebok", "puma", "under armour", "asics",
         "new balance", "vans", "converse", "carhartt", "dickies", "arc'teryx", "arcteryx",
     ]
