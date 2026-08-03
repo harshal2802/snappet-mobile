@@ -5,7 +5,7 @@ name: CI
 # that run in PARALLEL:
 #   • engine — the pure HighlightEngine SwiftPM tests (~1–2 min); an independent fast signal.
 #   • app (SnappetTests)   — builds the app once and runs ONLY the unit suite → the fast gate (~15 min).
-#   • app (SnappetUITests) — builds the app once and runs ONLY the end-to-end UI suite (~30 min, slow).
+#   • app (SnappetUITests) — builds the app once and runs ONLY the end-to-end UI suite (~60 min, slow).
 # The unit and UI suites are matrix legs (`-only-testing:`), so the unit/correctness signal no longer
 # waits behind the slow UI run. SwiftPM checkouts (notably onnxruntime's binary xcframework) are cached
 # between runs.
@@ -80,7 +80,7 @@ jobs:
             echo 'suites=["SnappetTests","SnappetUITests"]' >> "$GITHUB_OUTPUT"
           else
             echo 'suites=["SnappetTests"]' >> "$GITHUB_OUTPUT"
-            echo "::notice title=UI tests skipped::No ios/** (or ci.yml) changes in this PR — skipping the ~30-min SnappetUITests leg. Unit + engine still run."
+            echo "::notice title=UI tests skipped::No ios/** (or ci.yml) changes in this PR — skipping the ~60-min SnappetUITests leg. Unit + engine still run."
           fi
 
   engine:
@@ -104,7 +104,13 @@ jobs:
     # matrix — so a broken gate degrades to "run everything", never to silently losing the unit signal.
     if: ${{ !cancelled() }}
     runs-on: macos-26
-    timeout-minutes: 60
+    # 90, not 60: the UI suite outgrew the old ceiling and started being CANCELLED at exactly
+    # 60:00 mid-run — which surfaces as a red check with ZERO test failures, so it reads like a
+    # regression and hides real ones behind it. Measured 2026-08-03 on PR #303: every test passed
+    # and the job was killed with ~2 suites left. Note `-test-iterations 3` below multiplies the
+    # cost of any flake, so the ceiling has to clear the retried worst case, not the happy path.
+    # The unit leg finishes in ~10 min and is unaffected by the larger number.
+    timeout-minutes: 90
     strategy:
       fail-fast: false         # a UI failure must not cancel the unit-test signal (and vice-versa)
       matrix:
