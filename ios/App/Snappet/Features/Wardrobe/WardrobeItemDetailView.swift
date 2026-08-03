@@ -29,7 +29,9 @@ struct WardrobeItemDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                WardrobeItemTile(item: item, height: 240)
+                // The one site that reads the full display master; every other tile in the app
+                // renders the small `thumbnailData` (wardrobe prompt 03).
+                WardrobeItemHeroImage(item: item, height: 240)
                     .overlay(alignment: .topTrailing) {
                         Button {
                             item.isFavorite.toggle()
