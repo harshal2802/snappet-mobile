@@ -77,4 +77,42 @@ final class WardrobeUITests: XCTestCase {
                       "the saved outfit should appear under Outfits")
         snap("wardrobe-sections-outfits")
     }
+
+    /// Multi-photo surfaces (wardrobe prompt 04). The simulator has no camera and no Photos, so
+    /// this covers what IS reachable there: the ··· menu carries a photo count, "Manage photos"
+    /// presents, and a photo-less sample garment shows the add affordance rather than a broken
+    /// grid. It also pins the one-photo rule from the other side — a garment with fewer than two
+    /// photos must NOT render the pager, so `wardrobe.item.carousel` is absent here.
+    func testManagePhotosSheetOpensForASampleGarment() {
+        openWardrobe()
+
+        let sample = app.buttons["wardrobe.empty.sample"]
+        XCTAssertTrue(sample.waitForExistence(timeout: 6), "fresh store should show the empty state")
+        sample.tap()
+
+        XCTAssertTrue(app.staticTexts["Grey joggers"].waitForExistence(timeout: 6),
+                      "sample closet should seed the joggers")
+        app.staticTexts["Grey joggers"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["wardrobe.item.style"].waitForExistence(timeout: 6),
+                      "item detail should open")
+
+        // A sample garment has no photo at all, so the pager must not appear.
+        XCTAssertFalse(app.descendants(matching: .any)["wardrobe.item.carousel"].exists,
+                       "a garment with <2 photos must render the plain hero, not the pager")
+
+        let menu = app.buttons["wardrobe.item.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 6), "the ··· menu should exist")
+        menu.tap()
+
+        let manage = app.buttons["wardrobe.item.managePhotos"]
+        XCTAssertTrue(manage.waitForExistence(timeout: 6),
+                      "the menu should offer Manage photos with a count")
+        manage.tap()
+
+        // The sheet presents and offers the add affordance (the grid is empty for a sample piece).
+        XCTAssertTrue(app.buttons["wardrobe.photos.add"].waitForExistence(timeout: 6),
+                      "Manage photos should present with an add slot")
+        snap("wardrobe-manage-photos")
+    }
+
 }

@@ -5,11 +5,37 @@ import PhotosUI
 /// The add-item flow: pick (camera or Photos) → subject lift → editable AI tag sheet →
 /// save. One garment per pass. Everything runs on-device; the tag draft is the Vision
 /// heuristic floor, optionally sharpened by Apple Intelligence (badge shows which).
+///
+/// **Multi-photo (wardrobe prompt 04)**: the review stage's single preview is a strip. The first
+/// photo is the cover and the only one that drives tagging; up to five more can be added with a
+/// role each. One photo still saves exactly as it did before — nothing on the fast path is new.
 struct WardrobeCaptureSheet: View {
     private enum Stage {
         case pick
         case processing
         case review
+    }
+
+    /// Where a picker's result should go when it comes back.
+    private enum PickIntent: Equatable {
+        /// The first photo: run tagging, become the cover.
+        case cover
+        /// An extra photo with this role: subject lift per the role, no tagging.
+        case extra(GarmentPhotoRole)
+    }
+
+    private enum PickSource: Equatable { case camera, photos }
+
+    /// One photo held in the sheet before anything is persisted.
+    private struct DraftPhoto: Identifiable {
+        let id = UUID()
+        var role: GarmentPhotoRole
+        var original: UIImage
+        var cutout: UIImage?
+        var useCutout: Bool
+        /// What actually gets encoded on save.
+        var chosen: UIImage { (useCutout ? cutout : nil) ?? original }
+        var isCutout: Bool { useCutout && cutout != nil }
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -19,12 +45,20 @@ struct WardrobeCaptureSheet: View {
     @State private var stage: Stage = .pick
     @State private var photoSelection: PhotosPickerItem?
     @State private var showCamera = false
-    @State private var original: UIImage?
-    @State private var cutout: UIImage?
-    @State private var useCutout = true
+    @State private var photos: [DraftPhoto] = []
     @State private var draft = WardrobeVision.DraftTags()
     @State private var costText = ""
     @State private var isSaving = false
+
+    // Add-photo flow.
+    @State private var showAddPhoto = false
+    @State private var addRole: GarmentPhotoRole = .back
+    @State private var intent: PickIntent = .cover
+    /// Stashed while the add sheet is closing — see `onDismiss` below.
+    @State private var pendingSource: PickSource?
+    @State private var capMessage: String?
+
+    private var cover: DraftPhoto? { photos.first }
 
     var body: some View {
         NavigationStack {
@@ -49,16 +83,38 @@ struct WardrobeCaptureSheet: View {
             Task {
                 if let data = try? await selection.loadTransferable(type: Data.self),
                    let image = UIImage(data: data) {
-                    await process(image)
+                    await accept(image)
                 }
+                photoSelection = nil    // so re-picking the same asset fires again
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
             WardrobeCameraPicker { image in
                 showCamera = false
-                if let image { Task { await process(image) } }
+                if let image { Task { await accept(image) } }
             }
             .ignoresSafeArea()
+        }
+        // Presenting the camera/Photos picker straight from the add sheet's button would dismiss
+        // one presentation and request another in a SINGLE state mutation — SwiftUI drops the
+        // second, and the picker never appears (the same race that bit festival prompts 05 and 06).
+        // Stash the choice, promote it here once the sheet has actually gone.
+        .sheet(isPresented: $showAddPhoto, onDismiss: promotePendingSource) {
+            addPhotoSheet
+        }
+        .alert("Photo limit reached", isPresented: .constant(capMessage != nil)) {
+            Button("OK") { capMessage = nil }
+        } message: {
+            Text(capMessage ?? "")
+        }
+    }
+
+    private func promotePendingSource() {
+        guard let source = pendingSource else { return }
+        pendingSource = nil
+        switch source {
+        case .camera: showCamera = true
+        case .photos: break   // the PhotosPicker in the sheet handles its own presentation
         }
     }
 
@@ -123,20 +179,22 @@ struct WardrobeCaptureSheet: View {
         Form {
             Section {
                 VStack(spacing: 8) {
-                    if let shown = (useCutout ? cutout : original) ?? original {
-                        Image(uiImage: shown)
+                    if let cover {
+                        Image(uiImage: cover.chosen)
                             .resizable()
                             .scaledToFit()
                             .frame(height: 180)
                             .frame(maxWidth: .infinity)
                     }
-                    if cutout != nil {
-                        Picker("Image", selection: $useCutout) {
+                    // The cut-out toggle applies to the COVER — the roles decide it for the rest.
+                    if cover?.cutout != nil {
+                        Picker("Image", selection: coverUsesCutout) {
                             Text("Cut-out").tag(true)
                             Text("Original").tag(false)
                         }
                         .pickerStyle(.segmented)
                     }
+                    photoStrip
                     Label(draft.sharpenedByAI ? "Tagged on-device · Apple Intelligence"
                                               : "Tagged on-device",
                           systemImage: "sparkles")
@@ -186,6 +244,133 @@ struct WardrobeCaptureSheet: View {
         }
     }
 
+    /// Binding onto the cover's cut-out toggle (the cover is `photos[0]`).
+    private var coverUsesCutout: Binding<Bool> {
+        Binding(get: { photos.first?.useCutout ?? true },
+                set: { if !photos.isEmpty { photos[0].useCutout = $0 } })
+    }
+
+    /// Cover · extras · "+". The whole multi-photo affordance, in one row.
+    private var photoStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    slot(photo, isCover: index == 0)
+                }
+                if WardrobePhotoSet.canAdd(currentCount: photos.count) {
+                    Button {
+                        addRole = WardrobePhotoSet.nextUnusedRole(used: photos.map(\.role))
+                        // Set here (and kept in sync below) rather than on the picker's tap —
+                        // a tap gesture on a PhotosPicker label is not reliably delivered.
+                        intent = .extra(addRole)
+                        showAddPhoto = true
+                    } label: {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(SnappetColor.hairline, style: StrokeStyle(lineWidth: 1.5, dash: [4]))
+                            .frame(width: 66, height: 80)
+                            .overlay(Image(systemName: "plus")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(SnappetColor.wardrobe))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("wardrobe.capture.addPhoto")
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .overlay(alignment: .bottomLeading) {
+            Text("\(photos.count) of \(WardrobePhotoSet.maxPhotos) photos")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(SnappetColor.textSecondary)
+                .offset(y: 12)
+        }
+        .padding(.bottom, 12)
+    }
+
+    private func slot(_ photo: DraftPhoto, isCover: Bool) -> some View {
+        Image(uiImage: photo.chosen)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 66, height: 80)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(alignment: .bottom) {
+                Text(photo.role.title.uppercased())
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.72))
+            }
+            .overlay(alignment: .topLeading) {
+                if isCover {
+                    Text("COVER")
+                        .font(.system(size: 7, weight: .black))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 2)
+                        .background(SnappetColor.wardrobe, in: RoundedRectangle(cornerRadius: 4))
+                        .padding(3)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contextMenu {
+                if !isCover {
+                    Button(role: .destructive) {
+                        photos.removeAll { $0.id == photo.id }
+                    } label: { Label("Remove photo", systemImage: "trash") }
+                }
+            }
+    }
+
+    /// Role first, source second — the role decides whether subject lift runs, so it has to be
+    /// known before the picker returns.
+    private var addPhotoSheet: some View {
+        NavigationStack {
+            Form {
+                Section("What does this photo show?") {
+                    Picker("Role", selection: $addRole) {
+                        ForEach(GarmentPhotoRole.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: addRole) { _, role in intent = .extra(role) }
+                    Text(addRole.hint)
+                        .font(.caption)
+                        .foregroundStyle(SnappetColor.textSecondary)
+                    Label(addRole.shouldLiftSubject
+                            ? "Background will be removed"
+                            : "Background kept — you want the whole shot",
+                          systemImage: addRole.shouldLiftSubject ? "scissors" : "photo")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(SnappetColor.wardrobe)
+                }
+                Section {
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button {
+                            intent = .extra(addRole)
+                            pendingSource = .camera      // promoted in the sheet's onDismiss
+                            showAddPhoto = false
+                        } label: {
+                            Label("Take photo", systemImage: "camera.fill")
+                        }
+                        .accessibilityIdentifier("wardrobe.capture.add.camera")
+                    }
+                    // A PhotosPicker presents OVER this sheet, so it needs no dismiss dance.
+                    PhotosPicker(selection: $photoSelection, matching: .images) {
+                        Label("Import from Photos", systemImage: "photo.on.rectangle")
+                    }
+                    .accessibilityIdentifier("wardrobe.capture.add.photos")
+                }
+            }
+            .navigationTitle("Add a photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showAddPhoto = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
     private var seasonToggles: some View {
         HStack {
             ForEach(GarmentSeason.allCases) { season in
@@ -207,17 +392,42 @@ struct WardrobeCaptureSheet: View {
 
     // MARK: - Pipeline
 
-    private func process(_ image: UIImage) async {
+    /// Route a freshly picked image by the current `intent`.
+    private func accept(_ image: UIImage) async {
+        switch intent {
+        case .cover: await processCover(image)
+        case .extra(let role): await appendExtra(image, role: role)
+        }
+    }
+
+    /// The first photo: subject lift + the full tagging pass. This is the only photo that drives
+    /// the garment's tags.
+    private func processCover(_ image: UIImage) async {
         stage = .processing
         let lifted = await WardrobeVision.liftSubject(from: image)
         var tags = await WardrobeVision.draftTags(for: lifted ?? image)
         let labels = await WardrobeVision.classify(image)
         tags = await WardrobeIntelligence.sharpenTags(tags, labels: labels)
-        original = image
-        cutout = lifted
-        useCutout = lifted != nil
+        photos = [DraftPhoto(role: .front, original: image, cutout: lifted,
+                             useCutout: lifted != nil)]
         draft = tags
         stage = .review
+    }
+
+    /// An extra photo. Subject lift runs only when the ROLE calls for it, and **tagging does not
+    /// re-run**: the tags came from the cover, and a worn shot would drag the dominant-color
+    /// average toward skin and background.
+    private func appendExtra(_ image: UIImage, role: GarmentPhotoRole) async {
+        showAddPhoto = false
+        guard WardrobePhotoSet.canAdd(currentCount: photos.count) else {
+            capMessage = WardrobePhotoSet.addRefusalReason(currentCount: photos.count)
+            intent = .cover
+            return
+        }
+        let lifted = role.shouldLiftSubject ? await WardrobeVision.liftSubject(from: image) : nil
+        photos.append(DraftPhoto(role: role, original: image, cutout: lifted,
+                                 useCutout: lifted != nil))
+        intent = .cover     // back to the default so a stray pick can't append silently
     }
 
     /// Encode through `WardrobeImageStore` so the stored master is capped at
@@ -228,13 +438,13 @@ struct WardrobeCaptureSheet: View {
     /// The resize/encode runs detached: a full-resolution capture takes long enough that doing
     /// it inline would freeze the sheet on the Save tap.
     private func save() async {
-        let usingCutout = useCutout && cutout != nil
-        // `process()` always sets `original`, so this is normally non-nil; a nil source still
-        // saves the item (photo-less, category-emoji tile) rather than silently doing nothing.
+        // The cover rides the item itself (wardrobe prompt 04) — that's what keeps the closet
+        // grid a single-table read and what let multi-photo ship without a migration.
         var prepared: WardrobeImageStore.Prepared?
-        if let source = usingCutout ? cutout : original {
+        if let cover {
+            let image = cover.chosen, isCutout = cover.isCutout
             prepared = await Task.detached(priority: .userInitiated) {
-                WardrobeImageStore.prepare(image: source, isCutout: usingCutout)
+                WardrobeImageStore.prepare(image: image, isCutout: isCutout)
             }.value
         }
 
@@ -245,9 +455,20 @@ struct WardrobeCaptureSheet: View {
             cost: Double(costText.replacingOccurrences(of: ",", with: ".")),
             imageData: prepared?.display,
             thumbnailData: prepared?.thumbnail)
+        item.coverPhotoRole = cover?.role ?? .front
         modelContext.insert(item)
         try? modelContext.save()
-        core.log(module: "wardrobe", action: "add", summary: "Added \(item.name) to closet")
+
+        // Extras become rows, encoded through the same pipeline.
+        for extra in photos.dropFirst() {
+            await WardrobePhotoStore.addExtra(extra.chosen, role: extra.role,
+                                              isCutout: extra.isCutout,
+                                              to: item, in: modelContext)
+        }
+
+        let photoNote = photos.count > 1 ? " (\(photos.count) photos)" : ""
+        core.log(module: "wardrobe", action: "add",
+                 summary: "Added \(item.name) to closet\(photoNote)")
         dismiss()
     }
 }

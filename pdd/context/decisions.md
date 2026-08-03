@@ -9068,3 +9068,47 @@ Follow-ups owed (staged as agreed with the user): **P2** multiple photos per ite
 argues for P3: `material` is being used as a brand field (Uniqlo 32, Lululemon 30, Temu 10 — with 41 of 95
 values carrying stray whitespace, so `'Lululemon '` and `'Lululemon'` are two values today), and size is
 being typed into the item name ("Black tank top size M") 10 times.
+
+## 2026-08-02 — Multiple photos per garment: the cover stays on the item (wardrobe prompt 04)
+
+**Decision** (user device feedback: "people should be allowed to upload multiple photos of item:
+example: front, back, photo of the person wearing it"). P2 of the closet feedback trio, built against
+a wireframe approved before any code (`docs/ux-research/wardrobe/multi-photo.html`).
+
+Non-obvious calls:
+
+- **The COVER is not a `WardrobePhoto` row.** It stays on `WardrobeItem.imageData` / `thumbnailData`,
+  and only the *extras* become rows. Two reasons, both load-bearing: the closet grid renders 100 tiles
+  and must never join a second table to do it (prompt 03 exists precisely because that grid was the
+  hang), and keeping the cover in place meant prompt 04 shipped with **zero migration** — every
+  pre-existing garment is already a valid one-photo item with no rows at all. The cost of the
+  asymmetry is that "make cover" and "delete the cover" are byte moves rather than pointer swaps;
+  all of that is confined to `WardrobePhotoStore`.
+- **`GarmentPhotoRole` is a CLOSED enum**, even though prompt 05 makes the descriptive dropdowns
+  user-extensible. Role drives behavior, not labelling: `shouldLiftSubject` is **false for `worn` and
+  `tag`**, because lifting the subject out of a worn shot cuts the *person* out and a care label has
+  no subject to lift. A user-invented role would have no defined answer to that question.
+- **Deleting the cover promotes before it removes.** `WardrobePhotoSet.deletePlan` returns
+  `promoteThenRemove`, and the store copies the promoted row's bytes onto the item *before* deleting
+  it. The other order leaves a photographed garment rendering a category emoji if the app dies
+  between the two writes — the same class of bug as prompt 03's placeholder regression.
+- **`nextSortIndex` is max+1, not count.** A set that has had deletions would otherwise hand out an
+  index that is still in use and scramble the order.
+- **Extra photos do not re-run tagging.** The tags were drafted from the cover; a worn shot would
+  drag `WardrobeVision`'s dominant-color average toward skin and background, and a care label would
+  produce nonsense. Only the cover feeds the tagger.
+- **Six-photo cap is storage, not tidiness.** At prompt 03's caps a photo is ~1.2 MB master + ~130 KB
+  thumbnail, so a fully-photographed garment is ~8 MB — still under the 10 MB a *single* photo cost
+  before prompt 03. A 100-item closet averaging three photos lands near 390 MB. A refused add is
+  explained in an alert, never silently dropped.
+- **Orphan sweep is manual and deliberately named at every call site.** The FK is a plain UUID with
+  no SwiftData relationship, so nothing cascades: item delete, archived-item swipe delete, and
+  Settings' delete-all all call `WardrobePhotoStore.deleteAll(forItem:)`. Missing one leaks the
+  bytes, not just the rows.
+- **The add-photo sheet uses stash-and-promote**, not a direct present. Dismissing the sheet and
+  presenting the camera in one state mutation makes SwiftUI drop the second presentation — the same
+  race that bit festival prompts 05 and 06. The Photos picker needs no dance (it presents *over* the
+  sheet); only the camera does, so `pendingCamera` is promoted in the sheet's `onDismiss`.
+- **Backup**: `WardrobePhotoRow` mirrors the model; masters ride the backup, thumbnails stay excluded
+  as derived data, exactly as prompt 03 established. The tripwire earned its keep twice here — it
+  caught the unseeded model, then the hardcoded record count.

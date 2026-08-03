@@ -15,7 +15,14 @@ struct WardrobeItemDetailView: View {
 
     @State private var showGenerator = false
     @State private var showEdit = false
+    @State private var showPhotos = false
     @State private var confirmDelete = false
+
+    @Query private var allPhotos: [WardrobePhoto]
+
+    private var photoCount: Int {
+        (item.imageData == nil ? 0 : 1) + allPhotos.filter { $0.itemID == item.id }.count
+    }
 
     private var stats: WearStats.ItemStats {
         let mine = wearEvents.filter { $0.itemID == item.id }
@@ -29,9 +36,9 @@ struct WardrobeItemDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                // The one site that reads the full display master; every other tile in the app
-                // renders the small `thumbnailData` (wardrobe prompt 03).
-                WardrobeItemHeroImage(item: item, height: 240)
+                // Swipeable when the garment has more than one photo (wardrobe prompt 04);
+                // otherwise this renders exactly the prompt-03 hero, with no added chrome.
+                WardrobePhotoCarousel(item: item, height: 240)
                     .overlay(alignment: .topTrailing) {
                         Button {
                             item.isFavorite.toggle()
@@ -101,6 +108,12 @@ struct WardrobeItemDetailView: View {
                         Label("Log wear today", systemImage: "checkmark.circle")
                     }
                     Button {
+                        showPhotos = true
+                    } label: {
+                        Label("Manage photos (\(photoCount))", systemImage: "photo.on.rectangle")
+                    }
+                    .accessibilityIdentifier("wardrobe.item.managePhotos")
+                    Button {
                         showEdit = true
                     } label: {
                         Label("Edit details", systemImage: "pencil")
@@ -129,8 +142,15 @@ struct WardrobeItemDetailView: View {
         .sheet(isPresented: $showEdit) {
             WardrobeItemEditSheet(item: item)
         }
+        .sheet(isPresented: $showPhotos) {
+            WardrobePhotosView(item: item)
+        }
         .confirmationDialog("Delete \(item.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete item", role: .destructive) {
+                // Sweep the photo rows FIRST: the FK is a plain UUID with no SwiftData
+                // relationship, so nothing cascades and they would be orphaned bytes that
+                // never get reclaimed (wardrobe prompt 04).
+                WardrobePhotoStore.deleteAll(forItem: item.id, in: modelContext)
                 modelContext.delete(item)
                 try? modelContext.save()
                 dismiss()
