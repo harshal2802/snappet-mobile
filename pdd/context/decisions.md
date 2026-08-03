@@ -8956,3 +8956,39 @@ Non-obvious calls:
   and fall back to an install-link QR — the exact `SharedRoutine` payload-vs-link logic.
 - **Module accent proposal**: "UV orchid" (light `0xB03AC2` / dark `0xD96BE8`) — distinct from
   journal-violet and wardrobe-rose; confirm against the ramp when prompt 02 lands it.
+
+## 2026-08-02 — The "hermetic" clip-export E2E wasn't: a Photos dialog nobody could dismiss (prompt 100)
+
+`RecapClipExportUITests.testSeededClipAnimatesHermeticallyOnSimulator` had been failing on **main**,
+which is worse than it sounds: every PR's UI suite was red before it started, so a real regression in
+that suite was indistinguishable from the standing failure. Found while shipping the wardrobe closet
+trio (PR #301) — blame was established *before* touching anything, by reproducing the failure on main
+with none of the PR's code present.
+
+Non-obvious calls:
+
+- **The root cause was a lie in a docstring.** `RecapClipSeed` says the seed exists to run the export
+  *"hermetically on the simulator, with no Photos library and no device"* — but
+  `ClipExportCoordinator.animate` renders and then calls `saveVideoToPhotos`, whose first line is
+  `PHPhotoLibrary.requestAuthorization`. The seeded path was one system permission dialog away from
+  hermetic, and had been since R11.
+- **Why the interruption monitor didn't save it** (the part worth remembering): `addUIInterruptionMonitor`
+  fires only on the **next interaction with the app**. The test's one interaction (`app.tap()`) runs
+  immediately after tapping Animate — *seconds before* the render finishes and the dialog appears.
+  After that the test sits in `waitForExistence`, which does not interact, so the monitor never runs,
+  the `await` never returns, `animateState` stays `.rendering`, and `share.animate.result` (rendered
+  only when the state leaves `.rendering`) never appears. **A UI interruption monitor cannot dismiss a
+  dialog that appears while the test is idle** — if a dialog can appear late, either poke the app on a
+  timer or make sure it can't appear at all.
+- **Fixed by removing the dialog, not by dismissing it.** `RecapClipSeed.isActive` gates skipping the
+  Photos save, so the E2E exercises the whole render — the thing it exists to prove — and none of the
+  non-hermetic tail. The assertion keeps its teeth: the test already accepted `"Rendered …"` exactly
+  as it accepted `"Saved to Photos"`, and still fails if the export yields no file. Diagnosis
+  confirmed by the shape of the fix: **90s timeout → passes in ~21s**.
+- **Rejected**: granting Photos via `simctl privacy` in CI (moves an app-behavior bug into CI config
+  and leaves the test broken locally), and tapping the app on a timer to provoke the monitor (slower,
+  racier, and works around a dialog the test should never see).
+- **Also cleared in the same investigation**: `BudgetUITests.testEditTransactionAndMonthSwitch` failed
+  in the same CI run but passes locally on both main and the PR branch, and passed on CI re-run —
+  flake, consistent with the known UITest flakiness on this repo's runners. Two failures in one run
+  did **not** mean two regressions.

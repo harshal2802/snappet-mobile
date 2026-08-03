@@ -20,6 +20,20 @@ enum RecapClipSeed {
     /// The launch argument that enables the seed.
     static let argument = "-uiTestSeedRecapClip"
 
+    /// Whether this process was launched into the seeded hermetic E2E.
+    ///
+    /// Read by `ClipExportCoordinator.animate` to skip the **Photos save** — the one step of the
+    /// Animate pipeline that is not hermetic. `PHPhotoLibrary.requestAuthorization` puts up a system
+    /// dialog on a fresh simulator, and an `XCUITest` interruption monitor only fires on the *next*
+    /// interaction with the app; the test is parked in `waitForExistence` by the time the render
+    /// finishes, so nothing ever dismisses it and the await hangs until the test times out. Skipping
+    /// the save keeps this type's stated promise ("hermetically on the simulator, with no Photos
+    /// library") and still exercises the whole render — the composition and export are what the E2E
+    /// is proving.
+    static var isActive: Bool {
+        ProcessInfo.processInfo.arguments.contains(argument)
+    }
+
     /// The sentinel `localIdentifier` scheme for the bundled test clip (resolved by ReelExporter).
     static let bundledScheme = "uitest-bundled://"
 

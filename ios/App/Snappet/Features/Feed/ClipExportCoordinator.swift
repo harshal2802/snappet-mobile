@@ -85,12 +85,20 @@ enum ClipExportCoordinator {
                                                   restHR: context.restHR,
                                                   clipName: context.clipName))
             if Task.isCancelled { return .cancelled }
-            // Save to Photos; a denial is non-fatal — the file is still rendered on disk.
-            do {
-                try await library.saveVideoToPhotos(url)
-                outcome = .saved(url)
-            } catch {
+            if RecapClipSeed.isActive {
+                // Seeded hermetic E2E (R11): the render is the thing under test; the Photos save is
+                // the one non-hermetic step and it HANGS the run on a fresh simulator (see
+                // `RecapClipSeed.isActive`). Report the rendered file instead — the test accepts
+                // "Rendered …" exactly as it accepts "Saved to Photos".
                 outcome = .rendered(url)
+            } else {
+                // Save to Photos; a denial is non-fatal — the file is still rendered on disk.
+                do {
+                    try await library.saveVideoToPhotos(url)
+                    outcome = .saved(url)
+                } catch {
+                    outcome = .rendered(url)
+                }
             }
         } catch {
             if Task.isCancelled { return .cancelled }
