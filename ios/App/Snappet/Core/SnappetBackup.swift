@@ -63,7 +63,8 @@ enum SnappetBackup {
         KilterLogEntry.self, KilterSession.self, KilterFavorite.self, KilterCreatedClimb.self,
         KilterPlan.self, KilterLitEvent.self,
         FeedActivity.self, FeedReaction.self, FeedSaveItem.self, FeedShareEvent.self, FeedOutboxEntry.self,
-        WardrobeItem.self, WardrobePhoto.self, WearEvent.self, WardrobeOutfit.self,
+        WardrobeItem.self, WardrobePhoto.self, WardrobeVocabulary.self, WardrobeTidyEdit.self,
+        WearEvent.self, WardrobeOutfit.self,
         FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
     ]
 
@@ -109,6 +110,9 @@ enum SnappetBackup {
         var wardrobeItems: [WardrobeItemRow] = []
         /// Extra garment photos (wardrobe prompt 04). Defaulted so pre-04 blobs still decode.
         var wardrobePhotos: [WardrobePhotoRow] = []
+        /// Remembered custom dropdown values + the tidy-up undo log (wardrobe prompt 05).
+        var wardrobeVocabulary: [WardrobeVocabularyRow] = []
+        var wardrobeTidyEdits: [WardrobeTidyEditRow] = []
         var wearEvents: [WearEventRow] = []
         var wardrobeOutfits: [WardrobeOutfitRow] = []
         // Festival — defaulted so pre-festival backup blobs still decode.
@@ -157,6 +161,8 @@ enum SnappetBackup {
             n += feedOutbox.count
             n += wardrobeItems.count
             n += wardrobePhotos.count
+            n += wardrobeVocabulary.count
+            n += wardrobeTidyEdits.count
             n += wearEvents.count
             n += wardrobeOutfits.count
             n += festivalLineups.count
@@ -240,6 +246,8 @@ enum SnappetBackup {
         file.feedOutbox = try all(FeedOutboxEntry.self).map(FeedOutboxEntryRow.init).sorted(by: rowKey)
         file.wardrobeItems = try all(WardrobeItem.self).map(WardrobeItemRow.init).sorted(by: rowKey)
         file.wardrobePhotos = try all(WardrobePhoto.self).map(WardrobePhotoRow.init).sorted(by: rowKey)
+        file.wardrobeVocabulary = try all(WardrobeVocabulary.self).map(WardrobeVocabularyRow.init).sorted(by: rowKey)
+        file.wardrobeTidyEdits = try all(WardrobeTidyEdit.self).map(WardrobeTidyEditRow.init).sorted(by: rowKey)
         file.wearEvents = try all(WearEvent.self).map(WearEventRow.init).sorted(by: rowKey)
         file.wardrobeOutfits = try all(WardrobeOutfit.self).map(WardrobeOutfitRow.init).sorted(by: rowKey)
         file.festivalLineups = try all(FestivalLineup.self).map(FestivalLineupRow.init).sorted(by: rowKey)
@@ -340,8 +348,12 @@ enum SnappetBackup {
             uniqued(file.feedOutbox, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WardrobeItem.self)
             try deleteAll(WardrobePhoto.self)
+            try deleteAll(WardrobeVocabulary.self)
+            try deleteAll(WardrobeTidyEdit.self)
             uniqued(file.wardrobeItems, by: \.id).forEach { context.insert($0.make()) }
             uniqued(file.wardrobePhotos, by: \.id).forEach { context.insert($0.make()) }
+            uniqued(file.wardrobeVocabulary, by: \.id).forEach { context.insert($0.make()) }
+            uniqued(file.wardrobeTidyEdits, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WearEvent.self)
             uniqued(file.wearEvents, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(WardrobeOutfit.self)
@@ -1068,6 +1080,52 @@ extension SnappetBackup {
                                   imageData: imageData, createdAt: createdAt)
             p.roleRaw = roleRaw   // raw, not via the enum — unrecognized values survive verbatim
             return p
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    /// A remembered custom dropdown value (wardrobe prompt 05).
+    struct WardrobeVocabularyRow: BackupRow {
+        var id: UUID
+        var fieldRaw: String
+        var value: String
+        var mapsToRaw: String
+        var useCount: Int
+        var createdAt: Date
+
+        init(_ m: WardrobeVocabulary) {
+            id = m.id; fieldRaw = m.fieldRaw; value = m.value
+            mapsToRaw = m.mapsToRaw; useCount = m.useCount; createdAt = m.createdAt
+        }
+        func make() -> WardrobeVocabulary {
+            let v = WardrobeVocabulary(id: id, field: .brand, value: value,
+                                       mapsToRaw: mapsToRaw, useCount: useCount, createdAt: createdAt)
+            v.fieldRaw = fieldRaw   // raw, not via the enum — unrecognized values survive verbatim
+            return v
+        }
+        var sortKey: String { id.uuidString }
+    }
+
+    /// One tidy-up rewrite, so the cleanup stays undoable across a backup/restore.
+    struct WardrobeTidyEditRow: BackupRow {
+        var id: UUID
+        var batchID: UUID
+        var itemID: UUID?
+        var fieldRaw: String
+        var oldValue: String
+        var newValue: String
+        var appliedAt: Date
+        var isUndone: Bool
+
+        init(_ m: WardrobeTidyEdit) {
+            id = m.id; batchID = m.batchID; itemID = m.itemID; fieldRaw = m.fieldRaw
+            oldValue = m.oldValue; newValue = m.newValue
+            appliedAt = m.appliedAt; isUndone = m.isUndone
+        }
+        func make() -> WardrobeTidyEdit {
+            WardrobeTidyEdit(id: id, batchID: batchID, itemID: itemID, fieldRaw: fieldRaw,
+                             oldValue: oldValue, newValue: newValue,
+                             appliedAt: appliedAt, isUndone: isUndone)
         }
         var sortKey: String { id.uuidString }
     }
