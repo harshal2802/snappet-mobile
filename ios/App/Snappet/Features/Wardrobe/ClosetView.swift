@@ -10,7 +10,9 @@ struct ClosetView: View {
     @Query private var wearEvents: [WearEvent]
 
     @State private var searchText = ""
-    @State private var categoryFilter: GarmentCategory?
+    /// The stored category RAW, not a `GarmentCategory` — a custom category ("Loungewear") has no
+    /// enum case, and filtering on the enum silently folded it into whatever built-in it scores as.
+    @State private var categoryFilter: String?
     @State private var favoritesOnly = false
 
     private var stats: [UUID: WearStats.ItemStats] {
@@ -24,25 +26,33 @@ struct ClosetView: View {
         return items.filter { item in
             guard !item.isArchived else { return false }
             if favoritesOnly && !item.isFavorite { return false }
-            if let categoryFilter, item.category != categoryFilter { return false }
+            if let categoryFilter, item.categoryRaw != categoryFilter { return false }
             guard !query.isEmpty else { return true }
+            // Brand and size are searchable too — they're the facts you'd actually reach for
+            // ("that Uniqlo one", "everything in M"), and omitting them made prompt 05's fields
+            // invisible to search as well as to the eye.
             return item.name.lowercased().contains(query)
+                || item.brand.lowercased().contains(query)
+                || item.sizeLabel.lowercased().contains(query)
                 || item.material.lowercased().contains(query)
-                || item.colorRaw.contains(query)
+                || item.colorRaw.lowercased().contains(query)
                 || item.styleRaw.lowercased().contains(query)
-                || item.category.title.lowercased().contains(query)
+                || item.categoryRaw.lowercased().contains(query)
         }
     }
 
     /// ONE grouping pass over the filtered set. This used to call `filtered.filter` once per
     /// category (8×) on top of the `.isEmpty` check — and `filtered` is a computed property, so
     /// every one of those was a fresh O(n) scan, on every body pass.
-    private var sections: [(category: GarmentCategory, items: [WardrobeItem])] {
-        let grouped = Dictionary(grouping: filtered, by: \.category)
-        return GarmentCategory.allCases.compactMap { cat in
-            guard let inCat = grouped[cat], !inCat.isEmpty else { return nil }
-            return (cat, inCat)
-        }
+    /// Grouped by the stored RAW, so a custom category gets its own section under the user's own
+    /// wording instead of being folded into whatever built-in it scores as.
+    private var sections: [(category: WardrobeClosetGrouping.Category, items: [WardrobeItem])] {
+        let grouped = Dictionary(grouping: filtered, by: \.categoryRaw)
+        return WardrobeClosetGrouping.present(in: filtered.map(\.categoryRaw), plural: true)
+            .compactMap { category in
+                guard let inCat = grouped[category.key], !inCat.isEmpty else { return nil }
+                return (category, inCat)
+            }
     }
 
     var body: some View {
@@ -60,8 +70,8 @@ struct ClosetView: View {
                     ContentUnavailableView.search(text: searchText)
                         .padding(.top, 60)
                 } else {
-                    ForEach(sections, id: \.category) { section in
-                        Text("\(section.category.pluralTitle) · \(section.items.count)")
+                    ForEach(sections, id: \.category.key) { section in
+                        Text("\(section.category.title) · \(section.items.count)")
                             .font(.headline)
                             .padding(.horizontal, 18)
                             .padding(.top, 10)
@@ -105,9 +115,12 @@ struct ClosetView: View {
                      isOn: categoryFilter == nil && !favoritesOnly) {
                     categoryFilter = nil; favoritesOnly = false
                 }
-                ForEach([GarmentCategory.top, .bottom, .shoes, .outerwear, .dress, .accessory], id: \.self) { cat in
-                    chip(cat.pluralTitle, isOn: categoryFilter == cat) {
-                        categoryFilter = categoryFilter == cat ? nil : cat
+                // Pinned built-ins plus any CUSTOM category the closet actually contains, so a
+                // user-defined category is reachable from quick-select like any other.
+                ForEach(WardrobeClosetGrouping.filterChips(
+                    presentKeys: items.filter { !$0.isArchived }.map(\.categoryRaw))) { cat in
+                    chip(cat.title, isOn: categoryFilter == cat.key) {
+                        categoryFilter = categoryFilter == cat.key ? nil : cat.key
                     }
                 }
                 chip("♥", isOn: favoritesOnly) { favoritesOnly.toggle() }
@@ -166,7 +179,11 @@ struct ClosetItemCard: View {
                 .font(.caption.weight(.bold))
                 .lineLimit(1)
                 .padding(.top, 6)
-            Text([item.style.title, item.material].filter { !$0.isEmpty }.joined(separator: " · "))
+            // Brand · size · style. Brand leads because it's the fact you scan a closet for, and
+            // `styleDisplay` (not `style.title`) so a CUSTOM style shows the user's own wording
+            // rather than the built-in it happens to score as.
+            Text([item.brand, item.sizeLabel, item.styleDisplay]
+                    .filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(SnappetColor.textSecondary)
                 .lineLimit(1)

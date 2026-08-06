@@ -177,9 +177,14 @@ struct WardrobeItemDetailView: View {
     }
 
     private var chipLabels: [String] {
-        var out = [item.category.title, item.color.title]
-        if item.pattern != .solid { out.append(item.pattern.title) }
-        out.append(item.style.title)
+        // `*Display`, not `.title`: the typed accessors resolve a CUSTOM value through its scoring
+        // map, so `item.color.title` renders a user's "Mustard" as "Yellow". Scoring wants the
+        // built-in; the chips want what the user typed.
+        var out = [item.categoryDisplay, item.colorDisplay]
+        if item.pattern != .solid { out.append(item.patternDisplay) }
+        out.append(item.styleDisplay)
+        if !item.brand.isEmpty { out.append(item.brand) }
+        if !item.sizeLabel.isEmpty { out.append("Size \(item.sizeLabel)") }
         if !item.material.isEmpty { out.append(item.material) }
         if !item.seasons.isEmpty {
             out.append(item.seasons.sorted { $0.rawValue < $1.rawValue }.map(\.title).joined(separator: " · "))
@@ -267,21 +272,38 @@ struct WardrobeItemEditSheet: View {
             Form {
                 Section("Details") {
                     TextField("Name", text: $item.name)
-                    Picker("Category", selection: $item.category) {
-                        ForEach(GarmentCategory.allCases) { Text($0.title).tag($0) }
-                    }
-                    Picker("Color", selection: $item.color) {
-                        ForEach(GarmentColorFamily.allCases) { Text($0.title).tag($0) }
-                    }
-                    Picker("Pattern", selection: $item.pattern) {
-                        ForEach(GarmentPattern.allCases) { Text($0.title).tag($0) }
-                    }
-                    Picker("Style", selection: $item.style) {
-                        ForEach(GarmentStyle.allCases) { Text($0.title).tag($0) }
-                    }
-                    TextField("Material", text: $item.material)
-                    TextField("Cost", text: $costText)
+                    // `WardrobeValueRow` (open) rather than a closed `Picker`. The Picker bound to
+                    // `$item.category` wrote through the TYPED setter, which clears the custom map
+                    // and overwrites the raw with a built-in — so simply opening this sheet on an
+                    // item with a custom category/colour and saving destroyed the custom value.
+                    WardrobeValueRow(field: .category, value: $item.categoryRaw,
+                                     mapsToRaw: $item.categoryMapRaw,
+                                     display: GarmentCategory(rawValue: item.categoryRaw)?.title)
+                    WardrobeValueRow(field: .color, value: $item.colorRaw,
+                                     mapsToRaw: $item.colorMapRaw,
+                                     display: GarmentColorFamily(rawValue: item.colorRaw)?.title)
+                    WardrobeValueRow(field: .pattern, value: $item.patternRaw,
+                                     mapsToRaw: $item.patternMapRaw,
+                                     display: GarmentPattern(rawValue: item.patternRaw)?.title)
+                    WardrobeValueRow(field: .style, value: $item.styleRaw,
+                                     mapsToRaw: $item.styleMapRaw,
+                                     display: GarmentStyle(rawValue: item.styleRaw)?.title)
+                }
+                Section("Details") {
+                    WardrobeValueRow(field: .brand, value: $item.brand,
+                                     mapsToRaw: .constant(""), display: nil)
+                    WardrobeValueRow(field: .size, value: $item.sizeLabel,
+                                     mapsToRaw: .constant(""), display: nil)
+                    WardrobeValueRow(field: .material, value: $item.material,
+                                     mapsToRaw: .constant(""), display: nil)
+                }
+                Section("Purchase") {
+                    TextField("Price paid", text: $costText)
                         .keyboardType(.decimalPad)
+                    TextField("Product link", text: $item.productURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
                 Section("Seasons — empty for all-season") {
                     HStack {
@@ -310,7 +332,18 @@ struct WardrobeItemEditSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         item.cost = Double(costText.replacingOccurrences(of: ",", with: ".")) ?? item.cost
+                        // Normalize on the way out, exactly as capture does — otherwise editing is
+                        // a second door through which `'Uniqlo '` re-enters the closet.
+                        item.brand = WardrobeVocabularyRules.normalize(item.brand)
+                        item.sizeLabel = WardrobeVocabularyRules.normalize(item.sizeLabel)
+                        item.material = WardrobeVocabularyRules.normalize(item.material)
+                        item.productURL = item.productURL
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
                         try? modelContext.save()
+                        // An edit teaches the dropdowns too; capture was the only teacher before.
+                        WardrobeVocabularyStore.remember(item.brand, field: .brand, in: modelContext)
+                        WardrobeVocabularyStore.remember(item.sizeLabel, field: .size, in: modelContext)
+                        WardrobeVocabularyStore.remember(item.material, field: .material, in: modelContext)
                         dismiss()
                     }
                 }
