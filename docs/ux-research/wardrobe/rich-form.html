@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Wardrobe · Richer add form (P3)</title>
+<style>
+  :root{
+    --brand:#FF5A4D; --rose:#E86B99; --rose-l:#C13A6F;
+    --leaf:#4ECB71; --amber:#E8A33D; --azure:#5AA9FF;
+    --paper:#0E0E10; --surface:#1A1A1E; --muted:#232329;
+    --hair:#2E2E35; --ink:#F4F3F1; --t2:#9A9AA2;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#241a24,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  .wrap{max-width:1500px;margin:0 auto;padding:0 28px}
+  header.page{padding:64px 28px 12px;max-width:1500px;margin:0 auto}
+  h1.title{font-size:40px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#f2a7c3 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:17px;max-width:1000px;margin:0 0 16px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:18px 0 0;font-size:14px;color:#c3c7d1;max-width:1150px}
+  .scopebox b{color:#fff}
+  .scopebox .later{color:#8b90a0}
+  .datacite{background:rgba(90,169,255,.10);border:1px solid rgba(90,169,255,.32);border-radius:14px;
+    padding:14px 18px;margin:14px 0 0;font-size:13.5px;color:#c6ddf7;max-width:1150px}
+  .datacite b{color:#fff}
+  .datacite code{background:rgba(0,0,0,.35);padding:1px 5px;border-radius:4px;font-size:12.5px}
+  .flowhead{margin:60px 0 6px;font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#a0879a}
+  .flowtitle{font-size:26px;font-weight:750;margin:0 0 6px;color:#fff;letter-spacing:-.01em}
+  .flowdesc{color:#a9adb8;max-width:1000px;margin:0 0 30px;font-size:15px}
+  .gallery{display:flex;flex-wrap:wrap;gap:30px 38px;align-items:flex-start}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;width:34px;height:34px;border-radius:50%;
+    background:var(--rose);color:#2b0917;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(232,107,153,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .arrow{font-size:30px;color:#4a4f5e;align-self:center;margin-top:300px}
+
+  .device{width:330px;height:700px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;
+    background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 2px;font-size:13px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;padding:6px 16px 8px;position:relative;display:flex;flex-direction:column}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 6px;flex:0 0 auto}
+  .navrow .back{font-size:14px;font-weight:650;color:var(--rose)}
+  .navrow .title{font-size:16px;font-weight:800}
+  .navrow .side{width:56px;font-size:13px;font-weight:650;color:var(--rose);text-align:right}
+
+  .sectionlabel{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--t2);margin:14px 2px 6px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;
+    background:var(--surface);border:1px solid var(--hair);border-radius:13px;font-size:13.5px}
+  .row + .row{margin-top:6px}
+  .row .lbl{color:var(--t2);font-size:12.5px}
+  .row .val{font-weight:650;font-size:13px}
+  .row .val.dim{color:var(--t2);font-weight:500}
+  .row.tap .val{color:var(--rose)}
+  .cta{background:var(--brand);color:#fff;border-radius:13px;padding:12px;text-align:center;
+    font-weight:800;font-size:14.5px;box-shadow:0 8px 22px -8px rgba(255,90,77,.7)}
+  .cta.ghost{background:transparent;color:var(--rose);border:1.5px solid var(--rose);box-shadow:none;font-size:13px;padding:10px}
+  .hint{font-size:11px;color:var(--t2);margin:6px 2px 0;line-height:1.45}
+
+  .pill{display:inline-block;border:1px solid var(--hair);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;color:var(--t2)}
+  .pill.on{background:var(--rose);border-color:var(--rose);color:#2b0917}
+  .pill.new{border-style:dashed;color:var(--rose);border-color:var(--rose)}
+  .pills{display:flex;flex-wrap:wrap;gap:6px}
+
+  .sheetdim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:20;border-radius:40px}
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:21;background:var(--surface);
+    border-radius:22px 22px 0 0;border-top:1px solid var(--hair);padding:10px 16px 22px}
+  .grabber{width:36px;height:5px;border-radius:3px;background:var(--hair);margin:0 auto 12px}
+  .sheet h4{margin:0 0 3px;font-size:15.5px;font-weight:800}
+  .sheet p{margin:0 0 11px;font-size:12px;color:var(--t2)}
+  .listrow{display:flex;align-items:center;justify-content:space-between;padding:10px 2px;font-size:14px;border-bottom:1px solid var(--hair)}
+  .listrow:last-child{border-bottom:0}
+  .listrow .ct{color:var(--t2);font-size:12px}
+  .listrow.sel{color:var(--rose);font-weight:700}
+  .field{background:var(--muted);border:1px solid var(--hair);border-radius:11px;padding:10px 12px;font-size:13.5px;color:var(--ink)}
+  .field.ph{color:var(--t2)}
+
+  .note{background:rgba(232,107,153,.10);border:1px solid rgba(232,107,153,.32);border-radius:12px;
+    padding:9px 11px;font-size:11px;color:#f0c3d5;margin-top:9px;line-height:1.45}
+  .note.blue{background:rgba(90,169,255,.10);border-color:rgba(90,169,255,.32);color:#c6ddf7}
+  .note.green{background:rgba(78,203,113,.10);border-color:rgba(78,203,113,.32);color:#bfe9cd}
+
+  .pricebox{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:11px 12px}
+  .pricerow{display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px}
+  .pricerow + .pricerow{margin-top:7px}
+  .down{color:var(--leaf);font-weight:750}
+  .up{color:#FF6B5E;font-weight:750}
+  .stamp{font-size:10.5px;color:var(--t2);margin-top:7px}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--hair);border-top-color:var(--rose);border-radius:50%}
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1 class="title">Wardrobe · Richer add form</h1>
+  <p class="sub">Device feedback, 2026-08-02: <i>“We can make add to closet form more feature rich… brand, size,
+  online link, price bought, current price if online link is provided, allow a way to add custom value in all the
+  fields which have dropdown and also update same value in related dropdown for future.”</i> <b>P3</b> of the closet
+  trio — P1 (photo pipeline) and P2 (multi-photo) are shipped.</p>
+
+  <div class="datacite">
+    <b>Designed against your real closet, not a guess.</b> Pulled from MrRobot: <code>material</code> is already
+    being used as a <b>brand</b> field — Uniqlo&nbsp;32, Lululemon&nbsp;30, Temu&nbsp;10, Amazon&nbsp;5, Zara/Nike/Adidas&nbsp;2 each —
+    and <b>41 of 95</b> values carry stray whitespace, so <code>'Lululemon '</code> and <code>'Lululemon'</code> are
+    two different values today. <b>Size</b> is typed into the item <i>name</i> 10× (“Black tank top size M”), and
+    graphic-tee prints go there too (“Illenium ‘Amber shores Cancun 2021’”). So P3 is not just new empty fields —
+    it has to <b>move the data you already typed</b> into the right ones.
+  </div>
+
+  <div class="scopebox">
+    <b>In scope.</b> Brand · size · product link · price paid · current price (fetched on demand, parsed by
+    Apple Intelligence, with a “checked on” stamp). Custom values in <b>every</b> dropdown, remembered for reuse,
+    each mapped to a nearest built-in so the outfit composer keeps scoring. A one-time <b>guided</b> cleanup that
+    proposes brand/size moves and never rewrites silently.<br>
+    <span class="later"><b>Not in scope:</b> price history charts, retailer accounts, stock/restock alerts,
+    barcode scanning, and automatic background price polling (checks are user-initiated only).</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============ FLOW A ============ -->
+<div class="flowhead">Flow A</div>
+<div class="flowtitle">The form — more facts, same fast path</div>
+<p class="flowdesc">Everything new is <b>optional and collapsed by default</b>. The existing three-tap save is
+untouched: the new material lives under a “Details” disclosure so a quick add never scrolls past it.</p>
+
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Cancel</span><span class="title">Add to closet</span><span class="side"></span></div>
+        <div class="sectionlabel">Basics</div>
+        <div class="row"><span class="lbl">Name</span><span class="val">Blue tank top</span></div>
+        <div class="row tap"><span class="lbl">Category</span><span class="val">Top ›</span></div>
+        <div class="row tap"><span class="lbl">Color</span><span class="val">Blue ›</span></div>
+        <div class="row tap"><span class="lbl">Style</span><span class="val">Casual ›</span></div>
+
+        <div class="sectionlabel">Details</div>
+        <div class="row tap"><span class="lbl">Brand</span><span class="val">Uniqlo ›</span></div>
+        <div class="row tap"><span class="lbl">Size</span><span class="val">S ›</span></div>
+        <div class="row tap"><span class="lbl">Material</span><span class="val dim">Add ›</span></div>
+
+        <div class="sectionlabel">Purchase</div>
+        <div class="row"><span class="lbl">Price paid</span><span class="val">$32</span></div>
+        <div class="row"><span class="lbl">Product link</span><span class="val dim">Add ›</span></div>
+
+        <div style="margin-top:auto;padding-top:10px"><div class="cta">Save to closet</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Brand and size are their own fields now.</b> Both are dropdowns backed by a remembered
+    vocabulary, so the second Uniqlo item is one tap — and <code>'Uniqlo '</code> can never become a second brand.
+    <b>Material stays</b>, but demoted: your data shows it was never really being used for fabric.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Cancel</span><span class="title">Add to closet</span><span class="side"></span></div>
+        <div class="sectionlabel">Details</div>
+        <div class="row tap"><span class="lbl">Brand</span><span class="val">Uniqlo ›</span></div>
+
+        <div class="sheetdim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <h4>Brand</h4>
+          <p>Yours, most used first.</p>
+          <div class="listrow sel"><span>Uniqlo</span><span class="ct">32 ✓</span></div>
+          <div class="listrow"><span>Lululemon</span><span class="ct">30</span></div>
+          <div class="listrow"><span>Temu</span><span class="ct">10</span></div>
+          <div class="listrow"><span>Amazon</span><span class="ct">5</span></div>
+          <div class="listrow" style="color:var(--rose);font-weight:700">＋ Add a new brand…</div>
+          <div class="note">New brands are remembered and appear here next time — that’s the “update the same
+          value in the related dropdown for future” part.</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Every dropdown gets this.</b> A searchable list of your own values, ordered by how often
+    you’ve used them, plus <b>“Add a new…”</b>. Values are trimmed and case-folded on save, so the whitespace
+    duplicates in your current data can’t recur.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Cancel</span><span class="title">Add to closet</span><span class="side"></span></div>
+        <div class="sectionlabel">Basics</div>
+        <div class="row tap"><span class="lbl">Color</span><span class="val">Mustard ›</span></div>
+
+        <div class="sheetdim"></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <h4>New color</h4>
+          <p>Name it, then tell us what it behaves like.</p>
+          <div class="field" style="margin-bottom:10px">Mustard</div>
+          <div class="sectionlabel" style="margin-top:2px">Behaves like</div>
+          <div class="pills">
+            <span class="pill">Brown</span><span class="pill on">Yellow</span><span class="pill">Olive</span>
+            <span class="pill">Orange</span><span class="pill">Tan</span>
+          </div>
+          <div class="note blue">Outfit suggestions score colors against each other. A brand-new color has no
+          place on that wheel until you say where it sits — pick once, and <b>Mustard</b> works everywhere
+          <b>Yellow</b> does.</div>
+          <div class="cta" style="margin-top:12px">Add color</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Custom values in the <i>scored</i> dropdowns need one extra answer.</b> Color, category,
+    pattern and style feed the outfit composer’s harmony and formality math. Brand, size and material don’t —
+    those skip this step entirely and are pure free text.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW B ============ -->
+<div class="flowhead">Flow B</div>
+<div class="flowtitle">Price — checked when you ask, never behind your back</div>
+<p class="flowdesc">A product link unlocks a <b>Check price</b> button. Tapping it fetches the page and uses
+on-device Apple Intelligence to pull the current price out of the markup. Nothing is fetched automatically, on a
+timer, or in the background.</p>
+
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">‹ Closet</span><span class="title">Item</span><span class="side">•••</span></div>
+        <div class="sectionlabel">Purchase</div>
+        <div class="pricebox">
+          <div class="pricerow"><span class="lbl" style="color:var(--t2)">Paid</span><span class="val">$32.00</span></div>
+          <div class="pricerow"><span class="lbl" style="color:var(--t2)">Current</span><span class="val dim">Not checked</span></div>
+          <div class="cta ghost" style="margin-top:11px">↻ Check price</div>
+          <div class="stamp">uniqlo.com/…/airism-tank ↗</div>
+        </div>
+        <div class="sectionlabel">Cost per wear</div>
+        <div class="row"><span class="lbl">Worn 0×</span><span class="val">—</span></div>
+        <div class="note">Checking opens a connection to the retailer. It only happens when you tap.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Before.</b> The link is stored and tappable; current price is honestly blank until you
+    ask. No silent network on open.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">‹ Closet</span><span class="title">Item</span><span class="side">•••</span></div>
+        <div class="sectionlabel">Purchase</div>
+        <div class="pricebox">
+          <div class="pricerow"><span class="lbl" style="color:var(--t2)">Paid</span><span class="val">$32.00</span></div>
+          <div class="pricerow"><span class="lbl" style="color:var(--t2)">Current</span>
+            <span><span class="spin"></span> <span class="val dim">Checking…</span></span></div>
+          <div class="stamp">Reading the page · parsing on-device</div>
+        </div>
+        <div class="note blue">The page’s HTML is parsed <b>on this iPhone</b> by Apple Intelligence — the
+        markup is not sent anywhere. Only the request to the retailer leaves the device.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>During.</b> One honest in-flight state. If the fetch fails or the page has no readable
+    price, it says so and keeps the last known value with its old timestamp — it never blanks good data.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">‹ Closet</span><span class="title">Item</span><span class="side">•••</span></div>
+        <div class="sectionlabel">Purchase</div>
+        <div class="pricebox">
+          <div class="pricerow"><span class="lbl" style="color:var(--t2)">Paid</span><span class="val">$32.00</span></div>
+          <div class="pricerow"><span class="lbl" style="color:var(--t2)">Current</span>
+            <span class="val">$24.90 <span class="down">↓ 22%</span></span></div>
+          <div class="cta ghost" style="margin-top:11px">↻ Check again</div>
+          <div class="stamp">Checked 3 Aug, 9:41 · uniqlo.com ↗</div>
+        </div>
+        <div class="note green">Cheaper than you paid. Useful the other way too — a jacket that has gone
+        <b>up</b> is worth keeping rather than replacing.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>After.</b> Current price, the delta against what you paid, and a <b>“checked on”</b>
+    stamp so a stale number is never mistaken for a live one.</p>
+  </div>
+
+</div>
+
+<!-- ============ FLOW C ============ -->
+<div class="flowhead">Flow C</div>
+<div class="flowtitle">Cleaning up what’s already there</div>
+<p class="flowdesc">Your 100 garments already carry brand and size data — in the wrong fields. A one-time review
+proposes the moves. It is <b>guided, not silent</b>: nothing is rewritten until you tap Apply.</p>
+
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">7</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">Not now</span><span class="title">Tidy up</span><span class="side"></span></div>
+
+        <div class="note blue" style="margin-top:8px">We found details stored in the wrong fields. Review the
+        proposed moves — nothing changes until you apply.</div>
+
+        <div class="sectionlabel">Material → Brand · 95 items</div>
+        <div class="row"><span class="lbl">Uniqlo</span><span class="val">32 →</span></div>
+        <div class="row"><span class="lbl">Lululemon</span><span class="val">30 →</span></div>
+        <div class="row"><span class="lbl">Temu</span><span class="val">10 →</span></div>
+        <div class="hint">Includes 41 values with stray spaces, merged: <code>'Uniqlo '</code> → <code>Uniqlo</code>.</div>
+
+        <div class="sectionlabel">Name → Size · 10 items</div>
+        <div class="row"><span class="lbl">“…tank top size M”</span><span class="val">M →</span></div>
+        <div class="row"><span class="lbl">“…tank top size S”</span><span class="val">S →</span></div>
+        <div class="hint">The size words are removed from the name; the rest is left alone.</div>
+
+        <div style="margin-top:auto;padding-top:10px">
+          <div class="cta">Apply 105 changes</div>
+          <div class="hint" style="text-align:center">Review each one first ›</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The migration is a proposal.</b> Grouped by change, counted, with the whitespace merges
+    called out. “Not now” leaves everything untouched and the offer returns later.</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="step"><div class="stepnum">8</div>
+    <div class="device"><div class="island"></div><div class="screen">
+      <div class="statusbar"><span>9:41</span><span>▮▮▮ ᯤ 91</span></div>
+      <div class="content">
+        <div class="navrow"><span class="back">‹ Back</span><span class="title">Not a brand?</span><span class="side">Done</span></div>
+
+        <div class="note" style="margin-top:8px">These look like <b>prints</b>, not brands. They’d land in
+        “Graphic” instead — or leave them where they are.</div>
+
+        <div class="sectionlabel">Uncertain · 6 items</div>
+        <div class="row"><span class="lbl">Subtronics “BE NICE PLEASE”</span><span class="val">Graphic ›</span></div>
+        <div class="row"><span class="lbl">One piece zoro</span><span class="val">Graphic ›</span></div>
+        <div class="row"><span class="lbl">Illenium</span><span class="val">Graphic ›</span></div>
+        <div class="row"><span class="lbl">Lollapalooza</span><span class="val">Graphic ›</span></div>
+        <div class="row"><span class="lbl">Insomniac camp edc</span><span class="val">Graphic ›</span></div>
+        <div class="row"><span class="lbl">Hello kitty</span><span class="val">Brand ›</span></div>
+
+        <div class="hint">Each row can be switched between Brand, Graphic, Material, or skipped.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>The honest part.</b> Six of your values are festival/anime prints, not brands. The
+    migration refuses to guess on those — it separates the confident bulk from the uncertain few and asks.</p>
+  </div>
+
+</div>
+
+<div class="flowhead">Behind the glass</div>
+<div class="flowtitle">Calls worth arguing with</div>
+
+<div class="scopebox" style="max-width:1150px">
+  <p style="margin:0 0 10px"><b>Storage.</b> New optional fields on <code>WardrobeItem</code>: <code>brand</code>,
+  <code>size</code>, <code>productURL</code>, <code>currentPrice</code>, <code>currentPriceCheckedAt</code>
+  (<code>cost</code> already exists as price-paid). Plus a small <code>WardrobeVocabulary</code> model — one row per
+  remembered custom value: <code>field</code>, <code>value</code>, <code>mapsToRaw</code> (the nearest built-in, nil
+  for unscored fields), <code>useCount</code>. All inline-defaulted / optional, no relationships, so the CloudKit
+  posture from prompt 01 holds and this is a <b>zero-migration schema change</b>.</p>
+
+  <p style="margin:0 0 10px"><b>Why custom values need a “behaves like”.</b> <code>OutfitComposer</code> scores
+  color harmony over a closed 16-family wheel and formality over a 0–5 style scale. A free-string color has no
+  hue and no formality, so it would silently drop out of every suggestion. Mapping once keeps the composer exact
+  and the vocabulary open — <b>this is the reason the P2 photo roles stayed closed while these open up</b>.</p>
+
+  <p style="margin:0 0 10px"><b>The price fetch is the one network call in the whole app.</b> Everything else in
+  Snappet is on-device. It is user-initiated only, one request per tap, no background polling, no accounts. The
+  HTML is parsed locally by Apple Intelligence (same <code>#if canImport(FoundationModels)</code> + availability
+  contract as the tag sharpener) with a plain JSON-LD/OpenGraph regex floor when FM is unavailable — so it
+  degrades instead of failing. A failed check <b>keeps the last known price and its old timestamp</b>.</p>
+
+  <p style="margin:0"><b>Two things to push back on if you disagree:</b> (1) the cleanup is <b>opt-in and
+  reviewable</b> rather than automatic — it is your data and the brand/print distinction genuinely isn’t
+  machine-decidable; (2) <code>material</code> is <b>kept</b> rather than repurposed, because a few values really
+  are fabrics and silently redefining a field is how you lose data.</p>
+</div>
+
+</div>
+</body>
+</html>

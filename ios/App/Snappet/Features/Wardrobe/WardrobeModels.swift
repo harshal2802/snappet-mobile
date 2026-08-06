@@ -22,6 +22,27 @@ final class WardrobeItem {
     var patternRaw: String = "solid"
     var styleRaw: String = "casual"
     var material: String = ""
+    /// Who made it (wardrobe prompt 05). Its own field because the real closet was using
+    /// `material` for this — Uniqlo 32, Lululemon 30, Temu 10, with 41 of 95 values carrying
+    /// stray whitespace so `'Uniqlo '` and `'Uniqlo'` were two brands.
+    var brand: String = ""
+    /// Free text ("S", "M", "32x30", "EU 42") — sizing has no universal scale worth modelling.
+    /// Named `sizeLabel`, not `size`, so it can't be mistaken for a geometry property.
+    var sizeLabel: String = ""
+    /// Where it was bought. Unlocks the on-demand price check; empty = no check offered.
+    var productURL: String = ""
+    /// Last fetched price, and WHEN — the timestamp is not optional decoration. Without it a
+    /// months-old number reads as live.
+    var currentPrice: Double? = nil
+    var currentPriceCheckedAt: Date? = nil
+    /// The built-in each *custom* enum value behaves like, for scoring (wardrobe prompt 05).
+    /// Empty when the raw is already a built-in. Stored ON the item rather than looked up in
+    /// `WardrobeVocabulary` so `OutfitComposer` stays a pure function of the item — scoring must
+    /// never need a fetch.
+    var categoryMapRaw: String = ""
+    var colorMapRaw: String = ""
+    var patternMapRaw: String = ""
+    var styleMapRaw: String = ""
     /// Raw season ids; empty = all-season.
     var seasonsRaw: [String] = []
     /// Purchase cost — powers cost-per-wear; optional on purpose.
@@ -73,21 +94,51 @@ final class WardrobeItem {
         self.thumbnailData = thumbnailData
     }
 
+    // Typed accessors. Each prefers the stored raw, then the custom value's "behaves like" map,
+    // then the safe default (wardrobe prompt 05). The map fallback is what keeps an item with a
+    // custom color ("Mustard" → yellow) inside `OutfitComposer`'s harmony maths instead of
+    // silently dropping out of every suggestion. Setting always writes a built-in and CLEARS the
+    // map, so a value can never be both.
     var category: GarmentCategory {
-        get { GarmentCategory(rawValue: categoryRaw) ?? .top }
-        set { categoryRaw = newValue.rawValue }
+        get { GarmentCategory(rawValue: categoryRaw)
+                ?? GarmentCategory(rawValue: categoryMapRaw) ?? .top }
+        set { categoryRaw = newValue.rawValue; categoryMapRaw = "" }
     }
     var color: GarmentColorFamily {
-        get { GarmentColorFamily(rawValue: colorRaw) ?? .grey }
-        set { colorRaw = newValue.rawValue }
+        get { GarmentColorFamily(rawValue: colorRaw)
+                ?? GarmentColorFamily(rawValue: colorMapRaw) ?? .grey }
+        set { colorRaw = newValue.rawValue; colorMapRaw = "" }
     }
     var pattern: GarmentPattern {
-        get { GarmentPattern(rawValue: patternRaw) ?? .solid }
-        set { patternRaw = newValue.rawValue }
+        get { GarmentPattern(rawValue: patternRaw)
+                ?? GarmentPattern(rawValue: patternMapRaw) ?? .solid }
+        set { patternRaw = newValue.rawValue; patternMapRaw = "" }
     }
     var style: GarmentStyle {
-        get { GarmentStyle(rawValue: styleRaw) ?? .casual }
-        set { styleRaw = newValue.rawValue }
+        get { GarmentStyle(rawValue: styleRaw)
+                ?? GarmentStyle(rawValue: styleMapRaw) ?? .casual }
+        set { styleRaw = newValue.rawValue; styleMapRaw = "" }
+    }
+
+    /// What the UI shows for an enum field: the user's own wording when it's custom
+    /// ("Mustard"), the built-in's title otherwise ("Yellow").
+    var colorDisplay: String {
+        GarmentColorFamily(rawValue: colorRaw)?.title ?? colorRaw
+    }
+    var categoryDisplay: String {
+        GarmentCategory(rawValue: categoryRaw)?.title ?? categoryRaw
+    }
+    var patternDisplay: String {
+        GarmentPattern(rawValue: patternRaw)?.title ?? patternRaw
+    }
+    var styleDisplay: String {
+        GarmentStyle(rawValue: styleRaw)?.title ?? styleRaw
+    }
+
+    /// Price movement since purchase, when both numbers are known. Negative = cheaper now.
+    var priceDeltaFraction: Double? {
+        guard let cost, cost > 0, let currentPrice else { return nil }
+        return (currentPrice - cost) / cost
     }
     var seasons: Set<GarmentSeason> {
         get { Set(seasonsRaw.compactMap(GarmentSeason.init(rawValue:))) }
@@ -148,6 +199,72 @@ final class WardrobePhoto {
     var role: GarmentPhotoRole {
         get { GarmentPhotoRole(rawValue: roleRaw) ?? .detail }
         set { roleRaw = newValue.rawValue }
+    }
+}
+
+/// One remembered custom dropdown value (wardrobe prompt 05) — "add a custom value in all the
+/// fields which have dropdown and also update same value in related dropdown for future".
+///
+/// `mapsToRaw` is the built-in a *scored* field's custom value behaves like (a custom "Mustard"
+/// maps to `yellow`); empty for the unscored free-text fields (brand / size / material), which have
+/// nothing to score against.
+@Model
+final class WardrobeVocabulary {
+    var id: UUID = UUID()
+    /// Which dropdown this belongs to — `WardrobeVocabularyRules.Field` raw value.
+    var fieldRaw: String = "brand"
+    /// The value as the user typed it, already normalized (trimmed, inner whitespace collapsed).
+    var value: String = ""
+    /// Nearest built-in for scoring; empty for unscored fields.
+    var mapsToRaw: String = ""
+    /// Drives most-used-first ordering, so the second Uniqlo item is one tap.
+    var useCount: Int = 0
+    var createdAt: Date = Date()
+
+    init(id: UUID = UUID(), field: WardrobeVocabularyRules.Field, value: String,
+         mapsToRaw: String = "", useCount: Int = 1, createdAt: Date = .now) {
+        self.id = id
+        self.fieldRaw = field.rawValue
+        self.value = value
+        self.mapsToRaw = mapsToRaw
+        self.useCount = useCount
+        self.createdAt = createdAt
+    }
+
+    var field: WardrobeVocabularyRules.Field {
+        get { WardrobeVocabularyRules.Field(rawValue: fieldRaw) ?? .brand }
+        set { fieldRaw = newValue.rawValue }
+    }
+}
+
+/// One field rewritten by the tidy-up (wardrobe prompt 05) — the undo log.
+///
+/// The cleanup touches ~105 values across a real closet, so it is recorded rather than trusted:
+/// every edit in one run shares a `batchID`, and restoring `oldValue` for that batch is the whole
+/// of "Undo tidy up". Append-only; a run that is undone marks its rows rather than deleting them,
+/// so the history of what happened survives.
+@Model
+final class WardrobeTidyEdit {
+    var id: UUID = UUID()
+    var batchID: UUID = UUID()
+    var itemID: UUID? = nil
+    /// Which property was rewritten — `WardrobeTidyPlan.Field` raw value.
+    var fieldRaw: String = "brand"
+    var oldValue: String = ""
+    var newValue: String = ""
+    var appliedAt: Date = Date()
+    var isUndone: Bool = false
+
+    init(id: UUID = UUID(), batchID: UUID, itemID: UUID?, fieldRaw: String,
+         oldValue: String, newValue: String, appliedAt: Date = .now, isUndone: Bool = false) {
+        self.id = id
+        self.batchID = batchID
+        self.itemID = itemID
+        self.fieldRaw = fieldRaw
+        self.oldValue = oldValue
+        self.newValue = newValue
+        self.appliedAt = appliedAt
+        self.isUndone = isUndone
     }
 }
 

@@ -99,6 +99,11 @@ struct WardrobeRootView: View {
             // which is what makes it self-healing after a backup restore (masters come back,
             // thumbnails don't — by design).
             imageMigration.start(in: modelContext)
+            // Populate the dropdowns from what the closet already contains (wardrobe prompt 05),
+            // so Brand / Size / Material aren't empty the first time a picker opens. Seeded here
+            // rather than in Settings because Settings may never be visited. Idempotent: the
+            // fold recomputes each value's count and overwrites, so re-running can't inflate it.
+            WardrobeVocabularyStore.seedFromExistingItems(items, in: modelContext)
         }
     }
 

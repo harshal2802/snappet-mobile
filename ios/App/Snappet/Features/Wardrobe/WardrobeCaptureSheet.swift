@@ -50,6 +50,21 @@ struct WardrobeCaptureSheet: View {
     @State private var costText = ""
     @State private var isSaving = false
 
+    // Prompt 05 fields. The four enum raws are held here rather than on `draft` because a custom
+    // value is a free string with a separate "behaves like" map, which `DraftTags`' typed enums
+    // can't represent. They're seeded from the AI draft when tagging finishes.
+    @State private var categoryRaw = GarmentCategory.top.rawValue
+    @State private var colorRaw = GarmentColorFamily.grey.rawValue
+    @State private var patternRaw = GarmentPattern.solid.rawValue
+    @State private var styleRaw = GarmentStyle.casual.rawValue
+    @State private var categoryMapRaw = ""
+    @State private var colorMapRaw = ""
+    @State private var patternMapRaw = ""
+    @State private var styleMapRaw = ""
+    @State private var brand = ""
+    @State private var sizeLabel = ""
+    @State private var productURL = ""
+
     // Add-photo flow.
     @State private var showAddPhoto = false
     @State private var addRole: GarmentPhotoRole = .back
@@ -203,24 +218,43 @@ struct WardrobeCaptureSheet: View {
                 }
                 .listRowBackground(Color.clear)
             }
-            Section("Details") {
+            // Basics: what the AI drafted, all four now open to custom values (prompt 05).
+            Section("Basics") {
                 TextField("Name", text: $draft.suggestedName)
                     .accessibilityIdentifier("wardrobe.capture.name")
-                Picker("Category", selection: $draft.category) {
-                    ForEach(GarmentCategory.allCases) { Text($0.title).tag($0) }
-                }
-                Picker("Color", selection: $draft.color) {
-                    ForEach(GarmentColorFamily.allCases) { Text($0.title).tag($0) }
-                }
-                Picker("Pattern", selection: $draft.pattern) {
-                    ForEach(GarmentPattern.allCases) { Text($0.title).tag($0) }
-                }
-                Picker("Style", selection: $draft.style) {
-                    ForEach(GarmentStyle.allCases) { Text($0.title).tag($0) }
-                }
-                TextField("Material (optional)", text: $draft.material)
-                TextField("Cost (optional)", text: $costText)
+                WardrobeValueRow(field: .category, value: $categoryRaw, mapsToRaw: $categoryMapRaw,
+                                 display: GarmentCategory(rawValue: categoryRaw)?.title)
+                WardrobeValueRow(field: .color, value: $colorRaw, mapsToRaw: $colorMapRaw,
+                                 display: GarmentColorFamily(rawValue: colorRaw)?.title)
+                WardrobeValueRow(field: .pattern, value: $patternRaw, mapsToRaw: $patternMapRaw,
+                                 display: GarmentPattern(rawValue: patternRaw)?.title)
+                WardrobeValueRow(field: .style, value: $styleRaw, mapsToRaw: $styleMapRaw,
+                                 display: GarmentStyle(rawValue: styleRaw)?.title)
+            }
+
+            // Everything below is optional — the fast path never has to scroll past Basics.
+            Section("Details") {
+                WardrobeValueRow(field: .brand, value: $brand, mapsToRaw: .constant(""),
+                                 display: nil)
+                WardrobeValueRow(field: .size, value: $sizeLabel, mapsToRaw: .constant(""),
+                                 display: nil)
+                WardrobeValueRow(field: .material, value: $draft.material,
+                                 mapsToRaw: .constant(""), display: nil)
+            }
+
+            Section("Purchase") {
+                TextField("Price paid (optional)", text: $costText)
                     .keyboardType(.decimalPad)
+                    .accessibilityIdentifier("wardrobe.capture.cost")
+                TextField("Product link (optional)", text: $productURL)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("wardrobe.capture.link")
+                if !productURL.isEmpty {
+                    Text("You can check the current price from the item later.")
+                        .font(.caption2).foregroundStyle(SnappetColor.textSecondary)
+                }
             }
             Section("Seasons — leave empty for all-season") {
                 seasonToggles
@@ -411,6 +445,12 @@ struct WardrobeCaptureSheet: View {
         photos = [DraftPhoto(role: .front, original: image, cutout: lifted,
                              useCutout: lifted != nil)]
         draft = tags
+        // Seed the editable raws from the AI draft. From here the user may replace any of them
+        // with a custom value, which is why they live outside `draft`'s typed enums.
+        categoryRaw = tags.category.rawValue
+        colorRaw = tags.color.rawValue
+        patternRaw = tags.pattern.rawValue
+        styleRaw = tags.style.rawValue
         stage = .review
     }
 
@@ -448,16 +488,33 @@ struct WardrobeCaptureSheet: View {
             }.value
         }
 
+        let fallbackName = "\(GarmentColorFamily(rawValue: colorRaw)?.title ?? colorRaw) "
+            + "\(GarmentCategory(rawValue: categoryRaw)?.title.lowercased() ?? categoryRaw)"
         let item = WardrobeItem(
-            name: draft.suggestedName.isEmpty ? "\(draft.color.title) \(draft.category.title.lowercased())" : draft.suggestedName,
+            name: draft.suggestedName.isEmpty ? fallbackName : draft.suggestedName,
             category: draft.category, color: draft.color, pattern: draft.pattern,
-            style: draft.style, material: draft.material, seasons: draft.seasons,
+            style: draft.style, material: WardrobeVocabularyRules.normalize(draft.material),
+            seasons: draft.seasons,
             cost: Double(costText.replacingOccurrences(of: ",", with: ".")),
             imageData: prepared?.display,
             thumbnailData: prepared?.thumbnail)
+        // Write the RAWS directly (not through the typed setters, which would clear the maps and
+        // discard a custom value): raws stay raw, and the map carries the scoring fallback.
+        item.categoryRaw = categoryRaw; item.categoryMapRaw = categoryMapRaw
+        item.colorRaw = colorRaw;       item.colorMapRaw = colorMapRaw
+        item.patternRaw = patternRaw;   item.patternMapRaw = patternMapRaw
+        item.styleRaw = styleRaw;       item.styleMapRaw = styleMapRaw
+        item.brand = WardrobeVocabularyRules.normalize(brand)
+        item.sizeLabel = WardrobeVocabularyRules.normalize(sizeLabel)
+        item.productURL = productURL.trimmingCharacters(in: .whitespacesAndNewlines)
         item.coverPhotoRole = cover?.role ?? .front
         modelContext.insert(item)
         try? modelContext.save()
+
+        // Remember whatever was typed, so the next garment's dropdowns already know it.
+        WardrobeVocabularyStore.remember(item.brand, field: .brand, in: modelContext)
+        WardrobeVocabularyStore.remember(item.sizeLabel, field: .size, in: modelContext)
+        WardrobeVocabularyStore.remember(item.material, field: .material, in: modelContext)
 
         // Extras become rows, encoded through the same pipeline.
         for extra in photos.dropFirst() {

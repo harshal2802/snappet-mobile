@@ -9112,3 +9112,53 @@ Non-obvious calls:
 - **Backup**: `WardrobePhotoRow` mirrors the model; masters ride the backup, thumbnails stay excluded
   as derived data, exactly as prompt 03 established. The tripwire earned its keep twice here — it
   caught the unseeded model, then the hardcoded record count.
+
+## 2026-08-03 — Rich add form: open vocabularies, an on-demand price check, and a reversible cleanup (wardrobe prompt 05)
+
+**Decision** (user device feedback: brand · size · online link · price bought · current price · "add
+custom value in all the fields which have dropdown and also update same value in related dropdown for
+future"). P3 of the closet trio, wireframed and approved first (`docs/ux-research/wardrobe/rich-form.html`).
+
+The measurement changed the scope: this is not just new fields, because the real closet already holds
+this data in the wrong ones — `material` was the de-facto brand field (Uniqlo 32, Lululemon 30, Temu 10)
+with **41 of 95** values carrying stray whitespace, and size was typed into 10 item names.
+
+Non-obvious calls:
+
+- **A custom value's scoring map lives ON the item, not in a lookup.** `colorRaw` keeps the user's
+  wording ("Mustard") and a sibling `colorMapRaw` holds the built-in it behaves like ("yellow"); the
+  typed accessor prefers the raw, falls back to the map, then the default. The alternative — resolving
+  through `WardrobeVocabulary` at scoring time — would make `OutfitComposer` depend on a fetch. Worse,
+  an unmapped custom colour would silently drop the item out of every suggestion, and that failure is
+  invisible. Setting a built-in through the typed setter CLEARS the map, so a value can never be both.
+- **Only the scored fields ask "behaves like".** Colour/category/pattern/style feed harmony and
+  formality maths; brand/size/material feed nothing, so demanding a mapping there would be ceremony.
+  This is the mirror image of prompt 04, where photo roles stayed **closed** because role drives
+  behavior — open where it's a label, closed where it's a decision.
+- **The cleanup's most important behavior is what it refuses to do.** `WardrobeTidyPlan` proposes and
+  never mutates, and it classifies only against a known-brands allow-list plus a fabric check. The six
+  real values that are festival/anime **prints** — Subtronics, One piece zoro, Illenium, Lollapalooza,
+  Insomniac camp edc, Hello kitty — go to an `uncertain` bucket the user answers, defaulting to *skip*.
+  Brand-vs-print is not machine-decidable and a wrong guess pollutes the brand vocabulary permanently.
+- **Size extraction is deliberately timid**: it fires only on the literal word "size" followed by a
+  short token, keeps any text after it, and refuses to run if the result would leave the item nameless.
+  "Medium wash jeans" is left alone.
+- **Apply is recorded before it writes.** Every rewrite becomes a `WardrobeTidyEdit` under one
+  `batchID` *before* the item changes, so undo replays `oldValue`s rather than guessing. Undone rows
+  are marked, not deleted — history survives and a second undo is a no-op. This is what made a
+  105-value rewrite over a real closet an acceptable single tap.
+- **The price check is the app's FIRST third-party network call.** Existing network (Kilter catalogs,
+  festival lineups) fetches our own GitHub Pages; this reaches an arbitrary retailer. Posture is
+  deliberately narrow and stated in the UI: one GET per explicit tap, no polling, no background
+  refresh, no accounts, `httpShouldHandleCookies = false`. **Do not wire it to `onAppear` or a timer.**
+- **Structured metadata beats markup, and "first" beats "cheapest".** `WardrobePriceParser` tries
+  JSON-LD → OpenGraph → microdata → markup. A regex over rendered markup would happily return a
+  crossed-out list price; and within the markup fallback the *cheapest* number is usually an instalment
+  ("4 payments of $14.75") or a shipping threshold, so it takes the first currency-marked number.
+  Bare unmarked numbers are rejected outright — "250 gsm, style 4821" is specs.
+- **Apple Intelligence only refines.** The pure floor always runs; FM may correct it, but only within
+  a ×10 ballpark guard rail, so a model returning a product id can't overwrite a good structured read.
+  No FM ⇒ the floor's answer, never an error.
+- **A failed price check leaves `currentPrice` AND `currentPriceCheckedAt` untouched**, so the last
+  known number keeps its original timestamp. A price without a date is a trap: an old number reads as
+  live, which is why the stamp is not optional decoration.

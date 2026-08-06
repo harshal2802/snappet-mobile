@@ -11,8 +11,19 @@ struct WardrobeSettingsView: View {
     @Query private var outfits: [WardrobeOutfit]
 
     @State private var confirmDeleteAll = false
+    @State private var showTidy = false
 
     private var archived: [WardrobeItem] { items.filter(\.isArchived) }
+
+    /// How much the cleanup would move — computed from the live closet so the row disappears
+    /// once there's nothing left to tidy.
+    private var tidyChangeCount: Int {
+        let plan = WardrobeTidyPlan.make(rows: items.map {
+            WardrobeTidyPlan.Row(id: $0.id, name: $0.name, material: $0.material,
+                                 brand: $0.brand, sizeLabel: $0.sizeLabel)
+        })
+        return plan.changeCount + plan.uncertain.count
+    }
 
     var body: some View {
         List {
@@ -65,6 +76,20 @@ struct WardrobeSettingsView: View {
                 }
             }
 
+            if tidyChangeCount > 0 {
+                Section {
+                    Button {
+                        showTidy = true
+                    } label: {
+                        settingRow(symbol: "wand.and.sparkles", tint: SnappetColor.wardrobe,
+                                   title: "Tidy up details",
+                                   subtitle: "\(tidyChangeCount) values look like they're in the "
+                                           + "wrong field — review the moves")
+                    }
+                    .accessibilityIdentifier("wardrobe.settings.tidy")
+                }
+            }
+
             if items.isEmpty {
                 Section {
                     Button {
@@ -90,6 +115,9 @@ struct WardrobeSettingsView: View {
         }
         .navigationTitle("Wardrobe Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showTidy) {
+            WardrobeTidyView()
+        }
         .confirmationDialog("Delete all wardrobe data?", isPresented: $confirmDeleteAll, titleVisibility: .visible) {
             Button("Delete \(items.count) items, \(outfits.count) outfits & wear history", role: .destructive) {
                 deleteAll()
