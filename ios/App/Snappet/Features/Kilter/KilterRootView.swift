@@ -109,6 +109,10 @@ struct KilterRootView: View {
     /// Browse only climbs the user created (mutually exclusive with `savedOnly`).
     @State private var mineOnly = false
     @State private var showingCreate = false
+    /// A just-created climb's uuid, held while the create sheet dismisses; promoted to a
+    /// `KilterClimbRoute` push in the sheet's `onDismiss` (dismiss + push in one mutation drops
+    /// the push — prompt 124).
+    @State private var pendingCreatedOpen: String?
     @State private var items: [KilterListItem] = []
     // Created-climb lifecycle from the Mine list (#76): edit re-opens authoring; delete confirms first.
     @State private var editingCreated: KilterCreatedClimb?
@@ -275,11 +279,17 @@ struct KilterRootView: View {
             KilterGradeRangeSheet(minGrade: $minGrade, maxGrade: $maxGrade,
                                   scale: gradeScale, format: gradeFormat, count: count)
         }
-        .sheet(isPresented: $showingCreate) {
-            CreateClimbView(onCreated: { uuid in
-                // Open the freshly-created climb in the normal detail screen.
+        .sheet(isPresented: $showingCreate, onDismiss: {
+            // Push only once the sheet has actually dismissed — pushing and dismissing in one
+            // transaction intermittently drops the push (the festival 05/06 two-sheet race,
+            // generalized to sheet-dismiss + path-append; prompt 124).
+            if let uuid = pendingCreatedOpen {
+                pendingCreatedOpen = nil
                 router.push(KilterClimbRoute(uuid: uuid))
-            }, board: board)
+            }
+        }) {
+            // Stash the freshly-created climb; the `onDismiss` above opens its detail screen.
+            CreateClimbView(onCreated: { uuid in pendingCreatedOpen = uuid }, board: board)
         }
         // Re-open an authored climb in the editor from a Mine swipe (#76).
         .sheet(item: $editingCreated) { climb in
