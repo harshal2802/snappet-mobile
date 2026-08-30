@@ -279,7 +279,11 @@ struct KilterHistoryView: View {
         // Never delete the in-flight session out from under the live bar — clear everything else.
         let activeID = allSessions.first { $0.isActive }?.id
         for entry in entries where entry.sessionId != activeID { modelContext.delete(entry) }
-        for session in allSessions where !session.isActive { modelContext.delete(session) }
+        // Through the cascade: each session's SessionMedia/StudioProject rows go with it —
+        // plain-UUID FKs cascade nothing (prompt 125).
+        for session in allSessions where !session.isActive {
+            SessionCascade.deleteKilterSession(session, in: modelContext)
+        }
         try? modelContext.save()
     }
 }

@@ -499,7 +499,9 @@ final class KilterSessionManager {
             didStartMetrics = false
         }
         liveActivity?.end()
-        context.delete(session)
+        // Cascade, not a bare delete: a clip filmed in the seconds before the undo would
+        // otherwise orphan its SessionMedia row (prompt 125).
+        SessionCascade.deleteKilterSession(session, in: context)
         try? context.save()
         current = nil
         currentPlanId = nil

@@ -454,22 +454,9 @@ struct FestivalScheduleView: View {
             liveSession = nil
             return
         }
-        session.hrSeries = WorkoutHRStats.points(from: app.liveWorkout.samples)
-        if !session.hrSeries.isEmpty {
-            let profile = app.userProfile.profile
-            session.metricsSourceRaw = app.liveWorkout.activeKind.rawValue
-            session.maxHR = profile.resolvedMaxHR
-            session.restHR = profile.restingBound
-            if app.liveWorkout.activeKind == .ble {
-                session.kcalEstimate = profile.estimatedKcal(forSeries: session.hrSeries,
-                                                             durationSec: session.duration)
-            }
-        }
-        app.liveWorkout.stop()
-        app.liveActivity.end()
-        session.completedAt = now
-        FeedActivityWriter.recordWorkoutFinish(session, in: context)
-        try? context.save()
+        // Flush HR → stamp bounds/kcal → stop services → complete → feed the Recap log — the
+        // same shared path the gym tracker's finish uses (this block used to be its duplicate).
+        WorkoutSessionFinisher.finish(session, app: app, context: context, at: now)
         let mins = Int(session.duration / 60)
         core.log(module: FestivalModule.id, action: "session",
                  summary: "Danced at \(lineup.name)", metric: Double(mins))
