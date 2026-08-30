@@ -60,6 +60,20 @@ final class WardrobeTidyStoreTests: XCTestCase {
         XCTAssertTrue(brands.contains("Lululemon"))
     }
 
+    /// Apply teaches the dropdowns only from its OWN edits. The old loop re-remembered every
+    /// item's brand/size on every run — untouched items must not be (re)counted by a tidy.
+    func testApplyFeedsVocabularyOnlyFromItsOwnEdits() {
+        let untouched = item(name: "Hoodie")
+        untouched.brand = "Uniqlo"                      // already tidy — no edit targets it
+        item(name: "Legging", material: "Lululemon ")   // the one real edit (material → brand)
+        WardrobeTidyStore.apply(WardrobeTidyStore.plan(in: context).edits, in: context)
+
+        let brands = WardrobeVocabularyStore.choices(for: .brand, in: context).map(\.value)
+        XCTAssertTrue(brands.contains("Lululemon"), "the edit's new value is remembered")
+        XCTAssertFalse(brands.contains("Uniqlo"),
+                       "an untouched item's brand is not swept into the vocabulary by a tidy")
+    }
+
     func testApplyIsRecordedAsOneBatch() {
         item(name: "Tee size S", material: "Uniqlo")
         let batch = WardrobeTidyStore.apply(WardrobeTidyStore.plan(in: context).edits, in: context)

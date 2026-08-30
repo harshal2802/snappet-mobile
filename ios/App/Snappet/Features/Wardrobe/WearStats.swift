@@ -50,8 +50,14 @@ enum WearStats {
         return "\(wearCount)×"
     }
 
+    /// The user's currency code, for every price the module renders. One source so the detail
+    /// line, the purchase card and cost-per-wear can't disagree; USD only as the last resort
+    /// (a locale with no currency). Tests pass an explicit code and never read this.
+    static var localCurrencyCode: String { Locale.current.currency?.identifier ?? "USD" }
+
     /// "$4.08" style cost-per-wear string (system currency formatting, no cents games).
-    static func costPerWearLabel(cost: Double?, wears: Int, currencyCode: String = "USD") -> String? {
+    static func costPerWearLabel(cost: Double?, wears: Int,
+                                 currencyCode: String = localCurrencyCode) -> String? {
         guard let cost else { return nil }
         let v = costPerWear(cost: cost, wears: wears)
         return v.formatted(.currency(code: currencyCode).precision(.fractionLength(2)))
