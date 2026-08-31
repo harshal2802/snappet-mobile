@@ -9163,6 +9163,21 @@ Non-obvious calls:
   known number keeps its original timestamp. A price without a date is a trap: an old number reads as
   live, which is why the stamp is not optional decoration.
 
+## 2026-08-30 — wardrobe release polish (prompt 06)
+
+- **Form sheets edit drafts, not live models.** `WardrobeItemEditSheet` used to bind fields straight
+  to the `@Model`: every keystroke persisted, Cancel was impossible, and swipe-down kept half-applied
+  values *without* Done's normalization — re-opening the `'Uniqlo '` door prompt 05 closed. It now
+  copies into local `@State` on appear and writes back only in `commit()`. Rule going forward: an
+  edit sheet over an existing row binds a draft; live `@Bindable` writes are for immediate toggles
+  (favorite, archive), not forms with a Done button.
+- **One currency-code source for wardrobe prices**: `WearStats.localCurrencyCode`
+  (`Locale.current.currency ?? USD`). Three sites hardcoded USD while Expense already derived from
+  the locale. Tests keep passing an explicit code.
+- **Tidy apply teaches the vocabulary only from its own edits.** The old loop re-remembered every
+  item's brand/size each run, inflating `useCount`s (self-healing only by accident, because root-open
+  reseeding overwrites counts).
+
 ## 2026-08-30 — the dismiss+push rule (prompt 124)
 
 - **Never dismiss a presentation and mutate navigation in one transaction.** SwiftUI intermittently

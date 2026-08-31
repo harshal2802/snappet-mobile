@@ -117,8 +117,13 @@ struct WardrobeCaptureSheet: View {
         .sheet(isPresented: $showAddPhoto, onDismiss: promotePendingSource) {
             addPhotoSheet
         }
-        .alert("Photo limit reached", isPresented: .constant(capMessage != nil)) {
-            Button("OK") { capMessage = nil }
+        // A real two-way binding, not `.constant(...)`: with a constant, the alert only ever
+        // closed because the OK action happened to nil the message — any other dismissal path
+        // (or a future second button) would wedge it open.
+        .alert("Photo limit reached",
+               isPresented: Binding(get: { capMessage != nil },
+                                    set: { if !$0 { capMessage = nil } })) {
+            Button("OK") {}
         } message: {
             Text(capMessage ?? "")
         }

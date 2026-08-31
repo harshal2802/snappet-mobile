@@ -11,7 +11,6 @@ struct WardrobeItemDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SnappetCore.self) private var core
     @Query private var wearEvents: [WearEvent]
-    @Query private var allItems: [WardrobeItem]
 
     @State private var showGenerator = false
     @State private var showEdit = false
@@ -122,6 +121,7 @@ struct WardrobeItemDetailView: View {
                     } label: {
                         Label("Edit details", systemImage: "pencil")
                     }
+                    .accessibilityIdentifier("wardrobe.item.edit")
                     Button {
                         item.isArchived.toggle()
                         try? modelContext.save()
@@ -167,7 +167,8 @@ struct WardrobeItemDetailView: View {
     private var addedLine: String {
         var parts = ["Added \(item.createdAt.formatted(.dateTime.month(.abbreviated).year()))"]
         if let cost = item.cost {
-            parts.append(cost.formatted(.currency(code: "USD").precision(.fractionLength(0))))
+            parts.append(cost.formatted(.currency(code: WearStats.localCurrencyCode)
+                .precision(.fractionLength(0))))
         }
         return parts.joined(separator: " · ")
     }
@@ -261,46 +262,67 @@ struct FlexibleHStack: Layout {
 }
 
 /// Edit sheet: the same fields as capture, minus the photo pipeline.
+///
+/// Edits a local **draft**, not the live model: the old sheet bound fields straight to the
+/// `@Model`, so every keystroke persisted immediately, Cancel was impossible, and a swipe-down
+/// kept half-applied values *without* the Done-path normalization — the second door through
+/// which `'Uniqlo '` re-entered the closet. Now nothing touches the item until Done.
 struct WardrobeItemEditSheet: View {
-    @Bindable var item: WardrobeItem
+    let item: WardrobeItem
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+
+    // The draft. Raw + map pairs (never the typed setters — a typed write clears the custom map
+    // and overwrites the raw with a built-in, destroying a custom value like "Mustard").
+    @State private var name = ""
+    @State private var categoryRaw = ""
+    @State private var categoryMapRaw = ""
+    @State private var colorRaw = ""
+    @State private var colorMapRaw = ""
+    @State private var patternRaw = ""
+    @State private var patternMapRaw = ""
+    @State private var styleRaw = ""
+    @State private var styleMapRaw = ""
+    @State private var brand = ""
+    @State private var sizeLabel = ""
+    @State private var material = ""
+    @State private var productURL = ""
+    @State private var seasons: Set<GarmentSeason> = []
     @State private var costText = ""
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Details") {
-                    TextField("Name", text: $item.name)
-                    // `WardrobeValueRow` (open) rather than a closed `Picker`. The Picker bound to
-                    // `$item.category` wrote through the TYPED setter, which clears the custom map
-                    // and overwrites the raw with a built-in — so simply opening this sheet on an
-                    // item with a custom category/colour and saving destroyed the custom value.
-                    WardrobeValueRow(field: .category, value: $item.categoryRaw,
-                                     mapsToRaw: $item.categoryMapRaw,
-                                     display: GarmentCategory(rawValue: item.categoryRaw)?.title)
-                    WardrobeValueRow(field: .color, value: $item.colorRaw,
-                                     mapsToRaw: $item.colorMapRaw,
-                                     display: GarmentColorFamily(rawValue: item.colorRaw)?.title)
-                    WardrobeValueRow(field: .pattern, value: $item.patternRaw,
-                                     mapsToRaw: $item.patternMapRaw,
-                                     display: GarmentPattern(rawValue: item.patternRaw)?.title)
-                    WardrobeValueRow(field: .style, value: $item.styleRaw,
-                                     mapsToRaw: $item.styleMapRaw,
-                                     display: GarmentStyle(rawValue: item.styleRaw)?.title)
+                    TextField("Name", text: $name)
+                        .accessibilityIdentifier("wardrobe.edit.name")
+                    // `WardrobeValueRow` (open) rather than a closed `Picker` — see the draft note
+                    // above for why these bind raw + map, never the typed accessors.
+                    WardrobeValueRow(field: .category, value: $categoryRaw,
+                                     mapsToRaw: $categoryMapRaw,
+                                     display: GarmentCategory(rawValue: categoryRaw)?.title)
+                    WardrobeValueRow(field: .color, value: $colorRaw,
+                                     mapsToRaw: $colorMapRaw,
+                                     display: GarmentColorFamily(rawValue: colorRaw)?.title)
+                    WardrobeValueRow(field: .pattern, value: $patternRaw,
+                                     mapsToRaw: $patternMapRaw,
+                                     display: GarmentPattern(rawValue: patternRaw)?.title)
+                    WardrobeValueRow(field: .style, value: $styleRaw,
+                                     mapsToRaw: $styleMapRaw,
+                                     display: GarmentStyle(rawValue: styleRaw)?.title)
                 }
-                Section("Details") {
-                    WardrobeValueRow(field: .brand, value: $item.brand,
+                Section("Brand & fit") {
+                    WardrobeValueRow(field: .brand, value: $brand,
                                      mapsToRaw: .constant(""), display: nil)
-                    WardrobeValueRow(field: .size, value: $item.sizeLabel,
+                    WardrobeValueRow(field: .size, value: $sizeLabel,
                                      mapsToRaw: .constant(""), display: nil)
-                    WardrobeValueRow(field: .material, value: $item.material,
+                    WardrobeValueRow(field: .material, value: $material,
                                      mapsToRaw: .constant(""), display: nil)
                 }
                 Section("Purchase") {
                     TextField("Price paid", text: $costText)
                         .keyboardType(.decimalPad)
-                    TextField("Product link", text: $item.productURL)
+                    TextField("Product link", text: $productURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -308,11 +330,9 @@ struct WardrobeItemEditSheet: View {
                 Section("Seasons — empty for all-season") {
                     HStack {
                         ForEach(GarmentSeason.allCases) { season in
-                            let on = item.seasons.contains(season)
+                            let on = seasons.contains(season)
                             Button {
-                                var s = item.seasons
-                                if on { s.remove(season) } else { s.insert(season) }
-                                item.seasons = s
+                                if on { seasons.remove(season) } else { seasons.insert(season) }
                             } label: {
                                 Text(season.title)
                                     .font(.caption.weight(.bold))
@@ -329,28 +349,57 @@ struct WardrobeItemEditSheet: View {
             .navigationTitle("Edit item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("wardrobe.edit.cancel")
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        item.cost = Double(costText.replacingOccurrences(of: ",", with: ".")) ?? item.cost
-                        // Normalize on the way out, exactly as capture does — otherwise editing is
-                        // a second door through which `'Uniqlo '` re-enters the closet.
-                        item.brand = WardrobeVocabularyRules.normalize(item.brand)
-                        item.sizeLabel = WardrobeVocabularyRules.normalize(item.sizeLabel)
-                        item.material = WardrobeVocabularyRules.normalize(item.material)
-                        item.productURL = item.productURL
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        try? modelContext.save()
-                        // An edit teaches the dropdowns too; capture was the only teacher before.
-                        WardrobeVocabularyStore.remember(item.brand, field: .brand, in: modelContext)
-                        WardrobeVocabularyStore.remember(item.sizeLabel, field: .size, in: modelContext)
-                        WardrobeVocabularyStore.remember(item.material, field: .material, in: modelContext)
-                        dismiss()
-                    }
+                    Button("Done") { commit() }
+                        .accessibilityIdentifier("wardrobe.edit.done")
                 }
             }
-            .onAppear {
-                costText = item.cost.map { String(format: "%.0f", $0) } ?? ""
-            }
+            .onAppear(perform: load)
         }
+    }
+
+    /// Seed the draft from the item once. `onAppear` runs before first paint on a sheet, and the
+    /// item can't change underneath an open modal, so a plain copy is enough.
+    private func load() {
+        name = item.name
+        categoryRaw = item.categoryRaw; categoryMapRaw = item.categoryMapRaw
+        colorRaw = item.colorRaw; colorMapRaw = item.colorMapRaw
+        patternRaw = item.patternRaw; patternMapRaw = item.patternMapRaw
+        styleRaw = item.styleRaw; styleMapRaw = item.styleMapRaw
+        brand = item.brand
+        sizeLabel = item.sizeLabel
+        material = item.material
+        productURL = item.productURL
+        seasons = item.seasons
+        // `%g`, not `%.0f`: the old seed rounded 49.99 → "50", so opening the sheet and tapping
+        // Done silently rewrote the price.
+        costText = item.cost.map { String(format: "%g", $0) } ?? ""
+    }
+
+    /// The one write path. Normalizes on the way out, exactly as capture does, and teaches the
+    /// dropdowns — an edit is a teacher too, not just capture.
+    private func commit() {
+        item.name = name
+        item.categoryRaw = categoryRaw; item.categoryMapRaw = categoryMapRaw
+        item.colorRaw = colorRaw; item.colorMapRaw = colorMapRaw
+        item.patternRaw = patternRaw; item.patternMapRaw = patternMapRaw
+        item.styleRaw = styleRaw; item.styleMapRaw = styleMapRaw
+        item.brand = WardrobeVocabularyRules.normalize(brand)
+        item.sizeLabel = WardrobeVocabularyRules.normalize(sizeLabel)
+        item.material = WardrobeVocabularyRules.normalize(material)
+        item.productURL = productURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        item.seasons = seasons
+        // Emptying the field clears the price; unparseable text keeps the old value.
+        item.cost = costText.isEmpty
+            ? nil : Double(costText.replacingOccurrences(of: ",", with: ".")) ?? item.cost
+        try? modelContext.save()
+        WardrobeVocabularyStore.remember(item.brand, field: .brand, in: modelContext)
+        WardrobeVocabularyStore.remember(item.sizeLabel, field: .size, in: modelContext)
+        WardrobeVocabularyStore.remember(item.material, field: .material, in: modelContext)
+        dismiss()
     }
 }

@@ -42,12 +42,15 @@ enum WardrobeTidyStore {
         }
         try? context.save()
 
-        // The brands the cleanup just created should populate the dropdown immediately.
-        for item in items where !item.brand.isEmpty {
-            WardrobeVocabularyStore.remember(item.brand, field: .brand, in: context)
-        }
-        for item in items where !item.sizeLabel.isEmpty {
-            WardrobeVocabularyStore.remember(item.sizeLabel, field: .size, in: context)
+        // The brands/sizes the cleanup just created should populate the dropdowns immediately —
+        // but only the values THESE edits wrote. The old loop re-remembered every item in the
+        // closet on every apply, inflating `useCount`s each run.
+        for edit in edits {
+            switch edit.field {
+            case .brand: WardrobeVocabularyStore.remember(edit.newValue, field: .brand, in: context)
+            case .sizeLabel: WardrobeVocabularyStore.remember(edit.newValue, field: .size, in: context)
+            case .material, .name: break
+            }
         }
         return batchID
     }
