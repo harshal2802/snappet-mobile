@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Gym Tracker · History quick filters (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B;          /* brand coral (dark) — single primary CTA per surface */
+    --ember:#FF9645;          /* workout module accent                                */
+    --fresh:#5BC074;          /* perfFresh — imported-from-Health rows                */
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B;
+    --hair:#34343A; --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:#aeb2bd;font-size:16.5px;max-width:1080px;margin:0 0 14px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:38px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.rec{background:var(--fresh);color:#07240f;box-shadow:0 6px 18px rgba(91,192,116,.45)}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .win{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+  .metric{display:inline-block;margin-top:8px;font-size:12px;font-weight:700;letter-spacing:.02em;
+    padding:3px 9px;border-radius:8px;background:rgba(255,255,255,.07);color:#d8dae2}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;
+    padding:11px;box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;
+    background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:30}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto}
+  .navrow .title{font-size:16px;font-weight:800}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember)}
+  .search{background:var(--muted);border-radius:14px;padding:9px 12px;font-size:13px;color:var(--t3);display:flex;gap:8px;align-items:center;margin-bottom:8px;flex:0 0 auto}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:8px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* chip rows */
+  .chiprow{display:flex;gap:7px;margin-bottom:7px;flex:0 0 auto;overflow:hidden}
+  .chip{background:var(--muted);border-radius:999px;padding:7px 12px;font-size:12.5px;font-weight:600;white-space:nowrap;display:flex;gap:6px;align-items:center;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+  .chip .gl{opacity:.85;font-size:11px}
+  .chip.menu{background:var(--muted);color:#e7e7ea}
+  .chip.menu .car{color:var(--t3);font-size:10px}
+  .chip.menu.on{background:rgba(255,150,69,.22);color:var(--ember)}
+  .chip.token{background:rgba(255,150,69,.18);color:var(--ember)}
+  .chip.token .x{opacity:.75;font-weight:700}
+  .filterbtn{background:var(--muted);border-radius:999px;padding:7px 12px;font-size:12.5px;font-weight:700;display:flex;gap:6px;align-items:center;color:#e7e7ea;white-space:nowrap}
+  .filterbtn .badge{background:var(--ember);color:#2a1405;border-radius:999px;font-size:10.5px;font-weight:800;padding:1px 6px}
+  .clearall{font-size:12px;font-weight:650;color:var(--t2);align-self:center;margin-left:auto;white-space:nowrap}
+
+  /* list */
+  .month{font-size:15px;font-weight:800;color:#cfd0d6;margin:8px 2px 8px}
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .sub{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .sub .src{color:var(--fresh);font-weight:650}
+  .card .stats{display:flex;gap:12px;font-size:11px;color:var(--t3);margin-top:7px;align-items:center}
+  .card .stats .studio{color:var(--ember);font-weight:650}
+  .card .stats .clips{color:var(--fresh);font-weight:650}
+  .card .lead{width:22px;flex:0 0 auto;color:var(--fresh);font-size:13px;padding-top:2px}
+  .chev{color:var(--t3);font-size:13px}
+  .fade{position:absolute;left:0;right:0;bottom:0;height:76px;background:linear-gradient(to bottom,rgba(18,18,20,0),var(--paper))}
+
+  /* popover mock */
+  .pop{position:absolute;z-index:50;background:#2C2C31;border:1px solid var(--hair);border-radius:14px;padding:6px;
+    box-shadow:0 22px 50px -12px rgba(0,0,0,.9);width:186px}
+  .pop div{font-size:12.5px;padding:8px 10px;border-radius:9px;display:flex;justify-content:space-between;color:#e7e7ea}
+  .pop div.on{background:rgba(255,150,69,.2);color:var(--ember);font-weight:700}
+  .sheet{position:absolute;left:0;right:0;bottom:0;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;
+    padding:14px 16px 20px;box-shadow:0 -20px 50px -12px rgba(0,0,0,.9)}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 12px}
+  .sheet .lbl{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin:10px 2px 7px}
+  .sheet .row{display:flex;gap:7px;flex-wrap:wrap}
+  .legend{display:flex;gap:22px;flex-wrap:wrap;margin:26px 0 0;font-size:13px;color:#b8bcc6}
+  .legend b{color:#fff}
+  table.cmp{border-collapse:collapse;margin:34px 0 0;font-size:14px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:11px 14px;text-align:left;vertical-align:top}
+  table.cmp th{color:#fff;font-weight:700;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  table.cmp td b{color:#fff}
+  table.cmp .yes{color:var(--fresh);font-weight:700}
+  table.cmp .no{color:#ff9b8f;font-weight:700}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">History · quick filters</h1>
+  <p class="sub">Four ways to offer Source / Routine / Type on the Gym Tracker History screen. The list is
+  identical in all four — only the filter chrome differs, and with it how much history you can actually see
+  without scrolling.</p>
+  <div class="scopebox">
+    <b>The problem (option A, shipped today):</b> three stacked chip rows sit between the segmented control and
+    the first session — about <b>a third of the screen</b> is chrome before any content. It also grows: every new
+    routine name widens row 2, and any future facet adds a fourth row.
+    <br><br>
+    <b>Constraint from prior feedback:</b> Kilter's pull-down filter drawer hid search so well the tester never
+    found it (<i>kilter-ux-feedback prompt 04</i>). Whatever replaces this must keep filtering
+    <b>visibly discoverable</b> — an unlabelled icon alone is not enough.
+  </div>
+</header>
+
+<div class="wrap">
+<div class="gallery">
+
+  <!-- A — baseline -->
+  <div class="step">
+    <div class="stepnum">A</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div class="search">🔍 Search by routine</div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="chiprow"><div class="chip"><span class="gl">🏋</span>Tracked</div><div class="chip"><span class="gl">♡</span>Imported</div></div>
+        <div class="chiprow"><div class="chip">Pre climb warmup</div><div class="chip">Climbing</div><div class="chip">Quick…</div></div>
+        <div class="chiprow"><div class="chip"><span class="gl">▮▮</span>Reps &amp; weight</div><div class="chip"><span class="gl">⏱</span>Time</div><div class="chip">Climb</div></div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Thu, Aug 27 at 7:05 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 4,501m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Tue, Aug 25 at 7:18 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 19m</span><span>✓ 5 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>A — today.</b> Everything visible, nothing hidden… but <span class="cost">~280&nbsp;pt of chrome</span>
+    and only <b>two</b> sessions above the fold. Doesn't scale: more routines widen row 2, a new facet adds row 4.
+    <span class="metric">2 sessions visible</span></p>
+  </div>
+
+  <!-- B — menu pills -->
+  <div class="step">
+    <div class="stepnum rec">B ★</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div class="search">🔍 Search by routine</div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="chiprow">
+          <div class="chip menu">All sources <span class="car">▾</span></div>
+          <div class="chip menu">Any routine <span class="car">▾</span></div>
+          <div class="chip menu">Any type <span class="car">▾</span></div>
+        </div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Thu, Aug 27 at 7:05 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 4,501m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Tue, Aug 25 at 7:18 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 19m</span><span>✓ 5 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Fri, Aug 21 at 6:30 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 180m</span><span>🔥 947 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>B — menu pills (recommended).</b> One row of three dropdowns, each showing its current
+    value. <span class="win">Saves ~150 pt</span>, doubles the sessions above the fold, and the row never grows —
+    30 routines fit the same pill. Still plainly labelled, so filtering stays discoverable.
+    <span class="metric">4 sessions visible</span></p>
+  </div>
+
+  <!-- B open -->
+  <div class="step">
+    <div class="stepnum rec">B ★</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div class="search">🔍 Search by routine</div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="chiprow">
+          <div class="chip menu on">Imported <span class="car">▾</span></div>
+          <div class="chip menu">Any routine <span class="car">▾</span></div>
+          <div class="chip menu">Any type <span class="car">▾</span></div>
+        </div>
+        <div style="position:relative">
+          <div class="pop" style="left:0;top:2px">
+            <div class="on">All sources <span>✓</span></div>
+            <div>Tracked <span></span></div>
+            <div>Imported <span></span></div>
+          </div>
+        </div>
+        <div class="month" style="margin-top:150px">August 2026</div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>B, open.</b> Tapping a pill drops a short menu; the pill then reads the selection
+    (<b>“Imported ▾”</b>, tinted) so the active filter is legible at a glance without a separate token row.</p>
+  </div>
+
+  <!-- C — filter button + tokens -->
+  <div class="step">
+    <div class="stepnum">C</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div>
+          <div style="display:flex;gap:7px"><div class="circ" style="color:#fff">⚙</div><div class="circ">⚟</div></div></div>
+        <div class="search">🔍 Search by routine</div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Thu, Aug 27 at 7:05 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 4,501m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Tue, Aug 25 at 7:18 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 19m</span><span>✓ 5 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Fri, Aug 21 at 6:30 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 180m</span><span>🔥 947 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Quick session</div><div class="sub">Thu, Aug 13 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 134m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>C — toolbar button + sheet.</b> <span class="win">Zero chrome in the default state</span>
+    (5 sessions above the fold). But the filter lives behind an icon — exactly the affordance that failed the
+    Kilter tester — and needs a sheet round-trip to change anything.
+    <span class="metric">5 sessions visible</span></p>
+  </div>
+
+  <!-- C active -->
+  <div class="step">
+    <div class="stepnum">C</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div>
+          <div style="display:flex;gap:7px"><div class="circ" style="color:#fff">⚙</div><div class="circ" style="color:var(--ember)">⚟</div></div></div>
+        <div class="search">🔍 Search by routine</div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="chiprow"><div class="chip token">Imported <span class="x">✕</span></div><div class="chip token">Climbing <span class="x">✕</span></div><div class="clearall">Clear all</div></div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Fri, Aug 21 at 6:30 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 180m</span><span>🔥 947 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="lbl">Source</div>
+          <div class="row"><div class="chip on">Imported</div><div class="chip">Tracked</div></div>
+          <div class="lbl">Routine</div>
+          <div class="row"><div class="chip on">Climbing</div><div class="chip">Pre climb warmup</div><div class="chip">Quick session</div></div>
+          <div class="lbl">Tracking type</div>
+          <div class="row"><div class="chip">Reps &amp; weight</div><div class="chip">Time</div><div class="chip">Climb</div></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>C, filtering.</b> Active filters return as removable tokens; the sheet holds every facet
+    with room to grow. Costs a sheet round-trip for a one-tap job.</p>
+  </div>
+
+  <!-- D — segmented + more -->
+  <div class="step">
+    <div class="stepnum">D</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div class="search">🔍 Search by routine</div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="segbar" style="margin-bottom:7px"><div class="on">All</div><div>Tracked</div><div>Imported</div></div>
+        <div class="chiprow"><div class="filterbtn">⚟ Filters</div><div class="chip">Pre climb warmup</div><div class="chip">Climbing</div></div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Thu, Aug 27 at 7:05 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 4,501m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Tue, Aug 25 at 7:18 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 19m</span><span>✓ 5 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>D — source segmented + Filters.</b> Promotes Source (the coarsest, most useful cut) to a
+    one-tap segmented control and folds routine/type behind a labelled button. Two rows —
+    <span class="win">saves ~90 pt</span> — but mixes two control idioms on one screen.
+    <span class="metric">3 sessions visible</span></p>
+  </div>
+
+</div>
+
+<header class="page" style="padding-top:70px">
+  <h1 class="title">C+ · the refined version</h1>
+  <p class="sub">C's instinct is right — the default state should be <b>your history, not a control panel</b>. These
+  four changes remove its weak points without giving that up.</p>
+  <div class="scopebox">
+    <b>1. A labelled button, not a bare icon.</b> "Filters" sits at the trailing edge of the search row — the other
+    "narrow this list" control — so it costs <b>no extra vertical space</b>, isn't lost among the nav-bar circles,
+    and reads as a control rather than decoration. This is the specific fix for the Kilter discoverability failure.
+    <br><br>
+    <b>2. The sheet live-applies at a medium detent.</b> You see the list re-filter behind the sheet as you tap, so
+    there's no "apply → dismiss → check → reopen" loop. The primary button reads <b>"Show 12 sessions"</b>: it
+    tells you the outcome before you commit to it.
+    <br><br>
+    <b>3. Active filters are never invisible.</b> A slim token row appears only while filtering, with per-token ✕ and
+    Clear all — and filters <b>reset when you leave the screen</b>. A silently-persisted filter under a zero-chrome
+    header would recreate the bug we just removed: History quietly hiding half of itself.
+    <br><br>
+    <b>4. No dead ends.</b> A filter that matches nothing offers "Clear filters" in place, rather than an empty list.
+  </div>
+</header>
+
+<div class="wrap">
+<div class="gallery">
+
+  <!-- C+ idle -->
+  <div class="step">
+    <div class="stepnum rec">C+ ★</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="search" style="flex:1;margin-bottom:0">🔍 Search by routine</div>
+          <div class="filterbtn">⚟ Filters</div>
+        </div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Thu, Aug 27 at 7:05 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 4,501m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Pre climb warmup</div><div class="sub">Tue, Aug 25 at 7:18 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 19m</span><span>✓ 5 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Fri, Aug 21 at 6:30 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 180m</span><span>🔥 947 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div><div class="name">Quick session</div><div class="sub">Thu, Aug 13 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 134m</span><span>✓ 2 sets</span><span class="studio">▤ Studio</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>C+ idle — the default.</b> Same five sessions above the fold as plain C, but the entry point
+    now says <b>“Filters”</b> and lives beside search where narrowing belongs.
+    <span class="metric">5 sessions visible</span></p>
+  </div>
+
+  <!-- C+ sheet -->
+  <div class="step">
+    <div class="stepnum rec">C+ ★</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="search" style="flex:1;margin-bottom:0">🔍 Search by routine</div>
+          <div class="filterbtn" style="background:rgba(255,150,69,.22);color:var(--ember)">⚟ Filters <span class="badge">2</span></div>
+        </div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="sheet" style="height:56%">
+          <div class="grab"></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin:0 2px 4px">
+            <div style="font-size:16px;font-weight:800">Filters</div>
+            <div style="font-size:12.5px;font-weight:650;color:var(--t2)">Clear all</div>
+          </div>
+          <div class="lbl">Source</div>
+          <div class="row"><div class="chip on">Imported</div><div class="chip">Tracked</div></div>
+          <div class="lbl">Routine</div>
+          <div class="row"><div class="chip on">Climbing</div><div class="chip">Pre climb warmup</div><div class="chip">Quick session</div></div>
+          <div class="lbl">Tracking type</div>
+          <div class="row"><div class="chip">Reps &amp; weight</div><div class="chip">Time</div><div class="chip">Climb</div></div>
+          <div class="cta" style="background:var(--ember);color:#2a1405;margin-top:16px">Show 12 sessions</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>C+ filtering.</b> Medium detent, so the list re-filters <span class="win">live behind the
+    sheet</span> as you tap. The button states the outcome — <b>“Show 12 sessions”</b> — and the button in the
+    search row now carries a <b>count badge</b>.</p>
+  </div>
+
+  <!-- C+ active tokens -->
+  <div class="step">
+    <div class="stepnum rec">C+ ★</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="search" style="flex:1;margin-bottom:0">🔍 Search by routine</div>
+          <div class="filterbtn" style="background:rgba(255,150,69,.22);color:var(--ember)">⚟ Filters <span class="badge">2</span></div>
+        </div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="chiprow"><div class="chip token">Imported <span class="x">✕</span></div><div class="chip token">Climbing <span class="x">✕</span></div><div class="clearall">Clear all</div></div>
+        <div style="font-size:11.5px;color:var(--t3);margin:0 2px 6px">12 of 237 sessions</div>
+        <div class="month">August 2026</div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 24 at 7:44 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 15m</span><span>🔥 110 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Fri, Aug 21 at 6:30 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 180m</span><span>🔥 947 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="card"><div class="top"><div class="lead">♡</div><div style="flex:1"><div class="name">Climbing</div><div class="sub"><span class="src">Google Health</span> · Mon, Aug 10 at 8:00 PM</div></div><div class="chev">›</div></div>
+          <div class="stats"><span>⏱ 17m</span><span>🔥 102 kcal</span><span class="clips">▤ Clips</span></div></div>
+        <div class="fade"></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>C+ active.</b> Chrome appears <b>only because you asked for it</b>: removable tokens, a
+    Clear all, and an honest <b>“12 of 237 sessions”</b> so a filter can never quietly hide history.</p>
+  </div>
+
+  <!-- C+ empty -->
+  <div class="step">
+    <div class="stepnum">C+</div>
+    <div class="device"><div class="screen">
+      <div class="island"></div>
+      <div class="statusbar"><span>11:24</span><span>5G ▮</span></div>
+      <div class="content">
+        <div class="navrow"><div class="circ">‹</div><div class="title">History</div><div class="circ">⚙</div></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="search" style="flex:1;margin-bottom:0">🔍 Search by routine</div>
+          <div class="filterbtn" style="background:rgba(255,150,69,.22);color:var(--ember)">⚟ Filters <span class="badge">2</span></div>
+        </div>
+        <div class="segbar"><div>Dashboard</div><div>Library</div><div>Routines</div><div class="on">History</div></div>
+        <div class="chiprow"><div class="chip token">Imported <span class="x">✕</span></div><div class="chip token">Reps &amp; weight <span class="x">✕</span></div></div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:0 24px">
+          <div style="font-size:34px;opacity:.5">⚟</div>
+          <div style="font-size:15.5px;font-weight:750;margin-top:10px">No sessions match</div>
+          <div style="font-size:12.5px;color:var(--t2);margin-top:5px;line-height:1.45">Imported workouts don't track
+          reps &amp; weight — they carry no sets.</div>
+          <div class="cta" style="background:var(--ember);color:#2a1405;margin-top:16px;padding:10px 20px">Clear filters</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>C+ dead-end guard.</b> A contradictory combination explains <i>why</i> it's empty and offers
+    the way out, instead of leaving a blank list.</p>
+  </div>
+
+</div>
+</div>
+
+<div class="wrap">
+<table class="cmp">
+  <tr><th>Option</th><th>Chrome</th><th>Sessions above fold</th><th>Discoverable?</th><th>Scales with more routines / facets?</th></tr>
+  <tr><td><b>A — today</b></td><td>~280 pt, 3 rows</td><td>2</td><td class="yes">Yes — all visible</td><td class="no">No — row 2 widens, new facet = row 4</td></tr>
+  <tr><td><b>B — menu pills ★</b></td><td>~130 pt, 1 row</td><td>4</td><td class="yes">Yes — labelled pills show current value</td><td class="yes">Yes — pill width is constant</td></tr>
+  <tr><td><b>C — button + sheet</b></td><td>0 pt idle</td><td>5</td><td class="no">Weak — icon only (the Kilter failure mode)</td><td class="yes">Yes — sheet has room</td></tr>
+  <tr><td><b>D — segmented + Filters</b></td><td>~190 pt, 2 rows</td><td>3</td><td class="yes">Yes</td><td>Partly — routine chips still widen</td></tr>
+  <tr><td><b>C+ — refined C ★</b></td><td>0 pt idle · ~40 pt filtering</td><td>5</td><td class="yes">Yes — labelled "Filters" beside search</td><td class="yes">Yes — sheet has room</td></tr>
+</table>
+
+<div class="legend">
+  <span><b>★ Recommendation:</b> <b>C+</b> — keeps C's clean default (5 sessions, no control panel) and fixes its
+  three weak points: a <b>labelled</b> entry point beside search rather than a bare icon, a <b>live-applying</b>
+  medium-detent sheet whose button states the outcome, and filter state that is <b>never invisible</b>
+  (tokens + "12 of 237", reset on leaving the screen).</span>
+</div>
+</div>
+</body>
+</html>
