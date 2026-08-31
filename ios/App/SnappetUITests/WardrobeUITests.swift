@@ -78,6 +78,60 @@ final class WardrobeUITests: XCTestCase {
         snap("wardrobe-sections-outfits")
     }
 
+    /// The draft-based edit sheet (wardrobe prompt 06): Cancel discards every change; only Done
+    /// commits. This is the regression guard for the old live-`@Bindable` sheet, where each
+    /// keystroke persisted immediately and Cancel was impossible.
+    func testEditSheetCancelDiscardsAndDoneCommits() {
+        openWardrobe()
+
+        let sample = app.buttons["wardrobe.empty.sample"]
+        XCTAssertTrue(sample.waitForExistence(timeout: 6), "fresh store should show the empty state")
+        sample.tap()
+        XCTAssertTrue(app.staticTexts["Grey joggers"].waitForExistence(timeout: 6))
+        app.staticTexts["Grey joggers"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["wardrobe.item.style"].waitForExistence(timeout: 6))
+
+        // 1 — edit, rename, CANCEL → the item is untouched.
+        openEditSheet()
+        replaceName(with: "Track pants")
+        app.buttons["wardrobe.edit.cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Grey joggers"].waitForExistence(timeout: 6),
+                      "Cancel must discard the rename — the detail still shows the old name")
+
+        // 2 — edit, rename, DONE → the item is renamed.
+        openEditSheet()
+        replaceName(with: "Track pants")
+        app.buttons["wardrobe.edit.done"].tap()
+        XCTAssertTrue(app.buttons["wardrobe.item.style"].waitForExistence(timeout: 6),
+                      "the sheet should dismiss back to the detail")
+        XCTAssertFalse(app.staticTexts["Grey joggers"].exists,
+                       "Done must commit the rename — the old name is gone")
+        snap("wardrobe-edit-committed")
+    }
+
+    private func openEditSheet() {
+        let menu = app.buttons["wardrobe.item.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 6))
+        menu.tap()
+        let edit = app.buttons["wardrobe.item.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 6))
+        edit.tap()
+        XCTAssertTrue(app.textFields["wardrobe.edit.name"].waitForExistence(timeout: 6),
+                      "the edit sheet should present with the name field")
+    }
+
+    /// Replace the name field's content. Select-all via long-press when the edit menu offers it;
+    /// typing still lands (as an append) when it doesn't, and both tests assert on the OLD name's
+    /// presence/absence, which is correct under either outcome.
+    private func replaceName(with text: String) {
+        let field = app.textFields["wardrobe.edit.name"]
+        field.tap()
+        field.press(forDuration: 1.2)
+        let selectAll = app.menuItems["Select All"]
+        if selectAll.waitForExistence(timeout: 2) { selectAll.tap() }
+        field.typeText(text)
+    }
+
     /// Multi-photo surfaces (wardrobe prompt 04). The simulator has no camera and no Photos, so
     /// this covers what IS reachable there: the ··· menu carries a photo count, "Manage photos"
     /// presents, and a photo-less sample garment shows the add affordance rather than a broken
