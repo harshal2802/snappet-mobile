@@ -108,3 +108,76 @@ final class HistorySearchTests: XCTestCase {
         XCTAssertEqual(HistorySearch.filterByTrackingTypes(sessions, kinds: [.repsWeight]).count, 1)
     }
 }
+
+/// The Source facet + merged list (prompt 130): History shows tracked AND imported sessions by
+/// default, and filtering narrows instead of hiding a whole category. Before this, imports lived in
+/// a separate section that disappeared the moment any search/filter was active.
+final class HistorySourceFacetTests: XCTestCase {
+
+    private func tracked(_ name: String, daysAgo: Double) -> WorkoutSession {
+        let start = Date(timeIntervalSince1970: 1_000_000 - daysAgo * 86_400)
+        return WorkoutSession(routineName: name, startedAt: start,
+                              completedAt: start.addingTimeInterval(3600))
+    }
+
+    private func imported(_ name: String, daysAgo: Double,
+                          source: String = "Google Health", product: String = "iPhone14,3") -> WorkoutSession {
+        let start = Date(timeIntervalSince1970: 1_000_000 - daysAgo * 86_400)
+        let s = WorkoutSession(routineName: name, startedAt: start,
+                               completedAt: start.addingTimeInterval(3600),
+                               healthKitWorkoutUUID: UUID())
+        s.importSourceName = source
+        s.importSourceProductType = product
+        return s
+    }
+
+    private var mixed: [WorkoutSession] {
+        [tracked("Quick session", daysAgo: 1), imported("Climbing", daysAgo: 2),
+         tracked("Pre climb warmup", daysAgo: 3), imported("Walk", daysAgo: 4)]
+    }
+
+    func testNoSourceFilterShowsTrackedAndImported() {
+        let out = HistorySearch.apply(mixed, query: "", routine: nil)
+        XCTAssertEqual(out.count, 4, "History defaults to everything")
+    }
+
+    func testSourceFacetIsolatesEachOrigin() {
+        let onlyImported = HistorySearch.apply(mixed, query: "", routine: nil, sources: [.imported])
+        XCTAssertEqual(onlyImported.map(\.routineName), ["Climbing", "Walk"])
+
+        let onlyTracked = HistorySearch.apply(mixed, query: "", routine: nil, sources: [.tracked])
+        XCTAssertEqual(onlyTracked.map(\.routineName), ["Quick session", "Pre climb warmup"])
+    }
+
+    func testSelectingBothSourcesMatchesNoFilter() {
+        XCTAssertEqual(
+            HistorySearch.apply(mixed, query: "", routine: nil, sources: [.tracked, .imported]).count,
+            HistorySearch.apply(mixed, query: "", routine: nil).count)
+    }
+
+    /// The regression this replaces: searching used to hide every imported row outright. A query
+    /// must reach them like any other session.
+    func testSearchReachesImportedSessions() {
+        let out = HistorySearch.apply(mixed, query: "climb", routine: nil)
+        XCTAssertEqual(Set(out.map(\.routineName)), ["Climbing", "Pre climb warmup"],
+                       "search spans both origins")
+    }
+
+    /// Routine chips are built from the merged list, so an imported activity is filterable too.
+    func testRoutineNamesIncludeImportedActivities() {
+        XCTAssertEqual(HistorySearch.routineNames(mixed),
+                       ["Quick session", "Climbing", "Pre climb warmup", "Walk"])
+    }
+
+    /// A tracking-type facet still excludes imports — they carry no exercises, so they genuinely
+    /// track no kind. Composing it with a source selection is coherent, not contradictory.
+    func testTrackingTypeFacetExcludesImportsWhichHaveNoExercises() {
+        let out = HistorySearch.apply(mixed, query: "", routine: nil, kinds: [.repsWeight])
+        XCTAssertTrue(out.isEmpty, "no seeded session tracks reps & weight")
+    }
+
+    func testSourceOfClassifiesBothShapes() {
+        XCTAssertEqual(HistorySource.of(tracked("Quick session", daysAgo: 1)), .tracked)
+        XCTAssertEqual(HistorySource.of(imported("Climbing", daysAgo: 1)), .imported)
+    }
+}
