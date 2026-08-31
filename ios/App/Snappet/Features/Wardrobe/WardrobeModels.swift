@@ -35,6 +35,11 @@ final class WardrobeItem {
     /// months-old number reads as live.
     var currentPrice: Double? = nil
     var currentPriceCheckedAt: Date? = nil
+    /// The CURRENCY the fetched price was quoted in (ISO code, e.g. "EUR"), as parsed from the
+    /// retailer page (wardrobe prompt 07). Empty = the parse carried no code (or a pre-07 check):
+    /// the UI then falls back to the local currency, which is the pre-07 behavior. Without this a
+    /// €89 page rendered as $89 — the parser extracted the code all along; the section dropped it.
+    var currentPriceCurrencyRaw: String = ""
     /// The built-in each *custom* enum value behaves like, for scoring (wardrobe prompt 05).
     /// Empty when the raw is already a built-in. Stored ON the item rather than looked up in
     /// `WardrobeVocabulary` so `OutfitComposer` stays a pure function of the item — scoring must

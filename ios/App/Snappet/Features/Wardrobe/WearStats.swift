@@ -55,6 +55,21 @@ enum WearStats {
     /// (a locale with no currency). Tests pass an explicit code and never read this.
     static var localCurrencyCode: String { Locale.current.currency?.identifier ?? "USD" }
 
+    /// The code a FETCHED price renders in: the retailer's own code when the parse carried one,
+    /// else the local currency (the pre-prompt-07 behavior, kept for legacy checks). Pure —
+    /// `local` is a parameter so tests don't depend on the machine's locale.
+    static func fetchedPriceDisplayCode(fetched: String, local: String) -> String {
+        fetched.isEmpty ? local : fetched
+    }
+
+    /// Whether the ↑/↓ delta badge is meaningful: only when the fetched price and the cost the
+    /// user paid are in the SAME currency (cost is entered by hand, so it's the local one). A
+    /// cross-currency percentage is nonsense. Empty fetched code = legacy/unlabeled → keep the
+    /// pre-07 behavior and show it.
+    static func priceDeltaComparable(fetched: String, local: String) -> Bool {
+        fetched.isEmpty || fetched == local
+    }
+
     /// "$4.08" style cost-per-wear string (system currency formatting, no cents games).
     static func costPerWearLabel(cost: Double?, wears: Int,
                                  currencyCode: String = localCurrencyCode) -> String? {

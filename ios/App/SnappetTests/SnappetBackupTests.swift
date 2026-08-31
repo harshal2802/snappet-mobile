@@ -144,6 +144,43 @@ final class SnappetBackupTests: XCTestCase {
     /// Restore wipes what's in the store first — including rows whose unique keys overlap
     /// the incoming ones (`KilterFavorite.climbUUID`, `KilterSession.id`) — and ends with
     /// exactly the backup's contents.
+    /// Wardrobe prompt 07: every prompt-04/05/07 COLUMN survives a round trip, asserted on the
+    /// restored MODEL. These columns were added to `WardrobeItem` without being mirrored into
+    /// `WardrobeItemRow`, so restores silently dropped brand/size/link/prices/custom-value maps/
+    /// cover role — and neither tripwire could see it: the model-coverage check only proves each
+    /// @Model HAS a row, and the snapshot-equality round trip can't catch a field the row never
+    /// captures (it's absent from both sides). Field-level fidelity needs a model-level assert.
+    func testWardrobeItemRicherColumnsSurviveRestore() throws {
+        let context = sourceContainer.mainContext
+        let item = WardrobeItem(name: "Mustard tee", category: .top, color: .yellow, cost: 25)
+        item.colorRaw = "Mustard"; item.colorMapRaw = "yellow"   // custom value + its scoring map
+        item.brand = "Uniqlo"
+        item.sizeLabel = "M"
+        item.productURL = "https://example.com/tee"
+        item.currentPrice = 19.5
+        item.currentPriceCheckedAt = Date(timeIntervalSince1970: 1_756_000_000)
+        item.currentPriceCurrencyRaw = "EUR"
+        item.coverPhotoRoleRaw = "worn"
+        context.insert(item)
+        try context.save()
+
+        let decoded = try SnappetBackup.decode(try SnappetBackup.encode(
+            try SnappetBackup.snapshot(of: context)))
+        let target = targetContainer.mainContext
+        try SnappetBackup.restore(decoded, into: target)
+
+        let restored = try XCTUnwrap(target.fetch(FetchDescriptor<WardrobeItem>()).first)
+        XCTAssertEqual(restored.colorRaw, "Mustard", "custom value survives verbatim")
+        XCTAssertEqual(restored.colorMapRaw, "yellow", "…with its scoring map")
+        XCTAssertEqual(restored.brand, "Uniqlo")
+        XCTAssertEqual(restored.sizeLabel, "M")
+        XCTAssertEqual(restored.productURL, "https://example.com/tee")
+        XCTAssertEqual(restored.currentPrice, 19.5)
+        XCTAssertEqual(restored.currentPriceCheckedAt, Date(timeIntervalSince1970: 1_756_000_000))
+        XCTAssertEqual(restored.currentPriceCurrencyRaw, "EUR")
+        XCTAssertEqual(restored.coverPhotoRoleRaw, "worn")
+    }
+
     func testRestoreReplacesExistingDataIncludingUniqueKeyOverlap() throws {
         // The backup: one favorite + one session.
         let source = sourceContainer.mainContext
@@ -472,6 +509,15 @@ final class SnappetBackupTests: XCTestCase {
                                         seasons: [.fall, .winter], cost: 49, isFavorite: true,
                                         createdAt: Date(timeIntervalSince1970: 1_700_010_000),
                                         imageData: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A]))
+        // The prompt-04/05/07 columns, so the snapshot-equality/determinism tests exercise the
+        // richer row too (the dedicated fidelity test asserts these on the restored model).
+        wardrobeItem.brand = "Uniqlo"
+        wardrobeItem.sizeLabel = "M"
+        wardrobeItem.productURL = "https://example.com/flannel"
+        wardrobeItem.currentPrice = 39.99
+        wardrobeItem.currentPriceCheckedAt = Date(timeIntervalSince1970: 1_700_010_100)
+        wardrobeItem.currentPriceCurrencyRaw = "EUR"
+        wardrobeItem.coverPhotoRoleRaw = "worn"
         context.insert(wardrobeItem)
         // An EXTRA photo of that item (wardrobe prompt 04) — the cover itself rides the item above,
         // so this row is the "back of the shirt" case, with a non-default role and sortIndex.

@@ -87,11 +87,20 @@ struct WardrobePurchaseSection: View {
     }
 
     private var currentValue: String {
-        item.currentPrice.map(currency) ?? "Not checked"
+        // The FETCHED price renders in the retailer's own currency when the parse carried one —
+        // €89 must not read as $89 (prompt 07). "Paid" stays local: the user typed that number.
+        item.currentPrice.map {
+            $0.formatted(.currency(code: WearStats.fetchedPriceDisplayCode(
+                fetched: item.currentPriceCurrencyRaw, local: WearStats.localCurrencyCode))
+                .precision(.fractionLength(2)))
+        } ?? "Not checked"
     }
 
     @ViewBuilder private var deltaBadge: some View {
-        if let fraction = item.priceDeltaFraction, abs(fraction) >= 0.01 {
+        // No ↑/↓ across currencies — a percentage between a $ cost and a € price is nonsense.
+        if WearStats.priceDeltaComparable(fetched: item.currentPriceCurrencyRaw,
+                                          local: WearStats.localCurrencyCode),
+           let fraction = item.priceDeltaFraction, abs(fraction) >= 0.01 {
             let down = fraction < 0
             Text("\(down ? "↓" : "↑") \(Int(abs(fraction) * 100))%")
                 .font(.caption.weight(.heavy))
@@ -121,8 +130,11 @@ struct WardrobePurchaseSection: View {
         defer { isChecking = false }
 
         switch await WardrobePriceService.check(urlString: item.productURL) {
-        case let .updated(amount, _, _):
+        case let .updated(amount, currencyCode, _):
             item.currentPrice = amount
+            // Keep the currency WITH the amount — the parser extracted it all along; dropping
+            // it here was how a €89 page rendered as $89 (prompt 07).
+            item.currentPriceCurrencyRaw = currencyCode ?? ""
             item.currentPriceCheckedAt = .now
             try? modelContext.save()
         case let other:

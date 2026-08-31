@@ -84,6 +84,21 @@ final class WardrobeTagsTests: XCTestCase {
 
     // MARK: - WearStats
 
+    /// Prompt 07: a fetched price renders in the RETAILER's currency when the parse carried one;
+    /// an empty code keeps the pre-07 local-currency behavior (legacy checks).
+    func testFetchedPriceDisplayCode() {
+        XCTAssertEqual(WearStats.fetchedPriceDisplayCode(fetched: "EUR", local: "USD"), "EUR")
+        XCTAssertEqual(WearStats.fetchedPriceDisplayCode(fetched: "", local: "USD"), "USD")
+    }
+
+    /// The ↑/↓ delta only means something within one currency; empty = legacy → keep showing it.
+    func testPriceDeltaComparableOnlyWithinOneCurrency() {
+        XCTAssertTrue(WearStats.priceDeltaComparable(fetched: "USD", local: "USD"))
+        XCTAssertTrue(WearStats.priceDeltaComparable(fetched: "", local: "USD"), "legacy check")
+        XCTAssertFalse(WearStats.priceDeltaComparable(fetched: "EUR", local: "USD"),
+                       "a percentage between a $ cost and a € price is nonsense")
+    }
+
     func testCostPerWear() {
         XCTAssertEqual(WearStats.costPerWear(cost: 49, wears: 12), 49.0 / 12, accuracy: 0.001)
         XCTAssertEqual(WearStats.costPerWear(cost: 49, wears: 0), 49, "never worn shows full cost")
