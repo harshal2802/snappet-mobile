@@ -9259,3 +9259,13 @@ Non-obvious calls:
 - **Method note:** three fixes in a row were wrong because they were reasoned from the code's own
   assumptions. The device probe (source bundle/name/productType per anchor) settled it in one pass.
   When provenance is in question, read the provenance — don't infer it.
+
+## 2026-08-31 — History means ALL of it (prompt 130)
+
+- **A filter narrows; it never hides a category.** The History screen gated its imported-sessions
+  section on "no search, no routine chip, no kind chip", so typing a single character made every
+  Health import disappear. History now renders ONE chronological list (tracked + imported, grouped
+  by month) with a Source facet (Tracked / Imported, neither = both) as the way to narrow.
+- **Display merges; derivation does not.** `WorkoutHomeView` still keeps `history` (tracked-only)
+  for analytics, PRs, the dashboard and Studio candidates — imports carry no exercises/sets and
+  would skew every one of them. Only the History screen unions the two.

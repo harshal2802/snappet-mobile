@@ -15,19 +15,9 @@ struct HistorySectionView: View {
     let openStudio: (WorkoutSession) -> Void
     /// Completed workouts IMPORTED from Apple Health (watch-workouts-clips P3), newest first — the
     /// Watch's own recordings and anything another app wrote into Health (Google Health, Strava…).
-    /// Kept OUT of `history` (no exercises/sets) so they never run through the routine/kind filters
-    /// or pollute the tracked-workout list. Same detail route.
+    /// Passed separately because the tracked-only `history` feeds analytics/Studio elsewhere; THIS
+    /// screen merges the two (prompt 130) so History means all of your history.
     var watchSessions: [WorkoutSession] = []
-
-    /// The header names what the rows actually are. When every import really is a Watch recording
-    /// it still reads "From Apple Watch"; a mixed (or unknown-provenance) list reads neutrally,
-    /// and each row names its own writer.
-    private var watchSectionTitle: String {
-        watchSessions.allSatisfy(\.isFromAppleWatch) ? "From Apple Watch" : "Imported from Health"
-    }
-    private var watchSectionSymbol: String {
-        watchSessions.allSatisfy(\.isFromAppleWatch) ? "applewatch" : "heart.text.square"
-    }
 
     @State private var query = ""
     /// The routine name the chip row is filtering to; nil = all routines.
@@ -35,6 +25,16 @@ struct HistorySectionView: View {
     /// Tracking-type facet (workout-with-timer PR 6): the selected `SetKind`s; empty = no filter.
     /// A session is kept when any of its exercises tracks one of these kinds.
     @State private var kindFilter: Set<SetKind> = []
+    /// Source facet (prompt 130): empty = show tracked AND imported, the default.
+    @State private var sourceFilter: Set<HistorySource> = []
+
+    /// Everything, newest first — the list this screen actually shows. Imports used to live in a
+    /// separate section that vanished the moment ANY filter or search was active, so filtering
+    /// silently hid half the user's history; now one chronological list carries both and the
+    /// Source chips are how you narrow instead.
+    private var allSessions: [WorkoutSession] {
+        (history + watchSessions).sorted { $0.startedAt > $1.startedAt }
+    }
 
     /// A month bucket of sessions. `Identifiable` (by month) so the `ForEach` keeps stable view
     /// identity across re-renders — without it, pushing onto the shared nav path churns this
@@ -47,9 +47,12 @@ struct HistorySectionView: View {
         HistorySearch.effectiveRoutine(filter: routineFilter, names: routineNames)
     }
     private var filtered: [WorkoutSession] {
-        HistorySearch.apply(history, query: query, routine: effectiveFilter, kinds: kindFilter)
+        HistorySearch.apply(allSessions, query: query, routine: effectiveFilter,
+                            kinds: kindFilter, sources: sourceFilter)
     }
-    private var routineNames: [String] { HistorySearch.routineNames(history) }
+    /// Chips cover every name in the merged list — an imported "Climbing" is as filterable as a
+    /// tracked "Pre climb warmup".
+    private var routineNames: [String] { HistorySearch.routineNames(allSessions) }
 
     private var grouped: [MonthGroup] {
         let cal = Calendar.current
@@ -66,25 +69,6 @@ struct HistorySectionView: View {
         // Bare List + .overlay for the empty state (matching ExerciseBrowserView) — the previous
         // `Group { if empty … else List }` branch swap left the row Buttons' tap gestures dead.
         List {
-            // Apple Watch imports — their own section, above tracked history and outside its filters.
-            // Only when the user isn't actively filtering/searching the tracked list (those facets don't
-            // apply to watch workouts, which carry no routine/kinds).
-            if !watchSessions.isEmpty, query.isEmpty, effectiveFilter == nil, kindFilter.isEmpty {
-                Section {
-                    ForEach(watchSessions) { session in
-                        NavigationLink(value: SessionRoute(id: session.id)) {
-                            WatchHistoryRow(session: session, hasVideo: videoSessionIDs.contains(session.id))
-                        }
-                        .accessibilityIdentifier("watchHistoryRow")
-                    }
-                } header: {
-                    // Named for the STORE these came from, not a device: Apple Health is shared,
-                    // and these rows may have been written by the Watch, Google Health, Strava…
-                    // (prompt 129 — the old "From Apple Watch" header mislabelled every import).
-                    Label(watchSectionTitle, systemImage: watchSectionSymbol)
-                        .foregroundStyle(SnappetColor.perfFresh)
-                }
-            }
             ForEach(grouped) { group in
                 Section(group.id) {
                     ForEach(group.sessions) { session in
@@ -93,10 +77,18 @@ struct HistorySectionView: View {
                         // on tap — a narrow SwiftUI/List quirk specific to this view — so we keep the
                         // known-good NavigationLink. Trade-off: this one row isn't XCUITest-tappable.
                         NavigationLink(value: SessionRoute(id: session.id)) {
-                            HistoryRow(session: session, unit: unit,
-                                       hasVideo: videoSessionIDs.contains(session.id))
+                            // One list, two row shapes: an import carries no sets/exercises, so it
+                            // renders its source + measured totals instead of set counts.
+                            if session.isImportedFromHealth {
+                                WatchHistoryRow(session: session,
+                                                hasVideo: videoSessionIDs.contains(session.id))
+                            } else {
+                                HistoryRow(session: session, unit: unit,
+                                           hasVideo: videoSessionIDs.contains(session.id))
+                            }
                         }
-                        .accessibilityIdentifier("historyRow")
+                        .accessibilityIdentifier(session.isImportedFromHealth
+                                                 ? "watchHistoryRow" : "historyRow")
                         .swipeActions {
                             Button(role: .destructive) { deleteSession(session) } label: {
                                 Label("Delete", systemImage: "trash")
@@ -119,6 +111,9 @@ struct HistorySectionView: View {
                     prompt: "Search by routine")
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
+                // Source facet first — the coarsest cut, and the one that replaces the old
+                // disappearing-section behavior (prompt 130). Only when both kinds exist.
+                if !history.isEmpty && !watchSessions.isEmpty { sourceChips }
                 // Also shown while a filter is active with one routine left, so it can be toggled off.
                 if routineNames.count > 1 || effectiveFilter != nil { routineChips }
                 // Tracking-type facet (workout-with-timer PR 6): always offered once any session exists,
@@ -127,7 +122,7 @@ struct HistorySectionView: View {
             }
         }
         .overlay {
-            if history.isEmpty && watchSessions.isEmpty {
+            if allSessions.isEmpty {
                 ContentUnavailableView {
                     Label("No workouts yet", systemImage: "clock.arrow.circlepath")
                 } description: {
@@ -137,6 +132,36 @@ struct HistorySectionView: View {
                 ContentUnavailableView.search(text: query.isEmpty ? (effectiveFilter ?? "—") : query)
             }
         }
+    }
+
+    /// Source facet (prompt 130): Tracked / Imported. Nothing selected = both, which is the
+    /// default — History opens showing everything you've ever done.
+    private var sourceChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(HistorySource.allCases) { source in
+                    let on = sourceFilter.contains(source)
+                    Button {
+                        if on { sourceFilter.remove(source) } else { sourceFilter.insert(source) }
+                    } label: {
+                        Label(source.title, systemImage: source.symbol)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(on ? SnappetColor.workout.opacity(0.2)
+                                           : Color(.secondarySystemFill), in: Capsule())
+                            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .snappetAnimation(SnappetMotion.quick, value: on)
+                    .accessibilityIdentifier("history.sourceChip.\(source.rawValue)")
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+        }
+        .background(.bar)
     }
 
     /// One chip per distinct routine name (most recent first); tap to filter, tap again to clear.
@@ -199,13 +224,32 @@ struct HistorySectionView: View {
     }
 }
 
+/// Where a history row came from — the Source facet (prompt 130). History shows EVERYTHING by
+/// default; this is how the user narrows to one origin.
+enum HistorySource: String, CaseIterable, Identifiable, Hashable {
+    /// A session tracked in the app (routines, Quick Sessions) — has exercises and sets.
+    case tracked
+    /// A session imported from Apple Health, whoever wrote it (the Watch, Google Health, …).
+    case imported
+
+    var id: String { rawValue }
+    var title: String { self == .tracked ? "Tracked" : "Imported" }
+    var symbol: String { self == .tracked ? "dumbbell" : "heart.text.square" }
+
+    static func of(_ session: WorkoutSession) -> HistorySource {
+        session.isImportedFromHealth ? .imported : .tracked
+    }
+}
+
 /// PURE history search/filter (issue #73) — unit-tested in `SnappetTests` without a simulator.
 enum HistorySearch {
-    /// Routine-name chip filter (exact) first, then the tracking-type facet (any selected `SetKind`),
-    /// then the search query (case-insensitive substring). `kinds` empty ⇒ the facet is inert.
+    /// Source facet first, then the routine-name chip (exact), then the tracking-type facet (any
+    /// selected `SetKind`), then the search query (case-insensitive substring). Every facet is
+    /// inert when empty/nil, so the default is "show everything" (prompt 130).
     static func apply(_ sessions: [WorkoutSession], query: String, routine: String?,
-                      kinds: Set<SetKind> = []) -> [WorkoutSession] {
+                      kinds: Set<SetKind> = [], sources: Set<HistorySource> = []) -> [WorkoutSession] {
         var result = sessions
+        if !sources.isEmpty { result = result.filter { sources.contains(HistorySource.of($0)) } }
         if let routine { result = result.filter { $0.routineName == routine } }
         result = filterByTrackingTypes(result, kinds: kinds)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
