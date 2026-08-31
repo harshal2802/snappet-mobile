@@ -79,6 +79,53 @@ enum WatchWorkoutReconciler {
         return out
     }
 
+    /// Who recorded a workout — `HKSourceRevision` snapshotted into plain values at the service
+    /// edge (bundle id + recording device product type, e.g. "Watch6,9").
+    struct WorkoutSource: Equatable, Sendable {
+        var bundleID: String?
+        var productType: String?
+    }
+
+    /// One existing watch-import anchor, for the retroactive cleanup (prompt 128).
+    struct AnchorInfo: Equatable, Sendable {
+        var sessionID: UUID
+        var workoutUUID: UUID
+        /// How many `SessionMedia` rows the anchor owns — the duplicate-collapse keeper criterion.
+        var mediaCount: Int
+    }
+
+    /// Retroactive cleanup (prompt 128): which existing anchors should be DELETED.
+    ///
+    /// Prompt 127's source gate stops NEW ghosts, but anchors minted before it exist on real
+    /// phones — a tracked Quick Session's own watch recording sat in "From Apple Watch", some of
+    /// them twice. Two rules, both conservative:
+    ///
+    /// 1. **Duplicates collapse.** Several anchors for ONE `HKWorkout.uuid` (a historical FR3
+    ///    breach — e.g. two reconciles racing before either saved) keep exactly one: the most
+    ///    media, ties broken by sessionID for determinism. The rest go.
+    /// 2. **Sources that fail `shouldImport` go.** The app's own companion recordings (the ghost
+    ///    Quick Sessions) and phone-written workouts. A uuid with NO source entry (the workout
+    ///    was since deleted from HealthKit) is KEPT — can't judge, don't touch.
+    static func staleAnchors(anchors: [AnchorInfo],
+                             sources: [UUID: WorkoutSource]) -> [UUID] {
+        var doomed: [UUID] = []
+        let byWorkout = Dictionary(grouping: anchors, by: \.workoutUUID)
+        for (workoutUUID, group) in byWorkout {
+            // The duplicate-collapse keeper: most media wins; ties break on sessionID so the
+            // choice is stable across runs.
+            var keeper: AnchorInfo? = group.min { a, b in
+                if a.mediaCount != b.mediaCount { return a.mediaCount > b.mediaCount }
+                return a.sessionID.uuidString < b.sessionID.uuidString
+            }
+            if let source = sources[workoutUUID],
+               !shouldImport(sourceBundleID: source.bundleID, sourceProductType: source.productType) {
+                keeper = nil    // the whole group is a ghost — nothing survives
+            }
+            doomed += group.filter { $0.sessionID != keeper?.sessionID }.map(\.sessionID)
+        }
+        return doomed.sorted { $0.uuidString < $1.uuidString }   // deterministic for tests/logs
+    }
+
     /// Source gate (prompt 127) — decided from WHO WROTE the workout, before any timing logic:
     ///
     /// 1. **Snappet's own watch companion never re-imports.** A tracked Quick Session (or routine /

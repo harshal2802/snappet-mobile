@@ -36,6 +36,10 @@ final class WatchWorkoutImportService {
     /// %-of-max zones (mirrors the tracked-session path); `nil` falls back to the engine default.
     @discardableResult
     func reconcile(context: ModelContext, profileMaxHR: Double?) async -> Result {
+        // Retroactive ghost cleanup (prompt 128) — BEFORE the Photos gate below, so anchors that
+        // should never have been minted disappear even when auto-discovery is unavailable.
+        await cleanupStaleAnchors(context: context)
+
         // Full Photos authorization is required for a time-window library scan; `.limited`/denied ⇒
         // we can't auto-discover, so watch workouts simply don't populate (documented degradation).
         guard sessionMedia.canAutoDiscover else { return Result(minted: 0, attachedClips: 0) }
@@ -140,6 +144,37 @@ final class WatchWorkoutImportService {
         // Advance the watermark to the newest workout end we saw (steady-state cutoff for next run).
         if let newest = workouts.map(\.end).max() { defaults.set(newest, forKey: Self.watermarkKey) }
         return Result(minted: minted, attachedClips: attached)
+    }
+
+    /// Delete anchors that should never have been minted (prompt 128): the app's own
+    /// watch-companion recordings that pre-date the prompt-127 source gate (tracked Quick
+    /// Sessions ghosting into "From Apple Watch"), and duplicate anchors of one workout. The
+    /// decision is the pure `WatchWorkoutReconciler.staleAnchors`; deletion runs through
+    /// `SessionCascade`, whose tombstone doubles as a second guard against re-minting. Idempotent
+    /// and cheap once clean (one fetch, an empty doomed list, no writes).
+    private func cleanupStaleAnchors(context: ModelContext) async {
+        let anchored = (try? context.fetch(
+            FetchDescriptor<WorkoutSession>(predicate: #Predicate { $0.healthKitWorkoutUUID != nil }))) ?? []
+        guard !anchored.isEmpty else { return }
+
+        var mediaCounts: [UUID: Int] = [:]
+        for m in (try? context.fetch(FetchDescriptor<SessionMedia>())) ?? [] {
+            mediaCounts[m.sessionID, default: 0] += 1
+        }
+        let infos: [WatchWorkoutReconciler.AnchorInfo] = anchored.compactMap { s in
+            s.healthKitWorkoutUUID.map {
+                WatchWorkoutReconciler.AnchorInfo(sessionID: s.id, workoutUUID: $0,
+                                                  mediaCount: mediaCounts[s.id] ?? 0)
+            }
+        }
+        let sources = (try? await health.workoutSources(for: Set(infos.map(\.workoutUUID)))) ?? [:]
+        let doomed = Set(WatchWorkoutReconciler.staleAnchors(anchors: infos, sources: sources))
+        guard !doomed.isEmpty else { return }
+
+        for session in anchored where doomed.contains(session.id) {
+            SessionCascade.deleteWorkoutSession(session, in: context)
+        }
+        try? context.save()
     }
 
     private func insertMedia(_ c: SessionMediaService.Candidate, sessionID: UUID, into context: ModelContext) {

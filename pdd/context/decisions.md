@@ -9225,3 +9225,15 @@ Non-obvious calls:
   workouts whose recording device is a real Watch (`productType` "Watch…", nil fails closed) — an
   iPhone-app-written workout under a "From Apple Watch" badge is a provenance lie. FR10 survives
   for its remaining honest case: the user double-tracking with the Apple Workout app.
+
+## 2026-08-31 — retroactive ghost cleanup (prompt 128): the app removes rows it wrongly created
+
+- **A classification fix owes a data cleanup.** Prompt 127 gated new mints, but the ghosts it
+  prevents already existed on device (and some workouts had TWO anchors — an FR3 breach, likely
+  racing reconciles). `reconcile` now opens with a cleanup pass: targeted `HKQuery
+  .predicateForObjects(with:)` source lookup (anchors predate the watermark window), pure
+  `staleAnchors` decides — own-source groups die entirely, duplicates collapse to the most-media
+  keeper, a workout with no surviving HealthKit record is kept (can't judge → don't touch) —
+  and `SessionCascade` deletes, its tombstone doubling as the re-mint guard. Runs before the
+  Photos gate so it works without auto-discovery. Asking the user to hand-delete app-created
+  garbage is not a fix.
