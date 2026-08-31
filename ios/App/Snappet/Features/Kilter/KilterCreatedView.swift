@@ -46,6 +46,10 @@ struct KilterCreatedView: View {
 
     // Sheets + confirmations.
     @State private var showingCreate = false
+    /// A just-created climb's uuid, held while the create sheet dismisses; promoted to a
+    /// `KilterClimbRoute` push in the sheet's `onDismiss` (dismiss + push in one mutation drops
+    /// the push — prompt 124).
+    @State private var pendingCreatedOpen: String?
     /// The editor target — a STABLE value-type identity (self-assigned `UUID`), never a `@Model`'s
     /// `persistentModelID` (which is temporary/unstable for an un-inserted Duplicate clone). Keying the
     /// sheet on this makes two Duplicates in a row, or Edit→cancel→Edit, present reliably (F2).
@@ -147,8 +151,15 @@ struct KilterCreatedView: View {
                     .accessibilityIdentifier("kilter.created.add")
             }
         }
-        .sheet(isPresented: $showingCreate) {
-            CreateClimbView(onCreated: { uuid in router.push(KilterClimbRoute(uuid: uuid)) }, board: board)
+        .sheet(isPresented: $showingCreate, onDismiss: {
+            // Push only after the sheet is gone — dismiss + push in one mutation drops the push
+            // (prompt 124; the KilterRootView create sheet gets the same treatment).
+            if let uuid = pendingCreatedOpen {
+                pendingCreatedOpen = nil
+                router.push(KilterClimbRoute(uuid: uuid))
+            }
+        }) {
+            CreateClimbView(onCreated: { uuid in pendingCreatedOpen = uuid }, board: board)
         }
         .sheet(item: $editorTarget) { target in
             editorSheet(target)

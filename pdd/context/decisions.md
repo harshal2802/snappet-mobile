@@ -9177,3 +9177,12 @@ Non-obvious calls:
 - **Tidy apply teaches the vocabulary only from its own edits.** The old loop re-remembered every
   item's brand/size each run, inflating `useCount`s (self-healing only by accident, because root-open
   reseeding overwrites counts).
+
+## 2026-08-30 — the dismiss+push rule (prompt 124)
+
+- **Never dismiss a presentation and mutate navigation in one transaction.** SwiftUI intermittently
+  drops the second change. This has now bitten four times (festival 05 scanner→import, festival 06
+  poster→draft, the player's `onViewDetail`, and create-climb→detail). The named cure is **stash and
+  promote**: the callback only stashes the payload in `@State`; the presentation's `onDismiss`
+  promotes it into the push/second sheet. `CreateClimbView`'s hosts now follow it; any new sheet
+  whose completion navigates must too.
