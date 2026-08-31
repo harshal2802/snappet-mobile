@@ -80,71 +80,136 @@ enum WatchWorkoutReconciler {
     }
 
     /// Who recorded a workout — `HKSourceRevision` snapshotted into plain values at the service
-    /// edge (bundle id + recording device product type, e.g. "Watch6,9").
+    /// edge: the writing app's display name ("Apple Watch", "Google Health"), its bundle id, and
+    /// the recording device's product type ("Watch6,9" / "iPhone14,3").
     struct WorkoutSource: Equatable, Sendable {
+        var name: String?
         var bundleID: String?
         var productType: String?
     }
 
-    /// One existing watch-import anchor, for the retroactive cleanup (prompt 128).
+    /// A workout as it exists in HealthKit right now — used to re-link an anchor whose original
+    /// `HKWorkout.uuid` disappeared (prompt 129). Fitbit/Google Health rewrite their samples on
+    /// each sync: the same workout returns under a NEW uuid, which is why the app kept minting
+    /// twins and why old anchors resolved to nothing.
+    struct WorkoutIdentity: Equatable, Sendable {
+        var uuid: UUID
+        var start: Date
+        var duration: TimeInterval
+        var source: WorkoutSource
+    }
+
+    /// One existing import anchor, for maintenance (prompts 128/129).
     struct AnchorInfo: Equatable, Sendable {
         var sessionID: UUID
         var workoutUUID: UUID
         /// How many `SessionMedia` rows the anchor owns — the duplicate-collapse keeper criterion.
         var mediaCount: Int
+        /// The anchor's own window, for re-linking to a re-synced workout.
+        var start: Date = .distantPast
+        var duration: TimeInterval = 0
     }
 
-    /// Retroactive cleanup (prompt 128): which existing anchors should be DELETED.
+    /// What to do with an existing anchor (prompt 129).
+    enum AnchorAction: Equatable, Sendable {
+        /// The workout still exists: stamp/refresh the stored provenance so the row can name its
+        /// real origin instead of claiming the Watch.
+        case stampSource(sessionID: UUID, source: WorkoutSource)
+        /// The original uuid is gone but the SAME workout is back under a new one (a Fitbit/Google
+        /// Health re-sync): point the anchor at it and stamp the source. Keeps the row and its
+        /// clips instead of deleting and re-minting a twin.
+        case relink(sessionID: UUID, to: UUID, source: WorkoutSource)
+        /// Nothing in HealthKit corresponds to this anchor any more — drop it (media rows go with
+        /// it via `SessionCascade`). Only ever emitted when the lookup is demonstrably healthy.
+        case delete(sessionID: UUID)
+    }
+
+    /// How far apart a re-synced workout's start/duration may be and still be judged the same
+    /// workout. Re-syncs rewrite samples verbatim, so this only absorbs sub-minute jitter.
+    static let relinkTolerance: TimeInterval = 60
+
+    /// Anchor maintenance (prompt 129) — what to do with every existing import anchor.
     ///
-    /// Prompt 127's source gate stops NEW ghosts, but anchors minted before it exist on real
-    /// phones — a tracked Quick Session's own watch recording sat in "From Apple Watch", some of
-    /// them twice. Two rules, both conservative:
+    /// Replaces prompt 128's delete-only `staleAnchors`, which was built on the wrong model: it
+    /// assumed an unresolvable anchor meant a workout the user deleted, when on a real device it
+    /// meant **Fitbit/Google Health had re-synced and rewritten the workout under a new uuid**.
+    /// Deleting there would throw away a real session (and its clips); the right move is to
+    /// re-link. Rules, in order:
     ///
-    /// 1. **Duplicates collapse.** Several anchors for ONE `HKWorkout.uuid` (a historical FR3
-    ///    breach — e.g. two reconciles racing before either saved) keep exactly one: the most
-    ///    media, ties broken by sessionID for determinism. The rest go.
-    /// 2. **Sources that fail `shouldImport` go.** The app's own companion recordings (the ghost
-    ///    Quick Sessions) and phone-written workouts. A uuid with NO source entry (the workout
-    ///    was since deleted from HealthKit) is KEPT — can't judge, don't touch.
-    static func staleAnchors(anchors: [AnchorInfo],
-                             sources: [UUID: WorkoutSource]) -> [UUID] {
-        var doomed: [UUID] = []
+    /// 1. **Duplicates collapse** — several anchors for ONE uuid keep the most-media one (ties on
+    ///    sessionID, stable). The rest are deleted.
+    /// 2. **Resolvable** → `stampSource`, so the row can name its true origin.
+    /// 3. **Unresolvable but matched** (same start ± tolerance, same duration ± tolerance, and the
+    ///    candidate isn't already anchored) → `relink` + stamp.
+    /// 4. **Unresolvable and unmatched** → `delete`, but ONLY when `lookupHealthy` (some anchors
+    ///    did resolve, proving reads work). A denied/blipped HealthKit read must never be read as
+    ///    "the user deleted everything".
+    /// 5. Own-source anchors (`shouldImport` false) are deleted — the tracked session owns that data.
+    static func maintain(anchors: [AnchorInfo],
+                         sources: [UUID: WorkoutSource],
+                         candidates: [WorkoutIdentity] = [],
+                         lookupHealthy: Bool) -> [AnchorAction] {
+        var out: [AnchorAction] = []
+        var claimedCandidates = Set(anchors.map(\.workoutUUID))     // never relink onto a live anchor
         let byWorkout = Dictionary(grouping: anchors, by: \.workoutUUID)
-        for (workoutUUID, group) in byWorkout {
-            // The duplicate-collapse keeper: most media wins; ties break on sessionID so the
-            // choice is stable across runs.
-            var keeper: AnchorInfo? = group.min { a, b in
+
+        for workoutUUID in byWorkout.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+            let group = byWorkout[workoutUUID] ?? []
+            let keeper = group.min { a, b in
                 if a.mediaCount != b.mediaCount { return a.mediaCount > b.mediaCount }
                 return a.sessionID.uuidString < b.sessionID.uuidString
             }
-            if let source = sources[workoutUUID],
-               !shouldImport(sourceBundleID: source.bundleID, sourceProductType: source.productType) {
-                keeper = nil    // the whole group is a ghost — nothing survives
+            // Rule 1 — every non-keeper in a duplicate group goes.
+            for dupe in group where dupe.sessionID != keeper?.sessionID {
+                out.append(.delete(sessionID: dupe.sessionID))
             }
-            doomed += group.filter { $0.sessionID != keeper?.sessionID }.map(\.sessionID)
+            guard let anchor = keeper else { continue }
+
+            if let source = sources[workoutUUID] {
+                // Rule 5 then rule 2.
+                if !shouldImport(sourceBundleID: source.bundleID, sourceProductType: source.productType) {
+                    out.append(.delete(sessionID: anchor.sessionID))
+                } else {
+                    out.append(.stampSource(sessionID: anchor.sessionID, source: source))
+                }
+                continue
+            }
+
+            // Rule 3 — a re-synced twin of this exact workout?
+            let match = candidates.first { cand in
+                !claimedCandidates.contains(cand.uuid)
+                    && abs(cand.start.timeIntervalSince(anchor.start)) <= relinkTolerance
+                    && abs(cand.duration - anchor.duration) <= relinkTolerance
+            }
+            if let match {
+                claimedCandidates.insert(match.uuid)
+                out.append(.relink(sessionID: anchor.sessionID, to: match.uuid, source: match.source))
+            } else if lookupHealthy {
+                out.append(.delete(sessionID: anchor.sessionID))   // Rule 4
+            }
         }
-        return doomed.sorted { $0.uuidString < $1.uuidString }   // deterministic for tests/logs
+        return out
     }
 
-    /// Source gate (prompt 127) — decided from WHO WROTE the workout, before any timing logic:
+    /// Source gate — decided from WHO WROTE the workout, before any timing logic.
     ///
-    /// 1. **Snappet's own watch companion never re-imports.** A tracked Quick Session (or routine /
-    ///    Kilter / festival session) with the watch streaming records a real `HKWorkout` under the
-    ///    app's own bundle; the tracked session is authoritative and already holds the data. The
-    ///    FR10 gym-overlap check tried to express this with a midpoint-in-window heuristic — which
-    ///    is why a Quick Session could still ghost into "From Apple Watch" when the windows
-    ///    drifted, and why Kilter (deliberately outside FR10, decision Q2) always did.
-    /// 2. **Only genuine watch recordings import.** The section is CALLED "From Apple Watch"; a
-    ///    workout written by an iPhone app (Google Fit, Strava-on-phone, …) is neither recorded on
-    ///    a watch nor missing from its own app — importing it mislabels its provenance. Product
-    ///    types look like "Watch6,9" / "iPhone14,3"; an absent product type fails closed.
+    /// **Only one rule: never re-import our own recordings.** A session tracked in-app with the
+    /// watch streaming writes an `HKWorkout` under the app's own bundle; the tracked session is
+    /// authoritative and already holds that data, so importing it back would duplicate it. (The
+    /// FR10 gym-overlap check tried to express this as a midpoint-in-window heuristic, which
+    /// missed whenever a long watch workout swallowed a short tracked one.)
     ///
-    /// FR10 stays: it still suppresses a workout the user double-tracked with the *Apple* Workout
-    /// app during an in-app gym session (a foreign source this gate correctly lets through).
-    static func shouldImport(sourceBundleID: String?, sourceProductType: String?,
+    /// Everything else imports, **whoever wrote it**. Prompt 127 additionally demanded a real
+    /// Watch (`productType` "Watch…") on the theory that a section named "From Apple Watch" should
+    /// only hold watch recordings. Device evidence killed that: Apple Health is a shared store and
+    /// this user's climbing sessions are written into it by **Google Health (`com.fitbit
+    /// .FitbitMobile`, productType iPhone…)** — real workouts, with real clips filmed during them.
+    /// Dropping them would have silently stranded that footage. The lie was never the import; it
+    /// was the ⌚ label the app stamped on everything (fixed by storing the true source and
+    /// naming it — `WorkoutSession.importSourceLabel`).
+    static func shouldImport(sourceBundleID: String?, sourceProductType: String? = nil,
                              ownBundlePrefix: String = "com.snappet") -> Bool {
-        if sourceBundleID?.hasPrefix(ownBundlePrefix) == true { return false }
-        return sourceProductType?.hasPrefix("Watch") == true
+        sourceBundleID?.hasPrefix(ownBundlePrefix) != true
     }
 
     /// FR10: does the workout coincide with a user-tracked gym session? True when the workout's

@@ -255,7 +255,9 @@ struct ClipsFeedView: View {
     /// is NOT queryable, so a flag is the only honest gate).
     private var showsHealthOffer: Bool {
         ClipsHealthOffer.shouldShow(
-            hasWatchImportedSession: workoutSessions.contains(where: \.isFromAppleWatch),
+            // Any Health import proves the connection exists — the offer must not re-appear just
+            // because the imports came from Google Health rather than the Watch (prompt 129).
+            hasWatchImportedSession: workoutSessions.contains(where: \.isImportedFromHealth),
             resolved: healthOfferResolved)
     }
 

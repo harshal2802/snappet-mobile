@@ -51,15 +51,13 @@ final class WatchWorkoutImportService {
         // Drop workouts the user DELETED from History (prompt 125): without the tombstone check,
         // a deleted anchor inside the look-back window is simply missing from
         // `anchoredSessionByUUID` and gets re-minted on the very next pass — delete didn't stick.
-        // Then the SOURCE gate (prompt 127): never re-import the app's own watch-companion
-        // recordings (the tracked session is authoritative — a Quick Session must not ghost into
-        // "From Apple Watch"), and only genuine watch recordings qualify for a section with that
-        // name (an iPhone-app-written workout is neither).
+        // Then the source gate: never re-import the app's OWN recordings (the tracked session is
+        // authoritative). Everything else imports whoever wrote it — Apple Health is a shared
+        // store, and a workout logged in Google Health is still the user's workout (prompt 129).
         let tombstones = WatchImportTombstones.all()
         let workouts = ((try? await health.workoutsForImport(since: since)) ?? [])
             .filter { !tombstones.contains($0.id) }
-            .filter { WatchWorkoutReconciler.shouldImport(sourceBundleID: $0.sourceBundleID,
-                                                         sourceProductType: $0.sourceProductType) }
+            .filter { WatchWorkoutReconciler.shouldImport(sourceBundleID: $0.sourceBundleID) }
         guard let unionStart = workouts.map(\.start).min(),
               let unionEnd = workouts.map(\.end).max() else { return Result(minted: 0, attachedClips: 0) }
 
@@ -130,6 +128,10 @@ final class WatchWorkoutImportService {
                 }
                 session.restHR = summaryByUUID[info.workoutUUID]?.restingBpm
                 session.maxHR = profileMaxHR
+                // Remember WHO wrote it, so the row can name its origin instead of the UI
+                // assuming the Watch (prompt 129).
+                session.importSourceName = summaryByUUID[info.workoutUUID]?.sourceName ?? ""
+                session.importSourceProductType = summaryByUUID[info.workoutUUID]?.sourceProductType ?? ""
                 context.insert(session)
                 for c in cands { insertMedia(c, sessionID: session.id, into: context) }
                 minted += 1
@@ -162,19 +164,59 @@ final class WatchWorkoutImportService {
             mediaCounts[m.sessionID, default: 0] += 1
         }
         let infos: [WatchWorkoutReconciler.AnchorInfo] = anchored.compactMap { s in
-            s.healthKitWorkoutUUID.map {
-                WatchWorkoutReconciler.AnchorInfo(sessionID: s.id, workoutUUID: $0,
-                                                  mediaCount: mediaCounts[s.id] ?? 0)
-            }
+            guard let uuid = s.healthKitWorkoutUUID else { return nil }
+            return WatchWorkoutReconciler.AnchorInfo(
+                sessionID: s.id, workoutUUID: uuid, mediaCount: mediaCounts[s.id] ?? 0,
+                start: s.startedAt, duration: s.duration)
         }
         let sources = (try? await health.workoutSources(for: Set(infos.map(\.workoutUUID)))) ?? [:]
-        let doomed = Set(WatchWorkoutReconciler.staleAnchors(anchors: infos, sources: sources))
-        guard !doomed.isEmpty else { return }
+        // "Reads are working" — some anchors resolved. Without this a denied/blipped HealthKit
+        // read would look exactly like "every workout was deleted" and wipe the user's rows.
+        let lookupHealthy = !sources.isEmpty
 
-        for session in anchored where doomed.contains(session.id) {
-            SessionCascade.deleteWorkoutSession(session, in: context)
+        // Candidates for re-linking: every workout in HealthKit spanning the UNRESOLVED anchors.
+        // Fitbit/Google Health rewrite their samples on each sync (new uuid, same workout), which
+        // is what orphans an anchor and — before this — made the importer mint a twin.
+        let orphans = infos.filter { sources[$0.workoutUUID] == nil }
+        var candidates: [WatchWorkoutReconciler.WorkoutIdentity] = []
+        if !orphans.isEmpty, let earliest = orphans.map(\.start).min() {
+            candidates = (try? await health.workoutIdentities(
+                since: earliest.addingTimeInterval(-WatchWorkoutReconciler.relinkTolerance))) ?? []
         }
-        try? context.save()
+
+        let actions = WatchWorkoutReconciler.maintain(anchors: infos, sources: sources,
+                                                      candidates: candidates,
+                                                      lookupHealthy: lookupHealthy)
+        guard !actions.isEmpty else { return }
+        let byID = Dictionary(anchored.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var changed = false
+        for action in actions {
+            switch action {
+            case let .stampSource(sessionID, source):
+                guard let s = byID[sessionID] else { continue }
+                if stamp(source, on: s) { changed = true }
+            case let .relink(sessionID, newUUID, source):
+                guard let s = byID[sessionID] else { continue }
+                s.healthKitWorkoutUUID = newUUID
+                _ = stamp(source, on: s)
+                changed = true
+            case let .delete(sessionID):
+                guard let s = byID[sessionID] else { continue }
+                SessionCascade.deleteWorkoutSession(s, in: context)
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
+    }
+
+    /// Write the resolved provenance onto a session; `true` when something actually changed (so a
+    /// steady-state reconcile does no writes).
+    private func stamp(_ source: WatchWorkoutReconciler.WorkoutSource, on s: WorkoutSession) -> Bool {
+        let name = source.name ?? "", product = source.productType ?? ""
+        guard s.importSourceName != name || s.importSourceProductType != product else { return false }
+        s.importSourceName = name
+        s.importSourceProductType = product
+        return true
     }
 
     private func insertMedia(_ c: SessionMediaService.Candidate, sessionID: UUID, into context: ModelContext) {

@@ -550,6 +550,19 @@ final class WorkoutSession {
     var hkEnergyKcal: Double?
     var hkDistanceMeters: Double?
 
+    /// WHO wrote the imported workout (prompt 129) — the writing app's display name ("Apple Watch",
+    /// "Google Health") and the recording device's product type ("Watch6,9" / "iPhone14,3"), from
+    /// `HKSourceRevision`.
+    ///
+    /// These exist because the app used to equate "came from HealthKit" with "came from the Apple
+    /// Watch" and badged every import ⌚. Apple Health is a *shared store*: Fitbit/Google Health,
+    /// Strava and friends write workouts into it from the PHONE, and those rows were being labelled
+    /// as Watch recordings — a plain lie about provenance, reported from a real device. Empty on
+    /// pre-129 rows until the importer's backfill stamps them; the label then degrades to a neutral
+    /// "Health" rather than naming the wrong device.
+    var importSourceName: String = ""
+    var importSourceProductType: String = ""
+
     init(id: UUID = UUID(), routineID: UUID? = nil, routineName: String,
          startedAt: Date = .now, completedAt: Date? = nil, exercises: [SessionExercise] = [],
          hrSeries: [HRPoint] = [], maxHR: Double? = nil, restHR: Double? = nil,
@@ -573,8 +586,22 @@ final class WorkoutSession {
     }
 
     var isActive: Bool { completedAt == nil }
-    /// `true` when this session was imported from an Apple Watch workout (vs. tracked in-app).
-    var isFromAppleWatch: Bool { healthKitWorkoutUUID != nil }
+    /// `true` when this session was IMPORTED from Apple Health (vs. tracked in-app) — whoever wrote
+    /// it. This is the grouping predicate: such a session has no exercises/sets, so it stays out of
+    /// the tracked-workout pipeline regardless of which app recorded it.
+    var isImportedFromHealth: Bool { healthKitWorkoutUUID != nil }
+    /// `true` only for a workout genuinely recorded ON an Apple Watch — the ⌚ badge's condition.
+    /// A pre-129 row (no stored product type) is NOT claimed as a watch recording: unknown
+    /// provenance must read as unknown, never as a specific device (prompt 129).
+    var isFromAppleWatch: Bool {
+        isImportedFromHealth && importSourceProductType.hasPrefix("Watch")
+    }
+    /// What the UI calls this import's origin: "Apple Watch" for a real watch recording, else the
+    /// writing app's own name ("Google Health"), else a neutral "Health" when unknown.
+    var importSourceLabel: String {
+        if isFromAppleWatch { return "Apple Watch" }
+        return importSourceName.isEmpty ? "Health" : importSourceName
+    }
     var duration: TimeInterval { (completedAt ?? .now).timeIntervalSince(startedAt) }
     var completedSetCount: Int { exercises.reduce(0) { $0 + $1.completedSetCount } }
     var completedExerciseCount: Int { exercises.filter { !$0.skipped && $0.completedSetCount > 0 }.count }

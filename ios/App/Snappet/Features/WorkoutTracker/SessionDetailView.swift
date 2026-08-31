@@ -73,7 +73,7 @@ struct SessionDetailView: View {
             // Apple Watch import (watch-workouts-clips P3): an honest note that this workout was recorded
             // on the watch (no exercises/sets), plus its measured distance/energy — the HR chart + clips
             // sections below carry the rest.
-            if session.isFromAppleWatch { watchSourceSection }
+            if session.isImportedFromHealth { watchSourceSection }
 
             // Type-adaptive recap (E2): the same hero + per-discipline cards the Finish summary shows, so
             // "View detail" is richer — not poorer — than the completion screen. HR is shown by the
@@ -155,16 +155,24 @@ struct SessionDetailView: View {
         }
     }
 
-    // MARK: Apple Watch source note (watch-workouts-clips P3)
+    // MARK: Imported-from-Health source note (watch-workouts-clips P3; honest source, prompt 129)
 
     private var watchSourceSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: "applewatch").foregroundStyle(SnappetColor.perfFresh)
-                    Text("Recorded on Apple Watch").font(.subheadline.weight(.semibold))
+                    Image(systemName: session.isFromAppleWatch ? "applewatch" : "heart.text.square")
+                        .foregroundStyle(SnappetColor.perfFresh)
+                    // Names the actual writer — "Recorded in Google Health" — instead of
+                    // asserting an Apple Watch that may never have been involved.
+                    Text(session.isFromAppleWatch
+                         ? "Recorded on Apple Watch"
+                         : "Recorded in \(session.importSourceLabel)")
+                        .font(.subheadline.weight(.semibold))
                 }
-                Text("This workout was recorded on your Apple Watch, so it has no exercises or sets — just its heart rate and the clips you filmed.")
+                Text(session.isFromAppleWatch
+                     ? "This workout was recorded on your Apple Watch, so it has no exercises or sets — just its heart rate and the clips you filmed."
+                     : "Snappet found this workout in Apple Health, where \(session.importSourceLabel) saved it. It has no exercises or sets — just its heart rate and the clips you filmed.")
                     .font(.caption).foregroundStyle(.secondary)
                 if !watchStatChips.isEmpty {
                     HStack(spacing: 10) {

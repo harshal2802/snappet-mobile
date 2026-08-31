@@ -13,10 +13,21 @@ struct HistorySectionView: View {
     let deleteSession: (WorkoutSession) -> Void
     /// Open the Video Studio over a session (#74) — presented by `WorkoutHomeView`.
     let openStudio: (WorkoutSession) -> Void
-    /// Completed **Apple Watch** workouts imported into Clips (watch-workouts-clips P3), newest first.
-    /// Shown in their own "From Apple Watch" section — kept OUT of `history` (no exercises/sets) so they
-    /// never run through the routine/kind filters or pollute the tracked-workout list. Same detail route.
+    /// Completed workouts IMPORTED from Apple Health (watch-workouts-clips P3), newest first — the
+    /// Watch's own recordings and anything another app wrote into Health (Google Health, Strava…).
+    /// Kept OUT of `history` (no exercises/sets) so they never run through the routine/kind filters
+    /// or pollute the tracked-workout list. Same detail route.
     var watchSessions: [WorkoutSession] = []
+
+    /// The header names what the rows actually are. When every import really is a Watch recording
+    /// it still reads "From Apple Watch"; a mixed (or unknown-provenance) list reads neutrally,
+    /// and each row names its own writer.
+    private var watchSectionTitle: String {
+        watchSessions.allSatisfy(\.isFromAppleWatch) ? "From Apple Watch" : "Imported from Health"
+    }
+    private var watchSectionSymbol: String {
+        watchSessions.allSatisfy(\.isFromAppleWatch) ? "applewatch" : "heart.text.square"
+    }
 
     @State private var query = ""
     /// The routine name the chip row is filtering to; nil = all routines.
@@ -67,7 +78,10 @@ struct HistorySectionView: View {
                         .accessibilityIdentifier("watchHistoryRow")
                     }
                 } header: {
-                    Label("From Apple Watch", systemImage: "applewatch")
+                    // Named for the STORE these came from, not a device: Apple Health is shared,
+                    // and these rows may have been written by the Watch, Google Health, Strava…
+                    // (prompt 129 — the old "From Apple Watch" header mislabelled every import).
+                    Label(watchSectionTitle, systemImage: watchSectionSymbol)
                         .foregroundStyle(SnappetColor.perfFresh)
                 }
             }
@@ -262,13 +276,18 @@ private struct WatchHistoryRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "applewatch")
+            // The glyph follows the real writer: ⌚ only for a genuine Watch recording, a neutral
+            // health mark for anything another app wrote into Apple Health (prompt 129).
+            Image(systemName: session.isFromAppleWatch ? "applewatch" : "heart.text.square")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(SnappetColor.perfFresh)
                 .frame(width: 34)
             VStack(alignment: .leading, spacing: 3) {
                 Text(session.routineName).font(.headline).lineLimit(1)
-                Text(session.startedAt, format: .dateTime.weekday().month().day().hour().minute())
+                // Name the origin ("Google Health · Fri, Aug 21 at 6:30 PM") rather than letting a
+                // ⌚-badged section imply a device that never recorded this.
+                Text("\(session.importSourceLabel) · "
+                     + session.startedAt.formatted(.dateTime.weekday().month().day().hour().minute()))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     Label("\(max(1, Int(session.duration / 60)))m", systemImage: "clock")

@@ -576,6 +576,12 @@ extension SnappetBackup {
         var healthKitWorkoutUUID: UUID? = nil
         var hkEnergyKcal: Double? = nil
         var hkDistanceMeters: Double? = nil
+        /// WHO wrote an imported workout (prompt 129). Optional so backup files written before
+        /// this column shipped still decode (missing key → nil → the model's default) — the
+        /// prompt-07 rule: a new column on a backed-up model gets an Optional row mirror AND a
+        /// restored-model assertion, because snapshot equality is blind to a field no row carries.
+        var importSourceName: String? = nil
+        var importSourceProductType: String? = nil
 
         init(_ m: WorkoutSession) {
             id = m.id; routineID = m.routineID; routineName = m.routineName
@@ -585,14 +591,19 @@ extension SnappetBackup {
             metricsSourceRaw = m.metricsSourceRaw; kcalEstimate = m.kcalEstimate
             healthKitWorkoutUUID = m.healthKitWorkoutUUID
             hkEnergyKcal = m.hkEnergyKcal; hkDistanceMeters = m.hkDistanceMeters
+            importSourceName = m.importSourceName
+            importSourceProductType = m.importSourceProductType
         }
         func make() -> WorkoutSession {
-            WorkoutSession(id: id, routineID: routineID, routineName: routineName,
-                           startedAt: startedAt, completedAt: completedAt, exercises: exercises,
-                           hrSeries: hrSeries, maxHR: maxHR, restHR: restHR,
-                           metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate,
-                           healthKitWorkoutUUID: healthKitWorkoutUUID,
-                           hkEnergyKcal: hkEnergyKcal, hkDistanceMeters: hkDistanceMeters)
+            let s = WorkoutSession(id: id, routineID: routineID, routineName: routineName,
+                                   startedAt: startedAt, completedAt: completedAt, exercises: exercises,
+                                   hrSeries: hrSeries, maxHR: maxHR, restHR: restHR,
+                                   metricsSourceRaw: metricsSourceRaw, kcalEstimate: kcalEstimate,
+                                   healthKitWorkoutUUID: healthKitWorkoutUUID,
+                                   hkEnergyKcal: hkEnergyKcal, hkDistanceMeters: hkDistanceMeters)
+            s.importSourceName = importSourceName ?? ""
+            s.importSourceProductType = importSourceProductType ?? ""
+            return s
         }
         var sortKey: String { id.uuidString }
     }

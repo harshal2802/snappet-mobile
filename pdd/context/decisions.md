@@ -9237,3 +9237,25 @@ Non-obvious calls:
   and `SessionCascade` deletes, its tombstone doubling as the re-mint guard. Runs before the
   Photos gate so it works without auto-discovery. Asking the user to hand-delete app-created
   garbage is not a fix.
+
+## 2026-08-31 — Apple Health is a SHARED store (prompt 129, supersedes 127/128)
+
+- **"Came from HealthKit" never meant "came from the Apple Watch."** `isFromAppleWatch` was
+  `healthKitWorkoutUUID != nil`, so every import was badged ⌚ under a "From Apple Watch" header. On
+  the user's device, their climbing sessions are written into Health by **Google Health**
+  (`com.fitbit.FitbitMobile`, productType `iPhone14,3`). Sessions now STORE their writer
+  (`importSourceName` / `importSourceProductType`, backup-mirrored) and the UI names it;
+  `isImportedFromHealth` is the grouping predicate, `isFromAppleWatch` the ⌚ one, and unknown
+  provenance degrades to a neutral "Health" rather than asserting a device.
+- **Don't drop a workout because of who wrote it.** Prompt 127's watch-only gate would have
+  silently stranded the clips filmed during those Google Health workouts. The only import rule left
+  is "never re-import our OWN recordings"; the bug was always the label, not the import.
+- **Unresolvable ≠ deleted.** Fitbit/Google Health rewrite their samples on every sync, so the same
+  workout returns under a NEW uuid — which orphaned anchors AND minted duplicate rows. Prompt 128
+  read that as "the user deleted it" and would have destroyed real sessions. `maintain(...)` now
+  **re-links** an orphan to its re-synced twin (start ± 60 s, duration ± 60 s) and deletes only
+  own-source anchors, duplicate non-keepers, and truly-vanished ones — the last only when the
+  lookup is demonstrably healthy, so a denied read can't wipe history.
+- **Method note:** three fixes in a row were wrong because they were reasoned from the code's own
+  assumptions. The device probe (source bundle/name/productType per anchor) settled it in one pass.
+  When provenance is in question, read the provenance — don't infer it.
