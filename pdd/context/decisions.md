@@ -9297,3 +9297,14 @@ Non-obvious calls:
 - The guard runs **5 passes per host, on device as well as simulator** — the race was hardware
   timing, so a simulator-only pass would have proven little. Both hosts are covered because both
   pushed. Distinct frames per pass, since a repeated draft would hit the duplicate path instead.
+
+## 2026-08-31 — test isolation must cover UserDefaults, not just the store (prompt 133)
+
+- **`-uiTestFreshStore` isolates SwiftData, NOT UserDefaults.** Watch-import tombstones lived in
+  `.standard`, so a UI test deleting an imported session would have permanently excluded one of the
+  user's REAL workouts from future imports — the in-memory store made the delete look throwaway
+  while the side effect persisted. Tombstones now go to a scratch suite under that launch arg.
+  Rule: any device-local bookkeeping a test can trigger needs the same treatment.
+- **The half of a feature that's "just wiring" is the half that goes untested.** Prompt 125 tested
+  that deleting records a tombstone but never that the import gate honours one. Extracted to pure
+  `WatchWorkoutReconciler.importable(...)` and covered.

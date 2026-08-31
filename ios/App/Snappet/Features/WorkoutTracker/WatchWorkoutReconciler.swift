@@ -191,6 +191,27 @@ enum WatchWorkoutReconciler {
         return out
     }
 
+    /// One workout as the import gate sees it — plain values snapshotted at the service edge.
+    struct ImportCandidate: Equatable, Sendable {
+        var uuid: UUID
+        var sourceBundleID: String?
+    }
+
+    /// Which fetched workouts may be imported at all (prompt 133) — extracted from `reconcile` so
+    /// the "a deleted import stays deleted" policy is testable rather than inline plumbing.
+    ///
+    /// 1. **Tombstoned uuids never return.** Reconcile re-scans a 7-day look-back, so without this a
+    ///    workout the user deleted from History is simply missing from `anchoredSessionByUUID` and
+    ///    gets re-minted on the very next pass — delete wouldn't stick (prompt 125).
+    /// 2. Then the source gate below (never re-import our own recordings).
+    static func importable<T>(_ workouts: [T], tombstones: Set<UUID>,
+                              candidate: (T) -> ImportCandidate) -> [T] {
+        workouts.filter { workout in
+            let c = candidate(workout)
+            return !tombstones.contains(c.uuid) && shouldImport(sourceBundleID: c.sourceBundleID)
+        }
+    }
+
     /// Source gate — decided from WHO WROTE the workout, before any timing logic.
     ///
     /// **Only one rule: never re-import our own recordings.** A session tracked in-app with the

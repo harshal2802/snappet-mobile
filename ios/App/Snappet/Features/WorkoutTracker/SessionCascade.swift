@@ -15,12 +15,27 @@ import SwiftData
 /// not user data — deliberately outside SwiftData/backup).
 enum WatchImportTombstones {
     static let key = "watchImport.deletedWorkoutUUIDs"
+    /// The suite UI-test launches write to instead of `.standard` (prompt 133).
+    static let uiTestSuiteName = "uitest.watchImport"
 
-    static func all(defaults: UserDefaults = .standard) -> Set<UUID> {
+    /// Where tombstones live for THIS launch.
+    ///
+    /// A UI test runs against an in-memory store, so its deletes are throwaway — but tombstones are
+    /// UserDefaults, which the in-memory swap does NOT isolate. A test that deleted an imported
+    /// session would therefore write a REAL tombstone and permanently exclude that workout from the
+    /// user's actual app, long after the test store evaporated. Under `-uiTestFreshStore` they go to
+    /// a scratch suite instead; the shipped app is unaffected (`.standard`, as before).
+    static var store: UserDefaults {
+        guard ProcessInfo.processInfo.arguments.contains("-uiTestFreshStore"),
+              let suite = UserDefaults(suiteName: uiTestSuiteName) else { return .standard }
+        return suite
+    }
+
+    static func all(defaults: UserDefaults = WatchImportTombstones.store) -> Set<UUID> {
         Set((defaults.stringArray(forKey: key) ?? []).compactMap(UUID.init(uuidString:)))
     }
 
-    static func record(_ uuid: UUID, defaults: UserDefaults = .standard) {
+    static func record(_ uuid: UUID, defaults: UserDefaults = WatchImportTombstones.store) {
         var uuids = all(defaults: defaults)
         guard uuids.insert(uuid).inserted else { return }
         defaults.set(uuids.map(\.uuidString).sorted(), forKey: key)
@@ -39,7 +54,7 @@ enum SessionCascade {
     /// `FeedActivity` rows are deliberately left alone: that log is append-only by design and the
     /// Recap feed derives its cards from live sessions, so an orphan activity row is dormant.
     static func deleteWorkoutSession(_ session: WorkoutSession, in context: ModelContext,
-                                     defaults: UserDefaults = .standard) {
+                                     defaults: UserDefaults = WatchImportTombstones.store) {
         if let watchUUID = session.healthKitWorkoutUUID {
             WatchImportTombstones.record(watchUUID, defaults: defaults)
         }
