@@ -9269,3 +9269,20 @@ Non-obvious calls:
 - **Display merges; derivation does not.** `WorkoutHomeView` still keeps `history` (tracked-only)
   for analytics, PRs, the dashboard and Studio candidates — imports carry no exercises/sets and
   would skew every one of them. Only the History screen unions the two.
+
+## 2026-08-31 — History filters live in a sheet (prompt 131)
+
+- **The default state of a list screen is the list.** Three stacked facet rows cost ~280 pt and left
+  two sessions above the fold. Facets now live in a sheet behind ONE slim row (labelled button +
+  count). Wireframed first (`docs/ux-research/history-filters/`), four options compared, user picked
+  C and asked for it hardened.
+- **A filter entry point must be a WORD, not just a glyph.** The Kilter drawer proved an icon-only
+  affordance goes unfound; "Filters" is labelled, badges its active count, and fills in when on.
+- **Live-apply beats Apply.** Medium detent + `presentationBackgroundInteraction` means the list
+  re-filters behind the sheet as chips are tapped; the primary action states the outcome ("Show 12
+  sessions") rather than hiding it behind a generic Done.
+- **Hidden chrome must never mean hidden state.** The count line is ALWAYS visible ("237 sessions" /
+  "12 of 237 sessions"), active facets return as removable tokens, and filters stay `@State` so they
+  can't persist out of sight — the failure mode prompt 130 existed to remove.
+- **No dead ends.** Imported + a tracking type can never match (imports carry no sets); that case
+  says so and offers Clear filters instead of a blank list.

@@ -27,6 +27,69 @@ struct HistorySectionView: View {
     @State private var kindFilter: Set<SetKind> = []
     /// Source facet (prompt 130): empty = show tracked AND imported, the default.
     @State private var sourceFilter: Set<HistorySource> = []
+    /// The filter sheet (prompt 131). Facets used to live in three permanently-stacked chip rows —
+    /// ~280 pt of chrome that left only two sessions above the fold and grew with every new routine
+    /// name. They now live in a sheet behind a labelled button; the screen's default state is your
+    /// history, not a control panel.
+    @State private var showingFilters = false
+
+    /// Every facet is `@State`, never `@AppStorage`: a filter that survived out of sight would
+    /// recreate the bug this screen just shed (History quietly hiding half of itself). Switching
+    /// segments rebuilds this view — `sectionContent.id(section)` — so filters clear themselves;
+    /// pushing into a session detail and coming back deliberately keeps them.
+    private var activeFilterCount: Int {
+        sourceFilter.count + kindFilter.count + (effectiveFilter == nil ? 0 : 1)
+    }
+    private var isFiltering: Bool { activeFilterCount > 0 }
+
+    /// One removable chip per active facet value.
+    private struct FilterToken: Identifiable {
+        let id: String
+        let label: String
+        let clear: () -> Void
+    }
+
+    private var activeTokens: [FilterToken] {
+        var out: [FilterToken] = []
+        for source in HistorySource.allCases where sourceFilter.contains(source) {
+            out.append(FilterToken(id: "source.\(source.rawValue)", label: source.title) {
+                sourceFilter.remove(source)
+            })
+        }
+        if let routine = effectiveFilter {
+            out.append(FilterToken(id: "routine.\(routine)", label: routine) { routineFilter = nil })
+        }
+        for kind in SetKind.allCases where kindFilter.contains(kind) {
+            out.append(FilterToken(id: "kind.\(kind.rawValue)", label: kind.display) {
+                kindFilter.remove(kind)
+            })
+        }
+        return out
+    }
+
+    /// Always shown (the user's call): "237 sessions" idle, "12 of 237 sessions" while filtering —
+    /// so a filter can never quietly shrink History without saying so.
+    private var countLine: String {
+        let shown = filtered.count, total = allSessions.count
+        let noun = total == 1 ? "session" : "sessions"
+        return isFiltering ? "\(shown) of \(total) \(noun)" : "\(total) \(noun)"
+    }
+
+    /// Why the filtered list came back empty. The imported-plus-tracking-type case is genuinely
+    /// unsatisfiable rather than merely narrow, so it gets its own sentence.
+    private var emptyFilterExplanation: String {
+        if sourceFilter == [.imported], !kindFilter.isEmpty {
+            return "Imported workouts carry no sets, so they never match a tracking type."
+        }
+        if !query.isEmpty { return "Nothing matches “\(query)” with these filters." }
+        return "No sessions match every filter you've picked."
+    }
+
+    private func clearAllFilters() {
+        sourceFilter = []
+        routineFilter = nil
+        kindFilter = []
+    }
 
     /// Everything, newest first — the list this screen actually shows. Imports used to live in a
     /// separate section that vanished the moment ANY filter or search was active, so filtering
@@ -110,16 +173,18 @@ struct HistorySectionView: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic),
                     prompt: "Search by routine")
         .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                // Source facet first — the coarsest cut, and the one that replaces the old
-                // disappearing-section behavior (prompt 130). Only when both kinds exist.
-                if !history.isEmpty && !watchSessions.isEmpty { sourceChips }
-                // Also shown while a filter is active with one routine left, so it can be toggled off.
-                if routineNames.count > 1 || effectiveFilter != nil { routineChips }
-                // Tracking-type facet (workout-with-timer PR 6): always offered once any session exists,
-                // so a kind can always be toggled on/off (it sits alongside the routine chips).
-                if !history.isEmpty { kindChips }
-            }
+            if !allSessions.isEmpty { filterBar }
+        }
+        .sheet(isPresented: $showingFilters) {
+            HistoryFilterSheet(sources: $sourceFilter, routine: $routineFilter, kinds: $kindFilter,
+                               routineNames: routineNames,
+                               offersSource: !history.isEmpty && !watchSessions.isEmpty,
+                               matchCount: filtered.count,
+                               onClearAll: clearAllFilters)
+                // Medium detent so the list re-filters LIVE behind the sheet as chips are tapped —
+                // no apply → dismiss → check → reopen loop.
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
         .overlay {
             if allSessions.isEmpty {
@@ -128,99 +193,214 @@ struct HistorySectionView: View {
                 } description: {
                     Text("Finish a workout and it will appear here with your stats.")
                 }
+            } else if filtered.isEmpty, isFiltering {
+                // Never a bare blank list: say WHY nothing matched and offer the way out. The
+                // contradictory combination is called out by name, because "Imported + Reps &
+                // weight" can never match — imports carry no sets at all.
+                ContentUnavailableView {
+                    Label("No sessions match", systemImage: "line.3.horizontal.decrease.circle")
+                } description: {
+                    Text(emptyFilterExplanation)
+                } actions: {
+                    Button("Clear filters", action: clearAllFilters)
+                        .buttonStyle(.borderedProminent)
+                        .tint(SnappetColor.workout)
+                        .accessibilityIdentifier("history.emptyClearFilters")
+                }
             } else if filtered.isEmpty {
-                ContentUnavailableView.search(text: query.isEmpty ? (effectiveFilter ?? "—") : query)
+                ContentUnavailableView.search(text: query)
             }
         }
     }
 
-    /// Source facet (prompt 130): Tracked / Imported. Nothing selected = both, which is the
-    /// default — History opens showing everything you've ever done.
-    private var sourceChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(HistorySource.allCases) { source in
-                    let on = sourceFilter.contains(source)
-                    Button {
-                        if on { sourceFilter.remove(source) } else { sourceFilter.insert(source) }
-                    } label: {
-                        Label(source.title, systemImage: source.symbol)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(on ? SnappetColor.workout.opacity(0.2)
-                                           : Color(.secondarySystemFill), in: Capsule())
-                            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+    /// The one always-present row (prompt 131): a LABELLED "Filters" button — an unlabelled icon is
+    /// the affordance the Kilter tester never found — and the honest count beside it. When filters
+    /// are active a second line of removable tokens appears, so state is never invisible.
+    private var filterBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button { showingFilters = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: isFiltering
+                              ? "line.3.horizontal.decrease.circle.fill"
+                              : "line.3.horizontal.decrease.circle")
+                        Text("Filters").fontWeight(.semibold)
+                        if activeFilterCount > 0 {
+                            Text("\(activeFilterCount)")
+                                .font(.caption2.weight(.heavy))
+                                .padding(.horizontal, 6).padding(.vertical, 1)
+                                .background(SnappetColor.workout, in: Capsule())
+                                .foregroundStyle(.black)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .snappetAnimation(SnappetMotion.quick, value: on)
-                    .accessibilityIdentifier("history.sourceChip.\(source.rawValue)")
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .font(.subheadline)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(isFiltering ? SnappetColor.workout.opacity(0.2)
+                                            : Color(.secondarySystemFill), in: Capsule())
+                    .foregroundStyle(isFiltering ? SnappetColor.workout : Color.primary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("history.filtersButton")
+
+                Spacer(minLength: 6)
+
+                Text(countLine)
+                    .font(.caption)
+                    .foregroundStyle(SnappetColor.textSecondary)
+                    .accessibilityIdentifier("history.countLine")
             }
             .padding(.horizontal)
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
+
+            if !activeTokens.isEmpty { tokenRow }
         }
         .background(.bar)
     }
 
-    /// One chip per distinct routine name (most recent first); tap to filter, tap again to clear.
-    /// Shown when history spans more than one routine, or while a filter is active.
-    private var routineChips: some View {
+    /// Removable tokens for what's currently narrowing the list, plus Clear all.
+    private var tokenRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(routineNames, id: \.self) { name in
-                    let on = routineFilter == name
-                    Button { routineFilter = on ? nil : name } label: {
-                        Text(name)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(on ? SnappetColor.workout.opacity(0.2)
-                                           : Color(.secondarySystemFill), in: Capsule())
-                            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+                ForEach(activeTokens) { token in
+                    Button(action: token.clear) {
+                        HStack(spacing: 5) {
+                            Text(token.label).lineLimit(1)
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                        }
+                        .font(.subheadline)
+                        .padding(.horizontal, 11).padding(.vertical, 5)
+                        .background(SnappetColor.workout.opacity(0.18), in: Capsule())
+                        .foregroundStyle(SnappetColor.workout)
                     }
                     .buttonStyle(.plain)
-                    .snappetAnimation(SnappetMotion.quick, value: on)
-                    .accessibilityIdentifier("historyFilterChip")
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .accessibilityIdentifier("history.token")
                 }
+                Button("Clear all", action: clearAllFilters)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SnappetColor.textSecondary)
+                    .accessibilityIdentifier("history.clearAll")
             }
             .padding(.horizontal)
-            .padding(.vertical, 6)
+            .padding(.bottom, 7)
         }
-        .background(.bar)
     }
 
-    /// Tracking-type facet (workout-with-timer PR 6): one toggle chip per `SetKind` — keep sessions
-    /// whose exercises track ANY selected kind (empty = all). Mirrors the routine-chip styling; each
-    /// chip is a LEAF (id `history.kindChip.<rawValue>`) so iOS 26 doesn't collapse the a11y subtree.
-    private var kindChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(SetKind.allCases, id: \.self) { kind in
-                    let on = kindFilter.contains(kind)
-                    Button {
-                        if on { kindFilter.remove(kind) } else { kindFilter.insert(kind) }
-                    } label: {
-                        Label(kind.display, systemImage: kind.symbol)
-                            .font(.subheadline)
-                            .lineLimit(1)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(on ? SnappetColor.workout.opacity(0.2)
-                                           : Color(.secondarySystemFill), in: Capsule())
-                            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+}
+
+/// The History filter sheet (prompt 131) — every facet in one place, behind the labelled "Filters"
+/// button, so the screen's resting state is history rather than three rows of chips.
+///
+/// **Live-applying by design**: the chips write straight through to the caller's `@State`, and the
+/// sheet is presented at a medium detent with background interaction enabled, so the list re-filters
+/// behind it as you tap. There is no Apply button to forget; the primary action just states the
+/// outcome ("Show 12 sessions") and dismisses.
+struct HistoryFilterSheet: View {
+    @Binding var sources: Set<HistorySource>
+    @Binding var routine: String?
+    @Binding var kinds: Set<SetKind>
+    let routineNames: [String]
+    /// Hidden when the user has only one kind of session — a facet that can't narrow anything is noise.
+    let offersSource: Bool
+    let matchCount: Int
+    let onClearAll: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var isFiltering: Bool { !sources.isEmpty || routine != nil || !kinds.isEmpty }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if offersSource {
+                        section("Source") {
+                            ForEach(HistorySource.allCases) { source in
+                                chip(source.title, symbol: source.symbol,
+                                     on: sources.contains(source),
+                                     id: "history.filter.source.\(source.rawValue)") {
+                                    if sources.contains(source) { sources.remove(source) }
+                                    else { sources.insert(source) }
+                                }
+                            }
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .snappetAnimation(SnappetMotion.quick, value: on)
-                    .accessibilityIdentifier("history.kindChip.\(kind.rawValue)")
-                    .accessibilityAddTraits(on ? .isSelected : [])
+                    if !routineNames.isEmpty {
+                        section("Routine") {
+                            ForEach(routineNames, id: \.self) { name in
+                                chip(name, symbol: nil, on: routine == name,
+                                     id: "history.filter.routine") {
+                                    routine = (routine == name) ? nil : name
+                                }
+                            }
+                        }
+                    }
+                    section("Tracking type") {
+                        ForEach(SetKind.allCases, id: \.self) { kind in
+                            chip(kind.display, symbol: kind.symbol, on: kinds.contains(kind),
+                                 id: "history.filter.kind.\(kind.rawValue)") {
+                                if kinds.contains(kind) { kinds.remove(kind) } else { kinds.insert(kind) }
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button { dismiss() } label: {
+                    // States the outcome rather than a bare "Done": you know what you're getting
+                    // before you commit, and the number moves as you tap.
+                    Text(isFiltering
+                         ? "Show \(matchCount) session\(matchCount == 1 ? "" : "s")"
+                         : "Done")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(SnappetColor.workout)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+                .accessibilityIdentifier("history.filter.apply")
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Clear all", action: onClearAll)
+                        .disabled(!isFiltering)
+                        .accessibilityIdentifier("history.filter.clearAll")
                 }
             }
-            .padding(.horizontal)
-            .padding(.vertical, 6)
         }
-        .background(.bar)
+    }
+
+    private func section<Content: View>(_ title: String,
+                                        @ViewBuilder chips: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold))
+                .kerning(0.8)
+                .foregroundStyle(SnappetColor.textSecondary)
+            FlexibleHStack(spacing: 8) { chips() }
+        }
+    }
+
+    private func chip(_ label: String, symbol: String?, on: Bool, id: String,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let symbol { Image(systemName: symbol).font(.caption) }
+                Text(label).lineLimit(1)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(on ? SnappetColor.workout.opacity(0.2) : Color(.secondarySystemFill),
+                        in: Capsule())
+            .foregroundStyle(on ? SnappetColor.workout : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

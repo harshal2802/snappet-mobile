@@ -5,9 +5,11 @@ import XCTest
 /// tracking any selected kind, alongside the existing routine-name + text search (issue #73).
 ///
 /// Drives the real flow: Quick Start a freeform session → log ONE Timed set (Manual mode, an exact
-/// value) → Finish → open History → toggle the "Time" chip (`history.kindChip.duration`) and assert
-/// the just-finished session row is still shown, then toggle the "Reps & weight" chip
-/// (`history.kindChip.repsWeight`) — a kind this session does NOT track — and assert it's hidden.
+/// value) → Finish → open History → open the **Filters sheet** (prompt 131 moved the facets off the
+/// screen behind a labelled button) → toggle "Time" (`history.filter.kind.duration`) and assert the
+/// just-finished session row is still shown, then toggle "Reps & weight"
+/// (`history.filter.kind.repsWeight`) — a kind this session does NOT track — and assert it's hidden,
+/// finishing on the dead-end guard's "Clear filters" action.
 /// The store is launched fresh (`-uiTestFreshStore`), so History holds exactly the one timed session
 /// and the chip's narrow/widen is unambiguous.
 ///
@@ -117,29 +119,61 @@ import XCTest
         sleep(1); snap("06-history")
         XCTAssertTrue(rowExists(timeout: 6), "the finished session should appear in History before filtering")
 
-        // 4 — Toggle the "Time" chip (matches the Timed session) → the row stays shown.
-        let timeChip = app.descendants(matching: .any).matching(identifier: "history.kindChip.duration").firstMatch
-        XCTAssertTrue(timeChip.waitForExistence(timeout: 6), "the Time tracking-type chip should render")
+        // 4 — Open the Filters sheet (prompt 131: the facets moved off the screen into a sheet
+        // behind a labelled button) and toggle "Time" (matches the Timed session) → the row stays.
+        openFilters()
+        let timeChip = app.descendants(matching: .any).matching(identifier: "history.filter.kind.duration").firstMatch
+        XCTAssertTrue(timeChip.waitForExistence(timeout: 6), "the Time tracking-type chip should render in the sheet")
         timeChip.tap()
+        applyFilters()
         sleep(1); snap("07-time-on")
         XCTAssertTrue(rowExists(timeout: 4),
                       "filtering by Time should keep the session that tracked a Timed set")
 
         // 5 — Also turn on "Reps & weight" (a kind this session does NOT track). The selection is a
         // union, so the timed session still matches via Time and stays shown.
-        let repsChip = app.descendants(matching: .any).matching(identifier: "history.kindChip.repsWeight").firstMatch
+        openFilters()
+        let repsChip = app.descendants(matching: .any).matching(identifier: "history.filter.kind.repsWeight").firstMatch
         XCTAssertTrue(repsChip.waitForExistence(timeout: 4), "the Reps & weight chip should render")
         repsChip.tap()
+        applyFilters()
         sleep(1); snap("08-reps-also-on")
         XCTAssertTrue(rowExists(timeout: 4),
                       "Time + Reps & weight is a union — the timed session still matches via Time")
 
         // 6 — Turn "Time" back off, leaving only "Reps & weight" selected. The Timed-only session no
         // longer matches any selected kind → it's hidden (the distinctive narrowing assertion).
-        timeChip.tap()
+        openFilters()
+        app.descendants(matching: .any).matching(identifier: "history.filter.kind.duration").firstMatch.tap()
+        applyFilters()
         sleep(1); snap("09-only-reps")
         XCTAssertFalse(rowExists(timeout: 2),
                        "with only Reps & weight selected, the Timed-only session must be filtered out")
+
+        // 7 — The dead-end guard: nothing matches, so the empty state offers a way out rather than
+        // leaving a blank list.
+        XCTAssertTrue(app.buttons["history.emptyClearFilters"].waitForExistence(timeout: 4),
+                      "an empty filtered list must offer Clear filters")
+        app.buttons["history.emptyClearFilters"].tap()
+        sleep(1); snap("10-cleared")
+        XCTAssertTrue(rowExists(timeout: 4), "clearing filters brings the session back")
+    }
+
+    /// Open the History filter sheet via its labelled button (prompt 131).
+    private func openFilters() {
+        let button = app.buttons["history.filtersButton"]
+        XCTAssertTrue(button.waitForExistence(timeout: 6), "History should offer a labelled Filters button")
+        button.tap()
+        sleep(1)
+    }
+
+    /// Dismiss the sheet with its primary action ("Show N sessions" / "Done"). The sheet live-applies,
+    /// so this only closes it — but asserting on rows behind a presented sheet is unreliable.
+    private func applyFilters() {
+        let apply = app.buttons["history.filter.apply"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 4), "the sheet should offer its primary action")
+        apply.tap()
+        sleep(1)
     }
 
     /// Any History session row, queried type-agnostically (the row is a value-based `NavigationLink`
