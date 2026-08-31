@@ -9214,3 +9214,14 @@ Non-obvious calls:
   column to a backed-up model means (1) mirror it into its Row **as an Optional** (old files must
   decode), (2) assert it on the restored MODEL in `SnappetBackupTests` — a snapshot comparison is
   structurally blind to this drift.
+
+## 2026-08-31 — watch-import source gate (prompt 127): identity beats timing
+
+- **"Did WE record this?" is an identity question, not a timing question.** The watch importer
+  suppressed the app's own recordings only via FR10's midpoint-in-gym-interval heuristic — which
+  drifted (a Quick Session ghosted into "From Apple Watch" on a real device) and never covered
+  Kilter (Q2 excluded it while reasoning about *foreign* watch climbs, not our own companion's
+  recording). `shouldImport` now rejects any `com.snappet*` source outright, and admits only
+  workouts whose recording device is a real Watch (`productType` "Watch…", nil fails closed) — an
+  iPhone-app-written workout under a "From Apple Watch" badge is a provenance lie. FR10 survives
+  for its remaining honest case: the user double-tracking with the Apple Workout app.

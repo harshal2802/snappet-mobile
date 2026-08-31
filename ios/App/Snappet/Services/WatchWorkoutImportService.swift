@@ -47,9 +47,15 @@ final class WatchWorkoutImportService {
         // Drop workouts the user DELETED from History (prompt 125): without the tombstone check,
         // a deleted anchor inside the look-back window is simply missing from
         // `anchoredSessionByUUID` and gets re-minted on the very next pass — delete didn't stick.
+        // Then the SOURCE gate (prompt 127): never re-import the app's own watch-companion
+        // recordings (the tracked session is authoritative — a Quick Session must not ghost into
+        // "From Apple Watch"), and only genuine watch recordings qualify for a section with that
+        // name (an iPhone-app-written workout is neither).
         let tombstones = WatchImportTombstones.all()
         let workouts = ((try? await health.workoutsForImport(since: since)) ?? [])
             .filter { !tombstones.contains($0.id) }
+            .filter { WatchWorkoutReconciler.shouldImport(sourceBundleID: $0.sourceBundleID,
+                                                         sourceProductType: $0.sourceProductType) }
         guard let unionStart = workouts.map(\.start).min(),
               let unionEnd = workouts.map(\.end).max() else { return Result(minted: 0, attachedClips: 0) }
 
