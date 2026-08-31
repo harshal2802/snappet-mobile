@@ -17,10 +17,12 @@ struct WorkoutSummary: Identifiable, Hashable {
     /// The workout's specific `HKWorkoutActivityType`, mapped to a display label ("Outdoor Run",
     /// "Functional Strength", …) — finer than the coarse engine `Activity`. `nil` on the list path.
     var activityLabel: String? = nil
-    /// Who WROTE the workout (prompt 127), from `HKSourceRevision`: the recording app's bundle id
-    /// and the recording device's product type ("Watch6,9" / "iPhone14,3"). The watch importer
-    /// gates on these — identity, where the old gym-overlap heuristic was only timing. `nil` on
-    /// the list path, which never reads them.
+    /// Who WROTE the workout, from `HKSourceRevision`: the app's display name ("Apple Watch",
+    /// "Google Health"), its bundle id, and the recording device's product type ("Watch6,9" /
+    /// "iPhone14,3"). Apple Health is a shared store — these are what let the app say truthfully
+    /// where an import came from instead of assuming the Watch (prompt 129). `nil` on the list
+    /// path, which never reads them.
+    var sourceName: String? = nil
     var sourceBundleID: String? = nil
     var sourceProductType: String? = nil
     var duration: Double { end.timeIntervalSince(start) }
@@ -171,6 +173,7 @@ final class HealthKitService: @unchecked Sendable {
                     .sumQuantity()?.doubleValue(for: .kilocalorie()),
                 distanceMeters: Self.distanceMeters(of: wk),
                 activityLabel: Self.label(wk.workoutActivityType),
+                sourceName: wk.sourceRevision.source.name,
                 sourceBundleID: wk.sourceRevision.source.bundleIdentifier,
                 sourceProductType: wk.sourceRevision.productType)
         }
@@ -193,11 +196,36 @@ final class HealthKitService: @unchecked Sendable {
         }
         var out: [UUID: WatchWorkoutReconciler.WorkoutSource] = [:]
         for wk in samples.compactMap({ $0 as? HKWorkout }) {
-            out[wk.uuid] = WatchWorkoutReconciler.WorkoutSource(
-                bundleID: wk.sourceRevision.source.bundleIdentifier,
-                productType: wk.sourceRevision.productType)
+            out[wk.uuid] = Self.source(of: wk)
         }
         return out
+    }
+
+    /// Every workout ending on/after `since`, as plain identity values (uuid + window + writer) —
+    /// the candidate set for re-linking an anchor whose original uuid vanished because its writer
+    /// re-synced it (prompt 129). Deliberately lighter than `workoutsForImport`: no HR, no energy,
+    /// no per-workout statistics, since the caller only matches on start/duration.
+    func workoutIdentities(since: Date) async throws -> [WatchWorkoutReconciler.WorkoutIdentity] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let pred = HKQuery.predicateForSamples(withStart: since, end: nil, options: [])
+        let samples = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[HKSample], Error>) in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: pred,
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, result, error in
+                if let error { cont.resume(throwing: error) } else { cont.resume(returning: result ?? []) }
+            }
+            store.execute(q)
+        }
+        return samples.compactMap { $0 as? HKWorkout }.map {
+            WatchWorkoutReconciler.WorkoutIdentity(uuid: $0.uuid, start: $0.startDate,
+                                                   duration: $0.endDate.timeIntervalSince($0.startDate),
+                                                   source: Self.source(of: $0))
+        }
+    }
+
+    private static func source(of wk: HKWorkout) -> WatchWorkoutReconciler.WorkoutSource {
+        WatchWorkoutReconciler.WorkoutSource(name: wk.sourceRevision.source.name,
+                                             bundleID: wk.sourceRevision.source.bundleIdentifier,
+                                             productType: wk.sourceRevision.productType)
     }
 
     /// Total distance across the distance quantity types a workout might carry (walk/run, cycling,

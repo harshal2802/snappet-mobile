@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 38, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 39, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -179,6 +179,30 @@ final class SnappetBackupTests: XCTestCase {
         XCTAssertEqual(restored.currentPriceCheckedAt, Date(timeIntervalSince1970: 1_756_000_000))
         XCTAssertEqual(restored.currentPriceCurrencyRaw, "EUR")
         XCTAssertEqual(restored.coverPhotoRoleRaw, "worn")
+    }
+
+    /// Prompt 129: an import's provenance survives a restore. Without the row mirror the restored
+    /// session would lose `importSourceName`/`importSourceProductType` and silently re-appear as a
+    /// ⌚ "From Apple Watch" row — the very lie this initiative removed.
+    func testImportedSessionProvenanceSurvivesRestore() throws {
+        let context = sourceContainer.mainContext
+        let session = WorkoutSession(routineName: "Climbing", completedAt: .now,
+                                     healthKitWorkoutUUID: UUID())
+        session.importSourceName = "Google Health"
+        session.importSourceProductType = "iPhone14,3"
+        context.insert(session)
+        try context.save()
+
+        let decoded = try SnappetBackup.decode(try SnappetBackup.encode(
+            try SnappetBackup.snapshot(of: context)))
+        let target = targetContainer.mainContext
+        try SnappetBackup.restore(decoded, into: target)
+
+        let restored = try XCTUnwrap(target.fetch(FetchDescriptor<WorkoutSession>()).first)
+        XCTAssertEqual(restored.importSourceName, "Google Health")
+        XCTAssertEqual(restored.importSourceProductType, "iPhone14,3")
+        XCTAssertFalse(restored.isFromAppleWatch, "still not a Watch recording after a round trip")
+        XCTAssertEqual(restored.importSourceLabel, "Google Health")
     }
 
     func testRestoreReplacesExistingDataIncludingUniqueKeyOverlap() throws {
@@ -519,6 +543,15 @@ final class SnappetBackupTests: XCTestCase {
         wardrobeItem.currentPriceCurrencyRaw = "EUR"
         wardrobeItem.coverPhotoRoleRaw = "worn"
         context.insert(wardrobeItem)
+        // An IMPORTED session carrying its provenance (prompt 129) — the restored row must still
+        // know Google Health wrote it, or it would resurface labelled as a Watch recording.
+        let importedSession = WorkoutSession(routineName: "Climbing",
+                                             startedAt: Date(timeIntervalSince1970: 1_700_010_500),
+                                             completedAt: Date(timeIntervalSince1970: 1_700_012_300),
+                                             healthKitWorkoutUUID: UUID())
+        importedSession.importSourceName = "Google Health"
+        importedSession.importSourceProductType = "iPhone14,3"
+        context.insert(importedSession)
         // An EXTRA photo of that item (wardrobe prompt 04) — the cover itself rides the item above,
         // so this row is the "back of the shirt" case, with a non-default role and sortIndex.
         context.insert(WardrobePhoto(itemID: wardrobeItem.id, role: .back, sortIndex: 1,

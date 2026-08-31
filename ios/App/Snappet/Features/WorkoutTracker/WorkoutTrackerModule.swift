@@ -121,10 +121,11 @@ struct WorkoutHomeView: View {
     // exercises/sets, so they'd render as broken empty rows here and pollute the set-based analytics,
     // plan, dashboard, and Studio candidates this list feeds. They surface in Clips + their own
     // "From Apple Watch" section (P3), never in the tracked-workout pipeline.
-    private var history: [WorkoutSession] { sessions.filter { !$0.isActive && !$0.isFromAppleWatch } }
-    /// Completed Apple Watch imports — surfaced only in the History screen's "From Apple Watch" section,
-    /// never in `history` (the tracked-gym pipeline). Newest first (`sessions` is already sorted).
-    private var watchSessions: [WorkoutSession] { sessions.filter { !$0.isActive && $0.isFromAppleWatch } }
+    private var history: [WorkoutSession] { sessions.filter { !$0.isActive && !$0.isImportedFromHealth } }
+    /// Completed imports from Apple Health — the Watch's own recordings AND anything another app
+    /// (Google Health, Strava…) wrote into Health. Surfaced only in the History screen's imported
+    /// section, never in `history` (the tracked-gym pipeline). Newest first (`sessions` is sorted).
+    private var watchSessions: [WorkoutSession] { sessions.filter { !$0.isActive && $0.isImportedFromHealth } }
     private var activeSession: WorkoutSession? { sessions.first { $0.isActive } }
 
     var body: some View {
