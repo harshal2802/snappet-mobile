@@ -54,10 +54,11 @@ final class WatchWorkoutImportService {
         // Then the source gate: never re-import the app's OWN recordings (the tracked session is
         // authoritative). Everything else imports whoever wrote it — Apple Health is a shared
         // store, and a workout logged in Google Health is still the user's workout (prompt 129).
-        let tombstones = WatchImportTombstones.all()
-        let workouts = ((try? await health.workoutsForImport(since: since)) ?? [])
-            .filter { !tombstones.contains($0.id) }
-            .filter { WatchWorkoutReconciler.shouldImport(sourceBundleID: $0.sourceBundleID) }
+        let workouts = WatchWorkoutReconciler.importable(
+            (try? await health.workoutsForImport(since: since)) ?? [],
+            tombstones: WatchImportTombstones.all()) {
+                .init(uuid: $0.id, sourceBundleID: $0.sourceBundleID)
+            }
         guard let unionStart = workouts.map(\.start).min(),
               let unionEnd = workouts.map(\.end).max() else { return Result(minted: 0, attachedClips: 0) }
 

@@ -114,3 +114,57 @@ final class SessionCascadeTests: XCTestCase {
         XCTAssertEqual(count(StudioProject.self), 1)
     }
 }
+
+/// The "a deleted import stays deleted" round trip (prompt 133). `SessionCascadeTests` above proves
+/// deleting records a tombstone; this proves the IMPORT GATE then honours it — the half that was
+/// only wired, never asserted. Reconcile re-scans a 7-day look-back, so without the tombstone a
+/// just-deleted workout is merely absent from the anchor map and gets re-minted on the next pass.
+final class WatchImportGateTests: XCTestCase {
+
+    private struct Fetched: Equatable {
+        var uuid = UUID()
+        var bundle: String? = "com.apple.health.8F3A"
+    }
+
+    private func gate(_ workouts: [Fetched], tombstones: Set<UUID>) -> [Fetched] {
+        WatchWorkoutReconciler.importable(workouts, tombstones: tombstones) {
+            .init(uuid: $0.uuid, sourceBundleID: $0.bundle)
+        }
+    }
+
+    func testTombstonedWorkoutIsNeverReImported() {
+        let deleted = Fetched(), kept = Fetched()
+        let out = gate([deleted, kept], tombstones: [deleted.uuid])
+        XCTAssertEqual(out, [kept], "the deleted workout must not come back on the next reconcile")
+    }
+
+    func testWithoutATombstoneTheWorkoutWouldReturn() {
+        // The failure mode being guarded against: nothing else in the pipeline remembers a delete.
+        let deleted = Fetched()
+        XCTAssertEqual(gate([deleted], tombstones: []), [deleted])
+    }
+
+    func testOwnRecordingsAreStillRefusedByTheSameGate() {
+        let own = Fetched(bundle: "com.snappet.app.watchkitapp")
+        XCTAssertTrue(gate([own], tombstones: []).isEmpty)
+    }
+
+    func testTombstonesAndSourceGateCompose() {
+        let deleted = Fetched(), own = Fetched(bundle: "com.snappet.app"), good = Fetched()
+        XCTAssertEqual(gate([deleted, own, good], tombstones: [deleted.uuid]), [good])
+    }
+
+    /// A UI test runs against an in-memory store, but tombstones are UserDefaults — which that swap
+    /// does NOT isolate. Without a scratch suite a test's delete would permanently exclude one of
+    /// the user's REAL workouts from import, long after the test store evaporated.
+    func testUITestLaunchesWriteTombstonesToAScratchSuite() {
+        let isUITest = ProcessInfo.processInfo.arguments.contains("-uiTestFreshStore")
+        if isUITest {
+            XCTAssertNotEqual(WatchImportTombstones.store, .standard,
+                              "a UI-test launch must not write real tombstones")
+        } else {
+            XCTAssertEqual(WatchImportTombstones.store, .standard,
+                           "the shipped app keeps using the standard defaults")
+        }
+    }
+}
