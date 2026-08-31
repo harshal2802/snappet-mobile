@@ -44,7 +44,12 @@ final class WatchWorkoutImportService {
         let watermark = defaults.object(forKey: Self.watermarkKey) as? Date
         let since = watermark.map { $0.addingTimeInterval(-Self.lookBack) } ?? .distantPast
 
-        let workouts = (try? await health.workoutsForImport(since: since)) ?? []
+        // Drop workouts the user DELETED from History (prompt 125): without the tombstone check,
+        // a deleted anchor inside the look-back window is simply missing from
+        // `anchoredSessionByUUID` and gets re-minted on the very next pass — delete didn't stick.
+        let tombstones = WatchImportTombstones.all()
+        let workouts = ((try? await health.workoutsForImport(since: since)) ?? [])
+            .filter { !tombstones.contains($0.id) }
         guard let unionStart = workouts.map(\.start).min(),
               let unionEnd = workouts.map(\.end).max() else { return Result(minted: 0, attachedClips: 0) }
 

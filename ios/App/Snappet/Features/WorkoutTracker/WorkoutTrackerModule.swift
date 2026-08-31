@@ -432,7 +432,7 @@ struct WorkoutHomeView: View {
         // new one — otherwise the watch's `!isRunning` guard drops the new start and it
         // keeps recording the old activity (and HR rebases onto the wrong session).
         app.liveWorkout.stop()
-        if let active = activeSession { context.delete(active) }
+        if let active = activeSession { SessionCascade.deleteWorkoutSession(active, in: context) }
         let session = makeSession(from: routine)
         context.insert(session)
         try? context.save()
@@ -519,43 +519,20 @@ struct WorkoutHomeView: View {
 
     /// Called when the player closes. `saved == false` means "discard": delete the session.
     private func finishWorkout(_ session: WorkoutSession, saved: Bool) {
-        // On a saved finish, flush the live HR buffer into the session BEFORE `stop()` (which
-        // stops both sources) so the enriched summary (B2) can chart it. `samples` are engine
-        // `HRSample`s already rebased onto the session timeline; empty with no live source, so
-        // the summary's chart/stats simply hide. Discards keep no series (the session is deleted).
         if saved {
-            session.hrSeries = WorkoutHRStats.points(from: app.liveWorkout.samples)
-            // Stamp the HR-profile-derived bounds + source label from the actually-captured data, so
-            // the summary's zones/%HRR/effort personalize and a calorie estimate fills the band's
-            // `energy = 0` (Phase 2). All `nil`/absent with no HR or no profile → unchanged behavior.
-            if !session.hrSeries.isEmpty {
-                let profile = app.userProfile.profile
-                session.metricsSourceRaw = app.liveWorkout.activeKind.rawValue
-                session.maxHR = profile.resolvedMaxHR
-                session.restHR = profile.restingBound
-                // Calories are BLE-only: the Apple-Watch path measures real active energy on the
-                // wrist, so never override it with a Keytel estimate.
-                if app.liveWorkout.activeKind == .ble {
-                    session.kcalEstimate = profile.estimatedKcal(forSeries: session.hrSeries,
-                                                                 durationSec: session.duration)
-                }
-            }
-        }
-        // End the watch session regardless of save/discard so the watch isn't left recording.
-        app.liveWorkout.stop()
-        // End the Live Activity alongside the watch session.
-        app.liveActivity.end()
-        if saved {
-            session.completedAt = .now
-            // Recap feed (F0b): append-only, idempotent workout activity.
-            FeedActivityWriter.recordWorkoutFinish(session, in: context)
-            try? context.save()
+            // Flush HR → stamp bounds/kcal → stop services → complete → feed the Recap log.
+            // Shared with the festival night's `endNight` (a dance session is a session too).
+            WorkoutSessionFinisher.finish(session, app: app, context: context)
             let mins = Int(session.duration / 60)
             core.log(module: WorkoutTrackerModule.id, action: "session",
                      summary: "Completed \(session.routineName)", metric: Double(mins))
             section = .dashboard
         } else {
-            context.delete(session)
+            // End the watch session + Live Activity so nothing is left recording, then delete —
+            // through the cascade, so clips filmed during the discarded session don't orphan.
+            app.liveWorkout.stop()
+            app.liveActivity.end()
+            SessionCascade.deleteWorkoutSession(session, in: context)
             try? context.save()
         }
         playing = nil
@@ -574,7 +551,10 @@ struct WorkoutHomeView: View {
     }
 
     private func deleteSession(_ session: WorkoutSession) {
-        context.delete(session)
+        // Through the cascade: plain-UUID FKs cascade nothing, so the media/studio/festival rows
+        // must be swept with the session — and a deleted watch import records its tombstone so
+        // the reconciler doesn't re-mint it on the next pass (prompt 125).
+        SessionCascade.deleteWorkoutSession(session, in: context)
         try? context.save()
     }
 

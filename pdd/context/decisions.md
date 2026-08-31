@@ -9186,3 +9186,17 @@ Non-obvious calls:
   promote**: the callback only stashes the payload in `@State`; the presentation's `onDismiss`
   promotes it into the push/second sheet. `CreateClimbView`'s hosts now follow it; any new sheet
   whose completion navigates must too.
+
+## 2026-08-30 — session deletes cascade (prompt 125)
+
+- **A plain-UUID-FK schema means every delete needs an explicit sweep.** Wardrobe knew this
+  (`WardrobePhotoStore.deleteAll`); sessions now do too: `SessionCascade` is the ONE way to delete a
+  `WorkoutSession`/`KilterSession`, sweeping `SessionMedia`/`StudioProject` (+ festival attendance
+  and clip tags for workout sessions). `FeedActivity` is deliberately not swept — append-only by
+  design; the Recap feed derives cards from live sessions, so its orphans are dormant.
+- **Deleting a watch import writes a tombstone** (`WatchImportTombstones`, UserDefaults beside the
+  reconcile watermark) and `reconcile` filters against it — otherwise a deleted anchor inside the
+  7-day look-back was re-minted on the next pass. Device-local bookkeeping, not user data: it rides
+  neither SwiftData nor the backup, same as the watermark.
+- **One finish path** (`WorkoutSessionFinisher`): the tracker's finish and festival's end-night were
+  line-for-line duplicates; callers now share it and add only their own logging.
