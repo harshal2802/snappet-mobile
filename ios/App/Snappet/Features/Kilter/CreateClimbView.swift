@@ -115,6 +115,16 @@ struct CreateClimbView: View {
                             .accessibilityIdentifier("kilter.create.save")
                     }
                 }
+                // UI-test seam (prompt 132): placing four valid holds means tapping exact points on
+                // a rendered board, which no test can do reliably — so under the launch arg only,
+                // fill a valid DISTINCT draft and let the test drive the real save → detail push.
+                // Same shape as the festival canned-scan seam; never present in the shipped app.
+                if ProcessInfo.processInfo.arguments.contains(Self.uiTestSampleArgument) {
+                    ToolbarItem(placement: .principal) {
+                        Button("Sample") { fillUITestSample() }
+                            .accessibilityIdentifier("kilter.create.sample")
+                    }
+                }
             }
             .onAppear { seedFromEditingIfNeeded(); syncBoardSize(); reloadBoard(); loadGradeModelIfInstalled() }
             .onChange(of: layoutId) {
@@ -379,6 +389,22 @@ struct CreateClimbView: View {
     }
 
     /// Parse a climb's `p<placement>r<role>` frames back into the editor's `placementId → role` map.
+    /// Launch arg revealing the sample-draft seam (UI test only) — see the toolbar above.
+    static let uiTestSampleArgument = "-uiTestKilterCreateSample"
+    /// Bumped per fill so each sample is a DIFFERENT climb: the saved uuid is a content hash of the
+    /// frames, so repeating one draft would hit the duplicate path instead of creating anew — and the
+    /// point of the repeat test is N distinct create → detail pushes.
+    @MainActor private static var uiTestSampleCounter = 0
+
+    /// Fill a valid four-hold draft (start · two hands · finish — `kilterValidate`'s floor).
+    @MainActor private func fillUITestSample() {
+        Self.uiTestSampleCounter += 1
+        let n = Self.uiTestSampleCounter
+        name = "UITest climb \(n)"
+        // Vary one placement id per fill so the content hash — and thus the climb — differs.
+        assignments = Self.assignments(fromFrames: "p\(2 + n)r12p13r13p19r13p23r14")
+    }
+
     static func assignments(fromFrames frames: String) -> [Int: KilterAuthorRole] {
         var out: [Int: KilterAuthorRole] = [:]
         for (placementId, roleId) in KilterCatalog.parseFrames(frames) {
