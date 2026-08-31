@@ -140,6 +140,55 @@ final class WatchWorkoutReconcilerTests: XCTestCase {
             "unknown recorder fails closed")
     }
 
+    // MARK: retroactive cleanup (prompt 128) — the ghosts already on real phones
+
+    private func anchor(_ session: UUID = UUID(), workout: UUID, media: Int = 0)
+        -> WatchWorkoutReconciler.AnchorInfo {
+        .init(sessionID: session, workoutUUID: workout, mediaCount: media)
+    }
+
+    /// The screenshot case: tracked Quick Sessions, recorded by the app's own companion, sitting
+    /// as ghosts in "From Apple Watch" — every anchor of an own-source workout is deleted.
+    func testCleanupDeletesOwnCompanionGhosts() {
+        let wk = UUID()
+        let a = anchor(workout: wk, media: 2), b = anchor(workout: wk, media: 3)
+        let doomed = WatchWorkoutReconciler.staleAnchors(
+            anchors: [a, b],
+            sources: [wk: .init(bundleID: "com.snappet.app.watchkitapp", productType: "Watch6,9")])
+        XCTAssertEqual(Set(doomed), [a.sessionID, b.sessionID], "no keeper for a ghost group")
+    }
+
+    /// Two anchors of ONE legitimate watch workout (a historical FR3 breach) collapse to the one
+    /// with the most media.
+    func testCleanupCollapsesDuplicatesKeepingMostMedia() {
+        let wk = UUID()
+        let keeper = anchor(workout: wk, media: 3)
+        let dupe = anchor(workout: wk, media: 1)
+        let doomed = WatchWorkoutReconciler.staleAnchors(
+            anchors: [dupe, keeper],
+            sources: [wk: .init(bundleID: "com.apple.health.8F3A", productType: "Watch6,9")])
+        XCTAssertEqual(doomed, [dupe.sessionID])
+    }
+
+    /// A legitimate single anchor is untouched; a workout since DELETED from HealthKit (no source
+    /// entry) is kept too — can't judge, don't touch.
+    func testCleanupKeepsLegitimateAndUnjudgeableAnchors() {
+        let watchWk = UUID(), goneWk = UUID()
+        let doomed = WatchWorkoutReconciler.staleAnchors(
+            anchors: [anchor(workout: watchWk, media: 1), anchor(workout: goneWk, media: 2)],
+            sources: [watchWk: .init(bundleID: "com.apple.health.8F3A", productType: "Watch6,9")])
+        XCTAssertTrue(doomed.isEmpty)
+    }
+
+    /// Duplicate collapse still applies to an unjudgeable workout: keep one, drop the extras.
+    func testCleanupCollapsesDuplicatesEvenWithoutASource() {
+        let goneWk = UUID()
+        let keeper = anchor(workout: goneWk, media: 2)
+        let dupe = anchor(workout: goneWk, media: 0)
+        let doomed = WatchWorkoutReconciler.staleAnchors(anchors: [keeper, dupe], sources: [:])
+        XCTAssertEqual(doomed, [dupe.sessionID])
+    }
+
     // MARK: ordering — oldest first (chronological back-fill)
 
     func testMintsAreOldestFirst() {

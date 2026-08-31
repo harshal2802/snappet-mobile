@@ -176,6 +176,30 @@ final class HealthKitService: @unchecked Sendable {
         }
     }
 
+    /// Look up WHO recorded specific workouts, by `HKWorkout.uuid` (prompt 128) — feeds the
+    /// retroactive ghost-anchor cleanup, which must judge anchors minted BEFORE the source gate
+    /// existed (they can be far older than the reconcile watermark, hence a targeted UUID query
+    /// rather than a date window). A uuid absent from the result means the workout no longer
+    /// exists in HealthKit; the caller keeps such anchors (can't judge → don't touch).
+    func workoutSources(for uuids: Set<UUID>) async throws -> [UUID: WatchWorkoutReconciler.WorkoutSource] {
+        guard HKHealthStore.isHealthDataAvailable(), !uuids.isEmpty else { return [:] }
+        let pred = HKQuery.predicateForObjects(with: uuids)
+        let samples = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[HKSample], Error>) in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: pred,
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, result, error in
+                if let error { cont.resume(throwing: error) } else { cont.resume(returning: result ?? []) }
+            }
+            store.execute(q)
+        }
+        var out: [UUID: WatchWorkoutReconciler.WorkoutSource] = [:]
+        for wk in samples.compactMap({ $0 as? HKWorkout }) {
+            out[wk.uuid] = WatchWorkoutReconciler.WorkoutSource(
+                bundleID: wk.sourceRevision.source.bundleIdentifier,
+                productType: wk.sourceRevision.productType)
+        }
+        return out
+    }
+
     /// Total distance across the distance quantity types a workout might carry (walk/run, cycling,
     /// swimming, wheelchair, downhill snow), in metres; `nil` when none was recorded.
     private static func distanceMeters(of wk: HKWorkout) -> Double? {
