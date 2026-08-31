@@ -79,6 +79,27 @@ enum WatchWorkoutReconciler {
         return out
     }
 
+    /// Source gate (prompt 127) — decided from WHO WROTE the workout, before any timing logic:
+    ///
+    /// 1. **Snappet's own watch companion never re-imports.** A tracked Quick Session (or routine /
+    ///    Kilter / festival session) with the watch streaming records a real `HKWorkout` under the
+    ///    app's own bundle; the tracked session is authoritative and already holds the data. The
+    ///    FR10 gym-overlap check tried to express this with a midpoint-in-window heuristic — which
+    ///    is why a Quick Session could still ghost into "From Apple Watch" when the windows
+    ///    drifted, and why Kilter (deliberately outside FR10, decision Q2) always did.
+    /// 2. **Only genuine watch recordings import.** The section is CALLED "From Apple Watch"; a
+    ///    workout written by an iPhone app (Google Fit, Strava-on-phone, …) is neither recorded on
+    ///    a watch nor missing from its own app — importing it mislabels its provenance. Product
+    ///    types look like "Watch6,9" / "iPhone14,3"; an absent product type fails closed.
+    ///
+    /// FR10 stays: it still suppresses a workout the user double-tracked with the *Apple* Workout
+    /// app during an in-app gym session (a foreign source this gate correctly lets through).
+    static func shouldImport(sourceBundleID: String?, sourceProductType: String?,
+                             ownBundlePrefix: String = "com.snappet") -> Bool {
+        if sourceBundleID?.hasPrefix(ownBundlePrefix) == true { return false }
+        return sourceProductType?.hasPrefix("Watch") == true
+    }
+
     /// FR10: does the workout coincide with a user-tracked gym session? True when the workout's
     /// **midpoint** falls inside any gym interval padded by `SessionMediaService.padSec` — the same
     /// ±90 s clock-skew tolerance media discovery uses, so "the same session" is judged consistently.

@@ -17,6 +17,12 @@ struct WorkoutSummary: Identifiable, Hashable {
     /// The workout's specific `HKWorkoutActivityType`, mapped to a display label ("Outdoor Run",
     /// "Functional Strength", …) — finer than the coarse engine `Activity`. `nil` on the list path.
     var activityLabel: String? = nil
+    /// Who WROTE the workout (prompt 127), from `HKSourceRevision`: the recording app's bundle id
+    /// and the recording device's product type ("Watch6,9" / "iPhone14,3"). The watch importer
+    /// gates on these — identity, where the old gym-overlap heuristic was only timing. `nil` on
+    /// the list path, which never reads them.
+    var sourceBundleID: String? = nil
+    var sourceProductType: String? = nil
     var duration: Double { end.timeIntervalSince(start) }
     var dateInterval: DateInterval { DateInterval(start: start, end: end) }
 }
@@ -164,7 +170,9 @@ final class HealthKitService: @unchecked Sendable {
                 energyKcal: wk.statistics(for: HKQuantityType(.activeEnergyBurned))?
                     .sumQuantity()?.doubleValue(for: .kilocalorie()),
                 distanceMeters: Self.distanceMeters(of: wk),
-                activityLabel: Self.label(wk.workoutActivityType))
+                activityLabel: Self.label(wk.workoutActivityType),
+                sourceBundleID: wk.sourceRevision.source.bundleIdentifier,
+                sourceProductType: wk.sourceRevision.productType)
         }
     }
 

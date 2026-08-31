@@ -108,6 +108,38 @@ final class WatchWorkoutReconcilerTests: XCTestCase {
         XCTAssertTrue(WatchWorkoutReconciler.overlapsGymSession(wk, [gym]))
     }
 
+    // MARK: source gate (prompt 127) — identity beats the timing heuristic
+
+    /// The bug that shipped: a tracked Quick Session's own watch recording ghosted into
+    /// "From Apple Watch" whenever FR10's midpoint heuristic missed (and always, for Kilter).
+    /// The app's own companion is now rejected by IDENTITY, regardless of timing.
+    func testOwnWatchCompanionRecordingIsNeverImported() {
+        XCTAssertFalse(WatchWorkoutReconciler.shouldImport(
+            sourceBundleID: "com.snappet.app.watchkitapp", sourceProductType: "Watch6,9"))
+        XCTAssertFalse(WatchWorkoutReconciler.shouldImport(
+            sourceBundleID: "com.snappet.app", sourceProductType: "Watch6,9"),
+            "any own-bundle source is authoritative, not importable")
+    }
+
+    /// A genuine Apple Watch recording (the Workout app, a third-party watch app) still imports.
+    func testForeignWatchRecordingImports() {
+        XCTAssertTrue(WatchWorkoutReconciler.shouldImport(
+            sourceBundleID: "com.apple.health.8F3A", sourceProductType: "Watch6,9"))
+        XCTAssertTrue(WatchWorkoutReconciler.shouldImport(
+            sourceBundleID: "com.strava.watch", sourceProductType: "Watch7,2"))
+    }
+
+    /// A workout WRITTEN by an iPhone app (Google Fit, phone-Strava…) is neither recorded on a
+    /// watch nor missing from its own app — importing it would mislabel its provenance under a
+    /// "From Apple Watch" badge. An absent product type fails closed for the same reason.
+    func testPhoneWrittenWorkoutsAreNotImported() {
+        XCTAssertFalse(WatchWorkoutReconciler.shouldImport(
+            sourceBundleID: "com.google.ios.fitness", sourceProductType: "iPhone14,3"))
+        XCTAssertFalse(WatchWorkoutReconciler.shouldImport(
+            sourceBundleID: "com.example.tracker", sourceProductType: nil),
+            "unknown recorder fails closed")
+    }
+
     // MARK: ordering — oldest first (chronological back-fill)
 
     func testMintsAreOldestFirst() {
