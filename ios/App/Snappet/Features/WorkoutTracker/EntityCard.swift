@@ -25,28 +25,3 @@ extension WorkoutDiscipline {
     }
 }
 
-/// A rolled-up stat pill for an entity-card header — the strength/run/timed/dance analogue of the climb
-/// grade pill + status badge (matches the wireframe `.spill` chips). Renders a short stat ("top 100 × 5",
-/// "5.2 km", "9 sets") on a tinted capsule; a `nil` tint is the muted/secondary variant (e.g. "3 sets").
-struct EntityRollupChip: View {
-    let text: String
-    var tint: Color?
-    var systemImage: String?
-
-    init(_ text: String, tint: Color? = nil, systemImage: String? = nil) {
-        self.text = text
-        self.tint = tint
-        self.systemImage = systemImage
-    }
-
-    var body: some View {
-        HStack(spacing: 3) {
-            if let systemImage { Image(systemName: systemImage) }
-            Text(text)
-        }
-        .font(.caption2.weight(.bold))
-        .foregroundStyle(tint ?? SnappetColor.textSecondary)
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .background((tint?.opacity(0.15)) ?? SnappetColor.surfaceMuted, in: Capsule())
-    }
-}

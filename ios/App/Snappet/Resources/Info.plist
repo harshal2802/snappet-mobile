@@ -38,7 +38,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Snappet connects over Bluetooth to your heart-rate band (chest straps, Polar, Garmin, and similar) for live heart rate during a workout, and to a Kilter Board to light up climbs. Everything stays on your device.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Snappet uses the camera to record a video clip while you log a workout set, to scan a receipt (to pull out the line items and split them), and to scan a Kilter climb's QR code a friend shared. Everything is processed on your device; nothing is uploaded.</string>
+	<string>Snappet uses the camera to record a video clip while you log a workout set, to snap your clothes for the Wardrobe closet, to scan a festival lineup poster or a receipt, and to scan a QR code a friend shared. Everything is processed on your device; nothing is uploaded.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Snappet records sound with the video clips you film during a workout. The recording is saved only to your own photo library — nothing leaves your device.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -50,7 +50,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Snappet saves your finished highlight reel back to your library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Snappet finds the photos and videos you shot during your workout to build your reel, and — only when you ask — saves your edits over the original or removes a clip from your library.</string>
+	<string>Snappet finds the photos and videos you shot during your workout to build your reel, lets you import a clothing photo into your Wardrobe closet, and — only when you ask — saves your edits over the original or removes a clip from your library.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UILaunchScreen</key>

@@ -100,7 +100,10 @@ struct HomeDashboardView: View {
                 Button {
                     router.tab = .apps
                 } label: {
-                    Label("Or browse all 9 apps", systemImage: "square.stack.3d.up")
+                    // Derived, not hardcoded — the old literal said "9" after the registry
+                    // had grown to 10 (Wardrobe, Festival).
+                    Label("Or browse all \(ModuleRegistry.all.count) apps",
+                          systemImage: "square.stack.3d.up")
                         .font(.subheadline)
                 }
                 .accessibilityIdentifier("home.browseApps")

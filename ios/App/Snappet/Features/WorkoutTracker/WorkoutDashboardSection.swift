@@ -398,20 +398,3 @@ struct RecentSessionCard: View {
     }
 }
 
-/// A small stat tile (retained for any callers; the dashboard now leads with `DisciplineHero`).
-struct WorkoutStatCard: View {
-    let value: String
-    let label: String
-    let systemImage: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: systemImage).foregroundStyle(SnappetColor.workout)
-            Text(value).font(.title2.bold()).minimumScaleFactor(0.6).lineLimit(1)
-                .monospacedDigit().contentTransition(.numericText()).animation(.snappy, value: value)
-            Text(label).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading).padding()
-        .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
-    }
-}
