@@ -9200,3 +9200,17 @@ Non-obvious calls:
   neither SwiftData nor the backup, same as the watermark.
 - **One finish path** (`WorkoutSessionFinisher`): the tracker's finish and festival's end-night were
   line-for-line duplicates; callers now share it and add only their own logging.
+
+## 2026-08-31 — price-check currency + the column-drift lesson (wardrobe prompt 07)
+
+- **A fetched price carries its currency.** The parser extracted `priceCurrency` all along; the
+  purchase section dropped it at the last hop, so €89 rendered as $89. Fetched prices now render in
+  the retailer's code (empty = legacy → local, the old behavior), and the ↑/↓ delta hides across
+  currencies — a percentage between a $ cost and a € price is nonsense.
+- **The backup tripwires are model-level, not column-level.** Prompt 04/05 added columns to
+  `WardrobeItem` that `WardrobeItemRow` never mirrored, and every restore silently dropped them:
+  the coverage check only proves each `@Model` has a row, and the snapshot-equality round trip
+  can't catch a field the row never captures (absent from both sides). Rule going forward: adding a
+  column to a backed-up model means (1) mirror it into its Row **as an Optional** (old files must
+  decode), (2) assert it on the restored MODEL in `SnappetBackupTests` — a snapshot comparison is
+  structurally blind to this drift.

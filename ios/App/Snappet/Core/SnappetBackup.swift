@@ -1035,6 +1035,22 @@ extension SnappetBackup {
         /// The cut-out photo bytes ride the backup (base64 in JSON) — a restored closet
         /// without its photos is not a restored closet.
         var imageData: Data?
+        // Prompt-04/05/07 columns (wardrobe prompt 07 catch-up). These were added to the MODEL
+        // without being mirrored here, so a restore silently dropped brand/size/link/prices,
+        // the custom-value maps, and the cover role — the model-level tripwire only checks that
+        // each @Model HAS a row, not that the row carries every column. All Optional so backup
+        // files written before this row shipped still decode (missing key → nil → default).
+        var brand: String?
+        var sizeLabel: String?
+        var productURL: String?
+        var currentPrice: Double?
+        var currentPriceCheckedAt: Date?
+        var currentPriceCurrencyRaw: String?
+        var categoryMapRaw: String?
+        var colorMapRaw: String?
+        var patternMapRaw: String?
+        var styleMapRaw: String?
+        var coverPhotoRoleRaw: String?
 
         init(_ m: WardrobeItem) {
             id = m.id; name = m.name; categoryRaw = m.categoryRaw; colorRaw = m.colorRaw
@@ -1042,6 +1058,12 @@ extension SnappetBackup {
             seasonsRaw = m.seasonsRaw; cost = m.cost
             isFavorite = m.isFavorite; isArchived = m.isArchived
             notes = m.notes; createdAt = m.createdAt; imageData = m.imageData
+            brand = m.brand; sizeLabel = m.sizeLabel; productURL = m.productURL
+            currentPrice = m.currentPrice; currentPriceCheckedAt = m.currentPriceCheckedAt
+            currentPriceCurrencyRaw = m.currentPriceCurrencyRaw
+            categoryMapRaw = m.categoryMapRaw; colorMapRaw = m.colorMapRaw
+            patternMapRaw = m.patternMapRaw; styleMapRaw = m.styleMapRaw
+            coverPhotoRoleRaw = m.coverPhotoRoleRaw
         }
         func make() -> WardrobeItem {
             let item = WardrobeItem(id: id, name: name, category: .top, color: .grey,
@@ -1054,6 +1076,17 @@ extension SnappetBackup {
             item.patternRaw = patternRaw
             item.styleRaw = styleRaw
             item.seasonsRaw = seasonsRaw
+            item.brand = brand ?? ""
+            item.sizeLabel = sizeLabel ?? ""
+            item.productURL = productURL ?? ""
+            item.currentPrice = currentPrice
+            item.currentPriceCheckedAt = currentPriceCheckedAt
+            item.currentPriceCurrencyRaw = currentPriceCurrencyRaw ?? ""
+            item.categoryMapRaw = categoryMapRaw ?? ""
+            item.colorMapRaw = colorMapRaw ?? ""
+            item.patternMapRaw = patternMapRaw ?? ""
+            item.styleMapRaw = styleMapRaw ?? ""
+            item.coverPhotoRoleRaw = coverPhotoRoleRaw ?? "front"
             return item
         }
         var sortKey: String { id.uuidString }
