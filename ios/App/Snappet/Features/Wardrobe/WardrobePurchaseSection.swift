@@ -110,7 +110,7 @@ struct WardrobePurchaseSection: View {
     }
 
     private func currency(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(2)))
+        value.formatted(.currency(code: WearStats.localCurrencyCode).precision(.fractionLength(2)))
     }
 
     // MARK: - The check
