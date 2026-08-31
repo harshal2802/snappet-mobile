@@ -9286,3 +9286,14 @@ Non-obvious calls:
   can't persist out of sight — the failure mode prompt 130 existed to remove.
 - **No dead ends.** Imported + a tracking type can never match (imports carry no sets); that case
   says so and offers Clear filters instead of a blank list.
+
+## 2026-08-31 — an intermittent fix needs a repeat guard (prompt 132)
+
+- **"Verified by tapping it a few times" cannot verify an intermittent race.** Prompt 124's
+  create-climb fix shipped with no automated coverage because "no UI test installs a catalog" — but
+  `-uiTestInstallKilterCatalog` already existed; the real blocker was only that placing four valid
+  holds isn't tappable. A launch-arg-gated sample-draft seam (the festival canned-scan pattern)
+  unblocks it, leaving validation/save/hand-off/push as the real path under test.
+- The guard runs **5 passes per host, on device as well as simulator** — the race was hardware
+  timing, so a simulator-only pass would have proven little. Both hosts are covered because both
+  pushed. Distinct frames per pass, since a repeated draft would hit the duplicate path instead.
