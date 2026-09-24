@@ -52,6 +52,68 @@ enum AssetPosterLoader {
         Int(img.size.width * img.scale) * Int(img.size.height * img.scale) * 4
     }
 
+    // MARK: - Prefetch ahead of the scroll (prompt 134)
+
+    /// A poster the feed expects to need shortly.
+    struct Prefetch: Hashable, Sendable {
+        var localIdentifier: String
+        var isVideo: Bool
+        var posterTime: Double = 0
+    }
+
+    /// Identifiers already warmed (or warming), so a scroll that re-reports the same upcoming cards
+    /// doesn't re-enqueue them. Bounded: cleared wholesale once it grows past a few screens' worth,
+    /// which is cheaper than LRU bookkeeping for a hint cache.
+    private static var warmed: Set<String> = []
+    /// Frame-0 extraction is the expensive half (measured 93 ms avg on device), so only a couple run
+    /// at a time — a prefetch burst must never outrun the poster the user is actually looking at.
+    private static var inFlight = 0
+    private static let maxInFlight = 2
+
+    /// Warm posters for cards that are about to scroll into view.
+    ///
+    /// Measured motivation (prompt 134): a poster costs 70–120 ms and its load only began when the
+    /// cell appeared, so at normal scroll speed the user outran the loader and watched empty cards
+    /// fill in behind them. Photos' own `PHCachingImageManager` warms the thumbnail pipeline; video
+    /// frame-0 decodes are additionally pre-baked into `frameZeroCache` so the cell paints from cache.
+    static func prefetch(_ items: [Prefetch], pointSize: CGSize) {
+        let fresh = items.filter { !warmed.contains($0.localIdentifier) }
+        guard !fresh.isEmpty else { return }
+        if warmed.count > 400 { warmed.removeAll() }
+        fresh.forEach { warmed.insert($0.localIdentifier) }
+
+        let target = CGSize(width: pointSize.width * 3, height: pointSize.height * 3)
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = false
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: fresh.map(\.localIdentifier), options: nil)
+        var objects: [PHAsset] = []
+        assets.enumerateObjects { asset, _, _ in objects.append(asset) }
+        manager.startCachingImages(for: objects, targetSize: target,
+                                   contentMode: .aspectFill, options: options)
+
+        // Pre-bake the exact frame-0 for videos, throttled — `videoFrameZero` memoizes, so the cell's
+        // own request then hits the cache and paints immediately.
+        for item in fresh where item.isVideo {
+            Task { @MainActor in
+                while inFlight >= maxInFlight {
+                    try? await Task.sleep(for: .milliseconds(40))
+                }
+                inFlight += 1
+                defer { inFlight -= 1 }
+                _ = await videoFrameZero(localIdentifier: item.localIdentifier,
+                                         pointSize: pointSize, at: item.posterTime)
+            }
+        }
+    }
+
+    /// A already-baked frame-0, if one is cached — lets a cell paint synchronously on appear instead
+    /// of suspending for a decode it has already paid for.
+    static func cachedFrameZero(localIdentifier: String, at seconds: Double = 0) -> UIImage? {
+        let key = (seconds > 0.01 ? "\(localIdentifier)@\(Int(seconds * 100))" : localIdentifier) as NSString
+        return frameZeroCache.object(forKey: key)
+    }
+
     /// The clip's EXACT first frame (t=0) as the poster — vs `poster(...)`, whose `PHImageManager` thumbnail is,
     /// for a VIDEO, an arbitrary Photos-chosen key frame. The Clips carousel uses this so the still each page
     /// holds is pixel-identical to the frame its `AVPlayerLayer` first displays: the `isReadyForDisplay`

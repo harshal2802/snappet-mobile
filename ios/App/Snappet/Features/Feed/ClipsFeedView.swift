@@ -165,7 +165,7 @@ struct ClipsFeedView: View {
                                 if visible.isEmpty, filter.isActive {
                                     noMatchState
                                 } else {
-                                    ForEach(visible) { post in
+                                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, post in
                                         ClipPostCard(post: post,
                                                      hr: cachedHRContext[post.sessionID] ?? ClipFeedHR(series: [], maxHR: 190, restHR: nil),
                                                      allMedia: allMedia, playback: playback,
@@ -174,6 +174,16 @@ struct ClipsFeedView: View {
                                                      autoplayActive: autoplayActive,
                                                      contentWidth: feedGeo.size.width)
                                             .id(post.id)
+                                            // Warm the posters just below the fold (prompt 134). A poster
+                                            // costs 70–120 ms and used to START loading only when its cell
+                                            // appeared, so a normal scroll outran the loader and filled in
+                                            // behind the user. Hooking the row's own appearance keeps this
+                                            // free of scroll-offset tracking.
+                                            .onAppear {
+                                                prefetchPosters(after: index,
+                                                                in: visible,
+                                                                width: feedGeo.size.width)
+                                            }
                                     }
                                 }
                             }
@@ -509,6 +519,33 @@ struct ClipsFeedView: View {
             cachedPayloads = composed.payloads
         }
     }
+
+    /// How many cards ahead of the one just shown to warm. Three is about one screen of scrolling at
+    /// a normal flick — far enough to hide a ~100 ms decode, near enough that a fast scroll doesn't
+    /// queue work the user will never see (the frame-0 pre-bake is throttled besides).
+    private static let prefetchDepth = 3
+
+    /// Warm the FIRST clip of the next few posts — the one whose poster drives the tile. Later clips
+    /// in a post's carousel stay windowed by `loadPoster` (prompt 106); this is purely about the card
+    /// you are scrolling toward.
+    private func prefetchPosters(after index: Int, in posts: [ClipFeedPost], width: CGFloat) {
+        let upcoming = posts.dropFirst(index + 1).prefix(Self.prefetchDepth)
+        guard !upcoming.isEmpty else { return }
+        let items: [AssetPosterLoader.Prefetch] = upcoming.compactMap { post -> AssetPosterLoader.Prefetch? in
+            guard let first = post.clips.first else { return nil }
+            // The SAME poster time the card will request (a Studio-trimmed clip posters at its kept
+            // range's start) — otherwise the warmed cache key wouldn't match and the work is wasted.
+            return AssetPosterLoader.Prefetch(localIdentifier: first.media.localIdentifier,
+                                              isVideo: first.media.kind == "video",
+                                              posterTime: ClipHROverlay.playedRange(first.media).start)
+        }
+        guard !items.isEmpty else { return }
+        // Match the tile geometry the card will request, so the warmed bitmap is the one it wants.
+        AssetPosterLoader.prefetch(items, pointSize: CGSize(width: width, height: width / defaultTileAspect))
+    }
+
+    /// The tile aspect posters are warmed at — the composer's default until a real aspect resolves.
+    private var defaultTileAspect: CGFloat { CGFloat(ClipFeedComposer.defaultAspect) }
 
     /// sessionID → the session's SAVED Studio HR tile (the WYSIWYG override, prompt 89), present only when
     /// the user customized it in the Studio; otherwise the poster keeps the house-style `.feedClipScorebug`.
