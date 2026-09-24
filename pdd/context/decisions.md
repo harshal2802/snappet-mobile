@@ -9308,3 +9308,19 @@ Non-obvious calls:
 - **The half of a feature that's "just wiring" is the half that goes untested.** Prompt 125 tested
   that deleting records a tombstone but never that the import gate honours one. Extracted to pure
   `WatchWorkoutReconciler.importable(...)` and covered.
+
+## 2026-09-23 — Clips scroll: warm posters ahead (prompt 134)
+
+- **Measure the scroll, don't reason about it.** The code's obvious reading blamed a
+  write-during-scroll storm (`backfillAspect` → `context.save()` → 7 `@Query` invalidations →
+  repeated rebuilds). The device said 1 save and 1–2 rebuilds per scroll; the real cost was
+  per-poster decode (video 93 ms avg / photo 71 ms) that only STARTED when the cell appeared, so a
+  normal flick outran the loader. Second time this session a plausible code-read lost to a probe.
+- **Prefetch the next 3 cards; never let a decode gate the first pixel.** Frame-0 extraction is
+  pre-baked (throttled to 2 in flight) into the cache the cell reads, and a video that misses the
+  cache paints Photos' thumbnail first and upgrades to the exact frame after. The frame-exact
+  poster→video handoff (prompt 97) is preserved because the exact frame still arrives before any
+  tap — it just isn't what the user waits for. Result: 13/18 cards paint from cache, 0 video
+  decodes mid-scroll.
+- Prefetch must warm the SAME poster time the card will request (trimmed clips poster at their kept
+  range's start) or the cache key misses and the work is pure waste.

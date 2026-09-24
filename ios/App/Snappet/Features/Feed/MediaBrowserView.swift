@@ -177,9 +177,31 @@ struct ClipThumbnail: View {
     private func load() async {
         let key = posterKey
         guard enabled, loadedKey != key else { return }
-        // Video: use the EXACT first played frame (not Photos' arbitrary thumbnail) so the still equals
-        // the frame the player layer first displays → the carousel's poster→video reveal is invisible
-        // (no takeover flick). Photos keep the thumbnail; the frame path falls back to `poster(...)`.
+
+        // Video posters are the expensive ones (measured 93 ms avg vs 71 ms, prompt 134) because they
+        // decode the EXACT frame 0. Two stages, so the card never sits blank while that runs:
+        //
+        //  1. a prefetched frame-0 paints straight from cache — no suspension at all;
+        //  2. otherwise Photos' thumbnail lands first (the cheap path), THEN the exact frame replaces
+        //     it. The exact frame is what makes the poster→video handoff invisible when the clip
+        //     actually plays, and it still arrives long before a tap — but it no longer gates the
+        //     first pixel, which is what made scrolling feel like it was lagging behind.
+        if kind == "video",
+           let cached = AssetPosterLoader.cachedFrameZero(localIdentifier: localIdentifier, at: posterTime) {
+            image = cached
+            loadedKey = key
+            return
+        }
+
+        if kind == "video" {
+            if let quick = await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size) {
+                guard !Task.isCancelled else { return }
+                // Deliberately NOT stamping `loadedKey`: this is a placeholder, so the exact frame
+                // below (or a later re-run) must still be allowed to replace it.
+                if image == nil { image = quick }
+            }
+        }
+
         let loaded = kind == "video"
             ? await AssetPosterLoader.videoFrameZero(localIdentifier: localIdentifier, pointSize: size, at: posterTime)
             : await AssetPosterLoader.poster(localIdentifier: localIdentifier, pointSize: size)
