@@ -1,0 +1,54 @@
+Two months of work since build 17 — Wardrobe grew up, Health imports stopped lying about
+where your workouts came from, History shows everything, and Clips scrolls properly.
+
+WARDROBE
+• Add several photos per garment — front, back, and worn — and pick which one is the cover.
+• Richer add form: brand, size, product link, price paid and current price. Every dropdown
+  now takes your own values (a custom colour, your own brands) and remembers them.
+• Editing a garment is finally safe: there's a Cancel, and swiping the sheet away no longer
+  keeps a half-finished edit. Prices show in your own currency, including when a price check
+  comes back from a foreign store.
+• Closet photos right-sized: a full closet went from ~1 GB to ~126 MB, and the grid no longer
+  hangs while scrolling.
+• Tidy-up can clean brand/size/material data that ended up in the wrong field — and undo it.
+
+APPLE HEALTH IMPORTS  (the big correctness fix)
+• Workouts imported from Apple Health now name their real source. If Google Health, Fitbit or
+  another app wrote a workout, it says so instead of being labelled "From Apple Watch".
+• Deleting an imported workout sticks. It no longer reappears the next time the app syncs.
+• A workout your writer app re-syncs under a new id is re-linked to the row you already have,
+  instead of quietly turning into a duplicate.
+
+HISTORY  (Gym Tracker)
+• History now shows ALL of your past sessions in one list — tracked workouts and Health imports
+  together, newest first. Previously, typing a search or tapping any chip made every imported
+  workout vanish.
+• Filters moved into a Filters button, so the screen opens on your history rather than three rows
+  of chips. Filter by source (tracked / imported), routine, or tracking type; active filters show
+  as removable tags with a count, and "12 of 237 sessions" is always visible so you can tell at a
+  glance when a filter is hiding something.
+
+CLIPS
+• Scrolling keeps up now. Clip posters are loaded ahead of you instead of when each card appears —
+  on a large library most cards appear instantly where they used to sit blank for a moment.
+
+KILTER
+• Saving a newly created climb reliably opens it. It used to occasionally close the sheet and
+  open nothing.
+
+ALSO
+• Deleting a session now properly removes its clips and Studio project instead of leaving them
+  behind.
+• Camera and photo permission prompts now explain the Wardrobe and Festival uses too.
+
+KNOWN ISSUES
+• Opening the Clips tab still takes about half a second to populate on a large library, and the
+  very first card can be briefly blank. Being worked on.
+• Android is well behind iOS — reels, Wardrobe, Festival and the session player aren't there yet.
+
+WHAT WOULD HELP MOST
+• Wardrobe: try a price check on a non-US store and tell us if the currency looks right.
+• History: does the Filters button do what you'd expect, and is anything you relied on missing
+  now that the chips moved?
+• If you log workouts in another app (Fitbit / Google Health / Strava), check that History names
+  the source correctly.
