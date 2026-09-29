@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Routine schedule, Habits link &amp; QR (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ember:#FF9645; --fresh:#5BC074; --habit:#5BC074; --blue:#5AA9FF;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2.part{font-size:26px;font-weight:800;margin:64px 0 4px;color:#fff;letter-spacing:-.01em}
+  h2.part .tag{font-size:13px;font-weight:800;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .sub{color:#aeb2bd;font-size:16px;max-width:1100px;margin:0 0 10px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:30px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.alt{background:#8e8ea0;color:#111;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto;font-size:14px}
+  .navrow .title{font-size:15px;font-weight:800}
+  .navrow .lnk{color:var(--ember);font-weight:600}
+  .navrow .lnk.b{font-weight:800}
+  .bigtitle{font-size:26px;font-weight:800;margin:2px 2px 8px;letter-spacing:-.01em}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember);margin-left:6px}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:10px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* grouped form */
+  .glbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:12px 6px 5px}
+  .group{background:var(--surface);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--hair);gap:8px}
+  .row:last-child{border-bottom:0}
+  .row .v{color:var(--t2);font-size:13px;white-space:nowrap}
+  .row .v.e{color:var(--ember);font-weight:600}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;margin-right:9px;flex:0 0 auto}
+  .row .l{display:flex;align-items:center}
+  .foot{font-size:11px;color:var(--t3);margin:5px 8px 0;line-height:1.4}
+  .tog{width:40px;height:24px;border-radius:12px;background:#3a3a40;position:relative;flex:0 0 auto}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--fresh)}
+  .tog.on::after{left:18px}
+  .days{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .days div{flex:1;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--muted);color:var(--t2);aspect-ratio:1}
+  .days div.on{background:var(--ember);color:#2a1405}
+  .days.small div{height:24px;font-size:10px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .pill.g{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .pill.gr{background:var(--muted);color:var(--t2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--hair)}
+  .chip{background:var(--muted);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:650;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+
+  /* cards / list */
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .t{font-size:11px;color:var(--t3);margin-top:3px}
+  .sect{font-size:13px;font-weight:700;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .upnext{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.12));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:12px 13px;margin-bottom:10px;flex:0 0 auto}
+  .upnext .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase}
+  .upnext .n{font-size:17px;font-weight:800;margin-top:2px}
+  .upnext .w{font-size:12px;color:#e6d7cb}
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;padding:10px;font-size:14px;font-weight:700;background:var(--ember);color:#2a1405;flex:0 0 auto}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:999px;display:inline-flex}
+  .btn.ghost{background:var(--muted);color:var(--ember)}
+  .week{display:flex;gap:4px;margin-top:9px}
+  .week div{flex:1;text-align:center;font-size:10px;color:var(--t2)}
+  .week div b{display:block;height:24px;border-radius:7px;margin-top:3px;background:var(--muted);font-size:10px;line-height:24px;color:var(--t3);font-weight:700}
+  .week div b.s{background:rgba(255,150,69,.3);color:var(--ember)}
+  .week div b.d{background:var(--ember);color:#2a1405}
+  .week div b.m{background:rgba(255,122,107,.18);color:#ff9b8f}
+  .week div.today{color:#fff;font-weight:800}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:45}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;padding:8px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
+  .sheet.half{top:auto;height:62%}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 6px;flex:0 0 auto}
+  .behind{opacity:.9}
+
+  /* lock screen */
+  .lock{background:linear-gradient(180deg,#1b2635,#0d1118 70%);}
+  .lock .clock{text-align:center;font-size:64px;font-weight:300;letter-spacing:-2px;margin-top:10px;color:#fff}
+  .lock .date{text-align:center;font-size:15px;color:#cfd6e2;font-weight:600}
+  .notif{background:rgba(40,44,52,.82);backdrop-filter:blur(20px);border-radius:18px;padding:11px 12px;margin:0 10px 8px;color:#fff}
+  .notif .hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#c7ccd6}
+  .notif .ap{width:18px;height:18px;border-radius:5px;background:var(--ember);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#2a1405;font-weight:900}
+  .notif .tt{font-size:13.5px;font-weight:700;margin-top:4px}
+  .notif .bd{font-size:12.5px;color:#dfe3ea}
+  .actions{margin:0 10px;border-radius:14px;overflow:hidden;background:rgba(40,44,52,.82)}
+  .actions div{padding:10px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between}
+  .actions div:last-child{border-bottom:0}
+
+  /* habit row */
+  .hab{background:var(--surface);border-radius:14px;padding:11px 12px;margin-bottom:8px;flex:0 0 auto}
+  .hab .top{display:flex;align-items:center;gap:10px}
+  .hab .sym{font-size:20px;width:28px;text-align:center;color:var(--habit)}
+  .hab .nm{font-size:14.5px;font-weight:700}
+  .hab .st{font-size:12px;color:var(--ember);font-weight:650}
+  .hab .rt{font-size:11px;color:var(--t3)}
+  .hab .ck{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid var(--t3)}
+  .hab .ck.on{background:var(--habit);border-color:var(--habit)}
+  .hab .strip{display:flex;gap:5px;margin-top:8px;align-items:flex-end}
+  .hab .strip div{flex:1;text-align:center;font-size:9.5px;color:var(--t3)}
+  .hab .strip b{display:block;margin:2px auto 0;width:24px;height:24px;border-radius:50%;background:rgba(91,192,116,.13);font-size:9.5px;line-height:24px;color:var(--t2)}
+  .hab .strip b.on{background:var(--habit);color:#fff}
+  .hab .strip b.off{background:transparent;border:1px dashed #3a3a42;color:#4a4a52}
+  .link{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--t2);background:var(--muted);border-radius:9px;padding:6px 8px}
+  .link b{color:var(--ember)}
+
+  /* camera */
+  .cam{flex:1;border-radius:16px;margin:0 2px;position:relative;overflow:hidden;background:
+      repeating-linear-gradient(45deg,#1a1d22 0 10px,#16181c 10px 20px)}
+  .reticle{position:absolute;left:50%;top:44%;width:170px;height:170px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:22px}
+  .qr{background:#fff;border-radius:14px;padding:12px;margin:6px auto;width:176px;height:176px;display:grid;grid-template-columns:repeat(21,1fr);gap:0}
+  .qr i{display:block;aspect-ratio:1}
+  .qr i.k{background:#000}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .menu{position:absolute;right:16px;top:92px;z-index:55;width:228px;background:rgba(44,44,50,.97);border-radius:14px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu div{padding:11px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:last-child{border-bottom:0}
+  .menu div span{color:var(--t2)}
+
+  table.cmp{border-collapse:collapse;margin-top:18px;font-size:13.5px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:10px 12px;text-align:left;vertical-align:top}
+  table.cmp th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  .q{background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.3);border-radius:14px;padding:14px 18px;margin:14px 0;max-width:1240px;font-size:14.5px;color:#d9dce4}
+  .q b{color:#fff}
+  .q .rec{color:var(--fresh);font-weight:700}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1 class="title">Schedule a routine · Habits · QR share &amp; scan</h1>
+  <p class="sub">Two requests, drawn before they're built: <b>(1)</b> put a routine on a schedule, with detailed reminder settings and an optional link to the Habits mini-app; <b>(2)</b> share that routine <i>with</i> its schedule over QR, and scan one in from the Routines screen, either with the camera or from a photo in your library.</p>
+  <div class="scopebox">
+    <b>Already exists (reused, not rebuilt):</b> routine QR share (<code>snappet://routine/v1/…</code>, deflate + base64url), the camera scanner, and the import-confirm preview. Today <b>Scan</b> is only reachable inside <i>another</i> routine's Share sheet, which is backwards. Nothing handles schedules or photo import yet.<br>
+    <b>The third request (screen locking mid-workout) is already fixed</b> on branch <code>fix/workout-keep-screen-awake</code>. It needs no wireframe.
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============================ PART 1 ============================ -->
+<h2 class="part">1 · Scheduling a routine <span class="tag">Option A — per-routine schedule</span></h2>
+<p class="sub">Each routine owns its own schedule, set from its detail screen. The Routines list gains an <b>Up next</b> card and a week strip, so the plan is visible without opening anything.</p>
+
+<div class="gallery">
+
+  <!-- 1 routine detail -->
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Routines</span><span><span class="circ">⌗</span><span class="lnk" style="margin-left:10px">Edit</span></span></div>
+        <div class="bigtitle">Push Day</div>
+        <div style="font-size:12px;color:var(--t2);margin:-4px 2px 10px">6 blocks · 18 sets · Intermediate</div>
+        <div class="card" style="border:1px solid rgba(255,150,69,.35)">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div><div class="name">📅 Schedule</div><div class="s">Mon · Wed · Fri at 7:00 AM</div><div class="t">Reminder 15 min before · Tracked in Habits</div></div>
+            <span class="pill">Next Wed</span>
+          </div>
+          <div class="days small" style="padding:9px 0 0;border:0"><div class="on">M</div><div>T</div><div class="on">W</div><div>T</div><div class="on">F</div><div>S</div><div>S</div></div>
+        </div>
+        <div class="btn" style="margin:2px 0 12px">▶ Start workout</div>
+        <div class="sect">Blocks</div>
+        <div class="card"><div class="name">Bench Press</div><div class="s">4 × 8 · 60 kg · rest 2:00</div></div>
+        <div class="card"><div class="name">Overhead Press</div><div class="s">3 × 10 · 35 kg · rest 1:30</div></div>
+        <div class="card"><div class="name">Incline DB Press</div><div class="s">3 × 12 · 22 kg</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Routine detail.</b> <span class="new">NEW</span> A Schedule card above Start. An unscheduled routine shows <i>"Not scheduled · Set a schedule"</i> in the same place. Tapping it opens the editor (2).</p>
+  </div>
+
+  <!-- 2 schedule editor: when -->
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Push Day</div></div>
+      <div class="dim"></div>
+      <div class="sheet"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Schedule</span><span class="lnk b">Save</span></div>
+        <div class="group"><div class="row"><span>Scheduled</span><span class="tog on"></span></div></div>
+        <div class="glbl">Repeat</div>
+        <div class="group">
+          <div class="chips"><span class="chip on">Weekly</span><span class="chip">Every N days</span><span class="chip">Once</span></div>
+          <div class="days"><div class="on">M</div><div>T</div><div class="on">W</div><div>T</div><div class="on">F</div><div>S</div><div>S</div></div>
+          <div class="row"><span>Every</span><span class="v e">1 week ⌄</span></div>
+        </div>
+        <div class="glbl">Time</div>
+        <div class="group">
+          <div class="row"><span>Same time every day</span><span class="tog on"></span></div>
+          <div class="row"><span>Start at</span><span class="v e">7:00 AM</span></div>
+        </div>
+        <div class="glbl">Duration</div>
+        <div class="group">
+          <div class="row"><span>Starts</span><span class="v">Today</span></div>
+          <div class="row"><span>Ends</span><span class="v e">Never ⌄</span></div>
+        </div>
+        <div class="foot">Next 3: Wed 1 Oct · Fri 3 Oct · Mon 6 Oct at 7:00 AM</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Editor · When.</b> Weekly on chosen days, repeating every 1–4 weeks (for A/B splits), <b>or</b> every N days, <b>or</b> once. Turn off <i>Same time every day</i> to set a time per weekday. Ends can be never, a date, or after N sessions. A live <b>"Next 3"</b> preview confirms the result.</p>
+  </div>
+
+  <!-- 3 schedule editor: reminders + habits -->
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Push Day</div></div>
+      <div class="dim"></div>
+      <div class="sheet"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Schedule</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Notifications</div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--ember);color:#2a1405">🔔</span>Remind me</span><span class="tog on"></span></div>
+          <div class="row"><span>When</span><span class="v e">15 min before ⌄</span></div>
+          <div class="row"><span>Nudge if not started</span><span class="v e">After 30 min ⌄</span></div>
+          <div class="row"><span>Night-before heads-up</span><span class="v e">Off ⌄</span></div>
+          <div class="row"><span>Sound</span><span class="tog on"></span></div>
+          <div class="row"><span>Time Sensitive</span><span class="tog"></span></div>
+        </div>
+        <div class="foot">The nudge is cancelled automatically once you start the routine. Time Sensitive gets through Focus modes.</div>
+        <div class="glbl">Habits</div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--habit);color:#fff">✓</span>Track in Habits</span><span class="tog on"></span></div>
+          <div class="row"><span>Habit</span><span class="v e">Push Day (new) ⌄</span></div>
+        </div>
+        <div class="foot">Finishing this routine ticks the habit off. Your streak counts <b>scheduled days only</b>, so a rest day never breaks it.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Editor · Notify &amp; Habits.</b> Remind at start time or 5/10/15/30/60 min before. An optional follow-up nudge fires if you haven't started. An optional heads-up goes out the night before at a time you choose. Sound and Time Sensitive are per-routine. <b>Habit</b> creates a new linked habit or attaches to an existing one (e.g. one "Gym" habit shared by several routines).</p>
+  </div>
+
+  <!-- 4 lock screen notification -->
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="screen lock"><div class="island"></div>
+      <div class="statusbar"><span>6:45</span><span>●●● 􀙇 ▮</span></div>
+      <div class="date" style="margin-top:14px">Wednesday 1 October</div>
+      <div class="clock">6:45</div>
+      <div style="flex:1"></div>
+      <div class="notif">
+        <div class="hd"><span class="ap">S</span>SNAPPET · WORKOUT<span style="margin-left:auto">now</span></div>
+        <div class="tt">Push Day in 15 min</div>
+        <div class="bd">6 blocks · ~55 min · 🔥 4-session streak</div>
+      </div>
+      <div class="actions">
+        <div>Start now <span>▶</span></div>
+        <div>Snooze 15 min <span>⏱</span></div>
+        <div>Skip today <span>↷</span></div>
+      </div>
+      <div style="height:36px"></div>
+    </div></div>
+    <p class="caption"><b>The reminder (long-press).</b> <b>Start now</b> opens straight into the player with the routine loaded. <b>Snooze</b> re-fires in 15 min. <b>Skip today</b> marks the day skipped and cancels the nudge; a skip counts as "excused" rather than missed, but only if you choose that in Habits. The body shows the size of the session and the streak at stake.</p>
+  </div>
+
+  <!-- 5 routines list with up next -->
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span><span class="circ">⚙</span><span class="circ">＋</span></span></div>
+        <div class="bigtitle">Gym Tracker</div>
+        <div class="segbar"><div>Dashboard</div><div class="on">Routines</div><div>History</div><div>Library</div></div>
+        <div class="upnext">
+          <div class="k">Up next · Wed 7:00 AM</div>
+          <div class="n">Push Day</div>
+          <div class="w">6 blocks · 18 sets · 🔥 4 streak</div>
+          <div class="week">
+            <div>M<b class="d">✓</b></div><div>T<b></b></div><div class="today">W<b class="s">Push</b></div><div>T<b></b></div><div>F<b class="s">Legs</b></div><div>S<b></b></div><div>S<b></b></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px"><span class="btn sm">▶ Start</span><span class="btn sm ghost">Skip</span></div>
+        </div>
+        <div class="sect">My Routines</div>
+        <div class="card"><div class="name">Push Day <span class="pill" style="margin-left:4px">📅 M W F</span></div><div class="s">6 exercises · 18 sets</div></div>
+        <div class="card"><div class="name">Leg Day <span class="pill" style="margin-left:4px">📅 F</span></div><div class="s">5 exercises · 16 sets</div></div>
+        <div class="card"><div class="name">Mobility flow</div><div class="s">8 exercises · 8 sets</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Routines list.</b> <span class="new">NEW</span> An <b>Up next</b> card shows this week across every scheduled routine (✓ done, coral = missed) with Start/Skip. Scheduled rows get a 📅 chip. The card is hidden when nothing is scheduled, so the list looks exactly as it does today.</p>
+  </div>
+
+  <!-- 5B alt weekly plan -->
+  <div class="step"><div class="stepnum alt">5B</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Routines</span><span class="title">Weekly plan</span><span class="lnk b">Done</span></div>
+        <div class="glbl">This week · repeats weekly</div>
+        <div class="group">
+          <div class="row"><span><b>Mon</b></span><span class="v e">Push Day · 7:00 ›</span></div>
+          <div class="row"><span><b>Tue</b></span><span class="v">Rest ›</span></div>
+          <div class="row"><span><b>Wed</b></span><span class="v e">Pull Day · 7:00 ›</span></div>
+          <div class="row"><span><b>Thu</b></span><span class="v">Rest ›</span></div>
+          <div class="row"><span><b>Fri</b></span><span class="v e">Leg Day · 18:30 ›</span></div>
+          <div class="row"><span><b>Sat</b></span><span class="v e">Mobility · 9:00 ›</span></div>
+          <div class="row"><span><b>Sun</b></span><span class="v">Rest ›</span></div>
+        </div>
+        <div class="glbl">Reminders (all days)</div>
+        <div class="group">
+          <div class="row"><span>Remind me</span><span class="v e">15 min before ⌄</span></div>
+          <div class="row"><span>Track in Habits</span><span class="tog on"></span></div>
+        </div>
+        <div class="foot">One plan, one habit ("Train"). Tapping a day picks its routine and time.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Alternative B: one weekly plan.</b> A split (PPL etc.) is laid out in a single place, and one "Train" habit is fed by all of it. <span class="cost">Cost:</span> no "every 2 weeks / every 3 days / once", reminders aren't per routine, and it doesn't travel over QR (a plan spans several routines). <b>It can be added later on top of A</b>, since A's schedules are what it would edit.</p>
+  </div>
+</div>
+
+<!-- ============================ PART 2 ============================ -->
+<h2 class="part">2 · Habits link</h2>
+<p class="sub">A scheduled routine appears in the Habits mini-app as a habit that knows its days. Finishing the workout ticks it off automatically, and ticking it by hand in Habits still works (e.g. you trained somewhere else).</p>
+<div class="gallery">
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span class="circ">＋</span></div>
+        <div class="bigtitle">Habits</div>
+        <div class="hab">
+          <div class="top"><span class="sym">🏋</span><div><div class="nm">Push Day</div><div class="st">🔥 4 session streak</div><div class="rt">Mon · Wed · Fri · 100% last 30 days</div></div><span class="ck"></span></div>
+          <div class="strip"><div>T<b class="off">24</b></div><div>F<b class="on">25</b></div><div>S<b class="off">26</b></div><div>S<b class="off">27</b></div><div>M<b class="on">29</b></div><div>T<b class="off">30</b></div><div style="color:#fff">W<b>1</b></div></div>
+          <div class="link">🔗 Linked to <b>Push Day</b> routine · today 7:00 AM <span class="btn sm" style="margin-left:auto;padding:3px 10px">▶ Start</span></div>
+        </div>
+        <div class="hab">
+          <div class="top"><span class="sym">💧</span><div><div class="nm">Drink water</div><div class="st">🔥 12 day streak</div><div class="rt">Every day · 93% last 30 days</div></div><span class="ck on"></span></div>
+          <div class="strip"><div>T<b class="on">24</b></div><div>F<b class="on">25</b></div><div>S<b class="on">26</b></div><div>S<b class="on">27</b></div><div>M<b class="on">29</b></div><div>T<b class="on">30</b></div><div style="color:#fff">W<b class="on">1</b></div></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Habits list.</b> <span class="new">NEW</span> Days off the schedule are drawn as dashed outlines and don't count. The streak and 30-day rate cover scheduled days only. A <b>Linked</b> strip shows today's slot with a Start button that opens the Gym Tracker player. Ordinary habits are unchanged.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">7</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Habits</div></div>
+      <div class="dim"></div>
+      <div class="sheet"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Edit Habit</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Habit</div>
+        <div class="group"><div class="row"><span>Push Day</span></div></div>
+        <div class="glbl">Days</div>
+        <div class="group">
+          <div class="chips"><span class="chip">Every day</span><span class="chip on">Specific days</span></div>
+          <div class="days"><div class="on">M</div><div>T</div><div class="on">W</div><div>T</div><div class="on">F</div><div>S</div><div>S</div></div>
+        </div>
+        <div class="foot">Set by the linked routine's schedule. Change it there, or unlink below.</div>
+        <div class="glbl">Linked routine</div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--ember);color:#2a1405">🏋</span>Push Day</span><span class="v">Open ›</span></div>
+          <div class="row"><span>Skipped days count as</span><span class="v e">Excused ⌄</span></div>
+          <div class="row" style="color:#ff6b6b"><span>Unlink from routine</span></div>
+        </div>
+        <div class="foot">Unlinking keeps the habit and its history; it just stops auto-completing.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Habit editor.</b> <span class="new">NEW</span> Any habit (not just linked ones) can now run on specific weekdays. A linked habit's days mirror its routine and are read-only here, so the two can't disagree. You decide whether "Skip today" counts as excused or as missed.</p>
+  </div>
+</div>
+
+<!-- ============================ PART 3 ============================ -->
+<h2 class="part">3 · QR share with schedule · scan · from Photos</h2>
+<p class="sub">The schedule travels inside the existing <code>v1</code> code as one optional field. Older Snappet builds ignore that field and still import the routine, so no version bump is needed. Scanning moves to the Routines screen, where you'd look for it.</p>
+<div class="gallery">
+  <div class="step"><div class="stepnum">8</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Done</span><span class="title">Share routine</span><span style="width:34px"></span></div>
+        <div class="segbar"><div class="on">My Code</div><div>Scan</div></div>
+        <div style="text-align:center;font-weight:700">Push Day</div>
+        <div class="qr" id="qr1"></div>
+        <div class="group" style="margin-top:6px">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--ember);color:#2a1405">📅</span>Include schedule</span><span class="tog on"></span></div>
+          <div class="row"><span style="font-size:12px;color:var(--t2)">Mon · Wed · Fri at 7:00 AM · reminder 15 min before</span></div>
+        </div>
+        <div class="foot">Your Habits data is never shared, only the schedule itself.</div>
+        <div class="btn" style="margin-top:10px">⇪ Share link</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Share.</b> <span class="new">NEW</span> An <b>Include schedule</b> toggle (on by default when the routine has one) changes the code live. A schedule adds only ~30 bytes, so it doesn't push a routine past the "too big for a code" limit.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">9</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span><span class="circ">⚙</span><span class="circ" style="background:rgba(255,150,69,.3)">＋</span></span></div>
+        <div class="bigtitle">Gym Tracker</div>
+        <div class="segbar"><div>Dashboard</div><div class="on">Routines</div><div>History</div><div>Library</div></div>
+        <div class="sect">My Routines</div>
+        <div class="card"><div class="name">Push Day</div><div class="s">6 exercises · 18 sets</div></div>
+        <div class="card"><div class="name">Leg Day</div><div class="s">5 exercises · 16 sets</div></div>
+      </div>
+      <div class="menu">
+        <div>New routine <span>✎</span></div>
+        <div>Scan QR code <span>⌗</span></div>
+        <div>Import from Photos <span>🖼</span></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Scan entry.</b> <span class="new">NEW</span> On the Routines tab, <b>＋</b> becomes a menu: New routine · <b>Scan QR code</b> · <b>Import from Photos</b>. The empty state gets the same three buttons. Share → Scan stays where it is too, for anyone used to it.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">10</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Scan routine</span><span style="width:40px"></span></div>
+        <div class="cam"><div class="reticle"></div><div class="hint">Point at a Snappet routine QR code</div></div>
+        <div class="btn ghost" style="margin-top:10px">🖼 Choose from Photos</div>
+        <div class="foot" style="text-align:center">A screenshot of a code works too. Nothing leaves your phone.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Scanner.</b> The camera scanner you already have, plus <b>Choose from Photos</b>. Picking an image decodes the QR on-device (Vision). If there's no code, or it isn't a Snappet routine, you get <i>"No routine code found in that photo"</i> and stay here, never a blank result.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">11</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● 􀙇 ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Import routine</span><span style="width:40px"></span></div>
+        <div class="group"><div class="row" style="display:block"><div style="font-weight:700;font-size:16px">Push Day</div><div style="font-size:12px;color:var(--t2)">6 blocks · 18 sets</div></div></div>
+        <div class="glbl">Schedule</div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--ember);color:#2a1405">📅</span>Add this schedule</span><span class="tog on"></span></div>
+          <div class="row"><span style="font-size:12px;color:var(--t2)">Mon · Wed · Fri at 7:00 AM</span><span class="v e">Edit</span></div>
+          <div class="row"><span>Remind me</span><span class="v e">15 min before ⌄</span></div>
+          <div class="row"><span>Track in Habits</span><span class="tog on"></span></div>
+        </div>
+        <div class="foot">Reminders need notification permission. We'll ask once, when you add.</div>
+        <div class="glbl">Blocks</div>
+        <div class="group">
+          <div class="row"><span>Bench Press</span><span class="v">4 × 8</span></div>
+          <div class="row"><span>Overhead Press</span><span class="v">3 × 10</span></div>
+          <div class="row"><span>…4 more</span></div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="btn">＋ Add to my routines</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Import confirm.</b> <span class="new">NEW</span> A Schedule section appears only when the code carries one. You can accept it, tweak it (Edit opens editor 2/3), or turn it off. <b>Track in Habits</b> defaults to <b>off</b> for imports: a friend's code shouldn't add a habit to your list unless you ask for it.</p>
+  </div>
+</div>
+
+<!-- ============================ DECISIONS ============================ -->
+<h2 class="part">Your calls</h2>
+<div class="q"><b>Q1 · Where schedules live.</b> <b>A</b> per-routine schedule (1–5) · <b>B</b> one weekly plan (5B) · <b>A now, B later</b>. <span class="rec">My pick: A now, B later.</span> A covers every repeat pattern, travels over QR, and gives each routine its own reminders; B can be layered on top once A exists.</div>
+<div class="q"><b>Q2 · Habit per routine, or shared?</b> The editor (3) lets you pick either: a new habit per routine, or attach several routines to one "Gym" habit. <span class="rec">Default: a new habit per routine</span>, with "attach to existing" one tap away.</div>
+<div class="q"><b>Q3 · Streaks on scheduled habits.</b> Count <b>scheduled days only</b> (rest days neither help nor break the streak) vs. keep the current every-day streak. <span class="rec">My pick: scheduled days only</span>. Otherwise a Mon/Wed/Fri routine can never have a streak above 1.</div>
+<div class="q"><b>Q4 · "Skip today" in Habits.</b> Excused (streak survives) vs. missed (streak breaks) vs. user-chosen per habit (drawn in 7). <span class="rec">My pick: per habit, default Excused.</span></div>
+
+<table class="cmp">
+  <tr><th>Under the hood (for reference)</th><th>Choice</th></tr>
+  <tr><td>Storage</td><td>An optional <code>RoutineSchedule</code> Codable on <code>Routine</code>; <code>Habit</code> gains optional <code>weekdays</code> + <code>linkedRoutineID</code>. All optional, so SwiftData migrates lightweight, and the backup covers both.</td></tr>
+  <tr><td>Notifications</td><td>A pure planner computes the next ~14 days of occurrences (reminder, nudge, heads-up) within iOS's 64-pending budget. It re-plans on launch, on foreground, on edit, and when a session starts/finishes, which is what cancels the nudge.</td></tr>
+  <tr><td>QR</td><td>Same <code>snappet://routine/v1/</code> code plus an optional <code>sc</code> key. Older builds ignore unknown keys (import still works; the schedule just isn't picked up).</td></tr>
+  <tr><td>Photo import</td><td>PhotosPicker, then Vision <code>VNDetectBarcodesRequest</code> (QR), then the existing <code>SharedRoutine(decoding:)</code>. Fully on-device.</td></tr>
+  <tr><td>Tests</td><td>Occurrence math (DST, every-2-weeks, end-after-N), scheduled-day streaks, QR round-trip with/without schedule plus old-decoder compatibility, and photo decode against a rendered QR. All pure XCTest, no device needed.</td></tr>
+</table>
+</div>
+
+<script>
+  // deterministic fake QR so the share screen reads like one
+  const q=document.getElementById('qr1');let s=7;
+  function r(){s=(s*9301+49297)%233280;return s/233280}
+  for(let y=0;y<21;y++)for(let x=0;x<21;x++){
+    const f=(a,b)=>x>=a&&x<a+7&&y>=b&&y<b+7;
+    let k;
+    const finder=[[0,0],[14,0],[0,14]].find(([a,b])=>f(a,b));
+    if(finder){const [a,b]=finder;const dx=x-a,dy=y-b;k=(dx==0||dx==6||dy==0||dy==6)||(dx>=2&&dx<=4&&dy>=2&&dy<=4)}
+    else k=r()>.52;
+    const i=document.createElement('i');if(k)i.className='k';q.appendChild(i);
+  }
+</script>
+</body>
+</html>

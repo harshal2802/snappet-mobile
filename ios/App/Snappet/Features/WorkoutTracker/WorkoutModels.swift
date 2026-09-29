@@ -470,6 +470,9 @@ final class Routine {
     var detail: String?
     var sourceLabel: String?
     var sourceURL: String?
+    /// The routine's `RoutineSchedule` as terse JSON (prompt 136); nil = not scheduled. Stored as Data
+    /// (not a Codable composite) so the schedule's own defaults-tolerant decoder owns every migration.
+    var scheduleData: Data?
 
     init(id: UUID = UUID(), name: String, exercises: [RoutineExercise] = [],
          createdAt: Date = .now, updatedAt: Date = .now, isStarter: Bool = false,
@@ -501,6 +504,11 @@ final class Routine {
     }
 
     var totalSets: Int { exercises.reduce(0) { $0 + $1.sets } }
+
+    var schedule: RoutineSchedule? {
+        get { RoutineSchedule.decode(scheduleData) }
+        set { scheduleData = newValue?.encodedData }
+    }
 }
 
 /// A workout session. While live, `completedAt == nil` (at most one such "active" session

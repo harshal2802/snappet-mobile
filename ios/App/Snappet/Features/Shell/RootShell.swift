@@ -32,6 +32,7 @@ struct RootShell: View {
                         // has data. Subsequent refreshes ride scenePhase below.
                         WidgetSnapshotService.refresh(context: context)
                         drainAppActions()   // Siri/Shortcuts "open app and act" intents (#81 Phase 3)
+                        RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)   // prompt 136
                         SpotlightIndexer.reindex(context: context)   // #81 Phase 4
                         app.startWatchWorkoutObserver()   // HealthKit background delivery (watch-workouts-clips P2)
                         importWatchWorkouts()   // Apple Watch workouts → Clips (watch-workouts-clips P1)
@@ -52,6 +53,8 @@ struct RootShell: View {
             if phase == .active {
                 app.screenAwake.reassert()   // prompt 135: re-apply the workout's keep-awake on return
                 drainAppActions()
+                // Roll the scheduled-routine reminders' 14-day window forward (prompt 136).
+                RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
                 importWatchWorkouts()   // catch workouts finished while backgrounded (PR2 adds true background delivery)
             }
         }
@@ -61,6 +64,23 @@ struct RootShell: View {
         // intent rides the router one-shot (consumed by `KilterRootView`, which owns the
         // destination + catalog knowledge for the graceful missing-climb landing).
         .onOpenURL { url in handle(url) }
+        // Scheduled-routine notification actions (prompt 136). `initial: true` catches a cold start
+        // from a tapped action (set by the delegate before this view existed).
+        .onChange(of: app.routineReminders.pendingAction, initial: true) { _, action in
+            guard let action else { return }
+            app.routineReminders.pendingAction = nil
+            switch action {
+            case .start(let id):
+                router.pendingRoutineStart = id
+                router.open(module: "workout-log")
+            case .open:
+                router.pendingShowRoutines = true
+                router.open(module: "workout-log")
+            case .skip(let id, let day):
+                RoutineScheduleSync.skip(routineID: id, day: day, context: context,
+                                         reminders: app.routineReminders)
+            }
+        }
         // Spotlight tap (#81 Phase 4): the CSSearchableItem's uniqueIdentifier IS its snappet:// URL,
         // so route it through the same handler as onOpenURL — one routing brain.
         .onContinueUserActivity(CSSearchableItemActionType) { activity in

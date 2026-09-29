@@ -72,6 +72,9 @@ final class AppModel {
     /// The single owner of the screen's auto-lock override during a workout (prompt 135): the player
     /// and every running timer take named holds; the flag is derived from them + the user's mode.
     let screenAwake = ScreenAwakeController()
+    /// Scheduled-routine reminders (prompt 136) — and the app's notification delegate, installed in
+    /// `init` so a cold start from a tapped "Start now" / "Skip today" action is delivered.
+    let routineReminders = RoutineReminders()
 
     /// The Pomodoro countdown engine. Owned here — not as `@State` on `PomodoroRootView` —
     /// so popping back to the Apps grid no longer kills a running focus session (the same
@@ -98,6 +101,7 @@ final class AppModel {
         // (the reel toolbar's add-clips button, session-detail hints) is right from first render.
         // Requests still update it (`photos.requestAccess()` call sites).
         photoAccess = photos.currentStatus
+        routineReminders.install()
 
         // Wire the Kilter session manager to its sibling live services HERE, where all four are
         // constructed — not in a view's `onAppear` — so binding can't depend on appear order:
