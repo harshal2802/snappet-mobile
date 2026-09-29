@@ -11,6 +11,7 @@ struct WorkoutSettingsView: View {
 
     @Environment(AppModel.self) private var app
     @State private var showingHRSource = false
+    @AppStorage(KeepScreenAwakeMode.storageKey) private var keepAwakeRaw = KeepScreenAwakeMode.defaultMode.rawValue
 
     var body: some View {
         Form {
@@ -20,6 +21,19 @@ struct WorkoutSettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+
+            Section {
+                Picker("Keep screen on", selection: $keepAwakeRaw) {
+                    ForEach(KeepScreenAwakeMode.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                .accessibilityIdentifier("settings.keepScreenAwake")
+            } header: {
+                Text("During a workout")
+            } footer: {
+                Text(KeepScreenAwakeMode.resolve(keepAwakeRaw).footer)
+            }
+            // The controller reads the stored mode at launch; push later changes to it live.
+            .onChange(of: keepAwakeRaw) { _, raw in app.screenAwake.mode = KeepScreenAwakeMode.resolve(raw) }
 
             Section {
                 Button {

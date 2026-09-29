@@ -84,10 +84,10 @@ struct TimedSetCover: View {
             // capture stays correct — only the display stalls). Same family as the prompt-110
             // rest-ticker freeze; a no-op on first appearance (`start()` already runs the ticker).
             vm.resumeTicking()
-            UIApplication.shared.isIdleTimerDisabled = true
+            app.screenAwake.hold("timedSetCover", reason: .timer)
         }
         .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
+            app.screenAwake.release("timedSetCover")   // only THIS hold — the workout may still be open (prompt 135)
             vm.endTicking()
         }
         .onChange(of: scenePhase) { _, phase in

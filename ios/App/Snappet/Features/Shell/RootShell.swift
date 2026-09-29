@@ -50,6 +50,7 @@ struct RootShell: View {
                 WidgetSnapshotService.refresh(context: context)
             }
             if phase == .active {
+                app.screenAwake.reassert()   // prompt 135: re-apply the workout's keep-awake on return
                 drainAppActions()
                 importWatchWorkouts()   // catch workouts finished while backgrounded (PR2 adds true background delivery)
             }

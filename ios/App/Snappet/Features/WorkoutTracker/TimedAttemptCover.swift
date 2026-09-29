@@ -83,11 +83,11 @@ struct TimedAttemptCover: View {
             // rest-ticker freeze; a no-op on first appearance (`start()` already runs the ticker).
             vm.resumeTicking()
             // Keep the screen awake while timing an attempt off the wall — a sleeping screen mid-effort
-            // hid the live timer (Phase-6 device note). Cheaply reverted on disappear. (Phase 7)
-            UIApplication.shared.isIdleTimerDisabled = true
+            // hid the live timer (Phase-6 device note). Released on disappear (prompt 135 holds, was a raw flag). (Phase 7)
+            app.screenAwake.hold("timedAttemptCover", reason: .timer)
         }
         .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
+            app.screenAwake.release("timedAttemptCover")   // only THIS hold — the workout may still be open (prompt 135)
             vm.endTicking()
             // Never silently drop a captured effort: a dismissal after Stop (Peek / swipe-down) logs the
             // attempt with the captured duration AND any recorded clips. Cleared first so a subsequent

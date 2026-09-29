@@ -567,6 +567,8 @@ const nodes = [
     file: "ios/App/Snappet/Services/LiveActivityController.swift", desc: "Drives the Lock Screen / Dynamic Island Live Activity: overall timer, live HR, current exercise, and the paused state (renders a Paused badge that freezes the timer). Throttles HR-only pushes (≥2 s) so it never exhausts the ActivityKit update budget.", tags: ["live-activity","pause"] },
   { id: "workoutactivitymapping", label: "WorkoutActivityMapping", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/WorkoutActivityMapping.swift", desc: "Maps a routine to the HKWorkoutActivityType the watch should record (the inverse of HealthKitService's post-hoc map). WORKOUT-REDESIGN E4: added activityType(for: WorkoutDiscipline) (run→.running, climb→.climbing, dance→.cardioDance, timed→.HIIT, strength→.traditionalStrengthTraining, other→.other) and activityType(disciplines:sport:category:) — the discipline axis is now the strongest signal: a single-discipline routine records that type (a run is NEVER silently strength), a MIXED routine records .mixedCardio (one HKWorkoutSession holds one type, so the honest umbrella — README §10 Q1), and an all-strength / pre-E4 routine falls back to the legacy sport/category path unchanged. LiveMetricsCoordinator.start(for:disciplines:…) threads the routine's per-block disciplines from WorkoutTrackerModule.startLiveMetrics. Unit-tested (LiveWorkoutTests).", tags: ["mapping","discipline","keystone","mixed-session"] },
+  { id: "screen-awake", label: "ScreenAwakeController", type: "service", group: "core", category: "core", platform: "ios",
+    file: "ios/App/Snappet/Services/ScreenAwakeController.swift", desc: "Prompt 135 — the ONE owner of UIApplication.isIdleTimerDisabled (owned by AppModel, injected as the optional \\.screenAwake environment value). Surfaces take NAMED holds (reason .workout / .timer) and release only their own; the flag is derived by the pure ScreenAwakePolicy from the live holds + the user's KeepScreenAwakeMode (Whole workout default / Only timers / Off, @AppStorage workout.keepScreenAwake, set in Workout Settings). Holders: WorkoutTrackerModule while the player cover is presented (keyed on `playing`, so minimizing releases it), FreeformPlayerView's rest count-down until it hits zero, the three timed FOCUS covers, and StopwatchView while running. Fixes the screen auto-locking mid-routine: the player never held the idle timer, and each cover wrote `false` on disappear under a still-open workout. Re-asserted on foreground (RootShell scenePhase).", tags: ["service","idle-timer","keep-awake","workout","ref-counted","unit-tested"] },
   { id: "workoutnotifications", label: "WorkoutNotifications", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/WorkoutNotifications.swift", desc: "Local notifications for a backgrounded/minimized workout — schedules a 'rest complete' alert (UNUserNotifications) when rest starts so it still reaches the notification bar if the player isn't foregrounded, and cancels it on skip/pause/finish.", tags: ["notifications","background"] },
 
@@ -917,6 +919,12 @@ const nodes = [
 ];
 
 const links = [
+  { source: "wt-freeform-player", target: "screen-awake", type: "uses", label: "rest count-down hold (135)" },
+  { source: "wt-home", target: "screen-awake", type: "uses", label: "hold while player presented (135)" },
+  { source: "wt-timed-set-cover", target: "screen-awake", type: "uses", label: "timer hold (135)" },
+  { source: "wt-timed-attempt-cover", target: "screen-awake", type: "uses", label: "timer hold (135)" },
+  { source: "wt-structured-runner", target: "screen-awake", type: "uses", label: "timer hold (135)" },
+  { source: "wt-settings", target: "screen-awake", type: "configures", label: "Keep screen on mode (135)" },
   // ---- Shell containment + tab routing ----
   { source: "app", target: "rootshell", type: "contains" },
   { source: "rootshell", target: "shelltabs", type: "contains" },

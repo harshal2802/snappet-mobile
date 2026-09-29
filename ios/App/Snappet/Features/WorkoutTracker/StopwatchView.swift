@@ -129,6 +129,10 @@ struct StopwatchView: View {
     @State private var vm: StopwatchViewModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.screenAwake) private var screenAwake
+    /// This instance's keep-awake hold name (prompt 135) — per instance so two stopwatches can't release
+    /// each other's hold.
+    @State private var awakeID = "stopwatch.\(UUID().uuidString)"
 
     /// Called with the captured elapsed seconds when the user taps Stop.
     private let onStop: (TimeInterval) -> Void
@@ -149,8 +153,14 @@ struct StopwatchView: View {
             dial
             controlButton
         }
-        .onDisappear { vm.endTicking() }
-        .onChange(of: vm.isRunning) { _, running in onRunningChange?(running) }
+        .onDisappear {
+            vm.endTicking()
+            screenAwake?.release(awakeID)
+        }
+        .onChange(of: vm.isRunning) { _, running in
+            onRunningChange?(running)
+            screenAwake?.set(awakeID, reason: .timer, active: running)
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { vm.syncToWallClock() }
         }

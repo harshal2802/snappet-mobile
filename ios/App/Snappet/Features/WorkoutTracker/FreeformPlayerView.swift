@@ -130,6 +130,7 @@ struct FreeformPlayerView: View {
     @State private var restContext: RestTimerDefaults.Context?
     /// Whether a rest count-down is currently shown in the command bar.
     @State private var restRunning = false
+    private var restHoldsScreen: Bool { restRunning && !restTimer.reading.reachedZero }
 
     private var unit: WeightUnit { defaultUnit }
     /// Distance unit for the running discipline (Workout-Type Parity), derived from the weight-unit
@@ -378,7 +379,15 @@ struct FreeformPlayerView: View {
         // Keep the rest count-down correct across backgrounding (it's wall-clock-backed; this just nudges
         // an immediate refresh + the at-zero haptic on return) and tear its ticker down on disappear.
         .onChange(of: scenePhase) { _, phase in if phase == .active { restTimer.syncToWallClock() } }
-        .onDisappear { restTimer.endTicking() }
+        // A counting-down rest is a clock the user watches (prompt 135): hold the screen until it hits
+        // zero (the chip lingers at 0:00 until dismissed — no reason to stay awake for that).
+        .onChange(of: restHoldsScreen, initial: true) { _, holds in
+            app.screenAwake.set("restTimer", reason: .timer, active: holds)
+        }
+        .onDisappear {
+            restTimer.endTicking()
+            app.screenAwake.release("restTimer")
+        }
         // Live clip discovery (§F): periodically scan the Photos library for clips filmed during the
         // session and auto-tag them to the set they fall in. Device-only — a no-op without full Photo
         // access / on the simulator. ~20 s cadence (clips don't land faster, and a full-library time

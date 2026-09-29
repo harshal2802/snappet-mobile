@@ -72,11 +72,11 @@ struct StructuredTimedRunner: View {
             vm.hrSink = { app.liveWorkout.latestHR }
             vm.start()
             // Keep the screen awake through the interval run — a sleeping screen mid-set hid the phase
-            // ring + count-down (Phase-6 device note). Cheaply reverted on disappear. (Phase 7)
-            UIApplication.shared.isIdleTimerDisabled = true
+            // ring + count-down (Phase-6 device note). Released on disappear (prompt 135 holds, was a raw flag). (Phase 7)
+            app.screenAwake.hold("intervalRunner", reason: .timer)
         }
         .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
+            app.screenAwake.release("intervalRunner")   // only THIS hold — the workout may still be open (prompt 135)
             vm.endTicking()
         }
         .onChange(of: scenePhase) { _, phase in

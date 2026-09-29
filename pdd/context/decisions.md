@@ -9324,3 +9324,15 @@ Non-obvious calls:
   decodes mid-scroll.
 - Prefetch must warm the SAME poster time the card will request (trimmed clips poster at their kept
   range's start) or the cache key misses and the work is pure waste.
+
+## 2026-09-29 — keep the screen on with named holds, not a raw flag (prompt 135)
+
+- **One owner for `isIdleTimerDisabled`.** Three covers each set it on appear / cleared it on
+  disappear; the player (where users spend the whole workout) never set it at all. A global Bool with
+  several writers can't express "this cover is done but the workout isn't" — so surfaces now take
+  named holds on `ScreenAwakeController` and the flag is derived (pure `ScreenAwakePolicy`).
+- **"Workout open" is keyed on the host's `playing`, not the player's onAppear** — presenting a
+  timed cover or Studio fires the player's `onDisappear`. Minimizing drops `playing`, so a minimized
+  workout lets the phone lock (the Live Activity + rest notification carry it).
+- **Default is Whole workout**, with Only timers / Off in Workout Settings. The rest hold ends at
+  0:00 even though the chip lingers until dismissed.

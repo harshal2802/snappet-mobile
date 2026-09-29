@@ -235,6 +235,12 @@ struct WorkoutHomeView: View {
                                })
             .navigationTransition(.zoom(sourceID: "workoutPlayer", in: playerZoom))
         }
+        // Keep the screen on while the player is up (prompt 135) — keyed on the cover's presence, not the
+        // player's onAppear, because the player "disappears" under every timed cover / Studio it
+        // presents. Minimizing drops `playing`, which releases the hold and lets the phone lock.
+        .onChange(of: playing?.id, initial: true) { _, id in
+            app.screenAwake.set("workoutPlayer", reason: .workout, active: id != nil)
+        }
         // The module-level Video Studio (#74): presented from the dashboard's "Open in Studio"
         // rows / a History row's swipe shortcut, on this stable host (the session detail keeps
         // its own identical cover for the in-detail entry).
