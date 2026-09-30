@@ -336,6 +336,11 @@ struct SetLog: Codable, Hashable, Sendable {
     /// Optional rate-of-perceived-exertion (1–10) for a strength/timed effort — the non-climb analogue of a
     /// climb's outcome. Drives later milestone/quality reads; `nil` ⇒ unrated.
     var rpe: Int?
+    /// A hang's load relative to bodyweight, in kg: + added weight, − pulley assist (prompt 142). `nil` ⇒
+    /// bodyweight / not a hang. Additive Optional like the fields above.
+    var loadKg: Double?
+    /// `HandMode.rawValue` for a one-hand hang (prompt 142); `nil` ⇒ both hands.
+    var handModeRaw: String?
 }
 
 /// An exercise as it appears in a session: a snapshot of the routine target plus the

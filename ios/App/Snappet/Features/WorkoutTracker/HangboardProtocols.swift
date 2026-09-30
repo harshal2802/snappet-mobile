@@ -50,10 +50,28 @@ extension TimedExerciseSpec {
             var s = sets > 1 ? "\(sets) sets × " : ""
             s += isSelfPaced ? "\(reps) \(noun)\(reps == 1 ? "" : "s"), each until you tap done"
                              : "\(reps) \(noun)\(reps == 1 ? "" : "s") of \(Self.spoken(workSec))"
+            if let hands = handSentence { s += " " + hands }
             if reps > 1, restSec > 0 { s += " · \(Self.spoken(restSec)) between \(noun)s" }
             if sets > 1, restBetweenSetsSec > 0 { s += " · \(Self.spoken(restBetweenSetsSec)) between sets" }
+            if let load { s += " · " + Self.loadText(load) }
             return s + total
         }
+    }
+
+    private var handSentence: String? {
+        switch handMode {
+        case nil: return nil
+        case .alternate?: return "each hand, alternating"
+        case .leftThenRight?: return "each hand, left first"
+        case .leftOnly?: return "left hand"
+        case .rightOnly?: return "right hand"
+        }
+    }
+
+    /// "+10 kg" / "pulley −25 kg".
+    static func loadText(_ load: HangLoad) -> String {
+        let amount = SetMeasure.formatWeight((load.amount * 100).rounded() / 100)
+        return load.kind == .added ? "+\(amount) \(load.unitRaw)" : "pulley −\(amount) \(load.unitRaw)"
     }
 
     private var total: String {

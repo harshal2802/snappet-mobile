@@ -182,4 +182,45 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         XCTAssertTrue(tut.waitForExistence(timeout: 4))
         XCTAssertNotEqual(tut.label, "0:00", "the tap-done rep's time is logged")
     }
+
+    /// Prompt 142: one-hand alternating with added weight — the summary says so, and the runner shows the
+    /// hand and the load on every hang.
+    func testOneHandWithAddedLoadShowsHandAndLoad() {
+        openFreeformPlayer()
+        openTimedPickSheet()
+        app.buttons["timed.createNew"].tap()
+        let preset = app.buttons["timed.create.preset.maxhangs"]
+        XCTAssertTrue(preset.waitForExistence(timeout: 5))
+        preset.tap()
+
+        let added = app.buttons["+ Added"]
+        for _ in 0..<5 where !added.exists { app.swipeUp() }
+        XCTAssertTrue(added.waitForExistence(timeout: 4), "the Load section offers + Added")
+        added.tap()
+        let plus = app.buttons["protocol.load.plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 4))
+        plus.tap(); plus.tap(); plus.tap(); plus.tap()   // 4 × 2.5 kg default step = 10 kg
+        let oneHand = app.buttons["One hand"]
+        for _ in 0..<3 where !oneHand.exists { app.swipeUp() }
+        oneHand.tap()
+
+        let summary = app.staticTexts["protocol.summary"]
+        XCTAssertTrue(summary.label.contains("each hand, alternating"), summary.label)
+        XCTAssertTrue(summary.label.contains("+10 kg"), summary.label)
+        snap("protocol-one-hand-load")
+        app.buttons["timed.create.add"].tap()
+        XCTAssertTrue(app.staticTexts["freeform.timedName"].waitForExistence(timeout: 5)
+            || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2))
+        tapAddSetForLastExercise()
+
+        // During get-ready: which hand comes first. Then the hang shows LEFT and the load.
+        XCTAssertTrue(app.staticTexts["intervalRunner.nextHand"].waitForExistence(timeout: 6))
+        let hand = app.staticTexts["intervalRunner.hand"]
+        XCTAssertTrue(hand.waitForExistence(timeout: 10), "the hang shows which hand")
+        XCTAssertTrue(hand.label.contains("LEFT"), hand.label)
+        XCTAssertTrue(app.otherElements["intervalRunner.load"].exists || app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS '+10 kg'")).firstMatch.exists, "the load shows on the hang")
+        snap("runner-one-hand-load")
+        app.buttons["intervalRunner.stop"].tap()
+    }
 }

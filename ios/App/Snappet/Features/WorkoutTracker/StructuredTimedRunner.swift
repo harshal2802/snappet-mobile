@@ -134,6 +134,15 @@ struct StructuredTimedRunner: View {
 
     @ViewBuilder private var runningBody: some View {
         VStack(spacing: 18) {
+            // One-hand protocol: which hand, on every hang (prompt 142, wireframe frame 5B).
+            if vm.state.phase.isWork, let hand = vm.state.phase.hand {
+                Label(hand.label, systemImage: "hand.raised.fill")
+                    .font(.title2.weight(.heavy)).tracking(2)
+                    .foregroundStyle(Color(red: 0.16, green: 0.08, blue: 0.02))
+                    .padding(.horizontal, 22).padding(.vertical, 8)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityIdentifier("intervalRunner.hand")
+            }
             // Phase label — READY / WORK / REST, tinted per phase.
             Text(vm.state.phase.label)
                 .font(.system(size: 40, weight: .heavy, design: .rounded))
@@ -148,7 +157,12 @@ struct StructuredTimedRunner: View {
             }
 
             // Set/rep counter (hidden during lead-in / between-set rest, where there's no live rep).
-            if vm.state.repIndex > 0 {
+            if vm.state.repIndex > 0, let hand = vm.state.phase.hand {
+                Text("Set \(vm.state.setIndex)/\(vm.schedule.totalSets) · \(hand == .left ? "Left" : "Right") \(vm.state.repIndex) of \(vm.schedule.repsPerSet)")
+                    .font(.headline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.9))
+                    .accessibilityIdentifier("intervalRunner.setrep")
+            } else if vm.state.repIndex > 0 {
                 Text("Set \(vm.state.setIndex)/\(vm.schedule.totalSets) · Rep \(vm.state.repIndex)/\(vm.schedule.repsPerSet)")
                     .font(.headline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.white.opacity(0.9))
@@ -160,6 +174,15 @@ struct StructuredTimedRunner: View {
                     .accessibilityIdentifier("intervalRunner.setrep")
             }
 
+            // Load on the hang (prompt 142).
+            if let load = vm.schedule.spec.load { loadBar(load) }
+            // During a rest in a one-hand protocol: which hand is next.
+            if vm.state.phase.isRest || vm.state.phase.kind == .leadIn,
+               let next = vm.schedule.nextWorkHand(after: vm.state.phase) {
+                Text("Next: \(next.label) hand")
+                    .font(.headline.weight(.bold)).foregroundStyle(.white.opacity(0.85))
+                    .accessibilityIdentifier("intervalRunner.nextHand")
+            }
             // Next-phase preview chip.
             if let next = vm.state.phase.nextLabel {
                 Label("next ▸ \(next)", systemImage: "arrow.forward")
@@ -208,6 +231,27 @@ struct StructuredTimedRunner: View {
             Text("Tap when the rep is finished")
                 .font(.footnote).foregroundStyle(.white.opacity(0.7))
         }
+    }
+
+    /// "Load  +10 kg · 80 kg total" (total only when bodyweight is known).
+    private func loadBar(_ load: HangLoad) -> some View {
+        let text = TimedExerciseSpec.loadText(load)
+        let total: String? = app.userProfile.profile.weightKg.flatMap { bw in
+            guard bw > 0 else { return nil }
+            let unit: WeightUnit = load.unitRaw == "lb" ? .lb : .kg
+            let v = (WorkoutMath.kgToUnit(load.totalKg(bodyweightKg: bw), unit) * 10).rounded() / 10
+            return "\(SetMeasure.formatWeight(v)) \(unit.display) total"
+        }
+        return HStack {
+            Text("Load").foregroundStyle(.white.opacity(0.7))
+            Spacer()
+            Text(total.map { "\(text) · \($0)" } ?? text).fontWeight(.bold)
+        }
+        .font(.subheadline.monospacedDigit())
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityIdentifier("intervalRunner.load")
     }
 
     private var phaseTint: Color {
@@ -688,6 +732,9 @@ final class RunnerViewModel {
 
     /// Build the `SetLog` to commit — the time-under-tension as the duration (the timed-set contract).
     func buildSetLog() -> SetLog {
-        SetLog(durationSec: capture.tut > 0 ? capture.tut : nil)
+        var log = SetLog(durationSec: capture.tut > 0 ? capture.tut : nil)
+        log.loadKg = schedule.spec.load?.signedKg
+        log.handModeRaw = schedule.spec.handMode?.rawValue
+        return log
     }
 }

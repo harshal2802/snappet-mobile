@@ -9416,3 +9416,12 @@ Non-obvious calls:
   where it stopped. The entering tick anchors the rep at the schedule's phase start, so tick latency
   never steals rest time.
 - The new spec field is Optional and omitted when false, so no stored protocol changes bytes.
+
+## 2026-09-30 — load is signed vs bodyweight; hands expand the timeline (prompt 142)
+
+- **Load = direction + amount as typed + unit** (`HangLoad`), so the editor never re-rounds what the
+  user entered; everything computes through `signedKg` (+ added, − pulley). Bodyweight comes from the
+  existing profile; without it the UI asks for it rather than guessing.
+- **Reps are per hand** for two-sided modes, and the schedule itself is expanded (L R L R… / L…R…), so
+  the runner, totals and counters need no one-hand special cases beyond the label.
+- Load/hands are offered only where the protocol runner logs them — never a setting that silently drops.

@@ -15,6 +15,12 @@ struct ProtocolDraft: Equatable {
     var leadInSec: Int
     /// Each rep "until I tap done" instead of a fixed hang (prompt 141).
     var selfPaced: Bool
+    /// Load (prompt 142): nil = bodyweight; otherwise added / assisted with an amount in `loadUnitRaw`.
+    var loadKind: HangLoad.Kind?
+    var loadAmount: Double
+    var loadUnitRaw: String
+    /// nil = both hands.
+    var handMode: HandMode?
 
     init(name: String = "", category: TimedExerciseCategory = .hangboard, spec: TimedExerciseSpec) {
         self.name = name
@@ -27,6 +33,16 @@ struct ProtocolDraft: Equatable {
         restBetweenSetsSec = spec.restBetweenSetsSec
         leadInSec = spec.leadInSec
         selfPaced = spec.isSelfPaced
+        loadKind = spec.load?.kind
+        loadAmount = spec.load?.amount ?? 0
+        loadUnitRaw = spec.load?.unitRaw
+            ?? (UserDefaults.standard.string(forKey: "workoutlog.preferredUnit") == "lb" ? "lb" : "kg")
+        handMode = spec.handMode
+    }
+
+    private var load: HangLoad? {
+        guard let loadKind, loadAmount > 0 else { return nil }
+        return HangLoad(kind: loadKind, amount: loadAmount, unitRaw: loadUnitRaw)
     }
 
     /// The structure being authored. Open count-up carries no parameters; a single hold has no sets.
@@ -43,7 +59,8 @@ struct ProtocolDraft: Equatable {
             // A timed rep needs a length; a tap-done rep ignores it.
             return TimedExerciseSpec(mode: mode, workSec: selfPaced ? workSec : max(1, workSec), restSec: restSec,
                                      reps: reps, sets: sets, restBetweenSetsSec: sets > 1 ? restBetweenSetsSec : 0,
-                                     leadInSec: leadInSec, selfPacedWork: selfPaced ? true : nil)
+                                     leadInSec: leadInSec, selfPacedWork: selfPaced ? true : nil,
+                                     load: load, handMode: handMode)
         }
     }
 
@@ -52,7 +69,9 @@ struct ProtocolDraft: Equatable {
     mutating func apply(_ preset: TimedExerciseSpec, name presetName: String? = nil) {
         let keptName = name
         let keptCategory = category
+        let keptUnit = loadUnitRaw
         self = ProtocolDraft(name: keptName, category: keptCategory, spec: preset)
+        if preset.load == nil { loadUnitRaw = keptUnit }
         if name.trimmingCharacters(in: .whitespaces).isEmpty, let presetName { name = presetName }
     }
 
@@ -101,6 +120,12 @@ struct ProtocolEditorSections: View {
             .accessibilityIdentifier("timed.create.category")
         }
         structure
+        // Load + hands only where the protocol runner logs them (a single hold's stopwatch doesn't —
+        // offering them there would be a setting that silently goes nowhere).
+        if draft.mode == .repeaters || draft.mode == .tabata {
+            loadSection
+            handsSection
+        }
         Section {
             HStack {
                 Text("Total").font(.subheadline.weight(.medium))
@@ -159,6 +184,89 @@ struct ProtocolEditorSections: View {
         if draft.mode != .openCountUp {
             Section {
                 durationRow("Get-ready countdown", id: "timed.create.leadIn", value: $draft.leadInSec, range: 0...60)
+            }
+        }
+    }
+
+    // MARK: - Load + hands (prompt 142)
+
+    @Environment(AppModel.self) private var app
+    @AppStorage(WeightEntry.stepKey(for: .kg)) private var stepKg = 0.0
+    @AppStorage(WeightEntry.stepKey(for: .lb)) private var stepLb = 0.0
+
+    private var loadUnit: WeightUnit { draft.loadUnitRaw == "lb" ? .lb : .kg }
+    private var loadStep: Double { WeightEntry.step(stored: loadUnit == .lb ? stepLb : stepKg, unit: loadUnit) }
+
+    private var loadSection: some View {
+        Section {
+            Picker("Load", selection: $draft.loadKind) {
+                Text("Bodyweight").tag(HangLoad.Kind?.none)
+                Text("+ Added").tag(HangLoad.Kind?.some(.added))
+                Text("− Pulley").tag(HangLoad.Kind?.some(.assisted))
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("protocol.loadKind")
+            if let kind = draft.loadKind {
+                HStack(spacing: 12) {
+                    Text(kind == .added ? "Added" : "Taken off").font(.subheadline)
+                    Spacer(minLength: 0)
+                    Button { draft.loadAmount = WeightEntry.nudge(draft.loadAmount, by: -loadStep) } label: {
+                        Image(systemName: "minus.circle.fill").font(.title3)
+                    }
+                    .buttonStyle(.borderless).accessibilityIdentifier("protocol.load.minus")
+                    .accessibilityLabel("Decrease load")
+                    TypeableWeightValue(weight: $draft.loadAmount, unit: loadUnit,
+                                        font: .subheadline.weight(.semibold).monospacedDigit(),
+                                        id: "protocol.load", zeroLabel: "0 \(loadUnit.display)")
+                        .frame(minWidth: 70)
+                    Button { draft.loadAmount = WeightEntry.nudge(draft.loadAmount, by: loadStep) } label: {
+                        Image(systemName: "plus.circle.fill").font(.title3)
+                    }
+                    .buttonStyle(.borderless).accessibilityIdentifier("protocol.load.plus")
+                    .accessibilityLabel("Increase load")
+                }
+                if let total = totalText { LabeledContent(draft.handMode == nil ? "Total on your fingers" : "On one hand", value: total) }
+            }
+        } header: {
+            Text("Load · optional")
+        } footer: {
+            if draft.loadKind != nil, app.userProfile.profile.weightKg == nil {
+                Text("Add your bodyweight in Settings → Heart-rate profile to see the total.")
+            }
+        }
+    }
+
+    /// "80 kg (70 + 10)" in the load's unit, when bodyweight is known.
+    private var totalText: String? {
+        guard let bw = app.userProfile.profile.weightKg, bw > 0, let kind = draft.loadKind else { return nil }
+        let load = HangLoad(kind: kind, amount: draft.loadAmount, unitRaw: draft.loadUnitRaw)
+        let toUnit = { (kg: Double) in SetMeasure.formatWeight((WorkoutMath.kgToUnit(kg, self.loadUnit) * 10).rounded() / 10) }
+        let sign = kind == .added ? "+" : "−"
+        return "\(toUnit(load.totalKg(bodyweightKg: bw))) \(loadUnit.display) (\(toUnit(bw)) \(sign) \(SetMeasure.formatWeight(draft.loadAmount)))"
+    }
+
+    private var handsSection: some View {
+        Section {
+            Picker("Hands", selection: Binding(
+                get: { draft.handMode != nil },
+                set: { draft.handMode = $0 ? (draft.handMode ?? .alternate) : nil })) {
+                Text("Both hands").tag(false)
+                Text("One hand").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("protocol.hands")
+            if draft.handMode != nil {
+                Picker("Which hand", selection: Binding(get: { draft.handMode ?? .alternate },
+                                                        set: { draft.handMode = $0 })) {
+                    ForEach(HandMode.allCases) { Text($0.label).tag($0) }
+                }
+                .accessibilityIdentifier("protocol.handMode")
+            }
+        } header: {
+            Text("Hands")
+        } footer: {
+            if let mode = draft.handMode, mode.repMultiplier == 2 {
+                Text("Reps are per hand: \(draft.reps) rep\(draft.reps == 1 ? "" : "s") each side = \(draft.reps * 2) hangs per set.")
             }
         }
     }

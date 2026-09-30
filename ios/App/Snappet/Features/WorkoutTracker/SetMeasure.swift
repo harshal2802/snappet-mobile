@@ -28,7 +28,7 @@ enum SetMeasure {
 
         case .duration:
             guard let secs = set.durationSec, secs > 0 else { return "—" }
-            return formatDuration(secs)
+            return formatDuration(secs) + hangSuffix(set, unit: unit)
 
         case .climbAttempt:
             var parts: [String] = []
@@ -196,6 +196,20 @@ enum SetMeasure {
             return String(whole)
         }
         return String(value)
+    }
+
+    /// " · +10 kg", " · −25 kg assist", " · one hand" — a hang's load and hands (prompt 142), empty for
+    /// anything else. The load shows in the user's unit.
+    static func hangSuffix(_ set: SetLog, unit: WeightUnit) -> String {
+        var parts: [String] = []
+        if let kg = set.loadKg, kg != 0 {
+            let v = (WorkoutMath.kgToUnit(abs(kg), unit) * 10).rounded() / 10
+            parts.append(kg > 0 ? "+\(formatWeight(v)) \(unit.display)" : "−\(formatWeight(v)) \(unit.display) assist")
+        }
+        if let raw = set.handModeRaw, let mode = HandMode(rawValue: raw) {
+            parts.append(mode == .leftOnly ? "left hand" : mode == .rightOnly ? "right hand" : "one hand, each side")
+        }
+        return parts.isEmpty ? "" : " · " + parts.joined(separator: " · ")
     }
 
     /// Seconds → "M:SS" (or "H:MM:SS" past an hour).
