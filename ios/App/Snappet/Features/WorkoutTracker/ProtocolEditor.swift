@@ -13,6 +13,8 @@ struct ProtocolDraft: Equatable {
     var sets: Int
     var restBetweenSetsSec: Int
     var leadInSec: Int
+    /// Each rep "until I tap done" instead of a fixed hang (prompt 141).
+    var selfPaced: Bool
 
     init(name: String = "", category: TimedExerciseCategory = .hangboard, spec: TimedExerciseSpec) {
         self.name = name
@@ -24,6 +26,7 @@ struct ProtocolDraft: Equatable {
         sets = spec.sets
         restBetweenSetsSec = spec.restBetweenSetsSec
         leadInSec = spec.leadInSec
+        selfPaced = spec.isSelfPaced
     }
 
     /// The structure being authored. Open count-up carries no parameters; a single hold has no sets.
@@ -33,9 +36,14 @@ struct ProtocolDraft: Equatable {
             return TimedExerciseSpec(mode: .openCountUp)
         case .maxHang, .countDown:
             return TimedExerciseSpec(mode: mode, workSec: max(1, workSec), reps: 1, sets: 1, leadInSec: leadInSec)
-        case .repeaters, .tabata, .emom:
+        case .emom:
             return TimedExerciseSpec(mode: mode, workSec: workSec, restSec: restSec, reps: reps, sets: sets,
                                      restBetweenSetsSec: sets > 1 ? restBetweenSetsSec : 0, leadInSec: leadInSec)
+        case .repeaters, .tabata:
+            // A timed rep needs a length; a tap-done rep ignores it.
+            return TimedExerciseSpec(mode: mode, workSec: selfPaced ? workSec : max(1, workSec), restSec: restSec,
+                                     reps: reps, sets: sets, restBetweenSetsSec: sets > 1 ? restBetweenSetsSec : 0,
+                                     leadInSec: leadInSec, selfPacedWork: selfPaced ? true : nil)
         }
     }
 
@@ -73,6 +81,7 @@ struct ProtocolEditorSections: View {
                     presetChip("Repeaters 10:6", key: "endurance") {
                         draft.apply(.enduranceRepeaters, name: "Repeaters 10:6")
                     }
+                    presetChip("Contact", key: "contact") { draft.apply(.contact, name: "Contact") }
                     presetChip("Abrahangs", key: "abrahangs") { draft.apply(.abrahangs, name: "Abrahangs") }
                     presetChip("7:3 × 6", key: "repeaters") { draft.apply(.repeaters7x3x6) }
                     presetChip("10s hang", key: "maxhang") { draft.apply(.maxHang10) }
@@ -96,7 +105,9 @@ struct ProtocolEditorSections: View {
             HStack {
                 Text("Total").font(.subheadline.weight(.medium))
                 Spacer()
-                Text(draft.spec.totalSeconds.map { SetMeasure.formatDuration(Double($0)) } ?? "Open count up")
+                Text(draft.spec.totalSeconds.map {
+                    SetMeasure.formatDuration(Double($0)) + (draft.spec.isSelfPaced ? " + your reps" : "")
+                } ?? "Open count up")
                     .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(SnappetColor.workout)
                     .contentTransition(.numericText())
@@ -119,7 +130,15 @@ struct ProtocolEditorSections: View {
             case .maxHang, .countDown:
                 durationRow("Hold for", id: "timed.create.work", value: $draft.workSec, range: 1...3600)
             case .repeaters, .tabata:
-                durationRow("Hang for", id: "timed.create.work", value: $draft.workSec, range: 1...3600)
+                Picker("Each rep", selection: $draft.selfPaced) {
+                    Text("Timed hang").tag(false)
+                    Text("Until I tap done").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("timed.create.repStyle")
+                if !draft.selfPaced {
+                    durationRow("Hang for", id: "timed.create.work", value: $draft.workSec, range: 1...3600)
+                }
                 countRow("Reps per set", id: "timed.create.reps", value: $draft.reps, range: 1...100)
                 if draft.reps > 1 {
                     durationRow("Rest between reps", id: "timed.create.rest", value: $draft.restSec, range: 0...3600)
