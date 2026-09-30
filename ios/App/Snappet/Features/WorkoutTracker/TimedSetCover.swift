@@ -35,6 +35,10 @@ struct TimedSetCover: View {
     @State private var reps: Int
     @State private var weight: Double
     @State private var unitSel: WeightUnit
+    /// The user's ± step per unit (Workout Settings → Weight ± step; prompt 139). 0 = the default.
+    @AppStorage(WeightEntry.stepKey(for: .kg)) private var stepKg = 0.0
+    @AppStorage(WeightEntry.stepKey(for: .lb)) private var stepLb = 0.0
+    private var step: Double { WeightEntry.step(stored: unitSel == .lb ? stepLb : stepKg, unit: unitSel) }
     /// Clips recorded with the in-app camera during this set, saved to Photos and queued to attach on STOP.
     @State private var recordedClips: [RecordedClip] = []
     /// `true` while a just-recorded clip is still being saved to Photos. STOP & LOG is held until it lands so a
@@ -121,7 +125,9 @@ struct TimedSetCover: View {
                         dec: { reps = max(0, reps - 1) }, inc: { reps = min(999, reps + 1) })
                 stepper(idBase: "timedSet.weight", label: "Weight",
                         value: weight > 0 ? "\(SetMeasure.formatWeight(weight)) \(unitSel.display)" : "Body",
-                        dec: { weight = max(0, weight - 2.5) }, inc: { weight = min(2000, weight + 2.5) })
+                        dec: { weight = WeightEntry.nudge(weight, by: -step) },
+                        inc: { weight = WeightEntry.nudge(weight, by: step) },
+                        editableWeight: $weight)
             }
         }
         .padding(16)
@@ -129,15 +135,26 @@ struct TimedSetCover: View {
     }
 
     private func stepper(idBase: String, label: String, value: String,
-                         dec: @escaping () -> Void, inc: @escaping () -> Void) -> some View {
+                         dec: @escaping () -> Void, inc: @escaping () -> Void,
+                         editableWeight: Binding<Double>? = nil) -> some View {
         VStack(spacing: 4) {
             Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.6))
             HStack(spacing: 10) {
                 Button(action: dec) { Image(systemName: "minus.circle.fill").font(.title3) }
                     .buttonStyle(.borderless).foregroundStyle(.white.opacity(0.85))
                     .accessibilityIdentifier("\(idBase).minus").accessibilityLabel("Decrease \(label.lowercased())")
-                Text(value).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(.white)
-                    .frame(minWidth: 64).accessibilityIdentifier(idBase)
+                Group {
+                    if let editableWeight {
+                        // Tap to type an exact weight (prompt 139).
+                        TypeableWeightValue(weight: editableWeight, unit: unitSel,
+                                            font: .subheadline.weight(.bold).monospacedDigit(),
+                                            color: .white, id: idBase)
+                    } else {
+                        Text(value).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(.white)
+                            .accessibilityIdentifier(idBase)
+                    }
+                }
+                .frame(minWidth: 64)
                 Button(action: inc) { Image(systemName: "plus.circle.fill").font(.title3) }
                     .buttonStyle(.borderless).foregroundStyle(.white.opacity(0.85))
                     .accessibilityIdentifier("\(idBase).plus").accessibilityLabel("Increase \(label.lowercased())")

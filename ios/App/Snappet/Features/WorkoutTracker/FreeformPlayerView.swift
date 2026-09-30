@@ -1691,7 +1691,7 @@ struct FreeformPlayerView: View {
         // Remembered rest timer (Phase 7): opt-in, NON-blocking — after the log lands, auto-start a
         // count-down rest in the command bar at the duration remembered for this exercise's context.
         // Never gates logging (the append already happened); off by default.
-        if restAutoStart { startRest(for: ex) }
+        if restAutoStart, QuickSessionPager.startsRestAfterLog(ex) { startRest(for: ex) }
     }
 
     // MARK: - Remembered rest timer (Phase 7)

@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Hangboard protocols, load, any-frequency schedules (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ember:#FF9645; --fresh:#5BC074; --habit:#5BC074; --blue:#5AA9FF;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2.part{font-size:26px;font-weight:800;margin:64px 0 4px;color:#fff;letter-spacing:-.01em}
+  h2.part .tag{font-size:13px;font-weight:800;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .sub{color:#aeb2bd;font-size:16px;max-width:1100px;margin:0 0 10px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:30px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.alt{background:#8e8ea0;color:#111;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto;font-size:14px}
+  .navrow .title{font-size:15px;font-weight:800}
+  .navrow .lnk{color:var(--ember);font-weight:600}
+  .navrow .lnk.b{font-weight:800}
+  .bigtitle{font-size:26px;font-weight:800;margin:2px 2px 8px;letter-spacing:-.01em}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember);margin-left:6px}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:10px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* grouped form */
+  .glbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:12px 6px 5px}
+  .group{background:var(--surface);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--hair);gap:8px}
+  .row:last-child{border-bottom:0}
+  .row .v{color:var(--t2);font-size:13px;white-space:nowrap}
+  .row .v.e{color:var(--ember);font-weight:600}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;margin-right:9px;flex:0 0 auto}
+  .row .l{display:flex;align-items:center}
+  .foot{font-size:11px;color:var(--t3);margin:5px 8px 0;line-height:1.4}
+  .tog{width:40px;height:24px;border-radius:12px;background:#3a3a40;position:relative;flex:0 0 auto}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--fresh)}
+  .tog.on::after{left:18px}
+  .days{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .days div{flex:1;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--muted);color:var(--t2);aspect-ratio:1}
+  .days div.on{background:var(--ember);color:#2a1405}
+  .days.small div{height:24px;font-size:10px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .pill.g{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .pill.gr{background:var(--muted);color:var(--t2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--hair)}
+  .chip{background:var(--muted);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:650;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+
+  /* cards / list */
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .t{font-size:11px;color:var(--t3);margin-top:3px}
+  .sect{font-size:13px;font-weight:700;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .upnext{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.12));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:12px 13px;margin-bottom:10px;flex:0 0 auto}
+  .upnext .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase}
+  .upnext .n{font-size:17px;font-weight:800;margin-top:2px}
+  .upnext .w{font-size:12px;color:#e6d7cb}
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;padding:10px;font-size:14px;font-weight:700;background:var(--ember);color:#2a1405;flex:0 0 auto}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:999px;display:inline-flex}
+  .btn.ghost{background:var(--muted);color:var(--ember)}
+  .week{display:flex;gap:4px;margin-top:9px}
+  .week div{flex:1;text-align:center;font-size:10px;color:var(--t2)}
+  .week div b{display:block;height:24px;border-radius:7px;margin-top:3px;background:var(--muted);font-size:10px;line-height:24px;color:var(--t3);font-weight:700}
+  .week div b.s{background:rgba(255,150,69,.3);color:var(--ember)}
+  .week div b.d{background:var(--ember);color:#2a1405}
+  .week div b.m{background:rgba(255,122,107,.18);color:#ff9b8f}
+  .week div.today{color:#fff;font-weight:800}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:45}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;padding:8px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
+  .sheet.half{top:auto;height:62%}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 6px;flex:0 0 auto}
+  .behind{opacity:.9}
+
+  /* lock screen */
+  .lock{background:linear-gradient(180deg,#1b2635,#0d1118 70%);}
+  .lock .clock{text-align:center;font-size:64px;font-weight:300;letter-spacing:-2px;margin-top:10px;color:#fff}
+  .lock .date{text-align:center;font-size:15px;color:#cfd6e2;font-weight:600}
+  .notif{background:rgba(40,44,52,.82);backdrop-filter:blur(20px);border-radius:18px;padding:11px 12px;margin:0 10px 8px;color:#fff}
+  .notif .hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#c7ccd6}
+  .notif .ap{width:18px;height:18px;border-radius:5px;background:var(--ember);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#2a1405;font-weight:900}
+  .notif .tt{font-size:13.5px;font-weight:700;margin-top:4px}
+  .notif .bd{font-size:12.5px;color:#dfe3ea}
+  .actions{margin:0 10px;border-radius:14px;overflow:hidden;background:rgba(40,44,52,.82)}
+  .actions div{padding:10px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between}
+  .actions div:last-child{border-bottom:0}
+
+  /* habit row */
+  .hab{background:var(--surface);border-radius:14px;padding:11px 12px;margin-bottom:8px;flex:0 0 auto}
+  .hab .top{display:flex;align-items:center;gap:10px}
+  .hab .sym{font-size:20px;width:28px;text-align:center;color:var(--habit)}
+  .hab .nm{font-size:14.5px;font-weight:700}
+  .hab .st{font-size:12px;color:var(--ember);font-weight:650}
+  .hab .rt{font-size:11px;color:var(--t3)}
+  .hab .ck{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid var(--t3)}
+  .hab .ck.on{background:var(--habit);border-color:var(--habit)}
+  .hab .strip{display:flex;gap:5px;margin-top:8px;align-items:flex-end}
+  .hab .strip div{flex:1;text-align:center;font-size:9.5px;color:var(--t3)}
+  .hab .strip b{display:block;margin:2px auto 0;width:24px;height:24px;border-radius:50%;background:rgba(91,192,116,.13);font-size:9.5px;line-height:24px;color:var(--t2)}
+  .hab .strip b.on{background:var(--habit);color:#fff}
+  .hab .strip b.off{background:transparent;border:1px dashed #3a3a42;color:#4a4a52}
+  .link{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--t2);background:var(--muted);border-radius:9px;padding:6px 8px}
+  .link b{color:var(--ember)}
+
+  /* camera */
+  .cam{flex:1;border-radius:16px;margin:0 2px;position:relative;overflow:hidden;background:
+      repeating-linear-gradient(45deg,#1a1d22 0 10px,#16181c 10px 20px)}
+  .reticle{position:absolute;left:50%;top:44%;width:170px;height:170px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:22px}
+  .qr{background:#fff;border-radius:14px;padding:12px;margin:6px auto;width:176px;height:176px;display:grid;grid-template-columns:repeat(21,1fr);gap:0}
+  .qr i{display:block;aspect-ratio:1}
+  .qr i.k{background:#000}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .menu{position:absolute;right:16px;top:92px;z-index:55;width:228px;background:rgba(44,44,50,.97);border-radius:14px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu div{padding:11px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:last-child{border-bottom:0}
+  .menu div span{color:var(--t2)}
+
+  table.cmp{border-collapse:collapse;margin-top:18px;font-size:13.5px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:10px 12px;text-align:left;vertical-align:top}
+  table.cmp th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  .q{background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.3);border-radius:14px;padding:14px 18px;margin:14px 0;max-width:1240px;font-size:14.5px;color:#d9dce4}
+  .q b{color:#fff}
+  .q .rec{color:var(--fresh);font-weight:700}
+</style>
+</head>
+<body>
+<style>
+  .fbar{margin:10px 18px 0;height:150px;border-radius:14px;background:rgba(0,0,0,.28);position:relative;overflow:hidden}
+  .fbar .band{position:absolute;left:0;right:0;bottom:62%;height:8%;background:rgba(91,192,116,.35);border-top:1px dashed #5BC074;border-bottom:1px dashed #5BC074}
+  .fbar .fill{position:absolute;left:18%;right:18%;bottom:0;height:64%;background:linear-gradient(180deg,#fff,rgba(255,255,255,.6));border-radius:8px 8px 0 0}
+  .fbar .lbl{position:absolute;right:8px;font-size:10.5px;color:#9ee6ae}
+  .fnum{text-align:center;font-size:44px;font-weight:800;margin-top:8px;font-variant-numeric:tabular-nums}
+  .fnum small{font-size:14px;opacity:.75;font-weight:600}
+  .curve{height:110px;margin:6px 0;border-radius:10px;background:var(--surface);position:relative;overflow:hidden}
+  .curve svg{position:absolute;inset:0}
+  .hero{margin:0 2px 10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center}
+  .hero .cap{font-size:10px;font-weight:900;letter-spacing:.12em;color:var(--t3)}
+  .hero .val{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+  .hero .val.edit{border-bottom:2px solid var(--ember);color:var(--ember)}
+  .hero .pm{display:flex;gap:10px}
+  .hero .pm span{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .kbd{position:absolute;left:0;right:0;bottom:0;background:#2b2b30;padding:8px 6px 26px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;z-index:40}
+  .kbd div{background:#5a5a60;border-radius:7px;text-align:center;padding:10px 0;font-size:20px;color:#fff}
+  .kbd .bar{grid-column:1/-1;background:transparent;display:flex;justify-content:space-between;font-size:14px;padding:4px 8px}
+  .runner{background:linear-gradient(180deg,rgba(255,150,69,.42),#1a0a00 70%);color:#fff}
+  .runner.rest{background:linear-gradient(180deg,#0f1722,#000 70%)}
+  .phase{text-align:center;font-size:13px;font-weight:900;letter-spacing:.2em;margin-top:18px}
+  .ring{width:190px;height:190px;border-radius:50%;margin:14px auto 8px;border:12px solid rgba(255,255,255,.14);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+  .ring::before{content:"";position:absolute;inset:-12px;border-radius:50%;border:12px solid transparent;border-top-color:#fff;border-right-color:#fff;transform:rotate(20deg)}
+  .ring .big{font-size:54px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+  .ring .small{font-size:12px;opacity:.8;margin-top:4px}
+  .meta{text-align:center;font-size:13px;opacity:.9}
+  .dots{display:flex;gap:5px;justify-content:center;margin:10px 0}
+  .dots i{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.25)}
+  .dots i.d{background:#fff}
+  .chipsrow{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:10px 8px}
+  .rchip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:7px 12px;font-size:12.5px;font-weight:700;display:flex;gap:5px;align-items:center}
+  .rchip .e{opacity:.6;font-size:10px}
+  .ctrl{display:flex;gap:10px;justify-content:center;margin:12px 0 6px}
+  .ctrl div{width:54px;height:54px;border-radius:50%;background:rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .done{margin:14px 22px 0;background:#fff;color:#2a1405;border-radius:20px;padding:22px;text-align:center;font-size:22px;font-weight:900}
+  .loadbar{margin:8px 18px;background:rgba(0,0,0,.25);border-radius:14px;padding:9px 12px;font-size:12.5px;display:flex;justify-content:space-between}
+  .loadbar b{font-size:15px}
+  .stp{display:inline-flex;align-items:center;gap:10px}
+  .stp span.b{width:28px;height:28px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;color:var(--ember);font-weight:800}
+  .pv{background:rgba(255,150,69,.12);border-radius:12px;padding:10px 12px;font-size:12.5px;color:#ffd2ad;margin-top:10px;flex:0 0 auto}
+  .signed{position:relative;height:30px;margin:14px 12px 4px;border-radius:15px;background:linear-gradient(90deg,rgba(90,169,255,.35),rgba(255,255,255,.08) 50%,rgba(255,150,69,.4))}
+  .signed .zero{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:#fff;opacity:.6}
+  .signed .knob{position:absolute;left:62%;top:3px;width:24px;height:24px;border-radius:50%;background:#fff}
+  .scale{display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin:0 12px}
+</style>
+
+<header class="page">
+  <h1 class="title">Hangboard protocols · load · any-frequency schedules</h1>
+  <p class="sub">Your answers drawn out: <b>(1)</b> a schedule can repeat at any frequency, down to every few minutes; <b>(2)</b> load means real weight, either <i>added</i> on top of bodyweight or <i>taken off</i> with a pulley; <b>(3)</b> a rep can be timed or "until I tap done"; <b>(4)</b> protocols come as presets you can edit, and you can adjust them mid-run. The rule throughout: <b>one plain-English summary, sensible defaults, and advanced options hidden until you need them.</b></p>
+  <div class="scopebox">
+    <b>Fixed first, no design needed:</b> a protocol saved in a routine currently plays once per set, so a 3-set Max hang asks for 9 sets (confirmed in <code>RoutineSessionBuilder.swift:91</code>). After the fix, one routine block = one run of the protocol (frame 10).<br>
+    <b>Modular:</b> load and self-paced reps are optional extras on the timed-protocol model. Every existing timed exercise, routine, backup and QR code reads exactly as before.
+  </div>
+</header>
+
+<div class="wrap">
+
+<h2 class="part">1 · Building a protocol <span class="tag">editor</span></h2>
+<p class="sub">One editor, used when you create a timed exercise, edit one in a routine, or edit a preset. It starts from a preset and reads back as a sentence.</p>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Max hangs</span><span class="lnk b">Save</span></div>
+        <div class="chips" style="border:0;padding:2px 0 8px"><span class="chip on">Max hangs</span><span class="chip">Repeaters</span><span class="chip">Contact</span><span class="chip">Abrahangs</span><span class="chip">My presets ›</span></div>
+        <div class="pv"><b>3 sets × 3 hangs of 7 s</b> · 2 min between hangs · 4 min between sets · <b>+10 kg</b> · about 25 min</div>
+        <div class="glbl">Each rep</div>
+        <div class="group">
+          <div class="chips"><span class="chip on">Timed hang</span><span class="chip">Until I tap done</span></div>
+          <div class="row"><span>Hang for</span><span class="stp"><span class="b">−</span><b>0:07</b><span class="b">+</span></span></div>
+          <div class="row"><span>Reps per set</span><span class="stp"><span class="b">−</span><b>3</b><span class="b">+</span></span></div>
+          <div class="row"><span>Rest between reps</span><span class="v e">2:00 ⌄</span></div>
+        </div>
+        <div class="glbl">Sets</div>
+        <div class="group">
+          <div class="row"><span>Sets</span><span class="stp"><span class="b">−</span><b>3</b><span class="b">+</span></span></div>
+          <div class="row"><span>Rest between sets</span><span class="v e">4:00 ⌄</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Top of the editor.</b> <span class="new">NEW</span> Preset chips fill every field, and the summary sentence updates live. Rests use a minutes:seconds picker instead of ±1 s steppers (today a 2-min rest takes 120 taps), and rest between sets is editable (today it's fixed at 3 min). <b>Until I tap done</b> covers Contact-style reps (frame 5).</p>
+  </div>
+
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Max hangs</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Load <span style="text-transform:none;font-weight:500">· optional</span></div>
+        <div class="group">
+          <div class="chips"><span class="chip">Bodyweight</span><span class="chip on">+ Added weight</span><span class="chip">− Pulley assist</span></div>
+          <div class="row"><span>Added</span><span class="stp"><span class="b">−</span><b>10 kg</b><span class="b">+</span></span></div>
+          <div class="row"><span style="color:var(--t2)">Total on your fingers</span><span class="v">80 kg <span style="color:var(--t3)">(70 + 10)</span></span></div>
+        </div>
+        <div class="foot">Bodyweight comes from your profile (Settings → Heart-rate profile). Steps of 1.25 kg; lb if that's your unit.</div>
+        <div class="glbl">More</div>
+        <div class="group">
+          <div class="row"><span>Get-ready countdown</span><span class="v e">5 s ⌄</span></div>
+          <div class="row"><span>Sound & haptic cues</span><span class="v e">Both ⌄</span></div>
+        </div>
+        <div class="group" style="margin-top:12px">
+          <div class="row"><span class="lnk">Save as my preset…</span></div>
+        </div>
+        <div class="foot">Your presets appear next to the built-in ones, in the editor and when adding a timed exercise.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Load (option L1: pick a direction).</b> Three plain choices; weight is only asked for when it matters. Pulley assist shows "Total on your fingers: 55 kg (70 − 15)". <b>Save as my preset</b> is how a tweaked Max hangs becomes <i>your</i> Max hangs.</p>
+  </div>
+
+  <div class="step"><div class="stepnum alt">2B</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Max hangs</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Load <span style="text-transform:none;font-weight:500">· optional</span></div>
+        <div class="group" style="padding:12px 0 10px">
+          <div style="text-align:center;font-size:26px;font-weight:800">+10 kg</div>
+          <div style="text-align:center;font-size:12px;color:var(--t2)">80 kg total · 70 kg bodyweight + 10</div>
+          <div class="signed"><div class="zero"></div><div class="knob"></div></div>
+          <div class="scale"><span>−30 pulley</span><span>bodyweight</span><span>+30 added</span></div>
+        </div>
+        <div class="foot">Drag left of centre to take weight off with a pulley, right to add weight.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Alternative L2: one signed slider.</b> A single control where the centre is bodyweight. It's quicker for regulars, but "negative load" is harder to understand the first time, and precise values need a stepper anyway. <b>I recommend L1.</b></p>
+  </div>
+
+  <div class="step"><div class="stepnum">2C</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">One-arm max hangs</span><span class="lnk b">Save</span></div>
+        <div class="pv"><b>3 sets × 3 hangs of 7 s, each hand, alternating</b> · 2 min between hangs · 4 min between sets · <b>pulley −25 kg</b> · about 45 min</div>
+        <div class="glbl">Hands</div>
+        <div class="group">
+          <div class="chips"><span class="chip">Both hands</span><span class="chip on">One hand</span></div>
+          <div class="row"><span>Which hand</span><span class="v e">Alternate L / R ⌄</span></div>
+          <div class="row"><span style="color:var(--t2);font-size:12.5px">Also: Left first, then right · Left only · Right only</span></div>
+        </div>
+        <div class="foot">Reps are per hand. Alternating, 3 reps = L R L R L R.</div>
+        <div class="glbl">Load</div>
+        <div class="group">
+          <div class="chips"><span class="chip">Bodyweight</span><span class="chip">+ Added</span><span class="chip on">− Pulley assist</span></div>
+          <div class="row"><span>Taken off</span><span class="stp"><span class="b">−</span><b>25 kg</b><span class="b">+</span></span></div>
+          <div class="row"><span style="color:var(--t2)">On one hand</span><span class="v">45 kg <span style="color:var(--t3)">(70 − 25)</span></span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Hands.</b> <span class="new">NEW</span> <b>Both hands</b> is the default, so nothing changes for anyone who doesn't need this. <b>One hand</b> asks which hand and how to order the sides, makes reps count per hand (the summary and time estimate double honestly), and shows load per hand.</p>
+  </div>
+</div>
+
+<h2 class="part">2 · Running it, and adjusting mid-run</h2>
+<p class="sub">The runner shows what matters now: the phase, the timer, and where you are. Everything you can change sits on tappable chips, and changes apply from the <i>next</i> rep, never the one in progress.</p>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="screen runner"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="phase">HANG</div>
+      <div class="ring"><div class="big">0:05</div><div class="small">of 7 s</div></div>
+      <div class="meta">Set 2 of 3 · Rep 1 of 3</div>
+      <div class="dots"><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="loadbar"><span>Load</span><b>+10 kg · 80 kg total</b></div>
+      <div class="chipsrow"><span class="rchip">⚖ +10 kg <span class="e">✎</span></span><span class="rchip">⏱ Rest 2:00 <span class="e">✎</span></span><span class="rchip">↻ 3 reps <span class="e">✎</span></span></div>
+      <div class="ctrl"><div>⏮</div><div>⏸</div><div>⏭</div></div>
+    </div></div>
+    <p class="caption"><b>Runner.</b> <span class="new">NEW</span> The load is shown during every hang. Three chips (<b>load · rest · reps</b>) are the only things you can edit mid-run; each has a ✎ so it reads as tappable. Skip-back and skip-forward move by one phase.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="screen runner rest"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="phase" style="opacity:.6">REST</div>
+      <div class="ring" style="opacity:.5"><div class="big">1:42</div></div>
+      <div class="dim" style="background:rgba(0,0,0,.35)"></div>
+      <div class="sheet half"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Adjust</span><span class="lnk b">Done</span></div>
+        <div class="group">
+          <div class="chips"><span class="chip">Bodyweight</span><span class="chip on">+ Added</span><span class="chip">− Pulley</span></div>
+          <div class="row"><span>Added</span><span class="stp"><span class="b">−</span><b>12.5 kg</b><span class="b">+</span></span></div>
+          <div class="row"><span>Rest between reps</span><span class="v e">2:00 ⌄</span></div>
+          <div class="row"><span>Reps left in this set</span><span class="stp"><span class="b">−</span><b>2</b><span class="b">+</span></span></div>
+        </div>
+        <div class="foot">Applies from the next hang. The timer keeps running while you adjust.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Adjust sheet (option R1).</b> Tapping any chip opens one half-sheet with all three values. The clock keeps running underneath, and the footer says when the change takes effect. Nothing is saved to the protocol yet (frame 6).</p>
+  </div>
+
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="screen runner"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="phase">GO — CONTACT</div>
+      <div class="ring" style="border-color:rgba(255,255,255,.3)"><div class="big">0:02</div><div class="small">no time limit</div></div>
+      <div class="meta">Set 1 of 3 · Rep 3 of 5</div>
+      <div class="loadbar"><span>Load</span><b>Bodyweight</b></div>
+      <div class="done">✓ DONE</div>
+      <div class="meta" style="margin-top:10px;opacity:.7">Tap when the rep is finished → 30 s rest</div>
+    </div></div>
+    <p class="caption"><b>Until I tap done.</b> <span class="new">NEW</span> For Contact (or any single rep that isn't a fixed-length hang), the work phase counts <i>up</i> and waits for a big <b>DONE</b>. Then the rest starts automatically. The time you took is still logged.</p>
+  </div>
+
+
+  <div class="step"><div class="stepnum">5B</div>
+    <div class="device"><div class="screen runner"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div style="margin:18px auto 0;background:#fff;color:#2a1405;font-weight:900;font-size:22px;letter-spacing:.12em;padding:8px 22px;border-radius:14px;width:max-content">✋ LEFT</div>
+      <div class="phase" style="margin-top:10px">HANG</div>
+      <div class="ring"><div class="big">0:04</div><div class="small">of 7 s</div></div>
+      <div class="meta">Set 1 of 3 · Left 2 of 3</div>
+      <div class="loadbar"><span>Load · left hand</span><b>−25 kg · 45 kg</b></div>
+      <div class="chipsrow"><span class="rchip">✋ Left <span class="e">✎</span></span><span class="rchip">⚖ −25 kg <span class="e">✎</span></span><span class="rchip">⏱ Rest 2:00 <span class="e">✎</span></span></div>
+      <div class="meta" style="opacity:.7;margin-top:8px">Next: RIGHT hand</div>
+    </div></div>
+    <p class="caption"><b>One-hand run.</b> <span class="new">NEW</span> A large hand badge on every hang, with the hand repeated in the load bar. The rest screen says <b>Next: RIGHT hand</b>. The ✋ chip lets you switch hands mid-run (e.g. the left is tweaky, so do right only). Each set logs its hand, so History can compare <b>left vs right</b>.</p>
+  </div>
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="bigtitle" style="margin-top:16px">Max hangs · done</div>
+        <div class="group">
+          <div class="row"><span>Hangs</span><span class="v">9 of 9</span></div>
+          <div class="row"><span>Time under load</span><span class="v">1:03</span></div>
+          <div class="row"><span>Load</span><span class="v">+10 kg → +12.5 kg from set 2</span></div>
+        </div>
+        <div class="glbl">You changed</div>
+        <div class="group">
+          <div class="row"><span>Added weight</span><span class="v">10 → <b style="color:var(--ink)">12.5 kg</b></span></div>
+        </div>
+        <div class="btn" style="margin-top:12px">Keep +12.5 kg for next time</div>
+        <div class="btn ghost" style="margin-top:8px">Just this once</div>
+        <div class="foot" style="text-align:center">Updates this routine's Max hangs. Your built-in preset stays as it was.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>End of run.</b> <span class="new">NEW</span> This screen only appears when you changed something. You make one explicit choice, <b>keep it</b> or <b>just this once</b>, so progressive overload is one tap and a one-off tweak never changes your plan silently. The log records the load per set.</p>
+  </div>
+
+  <div class="step"><div class="stepnum alt">4B</div>
+    <div class="device"><div class="screen runner rest"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="phase">PAUSED</div>
+      <div class="ring" style="opacity:.5"><div class="big">1:42</div></div>
+      <div class="content" style="background:transparent">
+        <div class="group" style="background:rgba(255,255,255,.08)">
+          <div class="row" style="border-color:rgba(255,255,255,.1)"><span>Added</span><span class="stp"><span class="b">−</span><b>12.5 kg</b><span class="b">+</span></span></div>
+          <div class="row" style="border-color:rgba(255,255,255,.1)"><span>Rest</span><span class="v e">2:00 ⌄</span></div>
+        </div>
+      </div>
+      <div class="ctrl"><div>▶</div></div>
+    </div></div>
+    <p class="caption"><b>Alternative R2: edit only while paused.</b> Pausing reveals the values in place. There's no sheet, but you have to pause first, which breaks the rest timer's rhythm, and many people won't find it. <b>I recommend R1.</b></p>
+  </div>
+</div>
+
+<h2 class="part">3 · Any frequency</h2>
+<p class="sub">The Repeat section gets one new question, <b>"How often on those days?"</b>, with <b>Once</b> as the default, so existing schedules look unchanged.</p>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">7</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Abrahangs</div></div>
+      <div class="dim"></div>
+      <div class="sheet"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Schedule</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Repeat</div>
+        <div class="group">
+          <div class="chips"><span class="chip on">Weekly</span><span class="chip">Every N days</span><span class="chip">Once</span></div>
+          <div class="days"><div class="on">M</div><div class="on">T</div><div class="on">W</div><div class="on">T</div><div class="on">F</div><div>S</div><div>S</div></div>
+        </div>
+        <div class="glbl">How often on those days?</div>
+        <div class="group">
+          <div class="chips"><span class="chip">Once</span><span class="chip">At set times</span><span class="chip on">Every…</span></div>
+          <div class="row"><span>Every</span><span class="v e">2 hours ⌄</span></div>
+          <div class="row"><span>From</span><span class="v e">8:00 AM</span></div>
+          <div class="row"><span>Until</span><span class="v e">8:00 PM</span></div>
+        </div>
+        <div class="pv"><b>7 times a day</b>: 8:00, 10:00, 12:00, 2:00, 4:00, 6:00, 8:00 PM</div>
+        <div class="glbl">Habits</div>
+        <div class="group"><div class="row"><span>Day counts as done after</span><span class="v e">1 session ⌄</span></div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Every N minutes/hours.</b> <span class="new">NEW</span> Any interval from 1 minute up, within a daily window, and the preview lists the actual times. <b>At set times</b> is a list with "+ Add time" for irregular slots (e.g. 7:00, 12:30, 21:00). Habits asks how many sessions make the day count: 1 by default, up to "all 7".</p>
+  </div>
+
+  <div class="step"><div class="stepnum">8</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Mobility</div></div>
+      <div class="dim"></div>
+      <div class="sheet"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Schedule</span><span class="lnk b">Save</span></div>
+        <div class="glbl">How often on those days?</div>
+        <div class="group">
+          <div class="chips"><span class="chip">Once</span><span class="chip">At set times</span><span class="chip on">Every…</span></div>
+          <div class="row"><span>Every</span><span class="v e">15 minutes ⌄</span></div>
+          <div class="row"><span>From</span><span class="v e">9:00 AM</span></div>
+          <div class="row"><span>Until</span><span class="v e">5:00 PM</span></div>
+        </div>
+        <div class="pv"><b>33 times a day</b>: 9:00, 9:15, 9:30 … 5:00 PM</div>
+        <div class="glbl">Notifications</div>
+        <div class="group">
+          <div class="row"><span>Remind me</span><span class="v e">Every session ⌄</span></div>
+          <div class="row"><span>Nudge if not started</span><span class="v">Off</span></div>
+        </div>
+        <div class="foot" style="color:#ffc48f">⚠ iPhone keeps at most 64 upcoming notifications per app, so at this frequency Snappet schedules the next day of reminders and tops up each time you open the app. Nudges are off for anything more often than hourly.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Very frequent (the honest limit).</b> iOS caps pending notifications, so the editor says what will happen instead of silently dropping reminders. "Remind me" offers <i>Every session / First of the day / Off</i>, and nudges are turned off automatically below hourly so they don't flood the Lock Screen.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">9</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Apps</span><span><span class="circ">⚙</span><span class="circ">＋</span></span></div>
+        <div class="bigtitle">Gym Tracker</div>
+        <div class="segbar"><div>Dashboard</div><div class="on">Routines</div><div>History</div><div>Library</div></div>
+        <div class="upnext">
+          <div class="k">Up next · 10:00 AM · 2 of 7 today</div>
+          <div class="n">Abrahangs</div>
+          <div class="w">1 block · 20 hangs · bodyweight −15 kg</div>
+          <div class="week">
+            <div>M<b class="d">7/7</b></div><div class="today">T<b class="s">1/7</b></div><div>W<b></b></div><div>T<b></b></div><div>F<b></b></div><div>S<b></b></div><div>S<b></b></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px"><span class="btn sm">▶ Start</span><span class="btn sm ghost">Skip this one</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Up next with several a day.</b> The kicker says which session of the day this is, and the week strip shows counts. <b>Skip this one</b> skips a single slot; skipping the whole day stays available from the notification's long-press menu.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">10</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Push Day</span><span class="title">Edit routine</span><span class="lnk b">Save</span></div>
+        <div class="glbl">Blocks</div>
+        <div class="group">
+          <div class="row" style="display:block">
+            <div style="font-weight:700">🕒 Max hangs</div>
+            <div style="font-size:12px;color:var(--t2)">3 sets × 3 hangs of 7 s · 2 min / 4 min rest · +10 kg</div>
+            <div style="font-size:12px;color:var(--ember);margin-top:4px">Edit protocol ›</div>
+          </div>
+          <div class="row" style="display:block">
+            <div style="font-weight:700">🏋 Pull-ups</div>
+            <div style="font-size:12px;color:var(--t2)">3 × 8 · rest 1:30</div>
+          </div>
+        </div>
+        <div class="foot">A protocol block runs once: its sets are inside it. (Fixes today's bug where 3 sets became 3 full runs = 9 sets.)</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Protocols inside routines.</b> A routine block shows the protocol's summary, and <b>Edit protocol</b> opens the same editor (frames 1–2). Before, a timed block could only set Sets / Hold / Rest, so a protocol couldn't be edited inside a routine.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">10B</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Finger day</div></div>
+      <div class="dim"></div>
+      <div class="sheet half" style="height:68%"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Add block</span><span style="width:40px"></span></div>
+        <div class="chips" style="border:0;padding:0 0 8px"><span class="chip">Lifting</span><span class="chip">Climbing</span><span class="chip on">Hangboard</span><span class="chip">Timed</span><span class="chip">Run</span></div>
+        <div class="group">
+          <div class="row"><span><b>Max hangs</b><br><span style="font-size:11.5px;color:var(--t2)">3 × 3 · 7 s · 2 / 4 min</span></span><span class="v e">＋</span></div>
+          <div class="row"><span><b>Repeaters 10:6</b><br><span style="font-size:11.5px;color:var(--t2)">2 × 24 · 6 min between sets</span></span><span class="v e">＋</span></div>
+          <div class="row"><span><b>Contact</b><br><span style="font-size:11.5px;color:var(--t2)">3 × 5 · tap when done · 30 s</span></span><span class="v e">＋</span></div>
+          <div class="row"><span><b>Abrahangs</b><br><span style="font-size:11.5px;color:var(--t2)">20 × 10 s on / 20 s off</span></span><span class="v e">＋</span></div>
+          <div class="row"><span><b>One-arm max hangs</b> <span class="pill gr">mine</span><br><span style="font-size:11.5px;color:var(--t2)">3 × 3 each hand · pulley −25 kg</span></span><span class="v e">＋</span></div>
+          <div class="row"><span class="lnk">＋ New protocol…</span></div>
+        </div>
+        <div class="foot">Adds a copy to this routine. Tweak it here without touching the preset.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Protocols as routine blocks.</b> <span class="new">NEW</span> <b>Hangboard</b> sits alongside Lifting and Climbing in Add block, listing built-in and your own presets. The block is a <b>copy</b> labelled "based on Max hangs", so editing it inside the routine never changes the preset, and it travels in the routine's QR code as-is.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">10C</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content behind" style="opacity:.25"><div class="bigtitle">Max hangs</div></div>
+      <div class="dim"></div>
+      <div class="sheet half" style="height:46%"><div class="grab"></div>
+        <div style="text-align:center;font-weight:800;font-size:16px;margin:6px 0 4px">Update routines too?</div>
+        <div style="text-align:center;font-size:12.5px;color:var(--t2);margin:0 10px 12px">You changed <b style="color:var(--ink)">Max hangs</b> to +12.5 kg. 2 routines use a copy of it: <b style="color:var(--ink)">Finger day</b>, <b style="color:var(--ink)">Board + hangs</b>.</div>
+        <div class="btn">Update both routines</div>
+        <div class="btn ghost" style="margin-top:8px">Only the preset</div>
+        <div class="foot" style="text-align:center">Routines you've tweaked since are left alone.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Editing a preset.</b> <span class="new">NEW</span> The one moment copies and presets meet: you choose, explicitly, whether routines follow the change. A routine whose block you've already customised is never overwritten.</p>
+  </div>
+</div>
+
+
+<h2 class="part">4 · Force sensor (Tindeq) <span class="tag">optional device</span></h2>
+<p class="sub">Everything above works without a sensor. When a Tindeq Progressor is connected, it <b>fills in</b> what you'd otherwise estimate: real load, automatic rep start/stop, a measured max, and left-vs-right force history. Nothing new to learn: the same runner, with a live force bar.</p>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">11</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Settings</span><span class="title">Force sensor</span><span style="width:50px"></span></div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--fresh);color:#07240f">⚡</span><b>Tindeq Progressor</b></span><span class="pill g">Connected</span></div>
+          <div class="row"><span>Battery</span><span class="v">82%</span></div>
+          <div class="row"><span>Reading now</span><span class="v">0.2 kg</span></div>
+          <div class="row"><span class="lnk">Zero (tare)</span><span class="v">unloaded → 0</span></div>
+        </div>
+        <div class="glbl">When connected</div>
+        <div class="group">
+          <div class="row"><span>Start & stop reps automatically</span><span class="tog on"></span></div>
+          <div class="row"><span>Counts as loaded above</span><span class="v e">5 kg ⌄</span></div>
+          <div class="row"><span>Warn when below target</span><span class="tog on"></span></div>
+        </div>
+        <div class="foot">Turn the Progressor on and it connects when a hang protocol starts. It only talks to your phone; force data stays on the device.</div>
+        <div class="group" style="margin-top:12px"><div class="row"><span style="color:#ff6b6b">Forget this sensor</span></div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Pair once.</b> <span class="new">NEW</span> Lives in Workout → Settings next to the heart-rate source. <b>Zero (tare)</b> is one tap. Auto start/stop and the "loaded" threshold are the only settings, and both default to sensible values.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">12</div>
+    <div class="device"><div class="screen runner"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div style="display:flex;justify-content:space-between;margin:14px 18px 0;font-size:11.5px;opacity:.85"><span>✋ LEFT · Set 2 · Rep 2 of 3</span><span>⚡ Tindeq</span></div>
+      <div class="phase" style="margin-top:6px">HANG · 0:04 / 7 s</div>
+      <div class="fnum">46.8 <small>kg</small></div>
+      <div class="meta">Target 45–48 kg · 90% of your max (52 kg)</div>
+      <div class="fbar"><div class="band"></div><div class="fill"></div><span class="lbl" style="bottom:71%">48</span><span class="lbl" style="bottom:56%">45</span></div>
+      <div class="chipsrow" style="margin-top:12px"><span class="rchip">Peak 48.1 kg</span><span class="rchip">Avg 46.2 kg</span></div>
+      <div class="meta" style="opacity:.7;margin-top:6px">Timer started when you loaded · stops when you let go</div>
+    </div></div>
+    <p class="caption"><b>Live force in the runner.</b> <span class="new">NEW</span> The big number is the actual force right now, with a green <b>target band</b> worked out from your max × the protocol's %. The rep <b>starts when you load and ends when you let go</b>, so "until I tap done" becomes hands-free and timed hangs measure your real hold. Dropping below the band gets a haptic.</p>
+  </div>
+
+
+  <div class="step"><div class="stepnum">12B</div>
+    <div class="device"><div class="screen runner rest"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="phase" style="margin-top:22px">GET READY</div>
+      <div class="ring" style="opacity:.9"><div class="big">0:04</div><div class="small">Max hangs · set 1</div></div>
+      <div style="margin:14px 18px 0;background:rgba(91,192,116,.16);border:1px solid rgba(91,192,116,.45);border-radius:16px;padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><div style="font-weight:800;font-size:14px">⚡ Tindeq nearby</div><div style="font-size:11.5px;opacity:.8">Measure real force for this run</div></div>
+          <span class="btn sm" style="background:#5BC074;color:#07240f">Connect</span>
+        </div>
+      </div>
+      <div class="meta" style="opacity:.6;margin-top:10px">Not now: the timer works as usual</div>
+    </div></div>
+    <p class="caption"><b>Offered before you start.</b> <span class="new">NEW</span> Only when the protocol can use force <i>and</i> a sensor you've used before is nearby. One tap connects during the get-ready countdown. Ignore it and the run is exactly as today. No sensor nearby means nothing is shown.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">12C</div>
+    <div class="device"><div class="screen runner rest"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="phase" style="opacity:.6">REST</div>
+      <div class="ring" style="opacity:.5"><div class="big">1:38</div></div>
+      <div class="dim" style="background:rgba(0,0,0,.35)"></div>
+      <div class="sheet half" style="height:52%"><div class="grab"></div>
+        <div class="navrow"><span class="lnk">Cancel</span><span class="title">Force sensor</span><span style="width:40px"></span></div>
+        <div class="group">
+          <div class="row"><span class="l"><span class="ic" style="background:var(--fresh);color:#07240f">⚡</span><b>Tindeq Progressor</b></span><span class="pill g">Connected</span></div>
+          <div class="row"><span>Zeroing…</span><span class="v">keep it unloaded</span></div>
+          <div class="row"><span>Reading now</span><span class="v">0.0 kg ✓</span></div>
+        </div>
+        <div class="foot">Measuring from the next hang. The rest timer keeps running.</div>
+        <div class="btn" style="margin-top:10px">Done</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Connect mid-run.</b> <span class="new">NEW</span> From a <b>⚡ Connect</b> chip in the runner (next to load and rest), or from ⋯ → "Connect force sensor" if you've never paired one. It follows the Adjust-sheet rule: the clock keeps going, zeroing happens during the rest, and measuring starts <b>from the next rep</b>.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">12D</div>
+    <div class="device"><div class="screen runner"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div style="margin:14px 14px 0;background:rgba(0,0,0,.35);border-radius:12px;padding:8px 12px;font-size:12px;display:flex;justify-content:space-between"><span>⚡ Sensor disconnected: continuing on the timer</span><span style="opacity:.8">Reconnect</span></div>
+      <div class="phase" style="margin-top:12px">HANG</div>
+      <div class="ring"><div class="big">0:05</div><div class="small">of 7 s</div></div>
+      <div class="meta">Set 3 of 3 · Rep 1 of 3</div>
+      <div class="loadbar"><span>Load</span><b>+10 kg (planned)</b></div>
+      <div class="meta" style="opacity:.7;margin-top:8px">Force is logged for reps 1–6; the rest are timer-only</div>
+    </div></div>
+    <p class="caption"><b>If it drops mid-run.</b> <span class="new">NEW</span> Battery or range: the run never stops. It falls back to the timer and planned load, shows one quiet banner, and <b>reconnects automatically</b> if the sensor comes back. History marks which reps were measured, so a gap doesn't fake your numbers.</p>
+  </div>
+  <div class="step"><div class="stepnum">13</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="bigtitle" style="margin-top:14px">Max pull test</div>
+        <div style="font-size:12px;color:var(--t2);margin:-4px 2px 8px">20 mm edge · half crimp · 3 pulls each hand</div>
+        <div class="group">
+          <div class="row"><span>✋ Left</span><span class="v"><b style="color:var(--ink);font-size:16px">52.4 kg</b> peak</span></div>
+          <div class="row"><span>✋ Right</span><span class="v"><b style="color:var(--ink);font-size:16px">55.1 kg</b> peak</span></div>
+          <div class="row"><span>Difference</span><span class="v" style="color:#ffc48f">Left 5% weaker</span></div>
+        </div>
+        <div class="curve"><svg viewBox="0 0 300 110" preserveAspectRatio="none">
+          <path d="M0,105 C20,105 25,30 45,22 C70,14 90,20 110,24 C125,28 130,105 140,105" fill="none" stroke="#FF9645" stroke-width="2.5"/>
+          <path d="M160,105 C180,105 185,24 205,18 C230,10 250,14 270,20 C285,25 290,105 300,105" fill="none" stroke="#5AA9FF" stroke-width="2.5"/>
+        </svg></div>
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3)"><span>● left</span><span>● right</span></div>
+        <div class="btn" style="margin-top:12px">Use as my max</div>
+        <div class="foot" style="text-align:center">Protocols set to "% of max" now target these numbers, per hand.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>A measured max.</b> <span class="new">NEW</span> A built-in "Max pull test" protocol records your peak per hand (and per grip/edge, if you track that). <b>Use as my max</b> makes "90% of max" a real kg target. Without a sensor, you can type your max in instead. The force curves also go into the session log.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">14</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ History</span><span class="title">Finger day</span><span style="width:40px"></span></div>
+        <div class="glbl">Max hangs · 20 mm half crimp</div>
+        <div class="group">
+          <div class="row"><span>Set 1 · L / R</span><span class="v">47.9 / 50.2 kg · 7.0 s</span></div>
+          <div class="row"><span>Set 2 · L / R</span><span class="v">46.1 / 49.8 kg · 7.0 s</span></div>
+          <div class="row"><span>Set 3 · L / R</span><span class="v" style="color:#ffc48f">43.0 / 48.9 kg · 5.8 s</span></div>
+        </div>
+        <div class="foot">Set 3 left fell below target (45 kg) and let go at 5.8 s.</div>
+        <div class="glbl">Max, last 8 weeks</div>
+        <div class="curve"><svg viewBox="0 0 300 110" preserveAspectRatio="none">
+          <polyline points="0,80 40,76 80,70 120,72 160,62 200,58 240,52 300,46" fill="none" stroke="#FF9645" stroke-width="2.5"/>
+          <polyline points="0,70 40,66 80,62 120,58 160,55 200,50 240,46 300,40" fill="none" stroke="#5AA9FF" stroke-width="2.5"/>
+        </svg></div>
+        <div style="font-size:11.5px;color:var(--t2)">Left +9% · Right +11% since August</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>History.</b> <span class="new">NEW</span> Each set shows measured force per hand and how long you actually held. Misses are called out in plain words. Max-test results chart over time, left vs right, which is the progression view climbers use a Progressor for.</p>
+  </div>
+</div>
+
+
+<h2 class="part">5 · Exact weights <span class="tag">everywhere</span></h2>
+<p class="sub">Weight stepped in fixed 2.5 increments, so 71.3 kg or a 1.25 kg microplate jump couldn't be entered. Now: <b>tap the number to type any value</b>, and choose the ± step in Settings. One shared weight control is used for set logging, timed sets, protocol load, the Adjust sheet and bodyweight, so they all behave the same.</p>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">15</div>
+    <div class="device"><div class="screen" style="background:linear-gradient(180deg,#1d1410,#0c0c0e)"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div style="text-align:center;font-size:11px;font-weight:900;letter-spacing:.14em;color:var(--t3);margin:18px 0 10px">SET 3</div>
+        <div class="hero"><div><div class="cap">REPS</div><div class="val">8</div></div><div class="pm"><span>−</span><span>+</span></div></div>
+        <div class="hero"><div><div class="cap">WEIGHT · TAP TO TYPE</div><div class="val edit">71.3 <span style="font-size:16px">kg</span></div></div><div class="pm"><span>−</span><span>+</span></div></div>
+        <div style="text-align:center;font-size:12px;color:var(--t2)">Last time: 8 × 70 kg · ± steps 1.25 kg</div>
+      </div>
+      <div class="kbd">
+        <div class="bar"><span style="color:var(--t2)">kg · 0 = bodyweight</span><span style="color:var(--ember);font-weight:700">Done</span></div>
+        <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>.</div><div>0</div><div>⌫</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Tap to type.</b> <span class="new">NEW</span> Tapping the weight opens a decimal keypad, and the value is kept exactly as typed (71.3 stays 71.3). ± still nudge by your chosen step from wherever you are. Entering 0 means bodyweight ("Body"), as today.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">16</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ Gym Tracker</span><span class="title">Settings</span><span style="width:60px"></span></div>
+        <div class="glbl">Preferences</div>
+        <div class="group">
+          <div class="row"><span>Weight unit</span><span class="v">KG · <span style="color:var(--t3)">LB</span></span></div>
+          <div class="row" style="display:block"><div>Weight ± step</div>
+            <div class="chips" style="border:0;padding:8px 0 2px"><span class="chip">0.5</span><span class="chip">1</span><span class="chip on">1.25</span><span class="chip">2.5</span><span class="chip">5</span></div></div>
+        </div>
+        <div class="foot">How much − and + change a weight. You can always tap the number to type an exact value. Default 2.5 kg / 5 lb.</div>
+        <div class="glbl">During a workout</div>
+        <div class="group"><div class="row"><span>Keep screen on</span><span class="v e">Whole workout ⌄</span></div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Choose the step.</b> <span class="new">NEW</span> For microplates (1.25 / 0.5) or bigger jumps (5). Defaults match today's behaviour, so nothing changes unless you pick another step.</p>
+  </div>
+</div>
+
+<h2 class="part">Your calls</h2>
+<div class="q"><b>Q1 · Load control.</b> <b>L1</b> direction chips + stepper (frame 2) · <b>L2</b> one signed slider (2B). <span class="rec">My pick: L1.</span> It names "added weight" and "pulley assist" in plain words.</div>
+<div class="q"><b>Q2 · Editing mid-run.</b> <b>R1</b> tap a chip → Adjust sheet, timer keeps running (frame 4) · <b>R2</b> pause to reveal values (4B). <span class="rec">My pick: R1.</span> It's always visible, and the clock never stops.</div>
+<div class="q"><b>Q3 · Saving a mid-run change.</b> Ask at the end with <b>Keep for next time / Just this once</b> (frame 6), vs. always keeping it, vs. never keeping it. <span class="rec">My pick: ask, and only when something changed.</span></div>
+<div class="q"><b>Q6 · Protocols in routines.</b> A block is a <b>copy</b> of a preset (frame 10B), and editing a preset asks whether to update routines (10C), vs. blocks <i>linked</i> to the preset so they always follow it. <span class="rec">My pick: copy + ask.</span> Linking changes routines silently and breaks QR sharing, since the other phone doesn't have your preset. Scheduling stays on routines; "Schedule" on a lone protocol makes a one-block routine.</div>
+<div class="q"><b>Q7 · Force sensor.</b> Auto start/stop reps on by default when a Tindeq is connected (frame 11), a target band from "% of max" (12), and a measured max test per hand (13). <span class="rec">My pick: as drawn</span>, with everything still working exactly the same when no sensor is connected. Built as a generic "force sensor" so other boards (PitchSix, Entralpi…) can be added later.</div>
+<div class="q"><b>Q8 · Connecting during a workout.</b> Offer to connect before the first rep (12B) and any time mid-run (12C), prominently only when a known sensor is nearby, and fall back to the timer without stopping if it drops (12D). <span class="rec">My pick: as drawn.</span> Never-paired users only get the quiet ⋯ menu item, so nobody without a sensor gets nagged.</div>
+<div class="q"><b>Q9 · Exact weights.</b> Tap-to-type on every weight (frame 15) plus a ± step choice in Settings (16). <span class="rec">My pick: as drawn.</span> It's small, and ships first with the bug fix, since it helps every workout today.</div>
+<div class="q"><b>Q5 · Hands.</b> Both (default) / One hand with <i>Alternate · Left first · Left only · Right only</i> (frame 2C), reps counted per hand, and hand logged per set (5B). <span class="rec">My pick: as drawn.</span> Also track <b>grip type / edge size</b> (e.g. 20 mm half crimp)? It's the same kind of optional field, and it only earns its place if you want history comparable by grip.</div>
+<div class="q"><b>Q4 · Several a day and Habits.</b> A day counts as done after <b>N sessions</b> (default 1, frame 7). <span class="rec">My pick: default 1</span>, so a grease-the-groove plan doesn't break your streak over one missed slot.</div>
+
+<table class="cmp">
+  <tr><th>Build order (one PR each)</th><th>What ships</th></tr>
+  <tr><td>P1 · bug fix + exact weights</td><td>A protocol block in a routine runs once (no 3 × 3 = 9 sets). Tap-to-type weights + a configurable ± step (frames 15–16) via one shared weight control.</td></tr>
+  <tr><td>P2 · protocol editor + presets</td><td>Frames 1–2, 10, 10B–C (Hangboard in Add block; copy + "update routines?"): minutes:seconds rests, editable rest between sets, Max / Repeaters / Contact / Abrahangs presets, your own presets, Edit protocol in routines.</td></tr>
+  <tr><td>P3 · until-I-tap-done reps</td><td>Frame 5, in the editor and the runner.</td></tr>
+  <tr><td>P4 · load + hands</td><td>Frame 2 (+ the chosen load control), the runner load bar, and per-set load in the log. An optional load field on the protocol, so old data is untouched. Plus hands (frames 2C, 5B): optional hand mode, per-hand reps, and the hand logged per set.</td></tr>
+  <tr><td>P5 · adjust mid-run</td><td>Frames 3, 4, 6 (the chosen editing style + keep-or-once).</td></tr>
+  <tr><td>P6 · any frequency</td><td>Frames 7–9: several sessions a day, a 64-notification-aware plan, slot-level skip, Habits "done after N".</td></tr>
+  <tr><td>P7 · force sensor</td><td>Frames 11–14 (+12B–D connect before or during a run, timer fallback on drop): Tindeq pairing + tare, live force bar with target band, automatic rep detection, max pull test per hand, force per set in History. Pure force analysis (rep detection, peak, average, time under load, rate of force development) unit-tested on recorded samples; the live connection is tested on your device.</td></tr>
+</table>
+</div>
+</body>
+</html>

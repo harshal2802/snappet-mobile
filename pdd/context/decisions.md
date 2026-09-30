@@ -9380,3 +9380,20 @@ Non-obvious calls:
   code, says so rather than failing silently. The system picker can't be driven hermetically, so its
   end-to-end leg was verified once with a `simctl addmedia` seed and is not in the committed UI suite;
   decoding itself is unit-tested against a rendered QR placed in a phone-sized screenshot.
+
+## 2026-09-30 — a protocol block is one run; weights are typed exactly (prompt 139)
+
+- **A structured timed block's `sets` counts runs of the protocol**, never the protocol's own sets. The
+  old copy of `spec.sets` into the block made a 3-set protocol play 3 times (9 sets). Legacy data is
+  normalized on read (`sets == spec.sets` ⇒ 1) rather than migrated: a stored routine is never rewritten,
+  and a deliberately different run count is kept. Two tests that asserted the old copy were changed on
+  purpose.
+- **No block rest after a protocol run** — the protocol rests internally.
+- **Typed weights are never snapped** to the ± step; ± moves from wherever the value is. Step is per unit
+  (kg 0.5/1/1.25/2.5/5, lb 1/2.5/5/10), default 2.5 kg / 5 lb = old behaviour.
+- **Inline Done on the weight field**: `keypadDoneToolbar` doesn't render inside the full-screen workout
+  pager (caught by the UI test), so the field carries its own ✓.
+- The hangboard wireframe (Q1–Q9) was approved as drawn: load L1 (direction chips), mid-run edit R1
+  (Adjust sheet, clock running), keep-or-just-once at the end, Habits "done after N" default 1, hands
+  (Both / One hand), protocols in routines as copies + "update routines?", Tindeq connect before/during
+  a run with timer fallback, exact weights.

@@ -927,6 +927,8 @@ const nodes = [
     file: "ios/App/Snappet/Features/WorkoutTracker/RoutineScanSheet.swift", desc: "Prompt 138 (wireframe frame 10) — 'Scan routine' from the Routines ＋ menu / empty state: the shared SnappetScannerView camera + Choose from Photos (PhotosPicker → QRImageDecoder → pure RoutinePhotoImport: routine / noCode / notARoutine shown inline). The host stashes the found routine and promotes it to the import sheet in onDismiss (the sheet-race rule). Routines ＋ also offers Import from Photos directly (alert with Scan instead on failure).", tags: ["sheet","qr","scan","photos","import"] },
   { id: "qr-image-decoder", label: "QRImageDecoder", type: "service", group: "core", category: "core", platform: "ios",
     file: "ios/App/Snappet/Services/QRImageDecoder.swift", desc: "Prompt 138 — reads QR payloads from a still image (screenshot/photo): Vision VNDetectBarcodesRequest (orientation-aware) with a Core Image CIDetector fallback; on-device, unit-tested against a rendered code inside a phone-sized screenshot.", tags: ["service","vision","qr","on-device"] },
+  { id: "weight-entry", label: "TypeableWeightValue / WeightEntry", type: "component", group: "workout-log", category: "fitness", platform: "ios",
+    file: "ios/App/Snappet/Features/WorkoutTracker/TypeableWeightValue.swift", desc: "Prompt 139 — tap any weight to type an exact value (decimal field + inline ✓ Done; the keyboard toolbar doesn't render inside the full-screen pager), never snapped; ± move by the per-unit Weight ± step from Workout Settings (kg 0.5/1/1.25/2.5/5, lb 1/2.5/5/10; default 2.5/5). Pure WeightEntry (nudge/parse/step) is unit-tested. Used by the pager's strength card and the timed-set cover; the hangboard load (142) reuses it.", tags: ["component","weight","input","unit-tested"] },
   { id: "routine-share", label: "RoutineShareView", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
     file: "ios/App/Snappet/Features/WorkoutTracker/RoutineShareView.swift", desc: "Workout-redesign E6: a segmented My Code / Scan sheet reached from RoutineDetailView's qrcode toolbar button (mirroring KilterClimbDetailView). 'My Code' renders the routine as a pure-black-on-white QR (QRCodeImage) encoding a snappet://routine/v1/<blob> SharedRoutine + an always-present ShareLink (link/file); a routine too dense to scan (SharedRoutine.fitsInScannableQR false — the QR size cliff) hides the QR and leans on the link. 'Scan' opens the generalized SnappetScannerView with the routine decoder; a scan routes through the SAME SuiteRouter.pendingRoutineImport one-shot (one import brain), popping to root so the import preview surfaces on the tracker root.", tags: ["sheet","qr","share","scan","fallback"] },
   { id: "routine-import", label: "RoutineImportSheet", type: "sheet", group: "workout-log", category: "fitness", platform: "ios",
@@ -937,6 +939,9 @@ const nodes = [
 ];
 
 const links = [
+  { source: "wt-freeform-player", target: "weight-entry", type: "uses", label: "strength card weight (139)" },
+  { source: "wt-timed-set-cover", target: "weight-entry", type: "uses", label: "timed set weight (139)" },
+  { source: "wt-settings", target: "weight-entry", type: "configures", label: "Weight ± step (139)" },
   { source: "wt-freeform-player", target: "screen-awake", type: "uses", label: "rest count-down hold (135)" },
   { source: "wt-home", target: "screen-awake", type: "uses", label: "hold while player presented (135)" },
   { source: "wt-timed-set-cover", target: "screen-awake", type: "uses", label: "timer hold (135)" },

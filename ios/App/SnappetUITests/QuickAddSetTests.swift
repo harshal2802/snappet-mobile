@@ -86,4 +86,26 @@ final class QuickAddSetTests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [twoValues], timeout: 6), .completed,
                        "Repeat should append a second identical 10 × 5 kg set")
     }
+
+    /// Prompt 139: tap the weight to type an exact value; it's logged exactly (no 2.5 snapping), and ±
+    /// then moves from that value.
+    func testTypedExactWeightIsLoggedExactly() {
+        openFreeformPlayer()
+        addLiftingExercise()
+
+        let weight = app.buttons["freeform.quickWeight"]
+        XCTAssertTrue(weight.waitForExistence(timeout: 6), "the weight readout is tappable")
+        weight.tap()
+        let field = app.textFields["freeform.quickWeight.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 4), "tapping opens a typed field")
+        field.typeText("71.3")
+        app.buttons["freeform.quickWeight.done"].tap()
+
+        XCTAssertTrue(app.buttons["freeform.quickWeight"].waitForExistence(timeout: 4))
+        XCTAssertEqual(app.buttons["freeform.quickWeight"].label, "71.3 kg")
+
+        app.buttons["freeform.quickLog"].tap()
+        let row = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH '× 71.3 kg'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6), "the logged set keeps the typed weight exactly")
+    }
 }

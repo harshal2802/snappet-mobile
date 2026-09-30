@@ -23,12 +23,21 @@ enum RoutineSessionBuilder {
         routine.exercises.map { sessionExercise(from: $0, defaultUnit: defaultUnit) }
     }
 
+    /// How many times a routine block is played (prompt 139). A structured timed protocol (repeaters /
+    /// tabata / EMOM) carries its own sets inside the spec, so ONE run of it is the whole block — its
+    /// `sets` counts runs, not the protocol's sets. Routines saved before 139 copied `spec.sets` into the
+    /// block (a 3-set protocol then asked for 3 full runs = 9 sets); that exact legacy value reads as 1.
+    static func plannedRuns(for re: RoutineExercise) -> Int {
+        guard re.discipline == .timed, let spec = re.timedSpec, spec.mode.isStructured else { return re.sets }
+        return re.sets == spec.sets ? 1 : max(1, re.sets)
+    }
+
     /// Map one `RoutineExercise` → one `SessionExercise`, type-aware.
     static func sessionExercise(from re: RoutineExercise, defaultUnit: WeightUnit) -> SessionExercise {
         let discipline = re.discipline
         var se = SessionExercise(
             exerciseId: re.exerciseId,
-            targetSets: re.sets,
+            targetSets: plannedRuns(for: re),
             targetReps: re.reps,
             targetRestSeconds: re.restSeconds,
             targetWeight: re.weight,
@@ -88,8 +97,9 @@ enum RoutineSessionBuilder {
                 guard let spec else { return nil }
                 return spec.workSec > 0 && !spec.mode.isStructured ? Double(spec.workSec) : nil
             }()
-            let sets = spec?.sets ?? 1
-            return RoutineExercise(exerciseId: item.id, sets: max(1, sets), reps: "", restSeconds: defaultRest,
+            // A structured protocol is one run (its sets live in the spec — prompt 139); a simple hold
+            // defaults to one set too.
+            return RoutineExercise(exerciseId: item.id, sets: 1, reps: "", restSeconds: defaultRest,
                                    displayName: item.title, discipline: .timed,
                                    targetDurationSec: target,
                                    timedSpecData: specData, timedCategory: category.rawValue)

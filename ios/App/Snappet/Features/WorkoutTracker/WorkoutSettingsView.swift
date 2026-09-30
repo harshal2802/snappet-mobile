@@ -11,6 +11,8 @@ struct WorkoutSettingsView: View {
 
     @Environment(AppModel.self) private var app
     @State private var showingHRSource = false
+    @AppStorage(WeightEntry.stepKey(for: .kg)) private var stepKg = 0.0
+    @AppStorage(WeightEntry.stepKey(for: .lb)) private var stepLb = 0.0
     @AppStorage(KeepScreenAwakeMode.storageKey) private var keepAwakeRaw = KeepScreenAwakeMode.defaultMode.rawValue
 
     var body: some View {
@@ -20,6 +22,7 @@ struct WorkoutSettingsView: View {
                     ForEach(WeightUnit.allCases) { Text($0.display.uppercased()).tag($0.rawValue) }
                 }
                 .pickerStyle(.segmented)
+                weightStepRow
             }
 
             Section {
@@ -138,6 +141,27 @@ struct WorkoutSettingsView: View {
                 .accessibilityIdentifier("downloadGuidePhotosSettings")
                 GuidePhotoInstallError(phase: installer.phase)
             }
+        }
+    }
+
+    // MARK: - Weight ± step (prompt 139)
+
+    private var unit: WeightUnit { WeightUnit(rawValue: unitRaw) ?? .kg }
+
+    /// The step the − / + weight buttons use, per unit; you can always tap a weight to type it exactly.
+    private var weightStepRow: some View {
+        let binding = Binding<Double>(
+            get: { WeightEntry.step(stored: unit == .lb ? stepLb : stepKg, unit: unit) },
+            set: { if unit == .lb { stepLb = $0 } else { stepKg = $0 } })
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Weight ± step")
+            Picker("Weight ± step", selection: binding) {
+                ForEach(WeightEntry.stepChoices(for: unit), id: \.self) { Text(SetMeasure.formatWeight($0)).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings.weightStep")
+            Text("How much − and + change a weight (\(unit.display)). Tap any weight to type an exact value.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
