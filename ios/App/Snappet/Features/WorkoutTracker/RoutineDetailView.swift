@@ -16,6 +16,7 @@ struct RoutineDetailView: View {
     @Environment(SuiteRouter.self) private var router
     @Environment(\.modelContext) private var context
     @Environment(AppModel.self) private var app
+    @Environment(SnappetCore.self) private var core
     @State private var editing = false
     @State private var sharing = false
     @State private var scheduling = false
@@ -97,8 +98,10 @@ struct RoutineDetailView: View {
             RoutineEditorView(routine: routine, resolver: resolver, defaultUnit: unit)
         }
         .sheet(isPresented: $scheduling) {
-            RoutineScheduleEditor(routineName: routine.name, schedule: routine.schedule) { saved in
+            RoutineScheduleEditor(routineName: routine.name, schedule: routine.schedule,
+                                  habitLink: routine.linkedHabitID.map(HabitLinkChoice.existing) ?? .none) { saved, link in
                 routine.schedule = saved
+                HabitRoutineLink.apply(saved == nil ? .none : link, to: routine, in: context, core: core)
                 try? context.save()
                 RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
             }
@@ -128,7 +131,8 @@ extension RoutineDetailView {
                     if let schedule {
                         Text(schedule.isEnabled ? "Schedule" : "Schedule · paused").font(.headline)
                         Text(schedule.summary()).font(.subheadline).foregroundStyle(.secondary)
-                        Text(reminderLine(schedule)).font(.caption).foregroundStyle(.tertiary)
+                        Text(reminderLine(schedule) + (routine.linkedHabitID != nil ? " · Tracked in Habits" : ""))
+                            .font(.caption).foregroundStyle(.tertiary)
                         if case .weekly(let days, _) = schedule.repeatRule {
                             ScheduleDayDots(weekdays: days).padding(.top, 4)
                         }

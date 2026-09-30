@@ -562,6 +562,11 @@ struct WorkoutHomeView: View {
             // Flush HR → stamp bounds/kcal → stop services → complete → feed the Recap log.
             // Shared with the festival night's `endNight` (a dance session is a session too).
             WorkoutSessionFinisher.finish(session, app: app, context: context)
+            // A routine linked to a habit ticks it off (prompt 137).
+            if let routine = routines.first(where: { $0.id == session.routineID }) {
+                HabitRoutineLink.markDone(routine: routine, day: session.startedAt, in: context, core: core)
+                try? context.save()
+            }
             let mins = Int(session.duration / 60)
             core.log(module: WorkoutTrackerModule.id, action: "session",
                      summary: "Completed \(session.routineName)", metric: Double(mins))

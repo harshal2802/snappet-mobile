@@ -7,13 +7,29 @@ import SwiftUI
 struct HabitEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
+    /// What Save hands back (prompt 137 added the days + skip policy).
+    struct Result {
+        var name: String
+        var symbol: String
+        /// nil = every day.
+        var weekdays: [Int]?
+        var skipsBreakStreak: Bool
+    }
+
     /// The habit being edited, or `nil` when creating a new one.
     let habit: Habit?
-    /// Called with the (trimmed) name and chosen symbol when the user taps Save.
-    let onSave: (String, String) -> Void
+    /// Routines that tick this habit off (prompt 137). Non-empty ⇒ their schedules decide the days.
+    let linkedRoutines: [Routine]
+    let unlink: (() -> Void)?
+    /// Called with the (trimmed) name, symbol, days and skip policy when the user taps Save.
+    let onSave: (Result) -> Void
 
     @State private var name: String
     @State private var symbol: String
+    @State private var specificDays: Bool
+    @State private var weekdays: Set<Int>
+    @State private var skipsBreakStreak: Bool
+    @State private var confirmingUnlink = false
 
     /// A small shared palette of SF Symbols to pick from.
     static let symbols = [
@@ -22,14 +38,27 @@ struct HabitEditorView: View {
         "moon.fill", "sun.max.fill", "pencil", "heart.fill"
     ]
 
-    init(habit: Habit? = nil, onSave: @escaping (String, String) -> Void) {
+    init(habit: Habit? = nil, linkedRoutines: [Routine] = [], unlink: (() -> Void)? = nil,
+         onSave: @escaping (Result) -> Void) {
         self.habit = habit
+        self.linkedRoutines = linkedRoutines.filter { $0.schedule != nil }
+        self.unlink = unlink
         self.onSave = onSave
         _name = State(initialValue: habit?.name ?? "")
         _symbol = State(initialValue: habit?.symbol ?? "checkmark.circle")
+        let days = Set(habit?.weekdays ?? [])
+        _specificDays = State(initialValue: !days.isEmpty && days.count < 7)
+        _weekdays = State(initialValue: days.isEmpty ? [2, 3, 4, 5, 6] : days)
+        _skipsBreakStreak = State(initialValue: habit?.skipsBreakStreak == true)
     }
 
     private var isEditing: Bool { habit != nil }
+    private var isLinked: Bool { !linkedRoutines.isEmpty }
+
+    private var result: Result {
+        let days: [Int]? = specificDays && !weekdays.isEmpty && weekdays.count < 7 ? weekdays.sorted() : nil
+        return Result(name: trimmedName, symbol: symbol, weekdays: days, skipsBreakStreak: skipsBreakStreak)
+    }
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,6 +90,8 @@ struct HabitEditorView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                daysSection
+                if isLinked { linkedSection }
             }
             .navigationTitle(isEditing ? "Edit Habit" : "New Habit")
             .navigationBarTitleDisplayMode(.inline)
@@ -70,13 +101,67 @@ struct HabitEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isEditing ? "Save" : "Add") {
-                        onSave(trimmedName, symbol)
+                        onSave(result)
                         dismiss()
                     }
-                    .disabled(trimmedName.isEmpty)
+                    .disabled(trimmedName.isEmpty || (specificDays && weekdays.isEmpty && !isLinked))
                     .accessibilityIdentifier("habit.save")
                 }
             }
+        }
+    }
+
+    // MARK: - Days (prompt 137)
+
+    @ViewBuilder private var daysSection: some View {
+        Section {
+            if isLinked {
+                // The linked routine's schedule decides — shown, not editable, so the two can't disagree.
+                ForEach(linkedRoutines) { r in
+                    LabeledContent(r.name, value: r.schedule?.summary() ?? "")
+                }
+            } else {
+                Picker("Days", selection: $specificDays) {
+                    Text("Every day").tag(false)
+                    Text("Specific days").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("habit.daysMode")
+                if specificDays { WeekdayPicker(selection: $weekdays) }
+            }
+        } header: {
+            Text("Days")
+        } footer: {
+            if isLinked {
+                Text("Set by the linked routine's schedule. Change it there, or unlink below.")
+            } else if specificDays {
+                Text("Your streak counts these days only — a day off never breaks it.")
+            }
+        }
+    }
+
+    private var linkedSection: some View {
+        Section {
+            Picker("Skipped days count as", selection: $skipsBreakStreak) {
+                Text("Excused").tag(false)
+                Text("Missed").tag(true)
+            }
+            .accessibilityIdentifier("habit.skipPolicy")
+            if let unlink {
+                Button("Unlink from routine\(linkedRoutines.count == 1 ? "" : "s")", role: .destructive) {
+                    confirmingUnlink = true
+                }
+                .accessibilityIdentifier("habit.unlink")
+                .confirmationDialog("Unlink this habit?", isPresented: $confirmingUnlink, titleVisibility: .visible) {
+                    Button("Unlink", role: .destructive) { unlink(); dismiss() }
+                } message: {
+                    Text("The habit and its history stay; finishing the routine just won't tick it off any more.")
+                }
+            }
+        } header: {
+            Text("Linked routine\(linkedRoutines.count == 1 ? "" : "s")")
+        } footer: {
+            Text("\"Skip today\" on a routine reminder either keeps your streak alive (Excused) or ends it (Missed).")
         }
     }
 }

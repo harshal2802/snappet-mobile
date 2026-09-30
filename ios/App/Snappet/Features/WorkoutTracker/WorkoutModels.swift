@@ -473,6 +473,9 @@ final class Routine {
     /// The routine's `RoutineSchedule` as terse JSON (prompt 136); nil = not scheduled. Stored as Data
     /// (not a Codable composite) so the schedule's own defaults-tolerant decoder owns every migration.
     var scheduleData: Data?
+    /// The Habit this routine ticks off when completed (prompt 137). Device-local — never in a QR code.
+    /// Several routines may share one habit ("Gym").
+    var linkedHabitID: UUID?
 
     init(id: UUID = UUID(), name: String, exercises: [RoutineExercise] = [],
          createdAt: Date = .now, updatedAt: Date = .now, isStarter: Bool = false,

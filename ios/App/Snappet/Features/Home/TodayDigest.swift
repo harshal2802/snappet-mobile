@@ -19,15 +19,19 @@ enum TodayDigest {
     /// Habits not yet checked off today. `nil` when the user has no habits (card hidden).
     /// Mirrors `HabitRootView.isDoneToday`: a completion counts when its `day` normalizes to
     /// today's start-of-day (normalized here too, defensively — the rows are stored normalized).
+    /// `dueIDs` (prompt 137): habits due today per `HabitSchedule`; nil = every habit is due. A habit off
+    /// its schedule today isn't "left" — it only counts if it was done anyway.
     static func habitsToday(habits: [Habit], completions: [HabitCompletion],
-                            now: Date, calendar: Calendar) -> HabitsToday? {
+                            now: Date, calendar: Calendar, dueIDs: Set<UUID>? = nil) -> HabitsToday? {
         guard !habits.isEmpty else { return nil }
         let today = calendar.startOfDay(for: now)
         let doneToday = Set(completions.lazy
             .filter { calendar.startOfDay(for: $0.day) == today }
             .map(\.habitID))
-        let remaining = habits.filter { !doneToday.contains($0.id) }.count
-        return HabitsToday(remaining: remaining, total: habits.count)
+        let counted = habits.filter { dueIDs?.contains($0.id) ?? true || doneToday.contains($0.id) }
+        guard !counted.isEmpty else { return nil }
+        let remaining = counted.filter { !doneToday.contains($0.id) }.count
+        return HabitsToday(remaining: remaining, total: counted.count)
     }
 
     // MARK: - Resume workout

@@ -62,4 +62,39 @@ final class RoutineScheduleUITests: XCTestCase {
         XCTAssertTrue(when.label.contains("TOMORROW"), when.label)
         snap("routines-up-next-skipped")
     }
+
+    /// Prompt 137: a scheduled routine tracked in Habits appears there as a linked habit whose Start
+    /// strip opens the routine in the player.
+    func testScheduledRoutineShowsAsLinkedHabitWithStart() {
+        app.tabBars.buttons["Apps"].tap()
+        XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
+        app.buttons["moduleCard.workout-log"].tap()
+        app.segmentedControls.buttons["Routines"].tap()
+        let row = app.buttons.matching(identifier: "routineRow").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        app.buttons["routine.schedule"].tap()
+        XCTAssertTrue(app.buttons["schedule.save"].waitForExistence(timeout: 4))
+        for wd in 1...7 {
+            let day = app.buttons["schedule.day.\(wd)"]
+            if day.value as? String != "Selected" { day.tap() }
+        }
+        app.buttons["schedule.save"].tap()
+        XCTAssertTrue(app.buttons["routine.schedule"].label.contains("Tracked in Habits"),
+                      app.buttons["routine.schedule"].label)
+
+        // Over to Habits: back out of the detail (it hides the tab bar), then Apps → pop to the library.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 4))
+        app.tabBars.buttons["Apps"].tap()   // re-tapping the selected tab pops to the library root
+        XCTAssertTrue(app.buttons["moduleCard.habit"].waitForExistence(timeout: 6))
+        app.buttons["moduleCard.habit"].tap()
+        let linked = app.descendants(matching: .any)["habit.linked"]
+        XCTAssertTrue(linked.waitForExistence(timeout: 6), "the routine's habit shows its linked strip")
+        snap("habits-linked")
+
+        app.buttons["habit.startLinked"].tap()
+        XCTAssertTrue(app.buttons["pauseWorkout"].waitForExistence(timeout: 8), "Start opens the routine in the player")
+        snap("player-from-habits")
+    }
 }
