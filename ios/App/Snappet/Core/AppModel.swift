@@ -69,6 +69,10 @@ final class AppModel {
     /// unauthorized (live-workout-studio next pass).
     let workoutNotifications = WorkoutNotifications()
 
+    /// The single owner of the screen's auto-lock override during a workout (prompt 135): the player
+    /// and every running timer take named holds; the flag is derived from them + the user's mode.
+    let screenAwake = ScreenAwakeController()
+
     /// The Pomodoro countdown engine. Owned here — not as `@State` on `PomodoroRootView` —
     /// so popping back to the Apps grid no longer kills a running focus session (the same
     /// stale-on-pop fix as `kilterSessions`, issue #70). The view still wires its
