@@ -14,8 +14,11 @@ struct RoutineDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(SuiteRouter.self) private var router
+    @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     @State private var editing = false
     @State private var sharing = false
+    @State private var scheduling = false
 
     /// The disciplines present, in canonical order — drives the "mixed rhythm" summary chips.
     private var disciplines: [WorkoutDiscipline] {
@@ -25,6 +28,8 @@ struct RoutineDetailView: View {
 
     var body: some View {
         List {
+            Section { scheduleCard }
+
             if let detail = routine.detail, !detail.isEmpty {
                 Section { Text(detail).font(.callout) }
             }
@@ -91,6 +96,13 @@ struct RoutineDetailView: View {
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine, resolver: resolver, defaultUnit: unit)
         }
+        .sheet(isPresented: $scheduling) {
+            RoutineScheduleEditor(routineName: routine.name, schedule: routine.schedule) { saved in
+                routine.schedule = saved
+                try? context.save()
+                RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
+            }
+        }
         .sheet(isPresented: $sharing) {
             // Scanning a routine here routes it through the same router one-shot the snappet:// link path
             // uses, so WorkoutHomeView shows the one import-confirm preview (one import brain). Pop this
@@ -100,6 +112,67 @@ struct RoutineDetailView: View {
                 router.pendingRoutineImport = scanned
             })
         }
+    }
+}
+
+extension RoutineDetailView {
+    /// The Schedule card (prompt 136, wireframe frame 1): summary + reminder line + the weekday dots, or
+    /// a "Set a schedule" invitation. Tapping it opens the editor.
+    @ViewBuilder var scheduleCard: some View {
+        let schedule = routine.schedule
+        Button { scheduling = true } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: schedule == nil ? "calendar.badge.plus" : "calendar")
+                    .font(.title3).foregroundStyle(SnappetColor.workout).frame(width: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    if let schedule {
+                        Text(schedule.isEnabled ? "Schedule" : "Schedule · paused").font(.headline)
+                        Text(schedule.summary()).font(.subheadline).foregroundStyle(.secondary)
+                        Text(reminderLine(schedule)).font(.caption).foregroundStyle(.tertiary)
+                        if case .weekly(let days, _) = schedule.repeatRule {
+                            ScheduleDayDots(weekdays: days).padding(.top, 4)
+                        }
+                    } else {
+                        Text("Not scheduled").font(.headline)
+                        Text("Set a schedule to get reminders and see it in Up next.")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("routine.schedule")
+    }
+
+    private func reminderLine(_ s: RoutineSchedule) -> String {
+        guard s.reminder.isOn else { return "No reminder" }
+        let lead = s.reminder.leadMinutes
+        var parts = [lead == 0 ? "Reminder at start" : "Reminder \(lead) min before"]
+        if let n = s.reminder.nudgeAfterMinutes { parts.append("nudge after \(n) min") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Seven small weekday dots, filled for the scheduled days, in the user's week order.
+struct ScheduleDayDots: View {
+    let weekdays: Set<Int>
+    private let calendar = Calendar.current
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(RoutineSchedule.orderedWeekdays(calendar), id: \.self) { wd in
+                let on = weekdays.contains(wd)
+                Text(calendar.veryShortWeekdaySymbols[wd - 1])
+                    .font(.caption2.weight(.bold))
+                    .frame(width: 22, height: 22)
+                    .background(on ? SnappetColor.workout : Color(.tertiarySystemFill), in: Circle())
+                    .foregroundStyle(on ? Color.black : Color.secondary)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

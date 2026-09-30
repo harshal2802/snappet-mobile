@@ -9336,3 +9336,19 @@ Non-obvious calls:
   workout lets the phone lock (the Live Activity + rest notification carry it).
 - **Default is Whole workout**, with Only timers / Off in Workout Settings. The rest hold ends at
   0:00 even though the chip lingers until dismissed.
+## 2026-09-29 — routine schedules: per-routine, rolling notification plan (prompt 136)
+
+- **Per-routine schedules (wireframe option A), a weekly plan (B) later.** A covers every-N-weeks /
+  every-N-days / once, gives each routine its own reminders, and travels inside that routine's QR code;
+  B would be an editor over A's schedules, so building A first loses nothing. User approved.
+- **Days are `DayKey`s (20261001), not `Date`s.** A schedule is about calendar days; a shared code from
+  another zone must still mean "Wednesday", and a stored day must not drift across DST.
+- **Notifications are a re-computed plan, not bookkeeping.** A pure planner produces the next 14 days
+  of reminder / nudge / heads-up; the service replaces every `snappet.routine.*` request with it. So
+  "cancel the nudge when you start" is just "a started day plans no nudge" + a re-plan on session change,
+  and nothing can go stale. Rolling window because every-2-weeks / every-N-days / end-after-N can't be
+  expressed as repeating triggers, and the 64-pending cap is shared (routines take ≤ 40, soonest first).
+- **The app's first notification delegate claims only its own category.** Returning `[]` for everything
+  else keeps rest-complete / Pomodoro / festival alerts behaving exactly as before (no foreground banner).
+- **Start now goes through `startWorkout(from:)`** via a router one-shot, so an in-progress workout still
+  gets the resume / replace choice instead of being silently discarded.

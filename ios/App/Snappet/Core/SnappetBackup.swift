@@ -534,6 +534,8 @@ extension SnappetBackup {
         var detail: String?
         var sourceLabel: String?
         var sourceURL: String?
+        /// Optional → backups written before prompt 136 decode with no schedule.
+        var scheduleData: Data?
 
         init(_ m: Routine) {
             id = m.id; name = m.name; exercises = m.exercises
@@ -542,6 +544,7 @@ extension SnappetBackup {
             sportRaw = m.sportRaw; levelRaw = m.levelRaw
             tags = m.tags; detail = m.detail
             sourceLabel = m.sourceLabel; sourceURL = m.sourceURL
+            scheduleData = m.scheduleData
         }
         func make() -> Routine {
             let r = Routine(id: id, name: name, exercises: exercises,
@@ -552,6 +555,7 @@ extension SnappetBackup {
             // Raw, not via the enum init: an unrecognized stored value must survive verbatim.
             r.sportRaw = sportRaw
             r.levelRaw = levelRaw
+            r.scheduleData = scheduleData
             return r
         }
         var sortKey: String { id.uuidString }

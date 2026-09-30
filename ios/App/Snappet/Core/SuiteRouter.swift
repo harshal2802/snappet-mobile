@@ -28,6 +28,14 @@ final class SuiteRouter {
     /// Self-clearing on consume; a no-op when no active session exists.
     var pendingWorkoutResume = false
 
+    /// One-shot "start this routine" intent (prompt 136, the `pendingWorkoutResume` pattern): a
+    /// scheduled-routine notification's Start now (and Habits' linked Start, 137) sets this before
+    /// `open(module: "workout-log")`; `WorkoutHomeView` consumes it through its normal start path (so an
+    /// already-running workout still gets the resume/replace choice). Self-clearing on consume.
+    var pendingRoutineStart: UUID?
+    /// One-shot "land on the Routines section" (a tapped schedule reminder — the Up next card lives there).
+    var pendingShowRoutines = false
+
     /// One-shot QR/URL deep-link intent (#75, the `pendingWorkoutResume` pattern): the shell's
     /// `onOpenURL` sets this before `open(module: "kilter")`, and `KilterRootView` consumes it on
     /// appear/change — the shell can't push `KilterClimbRoute` itself because the climb push needs

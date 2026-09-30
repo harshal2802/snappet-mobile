@@ -11,6 +11,9 @@ struct RoutinesSectionView: View {
     let start: (Routine) -> Void
     let deleteRoutine: (Routine) -> Void
     let newRoutine: () -> Void
+    /// Scheduled routines (prompt 136) — the Up next card renders only when this is non-empty.
+    var scheduleInputs: [ScheduledRoutineInput] = []
+    var skip: (UUID, DayKey) -> Void = { _, _ in }
 
     private var mine: [Routine] { routines.filter { !$0.isStarter } }
     private var starters: [Routine] {
@@ -35,6 +38,18 @@ struct RoutinesSectionView: View {
 
     private var list: some View {
         List {
+            if !scheduleInputs.isEmpty {
+                // TimelineView so "today" / missed / the kicker roll over without another data change.
+                TimelineView(.everyMinute) { ctx in
+                    let upNext = RoutineReminderPlanner.upNext(scheduleInputs, now: ctx.date)
+                    RoutineUpNextCard(upNext: upNext,
+                                      week: RoutineReminderPlanner.week(scheduleInputs, now: ctx.date),
+                                      routine: upNext.flatMap { u in routines.first { $0.id == u.routineID } },
+                                      start: start, skip: skip)
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+            }
             if !mine.isEmpty {
                 Section("My Routines") {
                     ForEach(mine) { routine in
@@ -91,6 +106,9 @@ struct RoutineRow: View {
                     Image(systemName: sport.symbol).foregroundStyle(SnappetColor.workout)
                 }
                 Text(routine.name).font(.headline).lineLimit(1)
+                if let schedule = routine.schedule, schedule.isEnabled {
+                    ScheduleChip(schedule: schedule)
+                }
             }
             HStack(spacing: 6) {
                 Text("\(routine.exercises.count) exercises · \(routine.totalSets) sets")
@@ -107,5 +125,35 @@ struct RoutineRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// The small "📅 M W F" chip on a scheduled routine's row (prompt 136).
+struct ScheduleChip: View {
+    let schedule: RoutineSchedule
+    private let calendar = Calendar.current
+
+    private var text: String {
+        switch schedule.repeatRule {
+        case .weekly(let days, let every) where days.count == 7:
+            return every > 1 ? "Daily · \(every)w" : "Daily"
+        case .weekly(let days, let every):
+            let letters = RoutineSchedule.orderedWeekdays(calendar).filter(days.contains)
+                .map { calendar.veryShortWeekdaySymbols[$0 - 1] }.joined(separator: " ")
+            return every > 1 ? "\(letters) · \(every)w" : letters
+        case .everyDays(let n): return n == 1 ? "Daily" : "Every \(n)d"
+        case .once: return schedule.startDay.date(calendar: calendar).formatted(.dateTime.day().month(.abbreviated))
+        }
+    }
+
+    var body: some View {
+        Label(text, systemImage: "calendar")
+            .font(.caption2.weight(.bold))
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(SnappetColor.workout.opacity(0.18), in: Capsule())
+            .foregroundStyle(SnappetColor.workout)
+            .lineLimit(1)
+            .accessibilityLabel("Scheduled \(schedule.summary(calendar: calendar))")
     }
 }

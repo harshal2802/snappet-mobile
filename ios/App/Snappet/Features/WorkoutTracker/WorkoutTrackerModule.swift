@@ -128,6 +128,13 @@ struct WorkoutHomeView: View {
     private var watchSessions: [WorkoutSession] { sessions.filter { !$0.isActive && $0.isImportedFromHealth } }
     private var activeSession: WorkoutSession? { sessions.first { $0.isActive } }
 
+    /// Changes whenever the reminder plan could: a session starts/finishes/is deleted, or any routine's
+    /// schedule changes (prompt 136).
+    private var scheduleReplanKey: [String] {
+        let s = "\(sessions.count)|\(activeSession?.id.uuidString ?? "-")"
+        return [s] + routines.compactMap { r in r.scheduleData.map { "\(r.id.uuidString):\($0.hashValue)" } }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Text segments (#74): every section is identifiable without tapping. Staying on the
@@ -275,6 +282,26 @@ struct WorkoutHomeView: View {
             section = .routines
             importingRoutine = pending
         }
+        // Scheduled-routine reminder → Start now (prompt 136). Through the normal start path, so a
+        // workout already in progress still gets the resume / replace choice.
+        .onChange(of: router.pendingRoutineStart, initial: true) { _, id in
+            guard let id else { return }
+            router.pendingRoutineStart = nil
+            section = .routines
+            if let routine = routines.first(where: { $0.id == id }), !routine.exercises.isEmpty {
+                startWorkout(from: routine)
+            }
+        }
+        .onChange(of: router.pendingShowRoutines, initial: true) { _, show in
+            guard show else { return }
+            router.pendingShowRoutines = false
+            section = .routines
+        }
+        // Re-plan reminders whenever a session starts or ends (a started day plans no nudge) or a
+        // routine's schedule changes elsewhere (import, backup restore). Cheap: a handful of routines.
+        .onChange(of: scheduleReplanKey) { _, _ in
+            RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
+        }
     }
 
     /// Consume the router's one-shot resume intent (#71 review fix): Home's "Resume <routine>" card
@@ -344,7 +371,12 @@ struct WorkoutHomeView: View {
                                 open: { router.push($0) },
                                 start: startWorkout(from:),
                                 deleteRoutine: deleteRoutine,
-                                newRoutine: { showingNewRoutine = true })
+                                newRoutine: { showingNewRoutine = true },
+                                scheduleInputs: RoutineScheduleSync.inputs(routines: routines, sessions: sessions),
+                                skip: { id, day in
+                                    RoutineScheduleSync.skip(routineID: id, day: day, context: context,
+                                                             reminders: app.routineReminders)
+                                })
         case .history:
             HistorySectionView(history: history, resolver: resolver, unit: unit,
                                videoSessionIDs: StudioEntry.videoSessionIDs(media: sessionMedia),
