@@ -1,0 +1,49 @@
+Routines can now go on a schedule, remind you, and count toward a habit, and the screen no longer
+goes to sleep mid-workout.
+
+SCHEDULE A ROUTINE  (Gym Tracker)
+• Open a routine and tap Schedule. Repeat it on chosen weekdays (every week, or every 2–4 weeks
+  for A/B splits), every few days, or just once. Use the same time every day or a different time
+  per weekday, and optionally end it on a date or after a number of sessions.
+• Reminders you control: remind at the start time or up to an hour before, a "still on for it?"
+  nudge if you haven't started, and an optional heads-up the evening before. Sound and Time
+  Sensitive (gets through Focus) are per routine.
+• Long-press a reminder to Start now (opens the workout straight away), Snooze 15 min, or Skip
+  today. Starting the routine early cancels its nudge automatically.
+• Routines now opens with an Up next card, showing what's planned today and this week (done,
+  planned, missed, skipped), with Start and Skip right there.
+
+HABITS
+• A scheduled routine can be tracked in Habits. Finishing the workout ticks the habit off for you,
+  and several routines can share one habit (e.g. one "Gym" habit fed by Push, Pull and Legs).
+• Streaks now count scheduled days only, so a Mon/Wed/Fri routine keeps its streak through the
+  rest days. Rest days show as dashed circles.
+• Any habit can now run on specific weekdays, not just every day.
+• You choose whether "Skip today" keeps the streak alive (Excused, the default) or breaks it.
+• A linked habit shows today's session with a Start button that opens the workout.
+• Home and the Today widget no longer count a habit as "left to do" on its day off.
+
+SHARE & SCAN ROUTINES
+• A routine's QR code can now carry its schedule (Include schedule, on by default). Your Habits
+  data is never shared.
+• Routines ＋ now offers Scan QR Code and Import from Photos, so a screenshot of a code someone sent
+  you works too. Everything is read on your phone.
+• When you import, you can keep the schedule, change it, or leave it off. Tracking it in Habits is
+  off unless you turn it on.
+
+SCREEN STAYS ON DURING WORKOUTS
+• The screen no longer locks during rests, between sets, or after a timed set. It stays on while
+  the workout is open and locks normally once you minimize it.
+• Workout → Settings → Keep screen on: Whole workout (default), Only timers, or Off.
+
+KNOWN ISSUES
+• Reminders plan two weeks ahead and refresh each time you open the app, so if you don't open
+  Snappet for over two weeks, reminders pause until you do.
+• Android doesn't have schedules, Habits links or QR scanning yet.
+
+WHAT WOULD HELP MOST
+• Schedule a routine a few minutes out and try Start now / Snooze / Skip today from the
+  notification. Did each do what you expected?
+• Share a scheduled routine to another phone (in-app scan, the Camera app, or a screenshot via
+  Import from Photos). Did the schedule come through?
+• During a workout, did the screen ever lock when you didn't want it to?
