@@ -119,4 +119,29 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 6),
                       "logging from the runner should drop a set row under the named card")
     }
+
+    /// Prompt 140: the Max hangs preset fills every field, the summary reads back in plain English, and
+    /// rest between sets (fixed at 3 min before) is editable.
+    func testMaxHangsPresetAndEditableRestBetweenSets() {
+        openFreeformPlayer()
+        openTimedPickSheet()
+        app.buttons["timed.createNew"].tap()
+        let preset = app.buttons["timed.create.preset.maxhangs"]
+        XCTAssertTrue(preset.waitForExistence(timeout: 5), "the Max hangs preset chip should exist")
+        preset.tap()
+        let summary = app.staticTexts["protocol.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 4))
+        XCTAssertTrue(summary.label.hasPrefix("3 sets × 3 hangs of 7 s · 2 min between hangs · 4 min between sets"),
+                      summary.label)
+        let setRestPlus = app.buttons["timed.create.setRest.plus"]
+        for _ in 0..<4 where !setRestPlus.exists { app.swipeUp() }
+        XCTAssertTrue(setRestPlus.waitForExistence(timeout: 4), "rest between sets is editable")
+        setRestPlus.tap()
+        XCTAssertTrue(summary.label.contains("4:15 between sets"), summary.label)
+        snap("protocol-editor-maxhangs")
+        app.buttons["timed.create.add"].tap()
+        XCTAssertTrue(app.staticTexts["freeform.timedName"].waitForExistence(timeout: 5)
+            || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2),
+            "the protocol lands as a named card")
+    }
 }

@@ -230,7 +230,7 @@ struct RoutineBlockRow: View {
             parts.append("\(item.sets) attempt\(item.sets == 1 ? "" : "s")")
             return parts.joined(separator: " · ")
         case .timed:
-            if let spec = item.timedSpec, spec.mode.isStructured { return spec.summary }
+            if let spec = item.timedSpec, spec.mode.isStructured { return spec.sentence }
             if let hold = item.targetDurationSec, hold > 0 {
                 return "\(item.sets) × \(Int(hold))s"
             }

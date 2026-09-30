@@ -1,0 +1,265 @@
+import SwiftUI
+
+/// The editable state of a timed protocol (prompt 140) — name, category and every structure field,
+/// including the rest between sets and the get-ready countdown that used to be fixed. Pure value so the
+/// preset/edit round-trip is unit-tested; `spec` is what gets stored.
+struct ProtocolDraft: Equatable {
+    var name: String
+    var category: TimedExerciseCategory
+    var mode: TimedExerciseSpec.Mode
+    var workSec: Int
+    var restSec: Int
+    var reps: Int
+    var sets: Int
+    var restBetweenSetsSec: Int
+    var leadInSec: Int
+
+    init(name: String = "", category: TimedExerciseCategory = .hangboard, spec: TimedExerciseSpec) {
+        self.name = name
+        self.category = category
+        mode = spec.mode
+        workSec = spec.workSec
+        restSec = spec.restSec
+        reps = spec.reps
+        sets = spec.sets
+        restBetweenSetsSec = spec.restBetweenSetsSec
+        leadInSec = spec.leadInSec
+    }
+
+    /// The structure being authored. Open count-up carries no parameters; a single hold has no sets.
+    var spec: TimedExerciseSpec {
+        switch mode {
+        case .openCountUp:
+            return TimedExerciseSpec(mode: .openCountUp)
+        case .maxHang, .countDown:
+            return TimedExerciseSpec(mode: mode, workSec: max(1, workSec), reps: 1, sets: 1, leadInSec: leadInSec)
+        case .repeaters, .tabata, .emom:
+            return TimedExerciseSpec(mode: mode, workSec: workSec, restSec: restSec, reps: reps, sets: sets,
+                                     restBetweenSetsSec: sets > 1 ? restBetweenSetsSec : 0, leadInSec: leadInSec)
+        }
+    }
+
+    /// Pre-fill from a preset — every field, including the ones the old form dropped (rest between sets,
+    /// lead-in). The name is left alone unless it's still empty.
+    mutating func apply(_ preset: TimedExerciseSpec, name presetName: String? = nil) {
+        let keptName = name
+        let keptCategory = category
+        self = ProtocolDraft(name: keptName, category: keptCategory, spec: preset)
+        if name.trimmingCharacters(in: .whitespaces).isEmpty, let presetName { name = presetName }
+    }
+
+    var resolvedName: String {
+        let t = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? mode.label : t
+    }
+}
+
+/// The protocol editor's form sections (wireframe frame 1), shared by "create" in the pick sheet, editing
+/// a saved preset, and "Edit protocol" on a routine block — one editor, so they can't drift. Keeps the
+/// `timed.create.*` accessibility ids the existing UI tests drive.
+struct ProtocolEditorSections: View {
+    @Binding var draft: ProtocolDraft
+
+    var body: some View {
+        Section("Name") {
+            TextField(draft.mode.label, text: $draft.name)
+                .submitLabel(.done)
+                .accessibilityIdentifier("timed.create.name")
+        }
+        Section("Start from") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    presetChip("Max hangs", key: "maxhangs") { draft.apply(.maxHangs, name: "Max hangs") }
+                    presetChip("Repeaters 10:6", key: "endurance") {
+                        draft.apply(.enduranceRepeaters, name: "Repeaters 10:6")
+                    }
+                    presetChip("Abrahangs", key: "abrahangs") { draft.apply(.abrahangs, name: "Abrahangs") }
+                    presetChip("7:3 × 6", key: "repeaters") { draft.apply(.repeaters7x3x6) }
+                    presetChip("10s hang", key: "maxhang") { draft.apply(.maxHang10) }
+                    presetChip("Tabata", key: "tabata") { draft.apply(.tabata) }
+                    presetChip("EMOM", key: "emom") { draft.apply(.emom) }
+                    presetChip("Plank 60s", key: "plank") { draft.apply(.hold(60)) }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        Section("Category") {
+            Picker("Category", selection: $draft.category) {
+                ForEach(TimedExerciseCategory.allCases) { Text($0.display).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("timed.create.category")
+        }
+        structure
+        Section {
+            HStack {
+                Text("Total").font(.subheadline.weight(.medium))
+                Spacer()
+                Text(draft.spec.totalSeconds.map { SetMeasure.formatDuration(Double($0)) } ?? "Open count up")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(SnappetColor.workout)
+                    .contentTransition(.numericText())
+                    .accessibilityIdentifier("timed.create.total")
+            }
+        }
+    }
+
+    @ViewBuilder private var structure: some View {
+        Section("Each rep") {
+            Picker("Structure", selection: $draft.mode) {
+                ForEach(TimedExerciseSpec.Mode.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("timed.create.mode")
+
+            switch draft.mode {
+            case .openCountUp:
+                Text("Times an open-ended hold — no target.").font(.footnote).foregroundStyle(.secondary)
+            case .maxHang, .countDown:
+                durationRow("Hold for", id: "timed.create.work", value: $draft.workSec, range: 1...3600)
+            case .repeaters, .tabata:
+                durationRow("Hang for", id: "timed.create.work", value: $draft.workSec, range: 1...3600)
+                countRow("Reps per set", id: "timed.create.reps", value: $draft.reps, range: 1...100)
+                if draft.reps > 1 {
+                    durationRow("Rest between reps", id: "timed.create.rest", value: $draft.restSec, range: 0...3600)
+                }
+            case .emom:
+                countRow("Minutes", id: "timed.create.reps", value: $draft.reps, range: 1...60)
+            }
+        }
+        if draft.mode.isStructured {
+            Section("Sets") {
+                countRow("Sets", id: "timed.create.sets", value: $draft.sets, range: 1...20)
+                if draft.sets > 1 {
+                    durationRow("Rest between sets", id: "timed.create.setRest",
+                                value: $draft.restBetweenSetsSec, range: 0...3600)
+                }
+            }
+        }
+        if draft.mode != .openCountUp {
+            Section {
+                durationRow("Get-ready countdown", id: "timed.create.leadIn", value: $draft.leadInSec, range: 0...60)
+            }
+        }
+    }
+
+    // MARK: - Rows
+
+    /// A duration stepper that moves 1 s / 5 s / 15 s / 1 min depending on the size of the value.
+    private func durationRow(_ label: String, id: String, value: Binding<Int>,
+                             range: ClosedRange<Int>) -> some View {
+        stepper(label, id: id, text: SetMeasure.formatDuration(Double(value.wrappedValue)),
+                dec: { value.wrappedValue = DurationStep.next(value.wrappedValue, up: false, range: range) },
+                inc: { value.wrappedValue = DurationStep.next(value.wrappedValue, up: true, range: range) })
+    }
+
+    private func countRow(_ label: String, id: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        stepper(label, id: id, text: "\(value.wrappedValue)",
+                dec: { value.wrappedValue = max(range.lowerBound, value.wrappedValue - 1) },
+                inc: { value.wrappedValue = min(range.upperBound, value.wrappedValue + 1) })
+    }
+
+    private func stepper(_ label: String, id: String, text: String,
+                         dec: @escaping () -> Void, inc: @escaping () -> Void) -> some View {
+        HStack(spacing: 12) {
+            Text(label).font(.subheadline)
+            Spacer(minLength: 0)
+            Button(action: dec) { Image(systemName: "minus.circle.fill").font(.title3) }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("\(id).minus")
+                .accessibilityLabel("Decrease \(label.lowercased())")
+            Text(text).font(.subheadline.weight(.semibold).monospacedDigit())
+                .frame(minWidth: 56)
+                .accessibilityIdentifier(id)
+            Button(action: inc) { Image(systemName: "plus.circle.fill").font(.title3) }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("\(id).plus")
+                .accessibilityLabel("Increase \(label.lowercased())")
+        }
+    }
+
+    private func presetChip(_ text: String, key: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(SnappetColor.surfaceMuted, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("timed.create.preset.\(key)")
+    }
+}
+
+/// The live plain-English summary, pinned above the editor so every change reads back while you scroll
+/// (prompt 140): "3 sets × 3 hangs of 7 s · 2 min between hangs · 4 min between sets · about 21 min".
+struct ProtocolSummaryBar: View {
+    let spec: TimedExerciseSpec
+
+    var body: some View {
+        Text(spec.sentence)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(SnappetColor.workout)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal).padding(.vertical, 10)
+            .background(.bar)
+            .accessibilityIdentifier("protocol.summary")
+    }
+}
+
+/// The protocol editor as its own sheet (prompt 140): edit a saved preset, or a routine block's protocol
+/// ("Edit protocol", wireframe frame 10). Save hands the draft back; "Save as my preset" (block mode)
+/// copies it into your presets without linking the block to it.
+struct ProtocolEditorSheet: View {
+    let title: String
+    let initial: ProtocolDraft
+    /// Offer "Save as my preset…" (routine-block mode).
+    var offerSaveAsPreset = false
+    let onSave: (ProtocolDraft) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @State private var draft: ProtocolDraft
+    @State private var savedAsPreset = false
+
+    init(title: String, initial: ProtocolDraft, offerSaveAsPreset: Bool = false,
+         onSave: @escaping (ProtocolDraft) -> Void) {
+        self.title = title
+        self.initial = initial
+        self.offerSaveAsPreset = offerSaveAsPreset
+        self.onSave = onSave
+        _draft = State(initialValue: initial)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                ProtocolEditorSections(draft: $draft)
+                if offerSaveAsPreset {
+                    Section {
+                        Button(savedAsPreset ? "Saved to my presets ✓" : "Save as my preset…") {
+                            context.insert(TimedExerciseCatalog(name: draft.resolvedName, category: draft.category,
+                                                                spec: draft.spec))
+                            try? context.save()
+                            savedAsPreset = true
+                        }
+                        .disabled(savedAsPreset)
+                        .accessibilityIdentifier("protocol.saveAsPreset")
+                    } footer: {
+                        Text("Your presets appear next to the built-in ones when you add a timed exercise.")
+                    }
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) { ProtocolSummaryBar(spec: draft.spec) }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(draft); dismiss() }
+                        .accessibilityIdentifier("protocol.save")
+                }
+            }
+        }
+    }
+}

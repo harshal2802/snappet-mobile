@@ -37,6 +37,12 @@ struct PickTimedExerciseSheet: View {
 
     @State private var search = ""
     @State private var creating = false
+    /// Routines, to find copies of a preset being edited (prompt 140).
+    @Query private var routines: [Routine]
+    @State private var editingPreset: TimedExerciseCatalog?
+    /// Set when a saved preset edit has routine copies to offer — promoted to the dialog on sheet dismiss.
+    @State private var pendingCopies: PresetCopyUpdate?
+    @State private var copiesPrompt: PresetCopyUpdate?
 
     private var trimmedSearch: String { search.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -120,6 +126,26 @@ struct PickTimedExerciseSheet: View {
                 }
             }
         }
+        .sheet(item: $editingPreset, onDismiss: {
+            if let p = pendingCopies { pendingCopies = nil; copiesPrompt = p }
+        }) { item in
+            ProtocolEditorSheet(title: "Edit preset",
+                                initial: ProtocolDraft(name: item.name, category: item.category,
+                                                       spec: item.spec ?? TimedExerciseSpec(mode: .openCountUp))) { draft in
+                savePreset(item, draft)
+            }
+        }
+        .confirmationDialog("Update routines too?",
+                            isPresented: Binding(get: { copiesPrompt != nil }, set: { if !$0 { copiesPrompt = nil } }),
+                            titleVisibility: .visible, presenting: copiesPrompt) { update in
+            Button("Update \(update.routineNames.count == 1 ? "the routine" : "\(update.routineNames.count) routines")") {
+                applyCopies(update)
+            }
+            .accessibilityIdentifier("preset.updateRoutines")
+            Button("Only the preset", role: .cancel) {}
+        } message: { update in
+            Text("\(update.routineNames.joined(separator: ", ")) \(update.routineNames.count == 1 ? "uses" : "use") a copy of it. Routines you've changed since are left alone.")
+        }
         .searchable(text: $search, prompt: "Search timed exercises")
         .navigationTitle("Timed exercise")
         .navigationBarTitleDisplayMode(.inline)
@@ -141,6 +167,43 @@ struct PickTimedExerciseSheet: View {
             timedRowLabel(name: item.name, category: item.category, spec: item.spec)
         }
         .accessibilityIdentifier("timed.pick.\(item.id.uuidString)")
+        .swipeActions(edge: .trailing) {
+            Button { editingPreset = item } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+                .tint(SnappetColor.workout)
+        }
+        .contextMenu {
+            Button { editingPreset = item } label: { Label("Edit preset", systemImage: "slider.horizontal.3") }
+        }
+    }
+
+    /// Save an edited preset; if routines hold unchanged copies of the old version, offer to update them.
+    private func savePreset(_ item: TimedExerciseCatalog, _ draft: ProtocolDraft) {
+        let oldSpec = item.spec ?? TimedExerciseSpec(mode: .openCountUp)
+        item.name = draft.resolvedName
+        item.category = draft.category
+        item.spec = draft.spec
+        try? context.save()
+        guard draft.spec != oldSpec else { return }
+        let hits = routines.compactMap { r -> (Routine, [Int])? in
+            let idx = ProtocolCopies.matchingBlockIndices(in: r.exercises, presetID: item.id, oldSpec: oldSpec)
+            return idx.isEmpty ? nil : (r, idx)
+        }
+        guard !hits.isEmpty else { return }
+        pendingCopies = PresetCopyUpdate(routineIDs: hits.map { $0.0.id }, routineNames: hits.map { $0.0.name },
+                                         presetID: item.id, oldSpec: oldSpec, newSpec: draft.spec)
+    }
+
+    private func applyCopies(_ update: PresetCopyUpdate) {
+        for routine in routines where update.routineIDs.contains(routine.id) {
+            var blocks = routine.exercises
+            for i in ProtocolCopies.matchingBlockIndices(in: blocks, presetID: update.presetID, oldSpec: update.oldSpec) {
+                blocks[i].timedSpec = update.newSpec
+                blocks[i].sets = 1
+            }
+            routine.exercises = blocks
+            routine.updatedAt = .now
+        }
+        try? context.save()
     }
 
     private func suggestionRow(_ suggestion: TimedExerciseCatalog.Suggestion) -> some View {
@@ -173,220 +236,73 @@ struct PickTimedExerciseSheet: View {
     }
 }
 
-/// The **create-new** sub-form (`timed.create.*`): NAME + category + STRUCTURE (segmented modes) with
-/// protocol-preset chips that PRE-FILL, a live "Total …" readout, and a "Save to my exercises" toggle.
+/// The **create-new** sub-form (`timed.create.*`): the shared protocol editor (prompt 140 — presets incl.
+/// the hangboard protocols, every field editable incl. rest between sets and the get-ready countdown, a
+/// plain-English summary) + a "Save to my exercises" toggle and the Add CTA.
 private struct CreateTimedExerciseForm: View {
     let onCreate: (AddTimedParams) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
 
-    @State private var name: String
-    @State private var category: TimedExerciseCategory = .hangboard
-    @State private var mode: TimedExerciseSpec.Mode = .countDown
-    @State private var workSec = 30
-    @State private var restSec = 0
-    @State private var reps = 1
-    @State private var sets = 1
+    @State private var draft: ProtocolDraft
     @State private var saveToCatalog = true
 
     init(initialName: String, onCreate: @escaping (AddTimedParams) -> Void) {
         self.onCreate = onCreate
-        _name = State(initialValue: initialName)
-    }
-
-    /// The structure being authored — built from the current fields. Open count-up has no parameters.
-    private var spec: TimedExerciseSpec {
-        if mode == .openCountUp { return TimedExerciseSpec(mode: .openCountUp) }
-        return TimedExerciseSpec(mode: mode, workSec: workSec, restSec: restSec,
-                                 reps: reps, sets: sets,
-                                 restBetweenSetsSec: mode.isStructured ? 180 : 0)
-    }
-
-    private var resolvedName: String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? mode.label : trimmed
+        var initial = ProtocolDraft(name: initialName, category: .hangboard, spec: .hold(30))
+        initial.restBetweenSetsSec = 180   // the old fixed value, now just the starting point
+        _draft = State(initialValue: initial)
     }
 
     var body: some View {
         Form {
-            nameSection
-            categorySection
-            structureSection
-            presetSection
-            totalSection
-            saveSection
-            ctaSection
+            ProtocolEditorSections(draft: $draft)
+            Section {
+                Toggle("Save to my exercises", isOn: $saveToCatalog)
+                    .accessibilityIdentifier("timed.create.save")
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) { ProtocolSummaryBar(spec: draft.spec) }
+        // Pinned, so the primary action stays visible above the (now longer) editor — the AddClimbSheet rule.
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                commit()
+            } label: {
+                Text("Add to session").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(SnappetColor.workout)
+            .padding(.horizontal).padding(.vertical, 10)
+            .background(.bar)
+            .accessibilityIdentifier("timed.create.add")
         }
         .navigationTitle("New timed exercise")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var nameSection: some View {
-        Section("Name") {
-            TextField(mode.label, text: $name)
-                .submitLabel(.done)
-                .accessibilityIdentifier("timed.create.name")
-        }
-    }
-
-    private var categorySection: some View {
-        Section("Category") {
-            Picker("Category", selection: $category) {
-                ForEach(TimedExerciseCategory.allCases) { Text($0.display).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityIdentifier("timed.create.category")
-        }
-    }
-
-    private var structureSection: some View {
-        Section("Structure") {
-            Picker("Structure", selection: $mode) {
-                ForEach(TimedExerciseSpec.Mode.allCases) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.menu)
-            .accessibilityIdentifier("timed.create.mode")
-
-            // Per-mode parameters: a single hold for count-down/max-hang, work/rest/reps/sets for the
-            // structured protocols, nothing for open count-up. Custom +/- steppers so each control has its
-            // own queryable id (the leaf-only a11y rule), mirroring the freeform QuickAddRow steppers.
-            switch mode {
-            case .openCountUp:
-                Text("Times an open-ended hold — no target.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            case .maxHang, .countDown:
-                stepperRow("Hold", id: "timed.create.work",
-                           value: "\(workSec)s",
-                           dec: { workSec = max(1, workSec - 5) }, inc: { workSec = min(600, workSec + 5) })
-            case .repeaters, .tabata:
-                stepperRow("Work", id: "timed.create.work", value: "\(workSec)s",
-                           dec: { workSec = max(1, workSec - 1) }, inc: { workSec = min(600, workSec + 1) })
-                stepperRow("Rest", id: "timed.create.rest", value: "\(restSec)s",
-                           dec: { restSec = max(0, restSec - 1) }, inc: { restSec = min(600, restSec + 1) })
-                stepperRow("Reps", id: "timed.create.reps", value: "\(reps)",
-                           dec: { reps = max(1, reps - 1) }, inc: { reps = min(50, reps + 1) })
-                stepperRow("Sets", id: "timed.create.sets", value: "\(sets)",
-                           dec: { sets = max(1, sets - 1) }, inc: { sets = min(20, sets + 1) })
-            case .emom:
-                stepperRow("Rounds", id: "timed.create.reps", value: "\(reps) min",
-                           dec: { reps = max(1, reps - 1) }, inc: { reps = min(60, reps + 1) })
-            }
-        }
-    }
-
-    /// Protocol-preset chips that PRE-FILL the structure (mode + all parameters). They NEVER lock the
-    /// spec — a value the user then edits is kept; presets are a convenience starting point only.
-    private var presetSection: some View {
-        Section("Presets") {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    presetChip("7:3 × 6", key: "repeaters") { apply(.repeaters7x3x6) }
-                    presetChip("10s hang", key: "maxhang") { apply(.maxHang10) }
-                    presetChip("Tabata", key: "tabata") { apply(.tabata) }
-                    presetChip("EMOM", key: "emom") { apply(.emom) }
-                    presetChip("Plank 60s", key: "plank") { apply(.hold(60)) }
-                }
-                .padding(.vertical, 2)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var totalSection: some View {
-        Section {
-            HStack {
-                Text("Total").font(.subheadline.weight(.medium))
-                Spacer()
-                Text(totalLabel)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(SnappetColor.workout)
-                    .contentTransition(.numericText())
-                    .accessibilityIdentifier("timed.create.total")
-            }
-        }
-    }
-
-    private var saveSection: some View {
-        Section {
-            Toggle("Save to my exercises", isOn: $saveToCatalog)
-                .accessibilityIdentifier("timed.create.save")
-        }
-    }
-
-    private var ctaSection: some View {
-        Section {
-            Button {
-                commit()
-            } label: {
-                Text("Add to session").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(SnappetColor.workout)
-            .accessibilityIdentifier("timed.create.add")
-        }
-        .listRowBackground(Color.clear)
-    }
-
-    // MARK: - Pieces
-
-    private var totalLabel: String {
-        if let total = spec.totalSeconds { return SetMeasure.formatDuration(Double(total)) }
-        return "Open count up"
-    }
-
-    private func presetChip(_ text: String, key: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(text)
-                .font(.subheadline.weight(.medium))
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(SnappetColor.surfaceMuted, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("timed.create.preset.\(key)")
-    }
-
-    private func stepperRow(_ label: String, id: String, value: String,
-                            dec: @escaping () -> Void, inc: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
-            Text(label).font(.subheadline).foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            Spacer(minLength: 0)
-            Button(action: dec) { Image(systemName: "minus.circle.fill").font(.title3) }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("\(id).minus")
-                .accessibilityLabel("Decrease \(label.lowercased())")
-            Text(value).font(.subheadline.weight(.semibold).monospacedDigit())
-                .frame(minWidth: 70)
-                .accessibilityIdentifier(id)
-            Button(action: inc) { Image(systemName: "plus.circle.fill").font(.title3) }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("\(id).plus")
-                .accessibilityLabel("Increase \(label.lowercased())")
-        }
-    }
-
-    /// Pre-fill the form from a preset (mode + all parameters). The user can edit any of it afterwards.
-    private func apply(_ preset: TimedExerciseSpec) {
-        mode = preset.mode
-        workSec = max(1, preset.workSec)
-        restSec = preset.restSec
-        reps = preset.reps
-        sets = preset.sets
-    }
-
     private func commit() {
-        let resolved = spec
+        let resolved = draft.spec
         var catalogID: UUID?
         if saveToCatalog {
-            let item = TimedExerciseCatalog(name: resolvedName, category: category,
+            let item = TimedExerciseCatalog(name: draft.resolvedName, category: draft.category,
                                             spec: resolved, lastUsedAt: .now)
             context.insert(item)
             try? context.save()
             catalogID = item.id
         }
-        onCreate(AddTimedParams(name: resolvedName, category: category, spec: resolved, catalogID: catalogID))
+        onCreate(AddTimedParams(name: draft.resolvedName, category: draft.category, spec: resolved,
+                                catalogID: catalogID))
         dismiss()
     }
+}
+
+/// A pending "Update routines too?" offer after a preset edit (prompt 140).
+struct PresetCopyUpdate: Identifiable {
+    let id = UUID()
+    let routineIDs: [UUID]
+    let routineNames: [String]
+    let presetID: UUID
+    let oldSpec: TimedExerciseSpec
+    let newSpec: TimedExerciseSpec
 }
