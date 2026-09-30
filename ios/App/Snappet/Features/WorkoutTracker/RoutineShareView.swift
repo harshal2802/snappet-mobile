@@ -17,6 +17,8 @@ struct RoutineShareView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .myCode
+    /// Carry the schedule in the code (prompt 138) — on by default when the routine has one.
+    @State private var includeSchedule = true
 
     private enum Mode: String, CaseIterable, Identifiable {
         case myCode, scan
@@ -25,7 +27,8 @@ struct RoutineShareView: View {
     }
 
     private var shared: SharedRoutine {
-        SharedRoutine(name: routine.name, detail: routine.detail, exercises: routine.exercises)
+        SharedRoutine(name: routine.name, detail: routine.detail, exercises: routine.exercises,
+                      schedule: includeSchedule ? routine.schedule : nil)
     }
 
     var body: some View {
@@ -74,7 +77,7 @@ struct RoutineShareView: View {
                     .background(.white, in: RoundedRectangle(cornerRadius: 16))
                     .accessibilityLabel("QR code for \(routine.name)")
                     .accessibilityIdentifier("routine.share.qr")
-                Text("Open Snappet on another phone, tap Share on a routine → Scan, and point it here.")
+                Text("On another phone: Snappet → Routines → ＋ → Scan QR code, or just the Camera app.")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center).padding(.horizontal)
             } else {
@@ -84,6 +87,21 @@ struct RoutineShareView: View {
                 } description: {
                     Text("This routine is large — share the link instead, and your friend opens it in Snappet.")
                 }
+            }
+
+            if let schedule = routine.schedule {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(isOn: $includeSchedule) {
+                        Label("Include schedule", systemImage: "calendar")
+                    }
+                    .tint(SnappetColor.workout)
+                    .accessibilityIdentifier("routine.share.includeSchedule")
+                    Text(includeSchedule ? schedule.summary() + " · your Habits data is never shared"
+                                         : "Only the routine is shared.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
             }
 
             if let url = shared.url {

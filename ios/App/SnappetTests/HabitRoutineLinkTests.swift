@@ -9,14 +9,13 @@ final class HabitRoutineLinkTests: XCTestCase {
     private var container: ModelContainer!
     private var context: ModelContext { container.mainContext }
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         container = try ModelContainer(for: Schema(SnappetSchema.models),
                                        configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         container = nil
-        super.tearDown()
     }
 
     private func completions() -> [HabitCompletion] { (try? context.fetch(FetchDescriptor<HabitCompletion>())) ?? [] }

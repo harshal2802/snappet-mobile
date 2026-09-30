@@ -9367,3 +9367,16 @@ Non-obvious calls:
   doesn't open at 0%.
 - UITest gotcha (again): an `.accessibilityIdentifier` on a bare HStack is stamped onto every child,
   hiding a nested Button's id — add `.accessibilityElement(children: .contain)` first.
+
+## 2026-09-29 — the schedule rides the v1 routine code (prompt 138)
+
+- **Optional `sc` key, no `/v2/`.** Keyed JSON decoding ignores unknown keys, so an older build still
+  imports the routine (without the schedule); a routine shared without a schedule is byte-identical
+  to before. A version bump would have made every new code unreadable to older builds for no gain.
+- **What travels:** the schedule and reminder preferences. **What doesn't:** skip history (device-local)
+  and the Habits link (a habit id means nothing on another phone). Import defaults Track in Habits
+  to **off**, so a friend's code never adds a habit uninvited.
+- **Photo import decodes on-device** (Vision, then Core Image). A photo with no code, or a non-Snappet
+  code, says so rather than failing silently. The system picker can't be driven hermetically, so its
+  end-to-end leg was verified once with a `simctl addmedia` seed and is not in the committed UI suite;
+  decoding itself is unit-tested against a rendered QR placed in a phone-sized screenshot.

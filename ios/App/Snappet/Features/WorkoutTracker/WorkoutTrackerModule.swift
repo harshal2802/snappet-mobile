@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import SwiftData
 
 /// The **Gym Tracker** mini-app: a full gym/strength tracker — browse 870+ exercises, build
@@ -109,6 +110,15 @@ struct WorkoutHomeView: View {
     /// A routine arriving over QR / a `snappet://routine/v1/…` link (E6) awaiting the import-confirm
     /// preview. Set by `consumePendingImport` from the router one-shot; cleared when the sheet closes.
     @State private var importingRoutine: SharedRoutine?
+    /// Routines ＋ → Scan QR code (prompt 138). A found code is stashed and promoted to `importingRoutine`
+    /// in the scan sheet's onDismiss — presenting the import sheet in the same mutation that dismisses the
+    /// scanner drops it (the festival P5/P6 sheet race).
+    @State private var scanningRoutine = false
+    @State private var scannedRoutine: SharedRoutine?
+    /// Routines ＋ → Import from Photos (prompt 138).
+    @State private var pickingRoutinePhoto = false
+    @State private var routinePhoto: PhotosPickerItem?
+    @State private var routinePhotoError: RoutinePhotoImportError?
     /// The Video Studio opened from the module level (#74) — dashboard candidates or a History
     /// row's swipe shortcut. Same find-or-create + full-screen presentation as the session detail.
     @State private var studioProject: StudioProject?
@@ -219,7 +229,39 @@ struct WorkoutHomeView: View {
         // silent: the user reviews it (incl. the "not in your library" landing) and confirms an insert.
         .sheet(item: $importingRoutine) { shared in
             RoutineImportSheet(shared: shared, resolver: resolver, unit: unit,
-                               onImport: { blocks in importRoutine(shared, blocks: blocks) })
+                               onImport: { blocks, schedule, link in
+                                   importRoutine(shared, blocks: blocks, schedule: schedule, habitLink: link)
+                               })
+        }
+        .sheet(isPresented: $scanningRoutine, onDismiss: {
+            if let found = scannedRoutine { scannedRoutine = nil; importingRoutine = found }
+        }) {
+            RoutineScanSheet { scannedRoutine = $0 }
+        }
+        .photosPicker(isPresented: $pickingRoutinePhoto, selection: $routinePhoto, matching: .images,
+                      photoLibrary: .shared())
+        .onChange(of: routinePhoto) { _, item in
+            guard let item else { return }
+            routinePhoto = nil
+            Task { @MainActor in
+                let result: Result<SharedRoutine, RoutinePhotoImportError>
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    result = await RoutinePhotoImport.routine(fromImageData: data)
+                } else {
+                    result = .failure(.noCode)
+                }
+                switch result {
+                case .success(let shared): section = .routines; importingRoutine = shared
+                case .failure(let error): routinePhotoError = error
+                }
+            }
+        }
+        .alert("Couldn't import", isPresented: Binding(get: { routinePhotoError != nil },
+                                                       set: { if !$0 { routinePhotoError = nil } })) {
+            Button("Scan instead") { scanningRoutine = true }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(routinePhotoError?.message ?? "")
         }
         .fullScreenCover(item: $playing) { session in
             // One player for every session — routine and freeform alike. The saved routine's
@@ -317,11 +359,21 @@ struct WorkoutHomeView: View {
     /// Insert a NEW local `Routine` from a confirmed import (E6). A fresh UUID — it NEVER overwrites an
     /// existing routine (the design's "new local UUID, never overwrite" rule); the blocks already carry
     /// fresh ids from `SharedRoutine.routineExercises()`.
-    private func importRoutine(_ shared: SharedRoutine, blocks: [RoutineExercise]) {
+    private func importRoutine(_ shared: SharedRoutine, blocks: [RoutineExercise],
+                               schedule: RoutineSchedule? = nil, habitLink: HabitLinkChoice = .none) {
         let routine = Routine(name: shared.name, exercises: blocks, isStarter: false,
                               detail: (shared.detail?.isEmpty == false) ? shared.detail : nil)
         context.insert(routine)
+        // The shared schedule, if the user kept it (prompt 138) — plus its optional Habits link.
+        routine.schedule = schedule
+        if schedule != nil { HabitRoutineLink.apply(habitLink, to: routine, in: context, core: core) }
         try? context.save()
+        if let schedule, schedule.isEnabled, schedule.reminder.isOn || schedule.reminder.headsUp != nil,
+           !RoutineScheduleSync.isUITestLaunch {
+            let reminders = app.routineReminders
+            Task { _ = await reminders.requestAuthorization() }
+        }
+        RoutineScheduleSync.replan(context: context, reminders: app.routineReminders)
         core.log(module: WorkoutTrackerModule.id, action: "routine",
                  summary: "Imported routine: \(shared.name)")
         section = .routines
@@ -372,6 +424,8 @@ struct WorkoutHomeView: View {
                                 start: startWorkout(from:),
                                 deleteRoutine: deleteRoutine,
                                 newRoutine: { showingNewRoutine = true },
+                                scanRoutine: { scanningRoutine = true },
+                                importPhoto: { pickingRoutinePhoto = true },
                                 scheduleInputs: RoutineScheduleSync.inputs(routines: routines, sessions: sessions),
                                 skip: { id, day in
                                     RoutineScheduleSync.skip(routineID: id, day: day, context: context,
@@ -388,8 +442,19 @@ struct WorkoutHomeView: View {
 
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
         if section == .routines {
+            // ＋ is a menu (prompt 138): make one, or bring one in from a code / a photo of a code.
             ToolbarItem(placement: .primaryAction) {
-                Button { showingNewRoutine = true } label: { Label("New Routine", systemImage: "plus") }
+                Menu {
+                    Button { showingNewRoutine = true } label: { Label("New Routine", systemImage: "square.and.pencil") }
+                        .accessibilityIdentifier("routines.menu.new")
+                    Button { scanningRoutine = true } label: { Label("Scan QR Code", systemImage: "qrcode.viewfinder") }
+                        .accessibilityIdentifier("routines.menu.scan")
+                    Button { pickingRoutinePhoto = true } label: { Label("Import from Photos", systemImage: "photo.on.rectangle") }
+                        .accessibilityIdentifier("routines.menu.photos")
+                } label: {
+                    Label("Add Routine", systemImage: "plus")
+                }
+                .accessibilityIdentifier("routines.add")
             }
         } else if section == .browse {
             ToolbarItem(placement: .primaryAction) {

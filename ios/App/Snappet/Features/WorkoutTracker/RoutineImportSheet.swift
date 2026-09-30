@@ -9,10 +9,25 @@ struct RoutineImportSheet: View {
     let shared: SharedRoutine
     let resolver: ExerciseResolver
     let unit: WeightUnit
-    /// Called with the fresh blocks to insert as a new routine; the host owns the model context.
-    let onImport: ([RoutineExercise]) -> Void
+    /// Called with the fresh blocks to insert as a new routine, plus the schedule to adopt (nil = none)
+    /// and how to tie it to Habits (prompt 138); the host owns the model context.
+    let onImport: ([RoutineExercise], RoutineSchedule?, HabitLinkChoice) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var addSchedule = true
+    @State private var schedule: RoutineSchedule?
+    /// Off by default for imports: a friend's code shouldn't add a habit unless you ask (wireframe frame 11).
+    @State private var habitLink: HabitLinkChoice = .none
+    @State private var editingSchedule = false
+
+    init(shared: SharedRoutine, resolver: ExerciseResolver, unit: WeightUnit,
+         onImport: @escaping ([RoutineExercise], RoutineSchedule?, HabitLinkChoice) -> Void) {
+        self.shared = shared
+        self.resolver = resolver
+        self.unit = unit
+        self.onImport = onImport
+        _schedule = State(initialValue: shared.schedule)
+    }
 
     /// Block exercise-ids that don't resolve in this device's library (custom exercises authored on the
     /// sharer's phone, or a trimmed catalog). The import still proceeds — the block keeps its inline name.
@@ -49,6 +64,8 @@ struct RoutineImportSheet: View {
                     }
                 }
 
+                if let schedule { scheduleSection(schedule) }
+
                 if !unresolvable.isEmpty {
                     Section {
                         Label {
@@ -70,7 +87,8 @@ struct RoutineImportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 Button {
-                    onImport(blocks)
+                    let adopted = addSchedule ? schedule : nil
+                    onImport(blocks, adopted, adopted == nil ? .none : habitLink)
                     dismiss()
                 } label: {
                     Label("Add to my routines", systemImage: "plus.circle.fill")
@@ -84,6 +102,50 @@ struct RoutineImportSheet: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .sheet(isPresented: $editingSchedule) {
+                RoutineScheduleEditor(routineName: shared.name, schedule: schedule, habitLink: habitLink,
+                                      defaultTrackInHabits: false) { saved, link in
+                    if let saved { schedule = saved; habitLink = link } else { addSchedule = false }
+                }
+            }
+        }
+    }
+
+    /// The shared schedule, adoptable as-is, tweakable, or declinable (prompt 138).
+    private func scheduleSection(_ s: RoutineSchedule) -> some View {
+        Section {
+            Toggle(isOn: $addSchedule) {
+                Label("Add this schedule", systemImage: "calendar")
+            }
+            .tint(SnappetColor.workout)
+            .accessibilityIdentifier("routine.import.addSchedule")
+            if addSchedule {
+                Button { editingSchedule = true } label: {
+                    LabeledContent {
+                        Text("Edit").foregroundStyle(SnappetColor.workout)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(s.summary()).foregroundStyle(.primary)
+                            Text(s.reminder.isOn
+                                 ? (s.reminder.leadMinutes == 0 ? "Reminder at start" : "Reminder \(s.reminder.leadMinutes) min before")
+                                 : "No reminder")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)   // keep the summary in body colours; only "Edit" is tinted
+                .accessibilityIdentifier("routine.import.editSchedule")
+                Toggle("Track in Habits", isOn: Binding(
+                    get: { habitLink != .none }, set: { habitLink = $0 ? .newHabit : .none }))
+                    .tint(SnappetColor.workout)
+                    .accessibilityIdentifier("routine.import.trackHabit")
+            }
+        } header: {
+            Text("Schedule")
+        } footer: {
+            if addSchedule, s.reminder.isOn || s.reminder.headsUp != nil {
+                Text("Reminders need notification permission — Snappet asks once, when you add.")
             }
         }
     }
