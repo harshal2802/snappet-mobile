@@ -26,9 +26,11 @@ enum WidgetSnapshotService {
         let habits = (try? context.fetch(FetchDescriptor<Habit>())) ?? []
         let completions = (try? context.fetch(FetchDescriptor<HabitCompletion>())) ?? []
         let focus = (try? context.fetch(FetchDescriptor<PomodoroSession>())) ?? []
+        let routines = (try? context.fetch(FetchDescriptor<Routine>())) ?? []
         let snapshot = WidgetSnapshotBuilder.build(
             records: records, habits: habits, completions: completions, focusSessions: focus,
-            now: now, calendar: calendar)
+            now: now, calendar: calendar,
+            dueIDs: HabitSchedule.dueToday(habits: habits, routines: routines, now: now, calendar: calendar))
         WidgetSnapshotStore.write(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
     }

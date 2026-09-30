@@ -51,6 +51,7 @@ enum RoutineScheduleSync {
         let floor = DayKey(Calendar.current.date(byAdding: .day, value: -62, to: .now) ?? .now)
         schedule.skippedDays = schedule.skippedDays.filter { $0 >= floor }
         routine.schedule = schedule
+        HabitRoutineLink.recordSkip(routine: routine, day: day, in: context)   // prompt 137
         try? context.save()
         Task { await reminders.clearDelivered(for: routineID) }
         replan(context: context, reminders: reminders)

@@ -8,16 +8,19 @@ import Foundation
 /// streak the Home dashboard's StatTile shows), focus minutes via `TodayDigest.focusToday`, and
 /// "habits remaining" via the same start-of-day "done today" rule as `TodayDigest.habitsToday`.
 enum WidgetSnapshotBuilder {
+    /// `dueIDs` (prompt 137): habits due today; nil = all. The widget lists only due (or already-done)
+    /// habits, matching Home's "habits left".
     static func build(records: [UsageRecord], habits: [Habit], completions: [HabitCompletion],
                       focusSessions: [PomodoroSession],
-                      now: Date = Date(), calendar: Calendar = .current) -> SnappetWidgetSnapshot {
+                      now: Date = Date(), calendar: Calendar = .current,
+                      dueIDs: Set<UUID>? = nil) -> SnappetWidgetSnapshot {
         let dayStart = calendar.startOfDay(for: now)
 
         // "Done today" by the same start-of-day rule as TodayDigest.habitsToday.
         let doneToday = Set(completions.lazy
             .filter { calendar.startOfDay(for: $0.day) == dayStart }
             .map(\.habitID))
-        let items = habits.map { h in
+        let items = habits.filter { dueIDs?.contains($0.id) ?? true || doneToday.contains($0.id) }.map { h in
             SnappetWidgetSnapshot.HabitItem(
                 id: h.id, name: h.name, symbol: h.symbol, doneToday: doneToday.contains(h.id))
         }

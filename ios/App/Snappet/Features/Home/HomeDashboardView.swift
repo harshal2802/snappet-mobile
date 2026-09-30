@@ -16,6 +16,8 @@ struct HomeDashboardView: View {
     // drift from what each mini-app shows (#71). `TodayDigest` turns them into card facts.
     @Query private var habits: [Habit]
     @Query private var habitCompletions: [HabitCompletion]
+    /// For which habits are due today (a routine-linked or weekday habit on its day off isn't "left").
+    @Query private var routines: [Routine]
     @Query private var focusSessions: [PomodoroSession]
     @Query private var workoutSessions: [WorkoutSession]
     @Query private var budgetCategories: [BudgetCategory]
@@ -146,7 +148,9 @@ struct HomeDashboardView: View {
         // `now` is the state clock above — NOT `Date.now` — so cards roll at midnight.
         var cards: [TodayCard] = []
         if let h = TodayDigest.habitsToday(habits: habits, completions: habitCompletions,
-                                           now: now, calendar: cal) {
+                                           now: now, calendar: cal,
+                                           dueIDs: HabitSchedule.dueToday(habits: habits, routines: routines,
+                                                                          now: now, calendar: cal)) {
             cards.append(TodayCard(
                 id: "habits",
                 title: h.allDone ? "All \(h.total) habit\(h.total == 1 ? "" : "s") done"

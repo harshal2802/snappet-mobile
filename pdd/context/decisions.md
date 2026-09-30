@@ -9352,3 +9352,18 @@ Non-obvious calls:
   else keeps rest-complete / Pomodoro / festival alerts behaving exactly as before (no foreground banner).
 - **Start now goes through `startWorkout(from:)`** via a router one-shot, so an in-progress workout still
   gets the resume / replace choice instead of being silently discarded.
+
+## 2026-09-29 — routine ↔ habit link: link on the routine, skips on the habit (prompt 137)
+
+- **The link is `Routine.linkedHabitID`, not `Habit.routineID`**, so one "Gym" habit can be fed by
+  several routines (the user-approved option) and unlinking can never delete habit history.
+- **A skip is not a `HabitCompletion`.** Completions are read by Home, the Today widget, its check-off
+  reconciler and backup, all as "a row means done". Skips live in `Habit.skippedDayKeys` instead, so
+  none of those readers had to learn a new meaning.
+- **One definition of "due".** `HabitSchedule` (linked schedules › weekdays › every day) feeds the
+  streak, the rate, the week strip, Home's "habits left" and the widget list. The every-day case
+  reduces exactly to the old streak rule (tested), so existing habits are unchanged.
+- **An unfinished today is never a miss** — for the streak (already) and now the rate, so a new habit
+  doesn't open at 0%.
+- UITest gotcha (again): an `.accessibilityIdentifier` on a bare HStack is stamped onto every child,
+  hiding a nested Button's id — add `.accessibilityElement(children: .contain)` first.

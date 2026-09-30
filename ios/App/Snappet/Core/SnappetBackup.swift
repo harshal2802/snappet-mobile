@@ -417,8 +417,19 @@ extension SnappetBackup {
         var symbol: String
         var createdAt: Date
 
-        init(_ m: Habit) { id = m.id; name = m.name; symbol = m.symbol; createdAt = m.createdAt }
-        func make() -> Habit { Habit(id: id, name: name, symbol: symbol, createdAt: createdAt) }
+        /// Optional → backups written before prompt 137 decode as an every-day habit.
+        var weekdays: [Int]?
+        var skippedDayKeys: [Int]?
+        var skipsBreakStreak: Bool?
+        init(_ m: Habit) {
+            id = m.id; name = m.name; symbol = m.symbol; createdAt = m.createdAt
+            weekdays = m.weekdays; skippedDayKeys = m.skippedDayKeys; skipsBreakStreak = m.skipsBreakStreak
+        }
+        func make() -> Habit {
+            let h = Habit(id: id, name: name, symbol: symbol, createdAt: createdAt)
+            h.weekdays = weekdays; h.skippedDayKeys = skippedDayKeys; h.skipsBreakStreak = skipsBreakStreak
+            return h
+        }
         var sortKey: String { id.uuidString }
     }
 
@@ -536,6 +547,7 @@ extension SnappetBackup {
         var sourceURL: String?
         /// Optional → backups written before prompt 136 decode with no schedule.
         var scheduleData: Data?
+        var linkedHabitID: UUID?
 
         init(_ m: Routine) {
             id = m.id; name = m.name; exercises = m.exercises
@@ -545,6 +557,7 @@ extension SnappetBackup {
             tags = m.tags; detail = m.detail
             sourceLabel = m.sourceLabel; sourceURL = m.sourceURL
             scheduleData = m.scheduleData
+            linkedHabitID = m.linkedHabitID
         }
         func make() -> Routine {
             let r = Routine(id: id, name: name, exercises: exercises,
@@ -556,6 +569,7 @@ extension SnappetBackup {
             r.sportRaw = sportRaw
             r.levelRaw = levelRaw
             r.scheduleData = scheduleData
+            r.linkedHabitID = linkedHabitID
             return r
         }
         var sortKey: String { id.uuidString }

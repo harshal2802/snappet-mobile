@@ -11,6 +11,15 @@ final class Habit {
     /// SF Symbol name shown on the row (e.g. "drop", "book"). Defaults to a generic mark.
     var symbol: String
     var createdAt: Date
+    /// `Calendar` weekdays (1 = Sunday … 7 = Saturday) the habit is due; nil / empty = every day
+    /// (prompt 137). Ignored while a scheduled routine links to this habit — its schedule decides.
+    var weekdays: [Int]?
+    /// Days (`DayKey` values) the user skipped via a linked routine's "Skip today" (prompt 137). Kept on
+    /// the habit — not as a `HabitCompletion` — so every completion reader (widget, backup, Home) stays
+    /// "a row means done".
+    var skippedDayKeys: [Int]?
+    /// `true` → a skipped day breaks the streak like a miss; nil / false → it's excused (the default).
+    var skipsBreakStreak: Bool?
 
     init(id: UUID = UUID(), name: String, symbol: String = "checkmark.circle", createdAt: Date = .now) {
         self.id = id

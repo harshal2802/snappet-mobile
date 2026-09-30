@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UserNotifications
 
 /// The routine **Schedule** sheet (prompt 136, wireframe frames 2–3): when it repeats, what time, how
@@ -7,11 +8,12 @@ import UserNotifications
 struct RoutineScheduleEditor: View {
     let routineName: String
     let isNew: Bool
-    /// `nil` → remove the schedule.
-    let onSave: (RoutineSchedule?) -> Void
+    /// `nil` schedule → remove it. The link choice says how the routine ties to Habits (prompt 137).
+    let onSave: (RoutineSchedule?, HabitLinkChoice) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
+    @Query(sort: \Habit.createdAt) private var habits: [Habit]
 
     private enum RepeatKind: String, CaseIterable, Identifiable {
         case weekly, everyDays, once
@@ -47,11 +49,18 @@ struct RoutineScheduleEditor: View {
     @State private var reminder: ScheduleReminder
     @State private var headsUpTime: Date
     @State private var notificationsDenied = false
+    @State private var habitLink: HabitLinkChoice
 
-    init(routineName: String, schedule: RoutineSchedule?, onSave: @escaping (RoutineSchedule?) -> Void) {
+    /// `habitLink`: the routine's current link (`.existing`), or `.none`. A brand-new schedule defaults to
+    /// `.newHabit` (wireframe frame 3: Track in Habits on) unless `defaultTrackInHabits` is false.
+    init(routineName: String, schedule: RoutineSchedule?, habitLink: HabitLinkChoice = .none,
+         defaultTrackInHabits: Bool = true,
+         onSave: @escaping (RoutineSchedule?, HabitLinkChoice) -> Void) {
         self.routineName = routineName
         self.isNew = schedule == nil
         self.onSave = onSave
+        _habitLink = State(initialValue: schedule == nil && habitLink == .none && defaultTrackInHabits
+                           ? .newHabit : habitLink)
         let cal = Calendar.current
         let s = schedule ?? .suggested(today: .now, calendar: cal)
         let dayOne = DayKey(value: 20_000_101)
@@ -154,10 +163,11 @@ struct RoutineScheduleEditor: View {
                 timeSection
                 durationSection
                 notificationSection
+                habitSection
 
                 if !isNew {
                     Section {
-                        Button("Remove schedule", role: .destructive) { onSave(nil); dismiss() }
+                        Button("Remove schedule", role: .destructive) { onSave(nil, .none); dismiss() }
                             .accessibilityIdentifier("schedule.remove")
                     }
                 }
@@ -309,9 +319,33 @@ struct RoutineScheduleEditor: View {
         }
     }
 
+    private var habitSection: some View {
+        Section {
+            Toggle("Track in Habits", isOn: Binding(
+                get: { habitLink != .none },
+                set: { habitLink = $0 ? .newHabit : .none }))
+                .accessibilityIdentifier("schedule.trackHabit")
+            if habitLink != .none {
+                Picker("Habit", selection: $habitLink) {
+                    Text("\(routineName) (new)").tag(HabitLinkChoice.newHabit)
+                    ForEach(habits) { h in
+                        Label(h.name, systemImage: h.symbol).tag(HabitLinkChoice.existing(h.id))
+                    }
+                }
+                .accessibilityIdentifier("schedule.habitPicker")
+            }
+        } header: {
+            Text("Habits")
+        } footer: {
+            if habitLink != .none {
+                Text("Finishing this routine ticks the habit off. Its streak counts scheduled days only, so a rest day never breaks it.")
+            }
+        }
+    }
+
     private func save() {
         let schedule = draft
-        onSave(schedule)
+        onSave(schedule, habitLink)
         if schedule.isEnabled, schedule.reminder.isOn || schedule.reminder.headsUp != nil,
            !RoutineScheduleSync.isUITestLaunch {
             let reminders = app.routineReminders
