@@ -26,6 +26,10 @@ struct SharedRoutine: Equatable, Sendable {
     var name: String
     var detail: String?
     var exercises: [Block]
+    /// The routine's schedule, when the sharer chose to include it (prompt 138). Rides the same `/v1/`
+    /// code as an optional `sc` key: an older build's decoder ignores unknown keys, so it still imports
+    /// the routine — just without the schedule. Always `forSharing` (no skip history).
+    var schedule: RoutineSchedule?
 
     /// One exercise block in the shared routine — the wire mirror of a `RoutineExercise`, with only the
     /// fields a prescription needs (no per-set log, no live state). Every non-essential field is omitted
@@ -54,10 +58,11 @@ struct SharedRoutine: Equatable, Sendable {
     // MARK: - Bridge to/from RoutineExercise
 
     /// Build a shareable routine from a live `Routine` (drops per-session state; keeps the prescription).
-    init(name: String, detail: String?, exercises: [RoutineExercise]) {
+    init(name: String, detail: String?, exercises: [RoutineExercise], schedule: RoutineSchedule? = nil) {
         self.name = name
         self.detail = (detail?.isEmpty == false) ? detail : nil
         self.exercises = exercises.map(Block.init(from:))
+        self.schedule = schedule?.forSharing
     }
 
     /// The blocks as fresh `RoutineExercise`s — each gets a NEW `id` so an import never collides with an
@@ -196,19 +201,22 @@ extension SharedRoutine.Block {
 
 extension SharedRoutine: Codable {
     private enum CodingKeys: String, CodingKey {
-        case name = "n", detail = "d", exercises = "e"
+        case name = "n", detail = "d", exercises = "e", schedule = "sc"
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decode(String.self, forKey: .name)
         detail = try c.decodeIfPresent(String.self, forKey: .detail)
         exercises = try c.decodeIfPresent([Block].self, forKey: .exercises) ?? []
+        // A malformed schedule must not sink the routine it rides with.
+        schedule = (try? c.decodeIfPresent(RoutineSchedule.self, forKey: .schedule)) ?? nil
     }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(name, forKey: .name)
         try c.encodeIfPresent(detail, forKey: .detail)
         try c.encode(exercises, forKey: .exercises)
+        try c.encodeIfPresent(schedule, forKey: .schedule)
     }
 }
 

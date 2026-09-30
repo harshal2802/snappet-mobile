@@ -2,11 +2,11 @@ import XCTest
 
 /// Prompt 136: schedule a routine from its detail, see it summarized on the card, then find it on the
 /// Routines list's Up next card and skip today.
+@MainActor
 final class RoutineScheduleUITests: XCTestCase {
     var app: XCUIApplication!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchArguments += ["-uiTestFreshStore"]
@@ -96,5 +96,40 @@ final class RoutineScheduleUITests: XCTestCase {
         app.buttons["habit.startLinked"].tap()
         XCTAssertTrue(app.buttons["pauseWorkout"].waitForExistence(timeout: 8), "Start opens the routine in the player")
         snap("player-from-habits")
+    }
+
+    /// Prompt 138: Routines ＋ is a menu with Scan QR code / Import from Photos, and the share sheet can
+    /// carry the schedule.
+    func testScanEntryAndShareIncludesSchedule() {
+        app.tabBars.buttons["Apps"].tap()
+        XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
+        app.buttons["moduleCard.workout-log"].tap()
+        app.segmentedControls.buttons["Routines"].tap()
+
+        let add = app.buttons["routines.add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 4))
+        add.tap()
+        let scan = app.buttons["routines.menu.scan"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 4), "＋ offers Scan QR Code")
+        XCTAssertTrue(app.buttons["routines.menu.photos"].exists, "＋ offers Import from Photos")
+        snap("routines-add-menu")
+        scan.tap()
+        XCTAssertTrue(app.buttons["routine.scanSheet.photos"].waitForExistence(timeout: 4),
+                      "the scanner offers Choose from Photos")
+        snap("scan-sheet")
+        app.buttons["Cancel"].tap()
+
+        // Schedule a routine, then its share sheet offers Include schedule.
+        let row = app.buttons.matching(identifier: "routineRow").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        app.buttons["routine.schedule"].tap()
+        XCTAssertTrue(app.buttons["schedule.save"].waitForExistence(timeout: 4))
+        app.buttons["schedule.save"].tap()
+        app.buttons["routine.share"].tap()
+        let include = app.switches["routine.share.includeSchedule"]
+        XCTAssertTrue(include.waitForExistence(timeout: 4), "a scheduled routine can share its schedule")
+        XCTAssertEqual(include.value as? String, "1", "on by default")
+        snap("share-with-schedule")
     }
 }

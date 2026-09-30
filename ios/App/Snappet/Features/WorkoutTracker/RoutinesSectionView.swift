@@ -11,6 +11,9 @@ struct RoutinesSectionView: View {
     let start: (Routine) -> Void
     let deleteRoutine: (Routine) -> Void
     let newRoutine: () -> Void
+    /// Bring a routine in from a QR code / a photo of one (prompt 138).
+    var scanRoutine: () -> Void = {}
+    var importPhoto: () -> Void = {}
     /// Scheduled routines (prompt 136) — the Up next card renders only when this is non-empty.
     var scheduleInputs: [ScheduledRoutineInput] = []
     var skip: (UUID, DayKey) -> Void = { _, _ in }
@@ -26,9 +29,13 @@ struct RoutinesSectionView: View {
                 ContentUnavailableView {
                     Label("No routines", systemImage: "list.bullet.rectangle.portrait")
                 } description: {
-                    Text("Build a routine from the exercise catalog to start training.")
+                    Text("Build a routine from the exercise catalog, or scan one a friend shares.")
                 } actions: {
                     Button("New Routine") { newRoutine() }.buttonStyle(.borderedProminent)
+                    Button { scanRoutine() } label: { Label("Scan QR Code", systemImage: "qrcode.viewfinder") }
+                        .accessibilityIdentifier("routines.empty.scan")
+                    Button { importPhoto() } label: { Label("Import from Photos", systemImage: "photo.on.rectangle") }
+                        .accessibilityIdentifier("routines.empty.photos")
                 }
             } else {
                 list
