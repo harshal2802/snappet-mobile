@@ -1,0 +1,48 @@
+Hangboard protocols, the Tindeq force sensor, session history, and a 3D training buddy that grows
+with every workout.
+
+HANGBOARD PROTOCOLS  (Gym Tracker)
+• Ready-made Max hangs, Endurance repeaters, Contact and Abrahangs, or build your own: hang time,
+  rest, reps, sets, and "until I tap done" reps for Contact-style holds. Put them in any routine.
+• Added load: a weight on your harness, or a pulley taking weight off. Type any value, not just
+  ±2.5. One hand, or one hand each side, with the hand recorded per set.
+• Adjust a protocol mid-run, then keep the change or use it once.
+• Schedules can now repeat any number of times a day, down to every minute.
+
+TINDEQ PROGRESSOR  (Workout → Settings → Force sensor)
+• Pair it once and zero it. During a hang you see live force against a target band; reps start
+  and stop on their own when you load and let go. Set targets as a % of your max, measure your
+  max with the Max pull test, and see peak force per rep afterwards. Connect mid-workout too.
+
+SESSION DETAILS
+• A finished session now shows where it sits in its routine's history: "8th Push Day", what
+  changed since last time, records and firsts it earned, your week streak, a progress chart and
+  the next milestone. Strength compares each exercise with last time; hangboard shows force per
+  hang; climbing compares your grade pyramid with the last 30 days.
+• Fixes: a double minus in HR recovery, bodyweight sets showing "0 kg", "Median time on climb
+  0:00", and 67.5 kg showing as 68 kg.
+
+YOUR TRAINING BUDDY  (new)
+• Every session earns XP: finishing, minutes, training on plan, records, milestones and your
+  week streak, up to 300 a day. XP raises a level that never goes down, and your 3D buddy grows
+  with it: Egg → Hatchling → Sprout → Adult → Legend. Your past sessions already count; hatch it
+  from Home.
+• Form (how consistent you've been lately) shows only as its mood. A missed week makes it tired,
+  never smaller.
+• Pause mode for injury, travel, illness or a rest week: Form and your streak are held, routine
+  reminders can go quiet, and your buddy sleeps.
+• Streak freezes: every 4 weeks of streak earns one (hold up to 2), used automatically on a week
+  you miss.
+• The finish screen shows what each session earned, line by line.
+• Once you've earned XP, Home leads with your buddy, today's planned session and what it's worth,
+  the week in XP, recent wins and what's coming up. Your other apps sit below.
+
+KNOWN ISSUES
+• Only the Creature style exists so far; Companion and Athlete are coming.
+• Android doesn't have hangboard protocols, the Tindeq or the buddy yet.
+
+WHAT WOULD HELP MOST
+• Hatch your buddy. Does the level it hatches to feel fair for the training you've logged?
+• Finish a real session. Does the XP breakdown match what you did?
+• Try a Tindeq hang with auto reps. Did reps start and stop when you expected?
+• Start a pause with quiet reminders. Did a scheduled reminder stay silent?
