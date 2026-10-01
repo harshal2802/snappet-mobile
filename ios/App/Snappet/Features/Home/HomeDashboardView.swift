@@ -75,6 +75,8 @@ struct HomeDashboardView: View {
     private var flagshipHero: some View {
         ScrollView {
             VStack(spacing: SnappetSpacing.xl) {
+                // Workouts without any app-usage rows yet (e.g. restored history) still meet the buddy.
+                buddyCard
                 VStack(spacing: SnappetSpacing.md) {
                     Image(systemName: "sparkles.tv")
                         .font(.system(size: 44, weight: .semibold))
@@ -118,6 +120,7 @@ struct HomeDashboardView: View {
     private var feed: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SnappetSpacing.xl) {
+                buddyCard
                 upNext
                 todayRow
                 weekChart
@@ -127,6 +130,12 @@ struct HomeDashboardView: View {
         }
         // Clear the suite's floating tab bar so the last card isn't covered.
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
+    }
+
+    /// Your training buddy (progression P1, prompt 148) — once a session has earned XP.
+    @ViewBuilder private var buddyCard: some View {
+        let progression = ProgressionSnapshot.make(sessions: workoutSessions, routines: routines, now: now)
+        if progression.ledger.sessionCount > 0 { BuddyHomeCard(snapshot: progression) }
     }
 
     // MARK: up next (actionable Today cards, #71)

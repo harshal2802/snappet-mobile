@@ -8,6 +8,10 @@ struct BuddyCreatureView: View {
     let look: BuddyLook
     /// Bump to play the cheer (tap on the buddy does it too).
     var cheerTrigger: Int = 0
+    /// Idle animation (bob, blink, sparks). Off for stills in scrolling lists — a cheer still plays.
+    var animated: Bool = true
+    /// Drag to turn. Off inside scroll views, where the drag belongs to scrolling.
+    var interactive: Bool = true
 
     @State private var rig = BuddyRig()
     @State private var yaw: Float = 0
@@ -16,21 +20,22 @@ struct BuddyCreatureView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion && cheerStart == nil)) { context in
+        TimelineView(.animation(paused: (reduceMotion || !animated) && cheerStart == nil)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let cheer = cheerStart.map { context.date.timeIntervalSince($0) }.flatMap { $0 < BuddyRig.cheerDuration ? $0 : nil }
             RealityView { content in
                 content.camera = .virtual
                 content.add(rig.scene)
             } update: { _ in
-                rig.apply(look, time: reduceMotion ? 0 : t, cheer: cheer, yaw: yaw)
+                rig.apply(look, time: reduceMotion || !animated ? 0.6 : t, cheer: cheer, yaw: yaw)
             }
         }
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 4)
                 .onChanged { v in yaw = dragStartYaw + Float(v.translation.width) * 0.012 }
-                .onEnded { _ in dragStartYaw = yaw }
+                .onEnded { _ in dragStartYaw = yaw },
+            isEnabled: interactive
         )
         .onTapGesture { cheer() }
         .onChange(of: cheerTrigger) { _, _ in cheer() }
@@ -42,8 +47,14 @@ struct BuddyCreatureView: View {
     }
 
     private func cheer() {
-        cheerStart = .now
+        let start = Date.now
+        cheerStart = start
         Haptics.tap()
+        // Let a still buddy stop animating again once the cheer is over.
+        Task {
+            try? await Task.sleep(for: .seconds(BuddyRig.cheerDuration + 0.1))
+            if cheerStart == start { cheerStart = nil }
+        }
     }
 }
 
