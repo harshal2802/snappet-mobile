@@ -9478,3 +9478,16 @@ Non-obvious calls:
 - 3D is RealityKit. The creature style is built from primitives in code, so it ships with no art pipeline;
   Companion / Athlete will be USDZ packs (GLB for Android). Widgets and the Watch can't run RealityKit
   live → they'll get pre-rendered stills. A spike first, because a wireframe can't show how 3D feels.
+
+## 2026-10-01 — XP is derived and cached, never stored; Form is mood only (prompt 148)
+
+- The ledger is recomputed from sessions (so history counts on day one and edits re-judge records).
+  To keep it cheap, each session's XP lines are cached in memory by a fingerprint of that session and
+  everything before it: a new session costs one session's work; editing an old one recomputes from there.
+- A daily cap (300) stops "every minute" schedules or many tiny sessions from farming XP; sessions
+  under 5 minutes or with nothing completed earn nothing.
+- Form never feeds back into XP or level (user picked Q2 A): a bad month changes the buddy's mood only.
+- The buddy also shows on Home's first-run hero: a store can have workouts but no app-usage rows
+  (restored history), and those users should still meet it.
+- UI tests can't assert "under 5 minutes earns nothing": this environment's wall clock jumps, so a
+  seconds-long session can measure as 18 hours. That rule is unit-tested instead.

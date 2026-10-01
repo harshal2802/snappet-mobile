@@ -10,13 +10,15 @@ enum SessionInsights {
 
     /// Earlier completed sessions to compare with, newest first: the same routine; for a quick session
     /// (no routine), past sessions with the same name and the same main workout type.
-    static func comparable(for session: WorkoutSession, in all: [WorkoutSession]) -> [WorkoutSession] {
-        let kind = Kind.of(session)
+    /// `kindOf` lets a caller that walks the whole history (the XP ledger) pass a memoised lookup.
+    static func comparable(for session: WorkoutSession, in all: [WorkoutSession],
+                           kindOf: (WorkoutSession) -> Kind = Kind.of) -> [WorkoutSession] {
+        let kind = kindOf(session)
         return all.filter { other in
             other.id != session.id && other.completedAt != nil && other.startedAt < session.startedAt
                 && !other.isImportedFromHealth
                 && (session.routineID.map { other.routineID == $0 }
-                    ?? (other.routineID == nil && other.routineName == session.routineName && Kind.of(other) == kind))
+                    ?? (other.routineID == nil && other.routineName == session.routineName && kindOf(other) == kind))
         }
         .sorted { $0.startedAt > $1.startedAt }
     }
@@ -210,8 +212,10 @@ enum SessionInsights {
 
     static let countMilestones = [5, 10, 25, 50, 100, 150, 200, 250, 365, 500, 750, 1000]
 
+    /// `includeStreak: false` skips the week-streak badge (the XP ledger pays streaks itself, cheaply).
     static func badges(_ s: WorkoutSession, prior: [WorkoutSession], allHistory: [WorkoutSession],
-                       resolve: (SessionExercise) -> String, unit: WeightUnit) -> [Badge] {
+                       resolve: (SessionExercise) -> String, unit: WeightUnit,
+                       includeStreak: Bool = true) -> [Badge] {
         var out: [Badge] = []
         let kind = Kind.of(s)
         let n = prior.count + 1
@@ -271,8 +275,10 @@ enum SessionInsights {
             break
         }
         if countMilestones.contains(n), n > 1 { out.append(.sessionCount(n: n, name: s.routineName)) }
-        let streak = weekStreak(s, prior: prior)
-        if streak >= 2 { out.append(.weekStreak(weeks: streak)) }
+        if includeStreak {
+            let streak = weekStreak(s, prior: prior)
+            if streak >= 2 { out.append(.weekStreak(weeks: streak)) }
+        }
         return out
     }
 

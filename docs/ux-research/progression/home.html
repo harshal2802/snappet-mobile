@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Home, built around your buddy (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ember:#FF9645; --fresh:#5BC074; --habit:#5BC074; --blue:#5AA9FF;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2.part{font-size:26px;font-weight:800;margin:64px 0 4px;color:#fff;letter-spacing:-.01em}
+  h2.part .tag{font-size:13px;font-weight:800;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .sub{color:#aeb2bd;font-size:16px;max-width:1100px;margin:0 0 10px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:30px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.alt{background:#8e8ea0;color:#111;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto;font-size:14px}
+  .navrow .title{font-size:15px;font-weight:800}
+  .navrow .lnk{color:var(--ember);font-weight:600}
+  .navrow .lnk.b{font-weight:800}
+  .bigtitle{font-size:26px;font-weight:800;margin:2px 2px 8px;letter-spacing:-.01em}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember);margin-left:6px}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:10px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* grouped form */
+  .glbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:12px 6px 5px}
+  .group{background:var(--surface);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--hair);gap:8px}
+  .row:last-child{border-bottom:0}
+  .row .v{color:var(--t2);font-size:13px;white-space:nowrap}
+  .row .v.e{color:var(--ember);font-weight:600}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;margin-right:9px;flex:0 0 auto}
+  .row .l{display:flex;align-items:center}
+  .foot{font-size:11px;color:var(--t3);margin:5px 8px 0;line-height:1.4}
+  .tog{width:40px;height:24px;border-radius:12px;background:#3a3a40;position:relative;flex:0 0 auto}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--fresh)}
+  .tog.on::after{left:18px}
+  .days{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .days div{flex:1;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--muted);color:var(--t2);aspect-ratio:1}
+  .days div.on{background:var(--ember);color:#2a1405}
+  .days.small div{height:24px;font-size:10px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .pill.g{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .pill.gr{background:var(--muted);color:var(--t2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--hair)}
+  .chip{background:var(--muted);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:650;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+
+  /* cards / list */
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .t{font-size:11px;color:var(--t3);margin-top:3px}
+  .sect{font-size:13px;font-weight:700;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .upnext{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.12));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:12px 13px;margin-bottom:10px;flex:0 0 auto}
+  .upnext .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase}
+  .upnext .n{font-size:17px;font-weight:800;margin-top:2px}
+  .upnext .w{font-size:12px;color:#e6d7cb}
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;padding:10px;font-size:14px;font-weight:700;background:var(--ember);color:#2a1405;flex:0 0 auto}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:999px;display:inline-flex}
+  .btn.ghost{background:var(--muted);color:var(--ember)}
+  .week{display:flex;gap:4px;margin-top:9px}
+  .week div{flex:1;text-align:center;font-size:10px;color:var(--t2)}
+  .week div b{display:block;height:24px;border-radius:7px;margin-top:3px;background:var(--muted);font-size:10px;line-height:24px;color:var(--t3);font-weight:700}
+  .week div b.s{background:rgba(255,150,69,.3);color:var(--ember)}
+  .week div b.d{background:var(--ember);color:#2a1405}
+  .week div b.m{background:rgba(255,122,107,.18);color:#ff9b8f}
+  .week div.today{color:#fff;font-weight:800}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:45}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;padding:8px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
+  .sheet.half{top:auto;height:62%}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 6px;flex:0 0 auto}
+  .behind{opacity:.9}
+
+  /* lock screen */
+  .lock{background:linear-gradient(180deg,#1b2635,#0d1118 70%);}
+  .lock .clock{text-align:center;font-size:64px;font-weight:300;letter-spacing:-2px;margin-top:10px;color:#fff}
+  .lock .date{text-align:center;font-size:15px;color:#cfd6e2;font-weight:600}
+  .notif{background:rgba(40,44,52,.82);backdrop-filter:blur(20px);border-radius:18px;padding:11px 12px;margin:0 10px 8px;color:#fff}
+  .notif .hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#c7ccd6}
+  .notif .ap{width:18px;height:18px;border-radius:5px;background:var(--ember);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#2a1405;font-weight:900}
+  .notif .tt{font-size:13.5px;font-weight:700;margin-top:4px}
+  .notif .bd{font-size:12.5px;color:#dfe3ea}
+  .actions{margin:0 10px;border-radius:14px;overflow:hidden;background:rgba(40,44,52,.82)}
+  .actions div{padding:10px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between}
+  .actions div:last-child{border-bottom:0}
+
+  /* habit row */
+  .hab{background:var(--surface);border-radius:14px;padding:11px 12px;margin-bottom:8px;flex:0 0 auto}
+  .hab .top{display:flex;align-items:center;gap:10px}
+  .hab .sym{font-size:20px;width:28px;text-align:center;color:var(--habit)}
+  .hab .nm{font-size:14.5px;font-weight:700}
+  .hab .st{font-size:12px;color:var(--ember);font-weight:650}
+  .hab .rt{font-size:11px;color:var(--t3)}
+  .hab .ck{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid var(--t3)}
+  .hab .ck.on{background:var(--habit);border-color:var(--habit)}
+  .hab .strip{display:flex;gap:5px;margin-top:8px;align-items:flex-end}
+  .hab .strip div{flex:1;text-align:center;font-size:9.5px;color:var(--t3)}
+  .hab .strip b{display:block;margin:2px auto 0;width:24px;height:24px;border-radius:50%;background:rgba(91,192,116,.13);font-size:9.5px;line-height:24px;color:var(--t2)}
+  .hab .strip b.on{background:var(--habit);color:#fff}
+  .hab .strip b.off{background:transparent;border:1px dashed #3a3a42;color:#4a4a52}
+  .link{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--t2);background:var(--muted);border-radius:9px;padding:6px 8px}
+  .link b{color:var(--ember)}
+
+  /* camera */
+  .cam{flex:1;border-radius:16px;margin:0 2px;position:relative;overflow:hidden;background:
+      repeating-linear-gradient(45deg,#1a1d22 0 10px,#16181c 10px 20px)}
+  .reticle{position:absolute;left:50%;top:44%;width:170px;height:170px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:22px}
+  .qr{background:#fff;border-radius:14px;padding:12px;margin:6px auto;width:176px;height:176px;display:grid;grid-template-columns:repeat(21,1fr);gap:0}
+  .qr i{display:block;aspect-ratio:1}
+  .qr i.k{background:#000}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .menu{position:absolute;right:16px;top:92px;z-index:55;width:228px;background:rgba(44,44,50,.97);border-radius:14px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu div{padding:11px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:last-child{border-bottom:0}
+  .menu div span{color:var(--t2)}
+
+  table.cmp{border-collapse:collapse;margin-top:18px;font-size:13.5px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:10px 12px;text-align:left;vertical-align:top}
+  table.cmp th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  .q{background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.3);border-radius:14px;padding:14px 18px;margin:14px 0;max-width:1240px;font-size:14.5px;color:#d9dce4}
+  .q b{color:#fff}
+  .q .rec{color:var(--fresh);font-weight:700}
+</style>
+</head>
+<body>
+<style>
+  .hero3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:6px 0 10px;flex:0 0 auto}
+  .hc{background:var(--surface);border-radius:14px;padding:9px 8px;text-align:center}
+  .hc .v{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+  .hc .l{font-size:10.5px;color:var(--t2)}
+  .d{font-size:10.5px;font-weight:800;margin-top:2px}
+  .up{color:#5BC074}.dn{color:#ff7a6b}.eq{color:var(--t3)}
+  .chipline{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;flex:0 0 auto}
+  .ach{display:flex;gap:7px;overflow:hidden;margin-bottom:10px;flex:0 0 auto}
+  .badge{min-width:112px;background:linear-gradient(160deg,rgba(255,150,69,.28),rgba(255,150,69,.08));border:1px solid rgba(255,150,69,.4);border-radius:14px;padding:8px 9px}
+  .badge.g{background:linear-gradient(160deg,rgba(91,192,116,.28),rgba(91,192,116,.08));border-color:rgba(91,192,116,.45)}
+  .badge.b{background:linear-gradient(160deg,rgba(90,169,255,.28),rgba(90,169,255,.08));border-color:rgba(90,169,255,.45)}
+  .badge .i{font-size:18px}.badge .t{font-size:11.5px;font-weight:800;margin-top:2px}.badge .s{font-size:10px;color:var(--t2)}
+  .spark{height:74px;position:relative;margin:6px 0 2px}
+  .spark svg{position:absolute;inset:0}
+  .meter{height:8px;border-radius:4px;background:var(--muted);overflow:hidden;margin-top:6px}
+  .meter i{display:block;height:100%;background:var(--ember);border-radius:4px}
+  .exc{background:var(--surface);border-radius:14px;padding:10px 12px;margin-bottom:8px;flex:0 0 auto}
+  .exc .h{display:flex;justify-content:space-between;align-items:baseline}
+  .exc .n{font-weight:800;font-size:13.5px}
+  .exc .r{font-size:11.5px;color:var(--t2)}
+  .setr{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid var(--hair)}
+  .grid{display:grid;grid-template-columns:42px repeat(3,1fr);gap:4px;font-size:11px;margin-top:6px}
+  .grid div{text-align:center;padding:5px 0;border-radius:6px}
+  .grid .hdr{color:var(--t3);font-weight:700}
+  .heat3{background:rgba(255,150,69,.75);color:#2a1405;font-weight:800}
+  .heat2{background:rgba(255,150,69,.5);color:#2a1405;font-weight:800}
+  .heat1{background:rgba(255,150,69,.28);color:#ffd2ad;font-weight:800}
+  .pyr{margin-top:6px}
+  .pyr .row{display:flex;align-items:center;gap:6px;font-size:11px;padding:0;border:0}
+  .pyr .bar{height:12px;border-radius:4px;background:var(--ember)}
+  .pyr .ghost{height:12px;border-radius:4px;border:1px dashed rgba(255,255,255,.35)}
+  .disc{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:8px;flex:0 0 auto}
+  .ring{width:76px;height:76px;border-radius:50%;background:conic-gradient(var(--ember) 0 82%,var(--muted) 82% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .ring div{width:60px;height:60px;border-radius:50%;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800}
+</style>
+<style>
+  .stage3d{border-radius:18px;overflow:hidden;background:#1d1b22;flex:0 0 auto;position:relative}
+  .stage3d img{display:block;width:100%}
+  .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden;position:relative}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#FF9645,#FFC36B);border-radius:4px}
+  .bar.form i{background:linear-gradient(90deg,#5BC074,#8CE09F)}
+  .bar.low i{background:linear-gradient(90deg,#c9a33f,#e6c55c)}
+  .hero{position:relative;border-radius:22px;overflow:hidden;flex:0 0 auto;margin-bottom:9px;
+        background:linear-gradient(180deg,#2f2a3a,#17161b)}
+  .hero img{display:block;width:100%;margin:-6px 0 -22px}
+  .hero .top{position:absolute;left:12px;right:12px;top:10px;display:flex;justify-content:space-between;align-items:flex-start}
+  .hero .top .chip{background:rgba(0,0,0,.35);backdrop-filter:blur(8px);color:#fff;font-size:11px}
+  .hero .info{position:relative;padding:0 13px 11px}
+  .hero .lv{font-size:19px;font-weight:900;color:#fff}
+  .hero .md{font-size:12px;font-weight:700}
+  .hero .row2{display:flex;justify-content:space-between;font-size:10.5px;color:rgba(255,255,255,.6);margin:6px 0 4px}
+  .hero.tired{background:linear-gradient(180deg,#2a2730,#151418)}
+  .hero.sleep{background:linear-gradient(180deg,#1f2433,#121318)}
+  .train{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.1));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:11px 12px;margin-bottom:9px;flex:0 0 auto}
+  .train .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase;display:flex;justify-content:space-between}
+  .train .n{font-size:17px;font-weight:850;margin-top:2px}
+  .train .w{font-size:11.5px;color:#e6d7cb}
+  .train .acts{display:flex;gap:6px;margin-top:8px;align-items:center}
+  .xpchip{font-size:11px;font-weight:800;color:#FFC36B;background:rgba(255,195,107,.14);border-radius:999px;padding:3px 8px}
+  .weekx{display:flex;gap:4px;margin-top:8px}
+  .weekx div{flex:1;text-align:center;font-size:9.5px;color:var(--t2)}
+  .weekx b{display:block;height:44px;border-radius:8px;margin:3px 0 2px;background:var(--muted);position:relative;overflow:hidden}
+  .weekx b i{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(0deg,#FF9645,#FFC36B);border-radius:0 0 8px 8px}
+  .weekx b.plan{outline:1.5px dashed rgba(255,150,69,.7);outline-offset:-2px}
+  .weekx b.miss{background:rgba(255,122,107,.14)}
+  .weekx div.today{color:#fff;font-weight:800}
+  .weekx span{font-size:9px;color:var(--t3);font-weight:700}
+  .wins{display:flex;gap:6px;overflow:hidden;margin-top:7px}
+  .win{min-width:96px;border-radius:12px;padding:7px 8px;background:linear-gradient(160deg,rgba(255,150,69,.25),rgba(255,150,69,.07));border:1px solid rgba(255,150,69,.35)}
+  .win.g{background:linear-gradient(160deg,rgba(91,192,116,.25),rgba(91,192,116,.07));border-color:rgba(91,192,116,.4)}
+  .win.b{background:linear-gradient(160deg,rgba(90,169,255,.25),rgba(90,169,255,.07));border-color:rgba(90,169,255,.4)}
+  .win .t{font-size:11px;font-weight:800}.win .s{font-size:9.5px;color:var(--t2)}
+  .mini{display:grid;grid-template-columns:1fr 1fr;gap:7px;flex:0 0 auto;margin-bottom:9px}
+  .mini > div{background:var(--surface);border-radius:14px;padding:9px 10px}
+  .mini .k{font-size:10.5px;font-weight:750;color:var(--t2);display:flex;align-items:center;gap:5px}
+  .mini .v{font-size:15px;font-weight:850;margin-top:2px}
+  .mini .s{font-size:10px;color:var(--t3)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .feedrow{display:flex;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid var(--hair);font-size:12px}
+  .feedrow:last-child{border-bottom:0}
+  .feedrow .ic{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
+  .live{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:#ff7a6b}
+  .live::before{content:"";width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 3px rgba(255,77,77,.25)}
+  table.map td:first-child{color:#fff;font-weight:650;white-space:nowrap}
+</style>
+
+<header class="page">
+  <h1 class="title">Home, built around your buddy</h1>
+  <p class="sub">Home today is a stack of separate summaries. For people who train, the redesign puts <b>the buddy at the top</b>, then one clear thing to do today, then the week, your recent wins and what's next. Everything else (habits, focus, budget, climbing, the activity feed) stays, <b>below</b> the training section. People who don't train keep today's Home unchanged (frame 7). Only training earns XP, for now.</p>
+  <div class="scopebox">
+    <b>Same rules as the approved progression design:</b> Level 12 · Adult, 590 / 700 XP, Form 82%, a 5-week streak, Push Day planned Mon/Thu, today is Thursday. Buddy images are real renders from the app.
+    <b>Uses:</b> P1 (XP, level, Form, already built) · P2 (buddy screen, pause, freezes) · routine schedules (135–144) · records (#331).
+  </div>
+</header>
+
+<div class="wrap">
+
+<h2 class="part">1 · A normal training day <span class="tag">the new Home</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="hero">
+          <div class="top"><span class="chip">Thu 1 Oct</span><span class="chip">🔥 5 weeks · ❄︎ 1</span></div>
+          <img src="buddy/adult.png" alt="">
+          <div class="info">
+            <div><span class="lv">Adult · Level 12</span><br><span class="md" style="color:#8CE09F">Fired up</span></div>
+            <div class="row2"><span>590 / 700 XP</span><span>Legend at Level 20</span></div>
+            <div class="bar"><i style="width:84%"></i></div>
+          </div>
+        </div>
+        <div class="train">
+          <div class="k"><span>Today · 6:00 pm</span><span class="xpchip">≈ +130 XP</span></div>
+          <div class="n">Push Day</div>
+          <div class="w">Planned Mon/Thu · about 45 min · bench 70 kg × 6 last time</div>
+          <div class="acts"><span class="btn sm">▶ Start</span><span class="btn sm ghost">Skip with a reason</span></div>
+        </div>
+        <div class="card" style="padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="name" style="font-size:13.5px">This week</div><div style="font-size:11px;color:var(--t2)">2 of 3 planned · 312 XP</div></div>
+          <div class="weekx">
+            <div>M<b class="plan"><i style="height:78%"></i></b><span>187</span></div>
+            <div>T<b><i style="height:66%"></i></b><span>125</span></div>
+            <div>W<b></b><span>·</span></div>
+            <div class="today">T<b class="plan"></b><span>today</span></div>
+            <div>F<b></b><span></span></div>
+            <div>S<b class="plan"></b><span></span></div>
+            <div>S<b></b><span></span></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Top of Home.</b> <span class="new">NEW</span> <b>The buddy is the hero</b>: live 3D (drag to turn, tap to cheer, tap the info to open its screen), with level, mood, streak, freezes and the bar to the next growth. <b>Today</b> is one clear action with its likely XP. <b>This week</b> shows XP per day, with planned days outlined, so Form is visible without opening anything.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="card" style="padding:10px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="name" style="font-size:13.5px">Recent wins</div><div style="font-size:11px;color:var(--ember)">All ›</div></div>
+          <div class="wins">
+            <div class="win"><div>🏆</div><div class="t">Bench PR</div><div class="s">70 kg × 6 · Mon</div></div>
+            <div class="win g"><div>⚡️</div><div class="t">Peak force PR</div><div class="s">48.5 kg · Tue</div></div>
+            <div class="win b"><div>🎉</div><div class="t">First V5</div><div class="s">last Sat</div></div>
+          </div>
+        </div>
+        <div class="card" style="padding:10px 12px">
+          <div class="name" style="font-size:13.5px">Coming up</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:6px"><span>🌟 Grows into <b>Legend</b></span><span style="color:var(--t2)">Level 20 · 8 levels</span></div>
+          <div class="bar" style="margin-top:4px"><i style="width:40%"></i></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:9px"><span>🎯 <b>10th Push Day</b></span><span style="color:var(--t2)">2 to go</span></div>
+          <div class="bar" style="margin-top:4px"><i style="width:60%"></i></div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:9px"><span>❄︎ Next streak freeze</span><span style="color:var(--t2)">in 3 weeks</span></div>
+        </div>
+        <div class="glbl">Your other apps</div>
+        <div class="mini">
+          <div><div class="k"><span class="dot" style="background:#5BC074"></span>Habits</div><div class="v">3 of 5</div><div class="s">Read · Stretch left</div></div>
+          <div><div class="k"><span class="dot" style="background:#FF6A5C"></span>Focus</div><div class="v">2 sessions</div><div class="s">50 min today</div></div>
+          <div><div class="k"><span class="dot" style="background:#589BF2"></span>Budget</div><div class="v">€412 left</div><div class="s">Groceries 82%</div></div>
+          <div><div class="k"><span class="dot" style="background:#F59E0B"></span>Kilter</div><div class="v">Plan: V5 project</div><div class="s">3 climbs queued</div></div>
+        </div>
+        <div class="glbl">Activity</div>
+        <div class="group" style="padding:0 12px">
+          <div class="feedrow"><span class="ic" style="background:rgba(255,150,69,.2)">🏋️</span><span style="flex:1">Finger day · +121 XP</span><span style="color:var(--t3)">Tue</span></div>
+          <div class="feedrow"><span class="ic" style="background:rgba(91,192,116,.2)">✓</span><span style="flex:1">Habit: Stretch</span><span style="color:var(--t3)">Tue</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Scrolled down.</b> <span class="new">NEW</span> <b>Recent wins</b>: your latest records and firsts, each opening its session. <b>Coming up</b>: the next growth, the next count milestone and the next freeze, the "almost there" pull. <span class="new">CHANGED</span> The other apps become <b>a compact 2×2 grid</b> (each tile opens its app), and the activity feed stays at the bottom.</p>
+  </div>
+
+</div>
+
+<h2 class="part">2 · Other days <span class="tag">rest · missed · paused · training now</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="hero">
+          <div class="top"><span class="chip">Wed 30 Sep</span><span class="chip">🔥 5 weeks · ❄︎ 1</span></div>
+          <img src="buddy/adult.png" alt="">
+          <div class="info">
+            <div><span class="lv">Adult · Level 12</span><br><span class="md" style="color:#8CE09F">Fired up</span></div>
+            <div class="row2"><span>403 / 700 XP</span><span>Legend at Level 20</span></div>
+            <div class="bar"><i style="width:58%"></i></div>
+          </div>
+        </div>
+        <div class="train" style="background:var(--surface);border-color:var(--hair)">
+          <div class="k" style="color:var(--t2)"><span>Rest day</span><span></span></div>
+          <div class="n">Nothing planned today</div>
+          <div class="w" style="color:var(--t2)">Next: <b style="color:var(--ink)">Push Day</b> tomorrow 6:00 pm</div>
+          <div class="acts"><span class="btn sm ghost">Quick session</span><span style="font-size:11px;color:var(--t3)">extra sessions earn XP too</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Rest day.</b> Rest is part of the plan, so <b>no nagging and no streak warnings</b>. The card says what's next and offers a quick session for anyone who wants one.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="hero tired">
+          <div class="top"><span class="chip">Mon 12 Oct</span><span class="chip">🔥 9 weeks · ❄︎ 0</span></div>
+          <img src="buddy/legend-sleepy.png" alt="">
+          <div class="info">
+            <div><span class="lv">Legend · Level 21</span><br><span class="md" style="color:#e6c55c">Tired · Form 34%</span></div>
+            <div class="row2"><span>220 / 1,150 XP</span><span>Level 22 next</span></div>
+            <div class="bar"><i style="width:19%"></i></div>
+          </div>
+        </div>
+        <div class="note warm" style="background:rgba(255,150,69,.1);border:1px solid rgba(255,150,69,.35);border-radius:12px;padding:8px 10px;font-size:11.5px;color:#ffdcbf;margin-bottom:8px">Missed Thursday's Push Day. <b>One session today</b> gets your Form back up. Nothing is lost.</div>
+        <div class="train">
+          <div class="k"><span>Today · 6:00 pm</span><span class="xpchip">≈ +130 XP</span></div>
+          <div class="n">Push Day</div>
+          <div class="w">Planned Mon/Thu · about 45 min</div>
+          <div class="acts"><span class="btn sm">▶ Start</span><span class="btn sm ghost">Pause training…</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>After a miss.</b> The buddy is tired, never smaller, and the level stays. The note is kind, specific and says what fixes it. Alongside Start there's a way to <b>pause</b> (injury, travel), so the honest option is always right there.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="hero sleep">
+          <div class="top"><span class="chip">Paused · Injury</span><span class="chip">back Wed 14 Oct</span></div>
+          <img src="buddy/paused.png" alt="">
+          <div class="info">
+            <div><span class="lv">Legend · Level 21</span><br><span class="md" style="color:#9fb4ff">Resting</span></div>
+            <div class="row2"><span>Form and 🔥 9-week streak are held</span><span></span></div>
+          </div>
+        </div>
+        <div class="train" style="background:var(--surface);border-color:var(--hair)">
+          <div class="k" style="color:var(--t2)"><span>Paused</span><span></span></div>
+          <div class="n">Take care of yourself</div>
+          <div class="w" style="color:var(--t2)">Reminders are quiet until Wed 14 Oct. Training anyway still counts.</div>
+          <div class="acts"><span class="btn sm ghost">I'm back, end pause</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Paused</b> (P2). The buddy sleeps, the "Today" card turns into a calm pause card, and Form and streak are visibly <b>held</b>. Ending the pause early is one tap.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="hero">
+          <div class="top"><span class="chip"><span class="live">Training now</span></span><span class="chip">23 min</span></div>
+          <img src="buddy/adult.png" alt="">
+          <div class="info">
+            <div><span class="lv">Push Day</span><br><span class="md" style="color:#FFC36B">+73 XP so far</span></div>
+            <div class="row2"><span>4 sets logged · ♥ 138</span><span>Level 13 in 37 XP</span></div>
+            <div class="bar"><i style="width:84%"></i></div>
+          </div>
+        </div>
+        <div class="btn">Resume workout</div>
+        <div style="height:9px"></div>
+        <div class="card" style="padding:10px 12px"><div class="name" style="font-size:13.5px">This week</div>
+          <div class="weekx">
+            <div>M<b class="plan"><i style="height:78%"></i></b><span>187</span></div>
+            <div>T<b><i style="height:66%"></i></b><span>125</span></div>
+            <div>W<b></b><span>·</span></div>
+            <div class="today">T<b class="plan"><i style="height:30%"></i></b><span>+73</span></div>
+            <div>F<b></b><span></span></div><div>S<b class="plan"></b><span></span></div><div>S<b></b><span></span></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Mid-workout.</b> Leave the player and Home shows the workout <b>live</b>: time, sets, heart rate and the XP building up ("Level 13 in 37 XP" is a nice pull to finish). One tap resumes. This replaces the small live-workout banner.</p>
+  </div>
+
+</div>
+
+<h2 class="part">3 · Starting out &amp; not training <span class="tag">who sees what</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">7</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="bigtitle">Today</div>
+        <div class="card"><div class="name" style="font-size:13.5px">Up next</div>
+          <div class="row" style="padding:8px 0"><span class="l"><span class="ic" style="background:rgba(91,192,116,.2)">✓</span>Habits · 3 of 5 done</span><span class="v">›</span></div>
+          <div class="row" style="padding:8px 0"><span class="l"><span class="ic" style="background:rgba(88,155,242,.2)">€</span>Budget · €412 left</span><span class="v">›</span></div>
+          <div class="row" style="padding:8px 0;border:0"><span class="l"><span class="ic" style="background:rgba(255,106,92,.2)">◷</span>Focus · 2 sessions today</span><span class="v">›</span></div>
+        </div>
+        <div class="card"><div class="name" style="font-size:13.5px">This week</div><div class="s">Habits 82% · Focus 4 h 10 min</div>
+          <div class="spark" style="height:60px"><svg viewBox="0 0 280 60" preserveAspectRatio="none"><polyline points="5,50 50,40 95,44 140,30 185,26 230,20 275,14" fill="none" stroke="#5BC074" stroke-width="2.5"/></svg></div></div>
+        <div class="glbl">Activity</div>
+        <div class="group" style="padding:0 12px">
+          <div class="feedrow"><span class="ic" style="background:rgba(91,192,116,.2)">✓</span><span style="flex:1">Habit: Read</span><span style="color:var(--t3)">8:10</span></div>
+          <div class="feedrow"><span class="ic" style="background:rgba(255,106,92,.2)">◷</span><span style="flex:1">Focus · 25 min</span><span style="color:var(--t3)">7:30</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Someone who doesn't train</b> (no XP yet) keeps <b>today's Home, unchanged</b>: habits, budget and focus first. No egg is pushed at them. The buddy appears the first time a workout earns XP (frame 8).</p>
+  </div>
+
+  <div class="step"><div class="stepnum">8</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="hero">
+          <div class="top"><span class="chip">Meet your training buddy</span><span></span></div>
+          <img src="buddy/egg.png" alt="">
+          <div class="info">
+            <div class="lv" style="font-size:16px">Your 34 sessions already count</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.7);margin:3px 0 8px">It hatches straight to <b style="color:#fff">Level 12 · Adult</b></div>
+            <div class="btn">Hatch</div>
+          </div>
+        </div>
+        <div class="train">
+          <div class="k"><span>Today · 6:00 pm</span><span class="xpchip">≈ +130 XP</span></div>
+          <div class="n">Push Day</div>
+          <div class="acts"><span class="btn sm">▶ Start</span></div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>First meeting, in the hero.</b> The egg <b>is</b> the hero until it hatches, using the P1 hatch flow (it grows through each stage to the level your history earned). After that, frame 1. Picking a style comes with P2's buddy screen.</p>
+  </div>
+
+</div>
+
+<h2 class="part">4 · What moves where</h2>
+<table class="cmp map">
+  <tr><th>Today's Home</th><th>Redesigned Home (people who train)</th></tr>
+  <tr><td>"Today" large title</td><td>Replaced by the hero. Date and streak chips sit on the buddy.</td></tr>
+  <tr><td>Buddy card (P1)</td><td>Grows into the <b>hero</b>, live 3D.</td></tr>
+  <tr><td>Up next (per-app cards)</td><td>Training → <b>Today's training</b> card with XP. Other apps → the <b>compact 2×2 grid</b>.</td></tr>
+  <tr><td>Live-workout banner</td><td>The hero itself shows the live workout (frame 6).</td></tr>
+  <tr><td>Week chart</td><td><b>This week</b>: XP per day with planned days outlined.</td></tr>
+  <tr><td>(nothing)</td><td><b>Recent wins</b> + <b>Coming up</b> (new).</td></tr>
+  <tr><td>Activity feed</td><td>Unchanged, at the bottom; workout rows show their XP.</td></tr>
+</table>
+
+<h2 class="part">Your calls</h2>
+<div class="q"><b>Q1 · Hero.</b> <b>A</b> live 3D, about 40% of the first screen (as drawn) · <b>B</b> a smaller strip with a still image. <span class="rec">My pick: A</span>. It runs at a calm frame rate when idle, pauses when scrolled away, and stays still with Reduce Motion.</div>
+<div class="q"><b>Q2 · Other apps.</b> <b>A</b> the compact 2×2 grid (frame 2) · <b>B</b> keep today's full per-app cards below training. <span class="rec">My pick: A.</span> Each tile opens its app, and an app you don't use doesn't get a tile.</div>
+<div class="q"><b>Q3 · Who gets the new Home.</b> Anyone with at least one XP-earning session; everyone else keeps today's Home (frame 7). <span class="rec">My pick: as drawn.</span></div>
+<div class="q"><b>Q4 · Mid-workout hero</b> (frame 6) instead of the small banner: <span class="rec">My pick: yes.</span> It also shows XP building up live.</div>
+<div class="q"><b>Q5 · Build order.</b> This lands after <b>P2</b> (buddy screen, pause, freezes), because frames 4–5 need pause and the hero opens the buddy screen. P2, then this Home as its own PR, then P3 moments, then P4 widgets. <span class="rec">My pick: as listed.</span></div>
+</div>
+</body>
+</html>
