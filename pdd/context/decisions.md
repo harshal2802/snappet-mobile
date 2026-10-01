@@ -9455,3 +9455,16 @@ Non-obvious calls:
 - "% of max" is a field on the protocol, the max lives on the device (per hand); UI-test launches use a
   scratch defaults suite so a test can never overwrite a real max (the prompt-133 rule).
 - The Tindeq's own usage terms still need checking before its name appears in a public release.
+
+## 2026-09-30 — session history is derived, not stored; no XP until the progression initiative (prompt 146)
+
+- Insights (changes, badges, milestones, trend) are computed from existing sessions by the pure
+  `SessionInsights` — no new model fields, no migration, nothing to backfill, and old sessions get them
+  for free. Badges are recomputed per view, so editing a set re-judges its records honestly.
+- A quick session's "series" is same name + same workout type (no routine id to join on).
+- Records are judged against **all** earlier history (a bench PR is a PR whatever routine it was in);
+  changes and milestones are judged against the series.
+- XP, levels and the character are deliberately out: the user chose a permanent level + a Form stat,
+  pause mode and streak freezes over losing XP, and that needs its own design. The header is where it'll go.
+- Typed weights display exactly (67.5, 41.25) when entered in the display unit; cross-unit conversions
+  keep the whole-number rounding.

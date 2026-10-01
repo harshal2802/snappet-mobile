@@ -13,6 +13,14 @@ final class SetMeasureDisplaySummaryTests: XCTestCase {
         XCTAssertEqual(SetMeasure.displaySummary(set, discipline: .strength, kind: .repsWeight, unit: .kg, distanceUnit: .km), expected)
     }
 
+    func testStrengthShowsTypedFractionalWeight() {
+        // Prompt 146: 67.5 kg was rounded to "68 kg" on the session detail; same unit shows what was typed.
+        let set = SetLog(actualReps: 6, actualWeight: 67.5, weightUnit: .kg, completedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(SetMeasure.displaySummary(set, discipline: .strength, kind: .repsWeight, unit: .kg, distanceUnit: .km), "67.5 kg × 6")
+        let micro = SetLog(actualReps: 3, actualWeight: 41.25, weightUnit: .kg, completedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(SetMeasure.displaySummary(micro, discipline: .strength, kind: .repsWeight, unit: .kg, distanceUnit: .km), "41.25 kg × 3")
+    }
+
     func testStrengthCrossUnitConversion() {
         // A set stored in kg, displayed in lb, converts (the detail view's WYSIWYG behavior).
         let set = SetLog(actualReps: 5, actualWeight: 60, weightUnit: .kg, completedAt: Date(timeIntervalSince1970: 0))

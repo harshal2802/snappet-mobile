@@ -50,5 +50,6 @@ enum SpotlightIndexer {
         return args.contains("-uiTestFreshStore")
             || args.contains("-uiTestCorruptStore")
             || args.contains("-uiTestSeedStudioDemo")
+            || args.contains("-uiTestSeedRoutineHistory")
     }
 }

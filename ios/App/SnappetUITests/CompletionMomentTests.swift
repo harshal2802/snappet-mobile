@@ -95,12 +95,14 @@ final class CompletionMomentTests: XCTestCase {
         let viewDetail = app.buttons["freeform.viewDetail"]
         XCTAssertTrue(viewDetail.waitForExistence(timeout: 6), "the summary's View detail button should appear")
         viewDetail.tap()
-        XCTAssertTrue(app.navigationBars["Session"].waitForExistence(timeout: 6),
+        // The detail is titled with the session's name (prompt 146), so find it by its insights header.
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "insights.subtitle").firstMatch
+                        .waitForExistence(timeout: 6),
                       "View detail should push the session detail")
-        // The type-adaptive recap hero for a strength session shows Volume / Sets / PRs cells.
-        XCTAssertTrue(app.staticTexts["Volume"].waitForExistence(timeout: 4)
-            || app.staticTexts["Sets"].waitForExistence(timeout: 2),
-            "the session detail should render the type-adaptive recap hero")
+        // The insights hero for a strength session: volume / top set / sets, each vs last time.
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "insights.stat.0").firstMatch
+                        .waitForExistence(timeout: 4),
+            "the session detail should render the insights hero")
     }
 
     /// All-axis edit follow-up: the session detail's Edit mode still works end-to-end after the
@@ -114,7 +116,8 @@ final class CompletionMomentTests: XCTestCase {
         let viewDetail = app.buttons["freeform.viewDetail"]
         XCTAssertTrue(viewDetail.waitForExistence(timeout: 6))
         viewDetail.tap()
-        XCTAssertTrue(app.navigationBars["Session"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "insights.subtitle").firstMatch
+                        .waitForExistence(timeout: 6))
 
         let edit = app.buttons["session.editSets"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5), "a completed set makes the Edit button appear")
