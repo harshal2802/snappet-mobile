@@ -223,4 +223,44 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         snap("runner-one-hand-load")
         app.buttons["intervalRunner.stop"].tap()
     }
+
+    /// Prompt 143: adjust the load mid-run from its chip (the clock keeps going), and the end card asks
+    /// keep-or-once, listing what changed.
+    func testAdjustLoadMidRunThenChooseJustThisOnce() {
+        openFreeformPlayer()
+        openTimedPickSheet()
+        app.buttons["timed.createNew"].tap()
+        let preset = app.buttons["timed.create.preset.maxhangs"]
+        XCTAssertTrue(preset.waitForExistence(timeout: 5))
+        preset.tap()
+        app.buttons["timed.create.add"].tap()
+        XCTAssertTrue(app.staticTexts["freeform.timedName"].waitForExistence(timeout: 5)
+            || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2))
+        tapAddSetForLastExercise()
+
+        let loadChip = app.buttons["intervalRunner.adjust.load"]
+        XCTAssertTrue(loadChip.waitForExistence(timeout: 6), "the runner offers a load chip")
+        loadChip.tap()
+        let added = app.buttons["+ Added"]
+        XCTAssertTrue(added.waitForExistence(timeout: 4), "Adjust shows the load control")
+        added.tap()
+        app.buttons["protocol.load.plus"].tap()
+        app.buttons["protocol.load.plus"].tap()   // 5 kg
+        snap("adjust-sheet")
+        app.buttons["adjust.done"].tap()
+
+        let load = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '+5 kg'")).firstMatch
+        XCTAssertTrue(load.waitForExistence(timeout: 4), "the new load shows on the runner")
+        snap("runner-after-adjust")
+
+        app.buttons["intervalRunner.stop"].tap()
+        let changes = app.otherElements["intervalRunner.changes"]
+        let changeLine = app.staticTexts["Load: bodyweight → +5 kg"]
+        XCTAssertTrue(changeLine.waitForExistence(timeout: 4) || changes.exists, "the end card lists the change")
+        XCTAssertTrue(app.buttons["intervalRunner.keep"].exists, "Keep for next time is offered")
+        snap("end-card-keep-or-once")
+        app.buttons["intervalRunner.justOnce"].tap()
+        let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '+5 kg'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the logged run records the load it finished on")
+    }
 }

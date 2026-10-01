@@ -121,3 +121,54 @@ enum ProtocolCopies {
         return blocks.indices.filter { blocks[$0].exerciseId == key && blocks[$0].timedSpec == oldSpec }
     }
 }
+
+/// What changed between two versions of a protocol, in words — the end-of-run "You changed" list
+/// (prompt 143, wireframe frame 6). Pure → tested.
+enum ProtocolChanges {
+    static func lines(from old: TimedExerciseSpec, to new: TimedExerciseSpec) -> [String] {
+        var out: [String] = []
+        func loadWord(_ l: HangLoad?) -> String { l.map(TimedExerciseSpec.loadText) ?? "bodyweight" }
+        if old.load != new.load { out.append("Load: \(loadWord(old.load)) → \(loadWord(new.load))") }
+        if old.reps != new.reps { out.append("Reps per set: \(old.reps) → \(new.reps)") }
+        if old.restSec != new.restSec {
+            out.append("Rest between reps: \(TimedExerciseSpec.spoken(old.restSec)) → \(TimedExerciseSpec.spoken(new.restSec))")
+        }
+        if old.restBetweenSetsSec != new.restBetweenSetsSec {
+            out.append("Rest between sets: \(TimedExerciseSpec.spoken(old.restBetweenSetsSec)) → \(TimedExerciseSpec.spoken(new.restBetweenSetsSec))")
+        }
+        if old.handMode != new.handMode {
+            out.append("Hands: \(old.handMode?.label ?? "both") → \(new.handMode?.label ?? "both")")
+        }
+        return out
+    }
+}
+
+/// Where "Keep for next time" saves an adjusted protocol (prompt 143): this routine's block, else your saved
+/// preset the exercise came from, else just the rest of this session. Pure → tested; the note is what the
+/// end card tells the user so the save is never a surprise.
+enum ProtocolKeepTarget: Equatable {
+    case routine(routineName: String, exerciseName: String)
+    case preset(name: String)
+    case session
+
+    static func resolve(routineName: String?, routineHasBlock: Bool, presetID: UUID?,
+                        exerciseName: String) -> ProtocolKeepTarget {
+        if let routineName, routineHasBlock { return .routine(routineName: routineName, exerciseName: exerciseName) }
+        if presetID != nil { return .preset(name: exerciseName) }
+        return .session
+    }
+
+    /// The saved preset a timed exercise came from (`timed:<uuid>` ids), if any.
+    static func presetID(fromExerciseId id: String) -> UUID? {
+        guard id.hasPrefix("timed:") else { return nil }
+        return UUID(uuidString: String(id.dropFirst("timed:".count)))
+    }
+
+    var note: String {
+        switch self {
+        case .routine(let r, let e): return "Updates \(e) in your \(r) routine. Your presets stay as they were."
+        case .preset(let n): return "Updates your saved \(n) preset."
+        case .session: return "Keeps it for the rest of this workout."
+        }
+    }
+}

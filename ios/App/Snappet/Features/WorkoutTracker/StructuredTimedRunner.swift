@@ -25,6 +25,11 @@ struct StructuredTimedRunner: View {
     /// Commit funnel: a `SetLog` with the captured time-under-tension (+ rep/set counts in the log row via
     /// the duration; HR is for the capture card display only). Mirrors the timed `appendLog` path.
     let onLog: (_ setLog: SetLog) -> Void
+    /// "Keep for next time" after a mid-run adjustment (prompt 143) — the host saves the adjusted protocol
+    /// (this routine's block / the saved preset / the session). nil = nothing to keep it to.
+    var onKeep: ((TimedExerciseSpec) -> Void)? = nil
+    /// Where Keep saves to, in words ("Updates this routine's Max hangs").
+    var keepNote: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -32,14 +37,19 @@ struct StructuredTimedRunner: View {
     @Environment(AppModel.self) private var app
 
     @State private var vm: RunnerViewModel
+    @State private var adjusting = false
+    @State private var adjustDraft = ProtocolDraft(spec: .maxHangs)
     /// Cue style — sound + haptic / haptic only / silent. Persisted across launches so a gym preference sticks.
     @AppStorage("structuredRunner.cueMode") private var cueModeRaw = CueMode.both.rawValue
 
-    init(exerciseName: String, spec: TimedExerciseSpec,
+    init(exerciseName: String, spec: TimedExerciseSpec, keepNote: String? = nil,
+         onKeep: ((TimedExerciseSpec) -> Void)? = nil,
          onLog: @escaping (_ setLog: SetLog) -> Void) {
         self.exerciseName = exerciseName
         self.spec = spec
         self.onLog = onLog
+        self.onKeep = onKeep
+        self.keepNote = keepNote
         _vm = State(initialValue: RunnerViewModel(spec: spec))
     }
 
@@ -183,6 +193,8 @@ struct StructuredTimedRunner: View {
                     .font(.headline.weight(.bold)).foregroundStyle(.white.opacity(0.85))
                     .accessibilityIdentifier("intervalRunner.nextHand")
             }
+            // What you can change mid-run (prompt 143, wireframe frame 3): each chip opens Adjust.
+            if vm.spec.mode == .repeaters || vm.spec.mode == .tabata { adjustChips }
             // Next-phase preview chip.
             if let next = vm.state.phase.nextLabel {
                 Label("next ▸ \(next)", systemImage: "arrow.forward")
@@ -231,6 +243,65 @@ struct StructuredTimedRunner: View {
             Text("Tap when the rep is finished")
                 .font(.footnote).foregroundStyle(.white.opacity(0.7))
         }
+    }
+
+    private var adjustChips: some View {
+        let s = vm.spec
+        return HStack(spacing: 8) {
+            adjustChip("scalemass", s.load.map(TimedExerciseSpec.loadText) ?? "Bodyweight", id: "intervalRunner.adjust.load")
+            if s.effectiveRepsPerSet > 1 {
+                adjustChip("timer", "Rest \(SetMeasure.formatDuration(Double(s.restSec)))", id: "intervalRunner.adjust.rest")
+            }
+            adjustChip("repeat", "\(s.reps) reps", id: "intervalRunner.adjust.reps")
+            if let hands = s.handMode {
+                adjustChip("hand.raised", hands == .leftOnly ? "Left" : hands == .rightOnly ? "Right" : "L / R",
+                           id: "intervalRunner.adjust.hands")
+            }
+        }
+        .sheet(isPresented: $adjusting) { adjustSheet }
+    }
+
+    private func adjustChip(_ symbol: String, _ text: String, id: String) -> some View {
+        Button {
+            adjustDraft = ProtocolDraft(spec: vm.spec)
+            adjusting = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: symbol)
+                Text(text).lineLimit(1)
+                Image(systemName: "pencil").font(.caption2).opacity(0.6)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(.white.opacity(0.14), in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.2)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityHint("Adjust this run")
+    }
+
+    /// Adjust mid-run (wireframe frame 4, option R1): the clock keeps running underneath; changes apply
+    /// from the next phase and nothing is saved to the protocol until the end-of-run choice.
+    private var adjustSheet: some View {
+        NavigationStack {
+            Form { ProtocolEditorSections(draft: $adjustDraft, adjustOnly: true) }
+                .navigationTitle("Adjust")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { adjusting = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            vm.adjust(to: adjustDraft.spec)
+                            adjusting = false
+                            Haptics.tap()
+                        }
+                        .accessibilityIdentifier("adjust.done")
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     /// "Load  +10 kg · 80 kg total" (total only when bodyweight is known).
@@ -372,18 +443,22 @@ struct StructuredTimedRunner: View {
             .padding(16)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-            Button {
-                onLog(vm.buildSetLog())
-                dismiss()
-            } label: {
-                Label("Log set", systemImage: "checkmark.circle.fill")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 60)
-                    .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            if vm.hasChanges {
+                keepOrOnce
+            } else {
+                Button {
+                    onLog(vm.buildSetLog())
+                    dismiss()
+                } label: {
+                    Label("Log set", systemImage: "checkmark.circle.fill")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                        .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("intervalRunner.logSet")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("intervalRunner.logSet")
 
             Button {
                 dismiss()
@@ -395,6 +470,51 @@ struct StructuredTimedRunner: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("intervalRunner.discard")
+        }
+    }
+
+    /// Changed something mid-run (prompt 143, wireframe frame 6): one explicit choice. Either way the run
+    /// is logged; "Keep" also saves the adjusted protocol for next time, "Just this once" doesn't.
+    @ViewBuilder private var keepOrOnce: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("YOU CHANGED").font(.caption.weight(.heavy)).tracking(1).foregroundStyle(.white.opacity(0.6))
+            ForEach(ProtocolChanges.lines(from: vm.originalSpec, to: vm.spec), id: \.self) { line in
+                Text(line).font(.subheadline).foregroundStyle(.white)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityIdentifier("intervalRunner.changes")
+
+        if let onKeep {
+            Button {
+                onKeep(vm.spec)
+                onLog(vm.buildSetLog())
+                dismiss()
+            } label: {
+                Text("Keep for next time")
+                    .font(.title3.weight(.bold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .background(SnappetColor.workout, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("intervalRunner.keep")
+        }
+        Button {
+            onLog(vm.buildSetLog())
+            dismiss()
+        } label: {
+            Text(onKeep == nil ? "Log set" : "Just this once")
+                .font(.headline).foregroundStyle(onKeep == nil ? .white : SnappetColor.workout)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(onKeep == nil ? AnyShapeStyle(SnappetColor.workout) : AnyShapeStyle(.white.opacity(0.12)),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(onKeep == nil ? "intervalRunner.logSet" : "intervalRunner.justOnce")
+        if let keepNote, onKeep != nil {
+            Text(keepNote).font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center)
         }
     }
 
@@ -464,11 +584,28 @@ struct StructuredTimedRunner: View {
 /// per-phase + final-3s cues on the transitions, and accumulates HR samples for the capture card.
 @MainActor @Observable
 final class RunnerViewModel {
-    let schedule: IntervalSchedule
+    /// The timeline being run — rebuilt when the protocol is adjusted mid-run (prompt 143).
+    private(set) var schedule: IntervalSchedule
+    /// The protocol as it started, to tell whether anything was changed during the run.
+    let originalSpec: TimedExerciseSpec
+    /// The protocol as it is now (after any mid-run adjustments).
+    var spec: TimedExerciseSpec { schedule.spec }
+    var hasChanges: Bool { spec != originalSpec }
+
+    /// Work completed before the last adjustment, banked so the rebuilt timeline can't re-count or lose it.
+    private var bankedTUT: TimeInterval = 0
+    private var bankedReps = 0
+    private var bankedSets = 0
+    /// Phases starting before this schedule time were completed under an earlier version of the protocol.
+    private var countFrom: Double = 0
+    /// Maps banked open-rep durations onto the rebuilt timeline's open phases.
+    private var openCompletedAdjust = 0
+    /// Load at each adjustment, for the end card ("+10 kg → +12.5 kg from set 2").
+    private(set) var loadChanges: [(setIndex: Int, load: HangLoad?)] = []
 
     private(set) var startedAt: Date?
     private(set) var accumulated: TimeInterval = 0
-    private(set) var now: Date = .now
+    private(set) var now: Date = Date()
     private(set) var isPaused = false
     private(set) var isFinished = false
 
@@ -497,8 +634,40 @@ final class RunnerViewModel {
         var finishedEarly: Bool
     }
 
-    init(spec: TimedExerciseSpec) {
+    /// The wall clock — injectable so the run's time accounting is unit-tested without sleeping.
+    private let clock: () -> Date
+
+    init(spec: TimedExerciseSpec, clock: @escaping () -> Date = { Date() }) {
         self.schedule = IntervalSchedule(spec: spec)
+        self.originalSpec = spec
+        self.clock = clock
+    }
+
+    /// Apply a mid-run edit (load / rest / reps / hands). It takes effect from the next phase; the phase in
+    /// progress keeps its remaining time, completed work is banked, and nothing already done is repeated.
+    func adjust(to newSpec: TimedExerciseSpec) {
+        guard !isFinished, newSpec != spec else { return }
+        now = clock()
+        let current = state
+        // Bank only FULLY completed work: the phase in progress continues in the rebuilt timeline and is
+        // counted there once (banking its partial time too double-counted it).
+        let done = completedWork(includePartial: false)
+        bankedTUT += done.tut
+        bankedReps += done.reps
+        bankedSets = max(bankedSets, done.sets)
+        if newSpec.load != spec.load { loadChanges.append((max(1, current.setIndex), newSpec.load)) }
+
+        let newSchedule = IntervalSchedule(spec: newSpec)
+        let map = schedule.remap(current: current, to: newSchedule)
+        let openRunning = openRepElapsed
+        schedule = newSchedule
+        countFrom = map.countFrom
+        openCompletedAdjust = map.openRepsBefore - openRepDurations.count
+        // Re-anchor wall time so schedule time == the remapped point (open-rep time stays banked on top).
+        accumulated = map.scheduleElapsed + openBanked + (openRunning ?? 0)
+        startedAt = isPaused ? nil : clock()
+        if let openRunning { openRepStartedAt = accumulated - openRunning }
+        lastPhaseID = state.phase.id   // same phase continues — no transition cue
     }
 
     /// Elapsed seconds since the anchor (banked + running segment), floored at 0.
@@ -526,7 +695,7 @@ final class RunnerViewModel {
 
     /// The live timeline read.
     var state: IntervalSchedule.State {
-        schedule.state(at: scheduleElapsed, completedOpenReps: openRepDurations.count)
+        schedule.state(at: scheduleElapsed, completedOpenReps: openRepDurations.count + openCompletedAdjust)
     }
 
     /// DONE on a tap-done rep: bank its time and move on to what follows.
@@ -535,7 +704,7 @@ final class RunnerViewModel {
         openRepDurations.append(rep)
         openRepStartedAt = nil
         lastPhaseID = nil   // let the next tick fire the transition cue
-        now = .now
+        now = clock()
         tickEffects()
     }
 
@@ -543,8 +712,8 @@ final class RunnerViewModel {
 
     func start() {
         guard startedAt == nil, !isFinished else { return }
-        startedAt = .now
-        now = .now
+        startedAt = clock()
+        now = clock()
         // Prime so the first work-start cue fires when we leave the lead-in (not on appear).
         lastPhaseID = state.phase.id
         runTicker()
@@ -554,18 +723,18 @@ final class RunnerViewModel {
         guard !isFinished else { return }
         if isPaused {
             // Resume.
-            startedAt = .now
-            now = .now
+            startedAt = clock()
+            now = clock()
             isPaused = false
             runTicker()
         } else {
             // Pause: fold the running segment into accumulated.
             if let s = startedAt {
-                accumulated = max(0, accumulated + Date.now.timeIntervalSince(s))
+                accumulated = max(0, accumulated + clock().timeIntervalSince(s))
             }
             startedAt = nil
             isPaused = true
-            now = .now
+            now = clock()
             endTicking()
         }
     }
@@ -586,14 +755,17 @@ final class RunnerViewModel {
             boundary += Double(phase.durationSec)
             if e < boundary { break }
         }
-        if boundary >= Double(schedule.totalSeconds) {
+        // Past the last timed phase is only the end if no tap-done rep is still waiting there.
+        let completedOpen = openRepDurations.count + openCompletedAdjust
+        if boundary >= Double(schedule.totalSeconds),
+           schedule.state(at: boundary, completedOpenReps: completedOpen).isDone {
             finish(early: false)
             return
         }
         // Move the anchor so schedule time == boundary (open-rep time stays banked on top).
         accumulated = boundary + openBanked
-        startedAt = isPaused ? nil : .now
-        now = .now
+        startedAt = isPaused ? nil : clock()
+        now = clock()
         // Let the next tick fire the transition cue.
         lastPhaseID = nil
     }
@@ -605,7 +777,7 @@ final class RunnerViewModel {
 
     func syncToWallClock() {
         guard !isPaused, !isFinished, startedAt != nil else { return }
-        now = .now
+        now = clock()
         tickEffects()
     }
 
@@ -620,7 +792,7 @@ final class RunnerViewModel {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard let self, !Task.isCancelled else { return }
-                self.now = .now
+                self.now = self.clock()
                 self.tickEffects()
             }
         }
@@ -679,10 +851,10 @@ final class RunnerViewModel {
         guard !isFinished else { return }
         // Bank the final elapsed so `capture` reads a stable value.
         if let s = startedAt {
-            accumulated = max(0, accumulated + Date.now.timeIntervalSince(s))
+            accumulated = max(0, accumulated + clock().timeIntervalSince(s))
             startedAt = nil
         }
-        now = .now
+        now = clock()
         isFinished = true
         endTicking()
         capturedFinishedEarly = early
@@ -693,37 +865,40 @@ final class RunnerViewModel {
 
     // MARK: - Capture
 
-    /// The pre-filled capture: time-under-tension (completed work seconds), completed reps·sets, avg/peak HR.
-    var capture: Capture {
+    /// Timed work completed on the CURRENT timeline since the last adjustment (phases starting at or after
+    /// `countFrom`), including a partial work phase when stopped mid-hang. Open reps are counted separately.
+    private func completedWork(includePartial: Bool = true) -> (tut: TimeInterval, reps: Int, sets: Int) {
         let e = scheduleElapsed
-        var tut = 0.0
-        var completedReps = 0
-        var completedSets = 0
-        // Tap-done reps: their real durations, plus an unfinished one if stopped mid-rep.
-        var openIndex = 0
-        for phase in schedule.phases where phase.isOpenEnded {
-            if openIndex < openRepDurations.count {
-                tut += openRepDurations[openIndex]
-                completedReps += 1
-                completedSets = max(completedSets, phase.setIndex)
-            }
-            openIndex += 1
-        }
-        tut += openRepElapsed ?? 0
+        var tut = 0.0, reps = 0, sets = 0
         var startOfPhase = 0.0
         for phase in schedule.phases where phase.durationSec > 0 {
             let end = startOfPhase + Double(phase.durationSec)
-            if phase.kind == .work {
+            if phase.kind == .work, startOfPhase >= countFrom {
                 if e >= end {
-                    tut += Double(phase.durationSec)   // fully completed work
-                    completedReps += 1
-                    completedSets = max(completedSets, phase.setIndex)
-                } else if e > startOfPhase {
-                    tut += e - startOfPhase              // partial (when stopped mid-work)
+                    tut += Double(phase.durationSec)
+                    reps += 1
+                    sets = max(sets, phase.setIndex)
+                } else if includePartial, e > startOfPhase {
+                    tut += e - startOfPhase
                 }
             }
             startOfPhase = end
         }
+        return (tut, reps, sets)
+    }
+
+    /// The pre-filled capture: time-under-tension (completed work seconds), completed reps·sets, avg/peak HR.
+    var capture: Capture {
+        let work = completedWork()
+        var tut = bankedTUT + work.tut
+        var completedReps = bankedReps + work.reps
+        var completedSets = max(bankedSets, work.sets)
+        // Tap-done reps: their real durations, plus an unfinished one if stopped mid-rep.
+        tut += openRepDurations.reduce(0, +) + (openRepElapsed ?? 0)
+        completedReps += openRepDurations.count
+        let openPhases = schedule.phases.filter(\.isOpenEnded)
+        let doneOpen = min(openPhases.count, openRepDurations.count + openCompletedAdjust)
+        if doneOpen > 0 { completedSets = max(completedSets, openPhases[doneOpen - 1].setIndex) }
         let avg = hrCount > 0 ? Int((hrSum / Double(hrCount)).rounded()) : nil
         let peak = hrPeak > 0 ? Int(hrPeak.rounded()) : nil
         return Capture(tut: tut, completedReps: completedReps, completedSets: max(completedSets, 0),
@@ -733,8 +908,9 @@ final class RunnerViewModel {
     /// Build the `SetLog` to commit — the time-under-tension as the duration (the timed-set contract).
     func buildSetLog() -> SetLog {
         var log = SetLog(durationSec: capture.tut > 0 ? capture.tut : nil)
-        log.loadKg = schedule.spec.load?.signedKg
-        log.handModeRaw = schedule.spec.handMode?.rawValue
+        // The load / hands in effect at the end (an adjusted run records what it finished on).
+        log.loadKg = spec.load?.signedKg
+        log.handModeRaw = spec.handMode?.rawValue
         return log
     }
 }

@@ -9425,3 +9425,12 @@ Non-obvious calls:
 - **Reps are per hand** for two-sided modes, and the schedule itself is expanded (L R L R… / L…R…), so
   the runner, totals and counters need no one-hand special cases beyond the label.
 - Load/hands are offered only where the protocol runner logs them — never a setting that silently drops.
+
+## 2026-09-30 — mid-run adjust remaps the timeline; only completed work is banked (prompt 143)
+
+- An adjustment rebuilds the schedule and re-anchors wall time to the matching point (`remap`): the
+  phase in progress keeps its remaining time, so an edit never changes the rest you're already in.
+- **Bank only completed work** at an adjustment; the in-progress phase is counted once on the rebuilt
+  timeline. The first version banked the partial hang too and double-counted it (the UI-test screenshot
+  showed 0:07 TUT for a hang stopped at ~4 s); `RunnerViewModelTests` now pins it with a fake clock.
+- "Keep" is an explicit end-of-run choice with a stated destination (routine block › preset › session).
