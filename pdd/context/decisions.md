@@ -9434,3 +9434,13 @@ Non-obvious calls:
   timeline. The first version banked the partial hang too and double-counted it (the UI-test screenshot
   showed 0:07 TUT for a hang stopped at ~4 s); `RunnerViewModelTests` now pins it with a fake clock.
 - "Keep" is an explicit end-of-run choice with a stated destination (routine block › preset › session).
+
+## 2026-09-30 — several sessions a day are slots; sessions match their nearest slot (prompt 144)
+
+- A day with several sessions is a list of **slots**; a logged session counts for the nearest one. No
+  "which session is this" bookkeeping is stored — it's derived, so editing the times re-derives cleanly.
+- iOS's 64-pending cap is handled by planning the soonest reminders per routine and **saying so** in the
+  editor ("schedules the next N hours… tops up when you open the app"), instead of silently dropping.
+  Nudges are disabled under an hour apart; "first of the day" is offered for dense schedules.
+- Back-compat: new keys only, and `t` = the first slot, so older builds and QR readers degrade to a
+  once-a-day schedule at the first time rather than failing.

@@ -47,6 +47,16 @@ enum HabitRoutineLink {
     static func markDone(routine: Routine, day: Date, in context: ModelContext, core: SnappetCore?) {
         guard let habit = linkedHabit(for: routine, in: context) else { return }
         let start = Calendar.current.startOfDay(for: day)
+        // Several sessions a day (prompt 144): the day counts once enough of them are done.
+        let needed = routine.schedule?.sessionsForDayDone ?? 1
+        if needed > 1 {
+            let rid = routine.id
+            let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
+            let done = ((try? context.fetch(FetchDescriptor<WorkoutSession>(
+                predicate: #Predicate { $0.routineID == rid && $0.startedAt >= start && $0.startedAt < end }))) ?? [])
+                .filter { $0.completedAt != nil }.count
+            guard done >= needed else { return }
+        }
         let habitID = habit.id
         let existing = (try? context.fetch(FetchDescriptor<HabitCompletion>(
             predicate: #Predicate { $0.habitID == habitID && $0.day == start }))) ?? []

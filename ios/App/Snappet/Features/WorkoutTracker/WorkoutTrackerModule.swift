@@ -430,6 +430,10 @@ struct WorkoutHomeView: View {
                                 skip: { id, day in
                                     RoutineScheduleSync.skip(routineID: id, day: day, context: context,
                                                              reminders: app.routineReminders)
+                                },
+                                skipSlot: { id, slot in
+                                    RoutineScheduleSync.skipSlot(routineID: id, slot: slot, context: context,
+                                                                 reminders: app.routineReminders)
                                 })
         case .history:
             HistorySectionView(history: history, resolver: resolver, unit: unit,

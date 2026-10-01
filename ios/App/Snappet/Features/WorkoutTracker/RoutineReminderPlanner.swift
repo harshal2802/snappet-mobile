@@ -13,6 +13,21 @@ struct ScheduledRoutineInput: Sendable {
     var doneDays: Set<DayKey>
     /// Completed sessions since the schedule's start day — drives `ScheduleEnd.afterSessions`.
     var completedSessions: Int
+    /// When each recent session of this routine started — matched to the nearest slot on a day with
+    /// several sessions (prompt 144). Unused for once-a-day schedules (`doneDays` decides those).
+    var sessionStarts: [Date] = []
+
+    /// The slot indices of `day` that have a session (each session counts for its nearest slot).
+    func doneSlots(on day: DayKey, starts slotStarts: [Date], calendar: Calendar = .current) -> Set<Int> {
+        guard schedule.isMultiSlot else { return doneDays.contains(day) ? Set(slotStarts.indices) : [] }
+        var done = Set<Int>()
+        for s in sessionStarts where DayKey(s, calendar: calendar) == day {
+            if let i = slotStarts.indices.min(by: { abs(slotStarts[$0].timeIntervalSince(s)) < abs(slotStarts[$1].timeIntervalSince(s)) }) {
+                done.insert(i)
+            }
+        }
+        return done
+    }
 }
 
 /// One local notification the planner wants pending.
@@ -32,8 +47,18 @@ struct PlannedRoutineNotification: Hashable, Sendable {
     /// Every routine-schedule notification id starts with this, so a re-plan can clear exactly its own.
     static let idPrefix = "snappet.routine."
 
-    static func makeID(routineID: UUID, day: DayKey, kind: Kind) -> String {
-        "\(idPrefix)\(routineID.uuidString).\(day.value).\(kind.rawValue)"
+    /// Slot 0 keeps the original id shape; later slots append their index (the parser only reads the
+    /// routine and day, so both shapes route the same).
+    static func makeID(routineID: UUID, day: DayKey, kind: Kind, slot: Int = 0) -> String {
+        let base = "\(idPrefix)\(routineID.uuidString).\(day.value).\(kind.rawValue)"
+        return slot == 0 ? base : "\(base).\(slot)"
+    }
+
+    /// The slot index in an id (0 when absent).
+    static func slot(of id: String) -> Int {
+        guard id.hasPrefix(idPrefix) else { return 0 }
+        let parts = id.dropFirst(idPrefix.count).split(separator: ".")
+        return parts.count >= 4 ? Int(parts[3]) ?? 0 : 0
     }
 
     /// `(routineID, day)` back out of an id — how a tapped notification finds its routine and day.
@@ -70,29 +95,43 @@ enum RoutineReminderPlanner {
                 return nil
             }()
 
-            for day in s.days(from: today, through: through, calendar: calendar) {
+            let multi = s.isMultiSlot
+            // Nudges would flood the Lock Screen when sessions are under an hour apart (wireframe frame 8).
+            let nudgeAllowed = !multi || (s.daily?.minimumGapMinutes ?? 0) >= 60
+            var doneByDay: [DayKey: Set<Int>] = [:]
+            let countBefore = out.count
+            for slot in s.slots(from: today, through: through, calendar: calendar) {
+                // Slots are chronological: once this routine alone fills the budget, later ones can't make
+                // the soonest-first cut (keeps an every-minute schedule cheap to plan).
+                if out.count - countBefore >= budget { break }
                 if let left = remainingSessions {
                     guard left > 0 else { break }
                     remainingSessions = left - 1
                 }
-                guard !input.doneDays.contains(day) else { continue }
-                let start = s.startTime(on: day, calendar: calendar)
+                let day = slot.key.day
+                if doneByDay[day] == nil {
+                    doneByDay[day] = input.doneSlots(on: day, starts: s.slotStarts(on: day, calendar: calendar),
+                                                     calendar: calendar)
+                }
+                guard !(doneByDay[day]?.contains(slot.key.index) ?? false) else { continue }
+                let start = slot.start
+                let index = slot.key.index
                 func add(_ kind: PlannedRoutineNotification.Kind, at date: Date) {
                     guard date > now else { return }
                     let (title, body) = content(kind, input: input, start: start, calendar: calendar)
                     out.append(PlannedRoutineNotification(
-                        id: PlannedRoutineNotification.makeID(routineID: input.routineID, day: day, kind: kind),
+                        id: PlannedRoutineNotification.makeID(routineID: input.routineID, day: day, kind: kind, slot: index),
                         kind: kind, routineID: input.routineID, day: day, fireDate: date,
                         title: title, body: body, sound: s.reminder.sound,
                         timeSensitive: s.reminder.timeSensitive && kind != .headsUp))
                 }
-                if s.reminder.isOn {
+                if s.reminder.isOn, s.reminder.everySession || index == 0 {
                     add(.reminder, at: start.addingTimeInterval(-TimeInterval(s.reminder.leadMinutes * 60)))
-                    if let nudge = s.reminder.nudgeAfterMinutes {
+                    if nudgeAllowed, let nudge = s.reminder.nudgeAfterMinutes {
                         add(.nudge, at: start.addingTimeInterval(TimeInterval(nudge * 60)))
                     }
                 }
-                if let heads = s.reminder.headsUp {
+                if index == 0, let heads = s.reminder.headsUp {
                     add(.headsUp, at: heads.on(day.adding(days: -1, calendar: calendar), calendar: calendar))
                 }
             }
@@ -124,10 +163,16 @@ enum RoutineReminderPlanner {
         var start: Date
         /// Planned for today (still due all day, even once its start time has passed).
         var isToday: Bool
+        /// Several sessions a day (prompt 144): this slot's index, how many that day, how many done.
+        var slot: Int = 0
+        var slotsOnDay: Int = 1
+        var doneOnDay: Int = 0
+        var slotKey: SlotKey { SlotKey(day: day, index: slot) }
     }
 
-    /// The soonest planned, not-yet-done, not-skipped occurrence within the horizon — today's counts
-    /// until the day ends, so a 7:00 plan is still "up next" at 9:00 if you haven't trained yet.
+    /// The soonest planned, not-yet-done, not-skipped session within the horizon. A once-a-day plan stays
+    /// due all day (7:00 is still "up next" at 9:00); with several a day, a slot more than 15 min past is
+    /// treated as missed and Up next moves to the next one.
     static func upNext(_ inputs: [ScheduledRoutineInput], now: Date, calendar: Calendar = .current,
                        horizonDays: Int = horizonDays) -> UpNext? {
         let today = DayKey(now, calendar: calendar)
@@ -135,12 +180,20 @@ enum RoutineReminderPlanner {
         var best: UpNext?
         for input in inputs where input.schedule.isEnabled
             && !input.schedule.isFinished(today: today, completedSessions: input.completedSessions) {
-            guard let day = input.schedule.days(from: today, through: through, calendar: calendar)
-                .first(where: { !input.doneDays.contains($0) }) else { continue }
-            let candidate = UpNext(routineID: input.routineID, day: day,
-                                   start: input.schedule.startTime(on: day, calendar: calendar),
-                                   isToday: day == today)
-            if best.map({ candidate.start < $0.start }) ?? true { best = candidate }
+            let s = input.schedule
+            var doneByDay: [DayKey: Set<Int>] = [:]
+            for slot in s.slots(from: today, through: through, calendar: calendar) {
+                let day = slot.key.day
+                let starts = s.slotStarts(on: day, calendar: calendar)
+                if doneByDay[day] == nil { doneByDay[day] = input.doneSlots(on: day, starts: starts, calendar: calendar) }
+                let done = doneByDay[day] ?? []
+                if done.contains(slot.key.index) { continue }
+                if s.isMultiSlot, slot.start < now.addingTimeInterval(-15 * 60) { continue }
+                let candidate = UpNext(routineID: input.routineID, day: day, start: slot.start, isToday: day == today,
+                                       slot: slot.key.index, slotsOnDay: starts.count, doneOnDay: done.count)
+                if best.map({ candidate.start < $0.start }) ?? true { best = candidate }
+                break
+            }
         }
         return best
     }
@@ -152,6 +205,9 @@ enum RoutineReminderPlanner {
         var state: State
         /// Routine names planned (or done) that day, in schedule order.
         var names: [String]
+        /// Sessions done / planned that day across schedules with several a day (0/0 when none).
+        var done: Int = 0
+        var planned: Int = 0
     }
 
     /// The current calendar week (user's first weekday) across every enabled schedule. A past planned day
@@ -163,18 +219,27 @@ enum RoutineReminderPlanner {
             let day = start.adding(days: offset, calendar: calendar)
             var names: [String] = []
             var anyDone = false, anyPending = false, anySkipped = false
+            var doneCount = 0, plannedCount = 0
             for input in inputs where input.schedule.isEnabled {
                 let s = input.schedule
                 guard s.occurs(on: day, calendar: calendar) else { continue }
                 if s.skippedDays.contains(day) { anySkipped = true; continue }
                 names.append(input.name)
-                if input.doneDays.contains(day) { anyDone = true } else { anyPending = true }
+                if s.isMultiSlot {
+                    let starts = s.slotStarts(on: day, calendar: calendar)
+                    let done = input.doneSlots(on: day, starts: starts, calendar: calendar).count
+                    doneCount += done
+                    plannedCount += starts.count
+                    // "Done" once the day's Habits threshold is met; partly done still reads as planned/missed.
+                    if done >= s.sessionsForDayDone { anyDone = true } else { anyPending = true }
+                } else if input.doneDays.contains(day) { anyDone = true } else { anyPending = true }
             }
             let state: WeekDay.State =
                 anyDone ? .done
                 : anyPending ? (day < today ? .missed : .planned)
                 : anySkipped ? .skipped : .none
-            return WeekDay(day: day, isToday: day == today, state: state, names: names)
+            return WeekDay(day: day, isToday: day == today, state: state, names: names,
+                           done: doneCount, planned: plannedCount)
         }
     }
 }
