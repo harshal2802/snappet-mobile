@@ -49,11 +49,15 @@ final class BuddyPrototypeUITests: XCTestCase {
         XCTAssertEqual(mood.label, "Sleepy")
         sleep(1); snap("07-legend-sleepy")
 
-        app.switches["buddy.pause"].switches.firstMatch.tap()
+        // The Labs screen grew (P3 preview buttons): bring the switch above the tab bar first.
+        let pauseSwitch = app.switches["buddy.pause"]
+        for _ in 0..<3 where !pauseSwitch.isHittable { app.swipeUp() }
+        pauseSwitch.switches.firstMatch.tap()
         XCTAssertTrue(mood.label.hasPrefix("Resting"), mood.label)
         app.swipeDown()
         sleep(1); snap("08-paused")
-        app.switches["buddy.pause"].switches.firstMatch.tap()
+        for _ in 0..<3 where !pauseSwitch.isHittable { app.swipeUp() }
+        pauseSwitch.switches.firstMatch.tap()
 
         form.adjust(toNormalizedSliderPosition: 0.9)
         app.swipeDown()
