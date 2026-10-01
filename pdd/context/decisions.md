@@ -9444,3 +9444,14 @@ Non-obvious calls:
   Nudges are disabled under an hour apart; "first of the day" is offered for dense schedules.
 - Back-compat: new keys only, and `t` = the first slot, so older builds and QR readers degrade to a
   once-a-day schedule at the first time rather than failing.
+
+## 2026-09-30 — force sensor behind a generic protocol; the hold is decided once per hang (prompt 145)
+
+- `ForceSensorSource` keeps the Tindeq behind a protocol so other boards can be added and so the
+  simulator can run a `FakeForceSensor` — the only way to UI-test live force without Bluetooth.
+- Gating: a timed hang waits for load **only as it begins**. Re-evaluating mid-hang re-held the rep after
+  a release and froze the clock at its start, erasing the seconds done (the fake sensor's end card showed
+  0:00). Letting go partway is honest data: that rep ends short.
+- "% of max" is a field on the protocol, the max lives on the device (per hand); UI-test launches use a
+  scratch defaults suite so a test can never overwrite a real max (the prompt-133 rule).
+- The Tindeq's own usage terms still need checking before its name appears in a public release.

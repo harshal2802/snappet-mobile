@@ -11,24 +11,32 @@ extension TimedExerciseSpec {
     /// Max hangs: 3 sets × 3 hangs of 7 s, 2 min between hangs, 4 min between sets.
     static var maxHangs: TimedExerciseSpec {
         TimedExerciseSpec(mode: .repeaters, workSec: 7, restSec: 120, reps: 3, sets: 3,
-                          restBetweenSetsSec: 240, leadInSec: 5)
+                          restBetweenSetsSec: 240, leadInSec: 5, targetPercentOfMax: 90)
     }
 
     /// Endurance repeaters: 10 s on / 6 s off × 24, 2 sets, 6 min between sets.
     static var enduranceRepeaters: TimedExerciseSpec {
         TimedExerciseSpec(mode: .repeaters, workSec: 10, restSec: 6, reps: 24, sets: 2,
-                          restBetweenSetsSec: 360, leadInSec: 5)
+                          restBetweenSetsSec: 360, leadInSec: 5, targetPercentOfMax: 60)
     }
 
     /// Contact: 3 sets × 5 reps, each rep until you tap done, 30 s between reps, 3 min between sets.
     static var contact: TimedExerciseSpec {
         TimedExerciseSpec(mode: .repeaters, workSec: 0, restSec: 30, reps: 5, sets: 3,
-                          restBetweenSetsSec: 180, leadInSec: 5, selfPacedWork: true)
+                          restBetweenSetsSec: 180, leadInSec: 5, selfPacedWork: true, targetPercentOfMax: 90)
     }
 
     /// Abrahangs: low-load hangs, 10 s on / 20 s off × 20, one set.
     static var abrahangs: TimedExerciseSpec {
-        TimedExerciseSpec(mode: .repeaters, workSec: 10, restSec: 20, reps: 20, sets: 1, leadInSec: 5)
+        TimedExerciseSpec(mode: .repeaters, workSec: 10, restSec: 20, reps: 20, sets: 1, leadInSec: 5,
+                          targetPercentOfMax: 40)
+    }
+
+    /// Max pull test (prompt 145): 3 pulls of 5 s each hand, 2 min apart — with a force sensor the end
+    /// card offers "Use as my max".
+    static var maxPullTest: TimedExerciseSpec {
+        TimedExerciseSpec(mode: .repeaters, workSec: 5, restSec: 120, reps: 3, sets: 1, leadInSec: 5,
+                          handMode: .alternate, isMaxTest: true)
     }
 
     // MARK: - Plain-English summary
@@ -54,6 +62,7 @@ extension TimedExerciseSpec {
             if reps > 1, restSec > 0 { s += " · \(Self.spoken(restSec)) between \(noun)s" }
             if sets > 1, restBetweenSetsSec > 0 { s += " · \(Self.spoken(restBetweenSetsSec)) between sets" }
             if let load { s += " · " + Self.loadText(load) }
+            if let pct = targetPercentOfMax { s += " · \(Int(pct)) % of max" }
             return s + total
         }
     }

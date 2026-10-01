@@ -341,6 +341,19 @@ struct SetLog: Codable, Hashable, Sendable {
     var loadKg: Double?
     /// `HandMode.rawValue` for a one-hand hang (prompt 142); `nil` ⇒ both hands.
     var handModeRaw: String?
+    /// Measured force per rep when a force sensor was connected (prompt 145); `nil` ⇒ not measured.
+    var forceReps: [ForceRepRecord]?
+}
+
+/// One measured rep (prompt 145): which set/rep/hand, peak and mean force, how long it was held.
+struct ForceRepRecord: Codable, Hashable, Sendable {
+    var set: Int
+    var rep: Int
+    /// "left" / "right"; nil for two hands.
+    var hand: String?
+    var peakKg: Double
+    var meanKg: Double
+    var holdSec: Double
 }
 
 /// An exercise as it appears in a session: a snapshot of the routine target plus the

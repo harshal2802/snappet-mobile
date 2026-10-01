@@ -38,6 +38,12 @@ struct StructuredTimedRunner: View {
 
     @State private var vm: RunnerViewModel
     @State private var adjusting = false
+    // Force sensor (prompt 145)
+    @AppStorage("force.autoReps") private var autoReps = true
+    @AppStorage("force.loadedKg") private var loadedKg = 5.0
+    @AppStorage("force.warnBelow") private var warnBelow = true
+    @State private var warnedPhaseID: Int?
+    @State private var usedAsMax = false
     @State private var adjustDraft = ProtocolDraft(spec: .maxHangs)
     /// Cue style — sound + haptic / haptic only / silent. Persisted across launches so a gym preference sticks.
     @AppStorage("structuredRunner.cueMode") private var cueModeRaw = CueMode.both.rawValue
@@ -84,11 +90,23 @@ struct StructuredTimedRunner: View {
             // Keep the screen awake through the interval run — a sleeping screen mid-set hid the phase
             // ring + count-down (Phase-6 device note). Released on disappear (prompt 135 holds, was a raw flag). (Phase 7)
             app.screenAwake.hold("intervalRunner", reason: .timer)
+            attachForceSensor()
         }
         .onDisappear {
             app.screenAwake.release("intervalRunner")   // only THIS hold — the workout may still be open (prompt 135)
             vm.endTicking()
+            detachForceSensor()
         }
+        // A sensor connecting before or during the run (prompt 145, frames 12B–C): zero it if nothing is on
+        // it, then measure from the next rep. A drop (12D) falls back to the timer.
+        .onChange(of: sensor.state) { _, state in
+            if state == .connected, isHangProtocol, !vm.isFinished {
+                if !vm.state.phase.isWork { sensor.tare() }
+                sensor.startMeasuring()
+            }
+            updateGating()
+        }
+        .onChange(of: vm.latestKg) { _, kg in warnIfUnderTarget(kg) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { vm.syncToWallClock() }
         }
@@ -140,6 +158,120 @@ struct StructuredTimedRunner: View {
         }
     }
 
+    // MARK: - Force sensor (prompt 145)
+
+    private var sensor: any ForceSensorSource { app.forceSensor }
+    private var isHangProtocol: Bool { vm.spec.mode == .repeaters || vm.spec.mode == .tabata }
+    private var isMeasuring: Bool { sensor.state == .measuring }
+
+    private func attachForceSensor() {
+        guard isHangProtocol else { return }
+        vm.loadedKg = loadedKg
+        sensor.onSample = { [vm] sample in vm.ingestForce(sample) }
+        if sensor.state.isConnected {
+            sensor.tare()
+            sensor.startMeasuring()
+        } else if sensor.hasRememberedSensor {
+            sensor.startScan()   // so "Tindeq nearby · Connect" can appear; connecting stays the user's choice
+        }
+        updateGating()
+    }
+
+    private func detachForceSensor() {
+        guard isHangProtocol else { return }
+        sensor.onSample = nil
+        sensor.stopMeasuring()
+        sensor.stopScan()
+    }
+
+    private func updateGating() {
+        vm.forceGatingEnabled = autoReps && isMeasuring
+    }
+
+    /// The target band for this rep: the protocol's % of your max for this hand.
+    private var targetBand: ClosedRange<Double>? {
+        guard let pct = vm.spec.targetPercentOfMax, let max = app.forceMax.max(for: vm.state.phase.hand) else { return nil }
+        return ForceAnalysis.targetBand(maxKg: max, percent: pct)
+    }
+
+    private func warnIfUnderTarget(_ kg: Double?) {
+        guard warnBelow, let kg, let band = targetBand, vm.state.phase.isWork, !vm.isWaitingForLoad,
+              warnedPhaseID != vm.state.phase.id, ForceAnalysis.isUnderTarget(kg, band: band),
+              (vm.state.phase.durationSec - vm.state.remainingInPhase) >= 1 else { return }
+        warnedPhaseID = vm.state.phase.id
+        Haptics.warning()
+    }
+
+    /// Live force during a hang (wireframe frame 12): the reading, the target band, a bar.
+    @ViewBuilder private var forcePanel: some View {
+        let kg = vm.latestKg ?? 0
+        let band = targetBand
+        VStack(spacing: 6) {
+            Text("\(SetMeasure.formatWeight((kg * 10).rounded() / 10)) kg")
+                .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(band.map { ForceAnalysis.isUnderTarget(kg, band: $0) } == true ? Color.orange : .white)
+                .contentTransition(.numericText())
+                .accessibilityIdentifier("intervalRunner.forceNow")
+            if let band, let pct = vm.spec.targetPercentOfMax {
+                Text("Target \(Int(band.lowerBound.rounded()))–\(Int(band.upperBound.rounded())) kg · \(Int(pct)) % of your max")
+                    .font(.caption).foregroundStyle(.white.opacity(0.75))
+                    .accessibilityIdentifier("intervalRunner.forceTarget")
+            }
+            GeometryReader { geo in
+                let top = Swift.max(band?.upperBound ?? 0, kg, 10) * 1.25
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.12))
+                    if let band {
+                        Rectangle().fill(Color.green.opacity(0.35))
+                            .frame(width: geo.size.width * (band.upperBound - band.lowerBound) / top)
+                            .offset(x: geo.size.width * band.lowerBound / top)
+                    }
+                    RoundedRectangle(cornerRadius: 6).fill(.white)
+                        .frame(width: geo.size.width * Swift.min(1, kg / top))
+                }
+            }
+            .frame(height: 14)
+            .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 8)
+    }
+
+    /// Connect a sensor that's nearby (before or during a run).
+    @ViewBuilder private var connectCard: some View {
+        if isHangProtocol, !sensor.state.isConnected, sensor.hasRememberedSensor {
+            Button { sensor.connectRemembered() } label: {
+                HStack {
+                    Image(systemName: "bolt.fill")
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(sensor.state == .connecting ? "Connecting…"
+                             : sensor.isRememberedNearby ? "\(sensor.rememberedName ?? "Tindeq") nearby" : "Connect force sensor")
+                            .font(.subheadline.weight(.bold))
+                        Text("Measure real force for this run").font(.caption).opacity(0.8)
+                    }
+                    Spacer()
+                    if sensor.state != .connecting { Text("Connect").font(.subheadline.weight(.bold)) }
+                }
+                .foregroundStyle(.white)
+                .padding(12)
+                .background(Color.green.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.green.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            .disabled(sensor.state == .connecting)
+            .accessibilityIdentifier("intervalRunner.connectSensor")
+        }
+    }
+
+    @ViewBuilder private var droppedBanner: some View {
+        if isHangProtocol, sensor.droppedWhileMeasuring, !sensor.state.isConnected {
+            Label("Sensor disconnected — continuing on the timer", systemImage: "bolt.slash")
+                .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(.black.opacity(0.35), in: Capsule())
+                .accessibilityIdentifier("intervalRunner.sensorDropped")
+        }
+    }
+
     // MARK: - Running body (lead-in or phase)
 
     @ViewBuilder private var runningBody: some View {
@@ -153,8 +285,9 @@ struct StructuredTimedRunner: View {
                     .background(.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .accessibilityIdentifier("intervalRunner.hand")
             }
-            // Phase label — READY / WORK / REST, tinted per phase.
-            Text(vm.state.phase.label)
+            droppedBanner
+            // Phase label — READY / WORK / REST, tinted per phase (LOAD TO START while waiting for load).
+            Text(vm.isWaitingForLoad ? "LOAD TO START" : vm.state.phase.label)
                 .font(.system(size: 40, weight: .heavy, design: .rounded))
                 .foregroundStyle(phaseTint)
                 .accessibilityIdentifier("intervalRunner.phase")
@@ -184,6 +317,10 @@ struct StructuredTimedRunner: View {
                     .accessibilityIdentifier("intervalRunner.setrep")
             }
 
+            // Live force (prompt 145).
+            if isMeasuring, vm.state.phase.isWork { forcePanel }
+            // Offer the sensor while there's time to set it up — get-ready and rests.
+            if !vm.state.phase.isWork { connectCard }
             // Load on the hang (prompt 142).
             if let load = vm.schedule.spec.load { loadBar(load) }
             // During a rest in a one-hand protocol: which hand is next.
@@ -439,10 +576,13 @@ struct StructuredTimedRunner: View {
                 if let peak = cap.peakHR {
                     captureRow("Peak HR", "\(peak) bpm")
                 }
+                // Measured force (prompt 145).
+                ForEach(forceSummaryRows, id: \.0) { row in captureRow(row.0, row.1) }
             }
             .padding(16)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
+            useAsMax
             if vm.hasChanges {
                 keepOrOnce
             } else {
@@ -470,6 +610,53 @@ struct StructuredTimedRunner: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("intervalRunner.discard")
+        }
+    }
+
+    /// Peak / average force per hand from the measured reps, for the end card (and "Use as my max").
+    private var forcePeaks: (left: Double?, right: Double?, both: Double?) {
+        let r = vm.forceReps
+        func peak(_ hand: String?) -> Double? { r.filter { $0.hand == hand }.map(\.peakKg).max() }
+        return (peak("left"), peak("right"), peak(nil))
+    }
+
+    private var forceSummaryRows: [(String, String)] {
+        let r = vm.forceReps
+        guard !r.isEmpty else { return [] }
+        let p = forcePeaks
+        func kg(_ v: Double) -> String { "\(SetMeasure.formatWeight(v)) kg" }
+        var rows: [(String, String)] = []
+        if let l = p.left { rows.append(("Peak · left", kg(l))) }
+        if let rt = p.right { rows.append(("Peak · right", kg(rt))) }
+        if let b = p.both { rows.append(("Peak force", kg(b))) }
+        let mean = r.map(\.meanKg).reduce(0, +) / Double(r.count)
+        rows.append(("Average force", kg((mean * 10).rounded() / 10)))
+        if let a = ForceAnalysis.asymmetry(left: p.left, right: p.right), a >= 0.03, let l = p.left, let rt = p.right {
+            rows.append(("Difference", "\(l < rt ? "Left" : "Right") \(Int((a * 100).rounded())) % weaker"))
+        }
+        return rows
+    }
+
+    /// Max pull test (wireframe frame 13): save the measured peaks as your max.
+    @ViewBuilder private var useAsMax: some View {
+        if vm.spec.isMaxTest == true, !vm.forceReps.isEmpty {
+            Button {
+                let p = forcePeaks
+                if let l = p.left { app.forceMax.left = l }
+                if let r = p.right { app.forceMax.right = r }
+                if let b = p.both { app.forceMax.both = b }
+                usedAsMax = true
+                Haptics.success()
+            } label: {
+                Text(usedAsMax ? "Saved as your max ✓" : "Use as my max")
+                    .font(.headline).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Color.green.opacity(usedAsMax ? 0.3 : 0.6),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(usedAsMax)
+            .accessibilityIdentifier("intervalRunner.useAsMax")
         }
     }
 
@@ -663,8 +850,9 @@ final class RunnerViewModel {
         schedule = newSchedule
         countFrom = map.countFrom
         openCompletedAdjust = map.openRepsBefore - openRepDurations.count
-        // Re-anchor wall time so schedule time == the remapped point (open-rep time stays banked on top).
-        accumulated = map.scheduleElapsed + openBanked + (openRunning ?? 0)
+        // Re-anchor wall time so schedule time == the remapped point (held time stays banked on top).
+        if gateStartedAt != nil { releaseGate() }
+        accumulated = map.scheduleElapsed + pausedBanked + (openRunning ?? 0)
         startedAt = isPaused ? nil : clock()
         if let openRunning { openRepStartedAt = accumulated - openRunning }
         lastPhaseID = state.phase.id   // same phase continues — no transition cue
@@ -684,13 +872,92 @@ final class RunnerViewModel {
     private(set) var openRepDurations: [TimeInterval] = []
     private var openBanked: TimeInterval { openRepDurations.reduce(0, +) }
 
+    // MARK: Force sensor (prompt 145)
+
+    /// Rep start waits for load: while true and the sensor is measuring, a timed hang holds at its start
+    /// until you load the edge. Set by the view from the sensor's state + the "start & stop reps
+    /// automatically" setting.
+    var forceGatingEnabled = false {
+        didSet { if !forceGatingEnabled, gateStartedAt != nil { releaseGate() } }
+    }
+    /// The loaded threshold for rep detection.
+    var loadedKg: Double = 5 { didSet { detector = ForceAnalysis.Detector(onKg: loadedKg) } }
+    /// Wall-elapsed at which the current "load to start" hold began; nil when not holding.
+    private(set) var gateStartedAt: TimeInterval?
+    private var gateBanked: TimeInterval = 0
+    /// The work phase already released by a load, so the same phase isn't held twice.
+    private var gatedPhaseID: Int?
+    private var detector = ForceAnalysis.Detector(onKg: 5)
+    private(set) var latestKg: Double?
+    /// Samples since the current work phase began (wall-elapsed timestamps).
+    private var repSamples: [ForceSample] = []
+    private var repPhaseID: Int?
+    private var loadedSince: TimeInterval?
+    /// Measured reps so far.
+    private(set) var forceReps: [ForceRepRecord] = []
+    /// Waiting for the user to load the edge.
+    var isWaitingForLoad: Bool { gateStartedAt != nil }
+
+    /// A reading from the sensor.
+    func ingestForce(_ sample: ForceSample) {
+        guard !isFinished else { return }
+        now = clock()
+        latestKg = sample.kg
+        let edge = detector.feed(sample.kg)
+        let st = state
+        if st.phase.isWork {
+            if repPhaseID != st.phase.id { closeRep(); repPhaseID = st.phase.id; repSamples = [] }
+            repSamples.append(ForceSample(t: elapsed, kg: sample.kg))
+        } else if repPhaseID != nil {
+            closeRep()
+        }
+        switch edge {
+        case .loaded?:
+            loadedSince = elapsed
+            if gateStartedAt != nil { releaseGate() }
+        case .released?:
+            // A tap-done rep finishes when you let go (after holding at least a second).
+            if st.phase.isOpenEnded, let since = loadedSince, elapsed - since >= 1 { completeOpenRep() }
+            loadedSince = nil
+        case nil:
+            break
+        }
+    }
+
+    private func holdForLoad(_ st: IntervalSchedule.State) {
+        let overshoot = max(0, (elapsed - pausedBanked) - st.startOfPhase)
+        gateStartedAt = elapsed - overshoot
+    }
+
+    private func releaseGate() {
+        guard let g = gateStartedAt else { return }
+        gateBanked += max(0, elapsed - g)
+        gateStartedAt = nil
+    }
+
+    /// Summarize the samples of the work phase that just ended into a measured rep.
+    private func closeRep() {
+        defer { repPhaseID = nil; repSamples = [] }
+        guard let id = repPhaseID, let phase = schedule.phases.first(where: { $0.id == id }),
+              let rep = ForceAnalysis.reps(in: repSamples, onKg: loadedKg).max(by: { $0.duration < $1.duration })
+        else { return }
+        forceReps.append(ForceRepRecord(set: phase.setIndex, rep: phase.repIndex, hand: phase.hand?.rawValue,
+                                        peakKg: (rep.peakKg * 10).rounded() / 10, meanKg: (rep.meanKg * 10).rounded() / 10,
+                                        holdSec: (rep.duration * 10).rounded() / 10))
+    }
+
+    /// Time the protocol clock was held (tap-done reps + waiting for load) — excluded from schedule time.
+    private var pausedBanked: TimeInterval {
+        openBanked + gateBanked + (gateStartedAt.map { max(0, elapsed - $0) } ?? 0)
+    }
+
     /// Seconds into the current open-ended rep (counts up), nil when not in one.
     var openRepElapsed: TimeInterval? { openRepStartedAt.map { max(0, elapsed - $0) } }
 
     /// Schedule time: wall time minus time spent inside open-ended reps. The protocol clock is frozen while
     /// a tap-done rep is in progress, then carries on exactly where it stopped.
     var scheduleElapsed: TimeInterval {
-        max(0, elapsed - openBanked - (openRepElapsed ?? 0))
+        max(0, elapsed - pausedBanked - (openRepElapsed ?? 0))
     }
 
     /// The live timeline read.
@@ -762,8 +1029,9 @@ final class RunnerViewModel {
             finish(early: false)
             return
         }
-        // Move the anchor so schedule time == boundary (open-rep time stays banked on top).
-        accumulated = boundary + openBanked
+        // Move the anchor so schedule time == boundary (held time stays banked on top).
+        if gateStartedAt != nil { releaseGate() }
+        accumulated = boundary + pausedBanked
         startedAt = isPaused ? nil : clock()
         now = clock()
         // Let the next tick fire the transition cue.
@@ -810,6 +1078,15 @@ final class RunnerViewModel {
         }
         // Entering a tap-done rep: freeze the protocol clock at the exact start of the phase.
         if st.phase.isOpenEnded, openRepStartedAt == nil { enterOpenRep(st) }
+        // With a force sensor: a timed hang waits for you to load the edge before its clock runs. Decided
+        // once, as the hang begins — letting go partway ends that rep short rather than re-holding it
+        // (re-holding froze the clock at the hang's start and erased the time already done).
+        if forceGatingEnabled, st.phase.isWork, !st.phase.isOpenEnded, gatedPhaseID != st.phase.id {
+            gatedPhaseID = st.phase.id
+            if gateStartedAt == nil, !detector.isLoaded { holdForLoad(st) }
+        }
+        // A work phase that just ended: summarize its force.
+        if repPhaseID != nil, repPhaseID != st.phase.id { closeRep() }
 
         // Phase transition → work/rest cue.
         if lastPhaseID != st.phase.id {
@@ -836,7 +1113,7 @@ final class RunnerViewModel {
     /// Start timing an open-ended rep. The tick that noticed it may be a little late, so anchor the rep
     /// at the moment schedule time crossed the phase start (no lost or double-counted rest).
     private func enterOpenRep(_ st: IntervalSchedule.State) {
-        let overshoot = max(0, (elapsed - openBanked) - st.startOfPhase)
+        let overshoot = max(0, (elapsed - pausedBanked) - st.startOfPhase)
         openRepStartedAt = elapsed - overshoot
     }
 
@@ -849,6 +1126,7 @@ final class RunnerViewModel {
 
     private func finish(early: Bool) {
         guard !isFinished else { return }
+        closeRep()   // measure the hang in progress (STOP mid-hang) so the end card can report it
         // Bank the final elapsed so `capture` reads a stable value.
         if let s = startedAt {
             accumulated = max(0, accumulated + clock().timeIntervalSince(s))
@@ -907,7 +1185,9 @@ final class RunnerViewModel {
 
     /// Build the `SetLog` to commit — the time-under-tension as the duration (the timed-set contract).
     func buildSetLog() -> SetLog {
+        closeRep()
         var log = SetLog(durationSec: capture.tut > 0 ? capture.tut : nil)
+        log.forceReps = forceReps.isEmpty ? nil : forceReps
         // The load / hands in effect at the end (an adjusted run records what it finished on).
         log.loadKg = spec.load?.signedKg
         log.handModeRaw = spec.handMode?.rawValue

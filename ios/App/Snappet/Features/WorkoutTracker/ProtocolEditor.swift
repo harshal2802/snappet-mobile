@@ -21,6 +21,9 @@ struct ProtocolDraft: Equatable {
     var loadUnitRaw: String
     /// nil = both hands.
     var handMode: HandMode?
+    /// Target % of max (prompt 145); 0 = off.
+    var percentOfMax: Double
+    var isMaxTest: Bool
 
     init(name: String = "", category: TimedExerciseCategory = .hangboard, spec: TimedExerciseSpec) {
         self.name = name
@@ -38,6 +41,8 @@ struct ProtocolDraft: Equatable {
         loadUnitRaw = spec.load?.unitRaw
             ?? (UserDefaults.standard.string(forKey: "workoutlog.preferredUnit") == "lb" ? "lb" : "kg")
         handMode = spec.handMode
+        percentOfMax = spec.targetPercentOfMax ?? 0
+        isMaxTest = spec.isMaxTest == true
     }
 
     private var load: HangLoad? {
@@ -60,7 +65,9 @@ struct ProtocolDraft: Equatable {
             return TimedExerciseSpec(mode: mode, workSec: selfPaced ? workSec : max(1, workSec), restSec: restSec,
                                      reps: reps, sets: sets, restBetweenSetsSec: sets > 1 ? restBetweenSetsSec : 0,
                                      leadInSec: leadInSec, selfPacedWork: selfPaced ? true : nil,
-                                     load: load, handMode: handMode)
+                                     load: load, handMode: handMode,
+                                     targetPercentOfMax: percentOfMax > 0 ? percentOfMax : nil,
+                                     isMaxTest: isMaxTest ? true : nil)
         }
     }
 
@@ -128,6 +135,7 @@ struct ProtocolEditorSections: View {
                     }
                     presetChip("Contact", key: "contact") { draft.apply(.contact, name: "Contact") }
                     presetChip("Abrahangs", key: "abrahangs") { draft.apply(.abrahangs, name: "Abrahangs") }
+                    presetChip("Max pull test", key: "maxtest") { draft.apply(.maxPullTest, name: "Max pull test") }
                     presetChip("7:3 × 6", key: "repeaters") { draft.apply(.repeaters7x3x6) }
                     presetChip("10s hang", key: "maxhang") { draft.apply(.maxHang10) }
                     presetChip("Tabata", key: "tabata") { draft.apply(.tabata) }
@@ -253,11 +261,21 @@ struct ProtocolEditorSections: View {
                 }
                 if let total = totalText { LabeledContent(draft.handMode == nil ? "Total on your fingers" : "On one hand", value: total) }
             }
+            if !draft.isMaxTest {
+                Stepper(value: $draft.percentOfMax, in: 0...150, step: 5) {
+                    LabeledContent("Target", value: draft.percentOfMax > 0 ? "\(Int(draft.percentOfMax)) % of max" : "Off")
+                }
+                .accessibilityIdentifier("protocol.percentOfMax")
+            }
         } header: {
             Text("Load · optional")
         } footer: {
             if draft.loadKind != nil, app.userProfile.profile.weightKg == nil {
                 Text("Add your bodyweight in Settings → Heart-rate profile to see the total.")
+            } else if draft.percentOfMax > 0, let max = app.forceMax.max(for: nil) {
+                Text("≈ \(SetMeasure.formatWeight((max * draft.percentOfMax / 10).rounded() / 10)) kg with your max (\(SetMeasure.formatWeight(max)) kg). A force sensor shows this as a target band.")
+            } else if draft.percentOfMax > 0 {
+                Text("A force sensor shows this as a target band once you've set your max (Settings → Force sensor).")
             }
         }
     }

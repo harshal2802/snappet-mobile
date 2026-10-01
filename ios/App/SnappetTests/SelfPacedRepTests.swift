@@ -11,7 +11,7 @@ final class SelfPacedRepTests: XCTestCase {
         XCTAssertTrue(contact.isSelfPaced)
         XCTAssertEqual([contact.reps, contact.sets, contact.restSec, contact.restBetweenSetsSec], [5, 3, 30, 180])
         XCTAssertEqual(contact.sentence,
-                       "3 sets × 5 reps, each until you tap done · 30 s between reps · 3 min between sets · about 12 min + your reps")
+                       "3 sets × 5 reps, each until you tap done · 30 s between reps · 3 min between sets · 90 % of max · about 12 min + your reps")
     }
 
     func testScheduleHasOneOpenPhasePerRepAndTotalCountsOnlyRests() {

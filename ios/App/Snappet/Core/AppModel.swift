@@ -72,6 +72,16 @@ final class AppModel {
     /// The single owner of the screen's auto-lock override during a workout (prompt 135): the player
     /// and every running timer take named holds; the flag is derived from them + the user's mode.
     let screenAwake = ScreenAwakeController()
+
+    /// The force sensor (prompt 145): a Tindeq Progressor over Bluetooth — or a fake under UI tests, since
+    /// the simulator has no Bluetooth. Idle (radio off) until the user pairs one or a hang protocol starts
+    /// with one remembered.
+    let forceSensor: any ForceSensorSource =
+        CommandLine.arguments.contains("-uiTestFakeForceSensor") ? FakeForceSensor() : TindeqProgressorSource()
+    /// Measured (or typed) max per hand for "% of max" targets (prompt 145). UI-test launches write to a
+    /// scratch suite, so a test run on a real phone can never overwrite the user's max (the prompt-133 rule).
+    let forceMax = ForceMaxStore(defaults: CommandLine.arguments.contains("-uiTestFreshStore")
+                                 ? (UserDefaults(suiteName: "snappet.uitest.force") ?? .standard) : .standard)
     /// Scheduled-routine reminders (prompt 136) — and the app's notification delegate, installed in
     /// `init` so a cold start from a tapped "Start now" / "Skip today" action is delivered.
     let routineReminders = RoutineReminders()

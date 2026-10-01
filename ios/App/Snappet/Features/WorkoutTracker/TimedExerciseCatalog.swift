@@ -98,6 +98,8 @@ extension TimedExerciseCatalog {
                    category: .hangboard, spec: .enduranceRepeaters),
         Suggestion(key: "seed.contact", name: "Contact",
                    category: .hangboard, spec: .contact),
+        Suggestion(key: "seed.maxpulltest", name: "Max pull test",
+                   category: .hangboard, spec: .maxPullTest),
         Suggestion(key: "seed.abrahangs", name: "Abrahangs",
                    category: .hangboard, spec: .abrahangs),
         Suggestion(key: "seed.maxhang7", name: "7s max hang",

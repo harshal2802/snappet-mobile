@@ -209,6 +209,16 @@ enum SetMeasure {
         if let raw = set.handModeRaw, let mode = HandMode(rawValue: raw) {
             parts.append(mode == .leftOnly ? "left hand" : mode == .rightOnly ? "right hand" : "one hand, each side")
         }
+        // Measured force (prompt 145): "peak 48.1 kg", or per hand "peak L 47.9 / R 50.2 kg".
+        if let reps = set.forceReps, !reps.isEmpty {
+            func peak(_ h: String?) -> Double? { reps.filter { $0.hand == h }.map(\.peakKg).max() }
+            let toUnit = { (kg: Double) in formatWeight((WorkoutMath.kgToUnit(kg, unit) * 10).rounded() / 10) }
+            if let l = peak("left"), let r = peak("right") {
+                parts.append("peak L \(toUnit(l)) / R \(toUnit(r)) \(unit.display)")
+            } else if let p = reps.map(\.peakKg).max() {
+                parts.append("peak \(toUnit(p)) \(unit.display)")
+            }
+        }
         return parts.isEmpty ? "" : " · " + parts.joined(separator: " · ")
     }
 

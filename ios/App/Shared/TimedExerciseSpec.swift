@@ -84,6 +84,11 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
     var load: HangLoad?
     /// Which hand(s) (prompt 142); `nil` = both hands. Reps are per hand for one-hand modes.
     var handMode: HandMode?
+    /// Target load as a percent of your max pull (prompt 145) — "Load 90 %", "60 % of 1RM", "40 %".
+    /// With a force sensor the runner shows a target band from your max; optional, never encoded when nil.
+    var targetPercentOfMax: Double?
+    /// A max pull test (prompt 145): the end card offers "Use as my max" from the measured peaks.
+    var isMaxTest: Bool?
 
     /// Reps actually performed per set: per-hand reps × the number of hands.
     var effectiveRepsPerSet: Int { reps * (handMode?.repMultiplier ?? 1) }
@@ -93,7 +98,8 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
 
     init(mode: Mode, workSec: Int = 0, restSec: Int = 0, reps: Int = 1, sets: Int = 1,
          restBetweenSetsSec: Int = 0, leadInSec: Int = 3, selfPacedWork: Bool? = nil,
-         load: HangLoad? = nil, handMode: HandMode? = nil) {
+         load: HangLoad? = nil, handMode: HandMode? = nil, targetPercentOfMax: Double? = nil,
+         isMaxTest: Bool? = nil) {
         self.mode = mode
         self.workSec = max(0, workSec)
         self.restSec = max(0, restSec)
@@ -104,6 +110,8 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
         self.selfPacedWork = selfPacedWork == true ? true : nil
         self.load = (load?.amount ?? 0) > 0 ? load : nil
         self.handMode = handMode
+        self.targetPercentOfMax = targetPercentOfMax.flatMap { $0 > 0 ? min(150, $0) : nil }
+        self.isMaxTest = isMaxTest == true ? true : nil
     }
 
     // MARK: - Pure derivations
