@@ -165,6 +165,10 @@ final class ProgressionTests: XCTestCase {
         let missed = DayKey(now.addingTimeInterval(-86_400 * 4), calendar: cal)
         sched.skippedSlots = [SlotKey(day: missed, index: 0)]
         XCTAssertEqual(Progression.form(sessions, schedules: [id: sched], now: now).basis, .plan(done: 21, planned: 26))
+
+        // So is "Skip today" (a whole skipped day).
+        sched.skippedDays = [DayKey(now.addingTimeInterval(-86_400 * 8), calendar: cal)]
+        XCTAssertEqual(Progression.form(sessions, schedules: [id: sched], now: now).basis, .plan(done: 21, planned: 25))
     }
 
     func testFormWithoutAScheduleComparesWithYourUsualWeek() {

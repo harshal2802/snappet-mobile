@@ -286,7 +286,8 @@ enum Progression {
             var day = start
             while day <= today {
                 defer { day = day.adding(days: 1, calendar: calendar) }
-                guard schedule.occurs(on: day, calendar: calendar),
+                // "Skip today" (a skipped day) or skipping one of several slots is neutral, not a miss.
+                guard schedule.occurs(on: day, calendar: calendar), !schedule.skippedDays.contains(day),
                       !schedule.skippedSlots.contains(where: { $0.day == day }) else { continue }
                 let wasDone = doneDays.contains(day)
                 if day == today && !wasDone { continue }
