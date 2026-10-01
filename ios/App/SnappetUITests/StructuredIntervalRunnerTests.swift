@@ -144,4 +144,42 @@ final class StructuredIntervalRunnerTests: XCTestCase {
             || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2),
             "the protocol lands as a named card")
     }
+
+    /// Prompt 141: a Contact rep waits for DONE (the protocol clock doesn't run on without you), then the
+    /// rest starts; stopping logs the tap-done time.
+    func testContactRepWaitsForDoneThenRests() {
+        openFreeformPlayer()
+        openTimedPickSheet()
+        app.buttons["timed.createNew"].tap()
+        let preset = app.buttons["timed.create.preset.contact"]
+        XCTAssertTrue(preset.waitForExistence(timeout: 5), "the Contact preset chip should exist")
+        preset.tap()
+        XCTAssertTrue(app.staticTexts["protocol.summary"].label.contains("each until you tap done"),
+                      app.staticTexts["protocol.summary"].label)
+        app.buttons["timed.create.add"].tap()
+        XCTAssertTrue(app.staticTexts["freeform.timedName"].waitForExistence(timeout: 5)
+            || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2))
+        tapAddSetForLastExercise()
+
+        // After the 5 s get-ready, rep 1 waits for DONE — well past any fixed hang length.
+        let done = app.buttons["intervalRunner.repDone"]
+        XCTAssertTrue(done.waitForExistence(timeout: 10), "a tap-done rep shows DONE")
+        XCTAssertEqual(app.staticTexts["intervalRunner.phase"].label, "GO")
+        sleep(3)
+        XCTAssertTrue(done.exists, "the rep never times out on its own")
+        snap("contact-rep")
+        done.tap()
+
+        // The 30 s rest runs next.
+        let phase = app.staticTexts["intervalRunner.phase"]
+        let deadline = Date().addingTimeInterval(4)
+        while phase.label != "REST", Date() < deadline { usleep(200_000) }
+        XCTAssertEqual(phase.label, "REST")
+        XCTAssertTrue(app.staticTexts["intervalRunner.timer"].exists, "rests keep the count-down ring")
+
+        app.buttons["intervalRunner.stop"].tap()
+        let tut = app.staticTexts["intervalRunner.captureTUT"]
+        XCTAssertTrue(tut.waitForExistence(timeout: 4))
+        XCTAssertNotEqual(tut.label, "0:00", "the tap-done rep's time is logged")
+    }
 }

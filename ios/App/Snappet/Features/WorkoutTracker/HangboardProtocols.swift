@@ -20,6 +20,12 @@ extension TimedExerciseSpec {
                           restBetweenSetsSec: 360, leadInSec: 5)
     }
 
+    /// Contact: 3 sets × 5 reps, each rep until you tap done, 30 s between reps, 3 min between sets.
+    static var contact: TimedExerciseSpec {
+        TimedExerciseSpec(mode: .repeaters, workSec: 0, restSec: 30, reps: 5, sets: 3,
+                          restBetweenSetsSec: 180, leadInSec: 5, selfPacedWork: true)
+    }
+
     /// Abrahangs: low-load hangs, 10 s on / 20 s off × 20, one set.
     static var abrahangs: TimedExerciseSpec {
         TimedExerciseSpec(mode: .repeaters, workSec: 10, restSec: 20, reps: 20, sets: 1, leadInSec: 5)
@@ -40,9 +46,10 @@ extension TimedExerciseSpec {
             if sets > 1 { s += " · \(sets) sets" }
             return s + total
         case .repeaters, .tabata:
-            let noun = mode == .tabata ? "interval" : "hang"
+            let noun = isSelfPaced ? "rep" : (mode == .tabata ? "interval" : "hang")
             var s = sets > 1 ? "\(sets) sets × " : ""
-            s += "\(reps) \(noun)\(reps == 1 ? "" : "s") of \(Self.spoken(workSec))"
+            s += isSelfPaced ? "\(reps) \(noun)\(reps == 1 ? "" : "s"), each until you tap done"
+                             : "\(reps) \(noun)\(reps == 1 ? "" : "s") of \(Self.spoken(workSec))"
             if reps > 1, restSec > 0 { s += " · \(Self.spoken(restSec)) between \(noun)s" }
             if sets > 1, restBetweenSetsSec > 0 { s += " · \(Self.spoken(restBetweenSetsSec)) between sets" }
             return s + total
@@ -51,7 +58,8 @@ extension TimedExerciseSpec {
 
     private var total: String {
         guard let t = totalSeconds, t >= 60 else { return "" }
-        return " · about \(Int((Double(t) / 60).rounded())) min"
+        let mins = " · about \(Int((Double(t) / 60).rounded())) min"
+        return isSelfPaced ? mins + " + your reps" : mins
     }
 
     /// 7 → "7 s", 120 → "2 min", 150 → "2:30".

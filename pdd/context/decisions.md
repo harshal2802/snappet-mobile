@@ -9408,3 +9408,11 @@ Non-obvious calls:
   reference would change routines silently and break QR sharing.
 - **Duration steppers step by magnitude** (1 s < 30 s, 5 s < 2 min, 15 s < 10 min, then 1 min).
 - Hangboard presets live under Timed (category Hangboard) rather than a new top-level discipline.
+
+## 2026-09-30 — tap-done reps are open-ended phases on a frozen protocol clock (prompt 141)
+
+- The runner stays wall-clock-derived (no tick summing): schedule time = elapsed − time spent inside
+  open reps. An open rep freezes the protocol clock; DONE banks the rep and the clock resumes exactly
+  where it stopped. The entering tick anchors the rep at the schedule's phase start, so tick latency
+  never steals rest time.
+- The new spec field is Optional and omitted when false, so no stored protocol changes bytes.

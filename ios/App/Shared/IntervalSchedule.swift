@@ -50,6 +50,10 @@ struct IntervalSchedule: Equatable, Sendable {
         /// The next phase's label, for the "next ▸ …" preview chip (nil at the end).
         let nextLabel: String?
 
+        /// A self-paced work phase (prompt 141): no fixed length — it lasts until the runner is told the
+        /// rep is done. Its `durationSec` is 0 and it never counts toward `totalSeconds`.
+        var isOpenEnded: Bool = false
+
         var isWork: Bool { kind == .work }
         var isRest: Bool { kind == .rest || kind == .restBetweenSets }
     }
@@ -73,6 +77,9 @@ struct IntervalSchedule: Equatable, Sendable {
         let repIndex: Int
         /// `true` once elapsed has run past the final phase.
         let isDone: Bool
+        /// Schedule time at which the active phase began — lets the runner freeze exactly at the start
+        /// of an open-ended rep instead of wherever its tick happened to notice it.
+        var startOfPhase: Double = 0
     }
 
     /// 1-based set count and per-set rep count, for the counter denominators.
@@ -109,8 +116,11 @@ struct IntervalSchedule: Equatable, Sendable {
             for r in 1...reps {
                 let isLastRepOfSet = (r == reps)
                 let isLastSet = (s == sets)
-                // Work phase.
-                if workSec > 0 {
+                // Work phase — open-ended when reps are "until I tap done".
+                if spec.isSelfPaced {
+                    out.append(.init(id: out.count, kind: .work, durationSec: 0,
+                                     setIndex: s, repIndex: r, label: "GO", nextLabel: nil, isOpenEnded: true))
+                } else if workSec > 0 {
                     out.append(.init(id: out.count, kind: .work, durationSec: workSec,
                                      setIndex: s, repIndex: r, label: "WORK", nextLabel: nil))
                 }
@@ -139,7 +149,7 @@ struct IntervalSchedule: Equatable, Sendable {
             let next = (i + 1 < out.count && out[i + 1].kind != .done) ? out[i + 1].label : nil
             withNext.append(.init(id: p.id, kind: p.kind, durationSec: p.durationSec,
                                   setIndex: p.setIndex, repIndex: p.repIndex,
-                                  label: p.label, nextLabel: next))
+                                  label: p.label, nextLabel: next, isOpenEnded: p.isOpenEnded))
         }
         return withNext
     }
@@ -149,39 +159,46 @@ struct IntervalSchedule: Equatable, Sendable {
     /// Map an elapsed time (seconds since the runner started) to the active phase and the time left. The
     /// running view is a thin read of this — it never sums ticks, so it can't drift and survives
     /// backgrounding (the `StopwatchTiming` pattern).
-    func state(at elapsed: TimeInterval) -> State {
+    ///
+    /// `elapsed` is **schedule** time: the runner excludes time spent inside open-ended reps.
+    /// `completedOpenReps` says how many open-ended (tap-done) reps are finished; the first unfinished one
+    /// the walk reaches is the active phase until it's completed, whatever `elapsed` says.
+    func state(at elapsed: TimeInterval, completedOpenReps: Int = 0) -> State {
         let total = totalSeconds
         let e = max(0, elapsed)
         let done = phases.last ?? Phase(id: 0, kind: .done, durationSec: 0, setIndex: 0,
                                         repIndex: 0, label: "DONE", nextLabel: nil)
-
-        // Past the end → the done marker.
-        if e >= Double(total) {
-            return State(phase: done, remainingInPhase: 0, overallRemaining: 0,
-                         setIndex: 0, repIndex: 0, isDone: true)
-        }
-
-        // Walk the phases accumulating their durations until elapsed lands inside one. The `.done` marker
-        // has duration 0 so it is only reached via the `e >= total` branch above.
         var startOfPhase = 0.0
-        for phase in phases where phase.durationSec > 0 {
+        var openSeen = 0
+        for phase in phases where phase.kind != .done {
+            if phase.isOpenEnded {
+                openSeen += 1
+                if openSeen > completedOpenReps {
+                    return State(phase: phase, remainingInPhase: 0,
+                                 overallRemaining: max(0, Int(ceil(Double(total) - e))),
+                                 setIndex: phase.setIndex, repIndex: phase.repIndex, isDone: false,
+                                 startOfPhase: startOfPhase)
+                }
+                continue
+            }
+            guard phase.durationSec > 0 else { continue }
             let endOfPhase = startOfPhase + Double(phase.durationSec)
             if e < endOfPhase {
-                let remainingInPhase = Int(ceil(endOfPhase - e))
-                let overallRemaining = Int(ceil(Double(total) - e))
                 let countsRep = (phase.kind == .work || phase.kind == .rest)
                 return State(phase: phase,
-                             remainingInPhase: max(0, remainingInPhase),
-                             overallRemaining: max(0, overallRemaining),
+                             remainingInPhase: max(0, Int(ceil(endOfPhase - e))),
+                             overallRemaining: max(0, Int(ceil(Double(total) - e))),
                              setIndex: phase.setIndex,
                              repIndex: countsRep ? phase.repIndex : 0,
-                             isDone: false)
+                             isDone: false,
+                             startOfPhase: startOfPhase)
             }
             startOfPhase = endOfPhase
         }
-
-        // Fallthrough (only reachable at exactly `total`): done.
         return State(phase: done, remainingInPhase: 0, overallRemaining: 0,
-                     setIndex: 0, repIndex: 0, isDone: true)
+                     setIndex: 0, repIndex: 0, isDone: true, startOfPhase: Double(total))
     }
+
+    /// How many open-ended (tap-done) reps the schedule has.
+    var openRepCount: Int { phases.filter(\.isOpenEnded).count }
 }

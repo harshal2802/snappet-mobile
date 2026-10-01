@@ -74,9 +74,17 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
     var restBetweenSetsSec: Int
     /// Lead-in countdown before the first rep starts (so you can get on the wall). Default 3.
     var leadInSec: Int
+    /// Each rep lasts **until the user taps Done** instead of `workSec` (prompt 141 — Contact-style reps,
+    /// or any single effort that isn't a fixed-length hang). Optional so every stored spec, backup and QR
+    /// code without it decodes unchanged (`nil` = timed work, as before); only meaningful for the
+    /// structured repeaters/tabata modes.
+    var selfPacedWork: Bool?
+
+    /// Whether reps are "until I tap done" (only for the structured, non-EMOM modes).
+    var isSelfPaced: Bool { selfPacedWork == true && (mode == .repeaters || mode == .tabata) }
 
     init(mode: Mode, workSec: Int = 0, restSec: Int = 0, reps: Int = 1, sets: Int = 1,
-         restBetweenSetsSec: Int = 0, leadInSec: Int = 3) {
+         restBetweenSetsSec: Int = 0, leadInSec: Int = 3, selfPacedWork: Bool? = nil) {
         self.mode = mode
         self.workSec = max(0, workSec)
         self.restSec = max(0, restSec)
@@ -84,6 +92,7 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
         self.sets = max(1, sets)
         self.restBetweenSetsSec = max(0, restBetweenSetsSec)
         self.leadInSec = max(0, leadInSec)
+        self.selfPacedWork = selfPacedWork == true ? true : nil
     }
 
     // MARK: - Pure derivations
@@ -92,8 +101,9 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
     /// only *between* sets — not after the last). An open count-up has no prescribed total → `nil`.
     var totalSeconds: Int? {
         if mode == .openCountUp { return nil }
-        // Per set: reps work intervals, with (reps − 1) inter-rep rests between them.
-        let workPerSet = reps * workSec
+        // Per set: reps work intervals, with (reps − 1) inter-rep rests between them. Self-paced reps have
+        // no prescribed length, so the total counts only the rests (callers say "+ your reps").
+        let workPerSet = isSelfPaced ? 0 : reps * workSec
         let restPerSet = max(0, reps - 1) * restSec
         let perSet = workPerSet + restPerSet
         // Between-set rest applies (sets − 1) times.

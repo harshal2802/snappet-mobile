@@ -140,8 +140,12 @@ struct StructuredTimedRunner: View {
                 .foregroundStyle(phaseTint)
                 .accessibilityIdentifier("intervalRunner.phase")
 
-            // The draining ring + tabular count-down.
-            ring
+            // The draining ring + tabular count-down — or, for a tap-done rep, a count-up + DONE.
+            if vm.state.phase.isOpenEnded {
+                openRepBody
+            } else {
+                ring
+            }
 
             // Set/rep counter (hidden during lead-in / between-set rest, where there's no live rep).
             if vm.state.repIndex > 0 {
@@ -174,6 +178,35 @@ struct StructuredTimedRunner: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white.opacity(0.6))
             }
+        }
+    }
+
+    /// A self-paced ("until I tap done") rep (prompt 141, wireframe frame 5): the time counts UP and a big
+    /// DONE moves on to the rest. The time taken is still logged.
+    private var openRepBody: some View {
+        VStack(spacing: 14) {
+            Text(SetMeasure.formatDuration(vm.openRepElapsed ?? 0))
+                .font(.system(size: 64, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .accessibilityIdentifier("intervalRunner.repTimer")
+            Text("no time limit").font(.caption).foregroundStyle(.white.opacity(0.6))
+            Button {
+                vm.completeOpenRep()
+                Haptics.success()
+            } label: {
+                Label("DONE", systemImage: "checkmark")
+                    .font(.title.weight(.heavy))
+                    .foregroundStyle(Color(red: 0.16, green: 0.08, blue: 0.02))
+                    .frame(maxWidth: .infinity, minHeight: 84)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .disabled(vm.isPaused)
+            .accessibilityIdentifier("intervalRunner.repDone")
+            Text("Tap when the rep is finished")
+                .font(.footnote).foregroundStyle(.white.opacity(0.7))
         }
     }
 
@@ -430,8 +463,37 @@ final class RunnerViewModel {
         return max(0, accumulated + running)
     }
 
+    // MARK: Self-paced reps (prompt 141)
+
+    /// Wall-elapsed at which the current open-ended ("until I tap done") rep began; nil when not in one.
+    private(set) var openRepStartedAt: TimeInterval?
+    /// Durations of the completed open-ended reps, in order.
+    private(set) var openRepDurations: [TimeInterval] = []
+    private var openBanked: TimeInterval { openRepDurations.reduce(0, +) }
+
+    /// Seconds into the current open-ended rep (counts up), nil when not in one.
+    var openRepElapsed: TimeInterval? { openRepStartedAt.map { max(0, elapsed - $0) } }
+
+    /// Schedule time: wall time minus time spent inside open-ended reps. The protocol clock is frozen while
+    /// a tap-done rep is in progress, then carries on exactly where it stopped.
+    var scheduleElapsed: TimeInterval {
+        max(0, elapsed - openBanked - (openRepElapsed ?? 0))
+    }
+
     /// The live timeline read.
-    var state: IntervalSchedule.State { schedule.state(at: elapsed) }
+    var state: IntervalSchedule.State {
+        schedule.state(at: scheduleElapsed, completedOpenReps: openRepDurations.count)
+    }
+
+    /// DONE on a tap-done rep: bank its time and move on to what follows.
+    func completeOpenRep() {
+        guard !isFinished, let rep = openRepElapsed else { return }
+        openRepDurations.append(rep)
+        openRepStartedAt = nil
+        lastPhaseID = nil   // let the next tick fire the transition cue
+        now = .now
+        tickEffects()
+    }
 
     // MARK: - Lifecycle
 
@@ -467,7 +529,13 @@ final class RunnerViewModel {
     /// Jump the anchor to the start of the next phase boundary (Skip). If that lands past the end, finish.
     func skipPhase() {
         guard !isFinished else { return }
-        let e = elapsed
+        // Skipping a tap-done rep is the same as finishing it.
+        if state.phase.isOpenEnded {
+            if openRepStartedAt == nil { enterOpenRep(state) }
+            completeOpenRep()
+            return
+        }
+        let e = scheduleElapsed
         // Find the end-of-current-phase boundary.
         var boundary = 0.0
         for phase in schedule.phases where phase.durationSec > 0 {
@@ -478,8 +546,8 @@ final class RunnerViewModel {
             finish(early: false)
             return
         }
-        // Move the anchor so elapsed == boundary.
-        accumulated = boundary
+        // Move the anchor so schedule time == boundary (open-rep time stays banked on top).
+        accumulated = boundary + openBanked
         startedAt = isPaused ? nil : .now
         now = .now
         // Let the next tick fire the transition cue.
@@ -524,6 +592,8 @@ final class RunnerViewModel {
             finish(early: false)
             return
         }
+        // Entering a tap-done rep: freeze the protocol clock at the exact start of the phase.
+        if st.phase.isOpenEnded, openRepStartedAt == nil { enterOpenRep(st) }
 
         // Phase transition → work/rest cue.
         if lastPhaseID != st.phase.id {
@@ -545,6 +615,13 @@ final class RunnerViewModel {
         } else if lastTickRemaining == nil {
             lastTickRemaining = st.remainingInPhase
         }
+    }
+
+    /// Start timing an open-ended rep. The tick that noticed it may be a little late, so anchor the rep
+    /// at the moment schedule time crossed the phase start (no lost or double-counted rest).
+    private func enterOpenRep(_ st: IntervalSchedule.State) {
+        let overshoot = max(0, (elapsed - openBanked) - st.startOfPhase)
+        openRepStartedAt = elapsed - overshoot
     }
 
     private func sampleHR() {
@@ -574,10 +651,21 @@ final class RunnerViewModel {
 
     /// The pre-filled capture: time-under-tension (completed work seconds), completed reps·sets, avg/peak HR.
     var capture: Capture {
-        let e = elapsed
+        let e = scheduleElapsed
         var tut = 0.0
         var completedReps = 0
         var completedSets = 0
+        // Tap-done reps: their real durations, plus an unfinished one if stopped mid-rep.
+        var openIndex = 0
+        for phase in schedule.phases where phase.isOpenEnded {
+            if openIndex < openRepDurations.count {
+                tut += openRepDurations[openIndex]
+                completedReps += 1
+                completedSets = max(completedSets, phase.setIndex)
+            }
+            openIndex += 1
+        }
+        tut += openRepElapsed ?? 0
         var startOfPhase = 0.0
         for phase in schedule.phases where phase.durationSec > 0 {
             let end = startOfPhase + Double(phase.durationSec)
