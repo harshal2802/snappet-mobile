@@ -108,6 +108,19 @@ struct WorkoutSettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    BuddyPrototypeView()
+                } label: {
+                    Label("Training buddy (3D prototype)", systemImage: "sparkles")
+                }
+                .accessibilityIdentifier("openBuddyPrototype")
+            } header: {
+                Text("Labs")
+            } footer: {
+                Text("Try the training buddy that will grow with your progress. A prototype — not tied to your workouts yet.")
+            }
+
+            Section {
                 LabeledContent("Exercise catalog", value: "873 exercises")
             } footer: {
                 Text("Exercise data from the Free Exercise DB (yuhonas/free-exercise-db), bundled for offline use. Everything stays on your device.")
