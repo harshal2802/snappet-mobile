@@ -155,4 +155,33 @@ final class ProgressionUITests: XCTestCase {
         app.buttons["buddy.open"].tap()
         XCTAssertTrue(app.staticTexts["buddyScreen.level"].waitForExistence(timeout: 6))
     }
+
+    /// Mid-workout, the hero shows the live session, Resume works, and the buddy is still one tap away.
+    func testTrainingNowHeroStillReachesYourBuddy() {
+        app.launchArguments += ["-uiTestSeedRoutineHistory"]
+        app.launch()
+        app.tabBars.buttons["Home"].tap()
+        let hatch = app.buttons["buddy.hatch"]
+        XCTAssertTrue(hatch.waitForExistence(timeout: 8))
+        hatch.tap()
+        XCTAssertTrue(app.staticTexts["buddy.level"].waitForExistence(timeout: 10))
+
+        // Start a quick session and minimise it.
+        app.tabBars.buttons["Apps"].tap()
+        app.buttons["moduleCard.workout-log"].tap()
+        let quick = app.buttons["workout.quickStart"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 6))
+        quick.tap()
+        let minimize = app.buttons["minimizeWorkout"]
+        XCTAssertTrue(minimize.waitForExistence(timeout: 8))
+        minimize.tap()
+        app.tabBars.buttons["Home"].tap()
+
+        XCTAssertTrue(app.buttons["home.hero.resume"].waitForExistence(timeout: 6), "the hero shows the live workout")
+        sleep(1); snap("13-home-training-now")
+        let open = app.buttons["buddy.open"]
+        XCTAssertTrue(open.exists, "the buddy is still reachable while training")
+        open.tap()
+        XCTAssertTrue(app.staticTexts["buddyScreen.level"].waitForExistence(timeout: 6))
+    }
 }

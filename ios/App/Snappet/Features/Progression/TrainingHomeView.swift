@@ -313,17 +313,31 @@ struct BuddyHero: View {
             let soFar = ledger.awards[active.id]?.total ?? 0
             let level = Progression.levelInfo(totalXP: ledger.totalXP)
             VStack(alignment: .leading, spacing: 5) {
-                Text(active.routineName).font(.title3.weight(.heavy)).foregroundStyle(.white)
-                Text(soFar > 0 ? "+\(soFar) XP so far" : "Keep going — XP lands at 5 minutes")
-                    .font(.subheadline.weight(.bold)).foregroundStyle(.yellow)
-                    .accessibilityIdentifier("home.hero.xpSoFar")
-                HStack {
-                    Text("\(active.completedSetCount) logged").font(.caption)
-                    Spacer()
-                    Text("Level \(level.level + 1) in \(level.xpToNext) XP").font(.caption)
+                // The workout details still lead to your buddy; Resume is its own button below.
+                NavigationLink {
+                    BuddyScreen()
+                } label: {
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(active.routineName).font(.title3.weight(.heavy)).foregroundStyle(.white)
+                            Spacer()
+                            Text("Your buddy ›").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                        }
+                        Text(soFar > 0 ? "+\(soFar) XP so far" : "Keep going — XP lands at 5 minutes")
+                            .font(.subheadline.weight(.bold)).foregroundStyle(.yellow)
+                            .accessibilityIdentifier("home.hero.xpSoFar")
+                        HStack {
+                            Text("\(active.completedSetCount) logged").font(.caption)
+                            Spacer()
+                            Text("Level \(level.level + 1) in \(level.xpToNext) XP").font(.caption)
+                        }
+                        .foregroundStyle(.white.opacity(0.65))
+                        ProgressView(value: level.fraction).tint(SnappetColor.workout)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(.white.opacity(0.65))
-                ProgressView(value: level.fraction).tint(SnappetColor.workout)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("buddy.open")
                 Button {
                     router.pendingWorkoutResume = true
                     router.open(module: WorkoutTrackerModule.id)
