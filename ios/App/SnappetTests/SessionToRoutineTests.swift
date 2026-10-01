@@ -124,7 +124,7 @@ final class SessionToRoutineTests: XCTestCase {
         XCTAssertNotNil(b?.timedSpecData, "the spec is carried through verbatim")
     }
 
-    func testTimedStructuredProtocolKeepsItsSpecSetCountAndNoSeparateTarget() {
+    func testTimedStructuredProtocolCountsRunsAndNoSeparateTarget() {
         let spec = TimedExerciseSpec.repeaters7x3x6   // a structured (repeaters) spec carrying its own sets
         var t = SessionExercise(exerciseId: "timed.repeaters", targetSets: 0, targetReps: "",
                                 targetRestSeconds: 0, sets: [timed(120), timed(120)],
@@ -132,7 +132,7 @@ final class SessionToRoutineTests: XCTestCase {
         t.disciplineRaw = WorkoutDiscipline.timed.rawValue
         t.timedSpec = spec
         let b = SessionToRoutine.routineExercise(from: t, defaultUnit: .kg)
-        XCTAssertEqual(b?.sets, spec.sets, "a structured spec's set count drives the block, not the log count")
+        XCTAssertEqual(b?.sets, 2, "two completed runs → a 2-run block; the spec's 6 sets stay inside each run (prompt 139)")
         XCTAssertNil(b?.targetDurationSec, "a structured spec already carries its work seconds — no double target")
         XCTAssertEqual(b?.timedSpec?.mode, .repeaters)
     }

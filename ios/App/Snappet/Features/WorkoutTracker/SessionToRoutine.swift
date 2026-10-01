@@ -128,13 +128,15 @@ enum SessionToRoutine {
             climbGradeScaleRaw: se.climbGradeScaleRaw ?? se.climbGradeScale.rawValue)
     }
 
-    /// Timed: carry the structure through verbatim. A structured protocol (repeaters/tabata/emom) already
-    /// encodes its sets in the spec, so `sets` = the spec's set count; a simple hold / open count-up uses
-    /// the completed-set count and seeds a representative hold target (the median completed duration).
+    /// Timed: carry the structure through verbatim. A structured protocol (repeaters/tabata/emom) encodes
+    /// its own sets in the spec, and each completed run logs ONE SetLog — so the block's `sets` = runs
+    /// completed (usually 1), never the spec's set count (prompt 139: that made a replay 3 × 3 = 9 sets).
+    /// A simple hold / open count-up uses the completed-set count and seeds a representative hold target
+    /// (the median completed duration).
     private static func timedBlock(_ se: SessionExercise, completed: [SetLog]) -> RoutineExercise {
         let spec = se.timedSpec
         let structured = spec?.mode.isStructured ?? false
-        let sets = structured ? max(1, spec?.sets ?? completed.count) : max(1, completed.count)
+        let sets = max(1, completed.count)
         // A representative hold for a simple hold = the median completed duration; structured specs carry
         // their own work seconds, so we don't double-prescribe a target on top of the spec.
         let target: Double? = structured ? nil : medianDuration(completed)

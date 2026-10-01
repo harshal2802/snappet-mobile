@@ -65,6 +65,13 @@ enum QuickSessionPager {
         ex.plannedSets ?? (ex.targetSets > 0 ? ex.targetSets : nil)
     }
 
+    /// Whether logging an effort on `ex` should start the block's rest timer. Not after a structured
+    /// protocol run — the protocol already rested between its reps and sets; stacking the block's rest on
+    /// top was the "double rest" (prompt 139).
+    static func startsRestAfterLog(_ ex: SessionExercise) -> Bool {
+        !(ex.discipline == .timed && ex.timedSpec?.mode.isStructured == true)
+    }
+
     /// The per-discipline noun for plan labels and ledgers ("set" / "leg" / "round").
     static func effortNoun(for ex: SessionExercise) -> String {
         switch ex.discipline {

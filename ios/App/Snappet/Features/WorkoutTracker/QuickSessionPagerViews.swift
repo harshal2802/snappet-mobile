@@ -203,6 +203,9 @@ struct HeroStepperCard: View {
     let idBase: String
     let onMinus: () -> Void
     let onPlus: () -> Void
+    /// When set, the readout is a tap-to-type weight (prompt 139) instead of a static label.
+    var editableWeight: Binding<Double>? = nil
+    var weightUnit: WeightUnit = .kg
 
     var body: some View {
         HStack {
@@ -210,10 +213,16 @@ struct HeroStepperCard: View {
                 Text(caption.uppercased())
                     .font(.system(size: 10, weight: .heavy)).tracking(1.2)
                     .foregroundStyle(SnappetColor.textSecondary)
-                Text(value)
-                    .font(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit()
-                    .contentTransition(.numericText())
-                    .accessibilityIdentifier(idBase)
+                if let editableWeight {
+                    TypeableWeightValue(weight: editableWeight, unit: weightUnit,
+                                        font: .system(size: 32, weight: .bold, design: .rounded).monospacedDigit(),
+                                        id: idBase)
+                } else {
+                    Text(value)
+                        .font(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit()
+                        .contentTransition(.numericText())
+                        .accessibilityIdentifier(idBase)
+                }
             }
             Spacer()
             HStack(spacing: 10) {
@@ -255,6 +264,10 @@ struct StrengthHeroCard: View {
     @State private var reps: Int
     @State private var weight: Double
     @State private var unitSel: WeightUnit
+    /// The user's ± step per unit (Workout Settings → Weight ± step; prompt 139). 0 = the default.
+    @AppStorage(WeightEntry.stepKey(for: .kg)) private var stepKg = 0.0
+    @AppStorage(WeightEntry.stepKey(for: .lb)) private var stepLb = 0.0
+    private var step: Double { WeightEntry.step(stored: unitSel == .lb ? stepLb : stepKg, unit: unitSel) }
 
     init(setLabel: String, reps: Int, weight: Double, unit: WeightUnit, hint: String?,
          onLog: @escaping (SetLog) -> Void,
@@ -282,8 +295,9 @@ struct StrengthHeroCard: View {
                             value: weight > 0
                                 ? "\(SetMeasure.formatWeight(weight)) \(unitSel.display)" : "Body",
                             idBase: "freeform.quickWeight",
-                            onMinus: { weight = max(0, weight - 2.5) },
-                            onPlus: { weight = min(2000, weight + 2.5) })
+                            onMinus: { weight = WeightEntry.nudge(weight, by: -step) },
+                            onPlus: { weight = WeightEntry.nudge(weight, by: step) },
+                            editableWeight: $weight, weightUnit: unitSel)
             if let hint {
                 Text(hint).font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("lastTimeHint")

@@ -124,6 +124,40 @@ final class RoutineSessionBuilderTests: XCTestCase {
         XCTAssertEqual(block.discipline, .timed)
         XCTAssertEqual(block.timedCategory, TimedExerciseCategory.hangboard.rawValue)
         XCTAssertEqual(block.timedSpec?.mode, .repeaters)
-        XCTAssertEqual(block.sets, spec.sets, "a structured spec's set count seeds the block")
+        XCTAssertEqual(block.sets, 1, "a structured protocol is ONE run — its sets live in the spec (prompt 139)")
+    }
+
+    // MARK: - Prompt 139: a protocol block is one run
+
+    private func protocolBlock(sets: Int, spec: TimedExerciseSpec) -> RoutineExercise {
+        RoutineExercise(exerciseId: "timed.x", sets: sets, reps: "", restSeconds: 90, displayName: "Max hangs",
+                        discipline: .timed, timedSpecData: try? JSONEncoder().encode(spec), timedCategory: nil)
+    }
+
+    func testLegacyBlockThatCopiedTheSpecSetsPlaysOnce() {
+        let spec = TimedExerciseSpec.repeaters7x3x6
+        XCTAssertEqual(RoutineSessionBuilder.plannedRuns(for: protocolBlock(sets: spec.sets, spec: spec)), 1,
+                       "pre-139 routines stored spec.sets — that played 6 full runs = 36 sets")
+        let se = RoutineSessionBuilder.sessionExercise(from: protocolBlock(sets: spec.sets, spec: spec), defaultUnit: .kg)
+        XCTAssertEqual(QuickSessionPager.plannedCount(for: se), 1)
+    }
+
+    func testDeliberateRepeatOfAProtocolIsKept() {
+        let spec = TimedExerciseSpec.repeaters7x3x6
+        XCTAssertEqual(RoutineSessionBuilder.plannedRuns(for: protocolBlock(sets: 2, spec: spec)), 2)
+    }
+
+    func testNonProtocolBlocksAreUnchanged() {
+        let strength = RoutineExercise(exerciseId: "bench", sets: 4, reps: "8", restSeconds: 120)
+        XCTAssertEqual(RoutineSessionBuilder.plannedRuns(for: strength), 4)
+    }
+
+    func testNoBlockRestAfterAProtocolRun() {
+        let spec = TimedExerciseSpec.repeaters7x3x6
+        let se = RoutineSessionBuilder.sessionExercise(from: protocolBlock(sets: 1, spec: spec), defaultUnit: .kg)
+        XCTAssertFalse(QuickSessionPager.startsRestAfterLog(se), "the protocol already rested between its sets")
+        let strength = RoutineSessionBuilder.sessionExercise(
+            from: RoutineExercise(exerciseId: "bench", sets: 4, reps: "8", restSeconds: 120), defaultUnit: .kg)
+        XCTAssertTrue(QuickSessionPager.startsRestAfterLog(strength))
     }
 }
