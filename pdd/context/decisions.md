@@ -9517,3 +9517,11 @@ Non-obvious calls:
   level doesn't celebrate it twice.
 - Growing up is one buddy that changes stage in front of you, not two side by side: two RealityViews
   in a row get no intrinsic width, and the transformation reads better anyway.
+
+## 2026-10-01 — widget buddies are bundled renders of the real 3D buddy (prompt 152)
+
+- WidgetKit can't run RealityKit, and offscreen-rendering stills at runtime adds a Metal path for little
+  gain. Instead the 25 stage × mood stills are rendered once from the app (a studio mode + a render-only
+  UI test + a script) and bundled in the widget. A new art style or a look change = re-run the render.
+- Stills sit on the widget's exact background colour, so there's no seam; the crop stays inside the
+  render panel's rounded corners.

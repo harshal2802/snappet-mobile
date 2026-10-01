@@ -12,5 +12,6 @@ struct SnappetWidgetsBundle: WidgetBundle {
         KilterLiveActivity()
         PomodoroLiveActivity()
         TodayWidget()
+        BuddyWidget()
     }
 }
