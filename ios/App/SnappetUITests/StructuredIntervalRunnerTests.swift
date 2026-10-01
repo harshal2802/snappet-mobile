@@ -263,4 +263,56 @@ final class StructuredIntervalRunnerTests: XCTestCase {
         let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '+5 kg'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the logged run records the load it finished on")
     }
+
+    /// Prompt 145 (with the fake sensor — the simulator has no Bluetooth): set a max, run Max hangs at
+    /// 90 %, and the runner shows live force against a target band; the end card reports the peak.
+    func testForceSensorShowsLiveForceAndTargetBand() {
+        app.terminate()
+        app.launchArguments += ["-uiTestFakeForceSensor"]
+        app.launch()
+
+        // Workout → Settings → Force sensor: connected, set a two-hand max of 52 kg.
+        XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 8))
+        app.tabBars.buttons["Apps"].tap()
+        app.buttons["moduleCard.workout-log"].tap()
+        let gear = app.buttons["workout.settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 6))
+        gear.tap()
+        let open = app.buttons["openForceSensor"]
+        for _ in 0..<3 where !open.exists { app.swipeUp() }
+        open.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["forceSensor.connected"].waitForExistence(timeout: 4))
+        let max = app.buttons["forceSensor.maxBoth"]
+        for _ in 0..<3 where !max.isHittable { app.swipeUp() }
+        max.tap()
+        app.textFields["forceSensor.maxBoth.field"].typeText("52")
+        app.buttons["forceSensor.maxBoth.done"].tap()
+        XCTAssertEqual(app.buttons["forceSensor.maxBoth"].label, "52 kg")
+        snap("force-settings")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // Quick Start → Max hangs (90 % of max) → run.
+        let quick = app.buttons["workout.quickStart"]
+        XCTAssertTrue(quick.waitForExistence(timeout: 6))
+        quick.tap()
+        openTimedPickSheet()
+        app.buttons["timed.createNew"].tap()
+        app.buttons["timed.create.preset.maxhangs"].tap()
+        app.buttons["timed.create.add"].tap()
+        XCTAssertTrue(app.staticTexts["freeform.timedName"].waitForExistence(timeout: 5)
+            || app.otherElements["freeform.timedName"].waitForExistence(timeout: 2))
+        tapAddSetForLastExercise()
+
+        let now = app.staticTexts["intervalRunner.forceNow"]
+        XCTAssertTrue(now.waitForExistence(timeout: 12), "live force during the hang")
+        let target = app.staticTexts["intervalRunner.forceTarget"]
+        XCTAssertTrue(target.exists)
+        XCTAssertEqual(target.label, "Target 45–48 kg · 90 % of your max")
+        snap("runner-live-force")
+        sleep(3)
+        app.buttons["intervalRunner.stop"].tap()
+        XCTAssertTrue(app.staticTexts["Peak force"].waitForExistence(timeout: 4), "the end card reports measured force")
+        snap("end-card-force")
+    }
 }

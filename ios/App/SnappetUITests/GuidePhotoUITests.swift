@@ -41,6 +41,10 @@ final class GuidePhotoUITests: XCTestCase {
     /// offline), so start every run from the not-installed state.
     private func ensureRemoved() {
         let remove = app.buttons["removeGuidePhotos"]
+        let download = app.buttons["downloadGuidePhotosSettings"]
+        // Settings grew (weight ± step, force sensor — prompts 139/145): the guide-photo section can start
+        // below the fold, and a Form only builds on-screen rows, so scroll to it first.
+        for _ in 0..<5 where !(remove.exists || download.exists) { app.swipeUp() }
         if remove.waitForExistence(timeout: 2) { remove.tap() }
         XCTAssertTrue(app.buttons["downloadGuidePhotosSettings"].waitForExistence(timeout: 4),
                       "Settings should offer the guide-photo download when nothing is installed")

@@ -46,10 +46,18 @@ struct WorkoutSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("openHeartRateSource")
+                NavigationLink {
+                    ForceSensorSettingsView()
+                } label: {
+                    LabeledContent("Force sensor",
+                                   value: app.forceSensor.state.isConnected ? (app.forceSensor.connectedName ?? "Connected")
+                                       : app.forceSensor.hasRememberedSensor ? (app.forceSensor.rememberedName ?? "Paired") : "Not set up")
+                }
+                .accessibilityIdentifier("openForceSensor")
             } header: {
                 Text("Live metrics")
             } footer: {
-                Text("Choose where live heart rate comes from during a workout — your Apple Watch or a Bluetooth heart-rate band.")
+                Text("Choose where live heart rate comes from during a workout — your Apple Watch or a Bluetooth heart-rate band. A force sensor (Tindeq Progressor) measures hangs and pulls.")
             }
 
             Section {

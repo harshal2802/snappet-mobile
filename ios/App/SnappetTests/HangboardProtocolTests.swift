@@ -33,9 +33,9 @@ final class HangboardProtocolTests: XCTestCase {
 
     func testSentenceReadsLikeTheWireframe() {
         XCTAssertEqual(TimedExerciseSpec.maxHangs.sentence,
-                       "3 sets × 3 hangs of 7 s · 2 min between hangs · 4 min between sets · about 21 min")
+                       "3 sets × 3 hangs of 7 s · 2 min between hangs · 4 min between sets · 90 % of max · about 21 min")
         XCTAssertEqual(TimedExerciseSpec.abrahangs.sentence,
-                       "20 hangs of 10 s · 20 s between hangs · about 10 min")
+                       "20 hangs of 10 s · 20 s between hangs · 40 % of max · about 10 min")
         XCTAssertEqual(TimedExerciseSpec.hold(45).sentence, "One hold of 45 s")
         XCTAssertEqual(TimedExerciseSpec(mode: .openCountUp).sentence, "Open hold, counted up")
     }
