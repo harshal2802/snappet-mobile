@@ -38,7 +38,10 @@ enum RoutineScheduleSync {
         let horizonStart = Calendar.current.date(byAdding: .day, value: -60, to: now) ?? now
         let sessions = (try? context.fetch(FetchDescriptor<WorkoutSession>(
             predicate: #Predicate { $0.startedAt >= horizonStart }))) ?? []
+        // A pause with quiet reminders (progression P2, prompt 149) drops the ones it covers.
+        let quiet = PauseStore.load().filter(\.muteReminders)
         let plan = RoutineReminderPlanner.plan(inputs(routines: routines, sessions: sessions), now: now)
+            .filter { n in !quiet.contains { $0.covers(n.fireDate) } }
         Task { await reminders.apply(plan) }
     }
 

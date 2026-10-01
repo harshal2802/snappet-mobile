@@ -78,4 +78,57 @@ final class ProgressionUITests: XCTestCase {
         XCTAssertTrue(level.label.contains("Level"), level.label)
         snap("04-home-hatched")
     }
+
+    /// P2 (prompt 149): Home → the buddy's screen → Form explained → pause (buddy sleeps, Form held) →
+    /// end pause → how XP works → style (others locked).
+    func testBuddyScreenFormPauseRulesAndStyle() {
+        app.launchArguments += ["-uiTestSeedRoutineHistory"]
+        app.launch()
+        app.tabBars.buttons["Home"].tap()
+        let hatch = app.buttons["buddy.hatch"]
+        XCTAssertTrue(hatch.waitForExistence(timeout: 8))
+        hatch.tap()
+        let open = app.buttons["buddy.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+
+        let level = app.staticTexts["buddyScreen.level"]
+        XCTAssertTrue(level.waitForExistence(timeout: 6))
+        XCTAssertTrue(level.label.contains("Level"), level.label)
+        XCTAssertTrue(any("buddyScreen.streak").label.contains("🔥"), any("buddyScreen.streak").label)
+        XCTAssertTrue(any("buddyScreen.recent").exists, "recent XP lists the seeded sessions")
+        sleep(3); snap("05-buddy-screen")
+
+        app.buttons["buddyScreen.form"].tap()
+        XCTAssertTrue(app.navigationBars["Form"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Never your level or XP."].exists || app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'Never your level'")).firstMatch.exists)
+        snap("06-form-sheet")
+        app.navigationBars["Form"].buttons["Done"].tap()
+
+        app.buttons["buddyScreen.pause"].tap()
+        XCTAssertTrue(app.navigationBars["Pause"].waitForExistence(timeout: 4))
+        app.segmentedControls["pause.reason"].buttons["Injury"].tap()
+        app.segmentedControls["pause.length"].buttons["2 weeks"].tap()
+        snap("07-pause-sheet")
+        app.buttons["pause.start"].tap()
+        let mood = app.staticTexts["buddyScreen.mood"]
+        XCTAssertTrue(mood.waitForExistence(timeout: 4))
+        XCTAssertTrue(mood.label.hasPrefix("Resting"), mood.label)
+        XCTAssertTrue(app.buttons["buddyScreen.endPause"].exists)
+        XCTAssertTrue(any("buddyScreen.form").label.contains("Held while paused"), any("buddyScreen.form").label)
+        sleep(1); snap("08-paused")
+        app.buttons["buddyScreen.endPause"].tap()
+        XCTAssertFalse(mood.label.hasPrefix("Resting"), mood.label)
+
+        app.swipeUp()
+        app.buttons["buddyScreen.rules"].tap()
+        XCTAssertTrue(app.navigationBars["How XP works"].waitForExistence(timeout: 4))
+        snap("09-rules")
+        app.navigationBars["How XP works"].buttons["Done"].tap()
+        app.buttons["buddyScreen.style"].tap()
+        XCTAssertTrue(app.buttons["buddyStyle.athlete"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.buttons["buddyStyle.athlete"].label.contains("Coming soon"))
+        snap("10-style")
+    }
 }

@@ -9491,3 +9491,13 @@ Non-obvious calls:
   (restored history), and those users should still meet it.
 - UI tests can't assert "under 5 minutes earns nothing": this environment's wall clock jumps, so a
   seconds-long session can measure as 18 hours. That rule is unit-tested instead.
+
+## 2026-10-01 — pauses are stored, freezes are derived (prompt 149)
+
+- A pause is a user statement about the future (and about past days), so it's stored — a small JSON list
+  in BuddyDefaults, not SwiftData: no migration, and losing it on a reinstall only loses "held" weeks.
+- Freezes are a pure function of trained weeks + pauses (one per 4 streak weeks, hold 2, spent
+  automatically), so nothing can drift and history recomputes the same way every time.
+- While paused, Form is held at its value when the pause began; afterwards paused days are neutral. A
+  missed week overlapping a pause never spends a freeze.
+- Reminders a quiet pause covers are filtered out at replan time; the schedule itself is untouched.

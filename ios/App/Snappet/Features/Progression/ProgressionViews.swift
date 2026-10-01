@@ -11,6 +11,7 @@ enum BuddyDefaults {
         return suite
     }()
     static let hatchedKey = "buddy.hatched"
+    static let styleKey = "buddy.style"
 }
 
 /// Level, Form and streak at a glance, derived from the sessions and routine schedules.
@@ -19,21 +20,33 @@ struct ProgressionSnapshot {
     let ledger: Progression.Ledger
     let level: Progression.LevelInfo
     let form: Progression.Form
-    let weekStreak: Int
+    let streak: Progression.StreakState
+    let pause: Progression.Pause?
+    var weekStreak: Int { streak.weeks }
 
     static func schedules(_ routines: [Routine]) -> [UUID: RoutineSchedule] {
         Dictionary(routines.compactMap { r in r.schedule.map { (r.id, $0) } }, uniquingKeysWith: { a, _ in a })
     }
 
-    static func make(sessions: [WorkoutSession], routines: [Routine], now: Date = .now) -> ProgressionSnapshot {
+    static func make(sessions: [WorkoutSession], routines: [Routine], pauses: [Progression.Pause] = PauseStore.load(),
+                     now: Date = .now) -> ProgressionSnapshot {
         let schedules = schedules(routines)
-        let ledger = Progression.ledger(sessions, schedules: schedules)
+        let ledger = Progression.ledger(sessions, schedules: schedules, pauses: pauses)
         return ProgressionSnapshot(ledger: ledger, level: Progression.levelInfo(totalXP: ledger.totalXP),
-                                   form: Progression.form(sessions, schedules: schedules, now: now),
-                                   weekStreak: Progression.weekStreak(sessions, now: now))
+                                   form: Progression.form(sessions, schedules: schedules, pauses: pauses, now: now),
+                                   streak: Progression.streak(sessions, pauses: pauses, now: now),
+                                   pause: Progression.activePause(pauses, now: now))
     }
 
-    var look: BuddyLook { BuddyLook(stage: level.stage, form: form.value) }
+    var look: BuddyLook { BuddyLook(stage: level.stage, form: form.value, paused: pause != nil) }
+
+    /// "A streak freeze covered last week" — when the most recent frozen week was last week.
+    func freezeCoveredLastWeek(now: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard let last = streak.frozenWeeks.last,
+              let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
+              let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeek) else { return false }
+        return calendar.isDate(last, inSameDayAs: lastWeek)
+    }
 }
 
 // MARK: - Home card (wireframe frames 8–9)
@@ -51,7 +64,8 @@ struct BuddyHomeCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            BuddyCreatureView(look: BuddyLook(stage: shownStage, form: snapshot.form.value),
+            BuddyCreatureView(look: BuddyLook(stage: shownStage, form: snapshot.form.value,
+                                              paused: snapshot.pause != nil && hatchingStage == nil),
                               cheerTrigger: cheer, animated: hatchingStage != nil, interactive: false)
                 .frame(width: 118, height: 112)
                 .background(LinearGradient(colors: [Color(hue: 0.75, saturation: 0.2, brightness: 0.28), Color(white: 0.1)],
@@ -72,19 +86,29 @@ struct BuddyHomeCard: View {
         .accessibilityIdentifier("buddy.homeCard")
     }
 
+    /// Tapping the words opens the buddy's screen (P2); tapping the buddy itself cheers.
     private var status: some View {
-        Group {
-            Text("\(snapshot.level.stage.title) · Level \(snapshot.level.level)")
-                .font(.headline).foregroundStyle(.white)
-                .accessibilityIdentifier("buddy.level")
-            Text(snapshot.look.mood + (snapshot.weekStreak >= 2 ? " · 🔥 \(snapshot.weekStreak) weeks" : ""))
-                .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-            ProgressView(value: snapshot.level.fraction).tint(SnappetColor.workout)
-            Text("\(snapshot.level.xpToNext) XP to Level \(snapshot.level.level + 1)")
-                .font(.caption2).foregroundStyle(.white.opacity(0.55))
+        NavigationLink {
+            BuddyScreen()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(snapshot.level.stage.title) · Level \(snapshot.level.level)")
+                    .font(.headline).foregroundStyle(.white)
+                    .accessibilityIdentifier("buddy.level")
+                Text(snapshot.look.mood
+                     + (snapshot.weekStreak >= 2 ? " · 🔥 \(snapshot.weekStreak) weeks" : "")
+                     + (snapshot.streak.freezes > 0 ? " · ❄︎ \(snapshot.streak.freezes)" : ""))
+                    .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
+                ProgressView(value: snapshot.level.fraction).tint(SnappetColor.workout)
+                Text(snapshot.freezeCoveredLastWeek() ? "❄︎ A freeze kept your streak last week"
+                     : "\(snapshot.level.xpToNext) XP to Level \(snapshot.level.level + 1)")
+                    .font(.caption2).foregroundStyle(.white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
-        .onTapGesture { cheer += 1 }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("buddy.open")
     }
 
     private var meet: some View {
@@ -127,14 +151,17 @@ struct SessionXPCard: View {
     @Query(filter: #Predicate<WorkoutSession> { $0.completedAt != nil }) private var completed: [WorkoutSession]
     @Query private var routines: [Routine]
     @State private var cheer = 0
+    @AppStorage(PauseStore.key, store: BuddyDefaults.store) private var pausesRaw = "[]"
 
     var body: some View {
         let schedules = ProgressionSnapshot.schedules(routines)
-        let ledger = Progression.ledger(completed, including: session, schedules: schedules)
+        let pauses = PauseStore.decode(pausesRaw)
+        let ledger = Progression.ledger(completed, including: session, schedules: schedules, pauses: pauses)
         if let award = ledger.awards[session.id] {
             card(award: award, before: Progression.levelInfo(totalXP: ledger.xp(before: session.id)),
                  after: Progression.levelInfo(totalXP: ledger.totalXP),
-                 form: Progression.form(completed + [session], schedules: schedules))
+                 form: Progression.form(completed + [session], schedules: schedules, pauses: pauses),
+                 pause: Progression.activePause(pauses))
         } else {
             Label("Sessions of 5 minutes or more earn XP for your buddy.", systemImage: "sparkles")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -144,7 +171,7 @@ struct SessionXPCard: View {
     }
 
     private func card(award: Progression.Award, before: Progression.LevelInfo, after: Progression.LevelInfo,
-                      form: Progression.Form) -> some View {
+                      form: Progression.Form, pause: Progression.Pause?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .bottom) {
                 LinearGradient(colors: [Color(hue: BuddyLook(stage: after.stage, form: form.value).hue, saturation: 0.25, brightness: 0.3),
@@ -181,6 +208,17 @@ struct SessionXPCard: View {
             .accessibilityIdentifier("xp.items")
 
             levelLine(before: before, after: after)
+
+            // Training while paused still counts — offer to end the pause (wireframe frame 6).
+            if pause != nil {
+                HStack {
+                    Text("You're paused — this still counts.").font(.footnote).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("End pause") { PauseStore.endActive(); pausesRaw = PauseStore.encode(PauseStore.load()) }
+                        .font(.footnote.weight(.semibold))
+                        .accessibilityIdentifier("xp.endPause")
+                }
+            }
         }
     }
 
