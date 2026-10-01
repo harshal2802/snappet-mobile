@@ -51,12 +51,16 @@ final class BuddyPrototypeUITests: XCTestCase {
 
         app.switches["buddy.pause"].switches.firstMatch.tap()
         XCTAssertTrue(mood.label.hasPrefix("Resting"), mood.label)
+        app.swipeDown()
         sleep(1); snap("08-paused")
         app.switches["buddy.pause"].switches.firstMatch.tap()
 
         form.adjust(toNormalizedSliderPosition: 0.9)
+        app.swipeDown()
+        // Tapping the buddy itself cheers (same as the Cheer button).
+        app.descendants(matching: .any).matching(identifier: "buddy.creature").firstMatch.tap()
+        usleep(450_000); snap("09-cheer")
         app.buttons["buddy.cheer"].tap()
-        usleep(500_000); snap("09-cheer")
 
         // The other styles are shown but locked until their model packs exist.
         XCTAssertTrue(app.buttons["buddy.style.Athlete"].label.contains("Coming soon"))
