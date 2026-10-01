@@ -32,7 +32,26 @@ enum WidgetSnapshotService {
             now: now, calendar: calendar,
             dueIDs: HabitSchedule.dueToday(habits: habits, routines: routines, now: now, calendar: calendar))
         WidgetSnapshotStore.write(snapshot)
+        // The buddy widgets (progression P4): level, mood, streak and up next.
+        let sessions = (try? context.fetch(FetchDescriptor<WorkoutSession>())) ?? []
+        BuddyWidgetStore.write(buddySnapshot(sessions: sessions, routines: routines, now: now))
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// The buddy widgets' snapshot — the same derivation Home uses (`ProgressionSnapshot`).
+    static func buddySnapshot(sessions: [WorkoutSession], routines: [Routine], now: Date) -> BuddyWidgetSnapshot {
+        let p = ProgressionSnapshot.make(sessions: sessions, routines: routines, now: now)
+        let upNext = RoutineReminderPlanner.upNext(RoutineScheduleSync.inputs(routines: routines, sessions: sessions), now: now)
+        let routine = upNext.flatMap { u in routines.first { $0.id == u.routineID } }
+        return BuddyWidgetSnapshot(
+            stage: p.level.stage.rawValue, stageTitle: p.level.stage.title, level: p.level.level,
+            xpIntoLevel: p.level.xpIntoLevel, levelCost: p.level.levelCost, form: p.form.value,
+            mood: p.look.mood, paused: p.pause != nil, pausedUntil: p.pause?.plannedEnd,
+            hatched: BuddyDefaults.store.bool(forKey: BuddyDefaults.hatchedKey) && p.ledger.sessionCount > 0,
+            streakWeeks: p.streak.weeks, freezes: p.streak.freezes,
+            upNextName: routine?.name, upNextStart: upNext?.start,
+            upNextXP: routine.map { TrainingHome.xpEstimate(routineID: $0.id, sessions: sessions, ledger: p.ledger) },
+            updatedAt: now)
     }
 
     /// Drain the App-Group outbox of widget check-offs and apply them to the canonical store

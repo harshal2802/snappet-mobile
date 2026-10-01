@@ -25,6 +25,9 @@ struct BuddyPrototypeView: View {
     @State private var preview: Progression.Moment?
 
     private var look: BuddyLook { BuddyLook(stage: stage, form: form, paused: paused) }
+    /// `-buddyStillStudio` (P4): a flat background matching the widget, no idle animation or labels —
+    /// for rendering the widget stills (`BuddyStillRenderTests`).
+    private let studio = ProcessInfo.processInfo.arguments.contains("-buddyStillStudio")
 
     var body: some View {
         ScrollView {
@@ -49,12 +52,16 @@ struct BuddyPrototypeView: View {
 
     private var stagePanel: some View {
         ZStack(alignment: .bottom) {
-            LinearGradient(colors: [Color(hue: look.hue, saturation: 0.25, brightness: paused ? 0.35 : 0.3),
-                                    Color(white: 0.08)],
-                           startPoint: .top, endPoint: .bottom)
-            Ellipse().fill(.black.opacity(0.35)).frame(width: 150, height: 22).blur(radius: 8).offset(y: -84)
-            BuddyCreatureView(look: look, cheerTrigger: cheer)
-                .padding(.bottom, 56)
+            if studio {
+                Color(red: 0.078, green: 0.075, blue: 0.09)
+            } else {
+                LinearGradient(colors: [Color(hue: look.hue, saturation: 0.25, brightness: paused ? 0.35 : 0.3),
+                                        Color(white: 0.08)],
+                               startPoint: .top, endPoint: .bottom)
+                Ellipse().fill(.black.opacity(0.35)).frame(width: 150, height: 22).blur(radius: 8).offset(y: -84)
+            }
+            BuddyCreatureView(look: look, cheerTrigger: cheer, animated: !studio)
+                .padding(.bottom, studio ? 0 : 56)
             VStack(spacing: 2) {
                 Text(stage.title).font(.title3.weight(.heavy)).foregroundStyle(.white)
                 Text(look.mood).font(.subheadline.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
@@ -62,6 +69,7 @@ struct BuddyPrototypeView: View {
             }
             .padding(.bottom, 14)
             .allowsHitTesting(false)
+            .opacity(studio ? 0 : 1)
         }
         .frame(height: 380)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
