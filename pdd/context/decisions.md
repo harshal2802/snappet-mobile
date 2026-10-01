@@ -9468,3 +9468,13 @@ Non-obvious calls:
   pause mode and streak freezes over losing XP, and that needs its own design. The header is where it'll go.
 - Typed weights display exactly (67.5, 41.25) when entered in the display unit; cross-unit conversions
   keep the whole-number rounding.
+
+## 2026-10-01 — the buddy is a skin over progress; 3D via RealityKit, first style built in code (prompt 147)
+
+- Level, Form and streaks belong to the user; an art style only reads them (`BuddyLook`). So users can
+  choose a style and switch later without losing anything, and model packs can be added later.
+- Form shows as mood (colour, glow, energy, eyes, slump) and never shrinks the buddy, matching the
+  agreed "permanent level + Form" model rather than XP loss.
+- 3D is RealityKit. The creature style is built from primitives in code, so it ships with no art pipeline;
+  Companion / Athlete will be USDZ packs (GLB for Android). Widgets and the Watch can't run RealityKit
+  live → they'll get pre-rendered stills. A spike first, because a wireframe can't show how 3D feels.
