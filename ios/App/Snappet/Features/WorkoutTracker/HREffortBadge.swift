@@ -27,10 +27,10 @@ struct HREffortBadge: View {
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(zone.color)
-                if let drop = effort.hrRecovery60 ?? effort.hrRecovery30 {
+                if let drop = effort.hrRecovery60 ?? effort.hrRecovery30, let text = Self.recoveryText(drop) {
                     HStack(spacing: 3) {
                         Circle().fill(Self.recoveryColor(drop)).frame(width: 7, height: 7)
-                        Text("−\(Int(drop.rounded())) bpm rec.")
+                        Text(text)
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .ignore)
@@ -38,6 +38,13 @@ struct HREffortBadge: View {
                 }
             }
         }
+    }
+
+    /// "−8 bpm rec." for a real drop after the peak; nil when HR didn't fall (it was still rising — the
+    /// old text printed "−−3 bpm rec." for that; prompt 146).
+    static func recoveryText(_ drop: Double) -> String? {
+        let d = Int(drop.rounded())
+        return d >= 1 ? "−\(d) bpm rec." : nil
     }
 
     /// Bigger HR drop after the burn = better recovery (green); small = red. A relative within-session

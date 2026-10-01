@@ -74,6 +74,6 @@ enum RoutineScheduleSync {
     static var isUITestLaunch: Bool {
         let args = CommandLine.arguments
         return args.contains("-uiTestFreshStore") || args.contains("-uiTestCorruptStore")
-            || args.contains("-uiTestSeedStudioDemo")
+            || args.contains("-uiTestSeedStudioDemo") || args.contains("-uiTestSeedRoutineHistory")
     }
 }

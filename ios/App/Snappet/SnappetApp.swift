@@ -42,7 +42,10 @@ struct SnappetApp: App {
         // same lineup plus a pre-starred plan and a past dance session, so the For-You sheet ranks
         // real HR history and the reminder/clash surfaces are exercisable hermetically.
         let seedFestivalPlan = args.contains(FestivalPlanSeed.argument)
-        let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip
+        // `-uiTestSeedRoutineHistory` (prompt 146) implies a fresh store: weeks of strength / hangboard /
+        // climbing / running history so the session detail's "vs last time" + trends render.
+        let seedRoutineHistory = args.contains(RoutineHistorySeed.argument)
+        let freshStore = args.contains("-uiTestFreshStore") || seedStudioDemo || seedRecapClip || seedRoutineHistory
             || seedFestival || seedFestivalPlan
         if freshStore {
             // @AppStorage lives in UserDefaults, which the in-memory store swap doesn't
@@ -145,6 +148,9 @@ struct SnappetApp: App {
         // Installs the lineup + a pre-starred plan + past HR history for the For-You UI test.
         if seedFestivalPlan {
             FestivalPlanSeed.seedIfRequested(into: container.mainContext)
+        }
+        if seedRoutineHistory {
+            RoutineHistorySeed.seedIfRequested(into: container.mainContext)
         }
     }
 

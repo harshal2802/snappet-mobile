@@ -404,7 +404,8 @@ final class LiveWorkoutStudioWalkthroughTests: XCTestCase {
         for el in candidates {
             guard el.waitForExistence(timeout: 3), el.isHittable else { continue }
             el.tap()
-            if app.navigationBars["Session"].waitForExistence(timeout: 5)
+            if app.descendants(matching: .any).matching(identifier: "insights.subtitle").firstMatch
+                .waitForExistence(timeout: 5)
                 || app.staticTexts["Heart rate"].waitForExistence(timeout: 2) {
                 return true
             }

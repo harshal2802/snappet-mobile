@@ -122,6 +122,8 @@ struct SessionRecapCards: View {
     /// Whether to render the HR Effort block (climb/run). The Finish summary shows it here (default);
     /// the session detail passes `false` because it already has a dedicated Heart-rate section (E2).
     var showsHR: Bool = true
+    /// The session detail shows its own pyramid against the last 30 days (prompt 146) → hides this one.
+    var showsPyramid: Bool = true
 
     private var stats: FreeformSummary.Stats { FreeformSummary.stats(for: session, unit: unit) }
     private var dominant: FreeformSummary.Dominant { stats.dominant }
@@ -154,14 +156,15 @@ struct SessionRecapCards: View {
             ClimbSummarySectionTitle("Effort", systemImage: "figure.climbing")
             recapRow("Sends per hour", s.sendsPerHour > 0 ? String(format: "%.1f", s.sendsPerHour) : "—")
             recapRow("Total attempts", "\(s.totalAttempts)")
-            if let median = s.medianTimeOnClimb {
+            // Untimed climbing has no time on the climb — "0:00" read as data (prompt 146).
+            if let median = s.medianTimeOnClimb, median > 0 {
                 recapRow("Median time on climb", SetMeasure.formatDuration(median))
             }
         }
         .padding()
         .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
 
-        ClimbGradePyramid(pyramid: s.pyramid)
+        if showsPyramid { ClimbGradePyramid(pyramid: s.pyramid) }
         ClimbTimelineList(timeline: s.timeline)
         if showsHR, let hrStats { ClimbEffortSection(hr: hrStats) }
     }
@@ -251,7 +254,9 @@ struct SessionRecapCards: View {
             VStack(alignment: .leading, spacing: 10) {
                 ClimbSummarySectionTitle("Volume", systemImage: "scalemass.fill")
                 ForEach(volumes) { row in
-                    recapRow(row.name, "\(row.sets) \(row.sets == 1 ? "set" : "sets") · \(WorkoutMath.formatVolume(kg: row.volumeKg, unit: unit))")
+                    // Bodyweight work reports reps, never "0 kg" (prompt 146).
+                    recapRow(row.name, "\(row.sets) \(row.sets == 1 ? "set" : "sets") · "
+                             + (row.volumeKg > 0 ? WorkoutMath.formatVolume(kg: row.volumeKg, unit: unit) : "\(row.reps) reps"))
                 }
             }
             .padding()
@@ -292,7 +297,7 @@ struct SessionRecapCards: View {
         }
     }
 
-    private struct VolumeRow: Identifiable { let id: UUID; let name: String; let sets: Int; let volumeKg: Double }
+    private struct VolumeRow: Identifiable { let id: UUID; let name: String; let sets: Int; let volumeKg: Double; let reps: Int }
     private var liftingVolumeRows: [VolumeRow] {
         session.exercises.compactMap { ex -> VolumeRow? in
             guard ex.kind == .repsWeight else { return nil }
@@ -303,7 +308,8 @@ struct SessionRecapCards: View {
                 return sum + WorkoutMath.toKg(weight, set.weightUnit) * Double(reps)
             }
             return VolumeRow(id: ex.id, name: resolver.name(for: ex.exerciseId, override: ex.displayName),
-                             sets: completed.count, volumeKg: volume.rounded())
+                             sets: completed.count, volumeKg: volume.rounded(),
+                             reps: completed.compactMap(\.actualReps).reduce(0, +))
         }
     }
 }

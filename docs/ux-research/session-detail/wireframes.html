@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snappet — Session details, informative and gamified (wireframes)</title>
+<style>
+  :root{
+    --brand:#FF7A6B; --ember:#FF9645; --fresh:#5BC074; --habit:#5BC074; --blue:#5AA9FF;
+    --paper:#121214; --surface:#1E1E22; --muted:#26262B; --hair:#34343A;
+    --ink:#F4F3F1; --t2:#A6A5A1; --t3:#77767A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:radial-gradient(1200px 800px at 70% -10%,#2a1d16,#0b0c10 60%);
+    color:#e9eaee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    line-height:1.5;padding:0 0 90px}
+  header.page{padding:56px 28px 12px;max-width:1600px;margin:0 auto}
+  h1.title{font-size:38px;margin:0 0 6px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(92deg,#fff,#ffb782 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h2.part{font-size:26px;font-weight:800;margin:64px 0 4px;color:#fff;letter-spacing:-.01em}
+  h2.part .tag{font-size:13px;font-weight:800;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:8px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .sub{color:#aeb2bd;font-size:16px;max-width:1100px;margin:0 0 10px}
+  .scopebox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;
+    padding:16px 20px;margin:16px 0 0;font-size:14px;color:#c3c7d1;max-width:1240px}
+  .scopebox b{color:#fff}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 28px}
+  .gallery{display:flex;flex-wrap:wrap;gap:34px 40px;align-items:flex-start;margin-top:30px}
+  .step{width:330px;position:relative}
+  .stepnum{position:absolute;left:-10px;top:-12px;z-index:40;min-width:34px;height:34px;padding:0 10px;border-radius:17px;
+    background:var(--ember);color:#2a1405;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,150,69,.45)}
+  .stepnum.alt{background:#8e8ea0;color:#111;box-shadow:none}
+  .caption{margin:14px 4px 0;font-size:13.5px;color:#b8bcc6}
+  .caption b{color:#fff;font-weight:650}
+  .caption .new{color:var(--fresh);font-weight:700}
+  .caption .cost{color:#ff9b8f;font-weight:700}
+
+  /* device */
+  .device{width:330px;height:690px;border-radius:50px;background:#000;padding:11px;
+    box-shadow:0 30px 70px -20px rgba(0,0,0,.85),0 0 0 2px #2a2c33 inset;position:relative}
+  .screen{width:100%;height:100%;border-radius:40px;overflow:hidden;position:relative;display:flex;flex-direction:column;background:var(--paper);color:var(--ink)}
+  .island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:104px;height:28px;background:#000;border-radius:16px;z-index:60}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 22px 2px;font-size:12.5px;font-weight:650;flex:0 0 auto}
+  .content{flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;padding:4px 14px 8px}
+  .navrow{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 8px;flex:0 0 auto;font-size:14px}
+  .navrow .title{font-size:15px;font-weight:800}
+  .navrow .lnk{color:var(--ember);font-weight:600}
+  .navrow .lnk.b{font-weight:800}
+  .bigtitle{font-size:26px;font-weight:800;margin:2px 2px 8px;letter-spacing:-.01em}
+  .circ{width:30px;height:30px;border-radius:50%;background:var(--muted);display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--ember);margin-left:6px}
+  .segbar{display:flex;background:var(--muted);border-radius:12px;padding:3px;margin-bottom:10px;flex:0 0 auto}
+  .segbar div{flex:1;text-align:center;font-size:11.5px;font-weight:650;padding:6px 2px;border-radius:9px;color:var(--t2)}
+  .segbar div.on{background:#3A3A40;color:#fff}
+
+  /* grouped form */
+  .glbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin:12px 6px 5px}
+  .group{background:var(--surface);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--hair);gap:8px}
+  .row:last-child{border-bottom:0}
+  .row .v{color:var(--t2);font-size:13px;white-space:nowrap}
+  .row .v.e{color:var(--ember);font-weight:600}
+  .row .ic{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;margin-right:9px;flex:0 0 auto}
+  .row .l{display:flex;align-items:center}
+  .foot{font-size:11px;color:var(--t3);margin:5px 8px 0;line-height:1.4}
+  .tog{width:40px;height:24px;border-radius:12px;background:#3a3a40;position:relative;flex:0 0 auto}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff}
+  .tog.on{background:var(--fresh)}
+  .tog.on::after{left:18px}
+  .days{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--hair)}
+  .days div{flex:1;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--muted);color:var(--t2);aspect-ratio:1}
+  .days div.on{background:var(--ember);color:#2a1405}
+  .days.small div{height:24px;font-size:10px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(255,150,69,.18);color:var(--ember)}
+  .pill.g{background:rgba(91,192,116,.18);color:var(--fresh)}
+  .pill.gr{background:var(--muted);color:var(--t2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--hair)}
+  .chip{background:var(--muted);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:650;color:#e7e7ea}
+  .chip.on{background:rgba(255,150,69,.22);color:var(--ember)}
+
+  /* cards / list */
+  .card{background:var(--surface);border-radius:16px;padding:12px 13px;margin-bottom:9px;flex:0 0 auto}
+  .card .name{font-size:15px;font-weight:750;line-height:1.25}
+  .card .s{font-size:11.5px;color:var(--t2);margin-top:2px}
+  .card .t{font-size:11px;color:var(--t3);margin-top:3px}
+  .sect{font-size:13px;font-weight:700;color:var(--t2);margin:10px 4px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .upnext{background:linear-gradient(135deg,rgba(255,150,69,.28),rgba(255,122,107,.12));border:1px solid rgba(255,150,69,.35);border-radius:18px;padding:12px 13px;margin-bottom:10px;flex:0 0 auto}
+  .upnext .k{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--ember);text-transform:uppercase}
+  .upnext .n{font-size:17px;font-weight:800;margin-top:2px}
+  .upnext .w{font-size:12px;color:#e6d7cb}
+  .btn{display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;padding:10px;font-size:14px;font-weight:700;background:var(--ember);color:#2a1405;flex:0 0 auto}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:999px;display:inline-flex}
+  .btn.ghost{background:var(--muted);color:var(--ember)}
+  .week{display:flex;gap:4px;margin-top:9px}
+  .week div{flex:1;text-align:center;font-size:10px;color:var(--t2)}
+  .week div b{display:block;height:24px;border-radius:7px;margin-top:3px;background:var(--muted);font-size:10px;line-height:24px;color:var(--t3);font-weight:700}
+  .week div b.s{background:rgba(255,150,69,.3);color:var(--ember)}
+  .week div b.d{background:var(--ember);color:#2a1405}
+  .week div b.m{background:rgba(255,122,107,.18);color:#ff9b8f}
+  .week div.today{color:#fff;font-weight:800}
+
+  /* sheet */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:45}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:52px;z-index:50;background:#1C1C20;border-radius:22px 22px 0 0;padding:8px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
+  .sheet.half{top:auto;height:62%}
+  .sheet .grab{width:36px;height:4px;border-radius:2px;background:#4a4a52;margin:0 auto 6px;flex:0 0 auto}
+  .behind{opacity:.9}
+
+  /* lock screen */
+  .lock{background:linear-gradient(180deg,#1b2635,#0d1118 70%);}
+  .lock .clock{text-align:center;font-size:64px;font-weight:300;letter-spacing:-2px;margin-top:10px;color:#fff}
+  .lock .date{text-align:center;font-size:15px;color:#cfd6e2;font-weight:600}
+  .notif{background:rgba(40,44,52,.82);backdrop-filter:blur(20px);border-radius:18px;padding:11px 12px;margin:0 10px 8px;color:#fff}
+  .notif .hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#c7ccd6}
+  .notif .ap{width:18px;height:18px;border-radius:5px;background:var(--ember);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#2a1405;font-weight:900}
+  .notif .tt{font-size:13.5px;font-weight:700;margin-top:4px}
+  .notif .bd{font-size:12.5px;color:#dfe3ea}
+  .actions{margin:0 10px;border-radius:14px;overflow:hidden;background:rgba(40,44,52,.82)}
+  .actions div{padding:10px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between}
+  .actions div:last-child{border-bottom:0}
+
+  /* habit row */
+  .hab{background:var(--surface);border-radius:14px;padding:11px 12px;margin-bottom:8px;flex:0 0 auto}
+  .hab .top{display:flex;align-items:center;gap:10px}
+  .hab .sym{font-size:20px;width:28px;text-align:center;color:var(--habit)}
+  .hab .nm{font-size:14.5px;font-weight:700}
+  .hab .st{font-size:12px;color:var(--ember);font-weight:650}
+  .hab .rt{font-size:11px;color:var(--t3)}
+  .hab .ck{margin-left:auto;width:28px;height:28px;border-radius:50%;border:2px solid var(--t3)}
+  .hab .ck.on{background:var(--habit);border-color:var(--habit)}
+  .hab .strip{display:flex;gap:5px;margin-top:8px;align-items:flex-end}
+  .hab .strip div{flex:1;text-align:center;font-size:9.5px;color:var(--t3)}
+  .hab .strip b{display:block;margin:2px auto 0;width:24px;height:24px;border-radius:50%;background:rgba(91,192,116,.13);font-size:9.5px;line-height:24px;color:var(--t2)}
+  .hab .strip b.on{background:var(--habit);color:#fff}
+  .hab .strip b.off{background:transparent;border:1px dashed #3a3a42;color:#4a4a52}
+  .link{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11.5px;color:var(--t2);background:var(--muted);border-radius:9px;padding:6px 8px}
+  .link b{color:var(--ember)}
+
+  /* camera */
+  .cam{flex:1;border-radius:16px;margin:0 2px;position:relative;overflow:hidden;background:
+      repeating-linear-gradient(45deg,#1a1d22 0 10px,#16181c 10px 20px)}
+  .reticle{position:absolute;left:50%;top:44%;width:170px;height:170px;transform:translate(-50%,-50%);border:3px solid rgba(255,255,255,.9);border-radius:22px}
+  .qr{background:#fff;border-radius:14px;padding:12px;margin:6px auto;width:176px;height:176px;display:grid;grid-template-columns:repeat(21,1fr);gap:0}
+  .qr i{display:block;aspect-ratio:1}
+  .qr i.k{background:#000}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;white-space:nowrap}
+  .menu{position:absolute;right:16px;top:92px;z-index:55;width:228px;background:rgba(44,44,50,.97);border-radius:14px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .menu div{padding:11px 14px;font-size:14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+  .menu div:last-child{border-bottom:0}
+  .menu div span{color:var(--t2)}
+
+  table.cmp{border-collapse:collapse;margin-top:18px;font-size:13.5px;max-width:1240px;width:100%}
+  table.cmp th,table.cmp td{border-bottom:1px solid rgba(255,255,255,.1);padding:10px 12px;text-align:left;vertical-align:top}
+  table.cmp th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#9aa0ad}
+  .q{background:rgba(255,150,69,.08);border:1px solid rgba(255,150,69,.3);border-radius:14px;padding:14px 18px;margin:14px 0;max-width:1240px;font-size:14.5px;color:#d9dce4}
+  .q b{color:#fff}
+  .q .rec{color:var(--fresh);font-weight:700}
+</style>
+</head>
+<body>
+<style>
+  .hero3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:6px 0 10px;flex:0 0 auto}
+  .hc{background:var(--surface);border-radius:14px;padding:9px 8px;text-align:center}
+  .hc .v{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+  .hc .l{font-size:10.5px;color:var(--t2)}
+  .d{font-size:10.5px;font-weight:800;margin-top:2px}
+  .up{color:#5BC074}.dn{color:#ff7a6b}.eq{color:var(--t3)}
+  .chipline{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;flex:0 0 auto}
+  .ach{display:flex;gap:7px;overflow:hidden;margin-bottom:10px;flex:0 0 auto}
+  .badge{min-width:112px;background:linear-gradient(160deg,rgba(255,150,69,.28),rgba(255,150,69,.08));border:1px solid rgba(255,150,69,.4);border-radius:14px;padding:8px 9px}
+  .badge.g{background:linear-gradient(160deg,rgba(91,192,116,.28),rgba(91,192,116,.08));border-color:rgba(91,192,116,.45)}
+  .badge.b{background:linear-gradient(160deg,rgba(90,169,255,.28),rgba(90,169,255,.08));border-color:rgba(90,169,255,.45)}
+  .badge .i{font-size:18px}.badge .t{font-size:11.5px;font-weight:800;margin-top:2px}.badge .s{font-size:10px;color:var(--t2)}
+  .spark{height:74px;position:relative;margin:6px 0 2px}
+  .spark svg{position:absolute;inset:0}
+  .meter{height:8px;border-radius:4px;background:var(--muted);overflow:hidden;margin-top:6px}
+  .meter i{display:block;height:100%;background:var(--ember);border-radius:4px}
+  .exc{background:var(--surface);border-radius:14px;padding:10px 12px;margin-bottom:8px;flex:0 0 auto}
+  .exc .h{display:flex;justify-content:space-between;align-items:baseline}
+  .exc .n{font-weight:800;font-size:13.5px}
+  .exc .r{font-size:11.5px;color:var(--t2)}
+  .setr{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid var(--hair)}
+  .grid{display:grid;grid-template-columns:42px repeat(3,1fr);gap:4px;font-size:11px;margin-top:6px}
+  .grid div{text-align:center;padding:5px 0;border-radius:6px}
+  .grid .hdr{color:var(--t3);font-weight:700}
+  .heat3{background:rgba(255,150,69,.75);color:#2a1405;font-weight:800}
+  .heat2{background:rgba(255,150,69,.5);color:#2a1405;font-weight:800}
+  .heat1{background:rgba(255,150,69,.28);color:#ffd2ad;font-weight:800}
+  .pyr{margin-top:6px}
+  .pyr .row{display:flex;align-items:center;gap:6px;font-size:11px;padding:0;border:0}
+  .pyr .bar{height:12px;border-radius:4px;background:var(--ember)}
+  .pyr .ghost{height:12px;border-radius:4px;border:1px dashed rgba(255,255,255,.35)}
+  .disc{display:flex;justify-content:space-between;align-items:center;background:var(--surface);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:8px;flex:0 0 auto}
+  .ring{width:76px;height:76px;border-radius:50%;background:conic-gradient(var(--ember) 0 82%,var(--muted) 82% 100%);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .ring div{width:60px;height:60px;border-radius:50%;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800}
+</style>
+
+<header class="page">
+  <h1 class="title">Session details — informative &amp; gamified</h1>
+  <p class="sub">Reviewed live on the simulator with four weeks of seeded history (strength, hangboard + Tindeq, bouldering, runs). Today the page describes one session in isolation. The redesign puts <b>this session next to its routine's history</b>: what changed since last time, the trend, the records you set, and what's next. Each workout type gets the numbers that matter for it.</p>
+  <div class="scopebox">
+    <b>Bugs found during the review (fixed regardless of design):</b>
+    ① heart-rate recovery prints a double minus ("−−3 bpm rec.") when HR rose after a set;
+    ② bodyweight lifts show "Pullups · 3 sets · <b>0 kg</b>";
+    ③ untimed climbing shows "Median time on climb <b>0:00</b>";
+    ④ "First V5 send" is detected but never shown on the detail page;
+    ⑤ the page title is just "Session", with no routine name;
+    ⑥ an empty media block takes about half a screen above your sets.
+  </div>
+</header>
+
+<div class="wrap">
+<h2 class="part">1 · Strength — Push Day <span class="tag">routine history</span></h2>
+<div class="gallery">
+
+  <div class="step"><div class="stepnum">1</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ History</span><span class="title">Push Day</span><span class="lnk">Edit</span></div>
+        <div style="font-size:12px;color:var(--t2);margin:-2px 2px 8px">Wed 30 Sep · 50 min · <b style="color:var(--ink)">8th Push Day</b></div>
+        <div class="chipline"><span class="pill">🔥 4-week streak</span><span class="pill g">✓ On plan · Mon/Thu</span><span class="pill gr">♥ 146 avg</span></div>
+        <div class="hero3">
+          <div class="hc"><div class="v">2,520</div><div class="l">kg volume</div><div class="d up">▲ 6% vs last</div></div>
+          <div class="hc"><div class="v">70×6</div><div class="l">top set</div><div class="d up">▲ +2.5 kg</div></div>
+          <div class="hc"><div class="v">10</div><div class="l">sets</div><div class="d eq">= last</div></div>
+        </div>
+        <div class="glbl" style="margin-top:2px">This session earned</div>
+        <div class="ach">
+          <div class="badge"><div class="i">🏆</div><div class="t">Bench PR</div><div class="s">70 kg × 6 (was 67.5)</div></div>
+          <div class="badge g"><div class="i">📈</div><div class="t">Best volume</div><div class="s">for Push Day</div></div>
+          <div class="badge b"><div class="i">🔥</div><div class="t">8 Push Days</div><div class="s">2 to the 10 badge</div></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="name">Progress</div><div style="font-size:11px;color:var(--t2)">last 8 Push Days</div></div>
+          <div class="chips" style="border:0;padding:6px 0 0"><span class="chip on">Volume</span><span class="chip">Top set</span><span class="chip">Duration</span></div>
+          <div class="spark"><svg viewBox="0 0 280 74" preserveAspectRatio="none">
+            <line x1="0" y1="14" x2="280" y2="14" stroke="#5BC074" stroke-dasharray="4 4" stroke-width="1"/>
+            <polyline points="5,62 45,58 85,52 125,50 165,40 205,36 245,30 275,12" fill="none" stroke="#FF9645" stroke-width="2.5"/>
+            <circle cx="275" cy="12" r="5" fill="#FF9645" stroke="#fff" stroke-width="2"/></svg></div>
+          <div style="font-size:11.5px;color:var(--t2)"><b class="up">Up 18% in 4 weeks.</b> Dotted line = best ever (today).</div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Top of the page.</b> <span class="new">NEW</span> The routine name is the title, plus "8th Push Day", your streak and whether you trained on plan. Each header stat shows <b>the change since last time</b>. <b>This session earned</b> lists the records and milestones you hit, each tappable for its history. <b>Progress</b> charts this routine over time, with today highlighted against your best.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">2</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="glbl">Exercises · vs last Push Day</div>
+        <div class="exc">
+          <div class="h"><span class="n">Bench press</span><span class="d up">▲ +2.5 kg</span></div>
+          <div class="r">4 × 6 @ 70 kg · est. 1RM 82 kg <span class="up">▲</span></div>
+          <div class="spark" style="height:34px"><svg viewBox="0 0 280 34" preserveAspectRatio="none"><polyline points="5,30 45,30 85,24 125,24 165,18 205,18 245,12 275,4" fill="none" stroke="#FF9645" stroke-width="2"/></svg></div>
+          <div class="setr"><span>Set 1 · 70 × 6</span><span class="up">+2.5 kg</span></div>
+          <div class="setr"><span>Set 2 · 70 × 6</span><span class="up">+2.5 kg</span></div>
+          <div class="setr"><span>Set 3 · 70 × 6</span><span class="up">+2.5 kg</span></div>
+          <div class="setr"><span>Set 4 · 70 × 5</span><span class="dn">−1 rep</span></div>
+        </div>
+        <div class="exc">
+          <div class="h"><span class="n">Pull-ups</span><span class="d up">▲ +3 reps</span></div>
+          <div class="r">3 × 8 · bodyweight · 24 reps total</div>
+        </div>
+        <div class="exc">
+          <div class="h"><span class="n">Overhead press</span><span class="d eq">= last</span></div>
+          <div class="r">3 × 8 @ 37.5 kg · held for 3 sessions — try +2.5 next time</div>
+        </div>
+        <div class="card"><div style="display:flex;justify-content:space-between"><div class="name">Next milestone</div><div style="font-size:11px;color:var(--t2)">8 / 10</div></div>
+          <div class="s">10 Push Days · ~1 week at your pace</div><div class="meter"><i style="width:80%"></i></div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Exercises compare themselves.</b> <span class="new">NEW</span> Each exercise shows today's change since last time, a sparkline of its top weight, and an estimated 1RM. Each set shows its own change. Bodyweight work reports <b>reps</b>, not "0 kg". A stalled lift gets a gentle nudge. <b>Next milestone</b> gives you something to come back for.</p>
+  </div>
+</div>
+
+<h2 class="part">2 · Hangboard · Climbing · Running <span class="tag">each type its own numbers</span></h2>
+<div class="gallery">
+  <div class="step"><div class="stepnum">3</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ History</span><span class="title">Finger day</span><span class="lnk">Edit</span></div>
+        <div style="font-size:12px;color:var(--t2);margin:-2px 2px 8px">Mon 28 Sep · 22 min · <b style="color:var(--ink)">6th Finger day</b> · Max hangs</div>
+        <div class="hero3">
+          <div class="hc"><div class="v">+11.25</div><div class="l">kg added</div><div class="d up">▲ +1.25</div></div>
+          <div class="hc"><div class="v">48.5</div><div class="l">kg peak force</div><div class="d up">▲ +0.9</div></div>
+          <div class="hc"><div class="v">9/9</div><div class="l">hangs</div><div class="d eq">all done</div></div>
+        </div>
+        <div class="ach">
+          <div class="badge"><div class="i">🏋️</div><div class="t">Heaviest yet</div><div class="s">+11.25 kg Max hangs</div></div>
+          <div class="badge g"><div class="i">💪</div><div class="t">Peak force PR</div><div class="s">48.5 kg (Tindeq)</div></div>
+        </div>
+        <div class="card"><div class="name">Force per hang (peak kg)</div>
+          <div class="grid">
+            <div class="hdr"></div><div class="hdr">Rep 1</div><div class="hdr">Rep 2</div><div class="hdr">Rep 3</div>
+            <div class="hdr">Set 1</div><div class="heat3">48.5</div><div class="heat3">48.4</div><div class="heat3">48.2</div>
+            <div class="hdr">Set 2</div><div class="heat2">47.9</div><div class="heat2">47.7</div><div class="heat2">47.6</div>
+            <div class="hdr">Set 3</div><div class="heat1">47.3</div><div class="heat1">47.1</div><div class="heat1">46.9</div>
+          </div>
+          <div class="s" style="margin-top:6px">Fatigue: <b>−3%</b> from set 1 to set 3 (last time −4%) · target 45–48 kg, all hangs on target</div>
+        </div>
+        <div class="card"><div style="display:flex;justify-content:space-between"><div class="name">Added load</div><div style="font-size:11px;color:var(--t2)">last 6 sessions</div></div>
+          <div class="spark" style="height:40px"><svg viewBox="0 0 280 40" preserveAspectRatio="none"><polyline points="5,36 60,30 115,24 170,18 225,12 275,5" fill="none" stroke="#FF9645" stroke-width="2.5"/></svg></div>
+          <div class="s">+5 → +11.25 kg in 4 weeks</div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Hangboard reads like hangboard.</b> <span class="new">NEW</span> The header shows <b>added load, peak force and hangs done</b> instead of "hold time 1:03". With a Tindeq, a <b>set × rep force grid</b> shows where you faded, plus fatigue compared with last time. The load trend makes progressive overload visible. One-hand sessions add a left-vs-right row.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">4</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ History</span><span class="title">Bouldering</span><span class="lnk">Edit</span></div>
+        <div style="font-size:12px;color:var(--t2);margin:-2px 2px 8px">Tue 29 Sep · 80 min · 5th bouldering session</div>
+        <div class="hero3">
+          <div class="hc"><div class="v">3</div><div class="l">sends</div><div class="d eq">= last</div></div>
+          <div class="hc"><div class="v">V5</div><div class="l">hardest</div><div class="d up">▲ new grade</div></div>
+          <div class="hc"><div class="v">2.0</div><div class="l">tries / send</div><div class="d up">▼ better</div></div>
+        </div>
+        <div class="ach"><div class="badge"><div class="i">🎉</div><div class="t">First V5 send</div><div class="s">after 5 sessions</div></div>
+          <div class="badge b"><div class="i">📈</div><div class="t">Hardest month</div><div class="s">V3 → V5</div></div></div>
+        <div class="card"><div class="name">Grade pyramid · today vs last 30 days</div>
+          <div class="pyr">
+            <div class="row"><span style="width:20px">V5</span><div class="bar" style="width:46%"></div><span>2</span></div>
+            <div class="row" style="margin-top:4px"><span style="width:20px">V4</span><div class="bar" style="width:23%"></div><div class="ghost" style="width:46%"></div><span>1 · 30d: 6</span></div>
+            <div class="row" style="margin-top:4px"><span style="width:20px">V3</span><div class="ghost" style="width:60%"></div><span>30d: 6</span></div>
+          </div></div>
+        <div class="card"><div class="name">Climbs</div>
+          <div class="setr"><span>V5 boulder</span><span class="up">Sent · 2 tries</span></div>
+          <div class="setr"><span>V5 boulder</span><span class="up">Sent · 2 tries</span></div>
+          <div class="setr"><span>V4 boulder</span><span class="up">Sent · 2 tries</span></div></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Climbing.</b> <span class="new">NEW</span> The <b>First V5 send</b> celebration finally shows here. The pyramid compares today with your last 30 days, drawn as dashed outlines. Tries per send replaces the misleading "median time 0:00". Climbs sit in one list instead of a "Set 1" section each. A quick session with no routine is compared with your previous sessions of the same type.</p>
+  </div>
+
+  <div class="step"><div class="stepnum">5</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="navrow"><span class="lnk">‹ History</span><span class="title">Easy run</span><span class="lnk">Edit</span></div>
+        <div style="font-size:12px;color:var(--t2);margin:-2px 2px 8px">Sat 26 Sep · 29 min · 4th easy run</div>
+        <div class="hero3">
+          <div class="hc"><div class="v">5 km</div><div class="l">distance</div><div class="d eq">= last</div></div>
+          <div class="hc"><div class="v">5:33</div><div class="l">/km pace</div><div class="d up">▼ 9 s faster</div></div>
+          <div class="hc"><div class="v">146</div><div class="l">avg bpm</div><div class="d up">▼ 3 easier</div></div>
+        </div>
+        <div class="ach"><div class="badge g"><div class="i">⚡</div><div class="t">Fastest 5 km</div><div class="s">27:45</div></div></div>
+        <div class="card"><div style="display:flex;justify-content:space-between"><div class="name">Pace</div><div style="font-size:11px;color:var(--t2)">last 4 runs · lower is faster</div></div>
+          <div class="spark" style="height:44px"><svg viewBox="0 0 280 44" preserveAspectRatio="none"><polyline points="5,6 95,16 185,26 275,38" fill="none" stroke="#5BC074" stroke-width="2.5"/></svg></div>
+          <div class="s">6:00 → 5:33/km in 3 weeks, at a lower heart rate</div></div>
+        <div class="disc"><span>♥ Heart rate &amp; effort</span><span style="color:var(--t2)">146 avg · 172 max ⌄</span></div>
+        <div class="disc"><span>🖼 Photos &amp; videos</span><span style="color:var(--ember)">Add · Find from this run</span></div>
+      </div>
+    </div></div>
+    <p class="caption"><b>Running</b>, plus the tidier bottom of the page. <span class="new">NEW</span> Pace shows <b>"9 s faster"</b> (lower is better, coloured correctly), the trend, and an aerobic-efficiency line: faster at a lower heart rate. <b>Heart rate</b> becomes a compact row that expands to the full chart. An empty media block shrinks to <b>one row</b>; the full gallery is unchanged once there's media.</p>
+  </div>
+</div>
+
+<h2 class="part">3 · How gamified? <span class="tag">your pick</span></h2>
+<div class="gallery">
+  <div class="step"><div class="stepnum">6</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="glbl">Option A · records, streaks, milestones</div>
+        <div class="ach">
+          <div class="badge"><div class="i">🏆</div><div class="t">Bench PR</div><div class="s">70 kg × 6</div></div>
+          <div class="badge b"><div class="i">🔥</div><div class="t">4-week streak</div><div class="s">Push Day, on plan</div></div>
+        </div>
+        <div class="card"><div class="name">Next milestone</div><div class="s">10 Push Days · 8/10</div><div class="meter"><i style="width:80%"></i></div></div>
+        <div class="foot">Everything shown is a real record or count from your history; nothing is invented. Tap a badge to see when you set it and what came before.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>A · records + streaks + next milestone</b> (frames 1–5). It celebrates things you actually did: PRs, firsts, streaks, counts. It's quiet when there's nothing new. <b>My pick.</b></p>
+  </div>
+
+  <div class="step"><div class="stepnum alt">6B</div>
+    <div class="device"><div class="screen"><div class="island"></div>
+      <div class="statusbar"><span>9:41</span><span>●●● ▮</span></div>
+      <div class="content">
+        <div class="glbl">Option B · adds levels + XP</div>
+        <div style="display:flex;gap:12px;align-items:center;margin:4px 0 10px">
+          <div class="ring"><div><span style="font-size:10px;color:var(--t2)">LEVEL</span><span style="font-size:22px">4</span></div></div>
+          <div><div style="font-weight:800">Push Day · Level 4</div><div style="font-size:12px;color:var(--t2)">820 / 1000 XP to level 5</div></div>
+        </div>
+        <div class="group">
+          <div class="row"><span>Session completed</span><span class="v up">+100 XP</span></div>
+          <div class="row"><span>On plan (Thursday)</span><span class="v up">+25 XP</span></div>
+          <div class="row"><span>Bench PR</span><span class="v up">+50 XP</span></div>
+          <div class="row"><span>Streak bonus · 4 weeks</span><span class="v up">+40 XP</span></div>
+        </div>
+        <div class="foot">Levels per routine (and an overall level on Home). XP rules are fixed and shown, never random.</div>
+      </div>
+    </div></div>
+    <p class="caption"><b>B · adds levels + XP</b> on top of A. Every session moves a bar, which helps on days with no PR. <span class="cost">Cost:</span> invented points can feel arbitrary, and they need tuning so a 10-minute session isn't worth the same as an 80-minute one.</p>
+  </div>
+</div>
+
+<h2 class="part">Your calls</h2>
+<div class="q"><b>Q1 · Gamification.</b> <b>A</b> records + streaks + next milestone (frame 6) · <b>B</b> A plus levels/XP (6B). <span class="rec">My pick: A</span>; B can be layered on later.</div>
+<div class="q"><b>Q2 · "Compared with".</b> Last session of this routine (shown as ▲/▼), with best ever as the dotted line and in the badges. A quick session with no routine compares with past sessions of the same type and name. <span class="rec">My pick: as drawn.</span></div>
+<div class="q"><b>Q3 · Bottom of the page.</b> Heart rate as a compact row that expands, and empty media as one row (frame 5). Pages with media keep the full gallery. <span class="rec">My pick: as drawn.</span></div>
+<div class="q"><b>Q4 · Where else?</b> The same "earned" badges and change-since-last-time on the <b>finish screen</b> right after a workout, so the payoff lands immediately, not only when you open History later. <span class="rec">My pick: yes</span>, since they share the same building blocks.</div>
+</div>
+</body>
+</html>

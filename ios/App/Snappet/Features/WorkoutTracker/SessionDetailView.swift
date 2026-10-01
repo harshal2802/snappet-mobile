@@ -33,6 +33,8 @@ struct SessionDetailView: View {
     var sport: SportTag? = nil
     /// Prior completed sessions (used by the type-adaptive recap's PR detection, E2). Empty ⇒ no PR card.
     var history: [WorkoutSession] = []
+    /// The routine's schedule, for the "On plan" chip (prompt 146). `nil` = unscheduled / no routine.
+    var schedule: RoutineSchedule? = nil
 
     /// Dominant exercise category across the session (B4 activity-mapping fallback when there's
     /// no sport). Resolved from the session's exercises via the `resolver`.
@@ -75,17 +77,21 @@ struct SessionDetailView: View {
             // sections below carry the rest.
             if session.isImportedFromHealth { watchSourceSection }
 
-            // Type-adaptive recap (E2): the same hero + per-discipline cards the Finish summary shows, so
-            // "View detail" is richer — not poorer — than the completion screen. HR is shown by the
-            // dedicated Heart-rate section below (showsHR: false here to avoid duplicating it).
+            // Prompt 146: where this session sits in its routine's history — change since last time,
+            // records/streaks/milestones earned, the trend — then the type-specific detail. Health
+            // imports (no exercises) keep the plain recap.
             Section {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("\(session.startedAt.formatted(.dateTime.weekday().month().day())) · \(max(1, Int(session.duration / 60))) min")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    SessionRecapHero(cells: SessionRecap.heroCells(stats: recapStats, climbStats: recapClimbStats,
-                                                                   session: session, unit: unit, milestones: recapMilestones))
-                    SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
-                                      milestones: recapMilestones, showsHR: false)
+                    if session.isImportedFromHealth {
+                        Text("\(session.startedAt.formatted(.dateTime.weekday().month().day())) · \(max(1, Int(session.duration / 60))) min")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        SessionRecapHero(cells: SessionRecap.heroCells(stats: recapStats, climbStats: recapClimbStats,
+                                                                       session: session, unit: unit, milestones: recapMilestones))
+                    } else {
+                        SessionInsightsHeader(session: session, history: history, schedule: schedule,
+                                              resolver: resolver, unit: unit)
+                    }
+                    typeDetail
                 }
                 .padding(.vertical, 4)
             }
@@ -107,7 +113,7 @@ struct SessionDetailView: View {
                                 onRemove: { pendingRemoval = $0 },
                                 onOpenStudio: { studio = $0 })
         }
-        .navigationTitle("Session")
+        .navigationTitle(session.routineName.isEmpty ? "Session" : session.routineName)
         .navigationBarTitleDisplayMode(.inline)
         .keypadDoneToolbar($keypadFocused)
         .toolbar {
@@ -152,6 +158,34 @@ struct SessionDetailView: View {
             StudioEditorView(project: p.project, context: context,
                              focusClipMediaID: p.focusClipMediaID,
                              visibleClipMediaIDs: p.visibleClipMediaIDs)
+        }
+    }
+
+    /// The per-workout-type detail under the insights header (prompt 146): strength compares each
+    /// exercise with last time, hangboard shows force per hang, climbing its pyramid vs 30 days; the
+    /// recap cards stay for everything else (and alongside hangboard/climbing).
+    @ViewBuilder private var typeDetail: some View {
+        switch SessionInsights.Kind.of(session) {
+        case .strength:
+            let rows = SessionInsights.exerciseCompares(session, history: history, unit: unit,
+                                                        resolve: { resolver.name(for: $0.exerciseId, override: $0.displayName) })
+            ForEach(rows) { ExerciseCompareCard(row: $0) }
+        case .hangboard:
+            if let grid = SessionInsights.forceGrid(session) {
+                let last = SessionInsights.comparable(for: session, in: history).lazy
+                    .compactMap { SessionInsights.forceGrid($0)?.fatigue }.first
+                ForceGridCard(grid: grid, lastFatigue: last)
+            }
+            SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
+                              milestones: recapMilestones, showsHR: false)
+        case .climb:
+            let rows = SessionInsights.pyramid(session, history: history)
+            if !rows.isEmpty { PyramidCompareCard(rows: rows) }
+            SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
+                              milestones: recapMilestones, showsHR: false, showsPyramid: rows.isEmpty)
+        case .timed, .run, .other:
+            SessionRecapCards(session: session, resolver: resolver, unit: unit, maxHR: maxHR,
+                              milestones: recapMilestones, showsHR: false)
         }
     }
 
@@ -258,9 +292,39 @@ private struct HeartRateSummarySection: View {
     /// HR-based calorie estimate (BLE-only, Phase 2); `nil` hides the calories tile (watch sessions
     /// — where energy is measured, not estimated — and incomplete-profile sessions).
     var kcal: Double? = nil
+    /// Collapsed to one line by default (prompt 146) so the history leads; tap to expand.
+    @State private var expanded = false
 
     var body: some View {
         Section {
+            Button {
+                withAnimation { expanded.toggle() }
+            } label: {
+                HStack {
+                    Label("Heart rate & effort", systemImage: "heart.fill").foregroundStyle(.primary)
+                    Spacer()
+                    Text("\(Int(stats.avgBpm.rounded())) avg · \(Int(stats.maxBpm.rounded())) max")
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+            }
+            .tint(.primary)
+            .accessibilityIdentifier("hrSummary.toggle")
+            if expanded { details }
+        } header: {
+            HStack(spacing: 6) {
+                Text("Heart rate")
+                HRMetricsInfoButton()   // explains the HRV / recovery-dot colour codes (#78)
+                if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
+                    Spacer()
+                    Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var details: some View {
             HeartRateChart(series: series)
                 .frame(height: 160)
                 .padding(.vertical, 4)
@@ -282,16 +346,6 @@ private struct HeartRateSummarySection: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-        } header: {
-            HStack(spacing: 6) {
-                Text("Heart rate")
-                HRMetricsInfoButton()   // explains the HRV / recovery-dot colour codes (#78)
-                if let kind = sourceRaw.flatMap(MetricsSourceKind.init(rawValue:)) {
-                    Spacer()
-                    Text("via \(kind.title)").font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-        }
     }
 
     /// Estimated calories tile: the HR-based (Keytel) energy estimate that fills a BLE band's
@@ -499,16 +553,48 @@ private struct SessionMediaSection: View {
     // MARK: Actions header
 
     @ViewBuilder private var actionsSection: some View {
-        Section {
-            if media.isEmpty {
-                ContentUnavailableView {
-                    Label("No media yet", systemImage: "photo.on.rectangle.angled")
-                } description: {
-                    Text("Add photos and videos you took during this workout, or find them automatically.")
-                }
-                .frame(maxWidth: .infinity)
-            }
+        if media.isEmpty {
+            compactEmptyMedia
+        } else {
+            fullActionsSection
+        }
+    }
 
+    /// No media yet: one row instead of a half-screen empty state above the workout (prompt 146).
+    private var compactEmptyMedia: some View {
+        Section {
+            HStack(spacing: 10) {
+                Label("Photos & videos", systemImage: "photo.on.rectangle.angled")
+                    .font(.subheadline)
+                Spacer(minLength: 6)
+                Button {
+                    Task { await autoDiscover(prompt: true) }
+                } label: {
+                    if isDiscovering { ProgressView() } else { Text("Find") }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .disabled(isDiscovering)
+                .accessibilityIdentifier("media.find")
+                Button { Task { await ensureAccessThenPick() } } label: { Text("Add") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                    .accessibilityIdentifier("media.add")
+            }
+            if let message {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
+            }
+            if app.photoAccess == .denied || app.photoAccess == .restricted {
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                } label: {
+                    Label("Enable Photos access in Settings", systemImage: "gear")
+                }
+                .font(.footnote)
+            }
+        }
+    }
+
+    @ViewBuilder private var fullActionsSection: some View {
+        Section {
             if let message {
                 Text(message).font(.footnote).foregroundStyle(.secondary)
             }

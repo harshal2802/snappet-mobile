@@ -61,8 +61,12 @@ enum SetMeasure {
         case .repsWeight:
             var base: String
             if let w = set.actualWeight, w > 0 {
-                let kg = WorkoutMath.toKg(w, set.weightUnit)
-                base = "\(WorkoutMath.formatWeight(kg: kg, unit: unit)) \(unit.display) × \(set.actualReps ?? 0)"
+                // Entered in the display unit → show exactly what was typed (67.5, not 68; prompt 146);
+                // converted from the other unit → the whole-number conversion as before.
+                let shown = (set.weightUnit ?? .kg) == unit
+                    ? formatWeight((w * 100).rounded() / 100)
+                    : WorkoutMath.formatWeight(kg: WorkoutMath.toKg(w, set.weightUnit), unit: unit)
+                base = "\(shown) \(unit.display) × \(set.actualReps ?? 0)"
             } else {
                 base = set.actualReps.map { "\($0) reps" } ?? "done"
             }
@@ -203,7 +207,7 @@ enum SetMeasure {
     static func hangSuffix(_ set: SetLog, unit: WeightUnit) -> String {
         var parts: [String] = []
         if let kg = set.loadKg, kg != 0 {
-            let v = (WorkoutMath.kgToUnit(abs(kg), unit) * 10).rounded() / 10
+            let v = (WorkoutMath.kgToUnit(abs(kg), unit) * 100).rounded() / 100
             parts.append(kg > 0 ? "+\(formatWeight(v)) \(unit.display)" : "−\(formatWeight(v)) \(unit.display) assist")
         }
         if let raw = set.handModeRaw, let mode = HandMode(rawValue: raw) {

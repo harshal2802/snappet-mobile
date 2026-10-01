@@ -63,6 +63,8 @@ struct FreeformDoneSummaryView: View {
                     SessionRecapHero(cells: SessionRecap.heroCells(stats: stats, climbStats: climbStats,
                                                                    session: session, unit: unit,
                                                                    milestones: milestones))
+                    // Records, firsts, streaks and counts against history (prompt 146) — same as the detail.
+                    SessionEarnedStrip(session: session, resolver: resolver, unit: unit)
                     SessionRecapCards(session: session, resolver: resolver, unit: unit,
                                       maxHR: maxHR, milestones: milestones)
                     if videoClipCount > 0 { studioCTA }
