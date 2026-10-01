@@ -22,6 +22,7 @@ struct BuddyPrototypeView: View {
     @State private var form = 0.7
     @State private var paused = false
     @State private var cheer = 0
+    @State private var preview: Progression.Moment?
 
     private var look: BuddyLook { BuddyLook(stage: stage, form: form, paused: paused) }
 
@@ -39,6 +40,9 @@ struct BuddyPrototypeView: View {
             .padding(.bottom, 24)
         }
         .background(SnappetColor.paper.ignoresSafeArea())
+        .fullScreenCover(item: $preview) { m in
+            ProgressionMomentView(moment: m, form: form, sessions: 40, totalXP: 5_140) { preview = nil }
+        }
         .navigationTitle("Training buddy")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -119,6 +123,16 @@ struct BuddyPrototypeView: View {
             .buttonStyle(.borderedProminent)
             .tint(SnappetColor.workout)
             .accessibilityIdentifier("buddy.cheer")
+
+            // P3: see the full-screen moments without having to level up.
+            HStack {
+                Button("Preview level-up") { preview = .levelUp(level: 13) }
+                    .accessibilityIdentifier("buddy.previewLevelUp")
+                Spacer()
+                Button("Preview growing up") { preview = .grewUp(from: .sprout, to: .adult, level: 10) }
+                    .accessibilityIdentifier("buddy.previewGrewUp")
+            }
+            .font(.subheadline.weight(.semibold))
         }
         .padding(14)
         .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))

@@ -9509,3 +9509,11 @@ Non-obvious calls:
 - Only training feeds XP for now (user's call); the rules table is the one place other apps would plug in.
 - The hero is live 3D but stops its idle animation when scrolled off screen; in-list buddies elsewhere
   stay still. The other apps keep their own Today derivations, shown as compact tiles.
+
+## 2026-10-01 — moments celebrate each new level once; history never triggers one (prompt 151)
+
+- The highest celebrated level is stored (BuddyDefaults). Unset means "the backfilled level counts as
+  seen", so hatching with years of history doesn't fire a stack of level-ups, and an edit that re-earns a
+  level doesn't celebrate it twice.
+- Growing up is one buddy that changes stage in front of you, not two side by side: two RealityViews
+  in a row get no intrinsic width, and the transformation reads better anyway.

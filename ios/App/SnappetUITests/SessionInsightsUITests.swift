@@ -43,6 +43,9 @@ final class SessionInsightsUITests: XCTestCase {
         openLatest("Push Day")
         XCTAssertTrue(any("insights.subtitle").waitForExistence(timeout: 4))
         XCTAssertTrue(any("insights.subtitle").label.contains("8th Push Day"), any("insights.subtitle").label)
+        // P3: what the session earned, at the top.
+        XCTAssertTrue(any("session.xp").exists, "the XP line")
+        XCTAssertTrue(any("session.xp").label.hasPrefix("+"), any("session.xp").label)
         XCTAssertTrue(any("insights.badges").exists, "earned badges")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'PR'")).firstMatch.exists)
         XCTAssertTrue(any("insights.progress").exists, "progress chart")
