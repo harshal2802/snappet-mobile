@@ -178,6 +178,7 @@ struct RoutineBlockEditor: View {
     @State private var holdText = ""
     @State private var distanceText = ""
     @FocusState private var keypadFocused: Bool
+    @State private var editingProtocol = false
 
     private var exercise: Exercise? { resolver.exercise(id: item.exerciseId) }
     private var distanceUnit: DistanceUnit { defaultUnit == .lb ? .mi : .km }
@@ -288,7 +289,44 @@ struct RoutineBlockEditor: View {
         }
     }
 
-    private var timedFields: some View {
+    /// A structured protocol block shows its plain-English summary + **Edit protocol** (prompt 140,
+    /// wireframe frame 10) — its sets live inside the protocol, so there's no separate Sets stepper
+    /// (that stepper is what made a 3-set protocol play 9 sets). Simple holds keep the old fields.
+    @ViewBuilder private var timedFields: some View {
+        if let spec = item.timedSpec, spec.mode.isStructured {
+            Section {
+                Text(spec.sentence).font(.subheadline)
+                    .accessibilityIdentifier("routineBlock.protocolSummary")
+                Button { editingProtocol = true } label: { Label("Edit protocol", systemImage: "slider.horizontal.3") }
+                    .accessibilityIdentifier("routineBlock.editProtocol")
+            } header: {
+                Text("Protocol")
+            } footer: {
+                Text("Runs once as part of this routine — its sets are inside it. Editing here changes only this routine.")
+            }
+            .sheet(isPresented: $editingProtocol) { protocolEditor(spec) }
+        } else {
+            simpleTimedFields
+        }
+    }
+
+    private func protocolEditor(_ spec: TimedExerciseSpec) -> some View {
+        ProtocolEditorSheet(
+            title: "Edit protocol",
+            initial: ProtocolDraft(name: item.displayName ?? "",
+                                   category: TimedExerciseCategory(rawValue: item.timedCategory ?? "") ?? .hangboard,
+                                   spec: spec),
+            offerSaveAsPreset: true) { draft in
+                item.timedSpec = draft.spec
+                item.timedCategory = draft.category.rawValue
+                let name = draft.name.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty { item.displayName = name }
+                // One run of the (edited) protocol — never the protocol's own set count.
+                item.sets = 1
+            }
+    }
+
+    private var simpleTimedFields: some View {
         Section("Timed") {
             Stepper("Sets: \(item.sets)", value: $item.sets, in: 1...20)
             LabeledContent("Hold (sec, optional)") {

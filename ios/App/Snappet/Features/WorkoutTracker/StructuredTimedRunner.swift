@@ -204,7 +204,7 @@ struct StructuredTimedRunner: View {
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
                     .accessibilityIdentifier("intervalRunner.timer")
-                Text("\(vm.state.overallRemaining)s left")
+                Text("\(SetMeasure.formatDuration(Double(vm.state.overallRemaining))) left")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.55))
             }

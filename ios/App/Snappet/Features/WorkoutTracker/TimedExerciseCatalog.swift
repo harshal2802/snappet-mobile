@@ -91,6 +91,13 @@ extension TimedExerciseCatalog {
     static let suggestions: [Suggestion] = [
         Suggestion(key: "seed.freehold", name: "Free hold",
                    category: .other, spec: TimedExerciseSpec(mode: .openCountUp)),
+        // Hangboard protocols (prompt 140), right after the always-first Free hold.
+        Suggestion(key: "seed.maxhangs", name: "Max hangs",
+                   category: .hangboard, spec: .maxHangs),
+        Suggestion(key: "seed.endurance", name: "Repeaters 10:6 (endurance)",
+                   category: .hangboard, spec: .enduranceRepeaters),
+        Suggestion(key: "seed.abrahangs", name: "Abrahangs",
+                   category: .hangboard, spec: .abrahangs),
         Suggestion(key: "seed.maxhang7", name: "7s max hang",
                    category: .hangboard, spec: .maxHang7),
         Suggestion(key: "seed.deadhang", name: "Dead hang",

@@ -9397,3 +9397,14 @@ Non-obvious calls:
   (Adjust sheet, clock running), keep-or-just-once at the end, Habits "done after N" default 1, hands
   (Both / One hand), protocols in routines as copies + "update routines?", Tindeq connect before/during
   a run with timer fallback, exact weights.
+
+## 2026-09-30 — one protocol editor; routine blocks are copies (prompt 140)
+
+- **One editor for create / edit preset / edit routine block**, so the three can't drift. The live
+  summary and the primary button are pinned: the fuller form pushed "Add to session" below the fold
+  (a UI test caught it, and so would every user), and a summary that scrolls away can't confirm an edit.
+- **Routine blocks copy a preset** (identified by the block's `timed:<uuid>` id); editing the preset
+  offers "Update routines too?" only for copies still identical to the old version. Linking by
+  reference would change routines silently and break QR sharing.
+- **Duration steppers step by magnitude** (1 s < 30 s, 5 s < 2 min, 15 s < 10 min, then 1 min).
+- Hangboard presets live under Timed (category Hangboard) rather than a new top-level discipline.
