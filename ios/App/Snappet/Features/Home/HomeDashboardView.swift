@@ -37,13 +37,23 @@ struct HomeDashboardView: View {
     /// surviving into tomorrow, #71 review fix). Refreshed on `.NSCalendarDayChanged` (app awake
     /// across midnight) and on scenePhase `.active` (suspended-overnight resume).
     @State private var now: Date = .now
+    /// Pauses (progression P2) — observed so Home re-derives Form / the hero when one starts or ends.
+    @AppStorage(PauseStore.key, store: BuddyDefaults.store) private var pausesRaw = "[]"
 
     var body: some View {
         NavigationStack {
             // Empty ↔ populated is a cross-fade (issue #30 §5.2) — and rendering one OR
             // the other (not an .overlay) fixes the empty-state-overlaps-content bug.
             ZStack {
-                if records.isEmpty {
+                // People who've earned XP get the training-first Home built around their buddy
+                // (prompt 150); everyone else keeps the classic Home.
+                let progression = ProgressionSnapshot.make(sessions: workoutSessions, routines: routines,
+                                                           pauses: PauseStore.decode(pausesRaw), now: now)
+                if progression.ledger.sessionCount > 0 {
+                    TrainingHomeView(snapshot: progression, sessions: workoutSessions, routines: routines, now: now,
+                                     otherApps: otherAppTiles) { if !records.isEmpty { activityFeed } }
+                        .transition(.opacity)
+                } else if records.isEmpty {
                     flagshipHero.transition(.opacity)
                 } else {
                     feed.transition(.opacity)
@@ -75,8 +85,6 @@ struct HomeDashboardView: View {
     private var flagshipHero: some View {
         ScrollView {
             VStack(spacing: SnappetSpacing.xl) {
-                // Workouts without any app-usage rows yet (e.g. restored history) still meet the buddy.
-                buddyCard
                 VStack(spacing: SnappetSpacing.md) {
                     Image(systemName: "sparkles.tv")
                         .font(.system(size: 44, weight: .semibold))
@@ -120,7 +128,6 @@ struct HomeDashboardView: View {
     private var feed: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SnappetSpacing.xl) {
-                buddyCard
                 upNext
                 todayRow
                 weekChart
@@ -132,10 +139,13 @@ struct HomeDashboardView: View {
         .safeAreaInset(edge: .bottom) { Color.clear.frame(height: SnappetSpacing.xxl) }
     }
 
-    /// Your training buddy (progression P1, prompt 148) — once a session has earned XP.
-    @ViewBuilder private var buddyCard: some View {
-        let progression = ProgressionSnapshot.make(sessions: workoutSessions, routines: routines, now: now)
-        if progression.ledger.sessionCount > 0 { BuddyHomeCard(snapshot: progression) }
+    /// The other apps' Today cards as compact tiles under the training section (prompt 150) — the
+    /// workout ones are covered by the hero and Today's training card.
+    private var otherAppTiles: [HomeAppTile] {
+        todayCards.filter { !["resumeWorkout", "workoutPlan"].contains($0.id) }.map {
+            HomeAppTile(id: $0.id, title: $0.title, detail: $0.detail, systemImage: $0.systemImage,
+                        tint: $0.tint, open: $0.open)
+        }
     }
 
     // MARK: up next (actionable Today cards, #71)
