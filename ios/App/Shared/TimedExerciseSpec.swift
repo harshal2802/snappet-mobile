@@ -79,12 +79,21 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
     /// code without it decodes unchanged (`nil` = timed work, as before); only meaningful for the
     /// structured repeaters/tabata modes.
     var selfPacedWork: Bool?
+    /// Load on the hang (prompt 142): added weight or pulley assist; `nil` = bodyweight. Optional → never
+    /// encoded when absent, so existing protocols keep identical bytes.
+    var load: HangLoad?
+    /// Which hand(s) (prompt 142); `nil` = both hands. Reps are per hand for one-hand modes.
+    var handMode: HandMode?
+
+    /// Reps actually performed per set: per-hand reps × the number of hands.
+    var effectiveRepsPerSet: Int { reps * (handMode?.repMultiplier ?? 1) }
 
     /// Whether reps are "until I tap done" (only for the structured, non-EMOM modes).
     var isSelfPaced: Bool { selfPacedWork == true && (mode == .repeaters || mode == .tabata) }
 
     init(mode: Mode, workSec: Int = 0, restSec: Int = 0, reps: Int = 1, sets: Int = 1,
-         restBetweenSetsSec: Int = 0, leadInSec: Int = 3, selfPacedWork: Bool? = nil) {
+         restBetweenSetsSec: Int = 0, leadInSec: Int = 3, selfPacedWork: Bool? = nil,
+         load: HangLoad? = nil, handMode: HandMode? = nil) {
         self.mode = mode
         self.workSec = max(0, workSec)
         self.restSec = max(0, restSec)
@@ -93,6 +102,8 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
         self.restBetweenSetsSec = max(0, restBetweenSetsSec)
         self.leadInSec = max(0, leadInSec)
         self.selfPacedWork = selfPacedWork == true ? true : nil
+        self.load = (load?.amount ?? 0) > 0 ? load : nil
+        self.handMode = handMode
     }
 
     // MARK: - Pure derivations
@@ -103,8 +114,9 @@ struct TimedExerciseSpec: Codable, Sendable, Hashable {
         if mode == .openCountUp { return nil }
         // Per set: reps work intervals, with (reps − 1) inter-rep rests between them. Self-paced reps have
         // no prescribed length, so the total counts only the rests (callers say "+ your reps").
-        let workPerSet = isSelfPaced ? 0 : reps * workSec
-        let restPerSet = max(0, reps - 1) * restSec
+        let repsPerSet = effectiveRepsPerSet
+        let workPerSet = isSelfPaced ? 0 : repsPerSet * workSec
+        let restPerSet = max(0, repsPerSet - 1) * restSec
         let perSet = workPerSet + restPerSet
         // Between-set rest applies (sets − 1) times.
         let betweenSets = max(0, sets - 1) * restBetweenSetsSec

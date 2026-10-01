@@ -53,6 +53,8 @@ struct IntervalSchedule: Equatable, Sendable {
         /// A self-paced work phase (prompt 141): no fixed length — it lasts until the runner is told the
         /// rep is done. Its `durationSec` is 0 and it never counts toward `totalSeconds`.
         var isOpenEnded: Bool = false
+        /// The hand for this work phase (and the rest after it) in a one-hand protocol (prompt 142).
+        var hand: Hand? = nil
 
         var isWork: Bool { kind == .work }
         var isRest: Bool { kind == .rest || kind == .restBetweenSets }
@@ -112,22 +114,31 @@ struct IntervalSchedule: Equatable, Sendable {
                              setIndex: 0, repIndex: 0, label: "READY", nextLabel: "WORK"))
         }
 
+        // One set's reps in order: plain 1…reps, or per-hand (L R L R… / L…L R…R / one side) for a
+        // one-hand protocol (prompt 142). EMOM is never one-handed.
+        let sequence: [(hand: Hand?, rep: Int)] = {
+            if let mode = spec.handMode, !isEmom { return mode.sequence(reps: reps).map { ($0.hand, $0.rep) } }
+            return (1...reps).map { (nil, $0) }
+        }()
+
         for s in 1...sets {
-            for r in 1...reps {
-                let isLastRepOfSet = (r == reps)
+            for (i, step) in sequence.enumerated() {
+                let isLastRepOfSet = (i == sequence.count - 1)
                 let isLastSet = (s == sets)
+                let r = step.rep
                 // Work phase — open-ended when reps are "until I tap done".
                 if spec.isSelfPaced {
                     out.append(.init(id: out.count, kind: .work, durationSec: 0,
-                                     setIndex: s, repIndex: r, label: "GO", nextLabel: nil, isOpenEnded: true))
+                                     setIndex: s, repIndex: r, label: "GO", nextLabel: nil,
+                                     isOpenEnded: true, hand: step.hand))
                 } else if workSec > 0 {
                     out.append(.init(id: out.count, kind: .work, durationSec: workSec,
-                                     setIndex: s, repIndex: r, label: "WORK", nextLabel: nil))
+                                     setIndex: s, repIndex: r, label: "WORK", nextLabel: nil, hand: step.hand))
                 }
                 // Inter-rep rest (not after the last rep of a set).
                 if !isLastRepOfSet, restSec > 0 {
                     out.append(.init(id: out.count, kind: .rest, durationSec: restSec,
-                                     setIndex: s, repIndex: r, label: "REST", nextLabel: nil))
+                                     setIndex: s, repIndex: r, label: "REST", nextLabel: nil, hand: step.hand))
                 }
                 // Between-set rest after the last rep of a non-final set.
                 if isLastRepOfSet, !isLastSet, spec.restBetweenSetsSec > 0 {
@@ -149,7 +160,7 @@ struct IntervalSchedule: Equatable, Sendable {
             let next = (i + 1 < out.count && out[i + 1].kind != .done) ? out[i + 1].label : nil
             withNext.append(.init(id: p.id, kind: p.kind, durationSec: p.durationSec,
                                   setIndex: p.setIndex, repIndex: p.repIndex,
-                                  label: p.label, nextLabel: next, isOpenEnded: p.isOpenEnded))
+                                  label: p.label, nextLabel: next, isOpenEnded: p.isOpenEnded, hand: p.hand))
         }
         return withNext
     }
@@ -201,4 +212,9 @@ struct IntervalSchedule: Equatable, Sendable {
 
     /// How many open-ended (tap-done) reps the schedule has.
     var openRepCount: Int { phases.filter(\.isOpenEnded).count }
+
+    /// The hand of the next work phase after `phase` — the rest screen's "Next: RIGHT hand" (prompt 142).
+    func nextWorkHand(after phase: Phase) -> Hand? {
+        phases.first { $0.id > phase.id && $0.kind == .work }?.hand
+    }
 }

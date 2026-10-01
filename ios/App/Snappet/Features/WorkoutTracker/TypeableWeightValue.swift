@@ -12,13 +12,15 @@ struct TypeableWeightValue: View {
     var color: Color = .primary
     /// Accessibility id of the readout (the field gets `<id>.field`).
     let id: String
+    /// What 0 reads as — "Body" for a set weight (bodyweight); a load passes its own.
+    var zeroLabel: String = "Body"
 
     @State private var editing = false
     @State private var text = ""
     @FocusState private var focused: Bool
 
     private var display: String {
-        weight > 0 ? "\(SetMeasure.formatWeight(weight)) \(unit.display)" : "Body"
+        weight > 0 ? "\(SetMeasure.formatWeight(weight)) \(unit.display)" : zeroLabel
     }
 
     var body: some View {
