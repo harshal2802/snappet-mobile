@@ -44,8 +44,8 @@ enum Progression {
     /// The uncapped XP lines for `s`. `earlier` = every completed session before it (any routine);
     /// `schedule` = its routine's schedule, for "on plan".
     static func items(for s: WorkoutSession, earlier: [WorkoutSession], schedule: RoutineSchedule?,
-                      unit: WeightUnit = .kg, calendar: Calendar = .current) -> [XPItem] {
-        let memo = Memo(calendar: calendar)
+                      unit: WeightUnit = .kg, pauses: [Pause] = [], calendar: Calendar = .current) -> [XPItem] {
+        let memo = Memo(calendar: calendar, pauses: pauses)
         earlier.forEach(memo.add)
         return items(for: s, earlier: earlier, schedule: schedule, unit: unit, calendar: calendar, memo: memo)
     }
@@ -54,9 +54,10 @@ enum Progression {
     /// start and workout type are worked out once, and `weeks` holds the weeks trained so far.
     final class Memo {
         let calendar: Calendar
+        let pauses: [Pause]
         private(set) var weeks: Set<Date> = []
         private var kinds: [UUID: SessionInsights.Kind] = [:]
-        init(calendar: Calendar) { self.calendar = calendar }
+        init(calendar: Calendar, pauses: [Pause] = []) { self.calendar = calendar; self.pauses = pauses }
 
         func week(_ d: Date) -> Date { calendar.dateInterval(of: .weekOfYear, for: d)?.start ?? d }
         func kind(_ s: WorkoutSession) -> SessionInsights.Kind {
@@ -67,15 +68,11 @@ enum Progression {
         }
         func add(_ s: WorkoutSession) { weeks.insert(week(s.startedAt)) }
 
-        /// Consecutive weeks ending with `d`'s week (that week counted as trained).
+        /// The streak in `d`'s week (that week counted as trained), with freezes and pauses applied.
         func streak(endingAt d: Date) -> Int {
-            var cursor = week(d), count = 0
-            while count == 0 || weeks.contains(cursor) {
-                count += 1
-                guard let prev = calendar.date(byAdding: .weekOfYear, value: -1, to: cursor) else { break }
-                cursor = week(prev)
-            }
-            return count
+            let w = week(d)
+            return Progression.streak(trainedWeeks: weeks.union([w]), pauses: pauses, through: w,
+                                      inProgress: nil, calendar: calendar).weeks
         }
     }
 
@@ -169,7 +166,7 @@ enum Progression {
     /// being finished right now). `schedules` = routine id → schedule.
     @MainActor
     static func ledger(_ sessions: [WorkoutSession], including current: WorkoutSession? = nil,
-                       schedules: [UUID: RoutineSchedule], unit: WeightUnit = .kg,
+                       schedules: [UUID: RoutineSchedule], unit: WeightUnit = .kg, pauses: [Pause] = [],
                        calendar: Calendar = .current) -> Ledger {
         var all = sessions.filter { $0.completedAt != nil && $0.id != current?.id }
         if let current { all.append(current) }
@@ -178,9 +175,10 @@ enum Progression {
         var awards: [UUID: Award] = [:]
         var perDay: [DayKey: Int] = [:]
         var total = 0, counted = 0
-        let memo = Memo(calendar: calendar)
+        let memo = Memo(calendar: calendar, pauses: pauses)
         var prefix = Hasher()
         prefix.combine(unit); prefix.combine(calendar.firstWeekday); prefix.combine(calendar.timeZone.identifier)
+        prefix.combine(pauses)
         for (i, s) in all.enumerated() {
             defer { memo.add(s) }
             let schedule = s.routineID.flatMap { schedules[$0] }
@@ -260,6 +258,8 @@ enum Progression {
         }
         var value: Double
         var basis: Basis
+        /// Paused: Form is frozen at its value when the pause began.
+        var held = false
 
         var summary: String {
             switch basis {
@@ -274,8 +274,20 @@ enum Progression {
     /// `schedules` = routine id → schedule (enabled ones plan sessions). With at least two planned
     /// days in the last 4 weeks, Form is done ÷ planned (a day with a skipped slot is neutral, today
     /// only counts once it's done). Otherwise it compares the last 4 weeks with your usual week.
-    static func form(_ sessions: [WorkoutSession], schedules: [UUID: RoutineSchedule],
+    /// Pauses: while one is running Form is held at its value when it began; afterwards, paused days
+    /// are neutral (not planned, and not counted against your usual week).
+    static func form(_ sessions: [WorkoutSession], schedules: [UUID: RoutineSchedule], pauses: [Pause] = [],
                      now: Date = .now, calendar: Calendar = .current) -> Form {
+        if let p = activePause(pauses, now: now) {
+            var f = form(sessions, schedules: schedules, pauses: pauses.filter { $0.id != p.id },
+                         now: p.start, calendar: calendar)
+            f.held = true
+            return f
+        }
+        func paused(_ day: DayKey) -> Bool {
+            let noon = day.date(calendar: calendar).addingTimeInterval(12 * 3_600)
+            return pauses.contains { $0.covers(noon) }
+        }
         let done = sessions.filter { $0.completedAt != nil }
         let today = DayKey(now, calendar: calendar)
         let start = today.adding(days: -27, calendar: calendar)
@@ -288,7 +300,7 @@ enum Progression {
                 defer { day = day.adding(days: 1, calendar: calendar) }
                 // "Skip today" (a skipped day) or skipping one of several slots is neutral, not a miss.
                 guard schedule.occurs(on: day, calendar: calendar), !schedule.skippedDays.contains(day),
-                      !schedule.skippedSlots.contains(where: { $0.day == day }) else { continue }
+                      !schedule.skippedSlots.contains(where: { $0.day == day }), !paused(day) else { continue }
                 let wasDone = doneDays.contains(day)
                 if day == today && !wasDone { continue }
                 planned += 1
@@ -306,7 +318,10 @@ enum Progression {
         }
         let before = done.filter { $0.startedAt >= usualStart && $0.startedAt < windowStart }.count
         if recent == 0 && before == 0 { return Form(value: 0.6, basis: .new) }
-        let recentPerWeek = Double(recent) / 4
+        var pausedDays = 0
+        var d = start
+        while d <= today { if paused(d) { pausedDays += 1 }; d = d.adding(days: 1, calendar: calendar) }
+        let recentPerWeek = Double(recent) / (Double(max(7, 28 - pausedDays)) / 7)
         let usual = Double(before) / 12
         // No usual week yet (new to Snappet): two sessions a week counts as full Form.
         let target = usual > 0 ? usual : 2
@@ -314,15 +329,10 @@ enum Progression {
                     basis: .usual(recentPerWeek: recentPerWeek, usualPerWeek: usual > 0 ? usual : 2))
     }
 
-    // MARK: - Overall week streak (any training)
+    // MARK: - Overall week streak (any training) — see `streak(_:pauses:now:)` for freezes
 
-    /// Consecutive weeks with a session, still alive if the latest was this week or last week.
-    static func weekStreak(_ sessions: [WorkoutSession], now: Date = .now, calendar: Calendar = .current) -> Int {
-        let done = sessions.filter { $0.completedAt != nil }.sorted { $0.startedAt > $1.startedAt }
-        guard let latest = done.first,
-              let thisWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
-              let lastWeek = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeek),
-              latest.startedAt >= lastWeek else { return 0 }
-        return SessionInsights.weekStreak(latest, prior: Array(done.dropFirst()), calendar: calendar)
+    static func weekStreak(_ sessions: [WorkoutSession], pauses: [Pause] = [], now: Date = .now,
+                           calendar: Calendar = .current) -> Int {
+        streak(sessions, pauses: pauses, now: now, calendar: calendar).weeks
     }
 }
