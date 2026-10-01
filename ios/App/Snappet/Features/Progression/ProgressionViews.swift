@@ -38,6 +38,12 @@ struct ProgressionSnapshot {
                                    pause: Progression.activePause(pauses, now: now))
     }
 
+    /// The ledger everywhere outside Home / the buddy screen (history rows, a session's detail) — same
+    /// schedules and pauses, so the per-session XP cache is shared, not recomputed.
+    static func ledger(_ sessions: [WorkoutSession], routines: [Routine]) -> Progression.Ledger {
+        Progression.ledger(sessions, schedules: schedules(routines), pauses: PauseStore.load())
+    }
+
     var look: BuddyLook { BuddyLook(stage: level.stage, form: form.value, paused: pause != nil) }
 
     /// "A streak freeze covered last week" — when the most recent frozen week was last week.
@@ -61,16 +67,31 @@ struct SessionXPCard: View {
     @Query private var routines: [Routine]
     @State private var cheer = 0
     @AppStorage(PauseStore.key, store: BuddyDefaults.store) private var pausesRaw = "[]"
+    /// Highest level celebrated (P3) — 0 = never, so backfilled levels don't trigger a moment.
+    @AppStorage(MomentDefaults.celebratedKey, store: BuddyDefaults.store) private var celebrated = 0
+    @State private var moment: Progression.Moment?
 
     var body: some View {
         let schedules = ProgressionSnapshot.schedules(routines)
         let pauses = PauseStore.decode(pausesRaw)
         let ledger = Progression.ledger(completed, including: session, schedules: schedules, pauses: pauses)
         if let award = ledger.awards[session.id] {
-            card(award: award, before: Progression.levelInfo(totalXP: ledger.xp(before: session.id)),
-                 after: Progression.levelInfo(totalXP: ledger.totalXP),
-                 form: Progression.form(completed + [session], schedules: schedules, pauses: pauses),
-                 pause: Progression.activePause(pauses))
+            let before = Progression.levelInfo(totalXP: ledger.xp(before: session.id))
+            let after = Progression.levelInfo(totalXP: ledger.totalXP)
+            let form = Progression.form(completed + [session], schedules: schedules, pauses: pauses)
+            card(award: award, before: before, after: after, form: form, pause: Progression.activePause(pauses))
+                // Level up / grew up (P3): once per new level, after the cheer has played.
+                .task(id: session.id) {
+                    guard let m = Progression.moment(before: before, after: after,
+                                                     celebrated: celebrated == 0 ? nil : celebrated) else { return }
+                    try? await Task.sleep(for: .milliseconds(1_400))
+                    celebrated = after.level
+                    moment = m
+                }
+                .fullScreenCover(item: $moment) { m in
+                    ProgressionMomentView(moment: m, form: form.value, sessions: ledger.sessionCount,
+                                          totalXP: ledger.totalXP) { moment = nil }
+                }
         } else {
             Label("Sessions of 5 minutes or more earn XP for your buddy.", systemImage: "sparkles")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -171,5 +192,50 @@ struct SessionXPCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("xp.level")
+    }
+}
+
+// MARK: - Session detail XP line (P3, wireframe frame 10)
+
+/// What a finished session earned, at the top of its detail: a small still buddy, "+187 XP", and the
+/// level it reached with the reasons ("Level 12 · Bench PR · on plan · 5-week streak").
+struct SessionXPRow: View {
+    let session: WorkoutSession
+
+    @Query(filter: #Predicate<WorkoutSession> { $0.completedAt != nil }) private var completed: [WorkoutSession]
+    @Query private var routines: [Routine]
+
+    var body: some View {
+        let ledger = ProgressionSnapshot.ledger(completed, routines: routines)
+        if let award = ledger.awards[session.id] {
+            let upTo = completed.filter { $0.startedAt <= session.startedAt }
+                .compactMap { ledger.awards[$0.id]?.total }.reduce(0, +)
+            let level = Progression.levelInfo(totalXP: upTo)
+            HStack(spacing: 10) {
+                BuddyCreatureView(look: BuddyLook(stage: level.stage, form: 0.8), animated: false, interactive: false)
+                    .frame(width: 58, height: 54)
+                    .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("+\(award.total) XP").font(.headline.weight(.heavy)).foregroundStyle(SnappetColor.workout)
+                    Text((["Level \(level.level)"] + Self.reasons(award)).joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(6)
+            .background(SnappetColor.surfaceMuted, in: RoundedRectangle(cornerRadius: SnappetRadius.md))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("session.xp")
+        }
+    }
+
+    /// The bonus lines in short form (the finish and minutes lines go without saying).
+    static func reasons(_ award: Progression.Award) -> [String] {
+        award.items.dropFirst(2).prefix(3).map { item in
+            var l = item.label
+            for p in ["🏆 ", "🔥 ", "🎯 "] where l.hasPrefix(p) { l.removeFirst(p.count) }
+            if l.hasPrefix("On plan") { l = "on plan" }
+            return l
+        } + (award.items.first?.label == "Apple Health workout" ? ["Apple Health"] : [])
     }
 }

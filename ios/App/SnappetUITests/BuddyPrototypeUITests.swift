@@ -65,4 +65,34 @@ final class BuddyPrototypeUITests: XCTestCase {
         // The other styles are shown but locked until their model packs exist.
         XCTAssertTrue(app.buttons["buddy.style.Athlete"].label.contains("Coming soon"))
     }
+
+    /// P3 (prompt 151): the level-up and growing-up moments, previewed from Labs.
+    func testPreviewTheMoments() {
+        XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 8))
+        app.tabBars.buttons["Apps"].tap()
+        app.buttons["moduleCard.workout-log"].tap()
+        let gear = app.buttons["workout.settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 6))
+        gear.tap()
+        let open = app.buttons["openBuddyPrototype"]
+        for _ in 0..<6 where !open.isHittable { app.swipeUp() }
+        open.tap()
+        let levelUp = app.buttons["buddy.previewLevelUp"]
+        for _ in 0..<4 where !levelUp.isHittable { app.swipeUp() }
+        let title = app.staticTexts["moment.title"]
+
+        app.buttons["buddy.previewGrewUp"].tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Adult")
+        XCTAssertTrue(app.buttons["Meet your Adult"].exists)
+        sleep(3); snap("21-moment-grew-up")
+        app.buttons["moment.done"].tap()
+
+        levelUp.tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Level 13")
+        sleep(6); snap("20-moment-level-up")
+        app.buttons["moment.done"].tap()
+        XCTAssertFalse(title.exists)
+    }
 }

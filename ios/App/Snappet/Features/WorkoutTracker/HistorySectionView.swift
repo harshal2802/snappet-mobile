@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// The History section: completed sessions, newest first, grouped by month. Searchable by routine
 /// name, with one-tap routine filter chips (issue #73) and a tracking-type facet (workout-with-timer
@@ -20,6 +21,8 @@ struct HistorySectionView: View {
     var watchSessions: [WorkoutSession] = []
 
     @State private var query = ""
+    /// Routines' schedules for the XP ledger (P3: "+XP" on each row).
+    @Query private var routines: [Routine]
     /// The routine name the chip row is filtering to; nil = all routines.
     @State private var routineFilter: String?
     /// Tracking-type facet (workout-with-timer PR 6): the selected `SetKind`s; empty = no filter.
@@ -129,6 +132,7 @@ struct HistorySectionView: View {
     }
 
     var body: some View {
+        let xp = ProgressionSnapshot.ledger(history + watchSessions, routines: routines)
         // Bare List + .overlay for the empty state (matching ExerciseBrowserView) — the previous
         // `Group { if empty … else List }` branch swap left the row Buttons' tap gestures dead.
         List {
@@ -147,7 +151,8 @@ struct HistorySectionView: View {
                                                 hasVideo: videoSessionIDs.contains(session.id))
                             } else {
                                 HistoryRow(session: session, unit: unit,
-                                           hasVideo: videoSessionIDs.contains(session.id))
+                                           hasVideo: videoSessionIDs.contains(session.id),
+                                           xp: xp.awards[session.id]?.total)
                             }
                         }
                         .accessibilityIdentifier(session.isImportedFromHealth
@@ -467,10 +472,19 @@ private struct HistoryRow: View {
     /// Session has tagged video → show the Studio badge (#74), so media-bearing sessions are
     /// findable from the list instead of only after opening each detail.
     var hasVideo: Bool = false
+    /// XP this session earned (P3), nil when it earned none.
+    var xp: Int? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(session.routineName).font(.headline).lineLimit(1)
+            HStack(alignment: .firstTextBaseline) {
+                Text(session.routineName).font(.headline).lineLimit(1)
+                Spacer()
+                if let xp {
+                    Text("+\(xp) XP").font(.caption.weight(.heavy).monospacedDigit())
+                        .foregroundStyle(SnappetColor.workout)
+                }
+            }
             Text(session.startedAt, format: .dateTime.weekday().month().day().hour().minute())
                 .font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 12) {

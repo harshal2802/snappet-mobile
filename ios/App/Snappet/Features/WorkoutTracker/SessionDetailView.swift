@@ -82,6 +82,8 @@ struct SessionDetailView: View {
             // imports (no exercises) keep the plain recap.
             Section {
                 VStack(alignment: .leading, spacing: 14) {
+                    // What it earned your buddy (progression P3).
+                    SessionXPRow(session: session)
                     if session.isImportedFromHealth {
                         Text("\(session.startedAt.formatted(.dateTime.weekday().month().day())) · \(max(1, Int(session.duration / 60))) min")
                             .font(.footnote).foregroundStyle(.secondary)
