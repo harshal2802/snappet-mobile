@@ -21,7 +21,8 @@ enum RoutineScheduleSync {
                 blockCount: routine.exercises.count, setCount: routine.totalSets,
                 schedule: schedule,
                 doneDays: Set(mine.map { DayKey($0.startedAt, calendar: calendar) }),
-                completedSessions: mine.filter { !$0.isActive && $0.startedAt >= startDate }.count)
+                completedSessions: mine.filter { !$0.isActive && $0.startedAt >= startDate }.count,
+                sessionStarts: mine.map(\.startedAt))
         }
     }
 
@@ -54,6 +55,19 @@ enum RoutineScheduleSync {
         HabitRoutineLink.recordSkip(routine: routine, day: day, in: context)   // prompt 137
         try? context.save()
         Task { await reminders.clearDelivered(for: routineID) }
+        replan(context: context, reminders: reminders)
+    }
+
+    /// "Skip this one" on a day with several sessions (prompt 144): skip just that slot, then re-plan.
+    static func skipSlot(routineID: UUID, slot: SlotKey, context: ModelContext, reminders: RoutineReminders) {
+        guard let routine = try? context.fetch(FetchDescriptor<Routine>(
+            predicate: #Predicate { $0.id == routineID })).first,
+              var schedule = routine.schedule else { return }
+        schedule.skippedSlots.insert(slot)
+        let floor = DayKey(Calendar.current.date(byAdding: .day, value: -62, to: .now) ?? .now)
+        schedule.skippedSlots = schedule.skippedSlots.filter { $0.day >= floor }
+        routine.schedule = schedule
+        try? context.save()
         replan(context: context, reminders: reminders)
     }
 

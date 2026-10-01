@@ -132,4 +132,40 @@ final class RoutineScheduleUITests: XCTestCase {
         XCTAssertEqual(include.value as? String, "1", "on by default")
         snap("share-with-schedule")
     }
+
+    /// Prompt 144: several sessions a day — "Every 2 hours, 8 AM–8 PM" previews 7 times a day, saves into
+    /// the summary, and Up next says which session of the day it is.
+    func testEveryTwoHoursScheduleShowsSessionCount() {
+        app.tabBars.buttons["Apps"].tap()
+        XCTAssertTrue(app.buttons["moduleCard.workout-log"].waitForExistence(timeout: 6))
+        app.buttons["moduleCard.workout-log"].tap()
+        app.segmentedControls.buttons["Routines"].tap()
+        let row = app.buttons.matching(identifier: "routineRow").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 6))
+        row.tap()
+        app.buttons["routine.schedule"].tap()
+        XCTAssertTrue(app.buttons["schedule.save"].waitForExistence(timeout: 4))
+        for wd in 1...7 {
+            let day = app.buttons["schedule.day.\(wd)"]
+            if day.value as? String != "Selected" { day.tap() }
+        }
+        let every = app.buttons["Every…"]
+        for _ in 0..<3 where !every.isHittable { app.swipeUp() }
+        every.tap()
+        let preview = app.staticTexts["schedule.slotsPreview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 4))
+        XCTAssertTrue(preview.label.hasPrefix("7 times a day"), preview.label)
+        snap("schedule-every-2h")
+        app.buttons["schedule.save"].tap()
+
+        let card = app.buttons["routine.schedule"]
+        XCTAssertTrue(card.waitForExistence(timeout: 4))
+        XCTAssertTrue(card.label.contains("every 2 h"), card.label)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let when = app.staticTexts["upNext.when"]
+        XCTAssertTrue(when.waitForExistence(timeout: 4))
+        XCTAssertTrue(when.label.contains(" OF 7"), when.label)
+        XCTAssertTrue(app.buttons["upNext.skipSlot"].exists, "skip a single session")
+        snap("up-next-multi")
+    }
 }

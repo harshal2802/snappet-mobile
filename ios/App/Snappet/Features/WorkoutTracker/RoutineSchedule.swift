@@ -22,6 +22,13 @@ struct RoutineSchedule: Hashable, Sendable {
     var reminder = ScheduleReminder()
     /// Days the user tapped "Skip today". Device-local bookkeeping — stripped from a shared code.
     var skippedDays: Set<DayKey> = []
+    /// Several sessions on a scheduled day (prompt 144, wireframe frames 7–8): set times, or every N
+    /// minutes/hours in a window. `nil` = once a day at `time` / `perDayTimes` (the original behaviour).
+    var daily: DailyRepeat? = nil
+    /// Single slots skipped with "Skip this one" (`SlotKey`s). Device-local, stripped when shared.
+    var skippedSlots: Set<SlotKey> = []
+    /// With several sessions a day: how many make the day count as done in Habits (default 1).
+    var doneAfterSessions: Int? = nil
 
     init(startDay: DayKey) { self.startDay = startDay }
 
@@ -34,6 +41,7 @@ struct RoutineSchedule: Hashable, Sendable {
     var forSharing: RoutineSchedule {
         var s = self
         s.skippedDays = []
+        s.skippedSlots = []
         return s
     }
 }
@@ -71,6 +79,52 @@ struct DayKey: Hashable, Comparable, Codable, Sendable, CustomStringConvertible 
     func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
         try c.encode(value)
+    }
+}
+
+/// One slot of a day with several sessions: the day and the slot's index in that day's order.
+struct SlotKey: Hashable, Comparable, Codable, Sendable {
+    let day: DayKey
+    let index: Int
+    static func < (a: SlotKey, b: SlotKey) -> Bool { (a.day, a.index) < (b.day, b.index) }
+    /// Compact wire form: `day.value * 10_000 + index`.
+    var packed: Int { day.value * 10_000 + index }
+    init(day: DayKey, index: Int) { self.day = day; self.index = index }
+    init(packed: Int) { day = DayKey(value: packed / 10_000); index = packed % 10_000 }
+    init(from decoder: Decoder) throws { self.init(packed: try decoder.singleValueContainer().decode(Int.self)) }
+    func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(packed) }
+}
+
+/// Several sessions on a scheduled day (prompt 144).
+enum DailyRepeat: Hashable, Sendable {
+    /// At these times (sorted, de-duplicated).
+    case times([ScheduleTime])
+    /// Every `minutes` from `from` until `until` (inclusive when it lands exactly), within the day.
+    case every(minutes: Int, from: ScheduleTime, until: ScheduleTime)
+
+    static let intervalChoices = [1, 2, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720]
+    /// Hard cap on slots per day (every minute, all day, is 1440 — no human wants a reminder per minute,
+    /// but the schedule itself may be that dense).
+    static let maxSlotsPerDay = 1440
+
+    /// The day's slot times in order.
+    var slotTimes: [ScheduleTime] {
+        switch self {
+        case .times(let ts):
+            return Array(Set(ts)).sorted()
+        case .every(let m, let from, let until):
+            let step = max(1, m)
+            guard until.minutesOfDay >= from.minutesOfDay else { return [from] }
+            return stride(from: from.minutesOfDay, through: until.minutesOfDay, by: step)
+                .prefix(Self.maxSlotsPerDay).map(ScheduleTime.init(minutesOfDay:))
+        }
+    }
+
+    /// Shortest gap between consecutive slots, in minutes (nil for one slot).
+    var minimumGapMinutes: Int? {
+        let t = slotTimes.map(\.minutesOfDay)
+        guard t.count > 1 else { return nil }
+        return zip(t.dropFirst(), t).map { $0 - $1 }.min()
     }
 }
 
@@ -141,6 +195,8 @@ struct ScheduleReminder: Hashable, Sendable {
     var sound = true
     /// Break through Focus modes (the app holds the Time Sensitive entitlement).
     var timeSensitive = false
+    /// With several sessions a day: remind for every session (default) or only the first of the day.
+    var everySession = true
 
     static let leadChoices = [0, 5, 10, 15, 30, 60]
     static let nudgeChoices = [15, 30, 60, 120]
@@ -185,6 +241,32 @@ extension RoutineSchedule {
         return false
     }
 
+    // MARK: Slots (prompt 144)
+
+    /// Whether the day has several sessions.
+    var isMultiSlot: Bool { (daily?.slotTimes.count ?? 1) > 1 }
+
+    /// The start of every session on `day`, in order (one for a once-a-day schedule).
+    func slotStarts(on day: DayKey, calendar: Calendar = .current) -> [Date] {
+        guard let daily else { return [startTime(on: day, calendar: calendar)] }
+        return daily.slotTimes.map { $0.on(day, calendar: calendar) }
+    }
+
+    /// Slots on planned days in `[from, through]`, day- and slot-skips excluded.
+    func slots(from: DayKey, through: DayKey, calendar: Calendar = .current) -> [(key: SlotKey, start: Date)] {
+        days(from: from, through: through, calendar: calendar).flatMap { day in
+            slotStarts(on: day, calendar: calendar).enumerated().compactMap { i, start in
+                let key = SlotKey(day: day, index: i)
+                return skippedSlots.contains(key) ? nil : (key, start)
+            }
+        }
+    }
+
+    /// Sessions that count a day as done (Habits): 1 unless set, never more than the day's slots.
+    var sessionsForDayDone: Int {
+        min(max(1, doneAfterSessions ?? 1), daily?.slotTimes.count ?? 1)
+    }
+
     /// Planned days in `[from, through]`, skips excluded.
     func days(from: DayKey, through: DayKey, calendar: Calendar = .current) -> [DayKey] {
         guard from <= through else { return [] }
@@ -199,7 +281,15 @@ extension RoutineSchedule {
 
     /// Human summary: "Mon · Wed · Fri at 7:00 AM", "Every 3 days at 6:30 PM", "Once on 3 Oct at …".
     func summary(calendar: Calendar = .current) -> String {
-        let timeText = perDayTimes.isEmpty ? " at \(time.formatted(calendar: calendar))" : " · times vary"
+        var timeText = perDayTimes.isEmpty ? " at \(time.formatted(calendar: calendar))" : " · times vary"
+        if let daily, isMultiSlot {
+            switch daily {
+            case .times(let ts): timeText = " · \(Set(ts).count) times a day"
+            case .every(let m, let from, let until):
+                let every = m % 60 == 0 ? (m == 60 ? "hour" : "\(m / 60) h") : "\(m) min"
+                timeText = " · every \(every), \(from.formatted(calendar: calendar))–\(until.formatted(calendar: calendar))"
+            }
+        }
         switch repeatRule {
         case .weekly(let weekdays, let everyWeeks):
             let names = Self.orderedWeekdays(calendar).filter(weekdays.contains)
@@ -235,6 +325,8 @@ extension RoutineSchedule {
 extension RoutineSchedule: Codable {
     private enum K: String, CodingKey {
         case on, rk, wd, ew, ed, t, pt, sd, ek, ev, rm, sk
+        // prompt 144: set times · every-N window · skipped slots · Habits "done after N"
+        case dt, de, df, du, ss, dn
     }
 
     init(from decoder: Decoder) throws {
@@ -261,6 +353,15 @@ extension RoutineSchedule: Codable {
         }
         reminder = try c.decodeIfPresent(ScheduleReminder.self, forKey: .rm) ?? ScheduleReminder()
         skippedDays = Set(try c.decodeIfPresent([DayKey].self, forKey: .sk) ?? [])
+        if let times = try c.decodeIfPresent([Int].self, forKey: .dt), !times.isEmpty {
+            daily = .times(times.map(ScheduleTime.init(minutesOfDay:)))
+        } else if let every = try c.decodeIfPresent(Int.self, forKey: .de) {
+            daily = .every(minutes: max(1, every),
+                           from: ScheduleTime(minutesOfDay: try c.decodeIfPresent(Int.self, forKey: .df) ?? time.minutesOfDay),
+                           until: ScheduleTime(minutesOfDay: try c.decodeIfPresent(Int.self, forKey: .du) ?? 20 * 60))
+        }
+        skippedSlots = Set(try c.decodeIfPresent([SlotKey].self, forKey: .ss) ?? [])
+        doneAfterSessions = try c.decodeIfPresent(Int.self, forKey: .dn)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -292,11 +393,22 @@ extension RoutineSchedule: Codable {
         }
         if reminder != ScheduleReminder() { try c.encode(reminder, forKey: .rm) }
         if !skippedDays.isEmpty { try c.encode(skippedDays.sorted(), forKey: .sk) }
+        // An older build ignores these keys and keeps `t` — the first slot (the editor keeps them in sync).
+        switch daily {
+        case .times(let ts)?: try c.encode(Array(Set(ts)).sorted().map(\.minutesOfDay), forKey: .dt)
+        case .every(let m, let from, let until)?:
+            try c.encode(m, forKey: .de)
+            try c.encode(from.minutesOfDay, forKey: .df)
+            try c.encode(until.minutesOfDay, forKey: .du)
+        case nil: break
+        }
+        if !skippedSlots.isEmpty { try c.encode(skippedSlots.sorted(), forKey: .ss) }
+        try c.encodeIfPresent(doneAfterSessions, forKey: .dn)
     }
 }
 
 extension ScheduleReminder: Codable {
-    private enum K: String, CodingKey { case on, l, ng, hu, snd, ts }
+    private enum K: String, CodingKey { case on, l, ng, hu, snd, ts, fo }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
@@ -309,6 +421,7 @@ extension ScheduleReminder: Codable {
         headsUp = try c.decodeIfPresent(Int.self, forKey: .hu).map(ScheduleTime.init(minutesOfDay:))
         sound = try c.decodeIfPresent(Bool.self, forKey: .snd) ?? d.sound
         timeSensitive = try c.decodeIfPresent(Bool.self, forKey: .ts) ?? d.timeSensitive
+        everySession = !(try c.decodeIfPresent(Bool.self, forKey: .fo) ?? false)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -320,6 +433,7 @@ extension ScheduleReminder: Codable {
         try c.encodeIfPresent(headsUp?.minutesOfDay, forKey: .hu)
         if sound != d.sound { try c.encode(sound, forKey: .snd) }
         if timeSensitive != d.timeSensitive { try c.encode(timeSensitive, forKey: .ts) }
+        if !everySession { try c.encode(true, forKey: .fo) }
     }
 }
 

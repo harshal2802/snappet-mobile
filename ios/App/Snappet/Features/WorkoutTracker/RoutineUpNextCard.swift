@@ -9,6 +9,8 @@ struct RoutineUpNextCard: View {
     let routine: Routine?
     let start: (Routine) -> Void
     let skip: (UUID, DayKey) -> Void
+    /// Skip one session on a day with several (prompt 144).
+    var skipSlot: (UUID, SlotKey) -> Void = { _, _ in }
 
     private let calendar = Calendar.current
 
@@ -38,7 +40,11 @@ struct RoutineUpNextCard: View {
                     .buttonStyle(.borderedProminent).tint(SnappetColor.workout)
                     .disabled(routine.exercises.isEmpty)
                     .accessibilityIdentifier("upNext.start")
-                    if upNext.isToday {
+                    if upNext.slotsOnDay > 1 {
+                        Button("Skip this one") { skipSlot(routine.id, upNext.slotKey) }
+                            .buttonStyle(.bordered).tint(SnappetColor.workout)
+                            .accessibilityIdentifier("upNext.skipSlot")
+                    } else if upNext.isToday {
                         Button("Skip today") { skip(routine.id, upNext.day) }
                             .buttonStyle(.bordered).tint(SnappetColor.workout)
                             .accessibilityIdentifier("upNext.skip")
@@ -60,6 +66,11 @@ struct RoutineUpNextCard: View {
     }
 
     private func kicker(_ u: RoutineReminderPlanner.UpNext) -> String {
+        let base = kickerBase(u)
+        return u.slotsOnDay > 1 ? "\(base) · \(u.slot + 1) OF \(u.slotsOnDay)" : base
+    }
+
+    private func kickerBase(_ u: RoutineReminderPlanner.UpNext) -> String {
         let time = u.start.formatted(date: .omitted, time: .shortened)
         if u.isToday { return "UP NEXT · TODAY \(time)" }
         if calendar.isDateInTomorrow(u.start) { return "UP NEXT · TOMORROW \(time)" }
@@ -84,11 +95,17 @@ struct RoutineUpNextCard: View {
 
     @ViewBuilder private func cell(_ d: RoutineReminderPlanner.WeekDay) -> some View {
         let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
-        let label = d.names.first.map { String($0.split(separator: " ").first ?? "") } ?? ""
+        // Several sessions a day: "2/7"; otherwise the routine's first word.
+        let label = d.planned > 1 ? "\(d.done)/\(d.planned)"
+            : d.names.first.map { String($0.split(separator: " ").first ?? "") } ?? ""
         switch d.state {
         case .done:
-            Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.black)
-                .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.workout, in: shape)
+            Group {
+                if d.planned > 1 { Text(label).font(.system(size: 9, weight: .bold)) }
+                else { Image(systemName: "checkmark").font(.caption2.weight(.bold)) }
+            }
+            .foregroundStyle(.black)
+            .frame(maxWidth: .infinity, minHeight: 24).background(SnappetColor.workout, in: shape)
         case .planned:
             Text(label).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
                 .foregroundStyle(SnappetColor.workout)

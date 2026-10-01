@@ -17,6 +17,7 @@ struct RoutinesSectionView: View {
     /// Scheduled routines (prompt 136) — the Up next card renders only when this is non-empty.
     var scheduleInputs: [ScheduledRoutineInput] = []
     var skip: (UUID, DayKey) -> Void = { _, _ in }
+    var skipSlot: (UUID, SlotKey) -> Void = { _, _ in }
 
     private var mine: [Routine] { routines.filter { !$0.isStarter } }
     private var starters: [Routine] {
@@ -52,7 +53,7 @@ struct RoutinesSectionView: View {
                     RoutineUpNextCard(upNext: upNext,
                                       week: RoutineReminderPlanner.week(scheduleInputs, now: ctx.date),
                                       routine: upNext.flatMap { u in routines.first { $0.id == u.routineID } },
-                                      start: start, skip: skip)
+                                      start: start, skip: skip, skipSlot: skipSlot)
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 .listRowBackground(Color.clear)
@@ -153,8 +154,14 @@ struct ScheduleChip: View {
         }
     }
 
+    /// "Daily · 7×" when there are several sessions a day (prompt 144).
+    private var fullText: String {
+        guard schedule.isMultiSlot, let n = schedule.daily?.slotTimes.count else { return text }
+        return "\(text) · \(n)×"
+    }
+
     var body: some View {
-        Label(text, systemImage: "calendar")
+        Label(fullText, systemImage: "calendar")
             .font(.caption2.weight(.bold))
             .labelStyle(.titleAndIcon)
             .padding(.horizontal, 7).padding(.vertical, 2)

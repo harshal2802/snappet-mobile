@@ -51,6 +51,20 @@ struct RoutineScheduleEditor: View {
     @State private var notificationsDenied = false
     @State private var habitLink: HabitLinkChoice
 
+    // Several sessions a day (prompt 144, wireframe frames 7–8).
+    private enum Frequency: String, CaseIterable, Identifiable {
+        case once, setTimes, every
+        var id: String { rawValue }
+        var label: String { switch self { case .once: "Once"; case .setTimes: "At set times"; case .every: "Every…" } }
+    }
+    @State private var frequency: Frequency
+    @State private var setTimes: [Date]
+    @State private var everyMinutes: Int
+    @State private var windowFrom: Date
+    @State private var windowUntil: Date
+    @State private var doneAfter: Int
+    private let skippedSlots: Set<SlotKey>
+
     /// `habitLink`: the routine's current link (`.existing`), or `.none`. A brand-new schedule defaults to
     /// `.newHabit` (wireframe frame 3: Track in Habits on) unless `defaultTrackInHabits` is false.
     init(routineName: String, schedule: RoutineSchedule?, habitLink: HabitLinkChoice = .none,
@@ -103,6 +117,37 @@ struct RoutineScheduleEditor: View {
         }
         _reminder = State(initialValue: s.reminder)
         _headsUpTime = State(initialValue: (s.reminder.headsUp ?? ScheduleTime(hour: 20, minute: 0)).on(dayOne, calendar: cal))
+        skippedSlots = s.skippedSlots
+        _doneAfter = State(initialValue: s.doneAfterSessions ?? 1)
+        switch s.daily {
+        case .times(let ts)?:
+            _frequency = State(initialValue: .setTimes)
+            _setTimes = State(initialValue: ts.sorted().map { $0.on(dayOne, calendar: cal) })
+            _everyMinutes = State(initialValue: 120)
+            _windowFrom = State(initialValue: ScheduleTime(hour: 8, minute: 0).on(dayOne, calendar: cal))
+            _windowUntil = State(initialValue: ScheduleTime(hour: 20, minute: 0).on(dayOne, calendar: cal))
+        case .every(let m, let from, let until)?:
+            _frequency = State(initialValue: .every)
+            _setTimes = State(initialValue: [s.time.on(dayOne, calendar: cal)])
+            _everyMinutes = State(initialValue: m)
+            _windowFrom = State(initialValue: from.on(dayOne, calendar: cal))
+            _windowUntil = State(initialValue: until.on(dayOne, calendar: cal))
+        case nil:
+            _frequency = State(initialValue: .once)
+            _setTimes = State(initialValue: [s.time.on(dayOne, calendar: cal),
+                                             ScheduleTime(hour: (s.time.hour + 6) % 24, minute: s.time.minute).on(dayOne, calendar: cal)])
+            _everyMinutes = State(initialValue: 120)
+            _windowFrom = State(initialValue: ScheduleTime(hour: 8, minute: 0).on(dayOne, calendar: cal))
+            _windowUntil = State(initialValue: ScheduleTime(hour: 20, minute: 0).on(dayOne, calendar: cal))
+        }
+    }
+
+    private var dailyDraft: DailyRepeat? {
+        switch frequency {
+        case .once: return nil
+        case .setTimes: return .times(setTimes.map(scheduleTime))
+        case .every: return .every(minutes: everyMinutes, from: scheduleTime(windowFrom), until: scheduleTime(windowUntil))
+        }
     }
 
     // MARK: - Compose
@@ -133,6 +178,14 @@ struct RoutineScheduleEditor: View {
         r.headsUp = reminder.headsUp == nil ? nil : scheduleTime(headsUpTime)
         s.reminder = r
         s.skippedDays = skipped
+        if let daily = dailyDraft, daily.slotTimes.count > 1 {
+            s.daily = daily
+            s.perDayTimes = [:]
+            // Older builds read only `time`: make it the day's first session.
+            if let first = daily.slotTimes.first { s.time = first }
+            s.doneAfterSessions = doneAfter > 1 ? min(doneAfter, daily.slotTimes.count) : nil
+            s.skippedSlots = skippedSlots
+        }
         return s
     }
 
@@ -223,7 +276,68 @@ struct RoutineScheduleEditor: View {
         }
     }
 
-    private var timeSection: some View {
+    @ViewBuilder private var timeSection: some View {
+        frequencySection
+        if frequency == .once { onceTimeSection }
+    }
+
+    /// "How often on those days?" (prompt 144). Once is the default, so existing schedules look unchanged.
+    private var frequencySection: some View {
+        Section {
+            Picker("How often", selection: $frequency) {
+                ForEach(Frequency.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("schedule.frequency")
+            switch frequency {
+            case .once:
+                EmptyView()
+            case .setTimes:
+                ForEach(setTimes.indices, id: \.self) { i in
+                    DatePicker("Session \(i + 1)", selection: $setTimes[i], displayedComponents: .hourAndMinute)
+                }
+                .onDelete { idx in if setTimes.count - idx.count >= 1 { setTimes.remove(atOffsets: idx) } }
+                Button {
+                    let last = setTimes.last ?? time
+                    setTimes.append(calendar.date(byAdding: .hour, value: 2, to: last) ?? last)
+                } label: { Label("Add time", systemImage: "plus") }
+                .accessibilityIdentifier("schedule.addTime")
+            case .every:
+                Picker("Every", selection: $everyMinutes) {
+                    ForEach(DailyRepeat.intervalChoices, id: \.self) { m in Text(Self.intervalLabel(m)).tag(m) }
+                }
+                .accessibilityIdentifier("schedule.everyMinutes")
+                DatePicker("From", selection: $windowFrom, displayedComponents: .hourAndMinute)
+                    .accessibilityIdentifier("schedule.windowFrom")
+                DatePicker("Until", selection: $windowUntil, displayedComponents: .hourAndMinute)
+                    .accessibilityIdentifier("schedule.windowUntil")
+            }
+        } header: {
+            Text("How often on those days?")
+        } footer: {
+            if let daily = dailyDraft {
+                let times = daily.slotTimes
+                Text(times.count <= 1 ? "That's only one session — choose Once instead."
+                     : "\(times.count) times a day: " + Self.preview(times, calendar: calendar))
+                    .accessibilityIdentifier("schedule.slotsPreview")
+            }
+        }
+    }
+
+    static func intervalLabel(_ m: Int) -> String {
+        if m < 60 { return "\(m) minute\(m == 1 ? "" : "s")" }
+        if m % 60 == 0 { return m == 60 ? "1 hour" : "\(m / 60) hours" }
+        return "\(m / 60) h \(m % 60) min"
+    }
+
+    /// "8:00 AM, 10:00 AM … 8:00 PM" — up to 5 shown, then the last.
+    static func preview(_ times: [ScheduleTime], calendar: Calendar) -> String {
+        let text = times.map { $0.formatted(calendar: calendar) }
+        guard text.count > 6 else { return text.joined(separator: ", ") }
+        return text.prefix(4).joined(separator: ", ") + " … " + (text.last ?? "")
+    }
+
+    private var onceTimeSection: some View {
         Section("Time") {
             if kind == .weekly {
                 Toggle("Same time every day", isOn: $sameTime).accessibilityIdentifier("schedule.sameTime")
@@ -281,13 +395,24 @@ struct RoutineScheduleEditor: View {
                     }
                 }
                 .accessibilityIdentifier("schedule.lead")
-                Picker("Nudge if not started", selection: $reminder.nudgeAfterMinutes) {
-                    Text("Off").tag(Int?.none)
-                    ForEach(ScheduleReminder.nudgeChoices, id: \.self) { m in
-                        Text(m < 60 ? "After \(m) min" : "After \(m / 60) h").tag(Int?.some(m))
+                if (dailyDraft?.slotTimes.count ?? 1) > 1 {
+                    Picker("Which sessions", selection: $reminder.everySession) {
+                        Text("Every session").tag(true)
+                        Text("First of the day").tag(false)
                     }
+                    .accessibilityIdentifier("schedule.reminderScope")
                 }
-                .accessibilityIdentifier("schedule.nudge")
+                if nudgeAllowed {
+                    Picker("Nudge if not started", selection: $reminder.nudgeAfterMinutes) {
+                        Text("Off").tag(Int?.none)
+                        ForEach(ScheduleReminder.nudgeChoices, id: \.self) { m in
+                            Text(m < 60 ? "After \(m) min" : "After \(m / 60) h").tag(Int?.some(m))
+                        }
+                    }
+                    .accessibilityIdentifier("schedule.nudge")
+                } else {
+                    LabeledContent("Nudge if not started", value: "Off")
+                }
             }
             Toggle("Night-before heads-up", isOn: Binding(
                 get: { reminder.headsUp != nil },
@@ -313,10 +438,29 @@ struct RoutineScheduleEditor: View {
                         }
                     }
                 }
+            } else if let frequentNote {
+                Text(frequentNote).accessibilityIdentifier("schedule.frequentNote")
+            } else if !nudgeAllowed, reminder.isOn {
+                Text("Nudges are off for sessions under an hour apart, so they don't flood the Lock Screen.")
             } else if reminder.isOn {
                 Text("The nudge is cancelled once you start the routine. Time Sensitive gets through Focus modes.")
             }
         }
+    }
+
+    /// Nudges are off when sessions are less than an hour apart — they'd flood the Lock Screen.
+    private var nudgeAllowed: Bool {
+        guard let gap = dailyDraft?.minimumGapMinutes else { return true }
+        return gap >= 60
+    }
+
+    /// iOS keeps at most 64 pending notifications per app; with this many a day, say what happens.
+    private var frequentNote: String? {
+        let perDay = (dailyDraft?.slotTimes.count ?? 1) * (reminder.isOn && reminder.everySession ? 1 : 0)
+        guard perDay > RoutineReminderPlanner.defaultBudget / RoutineReminderPlanner.horizonDays else { return nil }
+        let days = max(1, RoutineReminderPlanner.defaultBudget / max(1, perDay))
+        let span = days > 1 ? "the next \(days) days" : "about the next \(max(1, RoutineReminderPlanner.defaultBudget * 24 / max(1, perDay))) hours"
+        return "iPhone keeps at most 64 upcoming notifications per app, so Snappet schedules \(span) of reminders and tops them up each time you open the app."
     }
 
     private var habitSection: some View {
@@ -333,6 +477,13 @@ struct RoutineScheduleEditor: View {
                     }
                 }
                 .accessibilityIdentifier("schedule.habitPicker")
+                if let n = dailyDraft?.slotTimes.count, n > 1 {
+                    Stepper(value: $doneAfter, in: 1...n) {
+                        LabeledContent("Day counts as done after",
+                                       value: doneAfter == n ? "all \(n) sessions" : "\(doneAfter) session\(doneAfter == 1 ? "" : "s")")
+                    }
+                    .accessibilityIdentifier("schedule.doneAfter")
+                }
             }
         } header: {
             Text("Habits")
