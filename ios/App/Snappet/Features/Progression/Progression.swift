@@ -115,12 +115,12 @@ enum Progression {
     }
 
     /// A record's exercise name without needing the custom-exercise list (custom ones carry a name).
-    private static func exerciseName(_ ex: SessionExercise) -> String {
+    static func exerciseName(_ ex: SessionExercise) -> String {
         ex.displayName ?? ExerciseCatalog.byID[ex.exerciseId]?.name ?? "Exercise"
     }
 
     /// The records that earn XP (firsts of a series and counts are handled separately).
-    private static func recordLabel(_ b: SessionInsights.Badge) -> String? {
+    static func recordLabel(_ b: SessionInsights.Badge) -> String? {
         switch b {
         case .weightPR(let ex, _, _, _): return "\(ex) PR"
         case .repPR(let ex, _): return "\(ex) rep PR"

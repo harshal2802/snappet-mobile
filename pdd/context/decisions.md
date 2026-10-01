@@ -9501,3 +9501,11 @@ Non-obvious calls:
 - While paused, Form is held at its value when the pause began; afterwards paused days are neutral. A
   missed week overlapping a pause never spends a freeze.
 - Reminders a quiet pause covers are filtered out at replan time; the schedule itself is untouched.
+
+## 2026-10-01 — Home switches to training-first once you've earned XP (prompt 150)
+
+- The trigger is "any XP-earning session", not a setting: people who only use Habits / Budget / Focus keep
+  the classic Home untouched; the buddy is never pushed at them.
+- Only training feeds XP for now (user's call); the rules table is the one place other apps would plug in.
+- The hero is live 3D but stops its idle animation when scrolled off screen; in-list buddies elsewhere
+  stay still. The other apps keep their own Today derivations, shown as compact tiles.

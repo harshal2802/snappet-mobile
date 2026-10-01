@@ -58,7 +58,7 @@ final class ProgressionUITests: XCTestCase {
         app.buttons["freeform.done"].tap()
         XCTAssertTrue(app.buttons["workout.quickStart"].waitForExistence(timeout: 8))
         app.tabBars.buttons["Home"].tap()
-        XCTAssertTrue(any("buddy.homeCard").waitForExistence(timeout: 6), "one earning session puts the buddy on Home")
+        XCTAssertTrue(any("home.hero").waitForExistence(timeout: 6), "one earning session makes Home the training Home")
         XCTAssertTrue(app.buttons["buddy.hatch"].exists)
         snap("02-home-egg")
     }
@@ -69,7 +69,7 @@ final class ProgressionUITests: XCTestCase {
         app.tabBars.buttons["Home"].tap()
         let hatch = app.buttons["buddy.hatch"]
         XCTAssertTrue(hatch.waitForExistence(timeout: 8), "an unhatched buddy offers Hatch")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Your 23 so far count")).firstMatch.exists,
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Your 23 sessions already count")).firstMatch.exists,
                       "all 23 seeded sessions count")
         snap("03-home-meet")
         hatch.tap()
@@ -130,5 +130,29 @@ final class ProgressionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["buddyStyle.athlete"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.buttons["buddyStyle.athlete"].label.contains("Coming soon"))
         snap("10-style")
+    }
+
+    /// Prompt 150: the training-first Home — hero, today, the week in XP, wins, coming up, other apps.
+    func testTrainingHomeLeadsWithTheBuddy() {
+        app.launchArguments += ["-uiTestSeedRoutineHistory"]
+        app.launch()
+        app.tabBars.buttons["Home"].tap()
+        XCTAssertTrue(any("trainingHome").waitForExistence(timeout: 8))
+        let hatch = app.buttons["buddy.hatch"]
+        XCTAssertTrue(hatch.waitForExistence(timeout: 6))
+        hatch.tap()
+        XCTAssertTrue(app.staticTexts["buddy.level"].waitForExistence(timeout: 10))
+        XCTAssertTrue(any("home.today").exists, "today's training card")
+        XCTAssertTrue(any("home.week").exists, "the week in XP")
+        sleep(2); snap("11-home-top")
+        app.swipeUp()
+        XCTAssertTrue(any("home.wins").waitForExistence(timeout: 4), "recent wins from the seeded PRs / first send")
+        XCTAssertTrue(any("home.comingUp").exists)
+        sleep(1); snap("12-home-scrolled")
+
+        // The hero opens the buddy's screen.
+        app.swipeDown(); app.swipeDown()
+        app.buttons["buddy.open"].tap()
+        XCTAssertTrue(app.staticTexts["buddyScreen.level"].waitForExistence(timeout: 6))
     }
 }
