@@ -86,8 +86,34 @@ struct ProtocolDraft: Equatable {
 /// `timed.create.*` accessibility ids the existing UI tests drive.
 struct ProtocolEditorSections: View {
     @Binding var draft: ProtocolDraft
+    /// Mid-run Adjust sheet (prompt 143): only what can change during a run — reps, rests, load, hands.
+    var adjustOnly = false
 
     var body: some View {
+        if adjustOnly { adjustBody } else { fullBody }
+    }
+
+    @ViewBuilder private var adjustBody: some View {
+        Section {
+            countRow("Reps per set", id: "adjust.reps", value: $draft.reps, range: 1...100)
+            if draft.reps > 1 || draft.handMode?.repMultiplier == 2 {
+                durationRow("Rest between reps", id: "adjust.rest", value: $draft.restSec, range: 0...3600)
+            }
+            if draft.sets > 1 {
+                durationRow("Rest between sets", id: "adjust.setRest", value: $draft.restBetweenSetsSec, range: 0...3600)
+            }
+        } header: {
+            Text("This run")
+        } footer: {
+            Text("Applies from the next phase. The timer keeps running while you adjust.")
+        }
+        if draft.mode == .repeaters || draft.mode == .tabata {
+            loadSection
+            handsSection
+        }
+    }
+
+    @ViewBuilder private var fullBody: some View {
         Section("Name") {
             TextField(draft.mode.label, text: $draft.name)
                 .submitLabel(.done)

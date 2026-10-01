@@ -249,7 +249,9 @@ struct FreeformPlayerView: View {
         // timed exercise runs its `IntervalSchedule` full-screen (lead-in → WORK/REST phases → capture
         // card). "Log set" commits a `SetLog(durationSec: TUT)` through the same `appendLog` funnel.
         .fullScreenCover(item: $runningInterval) { target in
-            StructuredTimedRunner(exerciseName: target.name, spec: target.spec) { setLog in
+            let keep = keepTarget(for: target)
+            StructuredTimedRunner(exerciseName: target.name, spec: target.spec, keepNote: keep.note,
+                                  onKeep: { spec in keepAdjusted(spec, original: target.spec, target: target, to: keep) }) { setLog in
                 appendLog(setLog, toExerciseID: target.exerciseID)
             }
         }
@@ -1748,6 +1750,55 @@ struct FreeformPlayerView: View {
         restRunning = false
         restContext = nil
         restExerciseID = nil
+    }
+
+    // MARK: - Keep a mid-run protocol adjustment (prompt 143)
+
+    private func routineForSession() -> Routine? {
+        guard let rid = session.routineID else { return nil }
+        return try? context.fetch(FetchDescriptor<Routine>(predicate: #Predicate { $0.id == rid })).first
+    }
+
+    /// The routine block this run came from: same exercise, still the protocol the run started with.
+    private func routineBlockIndex(_ routine: Routine, exerciseId: String, original: TimedExerciseSpec) -> Int? {
+        routine.exercises.firstIndex { $0.exerciseId == exerciseId && $0.timedSpec == original }
+    }
+
+    private func keepTarget(for target: IntervalRunTarget) -> ProtocolKeepTarget {
+        let ex = session.exercises.first { $0.id == target.exerciseID }
+        let exerciseId = ex?.exerciseId ?? ""
+        let routine = routineForSession()
+        let hasBlock = routine.map { routineBlockIndex($0, exerciseId: exerciseId, original: target.spec) != nil } ?? false
+        return ProtocolKeepTarget.resolve(routineName: routine?.name, routineHasBlock: hasBlock,
+                                          presetID: ProtocolKeepTarget.presetID(fromExerciseId: exerciseId),
+                                          exerciseName: target.name)
+    }
+
+    /// "Keep for next time": the rest of this session always uses it; plus the routine block or preset.
+    private func keepAdjusted(_ spec: TimedExerciseSpec, original: TimedExerciseSpec,
+                              target: IntervalRunTarget, to keep: ProtocolKeepTarget) {
+        guard let i = session.exercises.firstIndex(where: { $0.id == target.exerciseID }) else { return }
+        session.exercises[i].timedSpec = spec
+        let exerciseId = session.exercises[i].exerciseId
+        switch keep {
+        case .routine:
+            if let routine = routineForSession(),
+               let b = routineBlockIndex(routine, exerciseId: exerciseId, original: original) {
+                var blocks = routine.exercises
+                blocks[b].timedSpec = spec
+                routine.exercises = blocks
+                routine.updatedAt = .now
+            }
+        case .preset:
+            if let pid = ProtocolKeepTarget.presetID(fromExerciseId: exerciseId),
+               let preset = try? context.fetch(FetchDescriptor<TimedExerciseCatalog>(
+                   predicate: #Predicate { $0.id == pid })).first {
+                preset.spec = spec
+            }
+        case .session:
+            break
+        }
+        try? context.save()
     }
 
     /// Recompute milestones against prior history and celebrate each one not yet celebrated this

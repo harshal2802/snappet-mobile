@@ -217,4 +217,59 @@ struct IntervalSchedule: Equatable, Sendable {
     func nextWorkHand(after phase: Phase) -> Hand? {
         phases.first { $0.id > phase.id && $0.kind == .work }?.hand
     }
+
+    // MARK: - Mid-run adjust (prompt 143)
+
+    /// Where to continue in `new` after the protocol was edited mid-run (rest / reps / hands / load).
+    /// Rule: an edit applies from the next phase — the phase in progress keeps its remaining time (capped
+    /// at its new length) — and you never jump back over work already done.
+    struct Remap: Equatable, Sendable {
+        /// Schedule time to continue from in `new`.
+        let scheduleElapsed: Double
+        /// Open-ended (tap-done) reps that come before that point in `new`.
+        let openRepsBefore: Int
+        /// Start (schedule time) of the phase continued in — phases from here on are "after the edit".
+        let countFrom: Double
+    }
+
+    func remap(current state: State, to new: IntervalSchedule) -> Remap {
+        let cur = state.phase
+        let starts = new.phaseStarts()
+        func result(_ index: Int, timeInto: Double) -> Remap {
+            let p = new.phases[index]
+            let into = min(max(0, timeInto), Double(p.durationSec))
+            let openBefore = new.phases[..<index].filter(\.isOpenEnded).count
+            return Remap(scheduleElapsed: starts[index] + into, openRepsBefore: openBefore, countFrom: starts[index])
+        }
+        let remaining = Double(state.remainingInPhase)
+
+        // Same phase still exists (same kind, set, rep, hand) → stay in it with the same time left.
+        if cur.kind != .done, let i = new.phases.firstIndex(where: {
+            $0.kind == cur.kind && $0.setIndex == cur.setIndex && $0.repIndex == cur.repIndex
+                && $0.hand == cur.hand && $0.isOpenEnded == cur.isOpenEnded
+        }) {
+            let into = cur.isOpenEnded ? 0 : Double(new.phases[i].durationSec) - remaining
+            return result(i, timeInto: into)
+        }
+        // Otherwise (e.g. fewer reps now, so this rep/rest no longer exists): continue at the first
+        // phase that comes after this point in the set — the set's end rest, the next set, or done.
+        if let i = new.phases.firstIndex(where: {
+            ($0.setIndex == cur.setIndex && $0.kind == .restBetweenSets) || $0.setIndex > cur.setIndex
+                || $0.kind == .done
+        }) {
+            return result(i, timeInto: 0)
+        }
+        return result(new.phases.count - 1, timeInto: 0)
+    }
+
+    /// Schedule-time start of every phase (open-ended ones take no time).
+    func phaseStarts() -> [Double] {
+        var out: [Double] = []
+        var t = 0.0
+        for p in phases {
+            out.append(t)
+            t += Double(p.durationSec)
+        }
+        return out
+    }
 }
