@@ -1,0 +1,28 @@
+Your training buddy now celebrates every level and lives on your Home and Lock Screen.
+
+LEVEL-UP MOMENTS
+• Finish a session that takes you past a level and a full-screen moment opens: your buddy cheers,
+  shows the new level, and how far it is to the next growth.
+• Cross into a new stage (Hatchling, Sprout, Adult, Legend) and you watch your buddy grow from the old
+  stage into the new one, with what's new.
+• Each level is celebrated once, and the levels your past sessions already earned never trigger one.
+• Want a look now? Workout → Settings → Labs → Training buddy → Preview level-up / Preview growing up.
+
+XP EVERYWHERE
+• Every session's detail now starts with what it earned, e.g. "+187 XP · Level 12 · on plan · Bench PR".
+• History rows show the XP each session earned.
+
+WIDGETS
+• Training buddy widgets: small and medium on the Home Screen, plus two on the Lock Screen. Your buddy,
+  level, mood and streak, and what's up next with about how much XP it's worth.
+• Long-press the Home Screen → ＋ → Snappet → Training buddy. They update whenever you open or leave
+  the app.
+
+KNOWN ISSUES
+• Only the Creature style exists so far; Companion and Athlete are coming.
+• Android doesn't have the buddy yet.
+
+WHAT WOULD HELP MOST
+• Add the small and medium widgets. Do they show the right buddy, level and streak, and update after a
+  workout?
+• If you level up after a session, did the moment feel right? Try the previews in Labs too.
