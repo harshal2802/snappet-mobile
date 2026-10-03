@@ -23,6 +23,10 @@ range binds straight to `@AppStorage`). Each change did all of this **on the mai
   whole table — because `Menu` builds its content eagerly.
 - `statsSignature` decoded every `KilterSession.hrSeries` array to count sessions with HR.
 - `favoriteUUIDs` (a new `Set` over all favorites) was rebuilt once per visible row.
+- The "On the board" strip and the session bar / Live Activity count walked every log entry per render.
+- "Surprise me" ran its 500-row pool query on the main thread.
+- The grade-range slider wrote the root's `@AppStorage` min/max on every drag tick, re-rendering the whole
+  browse screen (and re-queuing its query) per tick.
 
 Android already queries on `Dispatchers.IO`, but a cancelled effect can't stop a running scan, so fast
 typing queued one scan per character.
@@ -42,12 +46,21 @@ typing queued one scan per character.
   the first results so it can't flash.
 - Cheap per-render work: `statsSignature` reads `metricsSourceRaw` (stamped with a non-empty `hrSeries`) and
   the newest session's `endedAt` instead of decoding HR arrays; build the favorites set once per render.
+- Memoize the log-derived bits: `allEntries` is queried newest-first so signatures are O(1); the strip
+  rows and the active session's climb count live in `@State`, recomputed when a cheap `logSignature`
+  (entry/lit counts + newest ids + current session) changes and on appear (picks up a status edited on a
+  pushed screen).
+- "Surprise me" draws from the browser's pool off the main thread.
+- The grade sheet drags a local draft and commits to the bindings when a drag ends, a VoiceOver step
+  lands, Reset/Done/Show is tapped, or the sheet goes away.
 - Android `KilterRoot`: 250 ms debounce when the search text changed.
 
 ## Output
 
 - `ios/App/Snappet/Features/Kilter/KilterCatalog.swift` — caches, shared browse SQL, `KilterCatalogBrowser`.
-- `ios/App/Snappet/Features/Kilter/KilterRootView.swift` — async debounced refresh, cheaper render.
+- `ios/App/Snappet/Features/Kilter/KilterRootView.swift` — async debounced refresh, cheaper render,
+  memoized strip/session count, off-main Surprise me.
+- `ios/App/Snappet/Features/Kilter/KilterGradeRange.swift` — draft-and-commit slider.
 - `ios/App/SnappetTests/KilterCatalogStoreTests.swift` — `testBrowserMatchesListAndCount`.
 - `android/.../feature/kilter/KilterRoot.kt` — search debounce.
 - `docs/knowledge-graph/data.js` — catalog + browse node descriptions.
@@ -62,7 +75,9 @@ typing queued one scan per character.
 - [ ] App changes type-check against the iOS 18 SDK (Swift 6, 0 warnings). (CI — no Xcode on the
       authoring box.)
 - [ ] Device: typing a setter name and dragging the grade slider on a full catalog no longer stalls; the
-      count and list settle shortly after you stop.
+      count and list settle shortly after you stop (the slider's after you lift your finger).
+- [ ] Device: the On the board strip and the session bar's climb count stay current after logging,
+      re-lighting, and editing a log in History.
 - [x] `decisions.md` updated.
 
 ## Constraints

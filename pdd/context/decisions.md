@@ -9537,3 +9537,7 @@ Non-obvious calls:
   doesn't wait. The previous rows stay until new ones land, so nothing flickers.
 - The stats memo's "has HR" check reads `metricsSourceRaw` (set alongside a non-empty `hrSeries`), so a
   root render never decodes session HR arrays.
+- The On the board strip and session climb count are cached, recomputed on a cheap signature and on
+  appear. A log edited on a pushed screen (which the signature can't see) shows up when you come back.
+- The grade slider commits when you let go, not per tick. The "Show N climbs" count therefore updates
+  after the drag, not during it — accepted, since live-per-tick meant a full re-render per tick.

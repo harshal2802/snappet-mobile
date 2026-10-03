@@ -37,7 +37,8 @@ struct KilterRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SnappetCore.self) private var core
     @Query private var favorites: [KilterFavorite]
-    @Query private var allEntries: [KilterLogEntry]
+    /// Newest first, so the per-render memo signatures read the newest entry in O(1) (prompt 153).
+    @Query(sort: \KilterLogEntry.date, order: .reverse) private var allEntries: [KilterLogEntry]
     /// Board sessions — feed the P3 analytics dashboard's all-time aggregate (session counts + HR trend).
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var statsSessions: [KilterSession]
     /// Climbs the user authored on this device (manual editor / generator) — the "Mine" filter's source.
@@ -148,18 +149,55 @@ struct KilterRootView: View {
         var newestSessionEnd: Date?
     }
 
-    /// Evaluated on EVERY root render (each search keystroke included), so it must stay cheap: one pass
-    /// for the newest entry, and HR presence read from the scalar `metricsSourceRaw` (stamped together
-    /// with a non-empty `hrSeries`) instead of decoding every session's full HR array (prompt 153).
+    /// Evaluated on EVERY root render (each search keystroke included), so it must stay cheap: the
+    /// newest entry is the sorted query's first, and HR presence is read from the scalar
+    /// `metricsSourceRaw` (stamped together with a non-empty `hrSeries`) instead of decoding every
+    /// session's full HR array (prompt 153).
     /// `newestSessionEnd` catches the session-end save that flushes HR onto the newest session.
     private var statsSignature: StatsSignature {
-        let newestEntry = allEntries.max(by: { $0.date < $1.date })
+        let newestEntry = allEntries.first   // the query is sorted newest first
         return StatsSignature(entryCount: allEntries.count,
                               sessionCount: statsSessions.count,
                               newestEntryDate: newestEntry?.date,
                               newestEntryID: newestEntry?.persistentModelID,
                               hrSessionCount: statsSessions.reduce(0) { $0 + ($1.metricsSourceRaw == nil ? 0 : 1) },
                               newestSessionEnd: statsSessions.first?.endedAt)
+    }
+
+    /// Memoized log-derived bits of the browse screen: the "On the board" strip rows and the active
+    /// session's climb count. Both used to walk every log entry on every render — every search
+    /// keystroke included (prompt 153). Recomputed when `logSignature` changes, and on appear, so a log
+    /// whose status was edited on a pushed screen is picked up when the root comes back.
+    @State private var recentRail: [KilterOnTheBoard.Row] = []
+    @State private var currentClimbCount = 0
+
+    private struct LogSignature: Equatable {
+        var entryCount: Int
+        var newestEntryID: PersistentIdentifier?
+        var litCount: Int
+        var newestLitID: PersistentIdentifier?
+        var newestLitAt: Date?
+        var sessionId: UUID?
+    }
+
+    /// O(1): both queries are sorted newest first.
+    private var logSignature: LogSignature {
+        LogSignature(entryCount: allEntries.count,
+                     newestEntryID: allEntries.first?.persistentModelID,
+                     litCount: litEvents.count,
+                     newestLitID: litEvents.first?.persistentModelID,
+                     newestLitAt: litEvents.first?.litAt,
+                     sessionId: sessions.currentId)
+    }
+
+    private func recomputeLogDerived() {
+        recentRail = KilterOnTheBoard.recent(litEvents.map(KilterOnTheBoard.LitEvent.from),
+                                             logs: allEntries.map(KilterClimbLog.from), limit: 8)
+        if let id = sessions.currentId {
+            currentClimbCount = allEntries.reduce(0) { $0 + ($1.sessionId == id ? 1 : 0) }
+        } else {
+            currentClimbCount = 0
+        }
     }
 
     private func recomputeTrendStats() {
@@ -381,6 +419,7 @@ struct KilterRootView: View {
         // Memoize the trend-detail aggregate (F6): rebuild only when the logs/sessions actually change,
         // not on every root re-render that re-evaluates the navigation destination.
         .onChange(of: statsSignature, initial: true) { _, _ in recomputeTrendStats() }
+        .onChange(of: logSignature, initial: true) { _, _ in recomputeLogDerived() }
         // Re-open the reader + refresh when the installed catalog changes (import here, or "Remove"
         // in Settings), wherever the change originated.
         .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
@@ -393,6 +432,9 @@ struct KilterRootView: View {
             // Hide the cross-screen Kilter live chip while the user is anywhere in Kilter (the root
             // stays in the stack under pushed Kilter screens, so this covers the whole module).
             app.kilterScreenVisible = true
+            // Pick up log edits made on a pushed screen (e.g. a status changed in History) that the
+            // cheap `logSignature` can't see.
+            recomputeLogDerived()
             // Keep the board-size selection valid for the current layout (seed the default when unset).
             syncBoardSize()
             // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
@@ -474,12 +516,6 @@ struct KilterRootView: View {
         }
     }
 
-    /// Climbs logged so far in the active session (the count shown in the banner + Live Activity).
-    private var currentClimbCount: Int {
-        guard let id = sessions.currentId else { return 0 }
-        return allEntries.filter { $0.sessionId == id }.count
-    }
-
     private func pushLiveActivity() {
         guard sessions.isActive else { return }
         sessions.pushLiveActivity(hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
@@ -487,8 +523,14 @@ struct KilterRootView: View {
     }
 
     /// Push a random climb from the current filters (Discovery "Surprise me").
+    /// The pool (up to 500 matches) is fetched off the main thread like the browse list (prompt 153).
     private func surpriseMe() {
-        if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
+        let f = filter
+        Task {
+            guard let page = await catalog.browser.browse(f, includeDiscovery: false),
+                  let pick = page.items.randomElement() else { return }
+            router.push(KilterClimbRoute(uuid: pick.uuid))
+        }
     }
 
     /// Resolve the size selection for the current layout through the per-layout memory: restore the
@@ -902,12 +944,6 @@ struct KilterRootView: View {
 
     // MARK: - P5 "Recently on the board" re-light rail
 
-    /// The deduped, newest-first recent lit climbs for the rail (status joined for the chip).
-    private var recentRail: [KilterOnTheBoard.Row] {
-        KilterOnTheBoard.recent(litEvents.map(KilterOnTheBoard.LitEvent.from),
-                                logs: allEntries.map(KilterClimbLog.from), limit: 8)
-    }
-
     /// A single-line strip of the most-recent climbs lit on the board (UX feedback "takes a lot of
     /// screen real estate": the previous full-card rail — 110 pt thumbnail + status chip + button per
     /// card — cost ~200 pt of the browse list). Each chip's name opens the climb; its ⚡ re-lights it;
@@ -1092,7 +1128,7 @@ struct KilterRootView: View {
     /// grouped under the session in History.
     @ViewBuilder private var sessionBar: some View {
         if let s = sessions.current {
-            let count = allEntries.filter { $0.sessionId == s.id }.count
+            let count = currentClimbCount   // memoized (`recomputeLogDerived`); `s` is the current session
             VStack(spacing: 4) {
                 HStack(spacing: 8) {
                     Image(systemName: "record.circle").foregroundStyle(.green)

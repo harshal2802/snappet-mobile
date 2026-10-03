@@ -30,27 +30,51 @@ enum KilterGradeRange {
 /// Bottom sheet behind the browse **Grade** chip: ONE two-thumb slider over the catalog's grade
 /// scale (replacing the coupled Min/Max chip pair), with a live "Show N climbs" apply so narrowing
 /// is felt before committing (UX feedback "filtering was not obvious").
+///
+/// The thumbs drag a local draft and commit to the bindings when a drag ends (or a VoiceOver step
+/// lands). The bindings are the root's `@AppStorage` browse state, so writing them per drag tick
+/// re-rendered the whole browse screen and re-queued its catalog query on every tick (prompt 153).
 struct KilterGradeRangeSheet: View {
     @Binding var minGrade: Int
     @Binding var maxGrade: Int
     /// The catalog's ordered grade scale (difficulty + combined label), from `KilterCatalog.gradeScale`.
     let scale: [(difficulty: Int, label: String)]
     let format: KilterGradeFormat
-    /// Live match count from the root (the bindings are the browse state, so it recounts per move).
+    /// Live match count from the root — recounts once each committed move settles.
     let count: Int
     @Environment(\.dismiss) private var dismiss
+    @State private var draftMin: Int
+    @State private var draftMax: Int
+
+    init(minGrade: Binding<Int>, maxGrade: Binding<Int>, scale: [(difficulty: Int, label: String)],
+         format: KilterGradeFormat, count: Int) {
+        _minGrade = minGrade
+        _maxGrade = maxGrade
+        self.scale = scale
+        self.format = format
+        self.count = count
+        _draftMin = State(initialValue: minGrade.wrappedValue)
+        _draftMax = State(initialValue: maxGrade.wrappedValue)
+    }
+
+    /// Push the draft into the browse state (no-op writes skipped, so nothing re-queries needlessly).
+    private func commit() {
+        if minGrade != draftMin { minGrade = draftMin }
+        if maxGrade != draftMax { maxGrade = draftMax }
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
                 if scale.count > 1 {
-                    GradeRangeSlider(minGrade: $minGrade, maxGrade: $maxGrade, scale: scale, format: format)
+                    GradeRangeSlider(minGrade: $draftMin, maxGrade: $draftMax, scale: scale, format: format,
+                                     onCommit: { commit() })
                         .padding(.top, 30)
                 } else {
                     ContentUnavailableView("No grade scale", systemImage: "questionmark.circle",
                                            description: Text("The installed catalog has no grade table."))
                 }
-                Button { dismiss() } label: {
+                Button { commit(); dismiss() } label: {
                     Text(count == 1 ? "Show 1 climb" : "Show \(count) climbs")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
@@ -67,18 +91,21 @@ struct KilterGradeRangeSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Reset") {
                         if let lo = scale.first?.difficulty, let hi = scale.last?.difficulty {
-                            minGrade = lo
-                            maxGrade = hi
+                            draftMin = lo
+                            draftMax = hi
+                            commit()
                         }
                     }
                     .accessibilityIdentifier("kilter.grade.reset")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.accessibilityIdentifier("kilter.grade.done")
+                    Button("Done") { commit(); dismiss() }.accessibilityIdentifier("kilter.grade.done")
                 }
             }
             .presentationDetents([.height(300), .medium])
         }
+        // A swipe-down dismiss still keeps the last position.
+        .onDisappear { commit() }
     }
 }
 
@@ -90,6 +117,8 @@ struct GradeRangeSlider: View {
     @Binding var maxGrade: Int
     let scale: [(difficulty: Int, label: String)]
     let format: KilterGradeFormat
+    /// Called when a move settles — a drag ends or a VoiceOver step lands.
+    var onCommit: () -> Void = {}
 
     private static let thumbSize: CGFloat = 26
 
@@ -154,6 +183,7 @@ struct GradeRangeSlider: View {
                             count: scale.count)
                         apply(index: picked, dragging: dragging)
                     }
+                    .onEnded { _ in onCommit() }
             )
             .accessibilityElement()
             .accessibilityLabel(dragging == .lo ? "Minimum grade" : "Maximum grade")
@@ -161,6 +191,7 @@ struct GradeRangeSlider: View {
             .accessibilityAdjustableAction { direction in
                 let step = direction == .increment ? 1 : -1
                 apply(index: index + step, dragging: dragging)
+                onCommit()
             }
             .accessibilityIdentifier(dragging == .lo ? "kilter.grade.min" : "kilter.grade.max")
     }
