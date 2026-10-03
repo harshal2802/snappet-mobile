@@ -25,6 +25,18 @@ enum KilterGradeRange {
         guard lo > hi else { return (lo, hi) }
         return dragging == .lo ? (lo, lo) : (hi, hi)
     }
+
+    /// Rough rendered width of a thumb label (caption, bold) — enough to tell when two labels collide.
+    static func labelWidth(_ label: String) -> Double { Double(label.count) * 7.5 }
+
+    /// The two thumb labels would overlap (they're centred on thumbs `gap` points apart), so the slider
+    /// shows one merged "lo – hi" label between the thumbs instead (UX feedback: overlapping text).
+    static func labelsCollide(gap: Double, lo: String, hi: String, spacing: Double = 8) -> Bool {
+        gap < (labelWidth(lo) + labelWidth(hi)) / 2 + spacing
+    }
+
+    /// The merged label: one grade when both thumbs sit on it, else "lo – hi".
+    static func mergedLabel(lo: String, hi: String) -> String { lo == hi ? lo : "\(lo) – \(hi)" }
 }
 
 /// Bottom sheet behind the browse **Grade** chip: ONE two-thumb slider over the catalog's grade
@@ -143,8 +155,23 @@ struct GradeRangeSlider: View {
                     .fill(SnappetColor.moduleAccent("kilter"))
                     .frame(width: hiX - loX + Self.thumbSize, height: 5)
                     .offset(x: loX)
-                thumb(at: loX, index: loIndex, dragging: .lo, usable: usable)
-                thumb(at: hiX, index: hiIndex, dragging: .hi, usable: usable)
+                let loLabel = displayLabel(loIndex), hiLabel = displayLabel(hiIndex)
+                let merged = KilterGradeRange.labelsCollide(gap: hiX - loX, lo: loLabel, hi: hiLabel)
+                thumb(at: loX, index: loIndex, dragging: .lo, usable: usable, showsLabel: !merged)
+                thumb(at: hiX, index: hiIndex, dragging: .hi, usable: usable, showsLabel: !merged)
+                if merged {
+                    // Close thumbs: one label centred between them, kept inside the slider.
+                    let text = KilterGradeRange.mergedLabel(lo: loLabel, hi: hiLabel)
+                    let half = KilterGradeRange.labelWidth(text) / 2
+                    let mid = (loX + hiX) / 2 + Self.thumbSize / 2
+                    Text(text)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SnappetColor.moduleAccent("kilter"))
+                        .fixedSize()
+                        .position(x: min(max(mid, half), geo.size.width - half), y: geo.size.height / 2 - 22 - 9)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("kilter.grade.mergedLabel")
+                }
             }
             .frame(maxHeight: .infinity)
         }
@@ -162,13 +189,15 @@ struct GradeRangeSlider: View {
         .accessibilityIdentifier("kilter.grade.slider")
     }
 
-    private func thumb(at x: CGFloat, index: Int, dragging: KilterGradeRange.Thumb, usable: CGFloat) -> some View {
+    private func thumb(at x: CGFloat, index: Int, dragging: KilterGradeRange.Thumb, usable: CGFloat,
+                       showsLabel: Bool) -> some View {
         Circle()
             .fill(.white)
             .frame(width: Self.thumbSize, height: Self.thumbSize)
             .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
             .overlay(alignment: .top) {
                 Text(displayLabel(index))
+                    .opacity(showsLabel ? 1 : 0)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(SnappetColor.moduleAccent("kilter"))
                     .fixedSize()
