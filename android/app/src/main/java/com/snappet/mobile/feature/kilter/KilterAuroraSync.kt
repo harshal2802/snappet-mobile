@@ -235,7 +235,7 @@ class HostedCatalogClient(baseURL: String = KILTER_DEFAULT_CATALOG_HOST) {
         // Board size: keep only climbs whose bounding box fits inside the size's box (mirrors the Board
         // Explorer's buildConditions). Bound in [left, right, bottom, top] order.
         f.sizeBox?.let {
-            conds.add("c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?")
+            conds.add("c.edge_left > ? AND c.edge_right < ? AND c.edge_bottom > ? AND c.edge_top < ?")  // strict: an edge-touching climb uses a hole only a bigger board has
             args.addAll(it.params)
         }
         f.angle?.let { conds.add("cs.angle = ?"); args.add(it) }

@@ -301,10 +301,9 @@ final class HostedCatalogClient {
         if !f.layoutIds.isEmpty {
             conds.append("c.layout_id IN (\(f.layoutIds.map { String($0) }.joined(separator: ",")))")
         }
-        // Board size: keep only climbs whose bounding box fits inside the size's box (mirrors the Board
-        // Explorer's buildConditions). The box is bound in [left, right, bottom, top] order.
+        // Board size: keep only climbs whose bounding box fits strictly inside the size's box. The box is bound in [left, right, bottom, top] order.
         if let box = f.sizeBox {
-            conds.append("c.edge_left >= ? AND c.edge_right <= ? AND c.edge_bottom >= ? AND c.edge_top <= ?")
+            conds.append(KilterSizeBox.fitSQL)   // strict — see KilterSizeBox
             params.append(contentsOf: box.params)
         }
         if let angle = f.angle { conds.append("cs.angle = ?"); params.append(angle) }

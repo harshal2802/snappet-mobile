@@ -365,4 +365,31 @@ final class KilterCatalogStoreTests: XCTestCase {
         XCTAssertNotNil(withDiscovery?.discovery)
         XCTAssertEqual(withDiscovery?.discovery, cat.climbOfTheDay(layoutId: 1, angle: 40))
     }
+
+    /// Device feedback: "cam pussie" listed on a 12 x 12 but its finish (a 16 x 12-only hole) never lit.
+    /// Browse now keeps only climbs that fit the board size STRICTLY (the fixture climbs span 4…20).
+    func testBrowseOnlyListsClimbsThatFitTheBoardSize() async throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        var roomy = KilterFilter(layoutId: 1, angle: 40, minDifficulty: 1, maxDifficulty: 39)
+        roomy.sizeBox = KilterSizeBox(left: 0, right: 24, bottom: 0, top: 24)
+        XCTAssertEqual(cat.count(roomy), 4, "every climb fits the roomy board")
+        var touching = roomy
+        touching.sizeBox = KilterSizeBox(left: 4, right: 24, bottom: 0, top: 24)
+        XCTAssertEqual(cat.count(touching), 0, "a climb whose box touches the board's edge doesn't fit")
+        XCTAssertNil(cat.climbOfTheDay(layoutId: 1, angle: 40, sizeBox: touching.sizeBox))
+        for f in [roomy, touching] {
+            let page = await cat.browser.browse(f, includeDiscovery: false)
+            XCTAssertEqual(page?.items, cat.list(f))
+            XCTAssertEqual(page?.count, cat.count(f))
+        }
+    }
 }

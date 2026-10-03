@@ -205,6 +205,7 @@ struct KilterClimbDetailView: View {
             anglePicker
             statRow
             metaRow
+            offBoardNote
             sessionStatusRow
             logButtons
             gradeChart
@@ -386,6 +387,37 @@ struct KilterClimbDetailView: View {
             stat("Ascents", "\(currentStat?.ascents ?? 0)")
         }
         .padding(.horizontal)
+    }
+
+    /// Holds on this climb that the selected board size has no LED for — the climb was set on a bigger
+    /// board, so those holds can't light (device feedback: "cam pussie"'s 16 x 12-only finish). Browse
+    /// already hides such climbs for your size; this catches ones reached from Saved, a QR code or History.
+    /// Zero when the size has no LED map at all (an older catalog), so it never cries wolf.
+    private var offBoardHolds: Int {
+        guard holds.contains(where: { $0.ledPosition != nil }) else { return 0 }
+        return holds.filter { $0.ledPosition == nil }.count
+    }
+
+    @ViewBuilder private var offBoardNote: some View {
+        let n = offBoardHolds
+        if n > 0, let c = climb {
+            let sizes = catalog.sizes(forLayout: c.layoutId)
+            let mine = sizes.first { $0.id == productSizeId }?.name ?? "your"
+            let fits = sizes.first {
+                $0.box?.fits(left: c.edgeLeft, right: c.edgeRight, bottom: c.edgeBottom, top: c.edgeTop) == true
+            }?.name
+            Label {
+                Text("\(n) hold\(n == 1 ? " isn't" : "s aren't") on your \(mine) board, so \(n == 1 ? "it" : "they") won't light"
+                     + (fits.map { ". This climb was set for a \($0)." } ?? "."))
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .accessibilityIdentifier("kilter.offBoardNote")
+        }
     }
 
     /// The matching rule (always shown), plus a benchmark ("Classic") badge + first-ascensionist when the
