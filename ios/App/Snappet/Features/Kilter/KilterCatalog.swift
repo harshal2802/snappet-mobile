@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import os
 
 /// Read-only access layer over the **user-installed** `kilter.sqlite3` catalog, opened from
 /// `KilterCatalogStore` (the app ships no catalog — issue #42; the user imports one themselves). This
@@ -14,9 +15,15 @@ import SQLite3
 ///
 /// Used exclusively from the main thread (the Kilter views), so it isn't `@MainActor`-isolated —
 /// that would make `KilterCatalog.shared` unusable in the views' stored-property initializers. The
-/// `nonisolated(unsafe)` singleton is safe under that main-thread-only convention.
+/// `nonisolated(unsafe)` singleton is safe under that main-thread-only convention. The one exception is
+/// the browse screen's list + count, which can scan most of a layout's climbs per keystroke — those run
+/// on `browser`, a second read-only connection with its own serial queue (prompt 153).
 final class KilterCatalog {
     nonisolated(unsafe) static let shared = KilterCatalog()
+
+    /// Off-main browse queries (the root list + live count) on their own connection — reopened with
+    /// this reader so it always reads the same installed catalog.
+    let browser = KilterCatalogBrowser()
 
     private var db: OpaquePointer?
     /// `placement_id -> (boardX, boardY)` for every placement (loaded once; ~3.7k rows).
@@ -33,12 +40,19 @@ final class KilterCatalog {
     /// True when the catalog asset opened successfully and has climbs.
     private(set) var isAvailable = false
 
+    /// Memoized reference reads (cleared on `reload`). The browse screen reads layouts + angles while
+    /// building every frame (the Board/Angle chip menus), and each is a `DISTINCT` scan over a whole
+    /// table — uncached, that was several full scans per keystroke in the search box (prompt 153).
+    private var layoutsCache: [KilterLayout]?
+    private var anglesCache: [Int]?
+    private var gradeScaleCache: [(difficulty: Int, label: String)]?
+
     /// Whether the installed catalog carries the newer optional columns. Detected once on open so reads
     /// can prefer them and degrade gracefully on older/hand-rolled catalogs that lack them.
     private var hasNoMatchColumn = false       // climbs.is_nomatch (the "No matching" rule)
     private var hasSizeEdges = false           // product_sizes.edge_* (a board size's fit box)
 
-    private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    fileprivate static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private init() { open() }
 
@@ -50,10 +64,12 @@ final class KilterCatalog {
               sqlite3_open_v2(store.resolvedCatalogURL.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK
         else {
             db = nil
+            browser.open(path: nil)
             return
         }
         loadReference()
         isAvailable = !grades.isEmpty
+        browser.open(path: isAvailable ? store.resolvedCatalogURL.path : nil)
     }
 
     /// Re-open after the installed catalog changes (import or remove). Main-thread only, per this
@@ -66,6 +82,7 @@ final class KilterCatalog {
         grades.removeAll(); roleScreenColor.removeAll(); roleLedColor.removeAll()
         placementXY.removeAll(); placementHole.removeAll()
         renderCache.removeAll(); ledCache.removeAll(); sizesCache.removeAll()
+        layoutsCache = nil; anglesCache = nil; gradeScaleCache = nil
         open()
     }
 
@@ -102,6 +119,7 @@ final class KilterCatalog {
 
     /// Listed layouts that actually have climbs in the installed catalog, in catalog order.
     func layouts() -> [KilterLayout] {
+        if let layoutsCache { return layoutsCache }
         var out: [KilterLayout] = []
         query("""
             SELECT l.id, l.name FROM layouts l
@@ -110,15 +128,18 @@ final class KilterCatalog {
         """) { s in
             out.append(KilterLayout(id: Self.int(s, 0), name: Self.text(s, 1)))
         }
+        if db != nil { layoutsCache = out }
         return out
     }
 
     /// Distinct angles available across the catalog (0…70 in 5° steps).
     func angles() -> [Int] {
+        if let anglesCache { return anglesCache }
         var out: [Int] = []
         query("SELECT DISTINCT angle FROM climb_stats ORDER BY angle") { s in
             out.append(Self.int(s, 0))
         }
+        if db != nil { anglesCache = out }
         return out
     }
 
@@ -132,75 +153,16 @@ final class KilterCatalog {
     /// Catalog list driven by the full `KilterFilter` — layout/angle/grade plus free-text search
     /// (name or setter), a benchmark/"classics" toggle, minimum ascents/quality, and a sort order.
     func list(_ f: KilterFilter, limit: Int = 500) -> [KilterListItem] {
-        let lo = min(f.minDifficulty, f.maxDifficulty), hi = max(f.minDifficulty, f.maxDifficulty)
-        let term = f.search.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        var sql = """
-            SELECT c.uuid, c.name, c.setter_username, cs.display_difficulty,
-                   cs.quality_average, cs.ascensionist_count
-            FROM climbs c
-            JOIN climb_stats cs ON cs.climb_uuid = c.uuid AND cs.angle = ?
-            WHERE c.is_listed = 1 AND c.layout_id = ?
-              AND cs.display_difficulty BETWEEN ? AND ?
-              AND cs.ascensionist_count >= ?
-              AND cs.quality_average >= ?
-        """
-        if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
-        if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
-        sql += " ORDER BY \(f.sort.orderBy) LIMIT ?"   // sort is an enum-controlled clause (no injection)
-
-        var out: [KilterListItem] = []
-        query(sql, bind: { s in
-            var i: Int32 = 1
-            sqlite3_bind_int64(s, i, Int64(f.angle)); i += 1
-            sqlite3_bind_int64(s, i, Int64(f.layoutId)); i += 1
-            sqlite3_bind_double(s, i, lo); i += 1
-            sqlite3_bind_double(s, i, hi); i += 1
-            sqlite3_bind_int64(s, i, Int64(f.minAscents)); i += 1
-            sqlite3_bind_double(s, i, f.minQuality); i += 1
-            if !term.isEmpty {
-                let like = "%\(term)%"
-                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
-                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
-            }
-            sqlite3_bind_int64(s, i, Int64(limit))
-        }) { s in
-            out.append(self.listItem(s))
-        }
-        return out
+        Self.listRows(on: db, f, limit: limit, grades: grades)
     }
 
     /// How many climbs match the full filter (search + grade + extras) — no list LIMIT, for the live
-    /// "N climbs" count in the browse bar. Mirrors `list`'s WHERE exactly (one `climb_stats` row per
+    /// "N climbs" count in the browse bar. Shares `list`'s WHERE exactly (one `climb_stats` row per
     /// climb at the angle, so `COUNT(*)` = distinct matching climbs).
     func count(_ f: KilterFilter) -> Int {
-        let lo = min(f.minDifficulty, f.maxDifficulty), hi = max(f.minDifficulty, f.maxDifficulty)
-        let term = f.search.trimmingCharacters(in: .whitespacesAndNewlines)
-        var sql = """
-            SELECT COUNT(*) FROM climbs c
-            JOIN climb_stats cs ON cs.climb_uuid = c.uuid AND cs.angle = ?
-            WHERE c.is_listed = 1 AND c.layout_id = ?
-              AND cs.display_difficulty BETWEEN ? AND ?
-              AND cs.ascensionist_count >= ?
-              AND cs.quality_average >= ?
-        """
-        if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
-        if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
         var result = 0
-        query(sql, bind: { s in
-            var i: Int32 = 1
-            sqlite3_bind_int64(s, i, Int64(f.angle)); i += 1
-            sqlite3_bind_int64(s, i, Int64(f.layoutId)); i += 1
-            sqlite3_bind_double(s, i, lo); i += 1
-            sqlite3_bind_double(s, i, hi); i += 1
-            sqlite3_bind_int64(s, i, Int64(f.minAscents)); i += 1
-            sqlite3_bind_double(s, i, f.minQuality); i += 1
-            if !term.isEmpty {
-                let like = "%\(term)%"
-                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
-                sqlite3_bind_text(s, i, like, -1, Self.transient); i += 1
-            }
-        }) { s in result = Self.int(s, 0) }
+        Self.run(on: db, Self.browseSQL(f, shape: .count),
+                 bind: { s in Self.bindBrowse(s, f, limit: nil) }) { s in result = Self.int(s, 0) }
         return result
     }
 
@@ -211,15 +173,7 @@ final class KilterCatalog {
 
     /// A deterministic "climb of the day" — a popular classic for the layout/angle, rotating daily.
     func climbOfTheDay(layoutId: Int, angle: Int) -> KilterListItem? {
-        var pool = list(KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
-                                     maxDifficulty: 39, sort: .popular, benchmarksOnly: true), limit: 150)
-        if pool.isEmpty {   // some layouts have few benchmarks — fall back to most-climbed
-            pool = list(KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
-                                     maxDifficulty: 39, sort: .popular), limit: 150)
-        }
-        guard !pool.isEmpty else { return nil }
-        let day = Calendar.current.ordinality(of: .day, in: .era, for: .now) ?? 0
-        return pool[day % pool.count]
+        Self.climbOfTheDay(on: db, layoutId: layoutId, angle: angle, grades: grades)
     }
 
     /// Fetch a set of climbs by uuid (used to render the favorites list), preserving input order.
@@ -243,11 +197,7 @@ final class KilterCatalog {
     }
 
     private func listItem(_ s: OpaquePointer?) -> KilterListItem {
-        let diff = sqlite3_column_double(s, 3)
-        return KilterListItem(
-            uuid: Self.text(s, 0), name: Self.text(s, 1), setter: Self.text(s, 2),
-            difficulty: diff, gradeLabel: gradeLabel(diff),
-            quality: sqlite3_column_double(s, 4), ascents: Self.int(s, 5))
+        Self.listItem(s, grades: grades)
     }
 
     func climb(_ uuid: String) -> KilterClimb? {
@@ -459,12 +409,15 @@ final class KilterCatalog {
 
     /// `difficulty (float) -> grade label`, rounding to the nearest catalog grade.
     func gradeLabel(_ difficulty: Double) -> String {
-        grades[Int(difficulty.rounded())] ?? "—"
+        Self.gradeLabel(difficulty, grades: grades)
     }
 
     /// All listed grade labels in difficulty order (for the filter UI).
     func gradeScale() -> [(difficulty: Int, label: String)] {
-        grades.keys.sorted().map { ($0, grades[$0]!) }
+        if let gradeScaleCache { return gradeScaleCache }
+        let scale = grades.keys.sorted().map { ($0, grades[$0]!) }
+        if !scale.isEmpty { gradeScaleCache = scale }
+        return scale
     }
 
     // MARK: - Board sizes & LED mapping (per product size, for BLE)
@@ -616,6 +569,13 @@ final class KilterCatalog {
     private func query(_ sql: String,
                        bind: ((OpaquePointer?) -> Void)? = nil,
                        step: (OpaquePointer?) -> Void) {
+        Self.run(on: db, sql, bind: bind, step: step)
+    }
+
+    /// The connection-agnostic core of `query` — shared with `KilterCatalogBrowser`'s own connection.
+    fileprivate static func run(on db: OpaquePointer?, _ sql: String,
+                                bind: ((OpaquePointer?) -> Void)? = nil,
+                                step: (OpaquePointer?) -> Void) {
         guard let db else { return }
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -624,12 +584,206 @@ final class KilterCatalog {
         while sqlite3_step(stmt) == SQLITE_ROW { step(stmt) }
     }
 
-    private static func text(_ s: OpaquePointer?, _ col: Int32) -> String {
+    fileprivate static func text(_ s: OpaquePointer?, _ col: Int32) -> String {
         guard let c = sqlite3_column_text(s, col) else { return "" }
         return String(cString: c)
     }
 
-    private static func int(_ s: OpaquePointer?, _ col: Int32) -> Int {
+    fileprivate static func int(_ s: OpaquePointer?, _ col: Int32) -> Int {
         Int(sqlite3_column_int64(s, col))
+    }
+}
+
+// MARK: - Browse queries (shared by the main-thread reader and the off-main browser)
+
+extension KilterCatalog {
+    /// What a browse statement selects: the capped rows, only the match count, or the capped rows each
+    /// carrying the uncapped total (`COUNT(*) OVER ()` is computed before `LIMIT`, so one scan answers
+    /// both the list and the live "N climbs").
+    fileprivate enum BrowseShape { case rows, count, rowsWithTotal }
+
+    /// The browse SELECT for `f`. Every list/count path builds its WHERE here, so the live count can
+    /// never disagree with the rows. `sort` is an enum-controlled ORDER BY clause (no injection).
+    fileprivate static func browseSQL(_ f: KilterFilter, shape: BrowseShape) -> String {
+        let term = f.search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rowColumns = """
+            c.uuid, c.name, c.setter_username, cs.display_difficulty,
+                   cs.quality_average, cs.ascensionist_count
+            """
+        let columns = switch shape {
+        case .rows: rowColumns
+        case .count: "COUNT(*)"
+        case .rowsWithTotal: rowColumns + ", COUNT(*) OVER ()"
+        }
+        var sql = """
+            SELECT \(columns)
+            FROM climbs c
+            JOIN climb_stats cs ON cs.climb_uuid = c.uuid AND cs.angle = ?
+            WHERE c.is_listed = 1 AND c.layout_id = ?
+              AND cs.display_difficulty BETWEEN ? AND ?
+              AND cs.ascensionist_count >= ?
+              AND cs.quality_average >= ?
+        """
+        if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
+        if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
+        if shape != .count { sql += " ORDER BY \(f.sort.orderBy) LIMIT ?" }
+        return sql
+    }
+
+    /// Binds `browseSQL`'s parameters in order; `limit` only for the row shapes.
+    fileprivate static func bindBrowse(_ s: OpaquePointer?, _ f: KilterFilter, limit: Int?) {
+        let lo = min(f.minDifficulty, f.maxDifficulty), hi = max(f.minDifficulty, f.maxDifficulty)
+        let term = f.search.trimmingCharacters(in: .whitespacesAndNewlines)
+        var i: Int32 = 1
+        sqlite3_bind_int64(s, i, Int64(f.angle)); i += 1
+        sqlite3_bind_int64(s, i, Int64(f.layoutId)); i += 1
+        sqlite3_bind_double(s, i, lo); i += 1
+        sqlite3_bind_double(s, i, hi); i += 1
+        sqlite3_bind_int64(s, i, Int64(f.minAscents)); i += 1
+        sqlite3_bind_double(s, i, f.minQuality); i += 1
+        if !term.isEmpty {
+            let like = "%\(term)%"
+            sqlite3_bind_text(s, i, like, -1, transient); i += 1
+            sqlite3_bind_text(s, i, like, -1, transient); i += 1
+        }
+        if let limit { sqlite3_bind_int64(s, i, Int64(limit)) }
+    }
+
+    fileprivate static func gradeLabel(_ difficulty: Double, grades: [Int: String]) -> String {
+        grades[Int(difficulty.rounded())] ?? "—"
+    }
+
+    /// One list row from columns 0…5 of a browse (or favorites) statement.
+    fileprivate static func listItem(_ s: OpaquePointer?, grades: [Int: String]) -> KilterListItem {
+        let diff = sqlite3_column_double(s, 3)
+        return KilterListItem(
+            uuid: text(s, 0), name: text(s, 1), setter: text(s, 2),
+            difficulty: diff, gradeLabel: gradeLabel(diff, grades: grades),
+            quality: sqlite3_column_double(s, 4), ascents: int(s, 5))
+    }
+
+    fileprivate static func listRows(on db: OpaquePointer?, _ f: KilterFilter, limit: Int,
+                                     grades: [Int: String]) -> [KilterListItem] {
+        var out: [KilterListItem] = []
+        run(on: db, browseSQL(f, shape: .rows), bind: { s in bindBrowse(s, f, limit: limit) }) { s in
+            out.append(listItem(s, grades: grades))
+        }
+        return out
+    }
+
+    /// A deterministic "climb of the day" — a popular classic for the layout/angle, rotating daily.
+    fileprivate static func climbOfTheDay(on db: OpaquePointer?, layoutId: Int, angle: Int,
+                                          grades: [Int: String]) -> KilterListItem? {
+        var pool = listRows(on: db, KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
+                                                 maxDifficulty: 39, sort: .popular, benchmarksOnly: true),
+                            limit: 150, grades: grades)
+        if pool.isEmpty {   // some layouts have few benchmarks — fall back to most-climbed
+            pool = listRows(on: db, KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
+                                                 maxDifficulty: 39, sort: .popular),
+                            limit: 150, grades: grades)
+        }
+        guard !pool.isEmpty else { return nil }
+        return pool[dayOrdinal() % pool.count]
+    }
+
+    /// Today's ordinal — the climb-of-the-day rotation (and the browser's cache key for it).
+    fileprivate static func dayOrdinal() -> Int {
+        Calendar.current.ordinality(of: .day, in: .era, for: .now) ?? 0
+    }
+}
+
+/// Runs the Kilter browse screen's catalog queries **off the main thread** (prompt 153). The list +
+/// count for a filter scans most of a layout's climbs (a `LIKE '%term%'` can't use an index), which on
+/// a full catalog is long enough to stall typing in the search box and dragging the grade slider when
+/// it ran on the main actor per keystroke. This owns a second read-only connection to the same file,
+/// used only on its private serial queue, and answers list + total in a single scan.
+///
+/// Superseded work is dropped: a request whose task was cancelled (the browse screen's `.task(id:)`
+/// cancels the previous run on every keystroke) before the queue reached it answers `nil` without
+/// scanning, so a burst of typing never queues a backlog of stale scans.
+final class KilterCatalogBrowser: @unchecked Sendable {
+    /// One answered browse request.
+    struct Page: Sendable {
+        let items: [KilterListItem]
+        /// Uncapped number of matches (the live "N climbs").
+        let count: Int
+        /// The climb of the day for the filter's layout + angle, when asked for.
+        let discovery: KilterListItem?
+    }
+
+    private let queue = DispatchQueue(label: "com.snappet.kilter.browse", qos: .userInitiated)
+    // `db`, `grades` and `discoveryCache` are only touched on `queue` (hence `@unchecked Sendable`).
+    private var db: OpaquePointer?
+    private var grades: [Int: String] = [:]
+    /// Climb of the day per "layout|angle|day" — it only changes daily, so the two 150-row pool scans
+    /// run once per board/angle per day, not on every refresh.
+    private var discoveryCache: [String: KilterListItem?] = [:]
+
+    fileprivate init() {}
+
+    /// (Re)open on `path`, or close for `nil`. Queued, so it lands after any in-flight query and
+    /// before every request made after it.
+    fileprivate func open(path: String?) {
+        queue.async { [self] in
+            if let current = self.db { sqlite3_close(current) }
+            self.db = nil
+            self.grades = [:]
+            self.discoveryCache = [:]
+            guard let path else { return }
+            var handle: OpaquePointer?
+            guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+                sqlite3_close(handle)
+                return
+            }
+            self.db = handle
+            KilterCatalog.run(on: handle, "SELECT difficulty, boulder_name FROM difficulty_grades") { s in
+                self.grades[KilterCatalog.int(s, 0)] = KilterCatalog.text(s, 1)
+            }
+        }
+    }
+
+    /// The capped list (`limit` rows), the uncapped match count, and — when `includeDiscovery` — the
+    /// climb of the day for `filter`. `nil` when the calling task was cancelled before the query ran.
+    func browse(_ filter: KilterFilter, limit: Int = 500, includeDiscovery: Bool) async -> Page? {
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                queue.async { [self] in
+                    guard !cancelled.withLock({ $0 }) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    continuation.resume(returning: self.page(filter, limit: limit,
+                                                             includeDiscovery: includeDiscovery))
+                }
+            }
+        } onCancel: {
+            cancelled.withLock { $0 = true }
+        }
+    }
+
+    /// Runs on `queue`.
+    private func page(_ filter: KilterFilter, limit: Int, includeDiscovery: Bool) -> Page {
+        guard let db else { return Page(items: [], count: 0, discovery: nil) }
+        var items: [KilterListItem] = []
+        var total = 0
+        let grades = self.grades
+        KilterCatalog.run(on: db, KilterCatalog.browseSQL(filter, shape: .rowsWithTotal),
+                          bind: { s in KilterCatalog.bindBrowse(s, filter, limit: limit) }) { s in
+            items.append(KilterCatalog.listItem(s, grades: grades))
+            total = KilterCatalog.int(s, 6)
+        }
+        var discovery: KilterListItem?
+        if includeDiscovery {
+            let key = "\(filter.layoutId)|\(filter.angle)|\(KilterCatalog.dayOrdinal())"
+            if let cached = discoveryCache[key] {
+                discovery = cached
+            } else {
+                discovery = KilterCatalog.climbOfTheDay(on: db, layoutId: filter.layoutId,
+                                                        angle: filter.angle, grades: grades)
+                discoveryCache.updateValue(discovery, forKey: key)
+            }
+        }
+        return Page(items: items, count: total, discovery: discovery)
     }
 }
