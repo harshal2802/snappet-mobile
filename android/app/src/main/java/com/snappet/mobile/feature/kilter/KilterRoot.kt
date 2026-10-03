@@ -87,6 +87,7 @@ import com.snappet.mobile.ui.theme.LocalReduceMotion
 import com.snappet.mobile.ui.theme.LocalSpacing
 import com.snappet.mobile.ui.theme.snappetSurfaceTransition
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private enum class KilterScreen {
@@ -374,7 +375,15 @@ private fun KilterCatalogScreen(
     val filter = KilterFilter(layoutId, angle, minGrade.toDouble(), maxGrade.toDouble(),
         search, sort, benchmarksOnly, minAscents, minQuality)
 
+    // The search text the last query ran with — a change means the user is typing (prompt 153).
+    var lastQueriedSearch by remember { mutableStateOf(search) }
+
     androidx.compose.runtime.LaunchedEffect(filter, savedOnly, mineOnly, favorites, createdClimbs) {
+        // Debounce typing (prompt 153): every keystroke restarts this effect, but a cancelled effect
+        // can't stop a SQLite scan already running on IO — without the pause, fast typing queued one
+        // full catalog scan per character. The query runs once the user pauses.
+        if (search != lastQueriedSearch) delay(250)
+        lastQueriedSearch = search
         val result: Triple<List<KilterListItem>, KilterListItem?, Int> = withContext(Dispatchers.IO) {
             if (!catalog.isAvailable) Triple(emptyList(), null, 0)
             else if (mineOnly) {

@@ -330,4 +330,39 @@ final class KilterCatalogStoreTests: XCTestCase {
         var byGrade = base; byGrade.minDifficulty = 22
         XCTAssertEqual(cat.count(byGrade), 1, "only Charlie (24) is >= grade 22 at 40°")
     }
+
+    /// The off-main browser behind the root list (prompt 153) answers exactly what the main-thread
+    /// `list` + `count` do — one windowed scan carrying the uncapped total — and its climb of the day
+    /// matches the reader's. Fixture angle-40 ascents: Alpha 250, Delta 200, Bravo 120, Charlie 45.
+    func testBrowserMatchesListAndCount() async throws {
+        let store = KilterCatalogStore.shared
+        let url = try KilterCatalogFixture.temporaryBuild()
+        let validated = try KilterCatalogValidator.validate(url)
+        try store.install(from: url, meta: KilterCatalogMeta(
+            version: validated.version, climbCount: validated.climbCount,
+            sizeBytes: validated.sizeBytes, source: "Test", installedAt: .now))
+        defer { try? store.clear(); KilterCatalog.shared.reload() }
+        KilterCatalog.shared.reload()
+        let cat = KilterCatalog.shared
+
+        let base = KilterFilter(layoutId: 1, angle: 40, minDifficulty: 1, maxDifficulty: 39)
+        var bySearch = base; bySearch.search = "bravo"
+        var bySetter = base; bySetter.search = "anotherSetter"; bySetter.sort = .easiest
+        var byGrade = base; byGrade.minDifficulty = 22
+        var noMatch = base; noMatch.search = "no such climb"
+        for f in [base, bySearch, bySetter, byGrade, noMatch] {
+            let page = await cat.browser.browse(f, includeDiscovery: false)
+            XCTAssertEqual(page?.items, cat.list(f), "rows for \(f)")
+            XCTAssertEqual(page?.count, cat.count(f), "count for \(f)")
+            XCTAssertNil(page?.discovery, "discovery only when asked")
+        }
+
+        let capped = await cat.browser.browse(base, limit: 2, includeDiscovery: false)
+        XCTAssertEqual(capped?.items.map(\.name), ["Test Problem Alpha", "Test Problem Delta"])
+        XCTAssertEqual(capped?.count, 4, "the total ignores the list cap")
+
+        let withDiscovery = await cat.browser.browse(base, includeDiscovery: true)
+        XCTAssertNotNil(withDiscovery?.discovery)
+        XCTAssertEqual(withDiscovery?.discovery, cat.climbOfTheDay(layoutId: 1, angle: 40))
+    }
 }

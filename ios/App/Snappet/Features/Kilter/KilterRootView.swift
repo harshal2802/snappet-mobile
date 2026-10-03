@@ -37,7 +37,8 @@ struct KilterRootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SnappetCore.self) private var core
     @Query private var favorites: [KilterFavorite]
-    @Query private var allEntries: [KilterLogEntry]
+    /// Newest first, so the per-render memo signatures read the newest entry in O(1) (prompt 153).
+    @Query(sort: \KilterLogEntry.date, order: .reverse) private var allEntries: [KilterLogEntry]
     /// Board sessions — feed the P3 analytics dashboard's all-time aggregate (session counts + HR trend).
     @Query(sort: \KilterSession.startedAt, order: .reverse) private var statsSessions: [KilterSession]
     /// Climbs the user authored on this device (manual editor / generator) — the "Mine" filter's source.
@@ -114,6 +115,14 @@ struct KilterRootView: View {
     /// the push — prompt 124).
     @State private var pendingCreatedOpen: String?
     @State private var items: [KilterListItem] = []
+    /// False until the first browse results land — holds back the empty-state overlay so it doesn't
+    /// flash "No climbs match" while the first (off-main) query is still running.
+    @State private var hasLoaded = false
+    /// The search text the last query ran with — a change means the user is typing, which debounces
+    /// longer than a picker/slider move (prompt 153).
+    @State private var lastQueriedSearch = ""
+    /// Bumped when the installed catalog changes, so `filterKey` re-runs the browse query.
+    @State private var catalogGeneration = 0
     // Created-climb lifecycle from the Mine list (#76): edit re-opens authoring; delete confirms first.
     @State private var editingCreated: KilterCreatedClimb?
     @State private var deletingCreated: KilterCreatedClimb?
@@ -137,14 +146,58 @@ struct KilterRootView: View {
         var newestEntryDate: Date?
         var newestEntryID: PersistentIdentifier?
         var hrSessionCount: Int
+        var newestSessionEnd: Date?
     }
 
+    /// Evaluated on EVERY root render (each search keystroke included), so it must stay cheap: the
+    /// newest entry is the sorted query's first, and HR presence is read from the scalar
+    /// `metricsSourceRaw` (stamped together with a non-empty `hrSeries`) instead of decoding every
+    /// session's full HR array (prompt 153).
+    /// `newestSessionEnd` catches the session-end save that flushes HR onto the newest session.
     private var statsSignature: StatsSignature {
-        StatsSignature(entryCount: allEntries.count,
-                       sessionCount: statsSessions.count,
-                       newestEntryDate: allEntries.max(by: { $0.date < $1.date })?.date,
-                       newestEntryID: allEntries.max(by: { $0.date < $1.date })?.persistentModelID,
-                       hrSessionCount: statsSessions.reduce(0) { $0 + ($1.hrSeries.isEmpty ? 0 : 1) })
+        let newestEntry = allEntries.first   // the query is sorted newest first
+        return StatsSignature(entryCount: allEntries.count,
+                              sessionCount: statsSessions.count,
+                              newestEntryDate: newestEntry?.date,
+                              newestEntryID: newestEntry?.persistentModelID,
+                              hrSessionCount: statsSessions.reduce(0) { $0 + ($1.metricsSourceRaw == nil ? 0 : 1) },
+                              newestSessionEnd: statsSessions.first?.endedAt)
+    }
+
+    /// Memoized log-derived bits of the browse screen: the "On the board" strip rows and the active
+    /// session's climb count. Both used to walk every log entry on every render — every search
+    /// keystroke included (prompt 153). Recomputed when `logSignature` changes, and on appear, so a log
+    /// whose status was edited on a pushed screen is picked up when the root comes back.
+    @State private var recentRail: [KilterOnTheBoard.Row] = []
+    @State private var currentClimbCount = 0
+
+    private struct LogSignature: Equatable {
+        var entryCount: Int
+        var newestEntryID: PersistentIdentifier?
+        var litCount: Int
+        var newestLitID: PersistentIdentifier?
+        var newestLitAt: Date?
+        var sessionId: UUID?
+    }
+
+    /// O(1): both queries are sorted newest first.
+    private var logSignature: LogSignature {
+        LogSignature(entryCount: allEntries.count,
+                     newestEntryID: allEntries.first?.persistentModelID,
+                     litCount: litEvents.count,
+                     newestLitID: litEvents.first?.persistentModelID,
+                     newestLitAt: litEvents.first?.litAt,
+                     sessionId: sessions.currentId)
+    }
+
+    private func recomputeLogDerived() {
+        recentRail = KilterOnTheBoard.recent(litEvents.map(KilterOnTheBoard.LitEvent.from),
+                                             logs: allEntries.map(KilterClimbLog.from), limit: 8)
+        if let id = sessions.currentId {
+            currentClimbCount = allEntries.reduce(0) { $0 + ($1.sessionId == id ? 1 : 0) }
+        } else {
+            currentClimbCount = 0
+        }
     }
 
     private func recomputeTrendStats() {
@@ -362,10 +415,11 @@ struct KilterRootView: View {
         .navigationDestination(for: KilterOnTheBoardRoute.self) { _ in
             KilterOnTheBoardView(board: board, sessions: sessions)
         }
-        .task(id: filterKey) { refresh() }
+        .task(id: filterKey) { await refresh() }
         // Memoize the trend-detail aggregate (F6): rebuild only when the logs/sessions actually change,
         // not on every root re-render that re-evaluates the navigation destination.
         .onChange(of: statsSignature, initial: true) { _, _ in recomputeTrendStats() }
+        .onChange(of: logSignature, initial: true) { _, _ in recomputeLogDerived() }
         // Re-open the reader + refresh when the installed catalog changes (import here, or "Remove"
         // in Settings), wherever the change originated.
         .onReceive(NotificationCenter.default.publisher(for: KilterCatalogStore.didChangeNotification)) { _ in
@@ -378,6 +432,9 @@ struct KilterRootView: View {
             // Hide the cross-screen Kilter live chip while the user is anywhere in Kilter (the root
             // stays in the stack under pushed Kilter screens, so this covers the whole module).
             app.kilterScreenVisible = true
+            // Pick up log edits made on a pushed screen (e.g. a status changed in History) that the
+            // cheap `logSignature` can't see.
+            recomputeLogDerived()
             // Keep the board-size selection valid for the current layout (seed the default when unset).
             syncBoardSize()
             // Re-sync with the persisted store: re-adopt a session left open by a prior visit / relaunch
@@ -459,12 +516,6 @@ struct KilterRootView: View {
         }
     }
 
-    /// Climbs logged so far in the active session (the count shown in the banner + Live Activity).
-    private var currentClimbCount: Int {
-        guard let id = sessions.currentId else { return 0 }
-        return allEntries.filter { $0.sessionId == id }.count
-    }
-
     private func pushLiveActivity() {
         guard sessions.isActive else { return }
         sessions.pushLiveActivity(hrBpm: app.liveWorkout.latestHR.map { Int($0.rounded()) },
@@ -472,8 +523,14 @@ struct KilterRootView: View {
     }
 
     /// Push a random climb from the current filters (Discovery "Surprise me").
+    /// The pool (up to 500 matches) is fetched off the main thread like the browse list (prompt 153).
     private func surpriseMe() {
-        if let pick = catalog.randomClimb(filter) { router.push(KilterClimbRoute(uuid: pick.uuid)) }
+        let f = filter
+        Task {
+            guard let page = await catalog.browser.browse(f, includeDiscovery: false),
+                  let pick = page.items.randomElement() else { return }
+            router.push(KilterClimbRoute(uuid: pick.uuid))
+        }
     }
 
     /// Resolve the size selection for the current layout through the per-layout memory: restore the
@@ -657,11 +714,13 @@ struct KilterRootView: View {
         catalog.reload()
         catalogInstalled = KilterCatalogStore.shared.isInstalled
         syncBoardSize()
-        refresh()
+        catalogGeneration += 1   // re-runs the browse query (`filterKey`) against the new catalog
     }
 
     private var content: some View {
-        VStack(spacing: 0) {
+        // Built once per render, not once per row (each row asks whether it's starred).
+        let starred = favoriteUUIDs
+        return VStack(spacing: 0) {
             filterBar
             // P1 board-detect surfaces (suggestion-not-overwrite, never blocking):
             //  • the pre-connect arrival suggestion at a remembered coarse place, and
@@ -680,7 +739,7 @@ struct KilterRootView: View {
                 if showDiscovery, let cotd {
                     Section("Climb of the day") {
                         Button { router.push(KilterClimbRoute(uuid: cotd.uuid)) } label: {
-                            KilterClimbRow(item: cotd, isFavorite: favoriteUUIDs.contains(cotd.uuid),
+                            KilterClimbRow(item: cotd, isFavorite: starred.contains(cotd.uuid),
                                            gradeFormat: gradeFormat, featured: true)
                         }
                         .buttonStyle(.plain)
@@ -690,7 +749,7 @@ struct KilterRootView: View {
                 Section {
                     ForEach(items) { item in
                         Button { router.push(KilterClimbRoute(uuid: item.uuid)) } label: {
-                            KilterClimbRow(item: item, isFavorite: favoriteUUIDs.contains(item.uuid),
+                            KilterClimbRow(item: item, isFavorite: starred.contains(item.uuid),
                                            gradeFormat: gradeFormat)
                         }
                         .buttonStyle(.plain)
@@ -712,7 +771,7 @@ struct KilterRootView: View {
             }
             .listStyle(.plain)
             .overlay {
-                if items.isEmpty && !(showDiscovery && cotd != nil) {
+                if hasLoaded && items.isEmpty && !(showDiscovery && cotd != nil) {
                     let searching = !search.trimmingCharacters(in: .whitespaces).isEmpty
                     if mineOnly && !searching {
                         ContentUnavailableView(
@@ -884,12 +943,6 @@ struct KilterRootView: View {
     }
 
     // MARK: - P5 "Recently on the board" re-light rail
-
-    /// The deduped, newest-first recent lit climbs for the rail (status joined for the chip).
-    private var recentRail: [KilterOnTheBoard.Row] {
-        KilterOnTheBoard.recent(litEvents.map(KilterOnTheBoard.LitEvent.from),
-                                logs: allEntries.map(KilterClimbLog.from), limit: 8)
-    }
 
     /// A single-line strip of the most-recent climbs lit on the board (UX feedback "takes a lot of
     /// screen real estate": the previous full-card rail — 110 pt thumbnail + status chip + button per
@@ -1075,7 +1128,7 @@ struct KilterRootView: View {
     /// grouped under the session in History.
     @ViewBuilder private var sessionBar: some View {
         if let s = sessions.current {
-            let count = allEntries.filter { $0.sessionId == s.id }.count
+            let count = currentClimbCount   // memoized (`recomputeLogDerived`); `s` is the current session
             VStack(spacing: 4) {
                 HStack(spacing: 8) {
                     Image(systemName: "record.circle").foregroundStyle(.green)
@@ -1262,27 +1315,46 @@ struct KilterRootView: View {
 
     /// Identity for `.task(id:)` — recompute the list whenever any criterion (or the favorites set) changes.
     private var filterKey: String {
-        "\(layoutId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(favoriteUUIDs.count)"
+        "\(catalogGeneration)|\(layoutId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(favorites.count)"
         + "|\(createdClimbs.count)|\(search)|\(sort.rawValue)|\(benchmarksOnly)|\(minAscents)|\(minQuality)"
     }
 
-    private func refresh() {
-        guard catalog.isAvailable else { items = []; cotd = nil; count = 0; return }
-        cotd = showDiscovery ? catalog.climbOfTheDay(layoutId: layoutId, angle: angle) : nil
-        if mineOnly {
-            items = createdListItems()
-        } else if savedOnly {
-            // Saved list isn't grade/angle-restricted, but still honor the search box (name/setter).
-            let saved = favorites.sorted { $0.addedAt > $1.addedAt }.map(\.climbUUID)
-            let all = catalog.climbsByUUID(saved)
-            let term = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            items = term.isEmpty ? all
-                : all.filter { $0.name.lowercased().contains(term) || $0.setter.lowercased().contains(term) }
-        } else {
-            items = catalog.list(filter)
+    /// Re-query the browse list for the current criteria. `.task(id: filterKey)` cancels the previous
+    /// run on every change, so the opening sleep is a debounce: a burst of keystrokes or a grade-slider
+    /// drag runs ONE query when the user pauses, not one per change. The catalog scan itself runs off
+    /// the main thread (`KilterCatalogBrowser`), so typing never waits on SQLite (prompt 153). The list
+    /// and count keep their previous values until the new ones land, so nothing flickers.
+    private func refresh() async {
+        if hasLoaded {
+            let typing = search != lastQueriedSearch
+            try? await Task.sleep(for: .milliseconds(typing ? 250 : 120))
+            if Task.isCancelled { return }
         }
-        // True match count (Saved/Mine are already the full set; the catalog list is capped, so query it).
-        count = (savedOnly || mineOnly) ? items.count : catalog.count(filter)
+        lastQueriedSearch = search
+        guard catalog.isAvailable else { items = []; cotd = nil; count = 0; hasLoaded = true; return }
+        if mineOnly || savedOnly {
+            // Small, on-device sets — computed here. Discovery is browse-only (`showDiscovery`).
+            cotd = nil
+            items = mineOnly ? createdListItems() : savedListItems()
+            count = items.count
+        } else {
+            guard let page = await catalog.browser.browse(filter, includeDiscovery: showDiscovery),
+                  !Task.isCancelled else { return }
+            items = page.items
+            count = page.count   // the uncapped match count (the list itself is capped)
+            cotd = page.discovery
+        }
+        hasLoaded = true
+    }
+
+    /// The user's starred climbs, newest-starred first. The Saved list isn't grade/angle-restricted, but
+    /// still honors the search box (name/setter).
+    private func savedListItems() -> [KilterListItem] {
+        let saved = favorites.sorted { $0.addedAt > $1.addedAt }.map(\.climbUUID)
+        let all = catalog.climbsByUUID(saved)
+        let term = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return term.isEmpty ? all
+            : all.filter { $0.name.lowercased().contains(term) || $0.setter.lowercased().contains(term) }
     }
 
     /// The user's created climbs for the current layout, newest first, honoring the search box — mapped to
