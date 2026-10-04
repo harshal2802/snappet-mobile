@@ -17,6 +17,8 @@ struct KilterGeneratorManifest: Codable, Sendable {
         let meta: String      // filename of the meta.json
         let sizeBytes: Int64?
         let description: String?
+        /// The model's training index (`training-index.json.gz`, prompt 155) — absent on older manifests.
+        let trainingIndex: String?
     }
 }
 
@@ -24,12 +26,14 @@ enum KilterGeneratorAssetError: LocalizedError {
     case http(Int)
     case emptyManifest
     case emptyDownload
+    case noTrainingIndex
 
     var errorDescription: String? {
         switch self {
         case .http(let code): return "Couldn't reach the generator host (HTTP \(code)). Check your connection."
         case .emptyManifest: return "The generator manifest had no models."
         case .emptyDownload: return "The model download was empty. Try again."
+        case .noTrainingIndex: return "The generator host doesn't publish a training index for this model yet."
         }
     }
 }
@@ -92,8 +96,28 @@ final class KilterGeneratorAssets: Sendable {
         return try KilterGeneratorModel.load(metaURL: metaURL)
     }
 
+    /// The decompressed training index (prompt 155).
+    var trainingIndexURL: URL { dir.appendingPathComponent("training-index.json") }
+
+    /// Download + gunzip the model's training index once; returns the cached JSON's URL afterwards.
+    func ensureTrainingIndex() async throws -> URL {
+        if FileManager.default.fileExists(atPath: trainingIndexURL.path) { return trainingIndexURL }
+        let manifest = try await fetchManifest()
+        guard let entry = manifest.models.first(where: { $0.id == manifest.default }) ?? manifest.models.first,
+              let file = entry.trainingIndex else { throw KilterGeneratorAssetError.noTrainingIndex }
+        let gz = dir.appendingPathComponent("training-index.json.gz")
+        try await download(file, to: gz) { _ in }
+        defer { try? FileManager.default.removeItem(at: gz) }
+        let tmp = trainingIndexURL.appendingPathExtension("part")
+        try HostedCatalogClient().gunzip(gz, to: tmp)
+        try? FileManager.default.removeItem(at: trainingIndexURL)
+        try FileManager.default.moveItem(at: tmp, to: trainingIndexURL)
+        return trainingIndexURL
+    }
+
     /// Delete the cached assets (e.g. from Settings, to reclaim space).
     func remove() {
+        try? FileManager.default.removeItem(at: trainingIndexURL)
         try? FileManager.default.removeItem(at: modelURL)
         try? FileManager.default.removeItem(at: metaURL)
         try? FileManager.default.removeItem(at: stampURL)

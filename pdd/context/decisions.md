@@ -9550,3 +9550,13 @@ Non-obvious calls:
 - Browse filters by the selected size by default (you can't climb what can't light); a climb reached
   another way says which holds aren't on your board rather than skipping them silently.
 - The web Board Explorer's size filter uses the same inclusive rule (separate repo) — worth the same fix.
+
+## 2026-10-04 — the generator's training split is published as an index pinned to the model (prompt 155)
+
+- The check must match what the model actually saw, not the user's installed catalog (which may be newer
+  or filtered to their board size), so the web repo publishes a per-climb index derived with the trainer's
+  own deterministic split — verified to reproduce the v1 split exactly — next to the model.
+- "Very close" compares placements over the larger climb (so a superset with extra holds isn't "close"),
+  and only against training climbs; an exact match with a held-out climb is called out as a rediscovery.
+- Generated climbs light with the user's board-size LED map, never the generator's: addresses differ per size.
+- Auto-light on generate is off by default (user's call), with a switch.

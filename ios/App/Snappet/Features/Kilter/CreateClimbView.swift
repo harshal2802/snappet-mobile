@@ -54,6 +54,22 @@ struct CreateClimbView: View {
     @State private var genResult: KilterGeneratedClimb?
     @State private var genHolds: [KilterHold] = []
     @State private var genGeometry: KilterBoardGeometry = .empty
+    /// The generated climb positioned for **your** board (`kilter.productSizeId`) — what gets lit. LED
+    /// addresses differ per size, so lighting with the generator's size would light the wrong holds.
+    @State private var genBoardHolds: [KilterHold] = []
+
+    // Training-data check + light-it-here (prompt 155).
+    enum TrainingState: Equatable { case idle, checking, result(KilterTrainingIndex.Match), unavailable(String) }
+    @State private var training: TrainingState = .idle
+    /// A training climb shown on the preview board instead of the generated one ("See it").
+    @State private var comparing: KilterTrainingIndex.Climb?
+    @State private var compareHolds: [KilterHold] = []
+    /// Light each new climb as it's generated (Q3: off by default, the user's choice).
+    @AppStorage("kilter.generate.autoLight") private var autoLight = false
+    /// The frames currently lit on the board (drives "Lit" vs "Light on board").
+    @State private var litFrames: String?
+    /// Light the current climb as soon as a connect started from this panel succeeds.
+    @State private var lightAfterConnect = false
 
     // Duplicate handling (shared by both tabs).
     @State private var duplicate: KilterDuplicateChecker.Duplicate?
@@ -135,6 +151,12 @@ struct CreateClimbView: View {
                 reloadBoard()
             }
             .onChange(of: productSizeId) { reloadBoard(); liveLight(manualLitHolds) }
+            // "Connect board" from the generate panel means "light this one": do it once connected.
+            .onChange(of: board?.isConnected == true) { _, connected in
+                guard connected, lightAfterConnect else { return }
+                lightAfterConnect = false
+                if mode == .generate, genResult != nil { lightGenerated() }
+            }
             // Light the draft on a connected board as holds are placed/cleared.
             .onChange(of: assignments) { liveLight(manualLitHolds) }
             .onChange(of: mode) { _, m in if m == .generate { Task { await prepareModelIfNeeded() } } }
@@ -266,7 +288,7 @@ struct CreateClimbView: View {
 
     @ViewBuilder private func generatePreview(_ result: KilterGeneratedClimb) -> some View {
         Section {
-            KilterBoardView(geometry: genGeometry, holds: genHolds)
+            KilterBoardView(geometry: genGeometry, holds: comparing == nil ? genHolds : compareHolds)
                 .frame(maxHeight: 380)
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
@@ -279,14 +301,195 @@ struct CreateClimbView: View {
             }
             .font(.caption)
             roleCounts(for: genHolds.compactMap { KilterAuthorRole(roleId: roleId(forRole: $0.role)) })
+            trainingCard
+            lightSection(result)
             Button { useGeneratedClimb(result) } label: {
                 Label("Use this climb", systemImage: "checkmark.circle.fill")
             }
             .accessibilityIdentifier("kilter.generate.use")
             copyFramesButton(result.frames, enabled: true)
-            bleRow(holds: genHolds)
         } footer: {
             Text("Generated on-device — the grade is a model estimate. Valid by construction (fits the size, has a start & finish).")
+        }
+    }
+
+    // MARK: - Training-data check (prompt 155)
+
+    private func checkTraining(_ frames: String) {
+        training = .checking
+        Task {
+            do {
+                let index = try await KilterTrainingIndexStore.shared.index()
+                guard genResult?.frames == frames else { return }   // a newer climb was generated meanwhile
+                training = .result(index.check(frames: frames))
+            } catch {
+                training = .unavailable(error.localizedDescription)
+            }
+        }
+    }
+
+    @ViewBuilder private var trainingCard: some View {
+        switch training {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Checking the training data…").font(.caption).foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("kilter.generate.trainingChecking")
+        case .unavailable(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Couldn't check the training data", systemImage: "exclamationmark.triangle")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                Text(message).font(.caption2).foregroundStyle(.secondary)
+                if let frames = genResult?.frames {
+                    Button("Try again") { checkTraining(frames) }.font(.caption)
+                }
+            }
+            .accessibilityIdentifier("kilter.generate.trainingUnavailable")
+        case .result(let m):
+            trainingResult(m)
+        }
+    }
+
+    @ViewBuilder private func trainingResult(_ m: KilterTrainingIndex.Match) -> some View {
+        let (title, icon, tint): (String, String, Color) = switch m.kind {
+        case .inTraining: ("This exact climb is in the training data", "exclamationmark.triangle.fill", .orange)
+        case .heldOut: ("Matches a climb held out of training", "scope", .purple)
+        case .veryClose: ("Very close to a training climb", "approximately.equal", .blue)
+        case .new: ("Not in the training data", "sparkles", .green)
+        }
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: icon).font(.subheadline.weight(.bold)).foregroundStyle(tint)
+            Text(trainingDetail(m)).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let c = m.climb {
+                Button(comparing?.uuid == c.uuid ? "Back to the generated climb" : "See \"\(c.name)\" on the board") {
+                    toggleCompare(c)
+                }
+                .font(.caption.weight(.semibold))
+                .accessibilityIdentifier("kilter.generate.compare")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(tint.opacity(0.35)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kilter.generate.training")
+    }
+
+    private func trainingDetail(_ m: KilterTrainingIndex.Match) -> String {
+        guard let c = m.climb else { return "No training climb shares a hold with it." }
+        let about = "\"\(c.name)\"\(c.setter.isEmpty ? "" : " by \(c.setter)") (\(c.grade) · \(c.angle)° · \(c.ascents) ascents)"
+        switch m.kind {
+        case .inTraining:
+            return "\(about). The model reproduced it hold for hold — saving it would duplicate that climb."
+        case .heldOut(let split):
+            return "\(about) was held back from training (\(split == .val ? "validation" : "test") set). The model never saw it, so this is an independent rediscovery."
+        case .veryClose:
+            return m.sameHoldsDifferentRoles
+                ? "Same holds as \(about), with different roles."
+                : "Shares \(m.shared) of \(m.outOf) holds with \(about)."
+        case .new:
+            return "The closest training climb shares \(m.shared) of \(m.outOf) holds: \(about)."
+        }
+    }
+
+    private func toggleCompare(_ c: KilterTrainingIndex.Climb) {
+        if comparing?.uuid == c.uuid { comparing = nil; return }
+        let climb = KilterClimb(uuid: c.uuid, name: c.name, setter: c.setter, layoutId: layoutForSize(genSizeId),
+                                edgeLeft: 0, edgeRight: 0, edgeBottom: 0, edgeTop: 0,
+                                frames: c.frames, description: "", isNoMatch: false)
+        compareHolds = catalog.holds(for: climb, sizeId: genSizeId)
+        comparing = c
+    }
+
+    // MARK: - Light it here (prompt 155)
+
+    private func lightGenerated() {
+        guard let board, board.isConnected, let frames = genResult?.frames else { return }
+        board.illuminate(genBoardHolds)
+        litFrames = frames
+    }
+
+    /// Holds of the generated climb your board has no LED for (generated for a bigger size).
+    private var offBoardCount: Int {
+        guard genBoardHolds.contains(where: { $0.ledPosition != nil }) else { return 0 }
+        return genBoardHolds.filter { $0.ledPosition == nil }.count
+    }
+
+    @ViewBuilder private func lightSection(_ result: KilterGeneratedClimb) -> some View {
+        if let board {
+            VStack(alignment: .leading, spacing: 6) {
+                if board.isConnected {
+                    HStack {
+                        if litFrames == result.frames {
+                            Label("Lit on your board", systemImage: "circle.fill")
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(.green)
+                                .accessibilityIdentifier("kilter.generate.lit")
+                        } else {
+                            Label("Board connected", systemImage: "bolt.fill").font(.subheadline)
+                        }
+                        Spacer()
+                        Button(litFrames == result.frames ? "Light again" : "Light on board") { lightGenerated() }
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                            .tint(SnappetColor.moduleAccent("kilter"))
+                            .accessibilityIdentifier("kilter.generate.light")
+                    }
+                    Toggle("Auto-light each new climb", isOn: $autoLight)
+                        .font(.caption)
+                        .accessibilityIdentifier("kilter.generate.autoLight")
+                    if offBoardCount > 0 { offBoardWarning }
+                } else {
+                    HStack {
+                        Label("Light it on your board", systemImage: "bolt.fill").font(.subheadline)
+                        Spacer()
+                        connectControl(board)
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("kilter.generate.lightSection")
+        }
+    }
+
+    @ViewBuilder private func connectControl(_ board: KilterBoardController) -> some View {
+        switch board.state {
+        case .scanning, .connecting:
+            HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Connecting…").font(.caption) }
+        case .bluetoothOff:
+            Text("Bluetooth is off").font(.caption).foregroundStyle(.secondary)
+        case .unauthorized:
+            Button("Allow Bluetooth") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            .font(.caption)
+        case .unsupported:
+            Text("No Bluetooth").font(.caption).foregroundStyle(.secondary)
+        default:
+            Button("Connect board") { lightAfterConnect = true; board.connect() }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+                .tint(SnappetColor.moduleAccent("kilter"))
+                .accessibilityIdentifier("kilter.generate.connect")
+        }
+    }
+
+    @ViewBuilder private var offBoardWarning: some View {
+        let mine = catalog.sizes(forLayout: layoutId).first { $0.id == productSizeId }?.name ?? "your board's size"
+        let gen = genModel?.meta.sizes.first { $0.id == genSizeId }?.name ?? "another size"
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Generated for a \(gen), but your board is a \(mine): \(offBoardCount) hold\(offBoardCount == 1 ? "" : "s") won't light.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.orange)
+            if genModel?.meta.sizes.contains(where: { $0.id == productSizeId }) == true {
+                Button("Generate for \(mine)") { genSizeId = productSizeId; generate() }
+                    .font(.caption.weight(.semibold))
+                    .accessibilityIdentifier("kilter.generate.forMySize")
+            }
         }
     }
 
@@ -449,6 +652,8 @@ struct CreateClimbView: View {
             genRuntime = KilterGeneratorRuntime(model: model, modelURL: KilterGeneratorAssets.shared.modelURL)
             seedGenPickers(model)
             genPhase = .idle
+            // Warm the training index (~4.6 MB once, then cached) so the first check after generating is instant.
+            Task.detached(priority: .utility) { _ = try? await KilterTrainingIndexStore.shared.index() }
         } catch {
             genPhase = .error(error.localizedDescription)
         }
@@ -476,9 +681,12 @@ struct CreateClimbView: View {
                                           frames: result.frames, description: "", isNoMatch: genNoMatch)
                 genHolds = catalog.holds(for: preview, sizeId: genSizeId)
                 genGeometry = catalog.boardGeometry(forLayout: layout, sizeId: genSizeId)
+                genBoardHolds = catalog.holds(for: preview, sizeId: productSizeId)
                 genResult = result
                 genPhase = .ready
-                liveLight(genHolds)
+                comparing = nil
+                if autoLight, board?.isConnected == true { lightGenerated() }
+                checkTraining(result.frames)
             } catch {
                 genPhase = .error(error.localizedDescription)
             }
