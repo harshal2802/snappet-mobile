@@ -1,0 +1,30 @@
+Kilter got faster and smarter: snappy search, only climbs your board can light, and the generator now
+tells you whether a climb is new.
+
+KILTER SEARCH & FILTERS
+• Typing in search and dragging the grade slider no longer lag, even with the full catalog installed.
+• With the two grade thumbs close together, the grade labels no longer overlap. They merge into one
+  label, e.g. "7c/V9 – 8a/V11".
+
+ONLY CLIMBS YOUR BOARD CAN LIGHT
+• Browse now lists only climbs that fit your board size, so every hold lights. Some climbs were set on a
+  bigger board, like a 16 x 12, and use holes a 12 x 12 doesn't have, so a hold never lit.
+• Open such a climb another way (Saved, a QR code, History) and it tells you which holds aren't on your
+  board and which board it was set for.
+
+GENERATE: IS IT REALLY NEW?
+• After generating a climb, a card says whether the model's training data had it: an exact copy, a
+  match with a climb the model never saw, "very close" (80% or more of holds shared), or new, with the
+  nearest training climb. Tap "See it on the board" to compare.
+• Light a generated climb right from the Generate panel. Connect your board there, tap Light, or turn on
+  "Auto-light each new climb" to try climbs one after another at the wall. No need to save first.
+• Fixed: a climb generated for a different board size than yours could light the wrong holds.
+
+KNOWN ISSUES
+• On Android, browse doesn't filter by board size yet.
+• The training check downloads a one-time 4.6 MB file the first time you use the generator.
+
+WHAT WOULD HELP MOST
+• Type fast in Kilter search. Does it keep up?
+• Generate a few climbs at the board with auto-light on. Did each light correctly, and did the training
+  card's verdict make sense?
