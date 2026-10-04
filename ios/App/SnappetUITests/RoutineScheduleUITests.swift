@@ -87,8 +87,9 @@ final class RoutineScheduleUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.tabBars.buttons["Apps"].waitForExistence(timeout: 4))
         app.tabBars.buttons["Apps"].tap()   // re-tapping the selected tab pops to the library root
-        XCTAssertTrue(app.buttons["moduleCard.habit"].waitForExistence(timeout: 6))
-        app.buttons["moduleCard.habit"].tap()
+        let habitCard = app.scrollToModuleCard("habit")   // below the fold (lazy grid)
+        XCTAssertTrue(habitCard.exists)
+        habitCard.tap()
         let linked = app.descendants(matching: .any)["habit.linked"]
         XCTAssertTrue(linked.waitForExistence(timeout: 6), "the routine's habit shows its linked strip")
         snap("habits-linked")

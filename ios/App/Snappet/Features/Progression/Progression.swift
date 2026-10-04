@@ -20,6 +20,17 @@ enum Progression {
         static let streakCap = 100
         static let healthImport = 25
         static let dailyCap = 300
+        /// A household chore you're credited with, by effort (household prompt 01).
+        static let choreS = 10
+        static let choreM = 20
+        static let choreL = 35
+        static func choreXP(_ effort: ChoreEffort) -> Int {
+            switch effort {
+            case .s: return choreS
+            case .m: return choreM
+            case .l: return choreL
+            }
+        }
         /// A session shorter than this, or with nothing completed, earns nothing. (`-uiTestXPAnyLength`
         /// lifts it so a UI test's seconds-long session can show the XP card.)
         static let minSeconds: TimeInterval =
@@ -29,6 +40,14 @@ enum Progression {
     struct XPItem: Equatable, Sendable {
         var label: String
         var xp: Int
+    }
+
+    /// XP earned outside a workout session (household chores, prompt 01), folded into the same ledger
+    /// and daily cap. `id` keys its award; it never collides with a session id.
+    struct Earning: Equatable, Sendable {
+        var id: UUID
+        var at: Date
+        var items: [XPItem]
     }
 
     struct Award: Equatable, Sendable {
@@ -163,18 +182,19 @@ enum Progression {
     }
 
     /// `sessions` = everything (active sessions are ignored unless passed as `including`, the one
-    /// being finished right now). `schedules` = routine id → schedule.
+    /// being finished right now). `schedules` = routine id → schedule. `extras` = XP from outside sessions
+    /// (chores), defaulting to what the household publishes so every caller agrees on the total. They share
+    /// the daily cap in time order but don't count as sessions.
     @MainActor
     static func ledger(_ sessions: [WorkoutSession], including current: WorkoutSession? = nil,
                        schedules: [UUID: RoutineSchedule], unit: WeightUnit = .kg, pauses: [Pause] = [],
+                       extras: [Earning] = HouseholdXP.shared.earnings,
                        calendar: Calendar = .current) -> Ledger {
         var all = sessions.filter { $0.completedAt != nil && $0.id != current?.id }
         if let current { all.append(current) }
         all.sort { $0.startedAt < $1.startedAt }
 
-        var awards: [UUID: Award] = [:]
-        var perDay: [DayKey: Int] = [:]
-        var total = 0, counted = 0
+        var entries: [(id: UUID, at: Date, lines: [XPItem], isSession: Bool)] = []
         let memo = Memo(calendar: calendar, pauses: pauses)
         var prefix = Hasher()
         prefix.combine(unit); prefix.combine(calendar.firstWeekday); prefix.combine(calendar.timeZone.identifier)
@@ -194,14 +214,27 @@ enum Progression {
                 cache[s.id] = (key, lines)
             }
             guard !lines.isEmpty else { continue }
-            let raw = lines.reduce(0) { $0 + $1.xp }
-            let day = DayKey(s.startedAt, calendar: calendar)
+            entries.append((s.id, s.startedAt, lines, true))
+        }
+        // Chores and sessions share the daily cap, first come first served (stable: a session and a
+        // chore at the same instant keep sessions first).
+        entries += extras.filter { !$0.items.isEmpty }.map { ($0.id, $0.at, $0.items, false) }
+        if !extras.isEmpty {
+            entries = entries.enumerated().sorted { ($0.element.at, $0.offset) < ($1.element.at, $1.offset) }.map(\.element)
+        }
+
+        var awards: [UUID: Award] = [:]
+        var perDay: [DayKey: Int] = [:]
+        var total = 0, counted = 0
+        for e in entries {
+            let raw = e.lines.reduce(0) { $0 + $1.xp }
+            let day = DayKey(e.at, calendar: calendar)
             let room = max(0, Rules.dailyCap - perDay[day, default: 0])
             let earned = min(raw, room)
             perDay[day, default: 0] += earned
-            awards[s.id] = Award(items: lines, total: earned, capped: earned < raw)
+            awards[e.id] = Award(items: e.lines, total: earned, capped: earned < raw)
             total += earned
-            counted += 1
+            if e.isSession { counted += 1 }
         }
         return Ledger(awards: awards, totalXP: total, sessionCount: counted)
     }

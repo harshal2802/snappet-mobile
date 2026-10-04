@@ -27,6 +27,11 @@ struct RootShell: View {
                 LoadingView()
                     .task {
                         core = SnappetCore(context: context)
+                        // Chore XP into the progression ledger before anything reads it (household 01).
+                        // Skipped in the unit-test host so the simulator's store can't leak into XP tests.
+                        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                            HouseholdXP.shared.load(context: context)
+                        }
                         // Publish the first Today snapshot for the home-screen widgets (#81 Phase 1)
                         // as soon as the store is up, so a widget added before the app is reopened
                         // has data. Subsequent refreshes ride scenePhase below.

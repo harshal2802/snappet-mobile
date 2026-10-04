@@ -9580,3 +9580,25 @@ Non-obvious calls:
   iOS↔Android discovery) were rejected. Accepted limit: no server means syncing mostly happens while the app is open.
 - **Chores feed XP** (S/M/L = 10/20/35 under the shared 300/day cap). This reverses "only training feeds XP"
   (2026-10-01) by the user's choice here; Home's training-first switch stays training-only.
+
+## 2026-10-04 — Household P1 build: chore XP reaches every ledger caller through one published feed (household prompt 01 / 156)
+
+- Chore XP is a `Progression.Earning` (id, time, lines) folded into the same ledger walk as sessions, so
+  chores and sessions share the 300/day cap first come first served. `Ledger.sessionCount` counts sessions
+  only, so chores never flip Home to training-first or hatch the buddy on their own.
+- The earnings come from `HouseholdXP.shared`, the default for `Progression.ledger(extras:)`. Threading a
+  chore query through all six ledger call sites (Home, buddy, history, session detail, XP card, widgets)
+  would let one of them silently disagree; a single observable feed means they can't. It's loaded at launch
+  (skipped in the unit-test host, so a simulator's real store can't leak into XP tests), republished on
+  every op, and reloaded after a backup restore.
+- The house goal counts **rounds of chores**, not effort points: "28 of 40 chores" is what the approved
+  wireframe says and what people understand. Effort points stay for the fair share (P3) and XP.
+- Rotation advances per **completed round**, not per calendar day: if nobody does Sam's dishes, it's still
+  Sam's turn tomorrow (the wireframe's "Sam's turn · 1 day over"), and helping out doesn't reshuffle the order.
+- An "after done" round runs from its first tick until that tick's due date, while the next due date
+  re-anchors on the latest tick. That keeps "two people did the fridge while apart" as one round without
+  letting regular early re-dos merge rounds forever.
+- An edit writes only the fields that changed, so P2's per-field last-writer-wins has something to merge.
+- Ops are stored as their wire JSON (`HouseholdOpRecord.payload`), not as columns, so an op kind from a
+  newer app survives on an older phone and can be relayed.
+

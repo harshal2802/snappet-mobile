@@ -66,6 +66,7 @@ enum SnappetBackup {
         WardrobeItem.self, WardrobePhoto.self, WardrobeVocabulary.self, WardrobeTidyEdit.self,
         WearEvent.self, WardrobeOutfit.self,
         FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
+        Household.self, HouseholdOpRecord.self,
     ]
 
     // MARK: - The envelope
@@ -121,6 +122,9 @@ enum SnappetBackup {
         var festivalAttendance: [FestivalAttendanceRow] = []
         // Festival clip tags — defaulted so prompt-02-era backup blobs still decode.
         var festivalClipTags: [FestivalClipTagRow] = []
+        // Household — defaulted so pre-household backup blobs still decode.
+        var households: [HouseholdRow] = []
+        var householdOps: [HouseholdOpRecordRow] = []
 
         /// Total rows across every model — for "Backed up N records" / restore confirmation copy.
         ///
@@ -169,6 +173,8 @@ enum SnappetBackup {
             n += festivalStars.count
             n += festivalAttendance.count
             n += festivalClipTags.count
+            n += households.count
+            n += householdOps.count
             return n
         }
     }
@@ -254,6 +260,8 @@ enum SnappetBackup {
         file.festivalStars = try all(FestivalStar.self).map(FestivalStarRow.init).sorted(by: rowKey)
         file.festivalAttendance = try all(FestivalAttendance.self).map(FestivalAttendanceRow.init).sorted(by: rowKey)
         file.festivalClipTags = try all(FestivalClipTag.self).map(FestivalClipTagRow.init).sorted(by: rowKey)
+        file.households = try all(Household.self).map(HouseholdRow.init).sorted(by: rowKey)
+        file.householdOps = try all(HouseholdOpRecord.self).map(HouseholdOpRecordRow.init).sorted(by: rowKey)
         return file
     }
 
@@ -366,6 +374,10 @@ enum SnappetBackup {
             uniqued(file.festivalAttendance, by: \.id).forEach { context.insert($0.make()) }
             try deleteAll(FestivalClipTag.self)
             uniqued(file.festivalClipTags, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(Household.self)
+            uniqued(file.households, by: \.id).forEach { context.insert($0.make()) }
+            try deleteAll(HouseholdOpRecord.self)
+            uniqued(file.householdOps, by: \.id).forEach { context.insert($0.make()) }
             try context.save()
         } catch {
             context.rollback()
@@ -1352,5 +1364,44 @@ extension SnappetBackup {
             return tag
         }
         var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
+    }
+
+    // MARK: Household rows
+
+    struct HouseholdRow: BackupRow {
+        var id: UUID
+        var name: String
+        var myDeviceID: UUID
+        var myMemberID: UUID
+        var createdAt: Date
+
+        init(_ m: Household) {
+            id = m.id; name = m.name; myDeviceID = m.myDeviceID; myMemberID = m.myMemberID; createdAt = m.createdAt
+        }
+        func make() -> Household {
+            Household(id: id, name: name, myDeviceID: myDeviceID, myMemberID: myMemberID, createdAt: createdAt)
+        }
+        var sortKey: String { "\(createdAt.timeIntervalSinceReferenceDate)|\(id.uuidString)" }
+    }
+
+    struct HouseholdOpRecordRow: BackupRow {
+        var id: UUID
+        var householdID: UUID
+        var opID: UUID
+        var deviceID: UUID
+        var seq: Int
+        var at: Date
+        /// The op's wire JSON, kept verbatim (an op from a newer app version survives a round trip).
+        var payload: Data
+
+        init(_ m: HouseholdOpRecord) {
+            id = m.id; householdID = m.householdID; opID = m.opID; deviceID = m.deviceID
+            seq = m.seq; at = m.at; payload = m.payload
+        }
+        func make() -> HouseholdOpRecord {
+            HouseholdOpRecord(id: id, householdID: householdID, opID: opID, deviceID: deviceID,
+                              seq: seq, at: at, payload: payload)
+        }
+        var sortKey: String { "\(householdID.uuidString)|\(deviceID.uuidString)|\(String(format: "%09d", seq))|\(id.uuidString)" }
     }
 }

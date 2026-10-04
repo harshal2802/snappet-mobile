@@ -89,7 +89,7 @@ not paint P2 into a corner.
 - `ios/App/Snappet/Features/Household/` with the files above plus `HouseholdModule.swift`.
 - Registration in `Core/ModuleRegistry.swift`; models in `SnappetSchema.models`; Rows in `SnappetBackup.swift`.
 - `Progression.swift` rules + ledger input for chores.
-- `SnappetTests/Household*Tests.swift` (see Test plan); UITest smoke `HouseholdUITests` (add chore → tick → goal moves).
+- `SnappetTests/Household*Tests.swift` (see Test plan); UITest smoke `HouseholdUITests` (add chore → set goal → tick → goal moves → untick; starter board).
 - A `SnappetColor.household` accent (pick an unused hue; teal-green fits the pet) with light/dark values.
 - `docs/knowledge-graph/data.js`: Household module node + edges (Progression XP source, Backup, Habit schedule reuse).
 - `pdd/context/decisions.md` entry; `pdd/context/project.md` lists the module.
@@ -101,7 +101,7 @@ not paint P2 into a corner.
 - [ ] Creating, editing, archiving, completing and undoing chores all work, and survive relaunch, by replaying ops.
 - [ ] "Every 14 days after done" is due 14 days after the latest completion, and re-anchors on each completion.
 - [ ] Rotation advances per due window through the member order (unit-tested with 3 members).
-- [ ] The house goal bar counts effort-point completions this week; setting a reward shows it on Today.
+- [ ] The house goal bar counts chores (rounds) done this week; setting a reward shows it on Today. *(Amended at build: rounds, not effort points, to match the wireframe's "28 of 40 chores"; see decisions.)*
 - [ ] Completing a chore adds an XP line under the shared 300/day cap; undo removes it.
 - [ ] `ChoreBoard.fold` gives the same state for any permutation and any duplication of the same ops (property-style test).
 - [ ] Two devices' concurrent completes of the same chore: both credited, goal +1 (test with fake device ids).
@@ -124,5 +124,5 @@ not paint P2 into a corner.
    duplication, LWW per field, archive wins, double-complete credit), `HouseholdChoreScheduleTests`
    (after-done, weekdays delegation, rotation), `HouseholdWireFormatTests` (golden files, unknown kind),
    `ProgressionTests` additions (chore XP, shared cap, undo).
-2. `xcodebuild test … -only-testing:SnappetUITests/HouseholdUITests` (no Make target for one UI class) (add a chore → tick → goal bar moves → relaunch persists).
+2. `xcodebuild test … -only-testing:SnappetUITests/HouseholdUITests` (no Make target for one UI class) (add a chore → set goal → tick → goal moves → untick). Relaunch persistence is unit-tested in `HouseholdStoreTests`, since UI tests run on an in-memory store.
 3. Install on MrRobot. Add 5 real chores (one "after done"), tick two, check the XP line on the buddy screen.
