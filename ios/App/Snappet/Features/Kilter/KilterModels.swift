@@ -103,12 +103,24 @@ struct KilterLayout: Identifiable, Hashable, Sendable {
 }
 
 /// A board size's bounding box in hole-coordinate units (`product_sizes.edge_*`). A climb fits the size
-/// when its own `edge_*` box is contained within this one — the rule the Board Explorer's size filter
-/// uses (`c.edge_left >= left AND c.edge_right <= right AND c.edge_bottom >= bottom AND c.edge_top <= top`).
+/// when its own `edge_*` box lies **strictly** inside this one (`c.edge_left > left AND c.edge_right <
+/// right AND c.edge_bottom > bottom AND c.edge_top < top`). Strict, not `>=`/`<=`: a size's edges are the
+/// line just outside its outermost wired holes — a climb whose box touches one uses a hole only a bigger
+/// board has. Checked against the real Kilter catalog (2026-10-03): on every Original-layout size, strict
+/// fit = exactly the climbs whose every hold has an LED on that size; the inclusive rule let in 954 such
+/// climbs on a 12 x 12 (e.g. "cam pussie", whose finish is a 16 x 12-only hole) and 14,437 on an 8 x 12.
 struct KilterSizeBox: Hashable, Sendable {
     let left, right, bottom, top: Int
-    /// `[left, right, bottom, top]` — the bind order for the download filter's fit condition.
+    /// `[left, right, bottom, top]` — the bind order for the fit condition.
     var params: [Int] { [left, right, bottom, top] }
+
+    /// The SQL fit condition over a climbs alias `c`; bind `params` in order.
+    static let fitSQL = "c.edge_left > ? AND c.edge_right < ? AND c.edge_bottom > ? AND c.edge_top < ?"
+
+    /// Whether a climb's box fits (same strict rule as `fitSQL`).
+    func fits(left l: Int, right r: Int, bottom b: Int, top t: Int) -> Bool {
+        l > left && r < right && b > bottom && t < top
+    }
 }
 
 /// A physical board size for a layout (a `product_size`), e.g. "8 x 12 — Home". The user picks theirs
@@ -163,6 +175,8 @@ struct KilterFilter: Equatable, Sendable {
     var benchmarksOnly: Bool = false
     var minAscents: Int = 0
     var minQuality: Double = 0
+    /// The user's board size: only climbs that fit it (every hold has an LED on it). `nil` = any size.
+    var sizeBox: KilterSizeBox? = nil
 
     /// Count of the optional (beyond layout/angle/grade) filters that are active — for a badge.
     var activeExtras: Int {

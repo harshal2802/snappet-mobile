@@ -234,7 +234,10 @@ struct KilterRootView: View {
         KilterFilter(layoutId: layoutId, angle: angle,
                      minDifficulty: Double(minGrade), maxDifficulty: Double(maxGrade),
                      search: search, sort: sort, benchmarksOnly: benchmarksOnly,
-                     minAscents: minAscents, minQuality: minQuality)
+                     minAscents: minAscents, minQuality: minQuality,
+                     // Only climbs your board can fully light (a climb set on a bigger board uses holes
+                     // yours doesn't have — device feedback: "cam pussie"'s finish never lit).
+                     sizeBox: sizes.first { $0.id == productSizeId }?.box)
     }
 
     /// The climbs currently on screen, in display order — handed to the detail view so the user can
@@ -1315,7 +1318,7 @@ struct KilterRootView: View {
 
     /// Identity for `.task(id:)` — recompute the list whenever any criterion (or the favorites set) changes.
     private var filterKey: String {
-        "\(catalogGeneration)|\(layoutId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(favorites.count)"
+        "\(catalogGeneration)|\(layoutId)|\(productSizeId)|\(angle)|\(minGrade)|\(maxGrade)|\(savedOnly)|\(mineOnly)|\(favorites.count)"
         + "|\(createdClimbs.count)|\(search)|\(sort.rawValue)|\(benchmarksOnly)|\(minAscents)|\(minQuality)"
     }
 

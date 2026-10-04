@@ -9541,3 +9541,12 @@ Non-obvious calls:
   appear. A log edited on a pushed screen (which the signature can't see) shows up when you come back.
 - The grade slider commits when you let go, not per tick. The "Show N climbs" count therefore updates
   after the drag, not during it — accepted, since live-per-tick meant a full re-render per tick.
+
+## 2026-10-03 — a climb fits a board size strictly inside its edges (prompt 154)
+
+- `product_sizes.edge_*` are the lines just outside a size's outermost wired holes, so a climb whose box
+  touches one uses a hole only a bigger board has. Strict containment matched "every hold has an LED on
+  this size" exactly across the real Kilter catalog's Original sizes; inclusive containment did not.
+- Browse filters by the selected size by default (you can't climb what can't light); a climb reached
+  another way says which holds aren't on your board rather than skipping them silently.
+- The web Board Explorer's size filter uses the same inclusive rule (separate repo) — worth the same fix.

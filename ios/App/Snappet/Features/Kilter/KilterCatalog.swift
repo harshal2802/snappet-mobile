@@ -172,8 +172,8 @@ final class KilterCatalog {
     }
 
     /// A deterministic "climb of the day" — a popular classic for the layout/angle, rotating daily.
-    func climbOfTheDay(layoutId: Int, angle: Int) -> KilterListItem? {
-        Self.climbOfTheDay(on: db, layoutId: layoutId, angle: angle, grades: grades)
+    func climbOfTheDay(layoutId: Int, angle: Int, sizeBox: KilterSizeBox? = nil) -> KilterListItem? {
+        Self.climbOfTheDay(on: db, layoutId: layoutId, angle: angle, sizeBox: sizeBox, grades: grades)
     }
 
     /// Fetch a set of climbs by uuid (used to render the favorites list), preserving input order.
@@ -626,6 +626,7 @@ extension KilterCatalog {
         """
         if !term.isEmpty { sql += " AND (c.name LIKE ? OR c.setter_username LIKE ?)" }
         if f.benchmarksOnly { sql += " AND cs.benchmark_difficulty IS NOT NULL" }
+        if f.sizeBox != nil { sql += " AND " + KilterSizeBox.fitSQL }   // only climbs the board can fully light
         if shape != .count { sql += " ORDER BY \(f.sort.orderBy) LIMIT ?" }
         return sql
     }
@@ -646,6 +647,7 @@ extension KilterCatalog {
             sqlite3_bind_text(s, i, like, -1, transient); i += 1
             sqlite3_bind_text(s, i, like, -1, transient); i += 1
         }
+        for edge in f.sizeBox?.params ?? [] { sqlite3_bind_int64(s, i, Int64(edge)); i += 1 }
         if let limit { sqlite3_bind_int64(s, i, Int64(limit)) }
     }
 
@@ -673,13 +675,14 @@ extension KilterCatalog {
 
     /// A deterministic "climb of the day" — a popular classic for the layout/angle, rotating daily.
     fileprivate static func climbOfTheDay(on db: OpaquePointer?, layoutId: Int, angle: Int,
-                                          grades: [Int: String]) -> KilterListItem? {
+                                          sizeBox: KilterSizeBox?, grades: [Int: String]) -> KilterListItem? {
         var pool = listRows(on: db, KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
-                                                 maxDifficulty: 39, sort: .popular, benchmarksOnly: true),
+                                                 maxDifficulty: 39, sort: .popular, benchmarksOnly: true,
+                                                 sizeBox: sizeBox),
                             limit: 150, grades: grades)
         if pool.isEmpty {   // some layouts have few benchmarks — fall back to most-climbed
             pool = listRows(on: db, KilterFilter(layoutId: layoutId, angle: angle, minDifficulty: 1,
-                                                 maxDifficulty: 39, sort: .popular),
+                                                 maxDifficulty: 39, sort: .popular, sizeBox: sizeBox),
                             limit: 150, grades: grades)
         }
         guard !pool.isEmpty else { return nil }
@@ -775,12 +778,13 @@ final class KilterCatalogBrowser: @unchecked Sendable {
         }
         var discovery: KilterListItem?
         if includeDiscovery {
-            let key = "\(filter.layoutId)|\(filter.angle)|\(KilterCatalog.dayOrdinal())"
+            let box = filter.sizeBox.map { "\($0.params)" } ?? "any"
+            let key = "\(filter.layoutId)|\(filter.angle)|\(box)|\(KilterCatalog.dayOrdinal())"
             if let cached = discoveryCache[key] {
                 discovery = cached
             } else {
                 discovery = KilterCatalog.climbOfTheDay(on: db, layoutId: filter.layoutId,
-                                                        angle: filter.angle, grades: grades)
+                                                        angle: filter.angle, sizeBox: filter.sizeBox, grades: grades)
                 discoveryCache.updateValue(discovery, forKey: key)
             }
         }
