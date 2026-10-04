@@ -109,4 +109,26 @@ final class KilterUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 6),
                       "Saved filter should show the climb we just starred")
     }
+
+    /// UX feedback (PR #340): with the two grade thumbs close together their labels overlapped and were
+    /// unreadable. Close thumbs now show ONE merged "lo – hi" label between them.
+    func testCloseGradeThumbsShowOneMergedLabel() {
+        let app = openKilter()
+        let chip = app.buttons["kilter.gradeRange"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 8))
+        chip.tap()
+        let lo = app.descendants(matching: .any).matching(identifier: "kilter.grade.min").firstMatch
+        let hi = app.descendants(matching: .any).matching(identifier: "kilter.grade.max").firstMatch
+        XCTAssertTrue(lo.waitForExistence(timeout: 4))
+        let merged = app.staticTexts["kilter.grade.mergedLabel"]
+        XCTAssertFalse(merged.exists, "a wide range shows a label on each thumb")
+
+        // Drag the max thumb down to sit just right of the min thumb.
+        hi.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: lo.coordinate(withNormalizedOffset: CGVector(dx: 1.6, dy: 0.5)))
+        XCTAssertTrue(merged.waitForExistence(timeout: 3), "close thumbs merge their labels")
+        let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        a.name = "grade-merged-label"; a.lifetime = .keepAlways; add(a)
+        _ = lo
+    }
 }

@@ -66,4 +66,18 @@ final class KilterGradeRangeTests: XCTestCase {
         XCTAssertEqual(pair.lo, 4)
         XCTAssertEqual(pair.hi, 4)
     }
+
+    // MARK: - Close thumbs merge their labels (overlapping text)
+
+    func testCloseThumbsMergeTheirLabels() {
+        // "7c/V9" and "8a/V11" ~ 37 + 45 pt wide: centred 28 pt apart they overlap; 120 pt apart they don't.
+        XCTAssertTrue(KilterGradeRange.labelsCollide(gap: 28, lo: "7c/V9", hi: "8a/V11"))
+        XCTAssertFalse(KilterGradeRange.labelsCollide(gap: 120, lo: "7c/V9", hi: "8a/V11"))
+        XCTAssertTrue(KilterGradeRange.labelsCollide(gap: 0, lo: "6a/V3", hi: "6a/V3"), "same grade")
+    }
+
+    func testMergedLabelReadsAsARange() {
+        XCTAssertEqual(KilterGradeRange.mergedLabel(lo: "7c/V9", hi: "8a/V11"), "7c/V9 – 8a/V11")
+        XCTAssertEqual(KilterGradeRange.mergedLabel(lo: "6a/V3", hi: "6a/V3"), "6a/V3")
+    }
 }

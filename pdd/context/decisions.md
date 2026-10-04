@@ -9525,3 +9525,19 @@ Non-obvious calls:
   UI test + a script) and bundled in the widget. A new art style or a look change = re-run the render.
 - Stills sit on the widget's exact background colour, so there's no seam; the crop stays inside the
   render panel's rounded corners.
+
+## 2026-10-03 — Kilter browse queries run off the main thread, debounced (prompt 153)
+
+- The catalog reader stays main-thread-only, except for the browse list + count, which run on a second
+  read-only connection with its own serial queue (`KilterCatalogBrowser`). A search with `LIKE '%term%'`
+  scans the whole layout, so no index would help, and the scan can't run on the main thread once per
+  keystroke. One connection per queue means no SQLite threading-mode assumptions.
+- List and count come from one scan (`COUNT(*) OVER ()` is evaluated before `LIMIT`), not two queries.
+- Debounce is 250 ms when the search text changed and 120 ms for other filter changes. The first load
+  doesn't wait. The previous rows stay until new ones land, so nothing flickers.
+- The stats memo's "has HR" check reads `metricsSourceRaw` (set alongside a non-empty `hrSeries`), so a
+  root render never decodes session HR arrays.
+- The On the board strip and session climb count are cached, recomputed on a cheap signature and on
+  appear. A log edited on a pushed screen (which the signature can't see) shows up when you come back.
+- The grade slider commits when you let go, not per tick. The "Show N climbs" count therefore updates
+  after the drag, not during it — accepted, since live-per-tick meant a full re-render per tick.
