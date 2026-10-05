@@ -24,7 +24,7 @@ enum Progression {
         static let choreS = 10
         static let choreM = 20
         static let choreL = 35
-        static func choreXP(_ effort: ChoreEffort) -> Int {
+        nonisolated static func choreXP(_ effort: ChoreEffort) -> Int {
             switch effort {
             case .s: return choreS
             case .m: return choreM

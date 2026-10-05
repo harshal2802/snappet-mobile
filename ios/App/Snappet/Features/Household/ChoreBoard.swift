@@ -9,6 +9,7 @@ struct Chore: Identifiable, Equatable, Sendable {
     var effort: ChoreEffort = .s
     var repeats: ChoreRepeat = .weekly
     var assignment: ChoreAssignment = .upForGrabs
+    var lean = false
     var createdAt: Date
     var archived = false
 }
@@ -52,6 +53,11 @@ struct ChoreBoard: Equatable, Sendable {
     var goals: [String: HouseholdGoal] = [:]
     /// The shared household name, if anyone has set one (household prompt 02).
     var householdName: String?
+    /// Household prompt 03.
+    var helpRequests: [HelpRequest] = []
+    var thanks: [HouseholdThanks] = []
+    var pauses: [HousePause] = []
+    var petName: String?
 
     static func fold(_ ops: [ChoreOp]) -> ChoreBoard {
         var seen = Set<UUID>()
@@ -92,6 +98,21 @@ struct ChoreBoard: Equatable, Sendable {
                 board.goals[week] = HouseholdGoal(week: week, target: max(0, target), reward: reward)
             case .renameHousehold(let name):
                 if !name.isEmpty { board.householdName = name }
+            case .askHelp(let chore, let member, let note):
+                guard !undone.contains(op.id), board.chores[chore] != nil else { continue }
+                board.helpRequests.append(HelpRequest(opID: op.id, chore: chore, member: member, note: note, at: op.at))
+            case .thank(let member, let by, let chore):
+                guard !undone.contains(op.id) else { continue }
+                board.thanks.append(HouseholdThanks(opID: op.id, member: member, by: by, chore: chore, at: op.at))
+            case .pauseHouse(let until):
+                if let open = board.pauses.last, open.end == nil, open.until == nil { continue }   // already paused
+                board.pauses.append(HousePause(start: op.at, until: until.flatMap(ChoreSchedule.day(fromKey:))))
+            case .resumeHouse:
+                if let i = board.pauses.indices.last, board.pauses[i].end == nil {
+                    board.pauses[i].end = op.at
+                }
+            case .namePet(let name):
+                if !name.isEmpty { board.petName = name }
             case .createChore, .undo, .unknown:
                 continue
             }
@@ -120,6 +141,7 @@ private extension Chore {
         if let v = f.effort { effort = v }
         if let v = f.repeats { repeats = v }
         if let v = f.assignment { assignment = v }
+        if let v = f.lean { lean = v }
     }
 }
 
@@ -171,7 +193,8 @@ extension ChoreBoard {
 
     func status(of chore: Chore, now: Date, calendar: Calendar = .current) -> ChoreStatus {
         ChoreSchedule.status(repeats: chore.repeats, rounds: rounds(of: chore, calendar: calendar),
-                             latest: completions.last { $0.chore == chore.id }?.at, now: now, calendar: calendar)
+                             latest: completions.last { $0.chore == chore.id }?.at, now: now, calendar: calendar,
+                             isPaused: pauses.isEmpty ? nil : { isPaused(day: $0, calendar: calendar) })
     }
 
     /// Who the current round falls to (the round just finished, if it's done). `nil` = up for grabs
@@ -186,7 +209,15 @@ extension ChoreBoard {
             let doneNow: Bool
             if case .done = status(of: chore, now: now, calendar: calendar) { doneNow = true } else { doneNow = false }
             let index = doneNow ? rounds.count - 1 : rounds.count
-            return order[max(0, index) % order.count]
+            let next = max(0, index) % order.count
+            if chore.lean, !doneNow, order.count > 1 {
+                // Lightest this week, ties in rotation order starting from whose turn it would be.
+                let points = effortPoints(weekStart: ChoreSchedule.weekStart(now, calendar: calendar), calendar: calendar)
+                let fromNext = (0..<order.count).map { order[(next + $0) % order.count] }
+                return fromNext.min { points[$0, default: 0] < points[$1, default: 0] }
+            }
+            if chore.lean, doneNow, let round = rounds.last { return round.first.member }
+            return order[next]
         case .upForGrabs:
             guard let claim = claims[chore.id] else { return nil }
             // A claim lasts until the chore is next done.
@@ -222,5 +253,79 @@ extension ChoreBoard {
     /// The goal for the week containing `now`, if one is set.
     func goal(now: Date, calendar: Calendar = .current) -> HouseholdGoal? {
         goals[ChoreSchedule.weekKey(now, calendar: calendar)]
+    }
+}
+
+// MARK: - Cooperative state (household prompt 03)
+
+/// "Can someone take this?" One member's request for a hand with one of their chores.
+struct HelpRequest: Equatable, Sendable {
+    var opID: UUID
+    var chore: UUID
+    var member: UUID
+    var note: String
+    var at: Date
+}
+
+struct HouseholdThanks: Equatable, Sendable {
+    var opID: UUID
+    /// Who's thanked.
+    var member: UUID
+    /// Who said it.
+    var by: UUID
+    var chore: UUID?
+    var at: Date
+}
+
+/// The house on holiday: from `start` until a resume (`end`) or the end of `until`'s day.
+struct HousePause: Equatable, Sendable {
+    var start: Date
+    var until: DayKey?
+    var end: Date?
+
+    func covers(_ date: Date, calendar: Calendar = .current) -> Bool {
+        guard date >= start else { return false }
+        if let end, date >= end { return false }
+        if let until, DayKey(date, calendar: calendar) > until { return false }
+        return true
+    }
+
+    /// A day counts as paused when the pause covers its midday.
+    func covers(day: DayKey, calendar: Calendar = .current) -> Bool {
+        covers(day.date(calendar: calendar).addingTimeInterval(12 * 3600), calendar: calendar)
+    }
+}
+
+extension ChoreBoard {
+    func isPaused(at date: Date, calendar: Calendar = .current) -> Bool {
+        pauses.contains { $0.covers(date, calendar: calendar) }
+    }
+
+    func isPaused(day: DayKey, calendar: Calendar = .current) -> Bool {
+        pauses.contains { $0.covers(day: day, calendar: calendar) }
+    }
+
+    /// Effort points each member is credited with for rounds first done in the week starting `weekStart`
+    /// (both people in a shared round get the chore's points).
+    func effortPoints(weekStart: Date, calendar: Calendar = .current) -> [UUID: Int] {
+        var points: [UUID: Int] = [:]
+        let end = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+        for chore in chores.values {
+            for round in rounds(of: chore, calendar: calendar) where round.first.at >= weekStart && round.first.at < end {
+                for m in round.members { points[m, default: 0] += chore.effort.points }
+            }
+        }
+        return points
+    }
+
+    /// Help requests still open at `now`: the chore hasn't been done, or claimed by someone else, since.
+    func openHelpRequests(now: Date = .now) -> [HelpRequest] {
+        helpRequests.filter { req in
+            guard let chore = chores[req.chore], !chore.archived, req.at <= now else { return false }
+            if completions.contains(where: { $0.chore == req.chore && $0.at >= req.at && $0.at <= now }) { return false }
+            if let claim = claims[req.chore], claim.at >= req.at, claim.member != req.member { return false }
+            // A newer request for the same chore replaces this one.
+            return !helpRequests.contains { $0.chore == req.chore && $0.at > req.at && $0.at <= now }
+        }
     }
 }

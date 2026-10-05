@@ -25,8 +25,9 @@ enum ChoreSchedule {
     }
 
     /// `rounds` = this chore's rounds, oldest first; `latest` = its most recent completion.
+    /// `isPaused`: days the house was on holiday (household prompt 03), which never count as overdue.
     static func status(repeats: ChoreRepeat, rounds: [ChoreRound], latest: Date?, now: Date,
-                       calendar: Calendar) -> ChoreStatus {
+                       calendar: Calendar, isPaused: ((DayKey) -> Bool)? = nil) -> ChoreStatus {
         let today = DayKey(now, calendar: calendar)
         let last = rounds.last
         let lastIsToday = last.map { r in r.completions.contains { DayKey($0.at, calendar: calendar) == today } } ?? false
@@ -55,8 +56,12 @@ enum ChoreSchedule {
             if let last, lastIsToday { return .done(last) }
             let dueDay = DayKey(latest, calendar: calendar).adding(days: days, calendar: calendar)
             if today < dueDay { return .notDue(next: dueDay) }
-            let over = calendar.dateComponents([.day], from: dueDay.date(calendar: calendar),
+            var over = calendar.dateComponents([.day], from: dueDay.date(calendar: calendar),
                                                to: today.date(calendar: calendar)).day ?? 0
+            if let isPaused, over > 0 {
+                if isPaused(today) { return .due(overdueDays: 0) }
+                over -= (0..<over).filter { isPaused(dueDay.adding(days: $0, calendar: calendar)) }.count
+            }
             return .due(overdueDays: max(0, over))
 
         case .once:
@@ -70,6 +75,13 @@ enum ChoreSchedule {
         let start = weekStart(date, calendar: calendar)
         let c = calendar.dateComponents([.year, .month, .day], from: start)
         return String(format: "%04d-%02d-%02d", c.year ?? 1970, c.month ?? 1, c.day ?? 1)
+    }
+
+    /// `yyyy-MM-dd` → a day; nil if malformed.
+    static func day(fromKey key: String) -> DayKey? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
+        return DayKey(value: parts[0] * 10_000 + parts[1] * 100 + parts[2])
     }
 
     static func weekStart(_ date: Date, calendar: Calendar = .current) -> Date {

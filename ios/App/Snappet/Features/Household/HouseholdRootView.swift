@@ -14,6 +14,16 @@ struct HouseholdRootView: View {
     @State private var celebrate = 0
     @State private var inviting = false
     @State private var joining: JoinTarget?
+    @State private var askingHelp: Chore?
+    @State private var showingPet = false
+    @State private var recapWeek: RecapWeek?
+    /// The last week whose recap opened by itself (prompt 03), so it shows once per new week.
+    @AppStorage("household.recap.seenWeek", store: BuddyDefaults.store) private var recapSeenWeek = ""
+
+    struct RecapWeek: Identifiable {
+        var start: Date
+        var id: Date { start }
+    }
 
     enum Section: String, CaseIterable, Identifiable {
         case today = "Today", chores = "All chores", week = "Week", household = "Household"
@@ -75,11 +85,14 @@ struct HouseholdRootView: View {
                 switch section {
                 case .today:
                     HouseholdTodayView(store: store, service: app.householdSync, setGoal: { settingGoal = true },
-                                       edit: { editing = .chore($0) }, ticked: { celebrate += 1 })
+                                       edit: { editing = .chore($0) }, askHelp: { askingHelp = $0 },
+                                       openPet: { showingPet = true }, ticked: { celebrate += 1 }, cheer: $celebrate,
+                                       petCovered: showingPet)
                 case .chores:
                     HouseholdChoresView(store: store, edit: { editing = .chore($0) })
                 case .week:
-                    HouseholdWeekView(store: store, setGoal: { settingGoal = true })
+                    HouseholdWeekView(store: store, setGoal: { settingGoal = true },
+                                      recap: { recapWeek = RecapWeek(start: Self.lastWeekStart) })
                 case .household:
                     EmptyView()
                 }
@@ -106,6 +119,22 @@ struct HouseholdRootView: View {
                 }
             }
         }
+        .navigationDestination(isPresented: $showingPet) { HouseholdPetScreen(store: store) }
+        .sheet(item: $askingHelp) { chore in
+            HouseholdAskHelpSheet(chore: chore) { note in store.askHelp(chore, note: note) }
+        }
+        .sheet(item: $recapWeek) { week in
+            HouseholdRecapSheet(store: store, weekStart: week.start)
+        }
+        .task {
+            // Once per new week, if last week had anything to celebrate.
+            let key = ChoreSchedule.weekKey(Self.lastWeekStart)
+            guard recapSeenWeek != key, recapWeek == nil else { return }
+            recapSeenWeek = key
+            if store.board.roundsByDay(weekStart: Self.lastWeekStart).reduce(0, +) > 0 {
+                recapWeek = RecapWeek(start: Self.lastWeekStart)
+            }
+        }
         .sheet(isPresented: $inviting) {
             HouseholdInviteSheet(service: app.householdSync, householdName: store.displayName)
         }
@@ -117,6 +146,10 @@ struct HouseholdRootView: View {
                 store.setGoal(target: target, reward: reward)
             }
         }
+    }
+
+    static var lastWeekStart: Date {
+        Calendar.current.date(byAdding: .weekOfYear, value: -1, to: ChoreSchedule.weekStart(.now)) ?? .now
     }
 
     private func emptyState(_ store: HouseholdStore) -> some View {
@@ -162,11 +195,17 @@ struct HouseholdTodayView: View {
     var service: HouseholdPeerService?
     let setGoal: () -> Void
     let edit: (Chore) -> Void
+    let askHelp: (Chore) -> Void
+    let openPet: () -> Void
     let ticked: () -> Void
+    @Binding var cheer: Int
+    var petCovered = false
 
     var body: some View {
         let now = Date.now
         let board = store.board
+        let help = board.openHelpRequests(now: now)
+        let thankable = Self.thankable(board, me: store.me, now: now)
         let rows = board.activeChores.map { chore in
             (chore: chore, status: board.status(of: chore, now: now), assignee: board.assignee(of: chore, now: now))
         }
@@ -187,15 +226,36 @@ struct HouseholdTodayView: View {
 
         List {
             Section {
-                if store.isShared, let service {
-                    HouseholdSyncPill(store: store, service: service)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                HouseholdGoalCard(board: board, now: now, setGoal: setGoal)
+                HouseholdPetCard(store: store, service: service, setGoal: setGoal, openPet: openPet, cheer: $cheer,
+                                 covered: petCovered)
             }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+
+            if !help.isEmpty {
+                Section("Asked for a hand") {
+                    ForEach(help, id: \.opID) { HouseholdHelpCard(store: store, request: $0) }
+                }
+            }
+            if !thankable.isEmpty {
+                Section("Both of you did it") {
+                    ForEach(thankable, id: \.round.first.opID) { item in
+                        HStack(spacing: 10) {
+                            Text(item.chore.emoji).font(.title3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.chore.name).font(.subheadline.weight(.semibold))
+                                Text("Done by \(item.others.map { board.name(of: $0) }.joined(separator: " & ")) and you. It counts once for the goal; you're both credited.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("👏 Thank") { for m in item.others { store.thank(m, for: item.chore.id) } }
+                                .font(.caption.weight(.bold)).buttonStyle(.bordered).tint(SnappetColor.household)
+                                .accessibilityIdentifier("household.thank")
+                        }
+                    }
+                }
+            }
 
             if !mine.isEmpty {
                 Section("Yours today") {
@@ -253,7 +313,28 @@ struct HouseholdTodayView: View {
                      }
                  })
             .contentShape(Rectangle())
-            .contextMenu { Button("Edit", systemImage: "pencil") { edit(chore) } }
+            .contextMenu {
+                Button("Edit", systemImage: "pencil") { edit(chore) }
+                if store.isShared, !Self.isDone(status), assignee == store.me {
+                    Button("Ask for a hand", systemImage: "hand.raised") { askHelp(chore) }
+                }
+            }
+    }
+
+    private static func isDone(_ status: ChoreStatus) -> Bool {
+        if case .done = status { return true } else { return false }
+    }
+
+    /// Today's rounds I shared with someone I haven't thanked yet.
+    static func thankable(_ board: ChoreBoard, me: UUID, now: Date) -> [(chore: Chore, round: ChoreRound, others: [UUID])] {
+        board.activeChores.compactMap { chore in
+            guard let round = board.rounds(of: chore).last, round.members.contains(me),
+                  Calendar.current.isDate(round.first.at, inSameDayAs: now) else { return nil }
+            let others = round.members.filter { m in
+                m != me && !board.thanks.contains { $0.by == me && $0.member == m && $0.chore == chore.id && $0.at >= round.first.at }
+            }
+            return others.isEmpty ? nil : (chore, round, others)
+        }
     }
 }
 
@@ -444,6 +525,7 @@ struct HouseholdChoresView: View {
 struct HouseholdWeekView: View {
     let store: HouseholdStore
     let setGoal: () -> Void
+    let recap: () -> Void
 
     var body: some View {
         let now = Date.now
@@ -477,9 +559,23 @@ struct HouseholdWeekView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(counts.reduce(0, +)) chores done this week")
             }
+            if store.board.members.count > 1 {
+                Section { HouseholdFairShareCard(store: store).padding(.vertical, 4) }
+                let help = store.board.openHelpRequests()
+                if !help.isEmpty {
+                    Section("Asked for a hand") {
+                        ForEach(help, id: \.opID) { HouseholdHelpCard(store: store, request: $0) }
+                    }
+                }
+            } else {
+                Section {
+                    Text("Once others join, you'll see everyone's share of the effort here, and anyone can ask for a hand with a chore.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             Section {
-                Text("Once others join, you'll see everyone's share of the effort here, and anyone can ask for a hand with a chore.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Button(action: recap) { Label("Last week in the house", systemImage: "sparkles") }
+                    .accessibilityIdentifier("household.week.recap")
             }
         }
         .scrollContentBackground(.hidden)

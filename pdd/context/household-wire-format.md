@@ -35,6 +35,11 @@ UUIDs are written lowercase; readers accept either case. Keys a kind doesn't use
 | `claim` | `chore`, `member` | "I'll do it" for an up-for-grabs chore. Lasts until the chore is next done. |
 | `set_goal` | `week`, `target`, `reward` | The house goal for the week starting `week` (`yyyy-MM-dd`, the calendar's first weekday). Latest wins. |
 | `rename_household` | `name` | The shared household name (prompt 157). Latest non-empty wins. |
+| `ask_help` | `chore`, `member`, `note` | Prompt 158: `member` asks for a hand. Open until the chore is next done, someone else claims it, a newer request replaces it, or `undo`. |
+| `thank` | `member`, `by`, optional `chore` | A thank-you from `by` to `member`. `undo` retracts it. |
+| `pause_house` | optional `until` (`yyyy-MM-dd`, inclusive) | The house on holiday from this op's time: nothing is overdue, and a week mostly paused neither breaks nor extends the streak. Ignored if already paused open-endedly. |
+| `resume_house` | (none) | Ends the open pause. |
+| `name_pet` | `name` | The house pet's name. Latest non-empty wins. |
 
 A reader that meets an unknown `kind` keeps the op (stores it, counts it in version vectors, relays it)
 and ignores it when folding. That's how a newer app's ops survive an older phone.
@@ -47,6 +52,8 @@ and ignores it when folding. That's how a newer app's ops survive an older phone
 | `effort` | `"s"` (1 point), `"m"` (2), `"l"` (3) |
 | `repeats` | `{"mode":"daily"}` · `{"mode":"weekdays","days":[2,5]}` (Calendar weekdays, 1 = Sunday) · `{"mode":"weekly"}` · `{"mode":"after_done","every":14}` · `{"mode":"once"}` |
 | `assignment` | `{"mode":"rotate","members":[…]}` · `{"mode":"fixed","member":"…"}` · `{"mode":"up_for_grabs"}` |
+
+| `lean` | `true` / `false` (prompt 158): a rotating chore goes to whoever in its rotation has the fewest effort points this week (ties → rotation order) |
 
 An unknown `effort`, `repeats.mode` or `assignment.mode` drops that one field; the rest of the op applies.
 
@@ -75,7 +82,19 @@ first done. So two people doing the fridge while apart is never a conflict.
 {"at":"2026-10-04T19:10:00.000Z","chore":"00000000-0000-0000-0000-0000000000c2","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-000000000009","kind":"archive_chore","seq":6,"v":1}
 ```
 
-Folded, these give: one active chore ("Clean the fridge", effort `m`, claimed by Alex, no live
+Later kinds (prompts 157–158), pinned by `testLaterKindsRoundTripAndDecode`:
+
+```json
+{"at":"2026-10-05T08:00:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-00000000000a","kind":"rename_household","name":"Flat 4B","seq":7,"v":1}
+{"at":"2026-10-05T08:01:00.000Z","chore":"00000000-0000-0000-0000-0000000000c1","device":"00000000-0000-0000-0000-0000000000d1","fields":{"lean":true},"id":"00000000-0000-0000-0000-00000000000b","kind":"edit_chore","seq":8,"v":1}
+{"at":"2026-10-05T08:02:00.000Z","chore":"00000000-0000-0000-0000-0000000000c1","device":"00000000-0000-0000-0000-0000000000d2","id":"00000000-0000-0000-0000-00000000000c","kind":"ask_help","member":"00000000-0000-0000-0000-0000000000a2","note":"Away till Tue","seq":4,"v":1}
+{"at":"2026-10-05T08:03:00.000Z","by":"00000000-0000-0000-0000-0000000000a2","chore":"00000000-0000-0000-0000-0000000000c1","device":"00000000-0000-0000-0000-0000000000d2","id":"00000000-0000-0000-0000-00000000000d","kind":"thank","member":"00000000-0000-0000-0000-0000000000a1","seq":5,"v":1}
+{"at":"2026-10-05T08:04:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-00000000000e","kind":"pause_house","seq":9,"until":"2026-10-11","v":1}
+{"at":"2026-10-05T08:05:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-00000000000f","kind":"resume_house","seq":10,"v":1}
+{"at":"2026-10-05T08:06:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-000000000010","kind":"name_pet","name":"Biscuit","seq":11,"v":1}
+```
+
+Folded, the first block gives: one active chore ("Clean the fridge", effort `m`, claimed by Alex, no live
 completions because the tick was undone), Dishes archived, and a 40-chore goal for the week of 28 Sep.
 
 ## Sync protocol (v1, prompt 157)

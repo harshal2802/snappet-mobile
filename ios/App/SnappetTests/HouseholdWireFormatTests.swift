@@ -17,6 +17,42 @@ final class HouseholdWireFormatTests: XCTestCase {
         #"{"at":"2026-10-04T19:10:00.000Z","chore":"00000000-0000-0000-0000-0000000000c2","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-000000000009","kind":"archive_chore","seq":6,"v":1}"#,
     ]
 
+    /// Prompts 157–158: the additive kinds and the `lean` field (also examples in the spec).
+    static let goldenLater: [String] = [
+        #"{"at":"2026-10-05T08:00:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-00000000000a","kind":"rename_household","name":"Flat 4B","seq":7,"v":1}"#,
+        #"{"at":"2026-10-05T08:01:00.000Z","chore":"00000000-0000-0000-0000-0000000000c1","device":"00000000-0000-0000-0000-0000000000d1","fields":{"lean":true},"id":"00000000-0000-0000-0000-00000000000b","kind":"edit_chore","seq":8,"v":1}"#,
+        #"{"at":"2026-10-05T08:02:00.000Z","chore":"00000000-0000-0000-0000-0000000000c1","device":"00000000-0000-0000-0000-0000000000d2","id":"00000000-0000-0000-0000-00000000000c","kind":"ask_help","member":"00000000-0000-0000-0000-0000000000a2","note":"Away till Tue","seq":4,"v":1}"#,
+        #"{"at":"2026-10-05T08:03:00.000Z","by":"00000000-0000-0000-0000-0000000000a2","chore":"00000000-0000-0000-0000-0000000000c1","device":"00000000-0000-0000-0000-0000000000d2","id":"00000000-0000-0000-0000-00000000000d","kind":"thank","member":"00000000-0000-0000-0000-0000000000a1","seq":5,"v":1}"#,
+        #"{"at":"2026-10-05T08:04:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-00000000000e","kind":"pause_house","seq":9,"until":"2026-10-11","v":1}"#,
+        #"{"at":"2026-10-05T08:05:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-00000000000f","kind":"resume_house","seq":10,"v":1}"#,
+        #"{"at":"2026-10-05T08:06:00.000Z","device":"00000000-0000-0000-0000-0000000000d1","id":"00000000-0000-0000-0000-000000000010","kind":"name_pet","name":"Biscuit","seq":11,"v":1}"#,
+    ]
+
+    func testLaterKindsRoundTripAndDecode() throws {
+        let ops = try Self.goldenLater.map { try ChoreOp.fromWire(Data($0.utf8)) }
+        for (line, op) in zip(Self.goldenLater, ops) {
+            XCTAssertEqual(String(decoding: try op.wireData(), as: UTF8.self), line)
+        }
+        let c1 = UUID(uuidString: "00000000-0000-0000-0000-0000000000c1")!
+        let a1 = UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!
+        let a2 = UUID(uuidString: "00000000-0000-0000-0000-0000000000a2")!
+        XCTAssertEqual(ops[0].kind, .renameHousehold(name: "Flat 4B"))
+        XCTAssertEqual(ops[1].kind, .editChore(chore: c1, fields: ChoreFields(lean: true)))
+        XCTAssertEqual(ops[2].kind, .askHelp(chore: c1, member: a2, note: "Away till Tue"))
+        XCTAssertEqual(ops[3].kind, .thank(member: a1, by: a2, chore: c1))
+        XCTAssertEqual(ops[4].kind, .pauseHouse(until: "2026-10-11"))
+        XCTAssertEqual(ops[5].kind, .resumeHouse)
+        XCTAssertEqual(ops[6].kind, .namePet(name: "Biscuit"))
+        let board = ChoreBoard.fold(try Self.golden.map { try ChoreOp.fromWire(Data($0.utf8)) } + ops)
+        XCTAssertEqual(board.householdName, "Flat 4B")
+        XCTAssertEqual(board.chores[c1]?.lean, true)
+        XCTAssertEqual(board.helpRequests.count, 1)
+        XCTAssertEqual(board.thanks.count, 1)
+        XCTAssertEqual(board.pauses.count, 1)
+        XCTAssertNotNil(board.pauses.first?.end, "resumed")
+        XCTAssertEqual(board.petName, "Biscuit")
+    }
+
     func testGoldenOpsRoundTripByteForByte() throws {
         for line in Self.golden {
             let op = try ChoreOp.fromWire(Data(line.utf8))
@@ -80,6 +116,9 @@ final class HouseholdWireFormatTests: XCTestCase {
             .editChore(chore: c, fields: ChoreFields(repeats: .once)),
             .archiveChore(chore: c), .complete(chore: c, member: m), .undo(op: d), .claim(chore: c, member: m),
             .setGoal(week: "2026-10-05", target: 3, reward: ""),
+            .renameHousehold(name: "Home"), .askHelp(chore: c, member: m, note: ""), .thank(member: m, by: d, chore: nil),
+            .thank(member: m, by: d, chore: c), .pauseHouse(until: nil), .pauseHouse(until: "2026-10-11"), .resumeHouse,
+            .namePet(name: "Mochi"), .editChore(chore: c, fields: ChoreFields(lean: false)),
         ]
         for (i, k) in kinds.enumerated() {
             let op = ChoreOp(id: UUID(), device: d, seq: i + 1, at: Date(timeIntervalSince1970: 1_791_190_800.123), kind: k)
