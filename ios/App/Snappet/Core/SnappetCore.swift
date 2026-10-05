@@ -60,7 +60,7 @@ enum SnappetSchema {
         // see FestivalModels.swift
         FestivalLineup.self, FestivalStar.self, FestivalAttendance.self, FestivalClipTag.self,
         // Household (shared chores) — the op log is the data; see HouseholdModels.swift
-        Household.self, HouseholdOpRecord.self,
+        Household.self, HouseholdOpRecord.self, HouseholdPeer.self,
     ]
 }
 

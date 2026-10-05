@@ -34,6 +34,7 @@ UUIDs are written lowercase; readers accept either case. Keys a kind doesn't use
 | `undo` | `op` | Retracts a `complete` or `claim` by its op id. |
 | `claim` | `chore`, `member` | "I'll do it" for an up-for-grabs chore. Lasts until the chore is next done. |
 | `set_goal` | `week`, `target`, `reward` | The house goal for the week starting `week` (`yyyy-MM-dd`, the calendar's first weekday). Latest wins. |
+| `rename_household` | `name` | The shared household name (prompt 157). Latest non-empty wins. |
 
 A reader that meets an unknown `kind` keeps the op (stores it, counts it in version vectors, relays it)
 and ignores it when folding. That's how a newer app's ops survive an older phone.
@@ -76,6 +77,62 @@ first done. So two people doing the fridge while apart is never a conflict.
 
 Folded, these give: one active chore ("Clean the fridge", effort `m`, claimed by Alex, no live
 completions because the tick was undone), Dishes archived, and a 40-chore goal for the week of 28 Sep.
+
+## Sync protocol (v1, prompt 157)
+
+Phones talk over TCP, found by Bonjour. Everything below is what a second implementation must match.
+
+### Discovery
+
+- Service type `_snappet-hh._tcp`, instance name = the phone's device id (lowercase UUID).
+- TXT record: `v=1`; `hh` = household tag; `inv` = invite tag, only while an invite is open.
+- Tag = first 8 bytes of `HMAC-SHA256(key: secret, message: label)`, lowercase hex. Labels:
+  `snappet-household-tag-v1` (secret = household key) and `snappet-household-invite-v1` (secret = invite token).
+- For discovery-triggered syncs only the phone with the smaller device id (string compare of the
+  uppercase UUID) dials. A local change or "Sync now" dials every visible member.
+
+### Invite link
+
+`snappet://household/join?v=1&h=<household uuid>&n=<name>&t=<32-byte token, base64url, no padding>&e=<expiry, unix seconds>`.
+The token is single-use, valid 5 minutes, and held only by the inviter. **The household key is never in
+the link.**
+
+### Frames
+
+Each frame is a 4-byte big-endian length, then the payload. A length over 1 MiB closes the connection.
+
+### Handshake
+
+1. Dialer → listener, plaintext JSON: `{"t":"hello","v":1,"mode":"sync"|"join","device":"…","nonce":"<32 bytes, base64>"}`
+2. Listener → dialer, plaintext: `{"t":"hello","v":1,"device":"…","nonce":"…"}`. If the listener has no
+   secret for that mode, it sends `{"t":"reject","reason":"invite_closed"|"not_a_member"}` instead and closes.
+3. Keys: `HKDF-SHA256(ikm: secret, salt: dialerNonce ‖ listenerNonce, info: label, length: 32)` with labels
+   `snappet-hh-v1 d2l` (dialer → listener) and `snappet-hh-v1 l2d` (listener → dialer). The secret is the
+   household key (`sync`) or the invite token (`join`).
+4. Every later frame is a ChaCha20-Poly1305 sealed box: `nonce (12, random) ‖ ciphertext ‖ tag (16)`, no
+   associated data, over one JSON message.
+5. Each side's first sealed message is `{"t":"auth","device":"<its hello device>"}`. If the peer's auth
+   doesn't open, the secret differs: close. Nothing about the household is sent before the peer's auth opens.
+
+Test vector (secret = 32 × `0x01`, dialer nonce = 32 × `0x02`, listener nonce = 32 × `0x03`):
+
+| | |
+|---|---|
+| d2l key | `42473905e765b737085a5f6d37b5644405dd34f767ae769f0224bc3e9025010e` |
+| l2d key | `fdc39f71f0d96562ae664017149b9ddde56f926584971dfdd7844b8f9d964d27` |
+| household tag | `04c02450e3f9af29` |
+
+### Conversation (sealed messages)
+
+- **join only:** after the dialer's auth, the listener sends
+  `{"t":"welcome","household":"<uuid>","name":"…","key":"<32 bytes, base64>"}` and burns the token. The
+  joiner creates the household with its own new device and member ids and appends `add_member` for itself.
+- Both: `{"t":"state","vv":{"<device>":<max seq>,…},"member":"…","name":"…","platform":"ios"|"android"}`.
+- Each side answers the other's `state` with the ops the peer is missing (`seq > vv[device]`), as
+  `{"t":"ops","ops":["<op JSON>",…]}` in chunks of roughly 256 KB. **Op strings are the stored bytes verbatim**,
+  so unknown kinds pass through unchanged.
+- Then `{"t":"done"}`. When a side has sent and received `done`, the conversation is over; the dialer closes.
+- Receivers ignore message types they don't know.
 
 ## Changing the format
 

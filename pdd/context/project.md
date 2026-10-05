@@ -214,7 +214,10 @@ repeat, rotation / one person / up for grabs, a starter board, chore XP into the
 the shared 300/day cap). The data is an **append-only op log** folded by a pure, order-independent
 `ChoreBoard`; its v1 JSON wire format (`pdd/context/household-wire-format.md`) is the contract for P2's
 phone-to-phone sync on the home Wi-Fi (Bonjour + TLS-PSK, iPhone and Android) and P4's Kotlin port.
-Sage accent; third Lifestyle resident. Not yet: sync, the house pet, fair share, widgets, Android.
+Sage accent; third Lifestyle resident. **P2 (prompt 157)** adds phone-to-phone sync for iPhones on the same
+Wi-Fi: one-time invite QR/link (a token, never the key), Bonjour discovery, an HKDF + ChaCha20-Poly1305 channel,
+version-vector op exchange, the Household tab (names, members, phones, Sync now, invite, join), and the Today
+sync pill. Not yet: the house pet, fair share, widgets, Android (P4).
 
 🟡 **Kilter create-a-climb (2026-06-09).** The module is no longer browse-only: users author climbs, either
 by hand (tap holes on an editable board) or with the **on-device board-explorer transformer** (✨ Generate,

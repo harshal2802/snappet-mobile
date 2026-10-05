@@ -61,6 +61,11 @@ final class SuiteRouter {
     /// cold-start window before the root is built (`initial: true` on the consumer, the Kilter precedent).
     var pendingFestivalImport: SharedLineup?
 
+    /// One-shot household-join intent (household prompt 02, the `pendingFestivalImport` pattern): a scanned
+    /// or opened `snappet://household/join?…` invite. `HouseholdRootView` consumes it into the join-confirm
+    /// sheet. Self-clearing on consume.
+    var pendingHouseholdJoin: HouseholdInvite?
+
     /// One-shot "start a focus timer" intent (#81 Phase 2): the Today widget's Start-focus button
     /// (`snappet://pomodoro/start`) and the shell's `onOpenURL` set this before `open(module:
     /// "pomodoro")`, and `PomodoroRootView` consumes it on appear/change to call `timer.start()` —

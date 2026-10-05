@@ -85,6 +85,8 @@ struct ChoreOp: Identifiable, Equatable, Sendable {
         case claim(chore: UUID, member: UUID)
         /// `week` = the week's first day, `yyyy-MM-dd`.
         case setGoal(week: String, target: Int, reward: String)
+        /// Household prompt 02: the shared household name. Latest wins.
+        case renameHousehold(name: String)
         /// A kind from a newer app version: kept in the log (and relayed), ignored by the fold.
         case unknown(String)
     }
@@ -179,6 +181,7 @@ private struct Wire: Codable {
         case .undo(let target): kind = "undo"; op = target.wire
         case .claim(let c, let m): kind = "claim"; chore = c.wire; member = m.wire
         case .setGoal(let w, let t, let r): kind = "set_goal"; week = w; target = t; reward = r
+        case .renameHousehold(let n): kind = "rename_household"; name = n
         case .unknown(let k): kind = k
         }
     }
@@ -198,6 +201,7 @@ private struct Wire: Codable {
         case "undo": k = .undo(op: UUID(wire: op))
         case "claim": k = .claim(chore: choreID, member: memberID)
         case "set_goal": k = .setGoal(week: week ?? "", target: target ?? 0, reward: reward ?? "")
+        case "rename_household": k = .renameHousehold(name: name ?? "")
         default: k = .unknown(kind)
         }
         return ChoreOp(id: id, device: device, seq: seq, at: date, kind: k)

@@ -300,7 +300,9 @@ struct BackupView: View {
         app.kilterSessions.detachForStoreRestore()
         do {
             try SnappetBackup.restore(file, into: context)
+            HouseholdStore.rerollDevices(context: context)   // two phones restored from one backup must not collide
             HouseholdXP.shared.load(context: context)   // chore XP from the restored log (household 01)
+            app.resetHouseholdStore()
             if storeIsFallback {
                 // Honest about ephemerality: the in-memory preview vanishes on relaunch.
                 finish(.success("Restored \(file.recordCount) records into temporary storage "

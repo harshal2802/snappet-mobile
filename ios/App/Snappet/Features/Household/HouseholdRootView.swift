@@ -4,17 +4,26 @@ import SwiftData
 /// Household root (household prompt 01; wireframe frames 1–3). Pushed into the App Library's stack.
 /// Sections sit in a top segmented control: a mini-app never adds its own bottom bar.
 struct HouseholdRootView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(AppModel.self) private var app
     @Environment(SnappetCore.self) private var core
+    @Environment(SuiteRouter.self) private var router
     @State private var store: HouseholdStore?
     @State private var section: Section = .today
     @State private var editing: EditTarget?
     @State private var settingGoal = false
     @State private var celebrate = 0
+    @State private var inviting = false
+    @State private var joining: JoinTarget?
 
     enum Section: String, CaseIterable, Identifiable {
-        case today = "Today", chores = "All chores", week = "Week"
+        case today = "Today", chores = "All chores", week = "Week", household = "Household"
         var id: String { rawValue }
+    }
+
+    /// The join sheet, from the Household section (scanner first) or an opened invite link.
+    struct JoinTarget: Identifiable {
+        var invite: HouseholdInvite?
+        var id: String { invite?.token.base64URL ?? "scan" }
     }
 
     enum EditTarget: Identifiable {
@@ -38,7 +47,12 @@ struct HouseholdRootView: View {
         }
         .navigationTitle("Household")
         .background(SnappetColor.paper)
-        .task { if store == nil { store = HouseholdStore(context: context) } }
+        .task { if store == nil { store = app.householdStore() } }
+        .onChange(of: router.pendingHouseholdJoin, initial: true) { _, invite in
+            guard let invite else { return }
+            router.pendingHouseholdJoin = nil
+            joining = JoinTarget(invite: invite)
+        }
     }
 
     @ViewBuilder
@@ -52,17 +66,22 @@ struct HouseholdRootView: View {
             .padding(.vertical, 8)
             .accessibilityIdentifier("household.section")
 
-            if store.board.activeChores.isEmpty {
+            if section == .household {
+                HouseholdMembersView(store: store, service: app.householdSync,
+                                     invite: { inviting = true }, join: { joining = JoinTarget(invite: nil) })
+            } else if store.board.activeChores.isEmpty {
                 emptyState(store)
             } else {
                 switch section {
                 case .today:
-                    HouseholdTodayView(store: store, setGoal: { settingGoal = true }, edit: { editing = .chore($0) },
-                                       ticked: { celebrate += 1 })
+                    HouseholdTodayView(store: store, service: app.householdSync, setGoal: { settingGoal = true },
+                                       edit: { editing = .chore($0) }, ticked: { celebrate += 1 })
                 case .chores:
                     HouseholdChoresView(store: store, edit: { editing = .chore($0) })
                 case .week:
                     HouseholdWeekView(store: store, setGoal: { settingGoal = true })
+                case .household:
+                    EmptyView()
                 }
             }
         }
@@ -86,6 +105,12 @@ struct HouseholdRootView: View {
                     store.edit(chore, to: fields)
                 }
             }
+        }
+        .sheet(isPresented: $inviting) {
+            HouseholdInviteSheet(service: app.householdSync, householdName: store.displayName)
+        }
+        .sheet(item: $joining) { target in
+            HouseholdJoinSheet(service: app.householdSync, store: store, invite: target.invite)
         }
         .sheet(isPresented: $settingGoal) {
             HouseholdGoalSheet(current: store.board.goal(now: .now)) { target, reward in
@@ -134,6 +159,7 @@ enum HouseholdStarter {
 
 struct HouseholdTodayView: View {
     let store: HouseholdStore
+    var service: HouseholdPeerService?
     let setGoal: () -> Void
     let edit: (Chore) -> Void
     let ticked: () -> Void
@@ -160,9 +186,16 @@ struct HouseholdTodayView: View {
         }.sorted { $0.1 < $1.1 }
 
         List {
-            Section { HouseholdGoalCard(board: board, now: now, setGoal: setGoal) }
+            Section {
+                if store.isShared, let service {
+                    HouseholdSyncPill(store: store, service: service)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                HouseholdGoalCard(board: board, now: now, setGoal: setGoal)
+            }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
             if !mine.isEmpty {
                 Section("Yours today") {

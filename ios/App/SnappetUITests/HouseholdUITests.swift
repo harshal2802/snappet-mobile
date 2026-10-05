@@ -72,4 +72,28 @@ final class HouseholdUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["The house this week"].waitForExistence(timeout: 4)
                       || app.staticTexts["THE HOUSE THIS WEEK"].exists)
     }
+
+    /// Household P2 (prompt 157): the Household section, the invite sheet's one-time code, and the
+    /// join sheet's paste-a-link path (a bad link can't be used).
+    func testHouseholdSectionInviteAndJoinSheets() {
+        openHousehold()
+        app.segmentedControls["household.section"].buttons["Household"].tap()
+        XCTAssertTrue(app.buttons["household.members.invite"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["You (you)"].exists || app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "(you)")).firstMatch.exists, "you're the first member")
+
+        app.buttons["household.members.invite"].tap()
+        XCTAssertTrue(app.images["household.invite.qr"].waitForExistence(timeout: 6), "a one-time QR")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "works once")).firstMatch.exists)
+        XCTAssertTrue(app.buttons["household.invite.copy"].exists)
+        app.buttons["household.invite.done"].tap()
+
+        app.buttons["household.members.join"].tap()
+        let link = app.textFields["household.join.link"]
+        XCTAssertTrue(link.waitForExistence(timeout: 4))
+        link.tap()
+        link.typeText("https://example.com/not-an-invite")
+        XCTAssertFalse(app.buttons["household.join.useLink"].isEnabled, "only a household invite link works")
+        app.buttons["household.join.close"].tap()
+    }
 }

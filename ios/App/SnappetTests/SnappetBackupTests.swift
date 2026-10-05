@@ -85,7 +85,7 @@ final class SnappetBackupTests: XCTestCase {
         }
 
         let exported = try SnappetBackup.snapshot(of: context)
-        XCTAssertEqual(exported.recordCount, 41, "every seeded row is captured")
+        XCTAssertEqual(exported.recordCount, 42, "every seeded row is captured")
         XCTAssertEqual(exported.recordCount, try storeRecordCount(in: context),
                        "File.recordCount must match the store's fetchCount total — a "
                        + "half-wired model makes these disagree")
@@ -598,12 +598,16 @@ final class SnappetBackupTests: XCTestCase {
             mediaID: UUID(), sessionID: UUID(),
             confidence: 0.97, reason: "mid-set", source: .auto,
             createdAt: Date(timeIntervalSince1970: 1_700_011_400)))
-        let household = Household(name: "Flat 4B", createdAt: Date(timeIntervalSince1970: 1_700_011_500))
+        let household = Household(name: "Flat 4B", createdAt: Date(timeIntervalSince1970: 1_700_011_500),
+                                  key: Data(repeating: 9, count: 32), leftAt: Date(timeIntervalSince1970: 1_700_011_550))
         context.insert(household)
         let op = ChoreOp(id: UUID(), device: household.myDeviceID, seq: 1,
                          at: Date(timeIntervalSince1970: 1_700_011_600),
                          kind: .addMember(member: household.myMemberID, name: "You"))
         context.insert(try! HouseholdOpRecord(householdID: household.id, op: op))
+        context.insert(HouseholdPeer(householdID: household.id, deviceID: UUID(), memberID: UUID(), name: "Sam",
+                                     platform: "ios", lastSyncedAt: Date(timeIntervalSince1970: 1_700_011_700),
+                                     ackedSeq: 3))
     }
 
     /// An hour-long session at 1 Hz (3600 HR points, RR intervals on one sample) with a
