@@ -41,6 +41,8 @@ final class HouseholdPeerService {
     @ObservationIgnored private var lastDial: [UUID: Date] = [:]
     @ObservationIgnored private var pushTask: Task<Void, Never>?
     @ObservationIgnored private var listenerTXT: [String: String] = [:]
+    /// The device id the listener advertises under; a join mints a new one, so the service restarts.
+    @ObservationIgnored private var listenerDevice: UUID?
 
     var isSyncing: Bool { activeSessions > 0 }
 
@@ -61,6 +63,7 @@ final class HouseholdPeerService {
         store?.onLocalChange = { [weak self] in self?.pushSoon() }
         let wanted = foreground && store != nil
             && ((store?.isShared ?? false) || invite != nil || pendingJoin != nil)
+        if wanted, isRunning, let store, store.myDevice != listenerDevice { stop() }   // joined: new identity
         if wanted, !isRunning { start() } else if !wanted, isRunning { stop() } else if isRunning { refreshTXT() }
     }
 
@@ -126,6 +129,7 @@ final class HouseholdPeerService {
             l.service = NWListener.Service(name: store.myDevice.uuidString.lowercased(), type: Self.serviceType,
                                            domain: nil, txtRecord: NWTXTRecord(txt()))
             listenerTXT = txt()
+            listenerDevice = store.myDevice
             l.newConnectionHandler = { [weak self] connection in
                 MainActor.assumeIsolated { self?.accept(connection) }
             }
