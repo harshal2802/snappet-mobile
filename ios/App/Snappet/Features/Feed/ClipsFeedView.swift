@@ -83,7 +83,8 @@ struct ClipsFeedView: View {
     /// Explore-grid sheet (prompt 86) + the post id to scroll the feed to when a grid cover is picked.
     @State private var showGrid = false
     @State private var scrollTarget: String?
-    /// Favorite reactions (prompt 88) — UserDefaults-backed, no new @Model.
+    /// Favorite reactions (prompt 88) — `FeedReaction` rows keyed by clip, so they're backed up and
+    /// survive regrouping (prompt 162). Bound to the context in `rebuildFeed`.
     @State private var reactions = ClipReactionStore()
     /// Optional search + chip filter (prompt 107) — pure value state; `.searchable` binds `query`,
     /// the chip strip binds the rest. Session-scoped by design (resets on relaunch, like IG search).
@@ -536,6 +537,10 @@ struct ClipsFeedView: View {
             let snap = makeSnapshot()
             let composed = await Task.detached(priority: .userInitiated) { Self.compose(snap) }.value
             guard !Task.isCancelled else { return }   // a newer rebuild superseded this one
+            // Favorites (prompt 162): re-read the rows each rebuild (picks up a backup restore) and move
+            // any prompt-88 post-id hearts onto the freshly composed posts' clips, once.
+            reactions.attach(context)
+            reactions.migrateLegacy(posts: composed.posts)
             cachedPosts = composed.posts
             cachedHRContext = composed.hr
             cachedHRTiles = composed.tiles
@@ -1032,17 +1037,17 @@ private struct ClipPostCard: View {
 
     // ❤️ favorite reaction (prompt 88) — a button (not a double-tap) so it can't fight the tap-to-play poster.
     private var favoriteButton: some View {
-        Button { reactions.toggle(post.id) } label: {
-            Image(systemName: reactions.isFavorite(post.id) ? "heart.fill" : "heart")
+        Button { reactions.toggle(post) } label: {
+            Image(systemName: reactions.isFavorite(post) ? "heart.fill" : "heart")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(reactions.isFavorite(post.id) ? .red : SnappetColor.ink)
-                .symbolEffect(.bounce, value: reduceMotion ? false : reactions.isFavorite(post.id))
+                .foregroundStyle(reactions.isFavorite(post) ? .red : SnappetColor.ink)
+                .symbolEffect(.bounce, value: reduceMotion ? false : reactions.isFavorite(post))
                 .frame(width: 34, height: 34)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("clips.post.favorite")
-        .accessibilityLabel(reactions.isFavorite(post.id) ? "Unfavorite" : "Favorite")
+        .accessibilityLabel(reactions.isFavorite(post) ? "Unfavorite" : "Favorite")
     }
 
     private var glyph: String {

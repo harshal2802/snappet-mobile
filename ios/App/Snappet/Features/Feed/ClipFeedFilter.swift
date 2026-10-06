@@ -46,11 +46,11 @@ struct ClipFeedFilter: Equatable, Sendable {
 
     /// Filter `posts` down to the visible set. `isFavorite` injects the reaction store lookup so the
     /// UserDefaults edge stays out of the pure layer (and is only consulted when `favoritesOnly` is on).
-    func apply(_ posts: [ClipFeedPost], isFavorite: (String) -> Bool) -> [ClipFeedPost] {
+    func apply(_ posts: [ClipFeedPost], isFavorite: (ClipFeedPost) -> Bool) -> [ClipFeedPost] {
         guard isActive else { return posts }
         let q = trimmedQuery
         return posts.filter { post in
-            if favoritesOnly, !isFavorite(post.id) { return false }
+            if favoritesOnly, !isFavorite(post) { return false }
             if reelsOnly, !post.isReel { return false }
             if sendsOnly, post.climbResult?.status.isSend != true { return false }
             switch discipline {

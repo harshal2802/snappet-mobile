@@ -104,7 +104,7 @@ final class ClipFeedFilterTests: XCTestCase {
 
     func testFavoritesOnly() {
         var f = ClipFeedFilter(); f.favoritesOnly = true
-        XCTAssertEqual(ids(f.apply(sample) { $0 == "b" || $0 == "c" }), ["b", "c"])
+        XCTAssertEqual(ids(f.apply(sample) { $0.id == "b" || $0.id == "c" }), ["b", "c"])
     }
 
     // MARK: stacking + reset

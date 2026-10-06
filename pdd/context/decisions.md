@@ -9715,3 +9715,18 @@ stripes, and the panel read as an opaque slab.
   (`.task` under the system TabView), so hashing every log row on each body pass would buy nothing.
 - Not done: Quick Session climb posts still take the strength glyph/accent (discipline comes from the clip's
   `climbUUID`); the "Climbs" chip is still Kilter-only.
+
+## 2026-10-06 — Clips favorites move to FeedReaction rows, keyed by clip (prompt 162)
+
+- **Reverses prompt 88's "UserDefaults, no SwiftData".** That choice had two silent losses: backup/restore
+  dropped every heart (the envelope is the SwiftData store), and the key was the derived post id, which a
+  re-tag changes.
+- **Reuse `FeedReaction`, don't add a model**: it already means "a private reaction on content" and is already
+  in the backup envelope. Rows are `typeRaw "clipFavorite"` / `activityContentId "clipmedia:<SessionMedia.id>"`;
+  Recap matches reactions by its own card content ids only, so they can't appear there.
+- **Keyed by clip, read per post**: a post is hearted if any of its clips is; hearting writes a row per clip;
+  un-hearting clears all of them (no half-hearted posts). `SessionMedia.id` survives regrouping, bakes and
+  restore.
+- **One-time legacy move after a non-empty compose**, then the UserDefaults key is removed. Legacy ids that
+  match no current post were already orphaned and are dropped.
+- Rows for a deleted clip are left behind (harmless; nothing reads them).
